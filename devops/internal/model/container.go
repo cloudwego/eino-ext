@@ -32,6 +32,7 @@ import (
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
+
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
 )
 
@@ -764,7 +765,7 @@ func (gi GraphInfo) inferGraphInputTypeByNodes() (git GraphInferType, supported 
 			}
 		}
 
-		// hande without InputKey node, but with GraphInfo
+		// handle without InputKey node, but with GraphInfo
 		for nk, ni := range startNodes {
 			if ni.GraphInfo == nil {
 				continue

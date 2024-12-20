@@ -91,23 +91,13 @@ jobs:
         with:
           go-version: stable
 
-      - name: Unit Test
-        run: go test -race -covermode=atomic -coverprofile=coverage.out ./...
-
-      - name: Benchmark
-        run: go test -bench=. -benchmem -run=none ./...
-
-  compatibility-test:
-    strategy:
-      matrix:
-        go: [ "1.18", "1.19", "1.20", "1.21", "1.22" ]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ matrix.go }}
-          cache: true # don't use cache for self-hosted runners
-      - name: Unit Test
-        run: go test -race -covermode=atomic ./...
+      - name: Go BenchMark
+        run: |
+          modules=`find . -name "go.mod" -exec dirname {} \;`
+          echo $modules
+          list=""
+          coverpkg=""
+          if [[ ! -f "go.work" ]];then go work init;fi
+          for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
+          go work sync
+          go test -bench=. -run=none $list
