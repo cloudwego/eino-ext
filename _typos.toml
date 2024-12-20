@@ -1,4 +1,13 @@
 # Typo check: https://github.com/crate-ci/typos
 
+[default]
+
+[default.extend-words]
+Invokable = "Invokable"
+invokable = "invokable"
+InvokableLambda = "InvokableLambda"
+InvokableRun = "InvokableRun"
+
+
 [files]
 extend-exclude = ["go.mod", "go.sum", "check_branch_name.sh"]
