@@ -17,7 +17,6 @@
 package service
 
 import (
-	"github.com/cloudwego/eino/compose"
 	"context"
 	"encoding/json"
 	"errors"
@@ -33,7 +32,9 @@ import (
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
 )
@@ -89,11 +90,12 @@ func Test_OnEnd(t *testing.T) {
 		Type:      "TestType",
 		Component: components.Component("TestComponent"),
 	}
-	cb := &callbackHandler{
-		nodeKey:  "nodeKey",
-		threadID: "threadID",
-	}
+
 	PatchConvey("Test when ctxValOK is false", t, func() {
+		cb := &callbackHandler{
+			nodeKey:  "nodeKey",
+			threadID: "threadID",
+		}
 		cb.stateCh = make(chan *model.NodeDebugState, 1)
 		Mock(getNodeDebugStateCtx).Return(nil, false).Build()
 		actualCtx := cb.OnEnd(ctx, info, "TestOutput")
@@ -104,6 +106,10 @@ func Test_OnEnd(t *testing.T) {
 		assert.Equal(t, actualCtx, ctx)
 	})
 	PatchConvey("Test when json.Marshal fails", t, func() {
+		cb := &callbackHandler{
+			nodeKey:  "nodeKey",
+			threadID: "threadID",
+		}
 		cb.stateCh = make(chan *model.NodeDebugState, 1)
 		Mock(getNodeDebugStateCtx).Return(&nodeDebugStateCtxValue{invokeTimeMS: int64(1728630000), callbackInput: "input"}, true).Build()
 		Mock(json.Marshal).Return(nil, errors.New("json marshal error")).Build()
@@ -115,6 +121,10 @@ func Test_OnEnd(t *testing.T) {
 		assert.Equal(t, actualCtx, ctx)
 	})
 	PatchConvey("Test normal case", t, func() {
+		cb := &callbackHandler{
+			nodeKey:  "nodeKey",
+			threadID: "threadID",
+		}
 		cb.stateCh = make(chan *model.NodeDebugState, 1)
 		Mock(getNodeDebugStateCtx).Return(&nodeDebugStateCtxValue{invokeTimeMS: int64(1728630000), callbackInput: "input"}, true).Build()
 		actualCtx := cb.OnEnd(ctx, info, "TestOutput")
@@ -125,6 +135,10 @@ func Test_OnEnd(t *testing.T) {
 		assert.Equal(t, actualCtx, ctx)
 	})
 	PatchConvey("Test multi-depth successful", t, func() {
+		cb := &callbackHandler{
+			nodeKey:  "nodeKey",
+			threadID: "threadID",
+		}
 		cb.stateCh = make(chan *model.NodeDebugState, 1)
 		Mock(getNodeDebugStateCtx).Return(&nodeDebugStateCtxValue{invokeTimeMS: int64(1728630000), callbackInput: "input", depth: 2}, true).Build()
 		actualCtx := cb.OnEnd(ctx, info, "TestOutput")

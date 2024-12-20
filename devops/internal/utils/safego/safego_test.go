@@ -18,6 +18,7 @@ package safego
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,10 +28,10 @@ import (
 
 func TestGo(t *testing.T) {
 	PatchConvey("TestGo", t, func() {
-		c := 0
-		fn := func() { c++ }
+		c := int64(0)
+		fn := func() { atomic.AddInt64(&c, 1) }
 		Go(context.Background(), fn)
 		time.Sleep(1 * time.Millisecond)
-		assert.Equal(t, c, 1)
+		assert.Equal(t, atomic.LoadInt64(&c), int64(1))
 	})
 }

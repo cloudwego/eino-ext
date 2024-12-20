@@ -20,15 +20,16 @@ linters-settings:
       - stdmethods
 linters:
   enable:
-    - gofumpt
     - goimports
     - gofmt
   disable:
     - errcheck
     - typecheck
-    - deadcode
-    - varcheck
     - staticcheck
+    - unused
+    - gosimple
+    - ineffassign
+    - gofumpt
 issues:
   exclude-use-default: true
   exclude-files:
