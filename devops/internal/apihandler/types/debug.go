@@ -17,12 +17,14 @@
 package types
 
 import (
-	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"encoding/json"
+
+	"github.com/cloudwego/eino-ext/devops/internal/model"
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 type GetCanvasInfoResponse struct {
-	CanvasInfo model.CanvasInfo `json:"canvas_info,omitempty"`
+	CanvasInfo devmodel.CanvasInfo `json:"canvas_info,omitempty"`
 }
 
 type CreateDebugThreadResponse struct {

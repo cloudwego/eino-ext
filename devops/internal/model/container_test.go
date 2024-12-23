@@ -25,14 +25,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 type mockContainer interface {
@@ -1509,22 +1510,21 @@ func (c *canvasCallBack) OnFinish(ctx context.Context, info *compose.GraphInfo) 
 	g := GraphInfo{
 		GraphInfo: info,
 	}
-	canvas, err := g.BuildCanvas()
+	graphSchema, err := g.BuildGraphSchema()
 	assert.NoError(t, err)
-	assert.Equal(t, 15, len(canvas.Nodes))
-	for _, edge := range canvas.Edges {
+	assert.Equal(t, 15, len(graphSchema.Nodes))
+	for _, edge := range graphSchema.Edges {
 		names := strings.Split(edge.Name, "_to_")
 		assert.Equal(t, names[0], edge.SourceNodeKey)
 		assert.Equal(t, names[1], edge.TargetNodeKey)
 	}
-	for _, node := range canvas.Nodes {
-
+	for _, node := range graphSchema.Nodes {
 		if ok := notAllowOperateNodes[node.Name]; ok {
-			assert.False(t, node.ImplMeta.AllowOperate)
+			assert.False(t, node.AllowOperate)
 		}
-		if node.Canvas != nil {
-			for _, n := range node.Canvas.Nodes {
-				assert.False(t, n.ImplMeta.AllowOperate)
+		if node.GraphSchema != nil {
+			for _, n := range node.GraphSchema.Nodes {
+				assert.False(t, n.AllowOperate)
 			}
 		}
 	}
@@ -1537,7 +1537,6 @@ func TestGraphInfo_BuildCanvas(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = g.Compile(context.Background(), compose.WithGraphCompileCallbacks(&canvasCallBack{t: t}))
 	assert.NoError(t, err)
-
 }
 
 type canvasCallbackStruct struct {
@@ -1734,18 +1733,17 @@ func (c *canvasCallBackInferStartNode) OnFinish(ctx context.Context, info *compo
 	g := GraphInfo{
 		GraphInfo: info,
 	}
-	canvas, err := g.BuildCanvas()
+	graphSchema, err := g.BuildGraphSchema()
 	assert.NoError(t, err)
-	for _, edge := range canvas.Edges {
+	for _, edge := range graphSchema.Edges {
 		names := strings.Split(edge.Name, "_to_")
 		assert.Equal(t, names[0], edge.SourceNodeKey)
 		assert.Equal(t, names[1], edge.TargetNodeKey)
 	}
-	for _, node := range canvas.Nodes {
-		if node.Type == NodeTypeOfStart {
-			implMeta := node.ImplMeta
-			assert.NotNil(t, implMeta.InferInput)
-			for k, n := range implMeta.InferInput.Properties {
+	for _, node := range graphSchema.Nodes {
+		if node.Type == devmodel.NodeTypeOfStart {
+			assert.NotNil(t, node.InferInput)
+			for k, n := range node.InferInput.Properties {
 				assert.Contains(t, []string{"n1", "n2", "n3", "subGGG"}, k)
 				if k == "subGGG" {
 					for sk := range n.Properties {
@@ -1882,11 +1880,11 @@ type DemoV1 struct {
 }
 
 func Test_parseReflectTypeToTypeSchema(t *testing.T) {
-	data := parseReflectTypeToTypeSchema(reflect.TypeOf(&DemoV1{}))
+	data := parseReflectTypeToJsonSchema(reflect.TypeOf(&DemoV1{}))
 
 	assert.Len(t, data.Properties, 8)
-	assert.Equal(t, data.Properties["child"].BasicType, BasicTypeOfObject)
-	assert.Equal(t, data.Properties["child2"].BasicType, BasicTypeOfArray)
+	assert.Equal(t, data.Properties["child"].Type, devmodel.TypeOfObject)
+	assert.Equal(t, data.Properties["child2"].Type, devmodel.TypeOfArray)
 	assert.Equal(t, data.Properties["child4"].Title, "model.DemoV2")
 	assert.Equal(t, data.Properties["child5"].Title, "model.DemoV2")
 

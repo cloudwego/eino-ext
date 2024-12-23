@@ -27,6 +27,7 @@ import (
 	"github.com/cloudwego/eino-ext/devops/internal/service"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 // GetCanvasInfo use graph name to  get canvas info
@@ -35,7 +36,7 @@ func GetCanvasInfo(res http.ResponseWriter, req *http.Request) {
 		graphID    string
 		ok         bool
 		err        error
-		canvasInfo model.CanvasInfo
+		canvasInfo devmodel.CanvasInfo
 	)
 
 	graphID = getPathParam(req, "graph_id")

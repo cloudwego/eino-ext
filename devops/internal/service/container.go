@@ -22,8 +22,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino-ext/devops/internal/model"
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
+	"github.com/cloudwego/eino/compose"
 )
 
 var _ ContainerService = &containerServiceImpl{}
@@ -36,8 +37,8 @@ type ContainerService interface {
 	ListGraphs() (graphNameToID map[string]string)
 	CreateRunnable(graphID, fromNode string) (runnable model.Runnable, err error)
 	GetRunnable(graphID, fromNode string) (runnable model.Runnable, exist bool)
-	CreateCanvas(graphID string) (canvas model.CanvasInfo, err error)
-	GetCanvas(graphID string) (canvas model.CanvasInfo, exist bool)
+	CreateCanvas(graphID string) (canvas devmodel.CanvasInfo, err error)
+	GetCanvas(graphID string) (canvas devmodel.CanvasInfo, exist bool)
 }
 
 type containerServiceImpl struct {
@@ -180,7 +181,7 @@ func (s *containerServiceImpl) GetRunnable(graphID, fromNode string) (runnable m
 	return *r, true
 }
 
-func (s *containerServiceImpl) CreateCanvas(graphID string) (canvasInfo model.CanvasInfo, err error) {
+func (s *containerServiceImpl) CreateCanvas(graphID string) (canvasInfo devmodel.CanvasInfo, err error) {
 	s.mu.Lock()
 	c := s.container[graphID]
 	s.mu.Unlock()
@@ -189,21 +190,21 @@ func (s *containerServiceImpl) CreateCanvas(graphID string) (canvasInfo model.Ca
 	}
 
 	graphInfo := c.GraphInfo
-	canvas, err := graphInfo.BuildCanvas()
+	graphSchema, err := graphInfo.BuildGraphSchema()
 	if err != nil {
 		return canvasInfo, fmt.Errorf("build canvas failed, err=%w", err)
 	}
-	canvasInfo = model.CanvasInfo{
-		Name:    c.GraphName,
-		Version: model.CanvasGraphVersionV1,
-		Canvas:  canvas,
+	graphSchema.Name = c.GraphName
+	canvasInfo = devmodel.CanvasInfo{
+		Version:     devmodel.Version,
+		GraphSchema: graphSchema,
 	}
 	c.CanvasInfo = &canvasInfo
 
 	return canvasInfo, nil
 }
 
-func (s *containerServiceImpl) GetCanvas(graphID string) (canvasInfo model.CanvasInfo, exist bool) {
+func (s *containerServiceImpl) GetCanvas(graphID string) (canvasInfo devmodel.CanvasInfo, exist bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

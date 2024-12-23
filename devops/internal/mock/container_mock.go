@@ -28,8 +28,9 @@ package mock
 import (
 	reflect "reflect"
 
-	compose "github.com/cloudwego/eino/compose"
 	model "github.com/cloudwego/eino-ext/devops/internal/model"
+	model0 "github.com/cloudwego/eino-ext/devops/model"
+	compose "github.com/cloudwego/eino/compose"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -87,10 +88,10 @@ func (mr *MockContainerServiceMockRecorder) AddGlobalGraphInfo(graphName, graphI
 }
 
 // CreateCanvas mocks base method.
-func (m *MockContainerService) CreateCanvas(graphID string) (model.CanvasInfo, error) {
+func (m *MockContainerService) CreateCanvas(graphID string) (model0.CanvasInfo, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CreateCanvas", graphID)
-	ret0, _ := ret[0].(model.CanvasInfo)
+	ret0, _ := ret[0].(model0.CanvasInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -117,10 +118,10 @@ func (mr *MockContainerServiceMockRecorder) CreateRunnable(graphID, fromNode any
 }
 
 // GetCanvas mocks base method.
-func (m *MockContainerService) GetCanvas(graphID string) (model.CanvasInfo, bool) {
+func (m *MockContainerService) GetCanvas(graphID string) (model0.CanvasInfo, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetCanvas", graphID)
-	ret0, _ := ret[0].(model.CanvasInfo)
+	ret0, _ := ret[0].(model0.CanvasInfo)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }

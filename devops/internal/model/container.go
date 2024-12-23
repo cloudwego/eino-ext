@@ -34,6 +34,7 @@ import (
 	"github.com/cloudwego/eino/compose"
 
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 type GraphContainer struct {
@@ -44,7 +45,7 @@ type GraphContainer struct {
 	// GraphInfo graph info, from graph compile callback.
 	GraphInfo *GraphInfo
 	// Canvas graph canvas.
-	CanvasInfo *CanvasInfo
+	CanvasInfo *devmodel.CanvasInfo
 	// NodesRunnable NodeKey vs Runnable, NodeKey is the node where debugging starts.
 	NodesRunnable map[string]*Runnable
 }
@@ -138,44 +139,44 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 	return g, nil
 }
 
-func (gi GraphInfo) BuildCanvas() (canvas *Canvas, err error) {
+func (gi GraphInfo) BuildGraphSchema() (graph *devmodel.GraphSchema, err error) {
 
-	canvas = &Canvas{
-		Nodes: make([]*Node, 0, len(gi.Nodes)+2),
-		Edges: make([]*Edge, 0, len(gi.Nodes)+2),
+	graph = &devmodel.GraphSchema{
+		Nodes: make([]*devmodel.Node, 0, len(gi.Nodes)+2),
+		Edges: make([]*devmodel.Edge, 0, len(gi.Nodes)+2),
 	}
-	nodes, err := gi.buildCanvasNodes()
+	nodes, err := gi.buildGraphNodes()
 	if err != nil {
 		return nil, fmt.Errorf("[BuildCanvas] build canvas nodes failed, err=%w", err)
 	}
-	canvas.Nodes = append(canvas.Nodes, nodes...)
-	edges, nodes, err := gi.buildCanvasEdges()
+	graph.Nodes = append(graph.Nodes, nodes...)
+	edges, nodes, err := gi.buildGraphEdges()
 	if err != nil {
 		return nil, fmt.Errorf("[BuildCanvas] build canvas edges failed, err=%w", err)
 	}
-	canvas.Nodes = append(canvas.Nodes, nodes...)
-	canvas.Edges = append(canvas.Edges, edges...)
-	edges, nodes, err = gi.buildCanvasBranches()
+	graph.Nodes = append(graph.Nodes, nodes...)
+	graph.Edges = append(graph.Edges, edges...)
+	edges, nodes, err = gi.buildGraphBranches()
 	if err != nil {
 		return nil, fmt.Errorf("[BuildCanvas] build canvas branch failed, err=%w", err)
 	}
-	canvas.Nodes = append(canvas.Nodes, nodes...)
-	canvas.Edges = append(canvas.Edges, edges...)
-	subCanvas, err := gi.buildCanvasSubCanvas()
+	graph.Nodes = append(graph.Nodes, nodes...)
+	graph.Edges = append(graph.Edges, edges...)
+	subGraphSchema, err := gi.buildSubGraphSchema()
 	if err != nil {
 		return nil, fmt.Errorf("[BuildCanvas] build sub canvas failed, err=%w", err)
 	}
 
-	for _, node := range canvas.Nodes {
-		if sc, ok := subCanvas[node.Key]; ok {
+	for _, node := range graph.Nodes {
+		if sc, ok := subGraphSchema[node.Key]; ok {
 			for _, n := range sc.Nodes { // sub canvas can not operate
-				n.ImplMeta.AllowOperate = false
+				n.AllowOperate = false
 			}
-			node.Canvas = sc
+			node.GraphSchema = sc
 		}
 	}
 
-	return canvas, err
+	return graph, err
 }
 
 func (gi GraphInfo) GetInputNonInterfaceType(nodeKeys []string) (reflectTypes map[string]reflect.Type, err error) {
@@ -190,49 +191,48 @@ func (gi GraphInfo) GetInputNonInterfaceType(nodeKeys []string) (reflectTypes ma
 	return reflectTypes, nil
 }
 
-func (gi GraphInfo) buildCanvasNodes() (nodes []*Node, err error) {
+func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 
-	nodes = make([]*Node, 0, len(gi.Nodes)+2)
-	startNode := &Node{
+	nodes = make([]*devmodel.Node, 0, len(gi.Nodes)+2)
+	startNode := &devmodel.Node{
 		Key:  compose.START,
 		Name: compose.START,
-		Type: NodeTypeOfStart,
+		Type: devmodel.NodeTypeOfStart,
 	}
 
-	implMeta, err := gi.inferStartNodeImplMeta()
+	inferInputType, allowOperate, err := gi.inferStartNodeImplMeta()
 	if err != nil {
 		return nil, fmt.Errorf("[buildCanvasNodes] failed to infer start node impl meta, err=%w", err)
 	}
 
-	startNode.ImplMeta = implMeta
+	startNode.InferInput = inferInputType
 	nodes = append(nodes, startNode)
 
-	nodes = append(nodes, &Node{
-		Key:  compose.END,
-		Name: compose.END,
-		Type: NodeTypeOfEnd,
-		ImplMeta: ImplMeta{
-			AllowOperate: false,
-		},
+	nodes = append(nodes, &devmodel.Node{
+		Key:          compose.END,
+		Name:         compose.END,
+		Type:         devmodel.NodeTypeOfEnd,
+		AllowOperate: allowOperate,
 	})
 
 	// add compose nodes
 	for key, node := range gi.Nodes {
-		fdlNode := &Node{
+		fdlNode := &devmodel.Node{
 			Key:  key,
 			Name: node.Name,
-			Type: NodeType(node.Component),
+			Type: devmodel.NodeType(node.Component),
 		}
 
-		fdlNode.ImplMeta = ImplMeta{
-			AllowOperate: generic.ValidateInputReflectTypeSupported(node.InputType),
-			Input:        reassembleTypeSchema(parseReflectTypeToTypeSchema(node.InputType), len(node.InputKey) != 0),
-			Output:       reassembleTypeSchema(parseReflectTypeToTypeSchema(node.OutputType), len(node.OutputKey) != 0),
-		}
+		fdlNode.AllowOperate = generic.ValidateInputReflectTypeSupported(node.InputType)
 
+		fdlNode.ComponentSchema = &devmodel.ComponentSchema{
+			Component:  devmodel.Component(node.Component),
+			InputType:  reassembleJsonSchema(parseReflectTypeToJsonSchema(node.InputType), len(node.InputKey) != 0),
+			OutputType: reassembleJsonSchema(parseReflectTypeToJsonSchema(node.OutputType), len(node.OutputKey) != 0),
+		}
 		for _, nn := range gi.Option.NodeInputUnmarshal {
 			if nn.NodeKey == key {
-				fdlNode.ImplMeta.AllowOperate = true
+				fdlNode.AllowOperate = true
 			}
 		}
 
@@ -243,9 +243,9 @@ func (gi GraphInfo) buildCanvasNodes() (nodes []*Node, err error) {
 
 }
 
-func (gi GraphInfo) buildCanvasEdges() (edges []*Edge, nodes []*Node, err error) {
-	nodes = make([]*Node, 0)
-	edges = make([]*Edge, 0, len(gi.Nodes)+2)
+func (gi GraphInfo) buildGraphEdges() (edges []*devmodel.Edge, nodes []*devmodel.Node, err error) {
+	nodes = make([]*devmodel.Node, 0)
+	edges = make([]*devmodel.Edge, 0, len(gi.Nodes)+2)
 	parallelID := 0
 	for sourceNodeKey, targetNodeKeys := range gi.Edges {
 		if len(targetNodeKeys) == 0 {
@@ -260,7 +260,7 @@ func (gi GraphInfo) buildCanvasEdges() (edges []*Edge, nodes []*Node, err error)
 				return nil, nil, err
 			}
 
-			edges = append(edges, &Edge{
+			edges = append(edges, &devmodel.Edge{
 				ID:            edgeID.String(),
 				Name:          canvasEdgeName(sourceNodeKey, targetNodeKey),
 				SourceNodeKey: sourceNodeKey,
@@ -271,10 +271,10 @@ func (gi GraphInfo) buildCanvasEdges() (edges []*Edge, nodes []*Node, err error)
 		}
 
 		// If it is concurrent, add a virtual concurrent node first
-		parallelNode := &Node{
+		parallelNode := &devmodel.Node{
 			Key:  fmt.Sprintf("from:%s", sourceNodeKey),
-			Name: string(NodeTypeOfParallel),
-			Type: NodeTypeOfParallel,
+			Name: string(devmodel.NodeTypeOfParallel),
+			Type: devmodel.NodeTypeOfParallel,
 		}
 		parallelID++
 		nodes = append(nodes, parallelNode)
@@ -282,7 +282,7 @@ func (gi GraphInfo) buildCanvasEdges() (edges []*Edge, nodes []*Node, err error)
 		if err != nil {
 			return nil, nil, err
 		}
-		edges = append(edges, &Edge{
+		edges = append(edges, &devmodel.Edge{
 			ID:            edgeID.String(),
 			Name:          canvasEdgeName(sourceNodeKey, parallelNode.Key),
 			SourceNodeKey: sourceNodeKey,
@@ -294,7 +294,7 @@ func (gi GraphInfo) buildCanvasEdges() (edges []*Edge, nodes []*Node, err error)
 			if err != nil {
 				return nil, nil, err
 			}
-			edges = append(edges, &Edge{
+			edges = append(edges, &devmodel.Edge{
 				ID:            edgeID.String(),
 				Name:          canvasEdgeName(parallelNode.Key, targetNodeKey),
 				SourceNodeKey: parallelNode.Key,
@@ -302,20 +302,20 @@ func (gi GraphInfo) buildCanvasEdges() (edges []*Edge, nodes []*Node, err error)
 			})
 		}
 	}
-	return edges, nodes, err
 
+	return edges, nodes, err
 }
-func (gi GraphInfo) buildCanvasBranches() (edges []*Edge, nodes []*Node, err error) {
-	nodes = make([]*Node, 0)
-	edges = make([]*Edge, 0)
+func (gi GraphInfo) buildGraphBranches() (edges []*devmodel.Edge, nodes []*devmodel.Node, err error) {
+	nodes = make([]*devmodel.Node, 0)
+	edges = make([]*devmodel.Edge, 0)
 	branchID := 0
 	for sourceNodeKey, branches := range gi.Branches {
 		for _, branch := range branches {
 			// Each branch needs to generate a virtual branch node
-			branchNode := &Node{
+			branchNode := &devmodel.Node{
 				Key:  fmt.Sprintf("from:%s", sourceNodeKey),
-				Name: string(NodeTypeOfBranch),
-				Type: NodeTypeOfBranch,
+				Name: string(devmodel.NodeTypeOfBranch),
+				Type: devmodel.NodeTypeOfBranch,
 			}
 			branchID++
 			nodes = append(nodes, branchNode)
@@ -323,7 +323,7 @@ func (gi GraphInfo) buildCanvasBranches() (edges []*Edge, nodes []*Node, err err
 			if err != nil {
 				return nil, nil, err
 			}
-			edges = append(edges, &Edge{
+			edges = append(edges, &devmodel.Edge{
 				ID:            edgeID.String(),
 				Name:          canvasEdgeName(sourceNodeKey, branchNode.Key),
 				SourceNodeKey: sourceNodeKey,
@@ -336,7 +336,7 @@ func (gi GraphInfo) buildCanvasBranches() (edges []*Edge, nodes []*Node, err err
 				if err != nil {
 					return nil, nil, err
 				}
-				edges = append(edges, &Edge{
+				edges = append(edges, &devmodel.Edge{
 					ID:            edgeID.String(),
 					Name:          canvasEdgeName(branchNode.Key, branchNodeTargetKey),
 					SourceNodeKey: branchNode.Key,
@@ -348,24 +348,22 @@ func (gi GraphInfo) buildCanvasBranches() (edges []*Edge, nodes []*Node, err err
 
 	return edges, nodes, err
 }
-func (gi GraphInfo) buildCanvasSubCanvas() (subCanvas map[string]*Canvas, err error) {
-
-	subCanvas = make(map[string]*Canvas, len(gi.Nodes))
+func (gi GraphInfo) buildSubGraphSchema() (subGraphSchema map[string]*devmodel.GraphSchema, err error) {
+	subGraphSchema = make(map[string]*devmodel.GraphSchema, len(gi.Nodes))
 	for key, graphNodeInfo := range gi.Nodes {
 		if graphNodeInfo.GraphInfo != nil {
 			subG := GraphInfo{
 				GraphInfo: graphNodeInfo.GraphInfo,
 			}
-			canvas, err := subG.BuildCanvas()
+			graphSchema, err := subG.BuildGraphSchema()
 			if err != nil {
 				return nil, err
 			}
-			subCanvas[key] = canvas
+			subGraphSchema[key] = graphSchema
 		}
-
 	}
 
-	return subCanvas, err
+	return subGraphSchema, err
 }
 
 type Graph struct {
@@ -441,159 +439,162 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 	}
 }
 
-func (gi GraphInfo) inferStartNodeImplMeta() (ImplMeta, error) {
-	implMeta := ImplMeta{}
-	implMeta.Input = parseReflectTypeToTypeSchema(gi.InputType) //
+func (gi GraphInfo) inferStartNodeImplMeta() (inferInputType *devmodel.JsonSchema, allowOperate bool, err error) {
+	inferInputType = parseReflectTypeToJsonSchema(gi.InputType)
 
 	inferGraphType, support, err := gi.InferGraphInputType(compose.START)
 	if err != nil {
-		return implMeta, err
+		return inferInputType, false, err
 	}
 
-	implMeta.AllowOperate = support
+	allowOperate = support
 	for _, nn := range gi.Option.NodeInputUnmarshal {
 		if nn.NodeKey == compose.START {
-			implMeta.AllowOperate = true
+			allowOperate = true
 		}
 	}
 
 	if len(inferGraphType.InputTypes) == 0 {
-		implMeta.InferInput = parseReflectTypeToTypeSchema(inferGraphType.InputType)
-		return implMeta, nil
+		inferInputType = parseReflectTypeToJsonSchema(inferGraphType.InputType)
+		return inferInputType, allowOperate, nil
 	}
 
-	var parseGraphInferTypeToTypeSchema func(inferType GraphInferType) *TypeSchema
-	parseGraphInferTypeToTypeSchema = func(inferType GraphInferType) *TypeSchema {
-		typeSchema := &TypeSchema{
-			BasicType:  BasicTypeOfObject,
+	var parseGraphInferTypeToJsonSchema func(inferType GraphInferType) *devmodel.JsonSchema
+	parseGraphInferTypeToJsonSchema = func(inferType GraphInferType) *devmodel.JsonSchema {
+		jsonSchema := &devmodel.JsonSchema{
+			Type:       devmodel.TypeOfObject,
 			Title:      reflect.TypeOf(map[string]interface{}{}).String(),
 			Required:   make([]string, 0, len(inferGraphType.InputTypes)),
-			Properties: make(map[string]*TypeSchema, len(inferGraphType.InputTypes)),
+			Properties: make(map[string]*devmodel.JsonSchema, len(inferGraphType.InputTypes)),
 		}
 		for inputKey, reflectType := range inferType.InputTypes {
-			typeSchema.Properties[inputKey] = parseReflectTypeToTypeSchema(reflectType)
-			typeSchema.Required = append(typeSchema.Required, inputKey)
+			jsonSchema.Properties[inputKey] = parseReflectTypeToJsonSchema(reflectType)
+			jsonSchema.Required = append(jsonSchema.Required, inputKey)
 		}
 		for nodeKey, gInferType := range inferType.ComplicatedGraphInferType {
 			if node, ok := gi.Nodes[nodeKey]; ok {
 				inputKey := node.InputKey
 				if len(inputKey) > 0 {
-					typeSchema.Properties[inputKey] = parseGraphInferTypeToTypeSchema(gInferType)
+					jsonSchema.Properties[inputKey] = parseGraphInferTypeToJsonSchema(gInferType)
 				}
 			}
 		}
-		return typeSchema
+		return jsonSchema
 	}
-	implMeta.InferInput = parseGraphInferTypeToTypeSchema(inferGraphType)
-	return implMeta, nil
 
+	inferInputType = parseGraphInferTypeToJsonSchema(inferGraphType)
+
+	return inferInputType, allowOperate, nil
 }
 
-func parseReflectTypeToTypeSchema(reflectType reflect.Type) (typeSchema *TypeSchema) {
-
+func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema) {
 	processedTypes := make(map[reflect.Type]bool)
 
-	var recursionParseReflectTypeToTypeSchema func(reflectType reflect.Type) (typeSchema *TypeSchema)
+	var recursionParseReflectTypeToJsonSchema func(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema)
 
-	recursionParseReflectTypeToTypeSchema = func(reflectType reflect.Type) (typeSchema *TypeSchema) {
+	recursionParseReflectTypeToJsonSchema = func(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema) {
 		if processedTypes[reflectType] {
-			return recursionParseReflectTypeToTypeSchema(reflect.TypeOf(map[string]interface{}{}))
+			return recursionParseReflectTypeToJsonSchema(reflect.TypeOf(map[string]interface{}{}))
 		}
 		if reflectType.Kind() == reflect.Struct {
 			processedTypes[reflectType] = true
 
 		}
-		typeSchema = &TypeSchema{}
-		typeSchema.BasicType = BasicTypeOfUndefined
+		jsonSchema = &devmodel.JsonSchema{}
+		jsonSchema.Type = devmodel.TypeOfNull
 		switch reflectType.Kind() {
 		case reflect.Struct:
-			typeSchema.BasicType = BasicTypeOfObject
-			typeSchema.Title = reflectType.String()
-			typeSchema.Properties = make(map[string]*TypeSchema, reflectType.NumField())
-			typeSchema.PropertyOrder = make([]string, 0, reflectType.NumField())
-			typeSchema.Required = make([]string, 0, reflectType.NumField())
-			structFieldsTypeSchemaCache := make(map[reflect.Type]*TypeSchema, reflectType.NumField())
+			jsonSchema.Type = devmodel.TypeOfObject
+			jsonSchema.Title = reflectType.String()
+			jsonSchema.Properties = make(map[string]*devmodel.JsonSchema, reflectType.NumField())
+			jsonSchema.PropertyOrder = make([]string, 0, reflectType.NumField())
+			jsonSchema.Required = make([]string, 0, reflectType.NumField())
+			structFieldsJsonSchemaCache := make(map[reflect.Type]*devmodel.JsonSchema, reflectType.NumField())
 			for i := 0; i < reflectType.NumField(); i++ {
 				field := reflectType.Field(i)
 				if !field.IsExported() || field.Type.Kind() == reflect.Interface {
 					continue
 				}
 
-				var fieldTypeSchema *TypeSchema
-				if ts, ok := structFieldsTypeSchemaCache[field.Type]; ok {
-					fieldTypeSchema = ts
+				var fieldJsonSchema *devmodel.JsonSchema
+				if ts, ok := structFieldsJsonSchemaCache[field.Type]; ok {
+					fieldJsonSchema = ts
 				} else {
-					fieldTypeSchema = recursionParseReflectTypeToTypeSchema(field.Type)
-					structFieldsTypeSchemaCache[field.Type] = fieldTypeSchema
+					fieldJsonSchema = recursionParseReflectTypeToJsonSchema(field.Type)
+					structFieldsJsonSchemaCache[field.Type] = fieldJsonSchema
 				}
 
 				jsonName := generic.GetJsonTag(field)
-				typeSchema.Properties[jsonName] = fieldTypeSchema
-				typeSchema.PropertyOrder = append(typeSchema.PropertyOrder, jsonName)
+
+				if jsonName == "-" {
+					continue
+				}
+				jsonSchema.Properties[jsonName] = fieldJsonSchema
+				jsonSchema.PropertyOrder = append(jsonSchema.PropertyOrder, jsonName)
 				if generic.HasRequired(field) {
-					typeSchema.Required = append(typeSchema.Required, jsonName)
+					jsonSchema.Required = append(jsonSchema.Required, jsonName)
 				}
 
 			}
-			return typeSchema
+			return jsonSchema
 		case reflect.Pointer:
-			typeSchema = recursionParseReflectTypeToTypeSchema(reflectType.Elem())
+			jsonSchema = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
 			return
 		case reflect.Map:
-			typeSchema.BasicType = BasicTypeOfObject
-			typeSchema.Title = reflectType.String()
-			typeSchema.AdditionalProperties = recursionParseReflectTypeToTypeSchema(reflectType.Elem())
+			jsonSchema.Type = devmodel.TypeOfObject
+			jsonSchema.Title = reflectType.String()
+			jsonSchema.AdditionalProperties = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
 
-			return typeSchema
+			return jsonSchema
 
 		case reflect.Slice, reflect.Array:
-			typeSchema.BasicType = BasicTypeOfArray
-			typeSchema.Title = reflectType.String()
-			typeSchema.Items = recursionParseReflectTypeToTypeSchema(reflectType.Elem())
-			return
+			jsonSchema.Type = devmodel.TypeOfArray
+			jsonSchema.Title = reflectType.String()
+			jsonSchema.Items = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
+			return jsonSchema
 		case reflect.String:
-			typeSchema.BasicType = BasicTypeOfString
-			typeSchema.Title = reflectType.String()
-			return typeSchema
+			jsonSchema.Type = devmodel.TypeOfString
+			jsonSchema.Title = reflectType.String()
+			return jsonSchema
 		case reflect.Bool:
-			typeSchema.BasicType = BasicTypeOfBoolean
-			typeSchema.Title = reflectType.String()
-			return typeSchema
+			jsonSchema.Type = devmodel.TypeOfBoolean
+			jsonSchema.Title = reflectType.String()
+			return jsonSchema
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Float32, reflect.Float64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			typeSchema.BasicType = BasicTypeOfNumber
-			typeSchema.Title = reflectType.String()
-			return typeSchema
+			jsonSchema.Type = devmodel.TypeOfNumber
+			jsonSchema.Title = reflectType.String()
+			return jsonSchema
 		case reflect.Interface:
-			typeSchema.BasicType = ""
-			typeSchema.AnyOf = make([]*TypeSchema, 0, 5)
-			typeSchema.AnyOf = append(typeSchema.AnyOf, &TypeSchema{BasicType: BasicTypeOfBoolean})
-			typeSchema.AnyOf = append(typeSchema.AnyOf, &TypeSchema{BasicType: BasicTypeOfString})
-			typeSchema.AnyOf = append(typeSchema.AnyOf, &TypeSchema{BasicType: BasicTypeOfNumber})
-			typeSchema.AnyOf = append(typeSchema.AnyOf, &TypeSchema{BasicType: BasicTypeOfArray})
-			typeSchema.AnyOf = append(typeSchema.AnyOf, &TypeSchema{BasicType: BasicTypeOfObject})
-			return typeSchema
+			jsonSchema.Type = ""
+			jsonSchema.AnyOf = make([]*devmodel.JsonSchema, 0, 5)
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfBoolean})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfString})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfNumber})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfArray})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfObject})
+			return jsonSchema
 		default:
-			return typeSchema
+			return jsonSchema
 		}
 	}
 
-	return recursionParseReflectTypeToTypeSchema(reflectType)
-
+	return recursionParseReflectTypeToJsonSchema(reflectType)
 }
 
-func reassembleTypeSchema(typeSchema *TypeSchema, hasInputOrOutputKey bool) *TypeSchema {
+func reassembleJsonSchema(jsonSchema *devmodel.JsonSchema, hasInputOrOutputKey bool) *devmodel.JsonSchema {
 	if !hasInputOrOutputKey {
-		return typeSchema
+		return jsonSchema
 	}
-	typeSchema = &TypeSchema{
-		BasicType:            BasicTypeOfObject,
-		Title:                reflect.TypeOf(map[string]interface{}{}).String(),
-		AdditionalProperties: typeSchema,
-	}
-	return typeSchema
 
+	jsonSchema = &devmodel.JsonSchema{
+		Type:                 devmodel.TypeOfObject,
+		Title:                reflect.TypeOf(map[string]interface{}{}).String(),
+		AdditionalProperties: jsonSchema,
+	}
+
+	return jsonSchema
 }
 
 func canvasEdgeName(source, target string) string {

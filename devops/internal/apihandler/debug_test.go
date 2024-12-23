@@ -33,6 +33,7 @@ import (
 	"github.com/cloudwego/eino-ext/devops/internal/mock"
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"github.com/cloudwego/eino-ext/devops/internal/service"
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 type debugTestSuite struct {
@@ -78,9 +79,14 @@ func (d *debugTestSuite) Test_GetCanvasInfo() {
 	mockey.PatchConvey("", d.t, func() {
 		mockGraphID := "mock_graph"
 		mockey.Mock(getPathParam).Return(mockGraphID).Build()
-		d.mockContainerSVC.EXPECT().GetCanvas(mockGraphID).Return(model.CanvasInfo{}, false).Times(1)
-		d.mockContainerSVC.EXPECT().CreateCanvas(mockGraphID).Return(model.CanvasInfo{
-			Name: "mock_canvas",
+
+		d.mockContainerSVC.EXPECT().GetCanvas(mockGraphID).Return(devmodel.CanvasInfo{
+			GraphSchema: &devmodel.GraphSchema{},
+		}, false).Times(1)
+		d.mockContainerSVC.EXPECT().CreateCanvas(mockGraphID).Return(devmodel.CanvasInfo{
+			GraphSchema: &devmodel.GraphSchema{
+				Name: "mock_canvas",
+			},
 		}, nil).Times(1)
 
 		req, err := http.NewRequest(http.MethodGet, "", nil)
