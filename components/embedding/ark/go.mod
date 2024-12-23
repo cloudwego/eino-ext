@@ -16,6 +16,6 @@ require (
 	github.com/smarty/assertions v1.15.0 // indirect
 	github.com/volcengine/volc-sdk-golang v1.0.23 // indirect
 	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
-	golang.org/x/sys v0.24.0 // indirect
+	golang.org/x/sys v0.28.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
