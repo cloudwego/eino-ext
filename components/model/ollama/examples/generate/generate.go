@@ -21,6 +21,7 @@ import (
 	"log"
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {

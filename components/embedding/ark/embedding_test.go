@@ -26,6 +26,7 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
+	"github.com/cloudwego/eino/components/embedding"
 )
 
 func Test_EmbedStrings(t *testing.T) {

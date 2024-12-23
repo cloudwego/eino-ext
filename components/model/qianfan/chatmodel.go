@@ -23,6 +23,10 @@ import (
 
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino/utils/safe"
 )
 
 // GetQianfanSingletonConfig qianfan config is singleton, you should set ak+sk / bear_token before init chat model

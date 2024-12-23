@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/cloudwego/eino/schema"
 )
 
 var commonSuccessHTML = `<!DOCTYPE html>

@@ -25,6 +25,9 @@ import (
 	"github.com/smartystreets/goconvey/convey"
 	"github.com/volcengine/volc-sdk-golang/service/vikingdb"
 
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/indexer"
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestNewIndexer(t *testing.T) {

@@ -23,15 +23,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/document"
+	"github.com/cloudwego/eino/components/document/parser"
+	"github.com/cloudwego/eino/schema"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components/document"
-	"github.com/cloudwego/eino/components/document/parser"
-	"github.com/cloudwego/eino/schema"
 )
 
 // LoaderConfig is the configuration for s3 loader.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"sort"
 
+	"github.com/cloudwego/eino/components/document"
+	"github.com/cloudwego/eino/schema"
 )
 
 type Config struct {

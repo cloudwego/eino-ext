@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cloudwego/eino-ext/components/model/qianfan"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {

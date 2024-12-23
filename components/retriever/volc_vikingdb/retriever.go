@@ -23,6 +23,11 @@ import (
 
 	"github.com/volcengine/volc-sdk-golang/service/vikingdb"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 )
 
 const (

@@ -25,6 +25,8 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/embedding"
 )
 
 var (

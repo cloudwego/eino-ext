@@ -22,6 +22,8 @@ import (
 	"os"
 
 	"github.com/cloudwego/eino-ext/components/indexer/volc_vikingdb"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {

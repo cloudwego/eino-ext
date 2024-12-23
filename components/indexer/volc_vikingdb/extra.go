@@ -16,6 +16,7 @@
 
 package volc_vikingdb
 
+import "github.com/cloudwego/eino/schema"
 
 // SetExtraDataFields set data fields for vikingdb UpsertData
 // see: https://www.volcengine.com/docs/84313/1254578

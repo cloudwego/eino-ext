@@ -21,6 +21,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestRecursiveSplitter(t *testing.T) {

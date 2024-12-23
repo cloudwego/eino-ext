@@ -8,6 +8,8 @@ import (
 
 	"golang.org/x/net/html"
 
+	"github.com/cloudwego/eino/components/document"
+	"github.com/cloudwego/eino/schema"
 )
 
 // HeaderConfig configures how HTML headers are identified and mapped to metadata keys

@@ -1,6 +1,7 @@
 package score
 
 import (
+	"github.com/cloudwego/eino/schema"
 	"context"
 	"math/rand"
 	"reflect"

@@ -23,6 +23,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cloudwego/eino/components/document"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/schema"
 )
 
 type Config struct {

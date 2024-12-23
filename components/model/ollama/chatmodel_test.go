@@ -28,6 +28,9 @@ import (
 	"github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 )
 
 func MockChatInvoke(ctx context.Context, req *api.ChatRequest, fn api.ChatResponseFunc) error {

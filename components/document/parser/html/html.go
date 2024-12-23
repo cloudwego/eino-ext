@@ -24,6 +24,8 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"github.com/microcosm-cc/bluemonday"
 
+	"github.com/cloudwego/eino/components/document/parser"
+	"github.com/cloudwego/eino/schema"
 )
 
 const (

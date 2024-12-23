@@ -21,6 +21,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 )
 
 func main() {

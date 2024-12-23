@@ -22,7 +22,9 @@ import (
 	"io"
 	"log"
 
+	"github.com/cloudwego/eino/schema"
 
+	"github.com/cloudwego/eino-ext/components/model/ollama"
 )
 
 func main() {

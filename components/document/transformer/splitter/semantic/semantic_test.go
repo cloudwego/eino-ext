@@ -17,6 +17,9 @@
 package semantic
 
 import (
+	"github.com/cloudwego/eino/components/document"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/schema"
 	"context"
 	"math/rand/v2"
 	"reflect"

@@ -21,6 +21,8 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {

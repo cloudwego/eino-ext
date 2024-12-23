@@ -17,6 +17,7 @@
 package ollama
 
 import (
+	"github.com/cloudwego/eino/components/model"
 )
 
 type options struct {

@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/cloudwego/eino/components/document/parser"
+	"github.com/cloudwego/eino/schema"
 	"github.com/dslipak/pdf"
 )
 
