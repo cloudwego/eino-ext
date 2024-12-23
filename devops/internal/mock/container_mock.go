@@ -57,34 +57,19 @@ func (m *MockContainerService) EXPECT() *MockContainerServiceMockRecorder {
 	return m.recorder
 }
 
-// AddCustomGraphInfo mocks base method.
-func (m *MockContainerService) AddCustomGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (string, error) {
+// AddGraphInfo mocks base method.
+func (m *MockContainerService) AddGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddCustomGraphInfo", graphName, graphInfo, graphOpt)
+	ret := m.ctrl.Call(m, "AddGraphInfo", graphName, graphInfo, graphOpt)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// AddCustomGraphInfo indicates an expected call of AddCustomGraphInfo.
-func (mr *MockContainerServiceMockRecorder) AddCustomGraphInfo(graphName, graphInfo, graphOpt any) *gomock.Call {
+// AddGraphInfo indicates an expected call of AddGraphInfo.
+func (mr *MockContainerServiceMockRecorder) AddGraphInfo(graphName, graphInfo, graphOpt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddCustomGraphInfo", reflect.TypeOf((*MockContainerService)(nil).AddCustomGraphInfo), graphName, graphInfo, graphOpt)
-}
-
-// AddGlobalGraphInfo mocks base method.
-func (m *MockContainerService) AddGlobalGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AddGlobalGraphInfo", graphName, graphInfo, graphOpt)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// AddGlobalGraphInfo indicates an expected call of AddGlobalGraphInfo.
-func (mr *MockContainerServiceMockRecorder) AddGlobalGraphInfo(graphName, graphInfo, graphOpt any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddGlobalGraphInfo", reflect.TypeOf((*MockContainerService)(nil).AddGlobalGraphInfo), graphName, graphInfo, graphOpt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AddGraphInfo", reflect.TypeOf((*MockContainerService)(nil).AddGraphInfo), graphName, graphInfo, graphOpt)
 }
 
 // CreateCanvas mocks base method.

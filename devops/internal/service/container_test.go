@@ -26,29 +26,49 @@ import (
 	"github.com/bytedance/mockey"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino-ext/devops/internal/model"
+	"github.com/cloudwego/eino/compose"
 )
 
 func Test_containerServiceImpl_AddGraphInfo(t *testing.T) {
-	t.Run("add graph info", func(t *testing.T) {
+	t.Run("add graph info, once", func(t *testing.T) {
 		mockGraphName := "mock_graph"
-		s := &containerServiceImpl{}
-		graphID, err := s.AddCustomGraphInfo(mockGraphName, &compose.GraphInfo{}, model.GraphOption{})
+		s := &containerServiceImpl{
+			container:        map[string]*model.GraphContainer{},
+			graphNameCounter: map[string]int{},
+		}
+		graphID, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{}, model.GraphOption{})
 		assert.Nil(t, err)
 		g, ok := s.container[graphID]
 		assert.True(t, ok)
 		assert.NotNil(t, g)
 	})
 
-	t.Run("add graph info", func(t *testing.T) {
+	t.Run("add graph info, many times", func(t *testing.T) {
 		mockGraphName := "mock_graph"
-		s := &containerServiceImpl{}
-		graphID, err := s.AddCustomGraphInfo(mockGraphName, &compose.GraphInfo{}, model.GraphOption{})
-		assert.Nil(t, err)
-		g, ok := s.container[graphID]
-		assert.True(t, ok)
-		assert.NotNil(t, g)
+		s := &containerServiceImpl{
+			container: map[string]*model.GraphContainer{
+				"mock_id": {
+					GraphName: mockGraphName,
+				},
+			},
+			graphNameCounter: map[string]int{},
+		}
+
+		for i := 0; i < 10; i++ {
+			graphID, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{}, model.GraphOption{})
+			assert.Nil(t, err)
+			g, ok := s.container[graphID]
+			assert.True(t, ok)
+			if i == 0 {
+				assert.Equal(t, mockGraphName, g.GraphName)
+			} else {
+				assert.Equal(t, fmt.Sprintf("%s_%d", mockGraphName, i), g.GraphName)
+			}
+		}
+
+		assert.Len(t, s.graphNameCounter, 1)
+		assert.Equal(t, s.graphNameCounter[mockGraphName], 10)
 	})
 }
 
@@ -172,8 +192,8 @@ func Test_containerServiceImpl_GetRunnable(t *testing.T) {
 		assert.True(t, exist)
 	})
 }
-func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 
+func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 	t.Run("not get canvas", func(t *testing.T) {
 		s := newContainerService()
 		_, err := s.CreateCanvas("graph_id")
@@ -189,7 +209,7 @@ func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 		g := &compose.GraphInfo{
 			InputType: reflect.TypeOf(map[string]any{}),
 		}
-		id, err := s.AddCustomGraphInfo("graph", g, model.GraphOption{})
+		id, err := s.AddGraphInfo("graph", g, model.GraphOption{})
 		assert.Nil(t, err)
 		c, err := s.CreateCanvas(id)
 		assert.Nil(t, err)
@@ -199,7 +219,6 @@ func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, "graph", c.Name)
 	})
-
 }
 
 func Test_containerServiceImpl_ListGraphs(t *testing.T) {

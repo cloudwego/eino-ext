@@ -31,8 +31,7 @@ var _ ContainerService = &containerServiceImpl{}
 
 //go:generate mockgen -source=container.go -destination=../mock/container_mock.go -package=mock ContainerService
 type ContainerService interface {
-	AddGlobalGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error)
-	AddCustomGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error)
+	AddGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error)
 	GetGraphInfo(graphID string) (graphInfo model.GraphInfo, exist bool)
 	ListGraphs() (graphNameToID map[string]string)
 	CreateRunnable(graphID, fromNode string) (runnable model.Runnable, err error)
@@ -41,63 +40,47 @@ type ContainerService interface {
 	GetCanvas(graphID string) (canvas devmodel.CanvasInfo, exist bool)
 }
 
+const maxGraphNum = 100
+
 type containerServiceImpl struct {
 	mu sync.RWMutex
 	// container: GraphID vs GraphContainer
-	container map[string]*model.GraphContainer
+	container        map[string]*model.GraphContainer
+	graphNameCounter map[string]int
+	totalGraphNum    int
 }
 
 func newContainerService() ContainerService {
 	return &containerServiceImpl{
-		mu:        sync.RWMutex{},
-		container: make(map[string]*model.GraphContainer, 10),
+		mu:               sync.RWMutex{},
+		container:        make(map[string]*model.GraphContainer, 8),
+		graphNameCounter: make(map[string]int, 8),
 	}
 }
 
-func (s *containerServiceImpl) AddGlobalGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error) {
+func (s *containerServiceImpl) AddGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error) {
 	if graphInfo == nil {
 		return "", fmt.Errorf("graph info is nil")
 	}
 
-	return s.addGraphInfo(graphName, &model.GraphInfo{
-		Option:    graphOpt,
-		GraphInfo: graphInfo,
-	}, true)
-}
-
-func (s *containerServiceImpl) AddCustomGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error) {
-	if graphInfo == nil {
-		return "", fmt.Errorf("graph info is nil")
-	}
-
-	return s.addGraphInfo(graphName, &model.GraphInfo{
-		Option:    graphOpt,
-		GraphInfo: graphInfo,
-	}, false)
-}
-
-func (s *containerServiceImpl) addGraphInfo(graphName string, graphInfo *model.GraphInfo, isGlobalAdd bool) (graphID string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	gid := ""
-	for _, c := range s.container {
-		if c.GraphName == graphName {
-			if isGlobalAdd {
-				return c.GraphID, nil
-			}
-			gid = c.GraphID
-			break
-		}
+	if s.totalGraphNum > maxGraphNum {
+		return "", fmt.Errorf("too many graph, max=%d", maxGraphNum)
 	}
 
-	if len(gid) == 0 {
-		genID, err := uuid.NewRandom()
-		if err != nil {
-			return "", err
-		}
-		gid = genID.String()
+	newName := graphName
+	cnt := s.graphNameCounter[graphName]
+	if cnt > 0 {
+		newName = fmt.Sprintf("%s_%d", newName, cnt)
 	}
+
+	genID, err := uuid.NewRandom()
+	if err != nil {
+		return "", err
+	}
+	gid := genID.String()
 
 	if s.container == nil {
 		s.container = make(map[string]*model.GraphContainer, 10)
@@ -105,9 +88,15 @@ func (s *containerServiceImpl) addGraphInfo(graphName string, graphInfo *model.G
 
 	s.container[gid] = &model.GraphContainer{
 		GraphID:   gid,
-		GraphName: graphName,
-		GraphInfo: graphInfo,
+		GraphName: newName,
+		GraphInfo: &model.GraphInfo{
+			GraphInfo: graphInfo,
+			Option:    graphOpt,
+		},
 	}
+
+	s.totalGraphNum++
+	s.graphNameCounter[graphName]++
 
 	return gid, nil
 }

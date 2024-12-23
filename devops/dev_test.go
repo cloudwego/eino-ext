@@ -26,13 +26,6 @@ import (
 
 func Test_Debug(t *testing.T) {
 	ctx := context.Background()
-	PatchConvey("Test Success", t, func() {
-		PatchConvey("Test success", func() {
-			actualErr := Run(ctx)
-			assert.Nil(t, actualErr)
-		})
-	})
-
 	PatchConvey("Test Init Success", t, func() {
 		PatchConvey("Test success", func() {
 			actualErr := Init(ctx)
