@@ -40,6 +40,5 @@ jobs:
         # https://golangci-lint.run/
         #        uses: golangci/golangci-lint-action@v6
         shell: bash
-        with:
-          run: |
-            $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do golangci-lint run ./...; done)
+        run: |
+          $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do golangci-lint run ./...; done)
