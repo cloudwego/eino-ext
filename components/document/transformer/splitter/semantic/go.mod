@@ -2,6 +2,7 @@ module github.com/cloudwego/eino-ext/components/document/transformer/splitter/se
 
 go 1.18
 
+require github.com/cloudwego/eino v0.3.0
 
 require (
 	github.com/bytedance/sonic v1.12.2 // indirect
