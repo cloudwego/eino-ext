@@ -29,16 +29,6 @@ jobs:
           # Enable it if we're going to use Github only
           cache: true
 
-#      - name: Detect Modules
-#        run: |
-#          modules=`find . -name "go.mod" -exec dirname {} \;`
-#          echo $modules
-#          list=""
-#          coverpkg=""
-#          if [[ ! -f "go.work" ]];then go work init;fi
-#          for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
-#          go work sync
-#          go test -race -coverprofile=coverage.out -gcflags="all=-l -N" -coverpkg=$coverpkg $list
       - name: Detect Modules
         id: detect-modules
         shell: bash
@@ -48,8 +38,8 @@ jobs:
           echo "modules=$modules" >> $GITHUB_OUTPUT
       - name: Golangci Lint
         # https://golangci-lint.run/
-        uses: golangci/golangci-lint-action@v6
+        #        uses: golangci/golangci-lint-action@v6
+        shell: bash
         with:
-          version: latest
-          args: |
-            $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do echo "$module/..."; done)
+          run: |
+            $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do golangci-lint run ./...; done)
