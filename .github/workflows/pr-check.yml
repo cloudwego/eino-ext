@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           # Find all modules
-          modules=$(find . -name "go.mod" -exec dirname {} \; | jq -R -s 'split("\n") | map(select(. != ""))')
+          modules=$(find . -name "go.mod" -exec dirname {} \; | jq -R -s 'split("\n") | map(select(. != "")) | @json')
           echo "modules=$modules" >> $GITHUB_OUTPUT
       - name: Golangci Lint
         # https://golangci-lint.run/
@@ -52,4 +52,4 @@ jobs:
         with:
           version: latest
           args: |
-            $(for module in ${{ steps.detect-modules.outputs.modules }}; do echo "--path-prefix=$module/..."; done)
+            $(for module in ${{ steps.detect-modules.outputs.modules }}; do echo "--path-prefix=$module"; done)
