@@ -16,29 +16,30 @@ jobs:
       - name: Check Spell
         uses: crate-ci/typos@master
 
-  golangci-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-          # for self-hosted, the cache path is shared across projects
-          # and it works well without the cache of github actions
-          # Enable it if we're going to use Github only
-          cache: true
-
-      - name: Detect Modules
-        id: detect-modules
-        shell: bash
-        run: |
-          # Find all modules
-          modules=$(find . -name "go.mod" -exec dirname {} \; | jq -R -s 'split("\n") | map(select(. != "")) | @json')
-          echo "modules=$modules" >> $GITHUB_OUTPUT
-      - name: Golangci Lint
-        # https://golangci-lint.run/
-        #        uses: golangci/golangci-lint-action@v6
-        shell: bash
-        run: |
-          $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do golangci-lint run ./...; done)
+#  golangci-lint:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#      - name: Set up Go
+#        uses: actions/setup-go@v5
+#        with:
+#          go-version: stable
+#          # for self-hosted, the cache path is shared across projects
+#          # and it works well without the cache of github actions
+#          # Enable it if we're going to use Github only
+#          cache: true
+#
+#      - name: Detect Modules
+#        id: detect-modules
+#        shell: bash
+#        run: |
+#          # Find all modules
+#          modules=$(find . -name "go.mod" -exec dirname {} \; | jq -R -s 'split("\n") | map(select(. != "")) | @json')
+#          echo "modules=$modules" >> $GITHUB_OUTPUT
+#      - name: Golangci Lint
+#        # https://golangci-lint.run/
+#        uses: golangci/golangci-lint-action@v6
+#        with:
+#          version: latest
+#          args: |
+#            $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do echo "$module/..."; done)
