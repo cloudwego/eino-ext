@@ -52,4 +52,4 @@ jobs:
         with:
           version: latest
           args: |
-            $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do echo "--path-prefix=$module"; done)
+            $(for module in $(echo ${{ steps.detect-modules.outputs.modules }} | jq -r '.[]'); do echo "$module/..."; done)
