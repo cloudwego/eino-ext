@@ -211,10 +211,12 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 	commonOptions := model.GetCommonOptions(&model.Options{}, opts...)
 	specificOptions := model.GetImplSpecificOptions(&options{}, opts...)
 
-	ollamaOptions := cm.config.Options
-	if ollamaOptions == nil {
-		ollamaOptions = &api.Options{}
+	ollamaOptions := &api.Options{}
+	conf := cm.config.Options
+	if conf != nil {
+		*ollamaOptions = *conf
 	}
+
 	if commonOptions.Temperature != nil {
 		ollamaOptions.Temperature = *commonOptions.Temperature
 	}
