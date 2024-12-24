@@ -1,4 +1,4 @@
-# Eino Extend
+# Eino Extension
 
 [English](README.md) | 中文
 
