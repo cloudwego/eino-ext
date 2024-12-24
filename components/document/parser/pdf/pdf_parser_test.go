@@ -21,7 +21,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/cloudwego/eino/components/document/parser"
+	"code.byted.org/flow/eino/components/document/parser"
 	"github.com/stretchr/testify/assert"
 )
 

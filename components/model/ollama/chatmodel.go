@@ -145,7 +145,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	})
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
-	go func() {
+	go func(conf *model.Config) {
 		defer func() {
 			panicErr := recover()
 
@@ -162,7 +162,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			cbOutput := &model.CallbackOutput{
 				// Notice: no token usage
 				Message: outMsg,
-				Config:  reqConf,
+				Config:  conf,
 			}
 
 			if resp.Done {
@@ -178,7 +178,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		if err != nil {
 			sw.Send(nil, err)
 		}
-	}()
+	}(reqConf)
 
 	ctx, s := callbacks.OnEndWithStreamOutput(ctx, sr)
 

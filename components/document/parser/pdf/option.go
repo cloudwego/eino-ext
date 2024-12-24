@@ -16,7 +16,7 @@
 
 package pdf
 
-import "github.com/cloudwego/eino/components/document/parser"
+import "code.byted.org/flow/eino/components/document/parser"
 
 type options struct {
 	toPages *bool

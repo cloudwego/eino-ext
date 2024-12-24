@@ -1,9 +1,9 @@
-module github.com/cloudwego/eino-ext/components/document/parser/pdf
+module code.byted.org/flow/eino-ext/components/document/parser/pdf
 
 go 1.18
 
 require (
-	github.com/cloudwego/eino v0.3.0
+	code.byted.org/flow/eino v0.2.6
 	github.com/dslipak/pdf v0.0.2
 	github.com/stretchr/testify v1.9.0
 )
