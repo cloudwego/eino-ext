@@ -145,7 +145,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	})
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
-	go func(conf *model.Config) {
+	go func(ctx context.Context, conf *model.Config) {
 		defer func() {
 			panicErr := recover()
 
@@ -156,7 +156,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			sw.Close()
 		}()
 
-		err := cm.cli.Chat(ctx, req, func(resp api.ChatResponse) error {
+		reqErr := cm.cli.Chat(ctx, req, func(resp api.ChatResponse) error {
 			outMsg := toEinoMessage(resp)
 
 			cbOutput := &model.CallbackOutput{
@@ -175,10 +175,10 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			return nil
 		})
 
-		if err != nil {
-			sw.Send(nil, err)
+		if reqErr != nil {
+			sw.Send(nil, reqErr)
 		}
-	}(reqConf)
+	}(ctx, reqConf)
 
 	ctx, s := callbacks.OnEndWithStreamOutput(ctx, sr)
 
