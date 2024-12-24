@@ -35,7 +35,7 @@ var (
 	defaultRegion         = "cn-beijing"
 	defaultRetryTimes int = 2
 	defaultTimeout        = 10 * time.Minute
-	defalutClient         = http.Client{Timeout: defaultTimeout}
+	defaultClient         = http.Client{Timeout: defaultTimeout}
 )
 
 type EmbeddingConfig struct {
@@ -76,7 +76,7 @@ func buildClient(config *EmbeddingConfig) *arkruntime.Client {
 		config.Timeout = &defaultTimeout
 	}
 	if config.HTTPClient == nil {
-		config.HTTPClient = &defalutClient
+		config.HTTPClient = &defaultClient
 	}
 	if config.RetryTimes == nil {
 		config.RetryTimes = &defaultRetryTimes

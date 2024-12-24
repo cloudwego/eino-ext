@@ -22,8 +22,6 @@ import (
 	"fmt"
 	"io"
 
-	"code.byted.org/flow/eino/components/document/parser"
-	"code.byted.org/flow/eino/schema"
 	"github.com/dslipak/pdf"
 )
 

@@ -46,7 +46,7 @@ type Config struct {
 	Separators []string
 	// LenFunc is used to calculate string length. Use builtin function len() by default.
 	LenFunc func(string) int
-	// KeepType specifies if separator will be kept in splitted chunks. Discard separator by default.
+	// KeepType specifies if separator will be kept in split chunks. Discard separator by default.
 	KeepType KeepType
 }
 

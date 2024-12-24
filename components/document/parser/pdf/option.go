@@ -16,7 +16,6 @@
 
 package pdf
 
-import "code.byted.org/flow/eino/components/document/parser"
 
 type options struct {
 	toPages *bool

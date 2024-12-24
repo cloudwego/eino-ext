@@ -21,7 +21,6 @@ import (
 	"os"
 	"testing"
 
-	"code.byted.org/flow/eino/components/document/parser"
 	"github.com/stretchr/testify/assert"
 )
 
