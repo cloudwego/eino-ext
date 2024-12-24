@@ -16,6 +16,7 @@
 
 package pdf
 
+import "github.com/cloudwego/eino/components/document/parser"
 
 type options struct {
 	toPages *bool
