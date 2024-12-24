@@ -1,0 +1,314 @@
+/*
+ * Copyright 2024 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package openai
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/bytedance/mockey"
+	"github.com/getkin/kin-openapi/openapi3gen"
+	"github.com/sashabaranov/go-openai"
+
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+
+	protocol "github.com/cloudwego/eino-ext/libs/acl/openai"
+)
+
+func TestOpenAIGenerate(t *testing.T) {
+	type testStruct struct {
+		A string `json:"a"`
+		B int    `json:"b"`
+	}
+	testToolParam, err := openapi3gen.NewSchemaRefForValue(testStruct{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedSeed := 4
+	mockToolCallIdx := 5
+	expectedRequestBody := openai.ChatCompletionRequest{
+		Model: "gpt-4",
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: "system",
+			},
+			{
+				Role: openai.ChatMessageRoleUser,
+				MultiContent: []openai.ChatMessagePart{
+					{
+						Type: openai.ChatMessagePartTypeImageURL,
+						ImageURL: &openai.ChatMessageImageURL{
+							URL:    "http://a.b.c",
+							Detail: "detail",
+						},
+					},
+					{
+						Type: openai.ChatMessagePartTypeText,
+						Text: "text",
+					},
+				},
+			},
+			{
+				Role:       openai.ChatMessageRoleTool,
+				Content:    "tool",
+				ToolCallID: "tool call id",
+			},
+		},
+		MaxTokens:       1,
+		Temperature:     0.1,
+		TopP:            0.2,
+		N:               3,
+		Stream:          false,
+		Stop:            []string{"stop"},
+		PresencePenalty: 0.3,
+		ResponseFormat: &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+		},
+		Seed:             &expectedSeed,
+		FrequencyPenalty: 0.4,
+		LogitBias:        map[string]int{"1024": 100},
+		LogProbs:         true,
+		TopLogProbs:      4,
+		User:             "megumin",
+		Tools: []openai.Tool{
+			{
+				Type: openai.ToolTypeFunction,
+				Function: &openai.FunctionDefinition{
+					Name:        "tool1",
+					Description: "tool1",
+					Parameters:  testToolParam.Value,
+				},
+			},
+			{
+				Type: openai.ToolTypeFunction,
+				Function: &openai.FunctionDefinition{
+					Name:        "tool2",
+					Description: "tool2",
+					Parameters:  testToolParam.Value,
+				},
+			},
+		},
+		ToolChoice: "required",
+	}
+	mockOpenAIResponse := openai.ChatCompletionResponse{
+		Choices: []openai.ChatCompletionChoice{
+			{
+				Index: 0,
+				Message: openai.ChatCompletionMessage{
+					Role:    openai.ChatMessageRoleAssistant,
+					Content: "response content",
+					Name:    "response name",
+					ToolCalls: []openai.ToolCall{
+						{
+							Index: &mockToolCallIdx,
+							ID:    "id",
+							Type:  openai.ToolTypeFunction,
+							Function: openai.FunctionCall{
+								Name:      "name",
+								Arguments: "arguments",
+							},
+						},
+					},
+				},
+			},
+		},
+		Usage: openai.Usage{
+			PromptTokens:     1,
+			CompletionTokens: 2,
+			TotalTokens:      3,
+		},
+	}
+	expectedMessages := &schema.Message{
+		Role:    schema.Assistant,
+		Content: "response content",
+		Name:    "response name",
+		ToolCalls: []schema.ToolCall{
+			{
+				Index: &mockToolCallIdx,
+				ID:    "id",
+				Type:  "function",
+				Function: schema.FunctionCall{
+					Name:      "name",
+					Arguments: "arguments",
+				},
+			},
+		},
+		ResponseMeta: &schema.ResponseMeta{
+			Usage: &schema.TokenUsage{
+				PromptTokens:     1,
+				CompletionTokens: 2,
+				TotalTokens:      3,
+			},
+		},
+	}
+	config := &ChatModelConfig{
+		ByAzure:         false,
+		BaseURL:         "",
+		APIVersion:      "",
+		APIKey:          "",
+		Timeout:         0,
+		Model:           "gpt-4",
+		MaxTokens:       &expectedRequestBody.MaxTokens,
+		Temperature:     &expectedRequestBody.Temperature,
+		TopP:            &expectedRequestBody.TopP,
+		N:               &expectedRequestBody.N,
+		Stop:            expectedRequestBody.Stop,
+		PresencePenalty: &expectedRequestBody.PresencePenalty,
+		ResponseFormat: &protocol.ChatCompletionResponseFormat{
+			Type: protocol.ChatCompletionResponseFormatTypeJSONObject,
+		},
+		Seed:             expectedRequestBody.Seed,
+		FrequencyPenalty: &expectedRequestBody.FrequencyPenalty,
+		LogitBias:        expectedRequestBody.LogitBias,
+		LogProbs:         &expectedRequestBody.LogProbs,
+		TopLogProbs:      &expectedRequestBody.TopLogProbs,
+		User:             &expectedRequestBody.User,
+	}
+
+	t.Run("all param", func(t *testing.T) {
+		defer mockey.Mock((*openai.Client).CreateChatCompletion).To(func(ctx context.Context, request openai.ChatCompletionRequest) (response openai.ChatCompletionResponse, err error) {
+			if !reflect.DeepEqual(expectedRequestBody, request) {
+				return response, fmt.Errorf("request is unexpected")
+			}
+			return mockOpenAIResponse, nil
+		}).Build().UnPatch()
+		ctx := context.Background()
+		m, err := NewChatModel(ctx, config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = m.BindForcedTools([]*schema.ToolInfo{
+			{
+				Name:        "tool1",
+				Desc:        "tool1",
+				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+			},
+			{
+				Name:        "tool2",
+				Desc:        "tool2",
+				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		cbm, _ := callbacks.NewManager(&callbacks.RunInfo{}, &callbacks.HandlerBuilder{OnEndFn: func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
+			nOutput := model.ConvCallbackOutput(output)
+			if nOutput.TokenUsage.PromptTokens != 1 {
+				t.Fatal("invalid token usage")
+			}
+			if nOutput.TokenUsage.CompletionTokens != 2 {
+				t.Fatal("invalid token usage")
+			}
+			if nOutput.TokenUsage.TotalTokens != 3 {
+				t.Fatal("invalid token usage")
+			}
+			return ctx
+		}})
+		ctx = callbacks.CtxWithManager(ctx, cbm)
+
+		result, err := m.Generate(ctx, []*schema.Message{
+			schema.SystemMessage("system"),
+			{
+				Role: schema.User,
+				MultiContent: []schema.ChatMessagePart{
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						ImageURL: &schema.ChatMessageImageURL{
+							URL:    "http://a.b.c",
+							Detail: "detail",
+						},
+					},
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "text",
+					},
+				},
+			},
+			schema.ToolMessage("tool", "tool call id"),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(result, expectedMessages) {
+			resultData, _ := json.Marshal(result)
+			expectMsgData, _ := json.Marshal(expectedMessages)
+			t.Fatalf("result is unexpected, given=%v, expected=%v", string(resultData), string(expectMsgData))
+		}
+	})
+	t.Run("stream all param", func(t *testing.T) {
+		defer mockey.Mock((*openai.Client).CreateChatCompletionStream).To(func(ctx context.Context, request openai.ChatCompletionRequest) (response *openai.ChatCompletionStream, err error) {
+			expectedRequestBody := expectedRequestBody
+			expectedRequestBody.Stream = true
+			expectedRequestBody.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
+			if !reflect.DeepEqual(expectedRequestBody, request) {
+				return response, fmt.Errorf("request is unexpected")
+			}
+			return nil, fmt.Errorf("expected error")
+		}).Build().UnPatch()
+		ctx := context.Background()
+		m, err := NewChatModel(ctx, config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = m.BindForcedTools([]*schema.ToolInfo{
+			{
+				Name:        "tool1",
+				Desc:        "tool1",
+				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+			},
+			{
+				Name:        "tool2",
+				Desc:        "tool2",
+				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = m.Stream(ctx, []*schema.Message{
+			schema.SystemMessage("system"),
+			{
+				Role: schema.User,
+				MultiContent: []schema.ChatMessagePart{
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						ImageURL: &schema.ChatMessageImageURL{
+							URL:    "http://a.b.c",
+							Detail: "detail",
+						},
+					},
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "text",
+					},
+				},
+			},
+			schema.ToolMessage("tool", "tool call id"),
+		})
+		if strings.Contains(err.Error(), "request is unexpected") {
+			t.Fatal(err)
+		}
+	})
+}
