@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 依赖包名称
-DEPENDENCY="github.com/cloudwego/eino"
+DEPENDENCY="golang.org/x/crypto"
 # 指定的版本号或分支（如果未提供，则更新到最新版本）
 VERSION=${1:-latest}
 
