@@ -24,3 +24,11 @@ func dereferenceOrZero[T any](v *T) T {
 
 	return *v
 }
+
+func dereferenceOrDefault[T any](v *T, d T) T {
+	if v == nil {
+		return d
+	}
+
+	return *v
+}
