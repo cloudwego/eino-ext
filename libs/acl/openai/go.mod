@@ -3,6 +3,7 @@ module github.com/cloudwego/eino-ext/libs/acl/openai
 go 1.18
 
 require (
+	github.com/bytedance/mockey v1.2.13
 	github.com/cloudwego/eino v0.3.0
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/sashabaranov/go-openai v1.32.5
@@ -10,7 +11,6 @@ require (
 )
 
 require (
-	github.com/bytedance/mockey v1.2.13 // indirect
 	github.com/bytedance/sonic v1.12.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
