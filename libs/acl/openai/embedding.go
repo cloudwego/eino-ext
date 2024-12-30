@@ -72,8 +72,14 @@ func NewEmbeddingClient(ctx context.Context, config *EmbeddingConfig) (*Embeddin
 
 	if config.ByAzure {
 		clientConf = openai.DefaultAzureConfig(config.APIKey, config.BaseURL)
+		if config.APIVersion != "" {
+			clientConf.APIVersion = config.APIVersion
+		}
 	} else {
 		clientConf = openai.DefaultConfig(config.APIKey)
+		if config.BaseURL != "" {
+			clientConf.BaseURL = config.BaseURL
+		}
 	}
 
 	clientConf.HTTPClient = config.HTTPClient
