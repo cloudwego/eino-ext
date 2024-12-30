@@ -25,12 +25,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
@@ -125,9 +126,9 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		err = g.AddGraphNode("node_5", sc)
 		assert.NoError(t, err)
 
-		ssg := compose.NewStateGraph[[]string, []string, string](func(ctx context.Context) (state string) {
+		ssg := compose.NewGraph[[]string, []string](compose.WithGenLocalState(func(ctx context.Context) (state string) {
 			return ""
-		})
+		}))
 		err = ssg.AddLambdaNode("ssg_node_1", compose.InvokableLambda(func(ctx context.Context, input []string) (output []string, err error) {
 			output = append(input, fmt.Sprintf("sub_state_graph_out_lambda_1"))
 			return output, nil
@@ -567,7 +568,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			genState: genState,
 		}
 
-		g := compose.NewStateGraph[int, []string, any](genState)
+		g := compose.NewGraph[int, []string](compose.WithGenLocalState(genState))
 		err := g.AddLambdaNode("node_1", compose.InvokableLambda(func(ctx context.Context, input int) (output []string, err error) {
 			return []string{strconv.Itoa(input), fmt.Sprintf("out_lambda_1")}, nil
 		}))
@@ -1390,7 +1391,7 @@ func Test_Graph_addNode(t *testing.T) {
 	}
 
 	t.Run("instance not Embedding", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: components.ComponentOfEmbedding,
 			Instance:  nil,
@@ -1401,7 +1402,7 @@ func Test_Graph_addNode(t *testing.T) {
 	})
 
 	t.Run("instance not Retriever", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: components.ComponentOfRetriever,
 			Instance:  nil,
@@ -1411,18 +1412,8 @@ func Test_Graph_addNode(t *testing.T) {
 		assert.Contains(t, err.Error(), "but get unexpected instance")
 	})
 
-	t.Run("instance not LoaderSplitter", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
-		gni := compose.GraphNodeInfo{
-			Component: components.ComponentOfLoaderSplitter,
-			Instance:  nil,
-		}
-		err := g.addNode("node_1", gni)
-		assert.Contains(t, err.Error(), "but get unexpected instance")
-	})
-
 	t.Run("instance not Indexer", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: components.ComponentOfIndexer,
 			Instance:  nil,
@@ -1432,7 +1423,7 @@ func Test_Graph_addNode(t *testing.T) {
 	})
 
 	t.Run("instance not ChatModel", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: components.ComponentOfChatModel,
 			Instance:  nil,
@@ -1442,7 +1433,7 @@ func Test_Graph_addNode(t *testing.T) {
 	})
 
 	t.Run("Prompt", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: components.ComponentOfPrompt,
 			Instance:  &prompt.DefaultChatTemplate{},
@@ -1452,7 +1443,7 @@ func Test_Graph_addNode(t *testing.T) {
 	})
 
 	t.Run("ToolsNode", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: compose.ComponentOfToolsNode,
 			Instance:  &compose.ToolsNode{},
@@ -1462,9 +1453,9 @@ func Test_Graph_addNode(t *testing.T) {
 	})
 
 	t.Run("Graph", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
-			Component: compose.ComponentOfStateGraph,
+			Component: compose.ComponentOfGraph,
 			Instance:  compose.NewGraph[string, string](),
 		}
 		err := g.addNode("node_1", gni)
@@ -1472,7 +1463,7 @@ func Test_Graph_addNode(t *testing.T) {
 	})
 
 	t.Run("Chain", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: compose.ComponentOfChain,
 			Instance:  compose.NewChain[string, string](),
@@ -1481,13 +1472,13 @@ func Test_Graph_addNode(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("StateGraph", func(t *testing.T) {
-		g := &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+	t.Run("Graph", func(t *testing.T) {
+		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
-			Component: compose.ComponentOfStateGraph,
-			Instance: compose.NewStateGraph[string, string, string](func(ctx context.Context) string {
+			Component: compose.ComponentOfGraph,
+			Instance: compose.NewGraph[string, string](compose.WithGenLocalState(func(ctx context.Context) string {
 				return ""
-			}),
+			})),
 		}
 		err := g.addNode("node_1", gni)
 		assert.NoError(t, err)

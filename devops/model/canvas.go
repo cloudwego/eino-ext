@@ -143,7 +143,6 @@ const (
 	ComponentOfRetriever    Component = "Retriever"
 	ComponentOfPassthrough  Component = "Passthrough"
 	ComponentOfGraph        Component = "Graph"
-	ComponentOfStateGraph   Component = "StateGraph"
 )
 
 type ComponentSource string

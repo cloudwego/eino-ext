@@ -25,7 +25,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/cloudwego/eino/components"
-	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/components/model"
@@ -73,10 +72,9 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 	}
 
 	if gi.Option.GenState != nil {
-		g = &Graph{StateGraph: compose.NewStateGraph[any, any, any](gi.Option.GenState)}
+		g = &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(gi.Option.GenState))}
 	} else {
-		genState := func(ctx context.Context) any { return nil }
-		g = &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g = &Graph{Graph: compose.NewGraph[any, any]()}
 	}
 
 	var (
@@ -367,7 +365,7 @@ func (gi GraphInfo) buildSubGraphSchema() (subGraphSchema map[string]*devmodel.G
 }
 
 type Graph struct {
-	*compose.StateGraph[any, any, any]
+	*compose.Graph[any, any]
 }
 
 func (g *Graph) Compile(opts ...compose.GraphCompileOption) (Runnable, error) {
@@ -390,12 +388,6 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddRetrieverNode(node, ins, newOpts...)
-	case components.ComponentOfLoaderSplitter:
-		ins, ok := gni.Instance.(document.LoaderSplitter)
-		if !ok {
-			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
-		}
-		return g.AddLoaderSplitterNode(node, ins, newOpts...)
 	case components.ComponentOfIndexer:
 		ins, ok := gni.Instance.(indexer.Indexer)
 		if !ok {
@@ -428,7 +420,7 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 		return g.AddLambdaNode(node, ins, newOpts...)
 	case compose.ComponentOfPassthrough:
 		return g.AddPassthroughNode(node, newOpts...)
-	case compose.ComponentOfGraph, compose.ComponentOfChain, compose.ComponentOfStateGraph:
+	case compose.ComponentOfGraph, compose.ComponentOfChain:
 		ins, ok := gni.Instance.(compose.AnyGraph)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
