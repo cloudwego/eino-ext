@@ -73,10 +73,9 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 	}
 
 	if gi.Option.GenState != nil {
-		g = &Graph{StateGraph: compose.NewStateGraph[any, any, any](gi.Option.GenState)}
+		g = &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(gi.Option.GenState))}
 	} else {
-		genState := func(ctx context.Context) any { return nil }
-		g = &Graph{StateGraph: compose.NewStateGraph[any, any, any](genState)}
+		g = &Graph{Graph: compose.NewGraph[any, any]()}
 	}
 
 	var (
@@ -367,7 +366,7 @@ func (gi GraphInfo) buildSubGraphSchema() (subGraphSchema map[string]*devmodel.G
 }
 
 type Graph struct {
-	*compose.StateGraph[any, any, any]
+	*compose.Graph[any, any]
 }
 
 func (g *Graph) Compile(opts ...compose.GraphCompileOption) (Runnable, error) {
