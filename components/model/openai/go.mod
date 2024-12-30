@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.0
+	github.com/cloudwego/eino v0.3.1
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20241224080951-513901fca79a
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/sashabaranov/go-openai v1.32.5
