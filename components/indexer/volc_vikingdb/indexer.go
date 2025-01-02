@@ -263,7 +263,7 @@ func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) 
 
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
-	return callbacks.SwitchRunInfo(ctx, runInfo)
+	return callbacks.SetRunInfo(ctx, runInfo)
 }
 
 func (i *Indexer) GetType() string {

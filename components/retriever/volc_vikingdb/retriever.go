@@ -278,7 +278,7 @@ func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder
 
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
-	return callbacks.SwitchRunInfo(ctx, runInfo)
+	return callbacks.SetRunInfo(ctx, runInfo)
 }
 
 func (r *Retriever) data2Document(data *vikingdb.Data) (*schema.Document, error) {
