@@ -341,13 +341,9 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
-	var (
-		cbm, cbmOK = callbacks.ManagerFromCtx(ctx)
-	)
-
 	defer func() {
-		if err != nil && cbmOK {
-			_ = cbm.OnError(ctx, err)
+		if err != nil {
+			callbacks.OnError(ctx, err)
 		}
 	}()
 
@@ -372,14 +368,12 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 		Stop:        req.Stop,
 	}
 
-	if cbmOK {
-		ctx = cbm.OnStart(ctx, &model.CallbackInput{
-			Messages:   in,
-			Tools:      append(cm.rawTools), // join tool info from call options
-			ToolChoice: getToolChoice(req.ToolChoice),
-			Config:     reqConf,
-		})
-	}
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages:   in,
+		Tools:      append(cm.rawTools), // join tool info from call options
+		ToolChoice: getToolChoice(req.ToolChoice),
+		Config:     reqConf,
+	})
 
 	resp, err := cm.cli.CreateChatCompletion(ctx, *req)
 	if err != nil {
@@ -417,13 +411,11 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 		TotalTokens:      resp.Usage.TotalTokens,
 	}
 
-	if cbmOK {
-		_ = cbm.OnEnd(ctx, &model.CallbackOutput{
-			Message:    outMsg,
-			Config:     reqConf,
-			TokenUsage: usage,
-		})
-	}
+	callbacks.OnEnd(ctx, &model.CallbackOutput{
+		Message:    outMsg,
+		Config:     reqConf,
+		TokenUsage: usage,
+	})
 
 	return outMsg, nil
 }
@@ -431,13 +423,9 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 func (cm *Client) Stream(ctx context.Context, in []*schema.Message, // nolint: byted_s_too_many_lines_in_func
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 
-	var (
-		cbm, cbmOK = callbacks.ManagerFromCtx(ctx)
-	)
-
 	defer func() {
-		if err != nil && cbmOK {
-			_ = cbm.OnError(ctx, err)
+		if err != nil {
+			callbacks.OnError(ctx, err)
 		}
 	}()
 
@@ -465,14 +453,12 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message, // nolint: b
 		Stop:        req.Stop,
 	}
 
-	if cbmOK {
-		ctx = cbm.OnStart(ctx, &model.CallbackInput{
-			Messages:   in,
-			Tools:      append(cm.rawTools), // join tool info from call options
-			ToolChoice: getToolChoice(req.ToolChoice),
-			Config:     reqConf,
-		})
-	}
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages:   in,
+		Tools:      append(cm.rawTools), // join tool info from call options
+		ToolChoice: getToolChoice(req.ToolChoice),
+		Config:     reqConf,
+	})
 
 	stream, err := cm.cli.CreateChatCompletionStream(ctx, *req)
 	if err != nil {
@@ -553,30 +539,21 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message, // nolint: b
 
 	}()
 
-	rawStreamArr := make([]*schema.StreamReader[*model.CallbackOutput], 2)
-	if cbmOK {
-		rawStreamArr = sr.Copy(2) // nolint: byted_s_magic_number
-	} else {
-		rawStreamArr[0] = sr
-	}
+	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
+		func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
+			return src, nil
+		}))
 
-	outStream = schema.StreamReaderWithConvert(rawStreamArr[0],
-		func(src *model.CallbackOutput) (*schema.Message, error) {
-			if src.Message == nil {
+	outStream = schema.StreamReaderWithConvert(nsr,
+		func(src callbacks.CallbackOutput) (*schema.Message, error) {
+			s := src.(*model.CallbackOutput)
+			if s.Message == nil {
 				return nil, schema.ErrNoValue
 			}
 
-			return src.Message, nil
-		})
-
-	if cbmOK {
-		cbStream := schema.StreamReaderWithConvert(rawStreamArr[1],
-			func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
-				return src, nil
-			},
-		)
-		_ = cbm.OnEndWithStreamOutput(ctx, cbStream)
-	}
+			return s.Message, nil
+		},
+	)
 
 	return outStream, nil
 }

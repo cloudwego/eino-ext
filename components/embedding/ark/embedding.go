@@ -112,13 +112,9 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) (
 	embeddings [][]float64, err error) {
 
-	var (
-		cbm, cbmOK = callbacks.ManagerFromCtx(ctx)
-	)
-
 	defer func() {
-		if err != nil && cbmOK {
-			_ = cbm.OnError(ctx, err)
+		if err != nil {
+			callbacks.OnError(ctx, err)
 		}
 	}()
 
@@ -128,12 +124,10 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 		EncodingFormat: string(req.EncodingFormat),
 	}
 
-	if cbmOK {
-		ctx = cbm.OnStart(ctx, &embedding.CallbackInput{
-			Texts:  texts,
-			Config: conf,
-		})
-	}
+	ctx = callbacks.OnStart(ctx, &embedding.CallbackInput{
+		Texts:  texts,
+		Config: conf,
+	})
 
 	resp, err := e.client.CreateEmbeddings(ctx, &req)
 	if err != nil {
@@ -153,13 +147,11 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 		embeddings[i] = toFloat64(d.Embedding)
 	}
 
-	if cbmOK {
-		_ = cbm.OnEnd(ctx, &embedding.CallbackOutput{
-			Embeddings: embeddings,
-			Config:     conf,
-			TokenUsage: usage,
-		})
-	}
+	callbacks.OnEnd(ctx, &embedding.CallbackOutput{
+		Embeddings: embeddings,
+		Config:     conf,
+		TokenUsage: usage,
+	})
 
 	return embeddings, nil
 }
