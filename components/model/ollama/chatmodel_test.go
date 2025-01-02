@@ -109,8 +109,7 @@ func MockChatStream(ctx context.Context, req *api.ChatRequest, fn api.ChatRespon
 
 func Test_Generate(t *testing.T) {
 	PatchConvey("test Generate", t, func() {
-		mgr, _ := callbacks.NewManager(&callbacks.RunInfo{}, &callbacks.HandlerBuilder{})
-		ctx := callbacks.CtxWithManager(context.Background(), mgr)
+		ctx := callbacks.InitCallbacks(context.Background(), &callbacks.RunInfo{}, callbacks.NewHandlerBuilder().Build())
 		m, err := NewChatModel(ctx, &ChatModelConfig{
 			Model: "asd",
 		})
@@ -204,10 +203,7 @@ func Test_Generate(t *testing.T) {
 
 func Test_Stream(t *testing.T) {
 	PatchConvey("test Stream", t, func() {
-		mgr, ok := callbacks.NewManager(&callbacks.RunInfo{}, &callbacks.HandlerBuilder{})
-		ctx := callbacks.CtxWithManager(context.Background(), mgr)
-
-		convey.So(ok, convey.ShouldBeTrue)
+		ctx := callbacks.InitCallbacks(context.Background(), &callbacks.RunInfo{}, callbacks.NewHandlerBuilder().Build())
 		m, err := NewChatModel(ctx, &ChatModelConfig{
 			Model: "asd",
 		})

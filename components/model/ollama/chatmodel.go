@@ -250,13 +250,18 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		return nil, nil, fmt.Errorf("error convert messages: %w", err)
 	}
 
+	tools, err := toOllamaTools(cm.tools)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error convert tools: %w", err)
+	}
+
 	req = &api.ChatRequest{
 		Model:    modelName,
 		Messages: msgs,
 		Stream:   ptrOf(stream),
 		Format:   cm.config.Format,
 
-		Tools: toOllamaTools(cm.tools),
+		Tools: tools,
 
 		Options: reqOptions,
 	}
@@ -344,7 +349,7 @@ func parseJSONToObject(jsonStr string) (map[string]any, error) {
 	return result, err
 }
 
-func toOllamaTools(einoTools []*schema.ToolInfo) []api.Tool {
+func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 	var ollamaTools []api.Tool
 	for _, einoTool := range einoTools {
 		properties := make(map[string]struct {
@@ -353,19 +358,29 @@ func toOllamaTools(einoTools []*schema.ToolInfo) []api.Tool {
 			Enum        []string `json:"enum,omitempty"`
 		})
 
-		var required []string
-		for name, param := range einoTool.ParamsOneOf.Params {
+		openTool, err := einoTool.ParamsOneOf.ToOpenAPIV3()
+		if err != nil {
+			return nil, err
+		}
+
+		for name, param := range openTool.Properties {
+			enums := make([]string, 0, len(param.Value.Enum))
+			for _, e := range param.Value.Enum {
+				str, ok := e.(string)
+				if !ok {
+					return nil, fmt.Errorf("toOllamaTools: enum must be string, but got %v", e)
+				}
+				enums = append(enums, str)
+			}
+
 			properties[name] = struct {
 				Type        string   `json:"type"`
 				Description string   `json:"description"`
 				Enum        []string `json:"enum,omitempty"`
 			}{
-				Type:        string(param.Type),
-				Description: param.Desc,
-				Enum:        param.Enum,
-			}
-			if param.Required {
-				required = append(required, name)
+				Type:        param.Value.Type,
+				Description: param.Value.Description,
+				Enum:        enums,
 			}
 		}
 
@@ -384,12 +399,12 @@ func toOllamaTools(einoTools []*schema.ToolInfo) []api.Tool {
 					} `json:"properties"`
 				}{
 					Type:       "object",
-					Required:   required,
+					Required:   openTool.Required,
 					Properties: properties,
 				},
 			},
 		}
 		ollamaTools = append(ollamaTools, ollamaTool)
 	}
-	return ollamaTools
+	return ollamaTools, nil
 }

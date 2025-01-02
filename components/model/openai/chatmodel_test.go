@@ -213,7 +213,7 @@ func TestOpenAIGenerate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cbm, _ := callbacks.NewManager(&callbacks.RunInfo{}, &callbacks.HandlerBuilder{OnEndFn: func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
+		handler := callbacks.NewHandlerBuilder().OnEndFn(func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
 			nOutput := model.ConvCallbackOutput(output)
 			if nOutput.TokenUsage.PromptTokens != 1 {
 				t.Fatal("invalid token usage")
@@ -225,8 +225,8 @@ func TestOpenAIGenerate(t *testing.T) {
 				t.Fatal("invalid token usage")
 			}
 			return ctx
-		}})
-		ctx = callbacks.CtxWithManager(ctx, cbm)
+		})
+		ctx = callbacks.InitCallbacks(ctx, &callbacks.RunInfo{}, handler.Build())
 
 		result, err := m.Generate(ctx, []*schema.Message{
 			schema.SystemMessage("system"),

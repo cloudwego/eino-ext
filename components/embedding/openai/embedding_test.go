@@ -81,8 +81,8 @@ func TestEmbedding(t *testing.T) {
 			return mockResponse, nil
 		}).Build().UnPatch()
 
-		cbm, _ := callbacks.NewManager(&callbacks.RunInfo{}, &callbacks.HandlerBuilder{
-			OnEndFn: func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
+		handler := callbacks.NewHandlerBuilder().
+			OnEndFn(func(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
 				nOutput := embedding.ConvCallbackOutput(output)
 				if nOutput.TokenUsage.PromptTokens != 1 {
 					t.Fatal("PromptTokens is unexpected")
@@ -94,9 +94,8 @@ func TestEmbedding(t *testing.T) {
 					t.Fatal("TotalTokens is unexpected")
 				}
 				return ctx
-			},
-		})
-		ctx = callbacks.CtxWithManager(ctx, cbm)
+			})
+		ctx = callbacks.InitCallbacks(ctx, &callbacks.RunInfo{}, handler.Build())
 		result, err := emb.EmbedStrings(ctx, []string{"input"})
 		if err != nil {
 			t.Fatal(err)

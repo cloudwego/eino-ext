@@ -54,7 +54,7 @@ func TestLoad(t *testing.T) {
 
 	time.Sleep(1 * time.Second)
 	ctx := context.Background()
-	ctx = callbacks.CtxWithManager(ctx, &callbacks.Manager{})
+	ctx = callbacks.InitCallbacks(ctx, &callbacks.RunInfo{})
 
 	t.Run("html loader", func(t *testing.T) {
 		loader, err := NewLoader(ctx, &LoaderConfig{})

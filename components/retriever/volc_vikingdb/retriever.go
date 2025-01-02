@@ -188,7 +188,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 			return nil, err
 		}
 
-		docs = append(docs, doc.WithVikingDSLInfo(options.DSLInfo))
+		docs = append(docs, doc.WithDSLInfo(options.DSLInfo))
 	}
 
 	ctx = callbacks.OnEnd(ctx, &retriever.CallbackOutput{Docs: docs})
@@ -278,7 +278,7 @@ func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder
 
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
-	return callbacks.SwitchRunInfo(ctx, runInfo)
+	return callbacks.ReuseHandlers(ctx, runInfo)
 }
 
 func (r *Retriever) data2Document(data *vikingdb.Data) (*schema.Document, error) {
