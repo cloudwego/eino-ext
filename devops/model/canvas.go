@@ -54,8 +54,15 @@ type GraphSchema struct {
 	Branches  []*Branch `json:"branches"`
 
 	// graph config option
-	NodeTriggerMode     NodeTriggerMode `json:"node_trigger_mode"`
-	GenLocalStateMethod *string         `json:"gen_local_state_method,omitempty"`
+	NodeTriggerMode NodeTriggerMode `json:"node_trigger_mode"`
+	GenLocalState   *GenLocalState  `json:"gen_local_state,omitempty"`
+	InputType       string          `json:"input_type"`
+	OutputType      string          `json:"output_type"`
+}
+
+type GenLocalState struct {
+	Method     string `json:"method"`
+	OutputType string `json:"output_type"`
 }
 
 type Node struct {
@@ -101,8 +108,9 @@ type Branch struct {
 }
 
 type Condition struct {
-	Method   string `json:"method"`
-	IsStream bool   `json:"is_stream"`
+	Method    string `json:"method"`
+	IsStream  bool   `json:"is_stream"`
+	InputType string `json:"input_type"`
 }
 
 type JsonType string
