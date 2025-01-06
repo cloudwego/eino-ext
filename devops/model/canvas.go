@@ -125,8 +125,17 @@ type JsonSchema struct {
 	AnyOf                []*JsonSchema          `json:"anyOf,omitempty"`
 	AdditionalProperties *JsonSchema            `json:"additionalProperties,omitempty"`
 	Required             []string               `json:"required,omitempty"`
-	PropertyOrder        []string               `json:"propertyOrder,omitempty"`
 	Enum                 []any                  `json:"enum,omitempty"`
+
+	// Custom Field
+	PropertyOrder []string `json:"propertyOrder,omitempty"`
+	Library       Library  `json:"library,omitempty"`
+}
+
+type Library struct {
+	Module  string `json:"module"`
+	Version string `json:"version"`
+	Source  string `json:"source"`
 }
 
 type Component string
@@ -134,7 +143,7 @@ type Component string
 const (
 	ComponentOfLambda       Component = "Lambda"
 	ComponentOfLoader       Component = "Loader"
-	ComponentOfTransformer  Component = "DocumentTransformer"
+	ComponentOfTransformer  Component = "Transformer"
 	ComponentOfTool         Component = "Tool"
 	ComponentOfChatModel    Component = "ChatModel"
 	ComponentOfChatTemplate Component = "ChatTemplate"
@@ -152,51 +161,17 @@ const (
 	SourceOfOfficial ComponentSource = "official"
 )
 
-type InteractionType string
-
-const (
-	InteractionOfInvoke    InteractionType = "invoke"
-	InteractionOfStream    InteractionType = "stream"
-	InteractionOfCollect   InteractionType = "collect"
-	InteractionOfTransform InteractionType = "transform"
-)
-
 type ComponentSchema struct {
 	Component       Component       `json:"component"`           // type of component (Lambda ChatModel....)
 	ComponentSource ComponentSource `json:"component_source"`    // component properties, official components, custom components
 	ImplType        string          `json:"impl_type,omitempty"` // The specific implementer name of the component type. For example, openai is the specific implementer of ChatModel.
-	Method          string          `json:"method,omitempty"`    // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
 	InputType       *JsonSchema     `json:"input_type,omitempty"`
 	OutputType      *JsonSchema     `json:"output_type,omitempty"`
+	Method          string          `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
 
-	ComponentExtraSchema *JsonSchema `json:"component_extra_schema,omitempty"`
-	ComponentExtra       string      `json:"component_extra"`
+	ConfigSchema *JsonSchema `json:"config_schema,omitempty"`
+	Config       string      `json:"config"`
+
+	ExtraPropertySchema *JsonSchema `json:"extra_property_schema,omitempty"`
+	ExtraProperty       string      `json:"extra_property"`
 }
-
-type LambdaExtra struct {
-	HasOption       bool            `json:"has_option"`
-	InteractionType InteractionType `json:"interaction_type"`
-}
-
-type ComponentImplType string
-
-const (
-	ImplTypeOfBase                ComponentImplType = "Base"
-	ImplTypeOfOpenAI              ComponentImplType = "OpenAI"
-	ImplTypeOfBytedGPT            ComponentImplType = "BytedGPT"
-	ImplTypeOfARK                 ComponentImplType = "ARK"
-	ImplTypeOfLLMGateway          ComponentImplType = "LLMGateway"
-	ImplTypeOfOllama              ComponentImplType = "Ollama"
-	ImplTypeOfChatTemplate        ComponentImplType = "ChatTemplate"
-	ImplTypeOfPromptHub           ComponentImplType = "PromptHub"
-	ImplTypeOftAgentReact         ComponentImplType = "React"
-	ImplTypeOfRetrieverMultiQuery ComponentImplType = "MultiQuery"
-	ImplTypeOfRetrieverRouter     ComponentImplType = "Router"
-	ImplTypeOfFornaxKnowledge     ComponentImplType = "FornaxKnowledge"
-	ImplTypeOfVikingDB            ComponentImplType = "VikingDB"
-	ImplTypeOfVolcVikingDB        ComponentImplType = "VolcVikingDB"
-	ImplTypeOfByteES              ComponentImplType = "ByteES"
-	ImplTypeOfLoaderFile          ComponentImplType = "File"
-	ImplTypeOfSplitterRecursive   ComponentImplType = "Recursive"
-	ImplTypeOfSplitterSemantic    ComponentImplType = "Semantic"
-)
