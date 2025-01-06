@@ -180,6 +180,15 @@ type ComponentSchema struct {
 	ConfigSchema *JsonSchema `json:"config_schema,omitempty"`
 	Config       string      `json:"config"`
 
+	Slots []Slot `json:"slots,omitempty"`
+
 	ExtraPropertySchema *JsonSchema `json:"extra_property_schema,omitempty"`
 	ExtraProperty       string      `json:"extra_property"`
+}
+
+type Slot struct {
+	Name           string            `json:"name"`
+	ComponentItems []ComponentSchema `json:"component_items"`
+	Multiple       bool              `json:"multiple"`
+	Required       bool              `json:"required"`
 }
