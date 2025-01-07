@@ -116,12 +116,12 @@ type Condition struct {
 type JsonType string
 
 const (
-	TypeOfBoolean JsonType = "boolean"
-	TypeOfString  JsonType = "string"
-	TypeOfNumber  JsonType = "number"
-	TypeOfObject  JsonType = "object"
-	TypeOfArray   JsonType = "array"
-	TypeOfNull    JsonType = "null"
+	JsonTypeOfBoolean JsonType = "boolean"
+	JsonTypeOfString  JsonType = "string"
+	JsonTypeOfNumber  JsonType = "number"
+	JsonTypeOfObject  JsonType = "object"
+	JsonTypeOfArray   JsonType = "array"
+	JsonTypeOfNull    JsonType = "null"
 )
 
 type JsonSchema struct {
@@ -137,13 +137,33 @@ type JsonSchema struct {
 
 	// Custom Field
 	PropertyOrder []string `json:"propertyOrder,omitempty"`
-	Library       Library  `json:"library,omitempty"`
+	// GoDefinition returns a field supplementary description for Go.
+	GoDefinition *GoDefinition `json:"goDefinition,omitempty"`
+}
+
+type GoDefinition struct {
+	LibraryRef *Library `json:"libraryRef,omitempty"`
+	// TypeString returns a string representation of the type.
+	// The string representation may use shortened package names
+	// (e.g., base64 instead of "encoding/base64") and is not
+	// guaranteed to be unique among types. To test for type identity,
+	// compare the Types directly.
+	TypeString string `json:"typeString"`
+	// Kind exclude any pointer kind, such as Pointer, UnsafePointer, etc.
+	Kind string `json:"kind"`
+	// IsPtr whether the type is a pointer type.
+	IsPtr bool `json:"isPtr"`
 }
 
 type Library struct {
-	Module  string `json:"module"`
 	Version string `json:"version"`
-	Source  string `json:"source"`
+	Module  string `json:"module"`
+	// PkgPath returns a defined type's package path, that is, the import path
+	// that uniquely identifies the package, such as "encoding/base64".
+	// If the type was predeclared (string, error) or not defined (*T, struct{},
+	// []int, or A where A is an alias for a non-defined type), the package path
+	// will be the empty string.
+	PkgPath string `json:"pkgPath"`
 }
 
 type Component string
@@ -151,7 +171,7 @@ type Component string
 const (
 	ComponentOfLambda       Component = "Lambda"
 	ComponentOfLoader       Component = "Loader"
-	ComponentOfTransformer  Component = "Transformer"
+	ComponentOfTransformer  Component = "DocumentTransformer"
 	ComponentOfTool         Component = "Tool"
 	ComponentOfChatModel    Component = "ChatModel"
 	ComponentOfChatTemplate Component = "ChatTemplate"
@@ -176,9 +196,8 @@ type ComponentSchema struct {
 	InputType       *JsonSchema     `json:"input_type,omitempty"`
 	OutputType      *JsonSchema     `json:"output_type,omitempty"`
 	Method          string          `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
-
-	ConfigSchema *JsonSchema `json:"config_schema,omitempty"`
-	Config       string      `json:"config"`
+	ConfigSchema    *JsonSchema     `json:"config_schema,omitempty"`
+	Config          string          `json:"config"`
 
 	Slots []Slot `json:"slots,omitempty"`
 

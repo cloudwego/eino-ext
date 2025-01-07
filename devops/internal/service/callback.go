@@ -52,7 +52,10 @@ func NewGlobalDevGraphCompileCallback() compose.GraphCompileCallback {
 			GenState: graphInfo.GenStateFn,
 		}
 
-		graphName := genGraphName(frame)
+		graphName := graphInfo.Name
+		if graphName == "" {
+			graphName = genGraphName(frame)
+		}
 
 		_, err := ContainerSVC.AddGraphInfo(graphName, graphInfo, opt)
 		if err != nil {

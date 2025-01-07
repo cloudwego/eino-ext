@@ -459,7 +459,7 @@ func (gi GraphInfo) inferStartNodeImplMeta() (inferInputType *devmodel.JsonSchem
 	var parseGraphInferTypeToJsonSchema func(inferType GraphInferType) *devmodel.JsonSchema
 	parseGraphInferTypeToJsonSchema = func(inferType GraphInferType) *devmodel.JsonSchema {
 		jsonSchema := &devmodel.JsonSchema{
-			Type:       devmodel.TypeOfObject,
+			Type:       devmodel.JsonTypeOfObject,
 			Title:      reflect.TypeOf(map[string]interface{}{}).String(),
 			Required:   make([]string, 0, len(inferGraphType.InputTypes)),
 			Properties: make(map[string]*devmodel.JsonSchema, len(inferGraphType.InputTypes)),
@@ -498,10 +498,10 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 		}
 		jsonSchema = &devmodel.JsonSchema{}
-		jsonSchema.Type = devmodel.TypeOfNull
+		jsonSchema.Type = devmodel.JsonTypeOfNull
 		switch reflectType.Kind() {
 		case reflect.Struct:
-			jsonSchema.Type = devmodel.TypeOfObject
+			jsonSchema.Type = devmodel.JsonTypeOfObject
 			jsonSchema.Title = reflectType.String()
 			jsonSchema.Properties = make(map[string]*devmodel.JsonSchema, reflectType.NumField())
 			jsonSchema.PropertyOrder = make([]string, 0, reflectType.NumField())
@@ -538,39 +538,39 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 			jsonSchema = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
 			return
 		case reflect.Map:
-			jsonSchema.Type = devmodel.TypeOfObject
+			jsonSchema.Type = devmodel.JsonTypeOfObject
 			jsonSchema.Title = reflectType.String()
 			jsonSchema.AdditionalProperties = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
 
 			return jsonSchema
 
 		case reflect.Slice, reflect.Array:
-			jsonSchema.Type = devmodel.TypeOfArray
+			jsonSchema.Type = devmodel.JsonTypeOfArray
 			jsonSchema.Title = reflectType.String()
 			jsonSchema.Items = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
 			return jsonSchema
 		case reflect.String:
-			jsonSchema.Type = devmodel.TypeOfString
+			jsonSchema.Type = devmodel.JsonTypeOfString
 			jsonSchema.Title = reflectType.String()
 			return jsonSchema
 		case reflect.Bool:
-			jsonSchema.Type = devmodel.TypeOfBoolean
+			jsonSchema.Type = devmodel.JsonTypeOfBoolean
 			jsonSchema.Title = reflectType.String()
 			return jsonSchema
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Float32, reflect.Float64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			jsonSchema.Type = devmodel.TypeOfNumber
+			jsonSchema.Type = devmodel.JsonTypeOfNumber
 			jsonSchema.Title = reflectType.String()
 			return jsonSchema
 		case reflect.Interface:
 			jsonSchema.Type = ""
 			jsonSchema.AnyOf = make([]*devmodel.JsonSchema, 0, 5)
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfBoolean})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfString})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfNumber})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfArray})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.TypeOfObject})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfBoolean})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfString})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfNumber})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfArray})
+			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfObject})
 			return jsonSchema
 		default:
 			return jsonSchema
@@ -586,7 +586,7 @@ func reassembleJsonSchema(jsonSchema *devmodel.JsonSchema, hasInputOrOutputKey b
 	}
 
 	jsonSchema = &devmodel.JsonSchema{
-		Type:                 devmodel.TypeOfObject,
+		Type:                 devmodel.JsonTypeOfObject,
 		Title:                reflect.TypeOf(map[string]interface{}{}).String(),
 		AdditionalProperties: jsonSchema,
 	}

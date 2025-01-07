@@ -1874,8 +1874,8 @@ func Test_parseReflectTypeToTypeSchema(t *testing.T) {
 	data := parseReflectTypeToJsonSchema(reflect.TypeOf(&DemoV1{}))
 
 	assert.Len(t, data.Properties, 8)
-	assert.Equal(t, data.Properties["child"].Type, devmodel.TypeOfObject)
-	assert.Equal(t, data.Properties["child2"].Type, devmodel.TypeOfArray)
+	assert.Equal(t, data.Properties["child"].Type, devmodel.JsonTypeOfObject)
+	assert.Equal(t, data.Properties["child2"].Type, devmodel.JsonTypeOfArray)
 	assert.Equal(t, data.Properties["child4"].Title, "model.DemoV2")
 	assert.Equal(t, data.Properties["child5"].Title, "model.DemoV2")
 
