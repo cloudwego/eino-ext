@@ -187,8 +187,9 @@ type ComponentSchema struct {
 }
 
 type Slot struct {
-	Name           string            `json:"name"`
-	ComponentItems []ComponentSchema `json:"component_items"`
+	Component      string            `json:"component"`
+	ConfigField    string            `json:"config_field"`
 	Multiple       bool              `json:"multiple"`
 	Required       bool              `json:"required"`
+	ComponentItems []ComponentSchema `json:"component_items"`
 }
