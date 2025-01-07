@@ -228,6 +228,11 @@ func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 			InputType:  reassembleJsonSchema(parseReflectTypeToJsonSchema(node.InputType), len(node.InputKey) != 0),
 			OutputType: reassembleJsonSchema(parseReflectTypeToJsonSchema(node.OutputType), len(node.OutputKey) != 0),
 		}
+
+		if implType, ok := components.GetType(node.Instance); ok {
+			fdlNode.ComponentSchema.ImplType = implType
+		}
+
 		for _, nn := range gi.Option.NodeInputUnmarshal {
 			if nn.NodeKey == key {
 				fdlNode.AllowOperate = true
