@@ -187,8 +187,11 @@ type ComponentSchema struct {
 }
 
 type Slot struct {
-	Component      string            `json:"component"`
-	ConfigField    string            `json:"config_field"`
+	Component string `json:"component"`
+
+	// The path of the configuration field.
+	// for example: if there is no nesting, it means Field, if there is a nested structure, it means Field.NestField.
+	FieldLocPath   string            `json:"field_loc_path"`
 	Multiple       bool              `json:"multiple"`
 	Required       bool              `json:"required"`
 	ComponentItems []ComponentSchema `json:"component_items"`
