@@ -720,7 +720,7 @@ func (gi GraphInfo) inferGraphInputTypeByNodes() (git GraphInferType, supported 
 
 	withInputKeyNodes := make(map[string]compose.GraphNodeInfo, len(startNodes))
 	for nk, ni := range startNodes {
-		// If one of nodes has inputKey, all nodes should have inputKey for einodev.
+		// If one of nodes has inputKey, all nodes should have inputKey for eino devops.
 		if ni.GraphInfo == nil && len(withInputKeyNodes) > 0 && ni.InputKey == "" {
 			return defaultTyp, false, nil
 		}
@@ -780,7 +780,7 @@ func (gi GraphInfo) inferGraphInputTypeByNodes() (git GraphInferType, supported 
 				return defaultTyp, false, nil
 			}
 			// If parent graph's start nodes have inputKey
-			// the subgraph's start nodes should have inputKey for einodev.
+			// the subgraph's start nodes should have inputKey for eino devops.
 			if len(git_.InputTypes) == 0 {
 				return defaultTyp, false, nil
 			}
@@ -805,7 +805,7 @@ func (gi GraphInfo) inferGraphInputTypeByNodes() (git GraphInferType, supported 
 				return defaultTyp, false, nil
 			}
 			// If parent graph's start nodes have no inputKey,
-			// the subgraph's start nodes have no inputKey for einodev.
+			// the subgraph's start nodes have no inputKey for eino devops.
 			if len(git_.InputTypes) > 0 {
 				return defaultTyp, false, nil
 			}

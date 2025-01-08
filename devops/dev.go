@@ -14,19 +14,20 @@
  * limitations under the License.
  */
 
-package einodev
+package devops
 
 import (
 	"context"
 	"time"
 
+	"github.com/cloudwego/eino/compose"
+
 	"github.com/cloudwego/eino-ext/devops/internal/apihandler"
 	"github.com/cloudwego/eino-ext/devops/internal/service"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
-	"github.com/cloudwego/eino/compose"
 )
 
-// Init start einodev.
+// Init start eino devops server
 func Init(ctx context.Context, opts ...ServerOption) error {
 	compose.InitGraphCompileCallbacks([]compose.GraphCompileCallback{service.NewGlobalDevGraphCompileCallback()})
 

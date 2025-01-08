@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package einodev
+package devops
 
 import (
 	"context"
 
 	"github.com/cloudwego/eino/compose"
+
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 )
 

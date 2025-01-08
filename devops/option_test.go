@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package einodev
+package devops
 
 import (
 	"testing"

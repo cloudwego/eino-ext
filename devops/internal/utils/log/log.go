@@ -83,16 +83,16 @@ func printLog(level int, depth int, format string, v ...any) {
 	switch level {
 	case infoLevel:
 		lg.SetOutput(os.Stdout)
-		lg.SetPrefix("[einodev][INFO] ")
+		lg.SetPrefix("[eino devops][INFO] ")
 	case warnLevel:
 		lg.SetOutput(os.Stderr)
-		lg.SetPrefix("[einodev][WARN] ")
+		lg.SetPrefix("[eino devops][WARN] ")
 	case errLevel:
 		lg.SetOutput(os.Stderr)
-		lg.SetPrefix("[einodev][ERROR] ")
+		lg.SetPrefix("[eino devops][ERROR] ")
 	default:
 		lg.SetOutput(os.Stdout)
-		lg.SetPrefix("[einodev][INFO] ")
+		lg.SetPrefix("[eino devops][INFO] ")
 	}
 
 	lg.Output(depth, fmt.Sprintf(format, v...))
