@@ -173,6 +173,7 @@ const (
 	ComponentOfLoader       Component = "Loader"
 	ComponentOfTransformer  Component = "DocumentTransformer"
 	ComponentOfTool         Component = "Tool"
+	ComponentOfToolsNode    Component = "ToolsNode"
 	ComponentOfChatModel    Component = "ChatModel"
 	ComponentOfChatTemplate Component = "ChatTemplate"
 	ComponentOfIndexer      Component = "Indexer"
@@ -214,4 +215,5 @@ type Slot struct {
 	Multiple       bool              `json:"multiple"`
 	Required       bool              `json:"required"`
 	ComponentItems []ComponentSchema `json:"component_items"`
+	GoDefinition   *GoDefinition     `json:"go_definition,omitempty"`
 }
