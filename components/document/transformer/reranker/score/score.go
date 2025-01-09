@@ -92,6 +92,10 @@ func (r *reranker) Transform(ctx context.Context, src []*schema.Document, opts .
 	return ret, nil
 }
 
+func (r *reranker) GetType() string {
+	return "ScoreReranker"
+}
+
 type sortedDocuments struct {
 	docs        []*schema.Document
 	scoreGetter func(doc *schema.Document) float64

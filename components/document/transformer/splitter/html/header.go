@@ -96,6 +96,10 @@ func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document,
 	return ret, nil
 }
 
+func (h *headerSplitter) GetType() string {
+	return "HTMLHeaderSplitter"
+}
+
 type splitResult struct {
 	chunk string
 	meta  map[string]string
