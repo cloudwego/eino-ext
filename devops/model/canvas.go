@@ -197,13 +197,22 @@ type ComponentSchema struct {
 	InputType       *JsonSchema     `json:"input_type,omitempty"`
 	OutputType      *JsonSchema     `json:"output_type,omitempty"`
 	Method          string          `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
-	ConfigSchema    *JsonSchema     `json:"config_schema,omitempty"`
-	Config          string          `json:"config"`
 
 	Slots []Slot `json:"slots,omitempty"`
 
-	ExtraPropertySchema *JsonSchema `json:"extra_property_schema,omitempty"`
-	ExtraProperty       string      `json:"extra_property"`
+	Config        *ConfigSchema        `json:"config,omitempty"`
+	ExtraProperty *ExtraPropertySchema `json:"extra_property,omitempty"`
+}
+
+type ConfigSchema struct {
+	Description string      `json:"description"`
+	Schema      *JsonSchema `json:"schema"`
+	ConfigInput string      `json:"config_input"`
+}
+
+type ExtraPropertySchema struct {
+	Schema             *JsonSchema `json:"schema"`
+	ExtraPropertyInput string      `json:"extra_property_input"`
 }
 
 type Slot struct {
