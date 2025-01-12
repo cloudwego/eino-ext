@@ -26,13 +26,14 @@ import (
 
 	"github.com/cloudwego/eino/components/retriever"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 // SearchModeSparseVectorTextExpansion convert the query text into a list of token-weight pairs,
 // which are then used in a query against a sparse vector
 // see: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-text-expansion-query.html
-func SearchModeSparseVectorTextExpansion(modelID string) SearchMode {
+func SearchModeSparseVectorTextExpansion(modelID string) es8.SearchMode {
 	return &sparseVectorTextExpansion{modelID}
 }
 
@@ -55,7 +56,16 @@ type sparseVectorTextExpansion struct {
 	modelID string
 }
 
-func (s sparseVectorTextExpansion) BuildRequest(ctx context.Context, query string, options *retriever.Options) (*search.Request, error) {
+func (s sparseVectorTextExpansion) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
+	opts ...retriever.Option) (*search.Request, error) {
+
+	options := retriever.GetCommonOptions(&retriever.Options{
+		Index:          &conf.Index,
+		TopK:           &conf.TopK,
+		ScoreThreshold: conf.ScoreThreshold,
+		Embedding:      conf.Embedding,
+	}, opts...)
+
 	var sq SparseVectorTextExpansionQuery
 	if err := json.Unmarshal([]byte(query), &sq); err != nil {
 		return nil, fmt.Errorf("[BuildRequest][SearchModeSparseVectorTextExpansion] parse query failed, %w", err)

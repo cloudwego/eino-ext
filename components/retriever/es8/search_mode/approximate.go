@@ -26,13 +26,14 @@ import (
 
 	"github.com/cloudwego/eino/components/retriever"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 // SearchModeApproximate retrieve with multiple approximate strategy (filter+knn+rrf)
 // knn: https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html
 // rrf: https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html
-func SearchModeApproximate(config *ApproximateConfig) SearchMode {
+func SearchModeApproximate(config *ApproximateConfig) es8.SearchMode {
 	return &approximate{config}
 }
 
@@ -85,7 +86,15 @@ type approximate struct {
 	config *ApproximateConfig
 }
 
-func (a *approximate) BuildRequest(ctx context.Context, query string, options *retriever.Options) (*search.Request, error) {
+func (a *approximate) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error) {
+
+	options := retriever.GetCommonOptions(&retriever.Options{
+		Index:          &conf.Index,
+		TopK:           &conf.TopK,
+		ScoreThreshold: conf.ScoreThreshold,
+		Embedding:      conf.Embedding,
+	}, opts...)
+
 	var appReq ApproximateQuery
 	if err := json.Unmarshal([]byte(query), &appReq); err != nil {
 		return nil, fmt.Errorf("[BuildRequest][SearchModeApproximate] parse query failed, %w", err)

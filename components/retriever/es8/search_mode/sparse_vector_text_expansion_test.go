@@ -27,6 +27,7 @@ import (
 
 	"github.com/cloudwego/eino/components/retriever"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
@@ -65,7 +66,12 @@ func TestSearchModeSparseVectorTextExpansion(t *testing.T) {
 			}
 
 			query, _ := sq.ToRetrieverQuery()
-			req, err := s.BuildRequest(ctx, query, &retriever.Options{TopK: of(10), ScoreThreshold: of(1.1)})
+
+			conf := &es8.RetrieverConfig{}
+			req, err := s.BuildRequest(ctx, conf, query,
+				retriever.WithTopK(10),
+				retriever.WithScoreThreshold(1.1))
+
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req, convey.ShouldNotBeNil)
 			b, err := json.Marshal(req)

@@ -24,16 +24,26 @@ import (
 
 	"github.com/cloudwego/eino/components/retriever"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
-func SearchModeExactMatch() SearchMode {
+func SearchModeExactMatch() es8.SearchMode {
 	return &exactMatch{}
 }
 
 type exactMatch struct{}
 
-func (e exactMatch) BuildRequest(ctx context.Context, query string, options *retriever.Options) (*search.Request, error) {
+func (e exactMatch) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
+	opts ...retriever.Option) (*search.Request, error) {
+
+	options := retriever.GetCommonOptions(&retriever.Options{
+		Index:          &conf.Index,
+		TopK:           &conf.TopK,
+		ScoreThreshold: conf.ScoreThreshold,
+		Embedding:      conf.Embedding,
+	}, opts...)
+
 	q := &types.Query{
 		Match: map[string]types.MatchQuery{
 			field_mapping.DocFieldNameContent: {Query: query},

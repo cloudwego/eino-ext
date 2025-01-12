@@ -28,6 +28,7 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
@@ -78,7 +79,8 @@ func TestSearchModeApproximate(t *testing.T) {
 				sq, err := aq.ToRetrieverQuery()
 				convey.So(err, convey.ShouldBeNil)
 
-				req, err := a.BuildRequest(ctx, sq, &retriever.Options{Embedding: nil})
+				conf := &es8.RetrieverConfig{}
+				req, err := a.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(nil))
 				convey.So(err, convey.ShouldBeNil)
 				b, err := json.Marshal(req)
 				convey.So(err, convey.ShouldBeNil)
@@ -104,7 +106,8 @@ func TestSearchModeApproximate(t *testing.T) {
 
 				sq, err := aq.ToRetrieverQuery()
 				convey.So(err, convey.ShouldBeNil)
-				req, err := a.BuildRequest(ctx, sq, &retriever.Options{Embedding: &mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}})
+				conf := &es8.RetrieverConfig{}
+				req, err := a.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}))
 				convey.So(err, convey.ShouldBeNil)
 				b, err := json.Marshal(req)
 				convey.So(err, convey.ShouldBeNil)
@@ -136,11 +139,11 @@ func TestSearchModeApproximate(t *testing.T) {
 
 				sq, err := aq.ToRetrieverQuery()
 				convey.So(err, convey.ShouldBeNil)
-				req, err := a.BuildRequest(ctx, sq, &retriever.Options{
-					Embedding:      &mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}},
-					TopK:           of(10),
-					ScoreThreshold: of(1.1),
-				})
+
+				conf := &es8.RetrieverConfig{}
+				req, err := a.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}),
+					retriever.WithTopK(10),
+					retriever.WithScoreThreshold(1.1))
 				convey.So(err, convey.ShouldBeNil)
 				b, err := json.Marshal(req)
 				convey.So(err, convey.ShouldBeNil)

@@ -52,6 +52,10 @@ type RetrieverConfig struct {
 	Embedding embedding.Embedder
 }
 
+type SearchMode interface { // nolint: byted_s_interface_name
+	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error)
+}
+
 type Retriever struct {
 	client *elasticsearch.TypedClient
 	config *RetrieverConfig

@@ -22,15 +22,19 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 
 	"github.com/cloudwego/eino/components/retriever"
+
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 )
 
-func SearchModeRawStringRequest() SearchMode {
+func SearchModeRawStringRequest() es8.SearchMode {
 	return &rawString{}
 }
 
 type rawString struct{}
 
-func (r rawString) BuildRequest(_ context.Context, query string, _ *retriever.Options) (*search.Request, error) {
+func (r rawString) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
+	opts ...retriever.Option) (*search.Request, error) {
+
 	req, err := search.NewRequest().FromJSON(query)
 	if err != nil {
 		return nil, err

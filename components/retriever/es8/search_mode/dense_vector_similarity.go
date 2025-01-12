@@ -26,12 +26,13 @@ import (
 
 	"github.com/cloudwego/eino/components/retriever"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 // SearchModeDenseVectorSimilarity calculate embedding similarity between dense_vector field and query
 // see: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/query-dsl-script-score-query.html#vector-functions
-func SearchModeDenseVectorSimilarity(typ DenseVectorSimilarityType) SearchMode {
+func SearchModeDenseVectorSimilarity(typ DenseVectorSimilarityType) es8.SearchMode {
 	return &denseVectorSimilarity{script: denseVectorScriptMap[typ]}
 }
 
@@ -54,7 +55,16 @@ type denseVectorSimilarity struct {
 	script string
 }
 
-func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, query string, options *retriever.Options) (*search.Request, error) {
+func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
+	opts ...retriever.Option) (*search.Request, error) {
+
+	options := retriever.GetCommonOptions(&retriever.Options{
+		Index:          &conf.Index,
+		TopK:           &conf.TopK,
+		ScoreThreshold: conf.ScoreThreshold,
+		Embedding:      conf.Embedding,
+	}, opts...)
+
 	var dq DenseVectorSimilarityQuery
 	if err := json.Unmarshal([]byte(query), &dq); err != nil {
 		return nil, fmt.Errorf("[BuildRequest][SearchModeDenseVectorSimilarity] parse query failed, %w", err)
