@@ -224,7 +224,7 @@ func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 		fdlNode.AllowOperate = generic.ValidateInputReflectTypeSupported(node.InputType)
 
 		fdlNode.ComponentSchema = &devmodel.ComponentSchema{
-			Component:  devmodel.Component(node.Component),
+			Component:  node.Component,
 			InputType:  reassembleJsonSchema(parseReflectTypeToJsonSchema(node.InputType), len(node.InputKey) != 0),
 			OutputType: reassembleJsonSchema(parseReflectTypeToJsonSchema(node.OutputType), len(node.OutputKey) != 0),
 		}

@@ -21,6 +21,10 @@
 
 package model
 
+import (
+	"github.com/cloudwego/eino/components"
+)
+
 const (
 	Version = "2.0.0"
 )
@@ -47,11 +51,11 @@ const (
 )
 
 type GraphSchema struct {
-	Name      string    `json:"name"`
-	Component Component `json:"component"`
-	Nodes     []*Node   `json:"nodes,omitempty"`
-	Edges     []*Edge   `json:"edges,omitempty"`
-	Branches  []*Branch `json:"branches"`
+	Name      string               `json:"name"`
+	Component components.Component `json:"component"`
+	Nodes     []*Node              `json:"nodes,omitempty"`
+	Edges     []*Edge              `json:"edges,omitempty"`
+	Branches  []*Branch            `json:"branches"`
 
 	// graph config option
 	NodeTriggerMode NodeTriggerMode `json:"node_trigger_mode"`
@@ -142,7 +146,7 @@ type JsonSchema struct {
 }
 
 type GoDefinition struct {
-	LibraryRef *Library `json:"libraryRef,omitempty"`
+	LibraryRef Library `json:"libraryRef,omitempty"`
 	// TypeString returns a string representation of the type.
 	// The string representation may use shortened package names
 	// (e.g., base64 instead of "encoding/base64") and is not
@@ -166,23 +170,6 @@ type Library struct {
 	PkgPath string `json:"pkgPath"`
 }
 
-type Component string
-
-const (
-	ComponentOfLambda       Component = "Lambda"
-	ComponentOfLoader       Component = "Loader"
-	ComponentOfTransformer  Component = "DocumentTransformer"
-	ComponentOfTool         Component = "Tool"
-	ComponentOfToolsNode    Component = "ToolsNode"
-	ComponentOfChatModel    Component = "ChatModel"
-	ComponentOfChatTemplate Component = "ChatTemplate"
-	ComponentOfIndexer      Component = "Indexer"
-	ComponentOfEmbedder     Component = "Embedder"
-	ComponentOfRetriever    Component = "Retriever"
-	ComponentOfPassthrough  Component = "Passthrough"
-	ComponentOfGraph        Component = "Graph"
-)
-
 type ComponentSource string
 
 const (
@@ -191,12 +178,12 @@ const (
 )
 
 type ComponentSchema struct {
-	Component       Component       `json:"component"`           // type of component (Lambda ChatModel....)
-	ComponentSource ComponentSource `json:"component_source"`    // component properties, official components, custom components
-	ImplType        string          `json:"impl_type,omitempty"` // The specific implementer name of the component type. For example, openai is the specific implementer of ChatModel.
-	InputType       *JsonSchema     `json:"input_type,omitempty"`
-	OutputType      *JsonSchema     `json:"output_type,omitempty"`
-	Method          string          `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
+	Component       components.Component `json:"component"`           // type of component (Lambda ChatModel....)
+	ComponentSource ComponentSource      `json:"component_source"`    // component properties, official components, custom components
+	ImplType        string               `json:"impl_type,omitempty"` // The specific implementer name of the component type. For example, openai is the specific implementer of ChatModel.
+	InputType       *JsonSchema          `json:"input_type,omitempty"`
+	OutputType      *JsonSchema          `json:"output_type,omitempty"`
+	Method          string               `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
 
 	Slots []Slot `json:"slots,omitempty"`
 
