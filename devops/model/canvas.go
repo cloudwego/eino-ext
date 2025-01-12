@@ -187,8 +187,9 @@ type ComponentSchema struct {
 
 	Slots []Slot `json:"slots,omitempty"`
 
-	Config        *ConfigSchema        `json:"config,omitempty"`
-	ExtraProperty *ExtraPropertySchema `json:"extra_property,omitempty"`
+	Config          *ConfigSchema        `json:"config,omitempty"`
+	ExtraProperty   *ExtraPropertySchema `json:"extra_property,omitempty"`
+	IsIOTypeMutable bool                 `json:"is_io_type_mutable"`
 }
 
 type ConfigSchema struct {
