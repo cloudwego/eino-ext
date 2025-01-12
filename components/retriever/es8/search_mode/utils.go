@@ -35,7 +35,7 @@ func makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Conte
 
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
-	return callbacks.SwitchRunInfo(ctx, runInfo)
+	return callbacks.ReuseHandlers(ctx, runInfo)
 }
 
 func f64To32(f64 []float64) []float32 {

@@ -25,12 +25,13 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
 
-	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
 )
 
 type IndexerConfig struct {
@@ -161,8 +162,8 @@ func (i *Indexer) vectorQueryItems(ctx context.Context, docs []*schema.Document,
 				return item, fmt.Errorf("[vectorQueryItems] field name not found or type incorrect, name=%s, doc=%v", kv.FieldName, doc)
 			}
 
-			if kv.FieldName == field_mapping.DocFieldNameContent && len(doc.Vector()) > 0 {
-				mp[string(kv.FieldNameVector)] = doc.Vector()
+			if kv.FieldName == field_mapping.DocFieldNameContent && len(doc.DenseVector()) > 0 {
+				mp[string(kv.FieldNameVector)] = doc.DenseVector()
 			} else {
 				texts = append(texts, str)
 			}
@@ -184,7 +185,7 @@ func (i *Indexer) vectorQueryItems(ctx context.Context, docs []*schema.Document,
 
 			vIdx := 0
 			for _, kv := range i.config.VectorFields {
-				if kv.FieldName == field_mapping.DocFieldNameContent && len(doc.Vector()) > 0 {
+				if kv.FieldName == field_mapping.DocFieldNameContent && len(doc.DenseVector()) > 0 {
 					continue
 				}
 
@@ -224,7 +225,7 @@ func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) 
 
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
-	return callbacks.SwitchRunInfo(ctx, runInfo)
+	return callbacks.ReuseHandlers(ctx, runInfo)
 }
 
 func (i *Indexer) GetType() string {

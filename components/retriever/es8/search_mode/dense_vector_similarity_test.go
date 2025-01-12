@@ -26,8 +26,9 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 	"github.com/smartystreets/goconvey/convey"
 
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 	"github.com/cloudwego/eino/components/retriever"
+
+	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 func TestSearchModeDenseVectorSimilarity(t *testing.T) {
@@ -85,8 +86,8 @@ func TestSearchModeDenseVectorSimilarity(t *testing.T) {
 				}
 
 				for typ, exp := range typ2Exp {
-					nd := &denseVectorSimilarity{script: denseVectorScriptMap[typ]}
-					req, err := nd.BuildRequest(ctx, sq, &retriever.Options{
+					similarity := &denseVectorSimilarity{script: denseVectorScriptMap[typ]}
+					req, err := similarity.BuildRequest(ctx, sq, &retriever.Options{
 						Embedding:      mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}},
 						TopK:           of(10),
 						ScoreThreshold: of(1.1),

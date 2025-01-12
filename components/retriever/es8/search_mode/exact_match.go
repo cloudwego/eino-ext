@@ -22,8 +22,9 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 	"github.com/cloudwego/eino/components/retriever"
+
+	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 func SearchModeExactMatch() SearchMode {

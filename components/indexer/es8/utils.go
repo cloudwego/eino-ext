@@ -17,8 +17,9 @@
 package es8
 
 import (
-	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
 )
 
 func GetType() string {

@@ -19,8 +19,9 @@ package field_mapping
 import (
 	"fmt"
 
-	"github.com/cloudwego/eino-ext/components/indexer/es8/internal"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/indexer/es8/internal"
 )
 
 // SetExtraDataFields set data fields for es

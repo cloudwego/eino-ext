@@ -24,13 +24,14 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/internal"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/search_mode"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
+	"github.com/cloudwego/eino-ext/components/retriever/es8/internal"
+	"github.com/cloudwego/eino-ext/components/retriever/es8/search_mode"
 )
 
 type RetrieverConfig struct {

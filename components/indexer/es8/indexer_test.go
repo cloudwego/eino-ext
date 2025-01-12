@@ -25,10 +25,11 @@ import (
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
 
-	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
 )
 
 func TestVectorQueryItems(t *testing.T) {
@@ -37,7 +38,7 @@ func TestVectorQueryItems(t *testing.T) {
 		extField := "extra_field"
 
 		d1 := &schema.Document{ID: "123", Content: "asd"}
-		d1.WithVector([]float64{2.3, 4.4})
+		d1.WithDenseVector([]float64{2.3, 4.4})
 		field_mapping.SetExtraDataFields(d1, map[string]interface{}{extField: "ext_1"})
 
 		d2 := &schema.Document{ID: "456", Content: "qwe"}
