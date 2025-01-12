@@ -9,9 +9,9 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 	"github.com/smartystreets/goconvey/convey"
 
-	"code.byted.org/flow/eino-ext/components/retriever/es8/field_mapping"
-	"code.byted.org/flow/eino/components/embedding"
-	"code.byted.org/flow/eino/components/retriever"
+	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/retriever"
 )
 
 func TestSearchModeApproximate(t *testing.T) {

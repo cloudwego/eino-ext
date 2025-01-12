@@ -8,13 +8,13 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 
-	"code.byted.org/flow/eino-ext/components/retriever/es8/field_mapping"
-	"code.byted.org/flow/eino-ext/components/retriever/es8/internal"
-	"code.byted.org/flow/eino-ext/components/retriever/es8/search_mode"
-	"code.byted.org/flow/eino/callbacks"
-	"code.byted.org/flow/eino/components/embedding"
-	"code.byted.org/flow/eino/components/retriever"
-	"code.byted.org/flow/eino/schema"
+	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
+	"github.com/cloudwego/eino-ext/components/retriever/es8/internal"
+	"github.com/cloudwego/eino-ext/components/retriever/es8/search_mode"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 )
 
 type RetrieverConfig struct {

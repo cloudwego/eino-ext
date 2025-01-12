@@ -5,7 +5,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 
-	"code.byted.org/flow/eino/components/retriever"
+	"github.com/cloudwego/eino/components/retriever"
 )
 
 func SearchModeRawStringRequest() SearchMode {

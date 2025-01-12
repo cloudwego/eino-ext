@@ -3,9 +3,9 @@ package search_mode
 import (
 	"context"
 
-	"code.byted.org/flow/eino/callbacks"
-	"code.byted.org/flow/eino/components"
-	"code.byted.org/flow/eino/components/embedding"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/components/embedding"
 )
 
 func makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {

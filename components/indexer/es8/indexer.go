@@ -9,12 +9,12 @@ import (
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
 
-	"code.byted.org/flow/eino-ext/components/indexer/es8/field_mapping"
-	"code.byted.org/flow/eino/callbacks"
-	"code.byted.org/flow/eino/components"
-	"code.byted.org/flow/eino/components/embedding"
-	"code.byted.org/flow/eino/components/indexer"
-	"code.byted.org/flow/eino/schema"
+	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/indexer"
+	"github.com/cloudwego/eino/schema"
 )
 
 type IndexerConfig struct {

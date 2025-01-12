@@ -3,8 +3,8 @@ package field_mapping
 import (
 	"fmt"
 
-	"code.byted.org/flow/eino-ext/components/indexer/es8/internal"
-	"code.byted.org/flow/eino/schema"
+	"github.com/cloudwego/eino-ext/components/indexer/es8/internal"
+	"github.com/cloudwego/eino/schema"
 )
 
 // SetExtraDataFields set data fields for es

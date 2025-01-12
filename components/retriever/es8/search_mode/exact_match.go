@@ -6,8 +6,8 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 
-	"code.byted.org/flow/eino-ext/components/retriever/es8/field_mapping"
-	"code.byted.org/flow/eino/components/retriever"
+	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
+	"github.com/cloudwego/eino/components/retriever"
 )
 
 func SearchModeExactMatch() SearchMode {

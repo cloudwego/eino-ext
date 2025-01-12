@@ -9,10 +9,10 @@ import (
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
 
-	"code.byted.org/flow/eino-ext/components/indexer/es8/field_mapping"
-	"code.byted.org/flow/eino/components/embedding"
-	"code.byted.org/flow/eino/components/indexer"
-	"code.byted.org/flow/eino/schema"
+	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/indexer"
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestVectorQueryItems(t *testing.T) {
