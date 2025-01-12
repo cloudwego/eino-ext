@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * You may obtain a copy ptrWithoutZero the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -44,10 +44,10 @@ func TestSearchModeApproximate(t *testing.T) {
 				Filters: []types.Query{
 					{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
 				},
-				Boost:         of(float32(1.0)),
-				K:             of(10),
-				NumCandidates: of(100),
-				Similarity:    of(float32(0.5)),
+				Boost:         ptrWithoutZero(float32(1.0)),
+				K:             ptrWithoutZero(10),
+				NumCandidates: ptrWithoutZero(100),
+				Similarity:    ptrWithoutZero(float32(0.5)),
 			}
 
 			sq, err := aq.ToRetrieverQuery()
@@ -66,14 +66,14 @@ func TestSearchModeApproximate(t *testing.T) {
 						FieldName:       field_mapping.DocFieldNameContent,
 						Value:           "content",
 					},
-					QueryVectorBuilderModelID: of("mock_model"),
+					QueryVectorBuilderModelID: ptrWithoutZero("mock_model"),
 					Filters: []types.Query{
 						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
 					},
-					Boost:         of(float32(1.0)),
-					K:             of(10),
-					NumCandidates: of(100),
-					Similarity:    of(float32(0.5)),
+					Boost:         ptrWithoutZero(float32(1.0)),
+					K:             ptrWithoutZero(10),
+					NumCandidates: ptrWithoutZero(100),
+					Similarity:    ptrWithoutZero(float32(0.5)),
 				}
 
 				sq, err := aq.ToRetrieverQuery()
@@ -98,10 +98,10 @@ func TestSearchModeApproximate(t *testing.T) {
 					Filters: []types.Query{
 						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
 					},
-					Boost:         of(float32(1.0)),
-					K:             of(10),
-					NumCandidates: of(100),
-					Similarity:    of(float32(0.5)),
+					Boost:         ptrWithoutZero(float32(1.0)),
+					K:             ptrWithoutZero(10),
+					NumCandidates: ptrWithoutZero(100),
+					Similarity:    ptrWithoutZero(float32(0.5)),
 				}
 
 				sq, err := aq.ToRetrieverQuery()
@@ -118,8 +118,8 @@ func TestSearchModeApproximate(t *testing.T) {
 				a := &approximate{config: &ApproximateConfig{
 					Hybrid:          true,
 					Rrf:             true,
-					RrfRankConstant: of(int64(10)),
-					RrfWindowSize:   of(int64(5)),
+					RrfRankConstant: ptrWithoutZero(int64(10)),
+					RrfWindowSize:   ptrWithoutZero(int64(5)),
 				}}
 
 				aq := &ApproximateQuery{
@@ -131,10 +131,10 @@ func TestSearchModeApproximate(t *testing.T) {
 					Filters: []types.Query{
 						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
 					},
-					Boost:         of(float32(1.0)),
-					K:             of(10),
-					NumCandidates: of(100),
-					Similarity:    of(float32(0.5)),
+					Boost:         ptrWithoutZero(float32(1.0)),
+					K:             ptrWithoutZero(10),
+					NumCandidates: ptrWithoutZero(100),
+					Similarity:    ptrWithoutZero(float32(0.5)),
 				}
 
 				sq, err := aq.ToRetrieverQuery()

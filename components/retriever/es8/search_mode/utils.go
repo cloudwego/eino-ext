@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * You may obtain a copy ptrWithoutZero the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -47,6 +47,10 @@ func f64To32(f64 []float64) []float32 {
 	return f32
 }
 
-func of[T any](v T) *T {
+func ptrWithoutZero[T string | int64 | int | float64 | float32](v T) *T {
+	var zero T
+	if zero == v {
+		return nil
+	}
 	return &v
 }

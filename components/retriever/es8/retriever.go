@@ -31,7 +31,6 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/internal"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/search_mode"
 )
 
 type RetrieverConfig struct {
@@ -47,12 +46,12 @@ type RetrieverConfig struct {
 	// use search_mode.SearchModeDenseVectorSimilarity with search_mode.DenseVectorSimilarityQuery
 	// use search_mode.SearchModeSparseVectorTextExpansion with search_mode.SparseVectorTextExpansionQuery
 	// use search_mode.SearchModeRawStringRequest with json search request
-	SearchMode search_mode.SearchMode `json:"search_mode"`
+	SearchMode SearchMode `json:"search_mode"`
 	// Embedding vectorization method, must provide when SearchMode needed
 	Embedding embedding.Embedder
 }
 
-type SearchMode interface { // nolint: byted_s_interface_name
+type SearchMode interface {
 	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error)
 }
 
@@ -97,7 +96,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		ScoreThreshold: options.ScoreThreshold,
 	})
 
-	req, err := r.config.SearchMode.BuildRequest(ctx, query, options)
+	req, err := r.config.SearchMode.BuildRequest(ctx, r.config, query, opts...)
 	if err != nil {
 		return nil, err
 	}

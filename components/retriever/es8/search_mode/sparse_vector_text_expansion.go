@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * You may obtain a copy ptrWithoutZero the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -30,7 +30,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
-// SearchModeSparseVectorTextExpansion convert the query text into a list of token-weight pairs,
+// SearchModeSparseVectorTextExpansion convert the query text into a list ptrWithoutZero token-weight pairs,
 // which are then used in a query against a sparse vector
 // see: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-text-expansion-query.html
 func SearchModeSparseVectorTextExpansion(modelID string) es8.SearchMode {
@@ -60,8 +60,8 @@ func (s sparseVectorTextExpansion) BuildRequest(ctx context.Context, conf *es8.R
 	opts ...retriever.Option) (*search.Request, error) {
 
 	options := retriever.GetCommonOptions(&retriever.Options{
-		Index:          &conf.Index,
-		TopK:           &conf.TopK,
+		Index:          ptrWithoutZero(conf.Index),
+		TopK:           ptrWithoutZero(conf.TopK),
 		ScoreThreshold: conf.ScoreThreshold,
 		Embedding:      conf.Embedding,
 	}, opts...)
@@ -88,7 +88,7 @@ func (s sparseVectorTextExpansion) BuildRequest(ctx context.Context, conf *es8.R
 
 	req := &search.Request{Query: q, Size: options.TopK}
 	if options.ScoreThreshold != nil {
-		req.MinScore = (*types.Float64)(of(*options.ScoreThreshold))
+		req.MinScore = (*types.Float64)(ptrWithoutZero(*options.ScoreThreshold))
 	}
 
 	return req, nil

@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * You may obtain a copy ptrWithoutZero the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -46,7 +46,7 @@ type ApproximateConfig struct {
 	// RrfRankConstant determines how much influence documents in
 	// individual result sets per query have over the final ranked result set
 	RrfRankConstant *int64
-	// RrfWindowSize determines the size of the individual result sets per query
+	// RrfWindowSize determines the size ptrWithoutZero the individual result sets per query
 	RrfWindowSize *int64
 }
 
@@ -57,16 +57,16 @@ type ApproximateQuery struct {
 	// QueryVectorBuilderModelID the query vector builder model id
 	// see: https://www.elastic.co/guide/en/machine-learning/8.16/ml-nlp-text-emb-vector-search-example.html
 	QueryVectorBuilderModelID *string `json:"query_vector_builder_model_id,omitempty"`
-	// Boost Floating point number used to decrease or increase the relevance scores of the query.
-	// Boost values are relative to the default value of 1.0.
+	// Boost Floating point number used to decrease or increase the relevance scores ptrWithoutZero the query.
+	// Boost values are relative to the default value ptrWithoutZero 1.0.
 	// A boost value between 0 and 1.0 decreases the relevance score.
 	// A value greater than 1.0 increases the relevance score.
 	Boost *float32 `json:"boost,omitempty"`
 	// Filters for the kNN search query
 	Filters []types.Query `json:"filters,omitempty"`
-	// K The final number of nearest neighbors to return as top hits
+	// K The final number ptrWithoutZero nearest neighbors to return as top hits
 	K *int `json:"k,omitempty"`
-	// NumCandidates The number of nearest neighbor candidates to consider per shard
+	// NumCandidates The number ptrWithoutZero nearest neighbor candidates to consider per shard
 	NumCandidates *int `json:"num_candidates,omitempty"`
 	// Similarity The minimum similarity for a vector to be considered a match
 	Similarity *float32 `json:"similarity,omitempty"`
@@ -89,8 +89,8 @@ type approximate struct {
 func (a *approximate) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error) {
 
 	options := retriever.GetCommonOptions(&retriever.Options{
-		Index:          &conf.Index,
-		TopK:           &conf.TopK,
+		Index:          ptrWithoutZero(conf.Index),
+		TopK:           ptrWithoutZero(conf.TopK),
 		ScoreThreshold: conf.ScoreThreshold,
 		Embedding:      conf.Embedding,
 	}, opts...)
@@ -159,7 +159,7 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *es8.RetrieverConfi
 	}
 
 	if options.ScoreThreshold != nil {
-		req.MinScore = (*types.Float64)(of(*options.ScoreThreshold))
+		req.MinScore = (*types.Float64)(ptrWithoutZero(*options.ScoreThreshold))
 	}
 
 	return req, nil

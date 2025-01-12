@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * You may obtain a copy ptrWithoutZero the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -59,8 +59,8 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 	opts ...retriever.Option) (*search.Request, error) {
 
 	options := retriever.GetCommonOptions(&retriever.Options{
-		Index:          &conf.Index,
-		TopK:           &conf.TopK,
+		Index:          ptrWithoutZero(conf.Index),
+		TopK:           ptrWithoutZero(conf.TopK),
 		ScoreThreshold: conf.ScoreThreshold,
 		Embedding:      conf.Embedding,
 	}, opts...)
@@ -92,7 +92,7 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 	q := &types.Query{
 		ScriptScore: &types.ScriptScoreQuery{
 			Script: types.Script{
-				Source: of(fmt.Sprintf(d.script, dq.FieldKV.FieldNameVector)),
+				Source: ptrWithoutZero(fmt.Sprintf(d.script, dq.FieldKV.FieldNameVector)),
 				Params: map[string]json.RawMessage{"embedding": vb},
 			},
 		},
@@ -110,7 +110,7 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 
 	req := &search.Request{Query: q, Size: options.TopK}
 	if options.ScoreThreshold != nil {
-		req.MinScore = (*types.Float64)(of(*options.ScoreThreshold))
+		req.MinScore = (*types.Float64)(ptrWithoutZero(*options.ScoreThreshold))
 	}
 
 	return req, nil
