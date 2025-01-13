@@ -230,7 +230,7 @@ func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 		}
 
 		if implType, ok := components.GetType(node.Instance); ok {
-			fdlNode.ComponentSchema.ImplType = implType
+			fdlNode.ComponentSchema.Identifier = implType
 		}
 
 		for _, nn := range gi.Option.NodeInputUnmarshal {

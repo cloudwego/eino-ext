@@ -178,12 +178,17 @@ const (
 )
 
 type ComponentSchema struct {
-	Component       components.Component `json:"component"`           // type of component (Lambda ChatModel....)
-	ComponentSource ComponentSource      `json:"component_source"`    // component properties, official components, custom components
-	ImplType        string               `json:"impl_type,omitempty"` // The specific implementer name of the component type. For example, openai is the specific implementer of ChatModel.
-	InputType       *JsonSchema          `json:"input_type,omitempty"`
-	OutputType      *JsonSchema          `json:"output_type,omitempty"`
-	Method          string               `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
+	// Name returns the displayed name of the component
+	Name string `json:"name"`
+	// Component returns type of component (Lambda ChatModel....)
+	Component components.Component `json:"component"`
+	// ComponentSource returns the source of the component, such as official and custom.
+	ComponentSource ComponentSource `json:"component_source"`
+	// Identifier returns the identifier of the component implementation, such as eino-ext/model/ark
+	Identifier string      `json:"identifier,omitempty"`
+	InputType  *JsonSchema `json:"input_type,omitempty"`
+	OutputType *JsonSchema `json:"output_type,omitempty"`
+	Method     string      `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
 
 	Slots []Slot `json:"slots,omitempty"`
 
