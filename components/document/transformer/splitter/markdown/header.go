@@ -82,7 +82,7 @@ func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document,
 	return ret, nil
 }
 
-func (r *headerSplitter) GetType() string {
+func (h *headerSplitter) GetType() string {
 	return "MarkdownHeaderSplitter"
 }
 

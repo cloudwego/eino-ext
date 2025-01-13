@@ -50,6 +50,12 @@ func WithMaxTaskQueueSize(maxTaskQueueSize int) Option {
 	}
 }
 
+func WithFlushAt(flushAt int) Option {
+	return func(o *options) {
+		o.flushAt = flushAt
+	}
+}
+
 func WithFlushInterval(flushInterval time.Duration) Option {
 	return func(o *options) {
 		o.flushInterval = flushInterval
