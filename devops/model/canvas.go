@@ -112,9 +112,9 @@ type Branch struct {
 }
 
 type Condition struct {
-	Method    string `json:"method"`
-	IsStream  bool   `json:"is_stream"`
-	InputType string `json:"input_type"`
+	Method    string      `json:"method"`
+	IsStream  bool        `json:"is_stream"`
+	InputType *JsonSchema `json:"input_type"`
 }
 
 type JsonType string
