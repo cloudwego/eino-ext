@@ -147,12 +147,12 @@ type JsonSchema struct {
 
 type GoDefinition struct {
 	LibraryRef Library `json:"libraryRef,omitempty"`
-	// TypeString returns a string representation of the type.
+	// TypeName returns a string representation of the type.
 	// The string representation may use shortened package names
 	// (e.g., base64 instead of "encoding/base64") and is not
 	// guaranteed to be unique among types. To test for type identity,
 	// compare the Types directly.
-	TypeString string `json:"typeString"`
+	TypeName string `json:"typeName"`
 	// Kind exclude any pointer kind, such as Pointer, UnsafePointer, etc.
 	Kind string `json:"kind"`
 	// IsPtr whether the type is a pointer type.
