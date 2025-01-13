@@ -60,13 +60,13 @@ type GraphSchema struct {
 	// graph config option
 	NodeTriggerMode NodeTriggerMode `json:"node_trigger_mode"`
 	GenLocalState   *GenLocalState  `json:"gen_local_state,omitempty"`
-	InputType       string          `json:"input_type"`
-	OutputType      string          `json:"output_type"`
+	InputType       *JsonSchema     `json:"input_type"`
+	OutputType      *JsonSchema     `json:"output_type"`
 }
 
 type GenLocalState struct {
-	Method     string `json:"method"`
-	OutputType string `json:"output_type"`
+	Method     string      `json:"method"`
+	OutputType *JsonSchema `json:"output_type"`
 }
 
 type Node struct {
