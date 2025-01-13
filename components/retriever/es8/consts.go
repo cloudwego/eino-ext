@@ -17,3 +17,7 @@
 package es8
 
 const typ = "ElasticSearch8"
+
+func GetType() string {
+	return typ
+}

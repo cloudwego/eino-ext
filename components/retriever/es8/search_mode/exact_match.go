@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy ptrWithoutZero the License at
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,20 +19,19 @@ package search_mode
 import (
 	"context"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
+	"github.com/cloudwego/eino/components/retriever"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
-
-	"github.com/cloudwego/eino/components/retriever"
-
-	"github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
-func SearchModeExactMatch() es8.SearchMode {
-	return &exactMatch{}
+func SearchModeExactMatch(queryFieldName string) es8.SearchMode {
+	return &exactMatch{queryFieldName}
 }
 
-type exactMatch struct{}
+type exactMatch struct {
+	name string
+}
 
 func (e exactMatch) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
 	opts ...retriever.Option) (*search.Request, error) {
@@ -46,7 +45,7 @@ func (e exactMatch) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig,
 
 	q := &types.Query{
 		Match: map[string]types.MatchQuery{
-			field_mapping.DocFieldNameContent: {Query: query},
+			e.name: {Query: query},
 		},
 	}
 

@@ -28,99 +28,85 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
 )
 
 func TestVectorQueryItems(t *testing.T) {
-	PatchConvey("test vectorQueryItems", t, func() {
+	PatchConvey("test makeBulkItems", t, func() {
 		ctx := context.Background()
 		extField := "extra_field"
 
-		d1 := &schema.Document{ID: "123", Content: "asd"}
-		d1.WithDenseVector([]float64{2.3, 4.4})
-		field_mapping.SetExtraDataFields(d1, map[string]interface{}{extField: "ext_1"})
-
-		d2 := &schema.Document{ID: "456", Content: "qwe"}
-		field_mapping.SetExtraDataFields(d2, map[string]interface{}{extField: "ext_2"})
-
+		d1 := &schema.Document{ID: "123", Content: "asd", MetaData: map[string]any{extField: "ext_1"}}
+		d2 := &schema.Document{ID: "456", Content: "qwe", MetaData: map[string]any{extField: "ext_2"}}
 		docs := []*schema.Document{d1, d2}
 
-		PatchConvey("test field not found", func() {
+		PatchConvey("test FieldMapping error", func() {
+			mockErr := fmt.Errorf("test err")
 			i := &Indexer{
 				config: &IndexerConfig{
 					Index: "mock_index",
-					VectorFields: []field_mapping.FieldKV{
-						field_mapping.DefaultFieldKV("not_found_field"),
+					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
+						return nil, nil, mockErr
 					},
 				},
 			}
 
-			bulks, err := i.vectorQueryItems(ctx, docs, &indexer.Options{
+			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{
 				Embedding: &mockEmbedding{size: []int{1}, mockVector: []float64{2.1}},
 			})
-			convey.So(err, convey.ShouldBeError, fmt.Sprintf("[vectorQueryItems] field name not found or type incorrect, name=not_found_field, doc=%v", d1))
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[makeBulkItems] FieldMapping failed, %w", mockErr))
 			convey.So(len(bulks), convey.ShouldEqual, 0)
 		})
 
 		PatchConvey("test emb not provided", func() {
 			i := &Indexer{
 				config: &IndexerConfig{
-					Index: "mock_index",
-					VectorFields: []field_mapping.FieldKV{
-						field_mapping.DefaultFieldKV(field_mapping.DocFieldNameContent),
-						field_mapping.DefaultFieldKV(field_mapping.FieldName(extField)),
-					},
+					Index:        "mock_index",
+					FieldMapping: defaultFieldMapping,
 				},
 			}
 
-			bulks, err := i.vectorQueryItems(ctx, docs, &indexer.Options{Embedding: nil})
-			convey.So(err, convey.ShouldBeError, "[vectorQueryItems] embedding not provided")
+			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{Embedding: nil})
+			convey.So(err, convey.ShouldBeError, "[makeBulkItems] embedding method not provided")
 			convey.So(len(bulks), convey.ShouldEqual, 0)
 		})
 
 		PatchConvey("test vector size invalid", func() {
 			i := &Indexer{
 				config: &IndexerConfig{
-					Index: "mock_index",
-					VectorFields: []field_mapping.FieldKV{
-						field_mapping.DefaultFieldKV(field_mapping.DocFieldNameContent),
-						field_mapping.DefaultFieldKV(field_mapping.FieldName(extField)),
-					},
+					Index:        "mock_index",
+					FieldMapping: defaultFieldMapping,
 				},
 			}
 
-			bulks, err := i.vectorQueryItems(ctx, docs, &indexer.Options{
+			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{
 				Embedding: &mockEmbedding{size: []int{2, 2}, mockVector: []float64{2.1}},
 			})
-			convey.So(err, convey.ShouldBeError, "[vectorQueryItems] invalid vector length, expected=1, got=2")
+			convey.So(err, convey.ShouldBeError, "[makeBulkItems] invalid vector length, expected=1, got=2")
 			convey.So(len(bulks), convey.ShouldEqual, 0)
 		})
 
 		PatchConvey("test success", func() {
 			i := &Indexer{
 				config: &IndexerConfig{
-					Index: "mock_index",
-					VectorFields: []field_mapping.FieldKV{
-						field_mapping.DefaultFieldKV(field_mapping.DocFieldNameContent),
-						field_mapping.DefaultFieldKV(field_mapping.FieldName(extField)),
-					},
+					Index:        "mock_index",
+					FieldMapping: defaultFieldMapping,
 				},
 			}
 
-			bulks, err := i.vectorQueryItems(ctx, docs, &indexer.Options{
-				Embedding: &mockEmbedding{size: []int{1, 2}, mockVector: []float64{2.1}},
+			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{
+				Embedding: &mockEmbedding{size: []int{1, 1}, mockVector: []float64{2.1}},
 			})
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(bulks), convey.ShouldEqual, 2)
 			exp := []string{
-				`{"eino_doc_content":"asd","extra_field":"ext_1","vector_eino_doc_content":[2.3,4.4],"vector_extra_field":[2.1]}`,
-				`{"eino_doc_content":"qwe","extra_field":"ext_2","vector_eino_doc_content":[2.1],"vector_extra_field":[2.1]}`,
+				`{"content":"asd","meta_data":{"extra_field":"ext_1"},"vector_content":[2.1]}`,
+				`{"content":"qwe","meta_data":{"extra_field":"ext_2"},"vector_content":[2.1]}`,
 			}
 
 			for idx, item := range bulks {
 				convey.So(item.Index, convey.ShouldEqual, i.config.Index)
 				b, err := io.ReadAll(item.Body)
+				fmt.Println(string(b))
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(string(b), convey.ShouldEqual, exp[idx])
 			}
@@ -146,4 +132,19 @@ func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts .
 	}
 
 	return resp, nil
+}
+
+func defaultFieldMapping(ctx context.Context, doc *schema.Document) (
+	fields map[string]any, needEmbeddingFields map[string]string, err error) {
+
+	fields = map[string]any{
+		"content":   doc.Content,
+		"meta_data": doc.MetaData,
+	}
+
+	needEmbeddingFields = map[string]string{
+		"vector_content": doc.Content,
+	}
+
+	return fields, needEmbeddingFields, nil
 }

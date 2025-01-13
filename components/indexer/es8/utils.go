@@ -16,27 +16,13 @@
 
 package es8
 
-import (
-	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/indexer/es8/field_mapping"
-)
-
 func GetType() string {
 	return typ
 }
 
-func toESDoc(doc *schema.Document) map[string]any {
-	mp := make(map[string]any)
-	if kvs, ok := field_mapping.GetExtraDataFields(doc); ok {
-		for k, v := range kvs {
-			mp[k] = v
-		}
-	}
-
-	mp[field_mapping.DocFieldNameContent] = doc.Content
-
-	return mp
+type tuple[A, B any] struct {
+	A A
+	B B
 }
 
 func chunk[T any](slice []T, size int) [][]T {

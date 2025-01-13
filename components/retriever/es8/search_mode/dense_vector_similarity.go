@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy ptrWithoutZero the License at
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -21,34 +21,16 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
+	"github.com/cloudwego/eino/components/retriever"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
-
-	"github.com/cloudwego/eino/components/retriever"
-
-	"github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 // SearchModeDenseVectorSimilarity calculate embedding similarity between dense_vector field and query
 // see: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/query-dsl-script-score-query.html#vector-functions
-func SearchModeDenseVectorSimilarity(typ DenseVectorSimilarityType) es8.SearchMode {
-	return &denseVectorSimilarity{script: denseVectorScriptMap[typ]}
-}
-
-type DenseVectorSimilarityQuery struct {
-	FieldKV field_mapping.FieldKV `json:"field_kv"`
-	Filters []types.Query         `json:"filters,omitempty"`
-}
-
-// ToRetrieverQuery convert approximate query to string query
-func (d *DenseVectorSimilarityQuery) ToRetrieverQuery() (string, error) {
-	b, err := json.Marshal(d)
-	if err != nil {
-		return "", fmt.Errorf("[ToRetrieverQuery] convert query failed, %w", err)
-	}
-
-	return string(b), nil
+func SearchModeDenseVectorSimilarity(typ DenseVectorSimilarityType, vectorFieldName string) es8.SearchMode {
+	return &denseVectorSimilarity{fmt.Sprintf(denseVectorScriptMap[typ], vectorFieldName)}
 }
 
 type denseVectorSimilarity struct {
@@ -58,24 +40,21 @@ type denseVectorSimilarity struct {
 func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
 	opts ...retriever.Option) (*search.Request, error) {
 
-	options := retriever.GetCommonOptions(&retriever.Options{
+	co := retriever.GetCommonOptions(&retriever.Options{
 		Index:          ptrWithoutZero(conf.Index),
 		TopK:           ptrWithoutZero(conf.TopK),
 		ScoreThreshold: conf.ScoreThreshold,
 		Embedding:      conf.Embedding,
 	}, opts...)
 
-	var dq DenseVectorSimilarityQuery
-	if err := json.Unmarshal([]byte(query), &dq); err != nil {
-		return nil, fmt.Errorf("[BuildRequest][SearchModeDenseVectorSimilarity] parse query failed, %w", err)
-	}
+	io := retriever.GetImplSpecificOptions[es8.ESImplOptions](nil, opts...)
 
-	emb := options.Embedding
+	emb := co.Embedding
 	if emb == nil {
 		return nil, fmt.Errorf("[BuildRequest][SearchModeDenseVectorSimilarity] embedding not provided")
 	}
 
-	vector, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), []string{dq.FieldKV.Value})
+	vector, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("[BuildRequest][SearchModeDenseVectorSimilarity] embedding failed, %w", err)
 	}
@@ -92,15 +71,15 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 	q := &types.Query{
 		ScriptScore: &types.ScriptScoreQuery{
 			Script: types.Script{
-				Source: ptrWithoutZero(fmt.Sprintf(d.script, dq.FieldKV.FieldNameVector)),
+				Source: ptrWithoutZero(d.script),
 				Params: map[string]json.RawMessage{"embedding": vb},
 			},
 		},
 	}
 
-	if len(dq.Filters) > 0 {
+	if len(io.Filters) > 0 {
 		q.ScriptScore.Query = &types.Query{
-			Bool: &types.BoolQuery{Filter: dq.Filters},
+			Bool: &types.BoolQuery{Filter: io.Filters},
 		}
 	} else {
 		q.ScriptScore.Query = &types.Query{
@@ -108,9 +87,9 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 		}
 	}
 
-	req := &search.Request{Query: q, Size: options.TopK}
-	if options.ScoreThreshold != nil {
-		req.MinScore = (*types.Float64)(ptrWithoutZero(*options.ScoreThreshold))
+	req := &search.Request{Query: q, Size: co.TopK}
+	if co.ScoreThreshold != nil {
+		req.MinScore = (*types.Float64)(ptrWithoutZero(*co.ScoreThreshold))
 	}
 
 	return req, nil
@@ -127,10 +106,10 @@ const (
 
 var denseVectorScriptMap = map[DenseVectorSimilarityType]string{
 	DenseVectorSimilarityTypeCosineSimilarity: `cosineSimilarity(params.embedding, '%s') + 1.0`,
-	DenseVectorSimilarityTypeDotProduct: `""
-          double value = dotProduct(params.embedding, '%s');
-          return sigmoid(1, Math.E, -value); 
-        ""`,
+	DenseVectorSimilarityTypeDotProduct: `
+    double value = dotProduct(params.query_vector, '%s');
+    return sigmoid(1, Math.E, -value);
+    `,
 	DenseVectorSimilarityTypeL1Norm: `1 / (1 + l1norm(params.embedding, '%s'))`,
 	DenseVectorSimilarityTypeL2Norm: `1 / (1 + l2norm(params.embedding, '%s'))`,
 }

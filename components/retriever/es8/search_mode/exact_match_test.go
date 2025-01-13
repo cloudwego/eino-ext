@@ -18,25 +18,24 @@ package search_mode
 
 import (
 	"context"
+	"encoding/json"
+	"testing"
 
+	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino/components/retriever"
-	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
+	"github.com/smartystreets/goconvey/convey"
 )
 
-func SearchModeRawStringRequest() es8.SearchMode {
-	return &rawString{}
-}
+func TestSearchModeExactMatch(t *testing.T) {
+	PatchConvey("test SearchModeExactMatch", t, func() {
+		ctx := context.Background()
+		conf := &es8.RetrieverConfig{}
+		searchMode := SearchModeExactMatch("test_field")
+		req, err := searchMode.BuildRequest(ctx, conf, "test_query")
+		convey.So(err, convey.ShouldBeNil)
+		b, err := json.Marshal(req)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(string(b), convey.ShouldEqual, `{"query":{"match":{"test_field":{"query":"test_query"}}}}`)
+	})
 
-type rawString struct{}
-
-func (r rawString) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
-	opts ...retriever.Option) (*search.Request, error) {
-
-	req, err := search.NewRequest().FromJSON(query)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
 }

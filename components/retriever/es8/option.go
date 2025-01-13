@@ -14,6 +14,14 @@
  * limitations under the License.
  */
 
-package field_mapping
+package es8
 
-const DocFieldNameContent = "eino_doc_content"
+import (
+	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
+)
+
+// ESImplOptions es specified options
+// Use retriever.GetImplSpecificOptions[ESImplOptions] to get ESImplOptions from options.
+type ESImplOptions struct {
+	Filters []types.Query `json:"filters,omitempty"`
+}

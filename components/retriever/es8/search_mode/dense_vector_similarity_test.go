@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy ptrWithoutZero the License at
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -23,60 +23,30 @@ import (
 	"testing"
 
 	. "github.com/bytedance/mockey"
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
+	"github.com/cloudwego/eino/components/retriever"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 	"github.com/smartystreets/goconvey/convey"
-
-	"github.com/cloudwego/eino/components/retriever"
-
-	"github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 func TestSearchModeDenseVectorSimilarity(t *testing.T) {
 	PatchConvey("test SearchModeDenseVectorSimilarity", t, func() {
-		PatchConvey("test ToRetrieverQuery", func() {
-			dq := &DenseVectorSimilarityQuery{
-				FieldKV: field_mapping.FieldKV{
-					FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-					FieldName:       field_mapping.DocFieldNameContent,
-					Value:           "content",
-				},
-				Filters: []types.Query{
-					{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-				},
-			}
-
-			sq, err := dq.ToRetrieverQuery()
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(sq, convey.ShouldEqual, `{"field_kv":{"field_name_vector":"vector_eino_doc_content","field_name":"eino_doc_content","value":"content"},"filters":[{"match":{"label":{"query":"good"}}}]}`)
-		})
-
 		PatchConvey("test BuildRequest", func() {
 			ctx := context.Background()
-			d := &denseVectorSimilarity{script: denseVectorScriptMap[DenseVectorSimilarityTypeCosineSimilarity]}
-			dq := &DenseVectorSimilarityQuery{
-				FieldKV: field_mapping.FieldKV{
-					FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-					FieldName:       field_mapping.DocFieldNameContent,
-					Value:           "content",
-				},
-				Filters: []types.Query{
-					{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-				},
-			}
-			sq, _ := dq.ToRetrieverQuery()
+			vectorFieldName := "vector_eino_doc_content"
+			d := SearchModeDenseVectorSimilarity(DenseVectorSimilarityTypeCosineSimilarity, vectorFieldName)
+			query := "content"
 
 			PatchConvey("test embedding not provided", func() {
-
 				conf := &es8.RetrieverConfig{}
-				req, err := d.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(nil))
+				req, err := d.BuildRequest(ctx, conf, query, retriever.WithEmbedding(nil))
 				convey.So(err, convey.ShouldBeError, "[BuildRequest][SearchModeDenseVectorSimilarity] embedding not provided")
 				convey.So(req, convey.ShouldBeNil)
 			})
 
 			PatchConvey("test vector size invalid", func() {
 				conf := &es8.RetrieverConfig{}
-				req, err := d.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(mockEmbedding{size: 2, mockVector: []float64{1.1, 1.2}}))
+				req, err := d.BuildRequest(ctx, conf, query, retriever.WithEmbedding(mockEmbedding{size: 2, mockVector: []float64{1.1, 1.2}}))
 				convey.So(err, convey.ShouldBeError, "[BuildRequest][SearchModeDenseVectorSimilarity] vector size invalid, expect=1, got=2")
 				convey.So(req, convey.ShouldBeNil)
 			})
@@ -84,18 +54,23 @@ func TestSearchModeDenseVectorSimilarity(t *testing.T) {
 			PatchConvey("test success", func() {
 				typ2Exp := map[DenseVectorSimilarityType]string{
 					DenseVectorSimilarityTypeCosineSimilarity: `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"cosineSimilarity(params.embedding, 'vector_eino_doc_content') + 1.0"}}},"size":10}`,
-					DenseVectorSimilarityTypeDotProduct:       `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"\"\"\n          double value = dotProduct(params.embedding, 'vector_eino_doc_content');\n          return sigmoid(1, Math.E, -value); \n        \"\""}}},"size":10}`,
+					DenseVectorSimilarityTypeDotProduct:       `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"\n    double value = dotProduct(params.query_vector, 'vector_eino_doc_content');\n    return sigmoid(1, Math.E, -value);\n    "}}},"size":10}`,
 					DenseVectorSimilarityTypeL1Norm:           `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"1 / (1 + l1norm(params.embedding, 'vector_eino_doc_content'))"}}},"size":10}`,
 					DenseVectorSimilarityTypeL2Norm:           `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"1 / (1 + l2norm(params.embedding, 'vector_eino_doc_content'))"}}},"size":10}`,
 				}
 
 				for typ, exp := range typ2Exp {
-					similarity := &denseVectorSimilarity{script: denseVectorScriptMap[typ]}
+					similarity := SearchModeDenseVectorSimilarity(typ, vectorFieldName)
 
 					conf := &es8.RetrieverConfig{}
-					req, err := similarity.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}),
+					req, err := similarity.BuildRequest(ctx, conf, query, retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}),
 						retriever.WithTopK(10),
-						retriever.WithScoreThreshold(1.1))
+						retriever.WithScoreThreshold(1.1),
+						retriever.WrapImplSpecificOptFn[es8.ESImplOptions](func(o *es8.ESImplOptions) {
+							o.Filters = []types.Query{
+								{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
+							}
+						}))
 
 					convey.So(err, convey.ShouldBeNil)
 					b, err := json.Marshal(req)

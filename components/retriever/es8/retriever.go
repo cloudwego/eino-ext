@@ -18,19 +18,16 @@ package es8
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
+	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/internal"
 )
 
 type RetrieverConfig struct {
@@ -47,11 +44,17 @@ type RetrieverConfig struct {
 	// use search_mode.SearchModeSparseVectorTextExpansion with search_mode.SparseVectorTextExpansionQuery
 	// use search_mode.SearchModeRawStringRequest with json search request
 	SearchMode SearchMode `json:"search_mode"`
+	// ResultParser parse document from es search hits.
+	// If ResultParser not provided, defaultResultParser will be used as default
+	ResultParser func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error)
 	// Embedding vectorization method, must provide when SearchMode needed
 	Embedding embedding.Embedder
 }
 
 type SearchMode interface {
+	// BuildRequest generate search request from config, query and options.
+	// Additionally, some specified options (like filters for query) will be provided in options,
+	// and use retriever.GetImplSpecificOptions[options.ESImplOptions] to get it.
 	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error)
 }
 
@@ -63,6 +66,10 @@ type Retriever struct {
 func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) {
 	if conf.SearchMode == nil {
 		return nil, fmt.Errorf("[NewRetriever] search mode not provided")
+	}
+
+	if conf.ResultParser == nil {
+		return nil, fmt.Errorf("[NewRetriever] result parser not provided")
 	}
 
 	client, err := elasticsearch.NewTypedClient(conf.ESConfig)
@@ -109,7 +116,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		return nil, err
 	}
 
-	docs, err = r.parseSearchResult(resp)
+	docs, err = r.parseSearchResult(ctx, resp)
 	if err != nil {
 		return nil, err
 	}
@@ -119,40 +126,13 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	return docs, nil
 }
 
-func (r *Retriever) parseSearchResult(resp *search.Response) (docs []*schema.Document, err error) {
+func (r *Retriever) parseSearchResult(ctx context.Context, resp *search.Response) (docs []*schema.Document, err error) {
 	docs = make([]*schema.Document, 0, len(resp.Hits.Hits))
 
 	for _, hit := range resp.Hits.Hits {
-		var raw map[string]any
-		if err = json.Unmarshal(hit.Source_, &raw); err != nil {
-			return nil, fmt.Errorf("[parseSearchResult] unexpected hit source type, source=%v", string(hit.Source_))
-		}
-
-		var id string
-		if hit.Id_ != nil {
-			id = *hit.Id_
-		}
-
-		content, ok := raw[field_mapping.DocFieldNameContent].(string)
-		if !ok {
-			return nil, fmt.Errorf("[parseSearchResult] content type not string, raw=%v", raw)
-		}
-
-		expMap := make(map[string]any, len(raw)-1)
-		for k, v := range raw {
-			if k != internal.DocExtraKeyEsFields {
-				expMap[k] = v
-			}
-		}
-
-		doc := &schema.Document{
-			ID:       id,
-			Content:  content,
-			MetaData: map[string]any{internal.DocExtraKeyEsFields: expMap},
-		}
-
-		if hit.Score_ != nil {
-			doc.WithScore(float64(*hit.Score_))
+		doc, err := r.config.ResultParser(ctx, hit)
+		if err != nil {
+			return nil, err
 		}
 
 		docs = append(docs, doc)

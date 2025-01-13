@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy ptrWithoutZero the License at
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -18,63 +18,42 @@ package search_mode
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
+	"github.com/cloudwego/eino/components/retriever"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
-
-	"github.com/cloudwego/eino/components/retriever"
-
-	"github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 // SearchModeSparseVectorTextExpansion convert the query text into a list ptrWithoutZero token-weight pairs,
 // which are then used in a query against a sparse vector
 // see: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-text-expansion-query.html
-func SearchModeSparseVectorTextExpansion(modelID string) es8.SearchMode {
-	return &sparseVectorTextExpansion{modelID}
-}
-
-type SparseVectorTextExpansionQuery struct {
-	FieldKV field_mapping.FieldKV `json:"field_kv"`
-	Filters []types.Query         `json:"filters,omitempty"`
-}
-
-// ToRetrieverQuery convert approximate query to string query
-func (s *SparseVectorTextExpansionQuery) ToRetrieverQuery() (string, error) {
-	b, err := json.Marshal(s)
-	if err != nil {
-		return "", fmt.Errorf("[ToRetrieverQuery] convert query failed, %w", err)
-	}
-
-	return string(b), nil
+func SearchModeSparseVectorTextExpansion(modelID, vectorFieldName string) es8.SearchMode {
+	return &sparseVectorTextExpansion{modelID, vectorFieldName}
 }
 
 type sparseVectorTextExpansion struct {
-	modelID string
+	modelID         string
+	vectorFieldName string
 }
 
 func (s sparseVectorTextExpansion) BuildRequest(ctx context.Context, conf *es8.RetrieverConfig, query string,
 	opts ...retriever.Option) (*search.Request, error) {
 
-	options := retriever.GetCommonOptions(&retriever.Options{
+	co := retriever.GetCommonOptions(&retriever.Options{
 		Index:          ptrWithoutZero(conf.Index),
 		TopK:           ptrWithoutZero(conf.TopK),
 		ScoreThreshold: conf.ScoreThreshold,
 		Embedding:      conf.Embedding,
 	}, opts...)
 
-	var sq SparseVectorTextExpansionQuery
-	if err := json.Unmarshal([]byte(query), &sq); err != nil {
-		return nil, fmt.Errorf("[BuildRequest][SearchModeSparseVectorTextExpansion] parse query failed, %w", err)
-	}
+	io := retriever.GetImplSpecificOptions[es8.ESImplOptions](nil, opts...)
 
-	name := fmt.Sprintf("%s.tokens", sq.FieldKV.FieldNameVector)
+	name := fmt.Sprintf("%s.tokens", s.vectorFieldName)
 	teq := types.TextExpansionQuery{
 		ModelId:   s.modelID,
-		ModelText: sq.FieldKV.Value,
+		ModelText: query,
 	}
 
 	q := &types.Query{
@@ -82,13 +61,13 @@ func (s sparseVectorTextExpansion) BuildRequest(ctx context.Context, conf *es8.R
 			Must: []types.Query{
 				{TextExpansion: map[string]types.TextExpansionQuery{name: teq}},
 			},
-			Filter: sq.Filters,
+			Filter: io.Filters,
 		},
 	}
 
-	req := &search.Request{Query: q, Size: options.TopK}
-	if options.ScoreThreshold != nil {
-		req.MinScore = (*types.Float64)(ptrWithoutZero(*options.ScoreThreshold))
+	req := &search.Request{Query: q, Size: co.TopK}
+	if co.ScoreThreshold != nil {
+		req.MinScore = (*types.Float64)(ptrWithoutZero(*co.ScoreThreshold))
 	}
 
 	return req, nil

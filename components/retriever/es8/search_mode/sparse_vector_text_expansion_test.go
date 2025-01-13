@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy ptrWithoutZero the License at
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,55 +22,28 @@ import (
 	"testing"
 
 	. "github.com/bytedance/mockey"
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
+	"github.com/cloudwego/eino/components/retriever"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 	"github.com/smartystreets/goconvey/convey"
-
-	"github.com/cloudwego/eino/components/retriever"
-
-	"github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
 )
 
 func TestSearchModeSparseVectorTextExpansion(t *testing.T) {
 	PatchConvey("test SearchModeSparseVectorTextExpansion", t, func() {
-		PatchConvey("test ToRetrieverQuery", func() {
-			sq := &SparseVectorTextExpansionQuery{
-				FieldKV: field_mapping.FieldKV{
-					FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-					FieldName:       field_mapping.DocFieldNameContent,
-					Value:           "content",
-				},
-				Filters: []types.Query{
-					{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-				},
-			}
-
-			ssq, err := sq.ToRetrieverQuery()
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(ssq, convey.ShouldEqual, `{"field_kv":{"field_name_vector":"vector_eino_doc_content","field_name":"eino_doc_content","value":"content"},"filters":[{"match":{"label":{"query":"good"}}}]}`)
-
-		})
-
 		PatchConvey("test BuildRequest", func() {
 			ctx := context.Background()
-			s := SearchModeSparseVectorTextExpansion("mock_model_id")
-			sq := &SparseVectorTextExpansionQuery{
-				FieldKV: field_mapping.FieldKV{
-					FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-					FieldName:       field_mapping.DocFieldNameContent,
-					Value:           "content",
-				},
-				Filters: []types.Query{
-					{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-				},
-			}
-
-			query, _ := sq.ToRetrieverQuery()
+			vectorFieldName := "vector_eino_doc_content"
+			s := SearchModeSparseVectorTextExpansion("mock_model_id", vectorFieldName)
 
 			conf := &es8.RetrieverConfig{}
-			req, err := s.BuildRequest(ctx, conf, query,
+			req, err := s.BuildRequest(ctx, conf, "content",
 				retriever.WithTopK(10),
-				retriever.WithScoreThreshold(1.1))
+				retriever.WithScoreThreshold(1.1),
+				retriever.WrapImplSpecificOptFn[es8.ESImplOptions](func(o *es8.ESImplOptions) {
+					o.Filters = []types.Query{
+						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
+					}
+				}))
 
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req, convey.ShouldNotBeNil)

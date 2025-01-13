@@ -3,7 +3,7 @@
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
- * You may obtain a copy ptrWithoutZero the License at
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,65 +22,44 @@ import (
 	"testing"
 
 	. "github.com/bytedance/mockey"
-	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
-	"github.com/smartystreets/goconvey/convey"
-
+	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
-
-	"github.com/cloudwego/eino-ext/components/retriever/es8"
-	"github.com/cloudwego/eino-ext/components/retriever/es8/field_mapping"
+	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
+	"github.com/smartystreets/goconvey/convey"
 )
 
 func TestSearchModeApproximate(t *testing.T) {
 	PatchConvey("test SearchModeApproximate", t, func() {
-		PatchConvey("test ToRetrieverQuery", func() {
-			aq := &ApproximateQuery{
-				FieldKV: field_mapping.FieldKV{
-					FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-					FieldName:       field_mapping.DocFieldNameContent,
-					Value:           "content",
-				},
-				Filters: []types.Query{
-					{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-				},
-				Boost:         ptrWithoutZero(float32(1.0)),
-				K:             ptrWithoutZero(10),
-				NumCandidates: ptrWithoutZero(100),
-				Similarity:    ptrWithoutZero(float32(0.5)),
-			}
-
-			sq, err := aq.ToRetrieverQuery()
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(sq, convey.ShouldEqual, `{"field_kv":{"field_name_vector":"vector_eino_doc_content","field_name":"eino_doc_content","value":"content"},"boost":1,"filters":[{"match":{"label":{"query":"good"}}}],"k":10,"num_candidates":100,"similarity":0.5}`)
-		})
-
 		PatchConvey("test BuildRequest", func() {
 			ctx := context.Background()
+			queryFieldName := "eino_doc_content"
+			vectorFieldName := "vector_eino_doc_content"
+			query := "content"
 
 			PatchConvey("test QueryVectorBuilderModelID", func() {
-				a := &approximate{config: &ApproximateConfig{}}
-				aq := &ApproximateQuery{
-					FieldKV: field_mapping.FieldKV{
-						FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-						FieldName:       field_mapping.DocFieldNameContent,
-						Value:           "content",
-					},
+				a := &approximate{config: &ApproximateConfig{
+					QueryFieldName:            queryFieldName,
+					VectorFieldName:           vectorFieldName,
+					Hybrid:                    false,
+					RRF:                       false,
+					RRFRankConstant:           nil,
+					RRFWindowSize:             nil,
 					QueryVectorBuilderModelID: ptrWithoutZero("mock_model"),
-					Filters: []types.Query{
-						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-					},
-					Boost:         ptrWithoutZero(float32(1.0)),
-					K:             ptrWithoutZero(10),
-					NumCandidates: ptrWithoutZero(100),
-					Similarity:    ptrWithoutZero(float32(0.5)),
-				}
-
-				sq, err := aq.ToRetrieverQuery()
-				convey.So(err, convey.ShouldBeNil)
+					Boost:                     ptrWithoutZero(float32(1.0)),
+					K:                         ptrWithoutZero(10),
+					NumCandidates:             ptrWithoutZero(100),
+					Similarity:                ptrWithoutZero(float32(0.5)),
+				}}
 
 				conf := &es8.RetrieverConfig{}
-				req, err := a.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(nil))
+				req, err := a.BuildRequest(ctx, conf, query,
+					retriever.WithEmbedding(nil),
+					retriever.WrapImplSpecificOptFn[es8.ESImplOptions](func(o *es8.ESImplOptions) {
+						o.Filters = []types.Query{
+							{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
+						}
+					}))
 				convey.So(err, convey.ShouldBeNil)
 				b, err := json.Marshal(req)
 				convey.So(err, convey.ShouldBeNil)
@@ -88,26 +67,28 @@ func TestSearchModeApproximate(t *testing.T) {
 			})
 
 			PatchConvey("test embedding", func() {
-				a := &approximate{config: &ApproximateConfig{}}
-				aq := &ApproximateQuery{
-					FieldKV: field_mapping.FieldKV{
-						FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-						FieldName:       field_mapping.DocFieldNameContent,
-						Value:           "content",
-					},
-					Filters: []types.Query{
-						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-					},
-					Boost:         ptrWithoutZero(float32(1.0)),
-					K:             ptrWithoutZero(10),
-					NumCandidates: ptrWithoutZero(100),
-					Similarity:    ptrWithoutZero(float32(0.5)),
-				}
+				a := &approximate{config: &ApproximateConfig{
+					QueryFieldName:            queryFieldName,
+					VectorFieldName:           vectorFieldName,
+					Hybrid:                    false,
+					RRF:                       false,
+					RRFRankConstant:           nil,
+					RRFWindowSize:             nil,
+					QueryVectorBuilderModelID: nil,
+					Boost:                     ptrWithoutZero(float32(1.0)),
+					K:                         ptrWithoutZero(10),
+					NumCandidates:             ptrWithoutZero(100),
+					Similarity:                ptrWithoutZero(float32(0.5)),
+				}}
 
-				sq, err := aq.ToRetrieverQuery()
-				convey.So(err, convey.ShouldBeNil)
 				conf := &es8.RetrieverConfig{}
-				req, err := a.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}))
+				req, err := a.BuildRequest(ctx, conf, query,
+					retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}),
+					retriever.WrapImplSpecificOptFn[es8.ESImplOptions](func(o *es8.ESImplOptions) {
+						o.Filters = []types.Query{
+							{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
+						}
+					}))
 				convey.So(err, convey.ShouldBeNil)
 				b, err := json.Marshal(req)
 				convey.So(err, convey.ShouldBeNil)
@@ -116,34 +97,29 @@ func TestSearchModeApproximate(t *testing.T) {
 
 			PatchConvey("test hybrid with rrf", func() {
 				a := &approximate{config: &ApproximateConfig{
-					Hybrid:          true,
-					Rrf:             true,
-					RrfRankConstant: ptrWithoutZero(int64(10)),
-					RrfWindowSize:   ptrWithoutZero(int64(5)),
+					QueryFieldName:            queryFieldName,
+					VectorFieldName:           vectorFieldName,
+					Hybrid:                    true,
+					RRF:                       true,
+					RRFRankConstant:           ptrWithoutZero(int64(10)),
+					RRFWindowSize:             ptrWithoutZero(int64(5)),
+					QueryVectorBuilderModelID: nil,
+					Boost:                     ptrWithoutZero(float32(1.0)),
+					K:                         ptrWithoutZero(10),
+					NumCandidates:             ptrWithoutZero(100),
+					Similarity:                ptrWithoutZero(float32(0.5)),
 				}}
 
-				aq := &ApproximateQuery{
-					FieldKV: field_mapping.FieldKV{
-						FieldNameVector: field_mapping.GetDefaultVectorFieldKeyContent(),
-						FieldName:       field_mapping.DocFieldNameContent,
-						Value:           "content",
-					},
-					Filters: []types.Query{
-						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-					},
-					Boost:         ptrWithoutZero(float32(1.0)),
-					K:             ptrWithoutZero(10),
-					NumCandidates: ptrWithoutZero(100),
-					Similarity:    ptrWithoutZero(float32(0.5)),
-				}
-
-				sq, err := aq.ToRetrieverQuery()
-				convey.So(err, convey.ShouldBeNil)
-
 				conf := &es8.RetrieverConfig{}
-				req, err := a.BuildRequest(ctx, conf, sq, retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}),
+				req, err := a.BuildRequest(ctx, conf, query,
+					retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}),
 					retriever.WithTopK(10),
-					retriever.WithScoreThreshold(1.1))
+					retriever.WithScoreThreshold(1.1),
+					retriever.WrapImplSpecificOptFn[es8.ESImplOptions](func(o *es8.ESImplOptions) {
+						o.Filters = []types.Query{
+							{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
+						}
+					}))
 				convey.So(err, convey.ShouldBeNil)
 				b, err := json.Marshal(req)
 				convey.So(err, convey.ShouldBeNil)

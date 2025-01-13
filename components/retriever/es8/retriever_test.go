@@ -19,10 +19,12 @@ package es8
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
@@ -34,9 +36,31 @@ func TestNewRetriever(t *testing.T) {
 
 	t.Run("retrieve_documents", func(t *testing.T) {
 		r, err := NewRetriever(ctx, &RetrieverConfig{
-			ESConfig:   elasticsearch.Config{},
-			Index:      "eino_ut",
-			TopK:       10,
+			ESConfig: elasticsearch.Config{},
+			Index:    "eino_ut",
+			TopK:     10,
+			ResultParser: func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error) {
+				var mp map[string]any
+				if err := json.Unmarshal(hit.Source_, &mp); err != nil {
+					return nil, err
+				}
+
+				var id string
+				if hit.Id_ != nil {
+					id = *hit.Id_
+				}
+
+				content, ok := mp["eino_doc_content"].(string)
+				if !ok {
+					return nil, fmt.Errorf("content not found")
+				}
+
+				return &schema.Document{
+					ID:       id,
+					Content:  content,
+					MetaData: nil,
+				}, nil
+			},
 			SearchMode: &mockSearchMode{},
 		})
 		assert.NoError(t, err)
