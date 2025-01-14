@@ -62,11 +62,11 @@ func registerRoutes(r *mux.Router) {
 
 	rootR := r.PathPrefix(root).Subrouter()
 	rootR.Path("/ping").HandlerFunc(Ping).Methods(http.MethodGet)
-	rootR.Path("/graphs").HandlerFunc(ListGraphs).Methods(http.MethodGet)
 	rootR.Path("/stream_log").HandlerFunc(StreamLog).Methods(http.MethodGet)
 
 	// debug routes
 	debugR := rootR.PathPrefix(debugBiz).Subrouter()
+	debugR.Path("/graphs").HandlerFunc(ListGraphs).Methods(http.MethodGet)
 	debugR.Path("/graphs/{graph_id}/canvas").HandlerFunc(GetCanvasInfo).Methods(http.MethodGet)
 	debugR.Path("/graphs/{graph_id}/threads").HandlerFunc(CreateDebugThread).Methods(http.MethodPost)
 	debugR.Path("/graphs/{graph_id}/threads/{thread_id}/stream").HandlerFunc(StreamDebugRun).Methods(http.MethodPost)
