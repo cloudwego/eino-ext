@@ -37,7 +37,6 @@ func main() {
 		return
 	}
 
-	// Ark 平台上支持的豆包模型，均不支持多模态能力，暂未测试 Ark 的多模态能力
 	multiModalMsg := schema.UserMessage("")
 	multiModalMsg.MultiContent = []schema.ChatMessagePart{
 		{

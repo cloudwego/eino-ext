@@ -78,7 +78,6 @@ func TestOpenAIGenerate(t *testing.T) {
 		MaxTokens:       1,
 		Temperature:     0.1,
 		TopP:            0.2,
-		N:               3,
 		Stream:          false,
 		Stop:            []string{"stop"},
 		PresencePenalty: 0.3,
@@ -88,8 +87,6 @@ func TestOpenAIGenerate(t *testing.T) {
 		Seed:             &expectedSeed,
 		FrequencyPenalty: 0.4,
 		LogitBias:        map[string]int{"1024": 100},
-		LogProbs:         true,
-		TopLogProbs:      4,
 		User:             "megumin",
 		Tools: []openai.Tool{
 			{
@@ -172,7 +169,6 @@ func TestOpenAIGenerate(t *testing.T) {
 		MaxTokens:       &expectedRequestBody.MaxTokens,
 		Temperature:     &expectedRequestBody.Temperature,
 		TopP:            &expectedRequestBody.TopP,
-		N:               &expectedRequestBody.N,
 		Stop:            expectedRequestBody.Stop,
 		PresencePenalty: &expectedRequestBody.PresencePenalty,
 		ResponseFormat: &protocol.ChatCompletionResponseFormat{
@@ -181,8 +177,6 @@ func TestOpenAIGenerate(t *testing.T) {
 		Seed:             expectedRequestBody.Seed,
 		FrequencyPenalty: &expectedRequestBody.FrequencyPenalty,
 		LogitBias:        expectedRequestBody.LogitBias,
-		LogProbs:         &expectedRequestBody.LogProbs,
-		TopLogProbs:      &expectedRequestBody.TopLogProbs,
 		User:             &expectedRequestBody.User,
 	}
 

@@ -30,11 +30,9 @@ import (
 func main() {
 	accessKey := os.Getenv("OPENAI_API_KEY")
 
-	N := 3
 	ctx := context.Background()
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
 		BaseURL: "https://api.openai.com/v1",
-		N:       &N,
 		APIKey:  accessKey,
 		ByAzure: true,
 		Model:   "gpt-4o-2024-05-13",

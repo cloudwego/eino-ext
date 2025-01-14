@@ -28,35 +28,83 @@ import (
 )
 
 type ChatModelConfig struct {
-	// if you want to use Azure OpenAI Service, set the next three fields. refs: https://learn.microsoft.com/en-us/azure/ai-services/openai/
-	// ByAzure set this field to true when using Azure OpenAI Service, otherwise it does not need to be set.
-	ByAzure bool `json:"by_azure"`
-	// BaseURL https://{{$YOUR_RESOURCE_NAME}}.openai.azure.com, YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
-	BaseURL string `json:"base_url"`
-	// APIVersion specifies the API version you want to use.
-	APIVersion string `json:"api_version"`
-
-	// APIKey is typically OPENAI_API_KEY, but if you have set up Azure, then it is Azure API_KEY.
+	// APIKey is your authentication key
+	// Use OpenAI API key or Azure API key depending on the service
+	// Required
 	APIKey string `json:"api_key"`
 
-	// Timeout specifies the http request timeout.
+	// Timeout specifies the maximum duration to wait for API responses
+	// Optional. Default: no timeout
 	Timeout time.Duration `json:"timeout"`
 
-	// The following fields have the same meaning as the fields in the openai chat completion API request. Ref: https://platform.openai.com/docs/api-reference/chat/create
-	Model            string                               `json:"model"`
-	MaxTokens        *int                                 `json:"max_tokens,omitempty"`
-	Temperature      *float32                             `json:"temperature,omitempty"`
-	TopP             *float32                             `json:"top_p,omitempty"`
-	N                *int                                 `json:"n,omitempty"`
-	Stop             []string                             `json:"stop,omitempty"`
-	PresencePenalty  *float32                             `json:"presence_penalty,omitempty"`
-	ResponseFormat   *openai.ChatCompletionResponseFormat `json:"response_format,omitempty"`
-	Seed             *int                                 `json:"seed,omitempty"`
-	FrequencyPenalty *float32                             `json:"frequency_penalty,omitempty"`
-	LogitBias        map[string]int                       `json:"logit_bias,omitempty"`
-	LogProbs         *bool                                `json:"logprobs,omitempty"`
-	TopLogProbs      *int                                 `json:"top_logprobs,omitempty"`
-	User             *string                              `json:"user,omitempty"`
+	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
+	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
+
+	// ByAzure indicates whether to use Azure OpenAI Service
+	// Required for Azure
+	ByAzure bool `json:"by_azure"`
+
+	// BaseURL is the Azure OpenAI endpoint URL
+	// Format: https://{YOUR_RESOURCE_NAME}.openai.azure.com. YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
+	// Required for Azure
+	BaseURL string `json:"base_url"`
+
+	// APIVersion specifies the Azure OpenAI API version
+	// Required for Azure
+	APIVersion string `json:"api_version"`
+
+	// The following fields correspond to OpenAI's chat completion API parameters
+	// Ref: https://platform.openai.com/docs/api-reference/chat/create
+
+	// Model specifies the ID of the model to use
+	// Required
+	Model string `json:"model"`
+
+	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
+	// Optional. Default: model's maximum
+	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// Temperature specifies what sampling temperature to use
+	// Generally recommend altering this or TopP but not both.
+	// Range: 0.0 to 2.0. Higher values make output more random
+	// Optional. Default: 1.0
+	Temperature *float32 `json:"temperature,omitempty"`
+
+	// TopP controls diversity via nucleus sampling
+	// Generally recommend altering this or Temperature but not both.
+	// Range: 0.0 to 1.0. Lower values make output more focused
+	// Optional. Default: 1.0
+	TopP *float32 `json:"top_p,omitempty"`
+
+	// Stop sequences where the API will stop generating further tokens
+	// Optional. Example: []string{"\n", "User:"}
+	Stop []string `json:"stop,omitempty"`
+
+	// PresencePenalty prevents repetition by penalizing tokens based on presence
+	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics
+	// Optional. Default: 0
+	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
+
+	// ResponseFormat specifies the format of the model's response
+	// Optional. Use for structured outputs
+	ResponseFormat *openai.ChatCompletionResponseFormat `json:"response_format,omitempty"`
+
+	// Seed enables deterministic sampling for consistent outputs
+	// Optional. Set for reproducible results
+	Seed *int `json:"seed,omitempty"`
+
+	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
+	// Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
+	// Optional. Default: 0
+	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+
+	// LogitBias modifies likelihood of specific tokens appearing in completion
+	// Optional. Map token IDs to bias values from -100 to 100
+	LogitBias map[string]int `json:"logit_bias,omitempty"`
+
+	// User unique identifier representing end-user
+	// Optional. Helps OpenAI monitor and detect abuse
+	User *string `json:"user,omitempty"`
 }
 
 var _ model.ChatModel = (*ChatModel)(nil)
@@ -78,15 +126,12 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			MaxTokens:        config.MaxTokens,
 			Temperature:      config.Temperature,
 			TopP:             config.TopP,
-			N:                config.N,
 			Stop:             config.Stop,
 			PresencePenalty:  config.PresencePenalty,
 			ResponseFormat:   config.ResponseFormat,
 			Seed:             config.Seed,
 			FrequencyPenalty: config.FrequencyPenalty,
 			LogitBias:        config.LogitBias,
-			LogProbs:         config.LogProbs,
-			TopLogProbs:      config.TopLogProbs,
 			User:             config.User,
 		}
 	}
