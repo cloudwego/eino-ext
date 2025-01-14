@@ -195,6 +195,8 @@ type ComponentSchema struct {
 	Config          *ConfigSchema        `json:"config,omitempty"`
 	ExtraProperty   *ExtraPropertySchema `json:"extra_property,omitempty"`
 	IsIOTypeMutable bool                 `json:"is_io_type_mutable"`
+
+	Version string `json:"version"`
 }
 
 type ConfigSchema struct {
