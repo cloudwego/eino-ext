@@ -22,14 +22,13 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/elastic/go-elasticsearch/v8/esutil"
-
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
+	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esutil"
 )
 
 type IndexerConfig struct {
@@ -37,14 +36,25 @@ type IndexerConfig struct {
 	Index    string               `json:"index"`
 	// BatchSize controls max texts size for embedding
 	BatchSize int `json:"batch_size"`
-	// FieldMapping supports customize es fields from eino document, returns:
-	// needEmbeddingFields will be embedded by Embedding firstly, then join fields with its keys,
-	// and joined fields will be saved as bulk item.
-	FieldMapping func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error)
+	// FieldMapping supports customize es fields from eino document.
+	// Each key - FieldValue.Value from field2Value will be saved, and
+	// vector of FieldValue.Value will be saved if FieldValue.EmbedKey is not empty.
+	DocumentToFields func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error)
 	// Embedding vectorization method, must provide in two cases
 	// 1. VectorFields contains fields except doc Content
 	// 2. VectorFields contains doc Content and vector not provided in doc extra (see Document.Vector method)
 	Embedding embedding.Embedder
+}
+
+type FieldValue struct {
+	// Value original Value
+	Value any
+	// EmbedKey if set, Value will be vectorized and saved to es.
+	// If Stringify method is provided, Embedding input text will be Stringify(Value).
+	// If Stringify method not set, retriever will try to assert Value as string.
+	EmbedKey string
+	// Stringify converts Value to string
+	Stringify func(val any) (string, error)
 }
 
 type Indexer struct {
@@ -58,8 +68,8 @@ func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
 		return nil, fmt.Errorf("[NewIndexer] new es client failed, %w", err)
 	}
 
-	if conf.FieldMapping == nil {
-		return nil, fmt.Errorf("[NewIndexer] field mapping method not provided")
+	if conf.DocumentToFields == nil {
+		return nil, fmt.Errorf("[NewIndexer] DocumentToFields method not provided")
 	}
 
 	if conf.BatchSize == 0 {
@@ -158,34 +168,60 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 
 	for idx := range docs {
 		doc := docs[idx]
-		fields, needEmbeddingFields, err := i.config.FieldMapping(ctx, doc)
+		fields, err := i.config.DocumentToFields(ctx, doc)
 		if err != nil {
 			return fmt.Errorf("[bulkAdd] FieldMapping failed, %w", err)
 		}
-		if fields == nil {
-			fields = make(map[string]any)
+
+		rawFields := make(map[string]any)
+		embSize := 0
+		for k, v := range fields {
+			rawFields[k] = v.Value
+			if v.EmbedKey != "" {
+				embSize++
+			}
 		}
 
-		if len(needEmbeddingFields) > i.config.BatchSize {
+		if embSize > i.config.BatchSize {
 			return fmt.Errorf("[bulkAdd] needEmbeddingFields length over batch size, batch size=%d, got size=%d",
-				i.config.BatchSize, len(needEmbeddingFields))
+				i.config.BatchSize, embSize)
 		}
 
-		if len(texts)+len(needEmbeddingFields) > i.config.BatchSize {
+		if len(texts)+embSize > i.config.BatchSize {
 			if err = embAndAdd(); err != nil {
 				return err
 			}
 		}
 
-		key2Idx := make(map[string]int, len(needEmbeddingFields))
-		for k, text := range needEmbeddingFields {
-			key2Idx[k] = len(texts)
-			texts = append(texts, text)
+		key2Idx := make(map[string]int, embSize)
+		for k, v := range fields {
+			if v.EmbedKey != "" {
+				if v.EmbedKey == k {
+					return fmt.Errorf("[bulkAdd] duplicate key for value and vector, field=%s", k)
+				}
+
+				var text string
+				if v.Stringify != nil {
+					text, err = v.Stringify(v.Value)
+					if err != nil {
+						return err
+					}
+				} else {
+					var ok bool
+					text, ok = v.Value.(string)
+					if !ok {
+						return fmt.Errorf("[bulkAdd] assert value as string failed, key=%s, emb_key=%s", k, v.EmbedKey)
+					}
+				}
+
+				key2Idx[v.EmbedKey] = len(texts)
+				texts = append(texts, text)
+			}
 		}
 
 		tuples = append(tuples, tuple{
 			id:      doc.ID,
-			fields:  fields,
+			fields:  rawFields,
 			key2Idx: key2Idx,
 		})
 	}

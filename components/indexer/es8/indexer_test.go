@@ -48,8 +48,8 @@ func TestBulkAdd(t *testing.T) {
 			i := &Indexer{
 				config: &IndexerConfig{
 					Index: "mock_index",
-					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
-						return nil, nil, nil
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return nil, nil
 					},
 				},
 			}
@@ -65,8 +65,8 @@ func TestBulkAdd(t *testing.T) {
 			i := &Indexer{
 				config: &IndexerConfig{
 					Index: "mock_index",
-					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
-						return nil, nil, mockErr
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return nil, mockErr
 					},
 				},
 			}
@@ -82,9 +82,10 @@ func TestBulkAdd(t *testing.T) {
 				config: &IndexerConfig{
 					Index:     "mock_index",
 					BatchSize: 1,
-					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
-						return nil, map[string]string{
-							"k1": "v1", "k2": "v2",
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return map[string]FieldValue{
+							"k1": {Value: "v1", EmbedKey: "k"},
+							"k2": {Value: "v2", EmbedKey: "kk"},
 						}, nil
 					},
 				},
@@ -101,12 +102,15 @@ func TestBulkAdd(t *testing.T) {
 				config: &IndexerConfig{
 					Index:     "mock_index",
 					BatchSize: 2,
-					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
-						return map[string]any{
-								"k0": "v0", "k1": "v1", "k3": 123,
-							}, map[string]string{
-								"k1": "v1", "k2": "v2",
-							}, nil
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return map[string]FieldValue{
+							"k0": {Value: "v0"},
+							"k1": {Value: "v1", EmbedKey: "vk1"},
+							"k2": {Value: 222, EmbedKey: "vk2", Stringify: func(val any) (string, error) {
+								return "222", nil
+							}},
+							"k3": {Value: 123},
+						}, nil
 					},
 				},
 			}
@@ -123,12 +127,15 @@ func TestBulkAdd(t *testing.T) {
 				config: &IndexerConfig{
 					Index:     "mock_index",
 					BatchSize: 2,
-					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
-						return map[string]any{
-								"k0": "v0", "k1": "v1", "k3": 123,
-							}, map[string]string{
-								"k1": "v1", "k2": "v2",
-							}, nil
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return map[string]FieldValue{
+							"k0": {Value: "v0"},
+							"k1": {Value: "v1", EmbedKey: "vk1"},
+							"k2": {Value: 222, EmbedKey: "vk2", Stringify: func(val any) (string, error) {
+								return "222", nil
+							}},
+							"k3": {Value: 123},
+						}, nil
 					},
 				},
 			}
@@ -144,12 +151,15 @@ func TestBulkAdd(t *testing.T) {
 				config: &IndexerConfig{
 					Index:     "mock_index",
 					BatchSize: 2,
-					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
-						return map[string]any{
-								"k0": "v0", "k1": "v1", "k3": 123,
-							}, map[string]string{
-								"k1": "v1", "k2": "v2",
-							}, nil
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return map[string]FieldValue{
+							"k0": {Value: "v0"},
+							"k1": {Value: "v1", EmbedKey: "vk1"},
+							"k2": {Value: 222, EmbedKey: "vk2", Stringify: func(val any) (string, error) {
+								return "222", nil
+							}},
+							"k3": {Value: 123},
+						}, nil
 					},
 				},
 			}
@@ -172,12 +182,13 @@ func TestBulkAdd(t *testing.T) {
 				config: &IndexerConfig{
 					Index:     "mock_index",
 					BatchSize: 2,
-					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
-						return map[string]any{
-								"k0": doc.Content, "k1": "v1", "k3": 123,
-							}, map[string]string{
-								"k1": "v1", "k2": "v2",
-							}, nil
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return map[string]FieldValue{
+							"k0": {Value: doc.Content},
+							"k1": {Value: "v1", EmbedKey: "vk1"},
+							"k2": {Value: 222, EmbedKey: "vk2", Stringify: func(val any) (string, error) { return "222", nil }},
+							"k3": {Value: 123},
+						}, nil
 					},
 				},
 			}
@@ -194,9 +205,11 @@ func TestBulkAdd(t *testing.T) {
 				var mp map[string]interface{}
 				convey.So(json.Unmarshal(b, &mp), convey.ShouldBeNil)
 				convey.So(mp["k0"], convey.ShouldEqual, doc.Content)
-				convey.So(mp["k1"], convey.ShouldEqual, []any{2.1})
-				convey.So(mp["k2"], convey.ShouldEqual, []any{2.1})
+				convey.So(mp["k1"], convey.ShouldEqual, "v1")
+				convey.So(mp["k2"], convey.ShouldEqual, 222)
 				convey.So(mp["k3"], convey.ShouldEqual, 123)
+				convey.So(mp["vk1"], convey.ShouldEqual, []any{2.1})
+				convey.So(mp["vk2"], convey.ShouldEqual, []any{2.1})
 			}
 		})
 	})
