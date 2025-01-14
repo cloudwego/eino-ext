@@ -31,26 +31,18 @@ import (
 
 func Test_EmbedStrings(t *testing.T) {
 	PatchConvey("test buildClient", t, func() {
-		var (
-			defaultDim  = 1
-			defaultUser = "mock"
-		)
 
 		buildClient(&EmbeddingConfig{
-			AccessKey:  "mock",
-			SecretKey:  "mock",
-			BaseURL:    "mock",
-			Dimensions: &defaultDim,
-			Model:      "mock",
-			Region:     "mock",
-			User:       &defaultUser,
+			AccessKey: "mock",
+			SecretKey: "mock",
+			BaseURL:   "mock",
+			Model:     "mock",
+			Region:    "mock",
 		})
 
 		buildClient(&EmbeddingConfig{
-			APIKey:     "mock",
-			Dimensions: &defaultDim,
-			Model:      "mock",
-			User:       &defaultUser,
+			APIKey: "mock",
+			Model:  "mock",
 		})
 	})
 	PatchConvey("test EmbedStrings", t, func() {

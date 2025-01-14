@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"runtime/debug"
 	"time"
 
@@ -38,49 +37,79 @@ import (
 
 var (
 	// all default values are from github.com/volcengine/volcengine-go-sdk/service/arkruntime/config.go
-	defaultBaseURL        = "https://ark.cn-beijing.volces.com/api/v3"
-	defaultRegion         = "cn-beijing"
-	defaultRetryTimes int = 2
-	defaultTimeout        = 10 * time.Minute
+	defaultBaseURL    = "https://ark.cn-beijing.volces.com/api/v3"
+	defaultRegion     = "cn-beijing"
+	defaultRetryTimes = 2
+	defaultTimeout    = 10 * time.Minute
 )
 
 var (
-	ErrEmptyResponse = errors.New("empty response from model")
+	ErrEmptyResponse = errors.New("empty response received from model")
 )
 
 type ChatModelConfig struct {
-	// default: "https://ark.cn-beijing.volces.com/api/v3"
+	// Timeout specifies the maximum duration to wait for API responses
+	// Optional. Default: 10 minutes
+	Timeout *time.Duration `json:"timeout"`
+
+	// RetryTimes specifies the number of retry attempts for failed API calls
+	// Optional. Default: 2
+	RetryTimes *int `json:"retry_times"`
+
+	// BaseURL specifies the base URL for Ark service
+	// Optional. Default: "https://ark.cn-beijing.volces.com/api/v3"
 	BaseURL string `json:"base_url"`
-	// default: "cn-beijing"
+	// Region specifies the region where Ark service is located
+	// Optional. Default: "cn-beijing"
 	Region string `json:"region"`
 
-	HTTPClient *http.Client   `json:"-"`
-	Timeout    *time.Duration `json:"timeout"`
-	RetryTimes *int           `json:"retry_times"`
-
-	// one of APIKey or AccessKey/SecretKey is required.
+	// The following three fields are about authentication - either APIKey or AccessKey/SecretKey pair is required
+	// For authentication details, see: https://www.volcengine.com/docs/82379/1298459
+	// APIKey takes precedence if both are provided
 	APIKey    string `json:"api_key"`
 	AccessKey string `json:"access_key"`
 	SecretKey string `json:"secret_key"`
 
-	// endpoint_id on ark platform.
+	// The following fields correspond to Ark's chat completion API parameters
+	// Ref: https://www.volcengine.com/docs/82379/1298454
+
+	// Model specifies the ID of endpoint on ark platform
+	// Required
 	Model string `json:"model"`
 
-	/* -- Parameters in request -- */
-	MaxTokens         *int                  `json:"max_tokens,omitempty"`
-	Temperature       *float32              `json:"temperature,omitempty"`
-	TopP              *float32              `json:"top_p,omitempty"`
-	Stream            *bool                 `json:"stream,omitempty"`
-	Stop              []string              `json:"stop,omitempty"`
-	FrequencyPenalty  *float32              `json:"frequency_penalty,omitempty"`
-	LogitBias         map[string]int        `json:"logit_bias,omitempty"`
-	LogProbs          *bool                 `json:"log_probs,omitempty"`
-	TopLogProbs       *int                  `json:"top_log_probs,omitempty"`
-	User              *string               `json:"user,omitempty"`
-	PresencePenalty   *float32              `json:"presence_penalty,omitempty"`
-	RepetitionPenalty *float32              `json:"repetition_penalty,omitempty"`
-	N                 *int                  `json:"n,omitempty"`
-	ResponseFormat    *model.ResponseFormat `json:"response_format,omitempty"`
+	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion and the range of values is [0, 4096]
+	// Optional. Default: 4096
+	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// Temperature specifies what sampling temperature to use
+	// Generally recommend altering this or TopP but not both
+	// Range: 0.0 to 1.0. Higher values make output more random
+	// Optional. Default: 1.0
+	Temperature *float32 `json:"temperature,omitempty"`
+
+	// TopP controls diversity via nucleus sampling
+	// Generally recommend altering this or Temperature but not both
+	// Range: 0.0 to 1.0. Lower values make output more focused
+	// Optional. Default: 0.7
+	TopP *float32 `json:"top_p,omitempty"`
+
+	// Stop sequences where the API will stop generating further tokens
+	// Optional. Example: []string{"\n", "User:"}
+	Stop []string `json:"stop,omitempty"`
+
+	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
+	// Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
+	// Optional. Default: 0
+	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+
+	// LogitBias modifies likelihood of specific tokens appearing in completion
+	// Optional. Map token IDs to bias values from -100 to 100
+	LogitBias map[string]int `json:"logit_bias,omitempty"`
+
+	// PresencePenalty prevents repetition by penalizing tokens based on presence
+	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics
+	// Optional. Default: 0
+	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
 }
 
 func buildClient(config *ChatModelConfig) *arkruntime.Client {
@@ -93,16 +122,12 @@ func buildClient(config *ChatModelConfig) *arkruntime.Client {
 	if config.Timeout == nil {
 		config.Timeout = &defaultTimeout
 	}
-	if config.HTTPClient == nil {
-		config.HTTPClient = &http.Client{Timeout: defaultTimeout}
-	}
 	if config.RetryTimes == nil {
 		config.RetryTimes = &defaultRetryTimes
 	}
 
 	if len(config.APIKey) > 0 {
 		return arkruntime.NewClientWithApiKey(config.APIKey,
-			arkruntime.WithHTTPClient(config.HTTPClient),
 			arkruntime.WithRetryTimes(*config.RetryTimes),
 			arkruntime.WithBaseUrl(config.BaseURL),
 			arkruntime.WithRegion(config.Region),
@@ -110,7 +135,6 @@ func buildClient(config *ChatModelConfig) *arkruntime.Client {
 	}
 
 	return arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey,
-		arkruntime.WithHTTPClient(config.HTTPClient),
 		arkruntime.WithRetryTimes(*config.RetryTimes),
 		arkruntime.WithBaseUrl(config.BaseURL),
 		arkruntime.WithRegion(config.Region),
@@ -167,7 +191,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	resp, err := cm.client.CreateChatCompletion(ctx, *req)
 	if err != nil {
-		return nil, fmt.Errorf("[ArkV3] CreateChatCompletion error, %v", err)
+		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
 	outMsg, err = cm.resolveChatResponse(resp)
@@ -184,7 +208,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 	return outMsg, nil
 }
 
-func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) ( // byted_s_too_many_lines_in_func
+func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
 	outStream *schema.StreamReader[*schema.Message], err error) {
 
 	defer func() {
@@ -294,26 +318,15 @@ func (cm *ChatModel) genRequest(in []*schema.Message, opts ...fmodel.Option) (re
 		Stop:        cm.config.Stop,
 	}, opts...)
 
-	if options.Model == nil || len(*options.Model) == 0 {
-		return nil, fmt.Errorf("ark chat model gen request with empty model")
-	}
-
 	req = &model.ChatCompletionRequest{
-		MaxTokens:         dereferenceOrZero(options.MaxTokens),
-		Temperature:       dereferenceOrZero(options.Temperature),
-		TopP:              dereferenceOrZero(options.TopP),
-		Model:             dereferenceOrZero(options.Model),
-		Stream:            dereferenceOrZero(cm.config.Stream),
-		Stop:              options.Stop,
-		FrequencyPenalty:  dereferenceOrZero(cm.config.FrequencyPenalty),
-		LogitBias:         cm.config.LogitBias,
-		LogProbs:          dereferenceOrZero(cm.config.LogProbs),
-		TopLogProbs:       dereferenceOrZero(cm.config.TopLogProbs),
-		User:              dereferenceOrZero(cm.config.User),
-		PresencePenalty:   dereferenceOrZero(cm.config.PresencePenalty),
-		RepetitionPenalty: dereferenceOrZero(cm.config.RepetitionPenalty),
-		N:                 dereferenceOrZero(cm.config.N),
-		ResponseFormat:    cm.config.ResponseFormat,
+		MaxTokens:        dereferenceOrZero(options.MaxTokens),
+		Temperature:      dereferenceOrZero(options.Temperature),
+		TopP:             dereferenceOrZero(options.TopP),
+		Model:            dereferenceOrZero(options.Model),
+		Stop:             options.Stop,
+		FrequencyPenalty: dereferenceOrZero(cm.config.FrequencyPenalty),
+		LogitBias:        cm.config.LogitBias,
+		PresencePenalty:  dereferenceOrZero(cm.config.PresencePenalty),
 	}
 
 	for _, msg := range in {
@@ -362,13 +375,13 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 		}
 	}
 
-	if choice == nil { // unexpected
-		return nil, fmt.Errorf("unexpected completion choices without index=0")
+	if choice == nil {
+		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
 	content := choice.Message.Content
 	if content == nil && len(choice.Message.ToolCalls) == 0 {
-		return nil, fmt.Errorf("unexpected message, nil content and no tool calls")
+		return nil, fmt.Errorf("invalid response format: message has neither content nor tool calls")
 	}
 
 	msg = &schema.Message{
@@ -381,7 +394,7 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 		},
 	}
 
-	if content.StringValue != nil {
+	if content != nil && content.StringValue != nil {
 		msg.Content = *content.StringValue
 	}
 
@@ -507,6 +520,9 @@ func toArkContent(content string, multiContent []schema.ChatMessagePart) (*model
 				Text: part.Text,
 			})
 		case schema.ChatMessagePartTypeImageURL:
+			if part.ImageURL == nil {
+				return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
+			}
 			parts = append(parts, &model.ChatCompletionMessageContentPart{
 				Type: model.ChatCompletionMessageContentPartTypeImageURL,
 				ImageURL: &model.ChatMessageImageURL{
@@ -550,12 +566,12 @@ func toTools(tls []*schema.ToolInfo) ([]tool, error) {
 	for i := range tls {
 		ti := tls[i]
 		if ti == nil {
-			return nil, errors.New("unexpected nil tool")
+			return nil, fmt.Errorf("tool info cannot be nil in BindTools")
 		}
 
 		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
 		if err != nil {
-			return nil, fmt.Errorf("convert toolInfo ParamsOneOf to JSONSchema failed: %w", err)
+			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
 
 		tools[i] = tool{

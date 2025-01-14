@@ -58,35 +58,83 @@ type ChatCompletionResponseFormatJSONSchema struct {
 }
 
 type Config struct {
-	// if you want to use Azure OpenAI Service, set the next three fields. refs: https://learn.microsoft.com/en-us/azure/ai-services/openai/
-	// ByAzure set this field to true when using Azure OpenAI Service, otherwise it does not need to be set.
-	ByAzure bool `json:"by_azure"`
-	// BaseURL https://{{$YOUR_RESOURCE_NAME}}.openai.azure.com, YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
-	BaseURL string `json:"base_url"`
-	// APIVersion specifies the API version you want to use.
-	APIVersion string `json:"api_version"`
-
-	// APIKey is typically OPENAI_API_KEY, but if you have set up Azure, then it is Azure API_KEY.
+	// APIKey is your authentication key
+	// Use OpenAI API key or Azure API key depending on the service
+	// Required
 	APIKey string `json:"api_key"`
 
-	// HTTPClient is used to send request.
-	HTTPClient *http.Client
+	// HTTPClient is used to send HTTP requests
+	// Optional. Default: http.DefaultClient
+	HTTPClient *http.Client `json:"-"`
 
-	// The following fields have the same meaning as the fields in the openai chat completion API request. Ref: https://platform.openai.com/docs/api-reference/chat/create
-	Model            string                        `json:"model"`
-	MaxTokens        *int                          `json:"max_tokens,omitempty"`
-	Temperature      *float32                      `json:"temperature,omitempty"`
-	TopP             *float32                      `json:"top_p,omitempty"`
-	N                *int                          `json:"n,omitempty"`
-	Stop             []string                      `json:"stop,omitempty"`
-	PresencePenalty  *float32                      `json:"presence_penalty,omitempty"`
-	ResponseFormat   *ChatCompletionResponseFormat `json:"response_format,omitempty"`
-	Seed             *int                          `json:"seed,omitempty"`
-	FrequencyPenalty *float32                      `json:"frequency_penalty,omitempty"`
-	LogitBias        map[string]int                `json:"logit_bias,omitempty"`
-	LogProbs         *bool                         `json:"logprobs,omitempty"`
-	TopLogProbs      *int                          `json:"top_logprobs,omitempty"`
-	User             *string                       `json:"user,omitempty"`
+	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
+	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
+
+	// ByAzure indicates whether to use Azure OpenAI Service
+	// Required for Azure
+	ByAzure bool `json:"by_azure"`
+
+	// BaseURL is the Azure OpenAI endpoint URL
+	// Format: https://{YOUR_RESOURCE_NAME}.openai.azure.com. YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
+	// Required for Azure
+	BaseURL string `json:"base_url"`
+
+	// APIVersion specifies the Azure OpenAI API version
+	// Required for Azure
+	APIVersion string `json:"api_version"`
+
+	// The following fields correspond to OpenAI's chat completion API parameters
+	// Ref: https://platform.openai.com/docs/api-reference/chat/create
+
+	// Model specifies the ID of the model to use
+	// Required
+	Model string `json:"model"`
+
+	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
+	// Optional. Default: model's maximum
+	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// Temperature specifies what sampling temperature to use
+	// Generally recommend altering this or TopP but not both.
+	// Range: 0.0 to 2.0. Higher values make output more random
+	// Optional. Default: 1.0
+	Temperature *float32 `json:"temperature,omitempty"`
+
+	// TopP controls diversity via nucleus sampling
+	// Generally recommend altering this or Temperature but not both.
+	// Range: 0.0 to 1.0. Lower values make output more focused
+	// Optional. Default: 1.0
+	TopP *float32 `json:"top_p,omitempty"`
+
+	// Stop sequences where the API will stop generating further tokens
+	// Optional. Example: []string{"\n", "User:"}
+	Stop []string `json:"stop,omitempty"`
+
+	// PresencePenalty prevents repetition by penalizing tokens based on presence
+	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics
+	// Optional. Default: 0
+	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
+
+	// ResponseFormat specifies the format of the model's response
+	// Optional. Use for structured outputs
+	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
+
+	// Seed enables deterministic sampling for consistent outputs
+	// Optional. Set for reproducible results
+	Seed *int `json:"seed,omitempty"`
+
+	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
+	// Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
+	// Optional. Default: 0
+	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+
+	// LogitBias modifies likelihood of specific tokens appearing in completion
+	// Optional. Map token IDs to bias values from -100 to 100
+	LogitBias map[string]int `json:"logit_bias,omitempty"`
+
+	// User unique identifier representing end-user
+	// Optional. Helps OpenAI monitor and detect abuse
+	User *string `json:"user,omitempty"`
 }
 
 var _ model.ChatModel = (*Client)(nil)
@@ -102,7 +150,7 @@ type Client struct {
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
 	if config == nil {
-		config = &Config{Model: "gpt-3.5-turbo"}
+		return nil, fmt.Errorf("OpenAI client config cannot be nil")
 	}
 
 	var clientConf openai.ClientConfig
@@ -161,7 +209,7 @@ func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatMessagePart
 			})
 		case schema.ChatMessagePartTypeImageURL:
 			if part.ImageURL == nil {
-				return nil, fmt.Errorf("image_url should not be nil")
+				return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
 			}
 			ret = append(ret, openai.ChatMessagePart{
 				Type: openai.ChatMessagePartTypeImageURL,
@@ -238,23 +286,16 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 }
 
 func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*openai.ChatCompletionRequest, error) {
-	if options.Model == nil || len(*options.Model) == 0 {
-		return nil, fmt.Errorf("open chat model gen request with empty model")
-	}
-
 	req := &openai.ChatCompletionRequest{
 		Model:            *options.Model,
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
 		Temperature:      dereferenceOrZero(options.Temperature),
 		TopP:             dereferenceOrZero(options.TopP),
-		N:                dereferenceOrZero(cm.config.N),
 		Stop:             cm.config.Stop,
 		PresencePenalty:  dereferenceOrZero(cm.config.PresencePenalty),
 		Seed:             cm.config.Seed,
 		FrequencyPenalty: dereferenceOrZero(cm.config.FrequencyPenalty),
 		LogitBias:        cm.config.LogitBias,
-		LogProbs:         dereferenceOrZero(cm.config.LogProbs),
-		TopLogProbs:      dereferenceOrZero(cm.config.TopLogProbs),
 		User:             dereferenceOrZero(cm.config.User),
 	}
 
@@ -275,17 +316,17 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 
 		if cm.forceToolCall && len(cm.tools) > 0 {
 
-			/* // nolint: byted_s_comment_space
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
+			/*
+				tool_choice is string or object
+				Controls which (if any) tool is called by the model.
+				"none" means the model will not call any tool and instead generates a message.
+				"auto" means the model can pick between generating a message or calling one or more tools.
+				"required" means the model must call one or more tools.
 
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
+				Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
 
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
+				"none" is the default when no tools are present.
+				"auto" is the default if tools are present.
 			*/
 
 			if len(req.Tools) > 1 {
@@ -357,7 +398,7 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 
 	req, err := cm.genRequest(in, options)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
 	}
 
 	reqConf := &model.Config{
@@ -377,7 +418,11 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 
 	resp, err := cm.cli.CreateChatCompletion(ctx, *req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create chat completion: %w", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return nil, fmt.Errorf("received empty choices from OpenAI API response")
 	}
 
 	for _, choice := range resp.Choices {
@@ -401,8 +446,8 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 		break
 	}
 
-	if outMsg == nil { // unexpected
-		return nil, fmt.Errorf("unexpected completion choices without index=0")
+	if outMsg == nil {
+		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
 	usage := &model.TokenUsage{
@@ -420,7 +465,7 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 	return outMsg, nil
 }
 
-func (cm *Client) Stream(ctx context.Context, in []*schema.Message, // nolint: byted_s_too_many_lines_in_func
+func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 
 	defer func() {
@@ -494,7 +539,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message, // nolint: b
 			}
 
 			if chunkErr != nil {
-				_ = sw.Send(nil, chunkErr)
+				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk from OpenAI: %w", chunkErr))
 				return
 			}
 
@@ -511,8 +556,8 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message, // nolint: b
 			// skip empty frame in stream, then stream first frame could know whether is tool call msg.
 			if lastEmptyMsg != nil {
 				cMsg, cErr := schema.ConcatMessages([]*schema.Message{lastEmptyMsg, msg})
-				if cErr != nil { // nolint: byted_s_too_many_nests_in_func
-					_ = sw.Send(nil, cErr)
+				if cErr != nil {
+					_ = sw.Send(nil, fmt.Errorf("failed to concatenate stream messages: %w", cErr))
 					return
 				}
 
@@ -596,12 +641,12 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 	for i := range tis {
 		ti := tis[i]
 		if ti == nil {
-			return nil, errors.New("unexpected nil tool")
+			return nil, fmt.Errorf("tool info cannot be nil in BindTools")
 		}
 
 		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
 		if err != nil {
-			return nil, fmt.Errorf("convert toolInfo ParamsOneOf to JSONSchema failed: %w", err)
+			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
 
 		tools[i] = tool{

@@ -19,7 +19,6 @@ package ark
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"time"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
@@ -31,33 +30,38 @@ import (
 
 var (
 	// all default values are from github.com/volcengine/volcengine-go-sdk/service/arkruntime/config.go
-	defaultBaseURL        = "https://ark.cn-beijing.volces.com/api/v3"
-	defaultRegion         = "cn-beijing"
-	defaultRetryTimes int = 2
-	defaultTimeout        = 10 * time.Minute
-	defaultClient         = http.Client{Timeout: defaultTimeout}
+	defaultBaseURL    = "https://ark.cn-beijing.volces.com/api/v3"
+	defaultRegion     = "cn-beijing"
+	defaultRetryTimes = 2
+	defaultTimeout    = 10 * time.Minute
 )
 
 type EmbeddingConfig struct {
-	// URL of ark endpoint, default "https://ark.cn-beijing.volces.com/api/v3".
-	BaseURL string
-	// Region of ark endpoint, default "cn-beijing", see more
-	Region string
+	// Timeout specifies the maximum duration to wait for API responses
+	// Optional. Default: 10 minutes
+	Timeout *time.Duration `json:"timeout"`
 
-	HTTPClient *http.Client   `json:"-"`
-	Timeout    *time.Duration `json:"timeout"`
-	RetryTimes *int           `json:"retry_times"`
+	// RetryTimes specifies the number of retry attempts for failed API calls
+	// Optional. Default: 2
+	RetryTimes *int `json:"retry_times"`
 
-	// one of APIKey or ak/sk must be set for authorization.
-	APIKey               string
-	AccessKey, SecretKey string
+	// BaseURL specifies the base URL for Ark service
+	// Optional. Default: "https://ark.cn-beijing.volces.com/api/v3"
+	BaseURL string `json:"base_url"`
+	// Region specifies the region where Ark service is located
+	// Optional. Default: "cn-beijing"
+	Region string `json:"region"`
 
-	// endpoint_id of the model you use in ark platform, mostly like `ep-20xxxxxxx-xxxxx`.
-	Model string
-	// A unique identifier representing your end-user, which will help to monitor and detect abuse. see more at https://github.com/volcengine/volcengine-go-sdk/blob/master/service/arkruntime/model/embeddings.go
-	User *string
-	// Dimensions The number of dimensions the resulting output embeddings should have, different between models.
-	Dimensions *int
+	// The following three fields are about authentication - either APIKey or AccessKey/SecretKey pair is required
+	// For authentication details, see: https://www.volcengine.com/docs/82379/1298459
+	// APIKey takes precedence if both are provided
+	APIKey    string `json:"api_key"`
+	AccessKey string `json:"access_key"`
+	SecretKey string `json:"secret_key"`
+
+	// Model specifies the ID of endpoint on ark platform
+	// Required
+	Model string `json:"model"`
 }
 
 type Embedder struct {
@@ -75,16 +79,12 @@ func buildClient(config *EmbeddingConfig) *arkruntime.Client {
 	if config.Timeout == nil {
 		config.Timeout = &defaultTimeout
 	}
-	if config.HTTPClient == nil {
-		config.HTTPClient = &defaultClient
-	}
 	if config.RetryTimes == nil {
 		config.RetryTimes = &defaultRetryTimes
 	}
 
 	if len(config.APIKey) > 0 {
 		return arkruntime.NewClientWithApiKey(config.APIKey,
-			arkruntime.WithHTTPClient(config.HTTPClient),
 			arkruntime.WithRetryTimes(*config.RetryTimes),
 			arkruntime.WithBaseUrl(config.BaseURL),
 			arkruntime.WithRegion(config.Region),
@@ -92,7 +92,6 @@ func buildClient(config *EmbeddingConfig) *arkruntime.Client {
 	}
 
 	return arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey,
-		arkruntime.WithHTTPClient(config.HTTPClient),
 		arkruntime.WithRetryTimes(*config.RetryTimes),
 		arkruntime.WithBaseUrl(config.BaseURL),
 		arkruntime.WithRegion(config.Region),
@@ -175,9 +174,7 @@ func (e *Embedder) genRequest(texts []string, opts ...embedding.Option) (
 	req = model.EmbeddingRequestStrings{
 		Input:          texts,
 		Model:          dereferenceOrZero(options.Model),
-		User:           dereferenceOrZero(e.conf.User),
 		EncodingFormat: model.EmbeddingEncodingFormatFloat, // only support Float for now?
-		Dimensions:     dereferenceOrZero(e.conf.Dimensions),
 	}
 
 	return req
