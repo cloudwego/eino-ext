@@ -53,9 +53,9 @@ func StartHTTPServer(_ context.Context, port string) error {
 
 func registerRoutes(r *mux.Router) {
 	const (
-		root     = "/eino/devops/v1"
-		debugBiz = "/eino/debug/v1"
-		evalBiz  = "/eino/evaluation/v1"
+		root     = "/eino/devops"
+		debugBiz = "/debug/v1"
+		evalBiz  = "/evaluation/v1"
 	)
 
 	r.Use(recoverMiddleware, corsMiddleware)
