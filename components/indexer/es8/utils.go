@@ -20,28 +20,6 @@ func GetType() string {
 	return typ
 }
 
-type tuple[A, B any] struct {
-	A A
-	B B
-}
-
-func chunk[T any](slice []T, size int) [][]T {
-	if size <= 0 {
-		return nil
-	}
-
-	var chunks [][]T
-	for size < len(slice) {
-		slice, chunks = slice[size:], append(chunks, slice[0:size:size])
-	}
-
-	if len(slice) > 0 {
-		chunks = append(chunks, slice)
-	}
-
-	return chunks
-}
-
 func iter[T, D any](src []T, fn func(T) D) []D {
 	resp := make([]D, len(src))
 	for i := range src {
@@ -49,18 +27,4 @@ func iter[T, D any](src []T, fn func(T) D) []D {
 	}
 
 	return resp
-}
-
-func iterWithErr[T, D any](src []T, fn func(T) (D, error)) ([]D, error) {
-	resp := make([]D, 0, len(src))
-	for i := range src {
-		d, err := fn(src[i])
-		if err != nil {
-			return nil, err
-		}
-
-		resp = append(resp, d)
-	}
-
-	return resp, nil
 }

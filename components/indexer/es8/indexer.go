@@ -33,10 +33,10 @@ import (
 )
 
 type IndexerConfig struct {
-	ESConfig  elasticsearch.Config `json:"es_config"`
-	Index     string               `json:"index"`
-	BatchSize int                  `json:"batch_size"`
-
+	ESConfig elasticsearch.Config `json:"es_config"`
+	Index    string               `json:"index"`
+	// BatchSize controls max texts size for embedding
+	BatchSize int `json:"batch_size"`
 	// FieldMapping supports customize es fields from eino document, returns:
 	// needEmbeddingFields will be embedded by Embedding firstly, then join fields with its keys,
 	// and joined fields will be saved as bulk item.
@@ -85,28 +85,7 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		Embedding: i.config.Embedding,
 	}, opts...)
 
-	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
-		Index:  i.config.Index,
-		Client: i.client,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	for _, slice := range chunk(docs, i.config.BatchSize) {
-		items, err := i.makeBulkItems(ctx, slice, options)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, item := range items {
-			if err = bi.Add(ctx, item); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if err = bi.Close(ctx); err != nil {
+	if err = i.bulkAdd(ctx, docs, options); err != nil {
 		return nil, err
 	}
 
@@ -117,59 +96,107 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	return ids, nil
 }
 
-func (i *Indexer) makeBulkItems(ctx context.Context, docs []*schema.Document, options *indexer.Options) (items []esutil.BulkIndexerItem, err error) {
+func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options *indexer.Options) error {
 	emb := options.Embedding
+	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
+		Index:  i.config.Index,
+		Client: i.client,
+	})
+	if err != nil {
+		return err
+	}
 
-	items, err = iterWithErr(docs, func(doc *schema.Document) (item esutil.BulkIndexerItem, err error) {
-		fields, needEmbeddingFields, err := i.config.FieldMapping(ctx, doc)
-		if err != nil {
-			return item, fmt.Errorf("[makeBulkItems] FieldMapping failed, %w", err)
-		}
+	var (
+		tuples []tuple
+		texts  []string
+	)
 
-		if len(needEmbeddingFields) > 0 {
+	embAndAdd := func() error {
+		var vectors [][]float64
+
+		if len(texts) > 0 {
 			if emb == nil {
-				return item, fmt.Errorf("[makeBulkItems] embedding method not provided")
+				return fmt.Errorf("[bulkAdd] embedding method not provided")
 			}
 
-			tuples := make([]tuple[string, int], 0, len(fields))
-			texts := make([]string, 0, len(fields))
-			for k, text := range needEmbeddingFields {
-				tuples = append(tuples, tuple[string, int]{k, len(texts)})
-				texts = append(texts, text)
-			}
-
-			vectors, err := emb.EmbedStrings(i.makeEmbeddingCtx(ctx, emb), texts)
+			vectors, err = emb.EmbedStrings(i.makeEmbeddingCtx(ctx, emb), texts)
 			if err != nil {
-				return item, fmt.Errorf("[makeBulkItems] embedding failed, %w", err)
+				return fmt.Errorf("[bulkAdd] embedding failed, %w", err)
 			}
 
 			if len(vectors) != len(texts) {
-				return item, fmt.Errorf("[makeBulkItems] invalid vector length, expected=%d, got=%d", len(texts), len(vectors))
-			}
-
-			for _, t := range tuples {
-				fields[t.A] = vectors[t.B]
+				return fmt.Errorf("[bulkAdd] invalid vector length, expected=%d, got=%d", len(texts), len(vectors))
 			}
 		}
 
-		b, err := json.Marshal(fields)
-		if err != nil {
-			return item, err
+		for _, t := range tuples {
+			fields := t.fields
+			for k, idx := range t.key2Idx {
+				fields[k] = vectors[idx]
+			}
+
+			b, err := json.Marshal(fields)
+			if err != nil {
+				return fmt.Errorf("[bulkAdd] marshal bulk item failed, %w", err)
+			}
+
+			if err = bi.Add(ctx, esutil.BulkIndexerItem{
+				Index:      i.config.Index,
+				Action:     "index",
+				DocumentID: t.id,
+				Body:       bytes.NewReader(b),
+			}); err != nil {
+				return err
+			}
 		}
 
-		return esutil.BulkIndexerItem{
-			Index:      i.config.Index,
-			Action:     "index",
-			DocumentID: doc.ID,
-			Body:       bytes.NewReader(b),
-		}, nil
-	})
+		tuples = tuples[:0]
+		texts = texts[:0]
 
-	if err != nil {
-		return nil, err
+		return nil
 	}
 
-	return items, nil
+	for idx := range docs {
+		doc := docs[idx]
+		fields, needEmbeddingFields, err := i.config.FieldMapping(ctx, doc)
+		if err != nil {
+			return fmt.Errorf("[bulkAdd] FieldMapping failed, %w", err)
+		}
+		if fields == nil {
+			fields = make(map[string]any)
+		}
+
+		if len(needEmbeddingFields) > i.config.BatchSize {
+			return fmt.Errorf("[bulkAdd] needEmbeddingFields length over batch size, batch size=%d, got size=%d",
+				i.config.BatchSize, len(needEmbeddingFields))
+		}
+
+		if len(texts)+len(needEmbeddingFields) > i.config.BatchSize {
+			if err = embAndAdd(); err != nil {
+				return err
+			}
+		}
+
+		key2Idx := make(map[string]int, len(needEmbeddingFields))
+		for k, text := range needEmbeddingFields {
+			key2Idx[k] = len(texts)
+			texts = append(texts, text)
+		}
+
+		tuples = append(tuples, tuple{
+			id:      doc.ID,
+			fields:  fields,
+			key2Idx: key2Idx,
+		})
+	}
+
+	if len(tuples) > 0 {
+		if err = embAndAdd(); err != nil {
+			return err
+		}
+	}
+
+	return bi.Close(ctx)
 }
 
 func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
@@ -192,4 +219,10 @@ func (i *Indexer) GetType() string {
 
 func (i *Indexer) IsCallbacksEnabled() bool {
 	return true
+}
+
+type tuple struct {
+	id      string
+	fields  map[string]any
+	key2Idx map[string]int
 }

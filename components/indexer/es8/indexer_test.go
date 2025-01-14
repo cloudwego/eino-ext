@@ -18,29 +18,50 @@ package es8
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"testing"
 
 	. "github.com/bytedance/mockey"
-	"github.com/smartystreets/goconvey/convey"
-
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
+	"github.com/elastic/go-elasticsearch/v8/esutil"
+	"github.com/smartystreets/goconvey/convey"
 )
 
-func TestVectorQueryItems(t *testing.T) {
-	PatchConvey("test makeBulkItems", t, func() {
+func TestBulkAdd(t *testing.T) {
+	PatchConvey("test bulkAdd", t, func() {
 		ctx := context.Background()
 		extField := "extra_field"
 
 		d1 := &schema.Document{ID: "123", Content: "asd", MetaData: map[string]any{extField: "ext_1"}}
 		d2 := &schema.Document{ID: "456", Content: "qwe", MetaData: map[string]any{extField: "ext_2"}}
 		docs := []*schema.Document{d1, d2}
+		bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{})
+		convey.So(err, convey.ShouldBeNil)
+
+		PatchConvey("test NewBulkIndexer error", func() {
+			mockErr := fmt.Errorf("test err")
+			Mock(esutil.NewBulkIndexer).Return(nil, mockErr).Build()
+			i := &Indexer{
+				config: &IndexerConfig{
+					Index: "mock_index",
+					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
+						return nil, nil, nil
+					},
+				},
+			}
+			err := i.bulkAdd(ctx, docs, &indexer.Options{
+				Embedding: &mockEmbedding{size: []int{1}, mockVector: []float64{2.1}},
+			})
+			convey.So(err, convey.ShouldBeError, mockErr)
+		})
 
 		PatchConvey("test FieldMapping error", func() {
 			mockErr := fmt.Errorf("test err")
+			Mock(esutil.NewBulkIndexer).Return(bi, nil).Build()
 			i := &Indexer{
 				config: &IndexerConfig{
 					Index: "mock_index",
@@ -49,78 +70,150 @@ func TestVectorQueryItems(t *testing.T) {
 					},
 				},
 			}
-
-			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{
+			err := i.bulkAdd(ctx, docs, &indexer.Options{
 				Embedding: &mockEmbedding{size: []int{1}, mockVector: []float64{2.1}},
 			})
-			convey.So(err, convey.ShouldBeError, fmt.Errorf("[makeBulkItems] FieldMapping failed, %w", mockErr))
-			convey.So(len(bulks), convey.ShouldEqual, 0)
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[bulkAdd] FieldMapping failed, %w", mockErr))
 		})
 
-		PatchConvey("test emb not provided", func() {
+		PatchConvey("test len(needEmbeddingFields) > i.config.BatchSize", func() {
+			Mock(esutil.NewBulkIndexer).Return(bi, nil).Build()
 			i := &Indexer{
 				config: &IndexerConfig{
-					Index:        "mock_index",
-					FieldMapping: defaultFieldMapping,
+					Index:     "mock_index",
+					BatchSize: 1,
+					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
+						return nil, map[string]string{
+							"k1": "v1", "k2": "v2",
+						}, nil
+					},
 				},
 			}
-
-			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{Embedding: nil})
-			convey.So(err, convey.ShouldBeError, "[makeBulkItems] embedding method not provided")
-			convey.So(len(bulks), convey.ShouldEqual, 0)
-		})
-
-		PatchConvey("test vector size invalid", func() {
-			i := &Indexer{
-				config: &IndexerConfig{
-					Index:        "mock_index",
-					FieldMapping: defaultFieldMapping,
-				},
-			}
-
-			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{
-				Embedding: &mockEmbedding{size: []int{2, 2}, mockVector: []float64{2.1}},
+			err := i.bulkAdd(ctx, docs, &indexer.Options{
+				Embedding: &mockEmbedding{size: []int{1}, mockVector: []float64{2.1}},
 			})
-			convey.So(err, convey.ShouldBeError, "[makeBulkItems] invalid vector length, expected=1, got=2")
-			convey.So(len(bulks), convey.ShouldEqual, 0)
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[bulkAdd] needEmbeddingFields length over batch size, batch size=%d, got size=%d", i.config.BatchSize, 2))
+		})
+
+		PatchConvey("test embedding not provided", func() {
+			Mock(esutil.NewBulkIndexer).Return(bi, nil).Build()
+			i := &Indexer{
+				config: &IndexerConfig{
+					Index:     "mock_index",
+					BatchSize: 2,
+					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
+						return map[string]any{
+								"k0": "v0", "k1": "v1", "k3": 123,
+							}, map[string]string{
+								"k1": "v1", "k2": "v2",
+							}, nil
+					},
+				},
+			}
+			err := i.bulkAdd(ctx, docs, &indexer.Options{
+				Embedding: nil,
+			})
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[bulkAdd] embedding method not provided"))
+		})
+
+		PatchConvey("test embed failed", func() {
+			mockErr := fmt.Errorf("test err")
+			Mock(esutil.NewBulkIndexer).Return(bi, nil).Build()
+			i := &Indexer{
+				config: &IndexerConfig{
+					Index:     "mock_index",
+					BatchSize: 2,
+					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
+						return map[string]any{
+								"k0": "v0", "k1": "v1", "k3": 123,
+							}, map[string]string{
+								"k1": "v1", "k2": "v2",
+							}, nil
+					},
+				},
+			}
+			err := i.bulkAdd(ctx, docs, &indexer.Options{
+				Embedding: &mockEmbedding{err: mockErr},
+			})
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[bulkAdd] embedding failed, %w", mockErr))
+		})
+
+		PatchConvey("test len(vectors) != len(texts)", func() {
+			Mock(esutil.NewBulkIndexer).Return(bi, nil).Build()
+			i := &Indexer{
+				config: &IndexerConfig{
+					Index:     "mock_index",
+					BatchSize: 2,
+					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
+						return map[string]any{
+								"k0": "v0", "k1": "v1", "k3": 123,
+							}, map[string]string{
+								"k1": "v1", "k2": "v2",
+							}, nil
+					},
+				},
+			}
+			err := i.bulkAdd(ctx, docs, &indexer.Options{
+				Embedding: &mockEmbedding{size: []int{1}, mockVector: []float64{2.1}},
+			})
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[bulkAdd] invalid vector length, expected=%d, got=%d", 2, 1))
 		})
 
 		PatchConvey("test success", func() {
+			var mps []esutil.BulkIndexerItem
+			Mock(esutil.NewBulkIndexer).Return(bi, nil).Build()
+			Mock(GetMethod(bi, "Add")).To(func(ctx context.Context, item esutil.BulkIndexerItem) error {
+				mps = append(mps, item)
+				return nil
+			}).Build()
+			Mock(GetMethod(bi, "Close")).Return(nil).Build()
+
 			i := &Indexer{
 				config: &IndexerConfig{
-					Index:        "mock_index",
-					FieldMapping: defaultFieldMapping,
+					Index:     "mock_index",
+					BatchSize: 2,
+					FieldMapping: func(ctx context.Context, doc *schema.Document) (fields map[string]any, needEmbeddingFields map[string]string, err error) {
+						return map[string]any{
+								"k0": doc.Content, "k1": "v1", "k3": 123,
+							}, map[string]string{
+								"k1": "v1", "k2": "v2",
+							}, nil
+					},
 				},
 			}
-
-			bulks, err := i.makeBulkItems(ctx, docs, &indexer.Options{
-				Embedding: &mockEmbedding{size: []int{1, 1}, mockVector: []float64{2.1}},
+			err := i.bulkAdd(ctx, docs, &indexer.Options{
+				Embedding: &mockEmbedding{size: []int{2, 2}, mockVector: []float64{2.1}},
 			})
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(bulks), convey.ShouldEqual, 2)
-			exp := []string{
-				`{"content":"asd","meta_data":{"extra_field":"ext_1"},"vector_content":[2.1]}`,
-				`{"content":"qwe","meta_data":{"extra_field":"ext_2"},"vector_content":[2.1]}`,
-			}
-
-			for idx, item := range bulks {
-				convey.So(item.Index, convey.ShouldEqual, i.config.Index)
+			convey.So(len(mps), convey.ShouldEqual, 2)
+			for j, doc := range docs {
+				item := mps[j]
+				convey.So(item.DocumentID, convey.ShouldEqual, doc.ID)
 				b, err := io.ReadAll(item.Body)
-				fmt.Println(string(b))
 				convey.So(err, convey.ShouldBeNil)
-				convey.So(string(b), convey.ShouldEqual, exp[idx])
+				var mp map[string]interface{}
+				convey.So(json.Unmarshal(b, &mp), convey.ShouldBeNil)
+				convey.So(mp["k0"], convey.ShouldEqual, doc.Content)
+				convey.So(mp["k1"], convey.ShouldEqual, []any{2.1})
+				convey.So(mp["k2"], convey.ShouldEqual, []any{2.1})
+				convey.So(mp["k3"], convey.ShouldEqual, 123)
 			}
 		})
 	})
 }
 
 type mockEmbedding struct {
+	err        error
 	call       int
 	size       []int
 	mockVector []float64
 }
 
 func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+
 	if m.call >= len(m.size) {
 		return nil, fmt.Errorf("call limit error")
 	}
@@ -132,19 +225,4 @@ func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts .
 	}
 
 	return resp, nil
-}
-
-func defaultFieldMapping(ctx context.Context, doc *schema.Document) (
-	fields map[string]any, needEmbeddingFields map[string]string, err error) {
-
-	fields = map[string]any{
-		"content":   doc.Content,
-		"meta_data": doc.MetaData,
-	}
-
-	needEmbeddingFields = map[string]string{
-		"vector_content": doc.Content,
-	}
-
-	return fields, needEmbeddingFields, nil
 }
