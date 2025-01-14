@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -87,19 +87,19 @@ func (mr *MockContainerServiceMockRecorder) CreateCanvas(graphID any) *gomock.Ca
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateCanvas", reflect.TypeOf((*MockContainerService)(nil).CreateCanvas), graphID)
 }
 
-// CreateRunnable mocks base method.
-func (m *MockContainerService) CreateRunnable(graphID, fromNode string) (model.Runnable, error) {
+// CreateDevGraph mocks base method.
+func (m *MockContainerService) CreateDevGraph(graphID, fromNode string) (*model.Graph, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "CreateRunnable", graphID, fromNode)
-	ret0, _ := ret[0].(model.Runnable)
+	ret := m.ctrl.Call(m, "CreateDevGraph", graphID, fromNode)
+	ret0, _ := ret[0].(*model.Graph)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// CreateRunnable indicates an expected call of CreateRunnable.
-func (mr *MockContainerServiceMockRecorder) CreateRunnable(graphID, fromNode any) *gomock.Call {
+// CreateDevGraph indicates an expected call of CreateDevGraph.
+func (mr *MockContainerServiceMockRecorder) CreateDevGraph(graphID, fromNode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateRunnable", reflect.TypeOf((*MockContainerService)(nil).CreateRunnable), graphID, fromNode)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateDevGraph", reflect.TypeOf((*MockContainerService)(nil).CreateDevGraph), graphID, fromNode)
 }
 
 // GetCanvas mocks base method.
@@ -117,34 +117,19 @@ func (mr *MockContainerServiceMockRecorder) GetCanvas(graphID any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetCanvas", reflect.TypeOf((*MockContainerService)(nil).GetCanvas), graphID)
 }
 
-// GetGraphInfo mocks base method.
-func (m *MockContainerService) GetGraphInfo(graphID string) (model.GraphInfo, bool) {
+// GetDevGraph mocks base method.
+func (m *MockContainerService) GetDevGraph(graphID, fromNode string) (*model.Graph, bool) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetGraphInfo", graphID)
-	ret0, _ := ret[0].(model.GraphInfo)
+	ret := m.ctrl.Call(m, "GetDevGraph", graphID, fromNode)
+	ret0, _ := ret[0].(*model.Graph)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
 
-// GetGraphInfo indicates an expected call of GetGraphInfo.
-func (mr *MockContainerServiceMockRecorder) GetGraphInfo(graphID any) *gomock.Call {
+// GetDevGraph indicates an expected call of GetDevGraph.
+func (mr *MockContainerServiceMockRecorder) GetDevGraph(graphID, fromNode any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetGraphInfo", reflect.TypeOf((*MockContainerService)(nil).GetGraphInfo), graphID)
-}
-
-// GetRunnable mocks base method.
-func (m *MockContainerService) GetRunnable(graphID, fromNode string) (model.Runnable, bool) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetRunnable", graphID, fromNode)
-	ret0, _ := ret[0].(model.Runnable)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
-}
-
-// GetRunnable indicates an expected call of GetRunnable.
-func (mr *MockContainerServiceMockRecorder) GetRunnable(graphID, fromNode any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRunnable", reflect.TypeOf((*MockContainerService)(nil).GetRunnable), graphID, fromNode)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDevGraph", reflect.TypeOf((*MockContainerService)(nil).GetDevGraph), graphID, fromNode)
 }
 
 // ListGraphs mocks base method.

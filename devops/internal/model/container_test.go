@@ -163,10 +163,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -227,10 +227,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -290,10 +290,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -357,10 +357,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -415,10 +415,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -473,10 +473,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -532,10 +532,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -604,10 +604,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -693,10 +693,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -803,10 +803,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph(compose.START)
+		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -885,10 +885,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph("node_21")
+		ng, err := BuildDevGraph(tc.gi, "node_21")
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType("node_21")
@@ -940,10 +940,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		ng, err := tc.gi.BuildDevGraph("node_2")
+		ng, err := BuildDevGraph(tc.gi, "node_2")
 		assert.NoError(t, err)
 
-		r, err := ng.Compile(tc.gi.CompileOptions...)
+		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType("node_2")
@@ -1025,10 +1025,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 			assert.NoError(t, err)
 
-			ng, err := tc.gi.BuildDevGraph("node_21")
+			ng, err := BuildDevGraph(tc.gi, "node_21")
 			assert.NoError(t, err)
 
-			r, err := ng.Compile(tc.gi.CompileOptions...)
+			r, err := ng.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("node_21")
@@ -1050,10 +1050,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 			assert.NoError(t, err)
 
-			ng, err := tc.gi.BuildDevGraph("node_21")
+			ng, err := BuildDevGraph(tc.gi, "node_21")
 			assert.NoError(t, err)
 
-			r, err := ng.Compile(tc.gi.CompileOptions...)
+			r, err := ng.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("node_21")
@@ -1133,10 +1133,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 			assert.NoError(t, err)
 
-			ng, err := tc.gi.BuildDevGraph("C")
+			ng, err := BuildDevGraph(tc.gi, "C")
 			assert.NoError(t, err)
 
-			r, err := ng.Compile(tc.gi.CompileOptions...)
+			r, err := ng.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("C")
@@ -1158,10 +1158,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 			assert.NoError(t, err)
 
-			ng, err := tc.gi.BuildDevGraph(compose.START)
+			ng, err := BuildDevGraph(tc.gi, compose.START)
 			assert.NoError(t, err)
 
-			r, err := ng.Compile(tc.gi.CompileOptions...)
+			r, err := ng.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -1211,10 +1211,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		t.Run("Chain[2]_Lambda", func(t *testing.T) {
-			newChain, err := tc.gi.BuildDevGraph("Chain[2]_Lambda")
+			newChain, err := BuildDevGraph(tc.gi, "Chain[2]_Lambda")
 			assert.NoError(t, err)
 
-			r, err := newChain.Compile(tc.gi.CompileOptions...)
+			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("Chain[2]_Lambda")
@@ -1238,10 +1238,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		})
 
 		t.Run("Chain[3]_Parallel[0]_Lambda", func(t *testing.T) {
-			newChain, err := tc.gi.BuildDevGraph("Chain[3]_Parallel[0]_Lambda")
+			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Parallel[0]_Lambda")
 			assert.NoError(t, err)
 
-			r, err := newChain.Compile(tc.gi.CompileOptions...)
+			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Parallel[0]_Lambda")
@@ -1264,10 +1264,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		})
 
 		t.Run("Chain[3]_Parallel[1]_Lambda", func(t *testing.T) {
-			newChain, err := tc.gi.BuildDevGraph("Chain[3]_Parallel[1]_Lambda")
+			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Parallel[1]_Lambda")
 			assert.NoError(t, err)
 
-			r, err := newChain.Compile(tc.gi.CompileOptions...)
+			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Parallel[1]_Lambda")
@@ -1332,10 +1332,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		t.Run("Chain[3]_Branch[b1]_Lambda", func(t *testing.T) {
-			newChain, err := tc.gi.BuildDevGraph("Chain[3]_Branch[b1]_Lambda")
+			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Branch[b1]_Lambda")
 			assert.NoError(t, err)
 
-			r, err := newChain.Compile(tc.gi.CompileOptions...)
+			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Branch[b1]_Lambda")
@@ -1358,10 +1358,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		})
 
 		t.Run("Chain[3]_Branch[b2]_Lambda", func(t *testing.T) {
-			newChain, err := tc.gi.BuildDevGraph("Chain[3]_Branch[b2]_Lambda")
+			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Branch[b2]_Lambda")
 			assert.NoError(t, err)
 
-			r, err := newChain.Compile(tc.gi.CompileOptions...)
+			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
 			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Branch[b2]_Lambda")

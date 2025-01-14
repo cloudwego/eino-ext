@@ -72,10 +72,10 @@ func Test_containerServiceImpl_AddGraphInfo(t *testing.T) {
 	})
 }
 
-func Test_containerServiceImpl_CreateRunnable(t *testing.T) {
+func Test_containerServiceImpl_CreateDevGraph(t *testing.T) {
 	t.Run("graphInfo not exist", func(t *testing.T) {
 		s := &containerServiceImpl{}
-		_, err := s.CreateRunnable("test_graph", compose.START)
+		_, err := s.CreateDevGraph("test_graph", compose.START)
 		assert.NotNil(t, err)
 	})
 
@@ -113,8 +113,7 @@ func Test_containerServiceImpl_CreateRunnable(t *testing.T) {
 		assert.Nil(t, err)
 
 		mockey.PatchConvey("from start node", t, func() {
-			mockey.Mock((*model.GraphInfo).BuildDevGraph).Return(g, nil).Build()
-			mockey.Mock((*model.Graph).Compile).Return(model.Runnable{}, nil).Build()
+			mockey.Mock(model.BuildDevGraph).Return(&model.Graph{}, nil).Build()
 
 			mockGraphID := "mock_graph"
 			s := &containerServiceImpl{
@@ -124,16 +123,15 @@ func Test_containerServiceImpl_CreateRunnable(t *testing.T) {
 					},
 				},
 			}
-			_, err = s.CreateRunnable(mockGraphID, compose.START)
+			_, err = s.CreateDevGraph(mockGraphID, compose.START)
 			assert.Nil(t, err)
 
-			_, exist := s.container[mockGraphID].NodesRunnable[compose.START]
+			_, exist := s.container[mockGraphID].NodesGraph[compose.START]
 			assert.True(t, exist)
 		})
 
 		mockey.PatchConvey("from node_2", t, func() {
-			mockey.Mock((*model.GraphInfo).BuildDevGraph).Return(g, nil).Build()
-			mockey.Mock((*model.Graph).Compile).Return(model.Runnable{}, nil).Build()
+			mockey.Mock(model.BuildDevGraph).Return(&model.Graph{}, nil).Build()
 
 			mockGraphID := "mock_graph"
 			s := &containerServiceImpl{
@@ -143,22 +141,22 @@ func Test_containerServiceImpl_CreateRunnable(t *testing.T) {
 					},
 				},
 			}
-			_, err = s.CreateRunnable(mockGraphID, "node_2")
+			_, err = s.CreateDevGraph(mockGraphID, "node_2")
 			assert.Nil(t, err)
 
-			_, exist := s.container[mockGraphID].NodesRunnable["node_2"]
+			_, exist := s.container[mockGraphID].NodesGraph["node_2"]
 			assert.True(t, exist)
 		})
 	})
 }
 
-func Test_containerServiceImpl_GetRunnable(t *testing.T) {
+func Test_containerServiceImpl_GetDevGraph(t *testing.T) {
 	t.Run("graph not exist", func(t *testing.T) {
 		mockGraphID := "mock_graph"
 		mockNode := "mock_node"
 
 		s := &containerServiceImpl{}
-		_, exist := s.GetRunnable(mockGraphID, mockNode)
+		_, exist := s.GetDevGraph(mockGraphID, mockNode)
 		assert.False(t, exist)
 	})
 
@@ -171,7 +169,7 @@ func Test_containerServiceImpl_GetRunnable(t *testing.T) {
 				mockGraphID: {},
 			},
 		}
-		_, exist := s.GetRunnable(mockGraphID, mockNode)
+		_, exist := s.GetDevGraph(mockGraphID, mockNode)
 		assert.False(t, exist)
 	})
 
@@ -182,13 +180,13 @@ func Test_containerServiceImpl_GetRunnable(t *testing.T) {
 		s := &containerServiceImpl{
 			container: map[string]*model.GraphContainer{
 				mockGraphID: {
-					NodesRunnable: map[string]*model.Runnable{
+					NodesGraph: map[string]*model.Graph{
 						mockNode: {},
 					},
 				},
 			},
 		}
-		_, exist := s.GetRunnable(mockGraphID, mockNode)
+		_, exist := s.GetDevGraph(mockGraphID, mockNode)
 		assert.True(t, exist)
 	})
 }

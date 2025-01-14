@@ -23,6 +23,7 @@ import (
 	"reflect"
 
 	"github.com/google/uuid"
+	"golang.org/x/exp/slices"
 
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
@@ -45,8 +46,8 @@ type GraphContainer struct {
 	GraphInfo *GraphInfo
 	// Canvas graph canvas.
 	CanvasInfo *devmodel.CanvasInfo
-	// NodesRunnable NodeKey vs Runnable, NodeKey is the node where debugging starts.
-	NodesRunnable map[string]*Runnable
+	// NodesGraph NodeKey vs Graph, NodeKey is the node where debugging starts.
+	NodesGraph map[string]*Graph
 }
 
 type GraphInfo struct {
@@ -62,11 +63,28 @@ type NodeUnmarshalInput struct {
 }
 
 type GraphOption struct {
-	NodeInputUnmarshal []*NodeUnmarshalInput
-	GenState           func(ctx context.Context) any
+	GenState func(ctx context.Context) any
 }
 
-func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
+func initGraphInfo(gi *GraphInfo) *GraphInfo {
+	return &GraphInfo{
+		GraphInfo: &compose.GraphInfo{
+			CompileOptions: slices.Clone(gi.GraphInfo.CompileOptions),
+			Nodes:          make(map[string]compose.GraphNodeInfo, len(gi.Nodes)),
+			Edges:          make(map[string][]string, len(gi.Edges)),
+			Branches:       make(map[string][]compose.GraphBranch, len(gi.Branches)),
+			InputType:      gi.InputType,
+			OutputType:     gi.OutputType,
+			Name:           gi.Name,
+			GenStateFn:     gi.GenStateFn,
+		},
+		Option: GraphOption{
+			GenState: gi.GenStateFn,
+		},
+	}
+}
+
+func BuildDevGraph(gi *GraphInfo, fromNode string) (g *Graph, err error) {
 	if fromNode == compose.END {
 		return nil, fmt.Errorf("can not start from end node")
 	}
@@ -78,6 +96,7 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 	}
 
 	var (
+		newGI    = initGraphInfo(gi)
 		queue    = []string{fromNode}
 		sgNodes  = make(map[string]bool, len(gi.Nodes))
 		addNodes = make(map[string]bool, len(gi.Nodes))
@@ -90,22 +109,27 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 		}
 
 		if fn != compose.START && !addNodes[fn] {
-			if err = g.addNode(fn, gi.Nodes[fn]); err != nil {
+			node := gi.Nodes[fn]
+			if err = g.addNode(fn, node); err != nil {
 				return nil, err
 			}
+			newGI.Nodes[fn] = node
 			addNodes[fn] = true
 		}
 
 		for _, tn := range gi.Edges[fn] {
 			if !addNodes[tn] && tn != compose.END {
-				if err = g.addNode(tn, gi.Nodes[tn]); err != nil {
+				node := gi.Nodes[tn]
+				if err = g.addNode(tn, node); err != nil {
 					return nil, err
 				}
+				newGI.Nodes[tn] = node
 				addNodes[tn] = true
 			}
 			if err = g.AddEdge(fn, tn); err != nil {
 				return nil, err
 			}
+			newGI.Edges[fn] = append(newGI.Edges[fn], tn)
 			queue = append(queue, tn)
 		}
 
@@ -113,9 +137,11 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 			bt := b
 			for tn := range bt.GetEndNode() {
 				if !addNodes[tn] && tn != compose.END {
-					if err = g.addNode(tn, gi.Nodes[tn]); err != nil {
+					node := gi.Nodes[tn]
+					if err = g.addNode(tn, node); err != nil {
 						return nil, err
 					}
+					newGI.Nodes[tn] = node
 					addNodes[tn] = true
 				}
 				queue = append(queue, tn)
@@ -123,6 +149,7 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 			if err = g.AddBranch(fn, &bt); err != nil {
 				return nil, err
 			}
+			newGI.Branches[fn] = append(newGI.Branches[fn], bt)
 		}
 
 		sgNodes[fn] = true
@@ -132,7 +159,10 @@ func (gi GraphInfo) BuildDevGraph(fromNode string) (g *Graph, err error) {
 		if err = g.AddEdge(compose.START, fromNode); err != nil {
 			return nil, err
 		}
+		newGI.Edges[compose.START] = append(newGI.Edges[compose.START], fromNode)
 	}
+
+	g.GraphInfo = newGI
 
 	return g, nil
 }
@@ -190,28 +220,27 @@ func (gi GraphInfo) GetInputNonInterfaceType(nodeKeys []string) (reflectTypes ma
 }
 
 func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
-
 	nodes = make([]*devmodel.Node, 0, len(gi.Nodes)+2)
-	startNode := &devmodel.Node{
-		Key:  compose.START,
-		Name: compose.START,
-		Type: devmodel.NodeTypeOfStart,
-	}
 
 	inferInputType, allowOperate, err := gi.inferStartNodeImplMeta()
 	if err != nil {
 		return nil, fmt.Errorf("[buildCanvasNodes] failed to infer start node impl meta, err=%w", err)
 	}
 
-	startNode.InferInput = inferInputType
-	nodes = append(nodes, startNode)
-
-	nodes = append(nodes, &devmodel.Node{
-		Key:          compose.END,
-		Name:         compose.END,
-		Type:         devmodel.NodeTypeOfEnd,
-		AllowOperate: allowOperate,
-	})
+	nodes = append(nodes,
+		&devmodel.Node{
+			Key:          compose.START,
+			Name:         compose.START,
+			Type:         devmodel.NodeTypeOfStart,
+			InferInput:   inferInputType,
+			AllowOperate: allowOperate,
+		},
+		&devmodel.Node{
+			Key:  compose.END,
+			Name: compose.END,
+			Type: devmodel.NodeTypeOfEnd,
+		},
+	)
 
 	// add compose nodes
 	for key, node := range gi.Nodes {
@@ -231,12 +260,6 @@ func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 
 		if implType, ok := components.GetType(node.Instance); ok {
 			fdlNode.ComponentSchema.Identifier = implType
-		}
-
-		for _, nn := range gi.Option.NodeInputUnmarshal {
-			if nn.NodeKey == key {
-				fdlNode.AllowOperate = true
-			}
 		}
 
 		nodes = append(nodes, fdlNode)
@@ -371,10 +394,11 @@ func (gi GraphInfo) buildSubGraphSchema() (subGraphSchema map[string]*devmodel.G
 
 type Graph struct {
 	*compose.Graph[any, any]
+	GraphInfo *GraphInfo
 }
 
-func (g *Graph) Compile(opts ...compose.GraphCompileOption) (Runnable, error) {
-	r, err := g.Graph.Compile(context.Background(), opts...)
+func (g *Graph) Compile() (Runnable, error) {
+	r, err := g.Graph.Compile(context.Background(), g.GraphInfo.CompileOptions...)
 	return Runnable{r: r}, err
 }
 
@@ -443,13 +467,7 @@ func (gi GraphInfo) inferStartNodeImplMeta() (inferInputType *devmodel.JsonSchem
 	if err != nil {
 		return inferInputType, false, err
 	}
-
 	allowOperate = support
-	for _, nn := range gi.Option.NodeInputUnmarshal {
-		if nn.NodeKey == compose.START {
-			allowOperate = true
-		}
-	}
 
 	if len(inferGraphType.InputTypes) == 0 {
 		inferInputType = parseReflectTypeToJsonSchema(inferGraphType.InputType)

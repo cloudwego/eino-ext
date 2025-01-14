@@ -25,8 +25,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
+	"github.com/cloudwego/eino/compose"
 )
 
 type mockRunnable interface {
@@ -113,9 +113,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -173,9 +173,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -232,9 +232,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -293,9 +293,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -351,9 +351,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -409,9 +409,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -467,9 +467,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -701,9 +701,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -778,9 +778,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -862,9 +862,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -961,9 +961,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -1043,9 +1043,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -1144,9 +1144,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -1310,9 +1310,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph(compose.START)
+		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -1407,9 +1407,9 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph("C")
+		dg, err := BuildDevGraph(tc.gi, "C")
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
 
 		it, ok, err := tc.gi.InferGraphInputType("C")
@@ -1494,10 +1494,12 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		dg, err := tc.gi.BuildDevGraph("C")
+		dg, err := BuildDevGraph(tc.gi, "C")
 		assert.NoError(t, err)
-		r, err := dg.Compile(tc.gi.CompileOptions...)
+		r, err := dg.Compile()
 		assert.NoError(t, err)
+		assert.Equal(t, len(dg.GraphInfo.Nodes), 1)
+		assert.Equal(t, len(dg.GraphInfo.Edges), 2)
 
 		it, ok, err := tc.gi.InferGraphInputType("C")
 		assert.NoError(t, err)

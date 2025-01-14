@@ -17,11 +17,10 @@
 package service
 
 import (
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino-ext/devops/internal/mock"
-	"github.com/cloudwego/eino-ext/devops/internal/model"
-	"go.uber.org/mock/gomock"
 	"testing"
+
+	"github.com/cloudwego/eino-ext/devops/internal/model"
+	"github.com/cloudwego/eino/compose"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -34,25 +33,19 @@ func Test_NewDebugService(t *testing.T) {
 }
 
 func Test_debugServiceImpl_getInvokeOptions(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockContainerSVC := mock.NewMockContainerService(ctrl)
-
-	mockContainerSVC.EXPECT().GetGraphInfo(gomock.Any()).Return(model.GraphInfo{
+	gi := &model.GraphInfo{
 		GraphInfo: &compose.GraphInfo{
 			Nodes: map[string]compose.GraphNodeInfo{
-				"node1": compose.GraphNodeInfo{},
-				"node2": compose.GraphNodeInfo{},
+				"node1": {},
+				"node2": {},
 			},
 		},
-	}, true)
-	ContainerSVC = mockContainerSVC
+	}
+
 	svc := newDebugService()
 	impl, ok := svc.(*debugServiceImpl)
 	assert.True(t, ok)
-	opts, err := impl.getInvokeOptions("g1", "t1", nil)
+	opts, err := impl.getInvokeOptions(gi, "t1", nil)
 	assert.Nil(t, err)
 	assert.NotNil(t, opts)
-
 }

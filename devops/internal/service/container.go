@@ -32,10 +32,9 @@ var _ ContainerService = &containerServiceImpl{}
 //go:generate mockgen -source=container.go -destination=../mock/container_mock.go -package=mock ContainerService
 type ContainerService interface {
 	AddGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error)
-	GetGraphInfo(graphID string) (graphInfo model.GraphInfo, exist bool)
 	ListGraphs() (graphNameToID map[string]string)
-	CreateRunnable(graphID, fromNode string) (runnable model.Runnable, err error)
-	GetRunnable(graphID, fromNode string) (runnable model.Runnable, exist bool)
+	CreateDevGraph(graphID, fromNode string) (devGraph *model.Graph, err error)
+	GetDevGraph(graphID, fromNode string) (devGraph *model.Graph, exist bool)
 	CreateCanvas(graphID string) (canvas devmodel.CanvasInfo, err error)
 	GetCanvas(graphID string) (canvas devmodel.CanvasInfo, exist bool)
 }
@@ -101,17 +100,17 @@ func (s *containerServiceImpl) AddGraphInfo(graphName string, graphInfo *compose
 	return gid, nil
 }
 
-func (s *containerServiceImpl) GetGraphInfo(graphID string) (graphInfo model.GraphInfo, exist bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	c := s.container[graphID]
-	if c == nil || c.GraphInfo == nil {
-		return graphInfo, false
-	}
-
-	return *c.GraphInfo, true
-}
+//func (s *containerServiceImpl) GetDevGraph(graphID string) (graphInfo model.GraphInfo, exist bool) {
+//	s.mu.RLock()
+//	defer s.mu.RUnlock()
+//
+//	c := s.container[graphID]
+//	if c == nil || c.GraphInfo == nil {
+//		return graphInfo, false
+//	}
+//
+//	return *c.GraphInfo, true
+//}
 
 func (s *containerServiceImpl) ListGraphs() (graphNameToID map[string]string) {
 	s.mu.RLock()
@@ -125,49 +124,44 @@ func (s *containerServiceImpl) ListGraphs() (graphNameToID map[string]string) {
 	return graphNameToID
 }
 
-func (s *containerServiceImpl) CreateRunnable(graphID, fromNode string) (runnable model.Runnable, err error) {
+func (s *containerServiceImpl) CreateDevGraph(graphID, fromNode string) (devGraph *model.Graph, err error) {
 	s.mu.Lock()
 	c := s.container[graphID]
 	s.mu.Unlock()
 	if c == nil {
-		return runnable, fmt.Errorf("must add graph info first")
+		return devGraph, fmt.Errorf("must add graph info first")
 	}
 
-	graph, err := c.GraphInfo.BuildDevGraph(fromNode)
+	graph, err := model.BuildDevGraph(c.GraphInfo, fromNode)
 	if err != nil {
-		return runnable, fmt.Errorf("build dev graph failed, err=%w", err)
-	}
-
-	runnable, err = graph.Compile(c.GraphInfo.CompileOptions...)
-	if err != nil {
-		return runnable, fmt.Errorf("compile failed, err=%w", err)
+		return devGraph, fmt.Errorf("build dev graph failed, err=%w", err)
 	}
 
 	s.mu.Lock()
-	if c.NodesRunnable == nil {
-		c.NodesRunnable = make(map[string]*model.Runnable, 10)
+	if c.NodesGraph == nil {
+		c.NodesGraph = make(map[string]*model.Graph, 10)
 	}
-	c.NodesRunnable[fromNode] = &runnable
+	c.NodesGraph[fromNode] = graph
 	s.mu.Unlock()
 
-	return runnable, nil
+	return graph, nil
 }
 
-func (s *containerServiceImpl) GetRunnable(graphID, fromNode string) (runnable model.Runnable, exist bool) {
+func (s *containerServiceImpl) GetDevGraph(graphID, fromNode string) (devGraph *model.Graph, exist bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	c := s.container[graphID]
 	if c == nil {
-		return runnable, false
+		return devGraph, false
 	}
 
-	r := c.NodesRunnable[fromNode]
-	if r == nil {
-		return runnable, false
+	g := c.NodesGraph[fromNode]
+	if g == nil {
+		return devGraph, false
 	}
 
-	return *r, true
+	return g, true
 }
 
 func (s *containerServiceImpl) CreateCanvas(graphID string) (canvasInfo devmodel.CanvasInfo, err error) {

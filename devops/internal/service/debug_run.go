@@ -19,7 +19,6 @@ package service
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 
 	"github.com/google/uuid"
@@ -97,55 +96,29 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 	}
 	debugID = id.String()
 
-	r, ok := ContainerSVC.GetRunnable(rm.GraphID, rm.FromNode)
+	devGraph, ok := ContainerSVC.GetDevGraph(rm.GraphID, rm.FromNode)
 	if !ok {
-		r, err = ContainerSVC.CreateRunnable(rm.GraphID, rm.FromNode)
+		devGraph, err = ContainerSVC.CreateDevGraph(rm.GraphID, rm.FromNode)
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("create runnable failed, err=%w", err)
 		}
 	}
 
-	gi, ok := ContainerSVC.GetGraphInfo(rm.GraphID)
+	inputType, ok, err := devGraph.GraphInfo.InferGraphInputType(rm.FromNode)
+	if err != nil {
+		return "", nil, nil, err
+	}
 	if !ok {
-		return "", nil, nil, fmt.Errorf("graph=%s not exist", rm.GraphID)
+		return "", nil, nil, fmt.Errorf("node=%s is not operational", rm.FromNode)
 	}
-
-	var (
-		needInfer      = true
-		unmarshalInput model.UnmarshalInput
-	)
-	for _, nn := range gi.Option.NodeInputUnmarshal {
-		if nn.NodeKey == rm.FromNode {
-			needInfer = false
-			unmarshalInput = nn.UnmarshalInput
-			break
-		}
-	}
-
-	var input reflect.Value
-	if !needInfer {
-		inputIns, err := unmarshalInput(ctx, userInput)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		input = reflect.ValueOf(inputIns)
-	} else {
-		inputType, ok, err := gi.InferGraphInputType(rm.FromNode)
-		if err != nil {
-			return "", nil, nil, err
-		}
-		if !ok {
-			return "", nil, nil, fmt.Errorf("node=%s is not operational", rm.FromNode)
-		}
-		input, err = inputType.UnmarshalJson(userInput)
-		if err != nil {
-			return "", nil, nil, err
-		}
+	input, err := inputType.UnmarshalJson(userInput)
+	if err != nil {
+		return "", nil, nil, err
 	}
 
 	stateCh = make(chan *model.NodeDebugState, 100)
 
-	opts, err := d.getInvokeOptions(rm.GraphID, rm.ThreadID, stateCh)
+	opts, err := d.getInvokeOptions(devGraph.GraphInfo, rm.ThreadID, stateCh)
 	if err != nil {
 		close(stateCh)
 		return "", nil, nil, fmt.Errorf("get invoke option failed, err=%w", err)
@@ -156,7 +129,14 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 		defer close(stateCh)
 		defer close(errCh)
 
-		_, e := r.Invoke(ctx, input, opts...)
+		r, e := devGraph.Compile()
+		if e != nil {
+			errCh <- e
+			log.Errorf("Compile failed, fromNode=%s\nerr=%s", rm.FromNode, e)
+			return
+		}
+
+		_, e = r.Invoke(ctx, input, opts...)
 		if e != nil {
 			errCh <- e
 			log.Errorf("invoke failed, userInput=%s\nerr=%s", userInput, e)
@@ -167,12 +147,7 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 	return debugID, stateCh, errCh, nil
 }
 
-func (d *debugServiceImpl) getInvokeOptions(graphID, threadID string, stateCh chan *model.NodeDebugState) (opts []compose.Option, err error) {
-	gi, ok := ContainerSVC.GetGraphInfo(graphID)
-	if !ok {
-		return nil, fmt.Errorf("graph=%s not exist", graphID)
-	}
-
+func (d *debugServiceImpl) getInvokeOptions(gi *model.GraphInfo, threadID string, stateCh chan *model.NodeDebugState) (opts []compose.Option, err error) {
 	opts = make([]compose.Option, 0, len(gi.Nodes))
 	for key, node := range gi.Nodes {
 		opts = append(opts, newCallbackOption(key, threadID, node, stateCh))

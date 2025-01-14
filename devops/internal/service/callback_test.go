@@ -113,7 +113,7 @@ func (c *callbackTestSuite) Test_NewGlobalDevGraphCompileCallback() {
 		svcImpl := containerServiceImpl{
 			container: map[string]*model.GraphContainer{mockID: {GraphInfo: &gi}},
 		}
-		_, err := svcImpl.CreateRunnable(mockID, compose.START)
+		_, err := svcImpl.CreateDevGraph(mockID, compose.START)
 		assert.NoError(c.T(), err)
 	})
 }
