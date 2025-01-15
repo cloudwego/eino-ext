@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -101,6 +102,15 @@ func genGraphName(frame runtime.Frame) string {
 	lastDotIdx := strings.LastIndex(fun, ".")
 	if lastDotIdx != -1 {
 		fun = fun[lastDotIdx+1:]
+	}
+
+	// process pattern functions
+	if strings.Contains(frame.Function, "[") && strings.Contains(fun, "]") {
+		re := regexp.MustCompile(`\.([^.]+)\[`)
+		matches := re.FindStringSubmatch(frame.Function)
+		if len(matches) > 1 {
+			fun = matches[1]
+		}
 	}
 
 	return fmt.Sprintf("%s.%s:%d", file, fun, frame.Line)
