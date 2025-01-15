@@ -258,8 +258,9 @@ func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 			OutputType: reassembleJsonSchema(parseReflectTypeToJsonSchema(node.OutputType), len(node.OutputKey) != 0),
 		}
 
-		if implType, ok := components.GetType(node.Instance); ok {
-			fdlNode.ComponentSchema.Identifier = implType
+		fdlNode.ComponentSchema.Name = string(node.Component)
+		if implType, ok := components.GetType(node.Instance); ok && implType != "" {
+			fdlNode.ComponentSchema.Name = implType
 		}
 
 		nodes = append(nodes, fdlNode)
