@@ -8,17 +8,18 @@ EinoExt 项目为 [Eino](https://github.com/cloudwego/eino) 框架提供了各�
 
 - **组件实现**: Eino 组件类型的官方实现。
 
-  | 组件类型                 | 官方实现                                   |
-      |----------------------|----------------------------------------|
-  | ChatModel            | OpenAI, Claude, Gemini, Ark, Ollama... |
-  | Tool                 | Google Search, Duck Duck Go...         |
-  | Retriever            | Elastic Search, Volc VikingDB...       |
-  | ChatTemplate         | DefaultChatTemplate...                 |
-  | Document Loader      | WebURL, Amazon S3, File...             |
-  | Document Transformer | HTMLSplitter, ScoreReranker...         |
-  | Indexer              | Elastic Search, Volc VikingDB...       |
-  | Embedding            | OpenAI, Ark...                         |
-  | Lambda               | JSONMessageParser...                   |
+| 组件类型                 | 官方组件实现                                 |
+|----------------------|----------------------------------------|
+| ChatModel            | OpenAI, Claude, Gemini, Ark, Ollama... |
+| Tool                 | Google Search, Duck Duck Go...         |
+| Retriever            | Elastic Search, Volc VikingDB...       |
+| ChatTemplate         | DefaultChatTemplate...                 |
+| Document Loader      | WebURL, Amazon S3, File...             |
+| Document Transformer | HTMLSplitter, ScoreReranker...         |
+| Indexer              | Elastic Search, Volc VikingDB...       |
+| Embedding            | OpenAI, Ark...                         |
+| Lambda               | JSONMessageParser...                   |
+
 
 有关组件类型的更多详细信息，请参阅 [Eino 组件文档.](https://www.cloudwego.io/zh/docs/eino/core_modules/components/)
 

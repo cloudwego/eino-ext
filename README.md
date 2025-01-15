@@ -8,17 +8,17 @@ The EinoExt project hosts various extensions for the [Eino](https://github.com/c
 
 - **component implementations**: official implementations for Eino's component types.
 
-  | component type       | official implementations               |
-    |----------------------|----------------------------------------|
-  | ChatModel            | OpenAI, Claude, Gemini, Ark, Ollama... |
-  | Tool                 | Google Search, Duck Duck Go...         |
-  | Retriever            | Elastic Search, Volc VikingDB...       |
-  | ChatTemplate         | DefaultChatTemplate...                 |
-  | Document Loader      | WebURL, Amazon S3, File...             |
-  | Document Transformer | HTMLSplitter, ScoreReranker...         |
-  | Indexer              | Elastic Search, Volc VikingDB...       |
-  | Embedding            | OpenAI, Ark...                         |
-  | Lambda               | JSONMessageParser...                   |
+| component type       | official implementations               |
+|----------------------|----------------------------------------|
+| ChatModel            | OpenAI, Claude, Gemini, Ark, Ollama... |
+| Tool                 | Google Search, Duck Duck Go...         |
+| Retriever            | Elastic Search, Volc VikingDB...       |
+| ChatTemplate         | DefaultChatTemplate...                 |
+| Document Loader      | WebURL, Amazon S3, File...             |
+| Document Transformer | HTMLSplitter, ScoreReranker...         |
+| Indexer              | Elastic Search, Volc VikingDB...       |
+| Embedding            | OpenAI, Ark...                         |
+| Lambda               | JSONMessageParser...                   |
 
 For more details about component types, please refer to the [Eino component documentation.](https://www.cloudwego.io/zh/docs/eino/core_modules/components/)
 
