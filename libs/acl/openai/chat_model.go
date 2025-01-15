@@ -42,7 +42,9 @@ const (
 )
 
 const (
-	toolChoiceRequired = "required"
+	toolChoiceNone     = "none"     // none means the model will not call any tool and instead generates a message.
+	toolChoiceAuto     = "auto"     // auto means the model can pick between generating a message or calling one or more tools.
+	toolChoiceRequired = "required" // required means the model must call one or more tools.
 )
 
 type ChatCompletionResponseFormat struct {
@@ -143,9 +145,9 @@ type Client struct {
 	cli    *openai.Client
 	config *Config
 
-	tools         []tool
-	rawTools      []*schema.ToolInfo
-	forceToolCall bool
+	tools      []tool
+	rawTools   []*schema.ToolInfo
+	toolChoice *schema.ToolChoice
 }
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
@@ -314,8 +316,7 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 			}
 		}
 
-		if cm.forceToolCall && len(cm.tools) > 0 {
-
+		if options.ToolChoice != nil {
 			/*
 				tool_choice is string or object
 				Controls which (if any) tool is called by the model.
@@ -329,15 +330,24 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 				"auto" is the default if tools are present.
 			*/
 
-			if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = openai.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: openai.ToolFunction{
-						Name: req.Tools[0].Function.Name,
-					},
+			switch *options.ToolChoice {
+			case schema.ToolChoiceForbidden:
+				req.ToolChoice = toolChoiceNone
+			case schema.ToolChoiceAllowed:
+				req.ToolChoice = toolChoiceAuto
+			case schema.ToolChoiceForced:
+				if len(req.Tools) > 1 {
+					req.ToolChoice = toolChoiceRequired
+				} else {
+					req.ToolChoice = openai.ToolChoice{
+						Type: req.Tools[0].Type,
+						Function: openai.ToolFunction{
+							Name: req.Tools[0].Function.Name,
+						},
+					}
 				}
+			default:
+				return nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
 			}
 		}
 	}
@@ -394,6 +404,7 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 		Model:       &cm.config.Model,
 		TopP:        cm.config.TopP,
 		Stop:        cm.config.Stop,
+		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
 	req, err := cm.genRequest(in, options)
@@ -479,6 +490,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 		Model:       &cm.config.Model,
 		TopP:        cm.config.TopP,
 		Stop:        cm.config.Stop,
+		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
 	req, err := cm.genRequest(in, options)
@@ -692,7 +704,8 @@ func (cm *Client) BindTools(tools []*schema.ToolInfo) error {
 		return err
 	}
 
-	cm.forceToolCall = false
+	tc := schema.ToolChoiceAllowed
+	cm.toolChoice = &tc
 	cm.rawTools = tools
 
 	return nil
@@ -705,7 +718,8 @@ func (cm *Client) BindForcedTools(tools []*schema.ToolInfo) error {
 		return err
 	}
 
-	cm.forceToolCall = true
+	tc := schema.ToolChoiceForced
+	cm.toolChoice = &tc
 	cm.rawTools = tools
 
 	return nil
