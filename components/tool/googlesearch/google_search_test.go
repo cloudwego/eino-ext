@@ -278,7 +278,7 @@ func TestGooGleSearchTool(t *testing.T) {
 			Num:            3,
 		}
 
-		st, err := NewGoogleSearchTool(ctx, conf)
+		st, err := NewTool(ctx, conf)
 		assert.NoError(t, err)
 
 		tl, err := st.Info(ctx)

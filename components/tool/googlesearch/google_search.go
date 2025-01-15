@@ -25,9 +25,9 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/bytedance/sonic"
 )
 
 type Config struct {
@@ -41,7 +41,7 @@ type Config struct {
 	ToolDesc string `json:"tool_desc"` // default: "custom search json api of google search engine"
 }
 
-func NewGoogleSearchTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
+func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 
 	if conf.APIKey == "" || conf.SearchEngineID == "" {
 		return nil, fmt.Errorf("missing api_key or search_engine_id")
