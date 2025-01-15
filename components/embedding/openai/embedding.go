@@ -35,11 +35,7 @@ type EmbeddingConfig struct {
 	// Use OpenAI API key or Azure API key depending on the service
 	// Required
 	APIKey string `json:"api_key"`
-
-	// HTTPClient is used to send HTTP requests
-	// Optional. Default: http.DefaultClient
-	HTTPClient *http.Client
-
+	
 	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
 	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
 
