@@ -65,7 +65,7 @@ type GraphSchema struct {
 }
 
 type GenLocalState struct {
-	Method     string      `json:"method"`
+	IsSet      bool        `json:"is_set"`
 	OutputType *JsonSchema `json:"output_type"`
 }
 
