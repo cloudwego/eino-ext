@@ -283,3 +283,7 @@ func Test_IsMapType(t *testing.T) {
 		assert.False(t, isMap)
 	})
 }
+
+func Test_UnsupportedInputKind(t *testing.T) {
+	assert.False(t, UnsupportedInputKind(reflect.TypeOf("").Kind()))
+}

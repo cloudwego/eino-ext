@@ -205,7 +205,8 @@ func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 	t.Run("create canvas and get this", func(t *testing.T) {
 		s := newContainerService()
 		g := &compose.GraphInfo{
-			InputType: reflect.TypeOf(map[string]any{}),
+			InputType:  reflect.TypeOf(map[string]any{}),
+			OutputType: reflect.TypeOf(map[string]any{}),
 		}
 		id, err := s.AddGraphInfo("graph", g, model.GraphOption{})
 		assert.Nil(t, err)

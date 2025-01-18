@@ -49,7 +49,6 @@ func ListGraphs(res http.ResponseWriter, _ *http.Request) {
 }
 
 func StreamLog(res http.ResponseWriter, req *http.Request) {
-
 	sseResponseChan := make(chan SSEResponse, 1000)
 	ctx := req.Context()
 	safego.Go(ctx, func() {
@@ -69,5 +68,4 @@ func StreamLog(res http.ResponseWriter, req *http.Request) {
 	})
 
 	doSSEResp(ctx, res, sseResponseChan)
-
 }

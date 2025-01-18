@@ -206,3 +206,20 @@ func (d *debugTestSuite) Test_validateDebugRunRequest() {
 	assert.Nil(d.t, err)
 	assert.Equal(d.t, "start", r.FromNode)
 }
+
+func (d *debugTestSuite) Test_ListInputTypes() {
+	req, err := http.NewRequest(http.MethodGet, "", nil)
+	assert.Nil(d.t, err)
+	res := &mockResponseWriter{}
+	ListInputTypes(res, req)
+
+	resp := &HTTPResp{}
+	err = json.Unmarshal(res.body, &resp)
+	assert.Nil(d.t, err)
+	b, err := json.Marshal(resp.Data)
+	assert.Nil(d.t, err)
+	var data *types.ListInputTypesResponse
+	err = json.Unmarshal(b, &data)
+	assert.Nil(d.t, err)
+	assert.Greater(d.t, len(data.Types), 0)
+}

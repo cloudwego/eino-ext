@@ -28,7 +28,17 @@ import (
 	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
+	"github.com/cloudwego/eino/compose"
 )
+
+func InitDebug(opt *model.DevOpt) {
+	compose.InitGraphCompileCallbacks([]compose.GraphCompileCallback{
+		service.NewGlobalDevGraphCompileCallback(),
+	})
+	for _, rt := range opt.GoTypes {
+		model.RegisterType(rt.Type)
+	}
+}
 
 // GetCanvasInfo use graph name to  get canvas info
 func GetCanvasInfo(res http.ResponseWriter, req *http.Request) {
@@ -194,4 +204,11 @@ func validateDebugRunRequest(req *http.Request) (*types.DebugRunRequest, error) 
 	}
 
 	return r, nil
+}
+
+func ListInputTypes(res http.ResponseWriter, req *http.Request) {
+	resp := &types.ListInputTypesResponse{
+		Types: model.GetRegisteredTypeJsonSchema(),
+	}
+	newHTTPResp(resp).doResp(res)
 }

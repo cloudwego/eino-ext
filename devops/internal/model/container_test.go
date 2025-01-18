@@ -164,12 +164,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `{"input":"mock_input"}`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
 		resp, err := r.Invoke(ctx, input)
 
@@ -226,13 +222,24 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
+		userMsg := `{
+  "A": {
+    "_value": {
+      "input": "mock_input_3",
+      "array": [
+        "mock_input_1",
+        "mock_input_2"
+      ]
+    },
+    "_eino_go_type": "*model.mockInputType"
+  }
+}`
 
-		userMsg := `{"A":{"input":"mock_input_3", "array":["mock_input_1", "mock_input_2"]}}`
-		input, err := ift.UnmarshalJson(userMsg)
+		RegisterType(generic.TypeOf[*mockInputType]())
+
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
 		assert.NoError(t, err)
 
@@ -288,14 +295,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `{"input":"mock_input"}`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		respStr, err := json.Marshal(resp)
 		assert.NoError(t, err)
@@ -354,14 +359,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `-1`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		respStr, err := json.Marshal(resp)
 		assert.NoError(t, err)
@@ -411,14 +414,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `{"input":"mock_input"}`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		respStr, err := json.Marshal(resp)
 		assert.NoError(t, err)
@@ -468,15 +469,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `mock_input`
-		userMsgMarshal, _ := json.Marshal(userMsg)
-		input, err := ift.UnmarshalJson(string(userMsgMarshal))
+		input, err := UnmarshalJson([]byte(fmt.Sprintf(`"%s"`, userMsg)), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		respStr, err := json.Marshal(resp)
 		assert.NoError(t, err)
@@ -526,14 +524,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `1`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		respStr, err := json.Marshal(resp)
 		assert.NoError(t, err)
@@ -597,14 +593,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `1`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		respStr, err := json.Marshal(resp)
 		assert.NoError(t, err)
@@ -683,14 +677,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `1`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		_, err = json.Marshal(resp)
 		assert.NoError(t, err)
@@ -705,7 +697,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 	})
 
 	t.Run("graph-parallel: has compositeType", func(t *testing.T) {
-
 		g := compose.NewGraph[mockContainerImpl, map[string][]string]()
 		err := g.AddLambdaNode("node_1", compose.InvokableLambda(func(ctx context.Context, input mockContainerImpl) (output mockContainer, err error) {
 			assert.Equal(t, input.NN, "start")
@@ -789,18 +780,15 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		ng, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
-		userMsg := `{"nn": "start", "age": -1}`
-
 		r, err := ng.Compile()
 		assert.NoError(t, err)
-		input, err := ift.UnmarshalJson(userMsg)
+
+		userMsg := `{"nn": "start", "age": -1}`
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
+		assert.NoError(t, err)
 
 		_, err = json.Marshal(resp)
 		assert.NoError(t, err)
@@ -875,12 +863,9 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType("node_21")
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
-		userMsg := `{"node":["from_node_21"]}`
-		input, err := ift.UnmarshalJson(userMsg)
+		userMsg := `{"Node":["from_node_21"]}`
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_21"].InputType)
+		fmt.Println(input.Interface())
 		assert.NoError(t, err)
 		resp, err := r.Invoke(ctx, input)
 
@@ -930,12 +915,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		r, err := ng.Compile()
 		assert.NoError(t, err)
 
-		ift, ok, err := tc.gi.InferGraphInputType("node_2")
-		assert.NoError(t, err)
-		assert.True(t, ok)
-
 		userMsg := `["from_node_2"]`
-		input, err := ift.UnmarshalJson(userMsg)
+		input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_2"].InputType)
 		assert.NoError(t, err)
 		resp, err := r.Invoke(ctx, input)
 
@@ -1015,12 +996,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			r, err := ng.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("node_21")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			userMsg := `[20000]`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_21"].InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1040,12 +1017,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			r, err := ng.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("node_21")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			userMsg := `[1]`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_21"].InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1123,12 +1096,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			r, err := ng.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("C")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			userMsg := `20000`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["C"].InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1148,12 +1117,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			r, err := ng.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType(compose.START)
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			userMsg := `-1`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1187,25 +1152,22 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		}))
 		c.AppendParallel(par)
 
-		tc := &testCallback{}
-		ctx := context.Background()
-
-		_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
-		assert.NoError(t, err)
-
 		t.Run("node_2", func(t *testing.T) {
+			tc := &testCallback{}
+			ctx := context.Background()
+
+			_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
+			assert.NoError(t, err)
 
 			newChain, err := BuildDevGraph(tc.gi, "node_2")
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("node_2")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
+
 			userMsg := `["from_Chain[2]_Lambda"]`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["Chain[2]_Lambda"].InputType)
+
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1221,18 +1183,20 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		})
 
 		t.Run("node_3_parallel_0", func(t *testing.T) {
+			tc := &testCallback{}
+			ctx := context.Background()
+
+			_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
+			assert.NoError(t, err)
+
 			newChain, err := BuildDevGraph(tc.gi, "node_3_parallel_0")
 			assert.NoError(t, err)
 
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("node_3_parallel_0")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			userMsg := `["from_p0"]`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_3_parallel_0"].InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1256,14 +1220,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			newChain, err := BuildDevGraph(tc.gi, "node_3_parallel_1")
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("node_3_parallel_1")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
 			userMsg := `["from_p1"]`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_3_parallel_1"].InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1277,6 +1237,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			assert.True(t, reflect.DeepEqual(ground, resp))
 		})
 	})
+
 	t.Run("chain-branch: start from here", func(t *testing.T) {
 		c := compose.NewChain[int, map[string][]string]()
 		c.AppendLambda(compose.InvokableLambda(func(ctx context.Context, input int) (output []string, err error) {
@@ -1324,12 +1285,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("node_3_branch_b1")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			userMsg := `["b1"]`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_3_branch_b1"].InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1357,12 +1314,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("node_3_branch_b2")
-			assert.NoError(t, err)
-			assert.True(t, ok)
-
 			userMsg := `["b2"]`
-			input, err := ift.UnmarshalJson(userMsg)
+			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["node_3_branch_b2"].InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1724,20 +1677,6 @@ func (c *canvasCallBackInferStartNode) OnFinish(ctx context.Context, info *compo
 		assert.Equal(t, names[0], edge.SourceNodeKey)
 		assert.Equal(t, names[1], edge.TargetNodeKey)
 	}
-	for _, node := range graphSchema.Nodes {
-		if node.Type == devmodel.NodeTypeOfStart {
-			assert.NotNil(t, node.InferInput)
-			for k, n := range node.InferInput.Properties {
-				assert.Contains(t, []string{"n1", "n2", "n3", "subGGG"}, k)
-				if k == "subGGG" {
-					for sk := range n.Properties {
-						assert.Contains(t, []string{"subN1", "subN2"}, sk)
-
-					}
-				}
-			}
-		}
-	}
 
 	return
 }
@@ -1811,34 +1750,6 @@ func TestGraphInfo_inferStartNodeImplMeta(t *testing.T) {
 
 }
 
-func Test_unmarshalJsonWithReflectType(t *testing.T) {
-	t.Run("Test unmarshal string input", func(t *testing.T) {
-		userInputStr := "hello"
-		userInputJson, _ := json.Marshal(userInputStr)
-		userInput := string(userInputJson)
-
-		actual, err := unmarshalJsonWithReflectType(userInput, generic.TypeOf[string]())
-
-		assert.NoError(t, err)
-		assert.Equal(t, actual.Kind(), reflect.String)
-		assert.Equal(t, actual.String(), userInputStr)
-	})
-}
-
-func Test_unmarshalJsonWithGraphInferType(t *testing.T) {
-	t.Run("Test map input type with unmarshalGraphInferType", func(t *testing.T) {
-		git := GraphInferType{
-			InputTypes:                map[string]reflect.Type{"1": reflect.TypeOf("")},
-			ComplicatedGraphInferType: map[string]GraphInferType{"key": {}},
-		}
-		actual, err := unmarshalJsonWithGraphInferType("{\"1\":\"aa\"}", git)
-
-		assert.NoError(t, err)
-		assert.Equal(t, actual.Kind(), reflect.Map)
-		assert.Equal(t, actual.MapIndex(actual.MapKeys()[0]).Elem().String(), "aa")
-	})
-}
-
 type DemoV2 struct {
 	Name string  `json:"name"`
 	D    *DemoV2 `json:"d"`
@@ -1871,5 +1782,4 @@ func Test_parseReflectTypeToTypeSchema(t *testing.T) {
 	assert.Equal(t, data.Properties["child2"].Type, devmodel.JsonTypeOfArray)
 	assert.Equal(t, data.Properties["child4"].Title, "model.DemoV2")
 	assert.Equal(t, data.Properties["child5"].Title, "model.DemoV2")
-
 }

@@ -51,7 +51,6 @@ func getPtrValue(typ reflect.Value, level int) reflect.Value {
 		newInput := reflect.New(typ.Type())
 		newInput.Elem().Set(typ)
 		typ = newInput
-		fmt.Printf("input: %v\n", typ.Type())
 	}
 	return typ
 }

@@ -104,14 +104,16 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 		}
 	}
 
-	inputType, ok, err := devGraph.GraphInfo.InferGraphInputType(rm.FromNode)
-	if err != nil {
-		return "", nil, nil, err
+	inputType := devGraph.GraphInfo.InputType
+	if rm.FromNode != compose.START {
+		fromNode, ok := devGraph.GraphInfo.Nodes[rm.FromNode]
+		if !ok {
+			return "", nil, nil, fmt.Errorf("node %s not found", rm.FromNode)
+		}
+		inputType = fromNode.InputType
 	}
-	if !ok {
-		return "", nil, nil, fmt.Errorf("node=%s is not operational", rm.FromNode)
-	}
-	input, err := inputType.UnmarshalJson(userInput)
+
+	input, err := model.UnmarshalJson([]byte(userInput), inputType)
 	if err != nil {
 		return "", nil, nil, err
 	}

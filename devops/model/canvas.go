@@ -80,8 +80,7 @@ type Node struct {
 	// node options
 	NodeOption *NodeOption `json:"node_option,omitempty"`
 
-	InferInput   *JsonSchema `json:"infer_input,omitempty"` // inferred input parameters of TypeMeta, currently only used when start run
-	AllowOperate bool        `json:"allow_operate"`         //  used to indicate whether the node can be operated on
+	AllowOperate bool `json:"allow_operate"` //  used to indicate whether the node can be operated on
 
 	Extra map[string]any `json:"extra,omitempty"` // used to store extra information
 }
@@ -126,6 +125,8 @@ const (
 	JsonTypeOfObject  JsonType = "object"
 	JsonTypeOfArray   JsonType = "array"
 	JsonTypeOfNull    JsonType = "null"
+
+	JsonTypeOfInterface JsonType = "interface"
 )
 
 type JsonSchema struct {

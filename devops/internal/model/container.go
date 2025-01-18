@@ -18,13 +18,14 @@ package model
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 
 	"github.com/google/uuid"
 	"golang.org/x/exp/slices"
 
+	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
@@ -32,9 +33,6 @@ import (
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
-
-	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
-	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 type GraphContainer struct {
@@ -53,13 +51,6 @@ type GraphContainer struct {
 type GraphInfo struct {
 	*compose.GraphInfo
 	Option GraphOption
-}
-
-type UnmarshalInput func(ctx context.Context, inputStr string) (input any, err error)
-
-type NodeUnmarshalInput struct {
-	NodeKey        string
-	UnmarshalInput UnmarshalInput
 }
 
 type GraphOption struct {
@@ -168,7 +159,6 @@ func BuildDevGraph(gi *GraphInfo, fromNode string) (g *Graph, err error) {
 }
 
 func (gi GraphInfo) BuildGraphSchema() (graph *devmodel.GraphSchema, err error) {
-
 	graph = &devmodel.GraphSchema{
 		Nodes: make([]*devmodel.Node, 0, len(gi.Nodes)+2),
 		Edges: make([]*devmodel.Edge, 0, len(gi.Nodes)+2),
@@ -222,23 +212,23 @@ func (gi GraphInfo) GetInputNonInterfaceType(nodeKeys []string) (reflectTypes ma
 func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 	nodes = make([]*devmodel.Node, 0, len(gi.Nodes)+2)
 
-	inferInputType, allowOperate, err := gi.inferStartNodeImplMeta()
-	if err != nil {
-		return nil, fmt.Errorf("[buildCanvasNodes] failed to infer start node impl meta, err=%w", err)
-	}
-
 	nodes = append(nodes,
 		&devmodel.Node{
-			Key:          compose.START,
-			Name:         compose.START,
-			Type:         devmodel.NodeTypeOfStart,
-			InferInput:   inferInputType,
-			AllowOperate: allowOperate,
+			Key:  compose.START,
+			Name: compose.START,
+			Type: devmodel.NodeTypeOfStart,
+			ComponentSchema: &devmodel.ComponentSchema{
+				Component:  compose.ComponentOfGraph,
+				InputType:  parseReflectTypeToJsonSchema(gi.InputType),
+				OutputType: parseReflectTypeToJsonSchema(gi.OutputType),
+			},
+			AllowOperate: !generic.UnsupportedInputKind(gi.InputType.Kind()),
 		},
 		&devmodel.Node{
-			Key:  compose.END,
-			Name: compose.END,
-			Type: devmodel.NodeTypeOfEnd,
+			Key:          compose.END,
+			Name:         compose.END,
+			Type:         devmodel.NodeTypeOfEnd,
+			AllowOperate: false,
 		},
 	)
 
@@ -250,12 +240,12 @@ func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 			Type: devmodel.NodeType(node.Component),
 		}
 
-		fdlNode.AllowOperate = generic.ValidateInputReflectTypeSupported(node.InputType)
+		fdlNode.AllowOperate = !generic.UnsupportedInputKind(node.InputType.Kind())
 
 		fdlNode.ComponentSchema = &devmodel.ComponentSchema{
 			Component:  node.Component,
-			InputType:  reassembleJsonSchema(parseReflectTypeToJsonSchema(node.InputType), len(node.InputKey) != 0),
-			OutputType: reassembleJsonSchema(parseReflectTypeToJsonSchema(node.OutputType), len(node.OutputKey) != 0),
+			InputType:  parseReflectTypeToJsonSchema(node.InputType),
+			OutputType: parseReflectTypeToJsonSchema(node.OutputType),
 		}
 
 		fdlNode.ComponentSchema.Name = string(node.Component)
@@ -461,48 +451,6 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 	}
 }
 
-func (gi GraphInfo) inferStartNodeImplMeta() (inferInputType *devmodel.JsonSchema, allowOperate bool, err error) {
-	inferInputType = parseReflectTypeToJsonSchema(gi.InputType)
-
-	inferGraphType, support, err := gi.InferGraphInputType(compose.START)
-	if err != nil {
-		return inferInputType, false, err
-	}
-	allowOperate = support
-
-	if len(inferGraphType.InputTypes) == 0 {
-		inferInputType = parseReflectTypeToJsonSchema(inferGraphType.InputType)
-		return inferInputType, allowOperate, nil
-	}
-
-	var parseGraphInferTypeToJsonSchema func(inferType GraphInferType) *devmodel.JsonSchema
-	parseGraphInferTypeToJsonSchema = func(inferType GraphInferType) *devmodel.JsonSchema {
-		jsonSchema := &devmodel.JsonSchema{
-			Type:       devmodel.JsonTypeOfObject,
-			Title:      reflect.TypeOf(map[string]interface{}{}).String(),
-			Required:   make([]string, 0, len(inferGraphType.InputTypes)),
-			Properties: make(map[string]*devmodel.JsonSchema, len(inferGraphType.InputTypes)),
-		}
-		for inputKey, reflectType := range inferType.InputTypes {
-			jsonSchema.Properties[inputKey] = parseReflectTypeToJsonSchema(reflectType)
-			jsonSchema.Required = append(jsonSchema.Required, inputKey)
-		}
-		for nodeKey, gInferType := range inferType.ComplicatedGraphInferType {
-			if node, ok := gi.Nodes[nodeKey]; ok {
-				inputKey := node.InputKey
-				if len(inputKey) > 0 {
-					jsonSchema.Properties[inputKey] = parseGraphInferTypeToJsonSchema(gInferType)
-				}
-			}
-		}
-		return jsonSchema
-	}
-
-	inferInputType = parseGraphInferTypeToJsonSchema(inferGraphType)
-
-	return inferInputType, allowOperate, nil
-}
-
 func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema) {
 	processedTypes := make(map[reflect.Type]bool)
 
@@ -514,8 +462,8 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 		}
 		if reflectType.Kind() == reflect.Struct {
 			processedTypes[reflectType] = true
-
 		}
+
 		jsonSchema = &devmodel.JsonSchema{}
 		jsonSchema.Type = devmodel.JsonTypeOfNull
 		switch reflectType.Kind() {
@@ -528,7 +476,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 			structFieldsJsonSchemaCache := make(map[reflect.Type]*devmodel.JsonSchema, reflectType.NumField())
 			for i := 0; i < reflectType.NumField(); i++ {
 				field := reflectType.Field(i)
-				if !field.IsExported() || field.Type.Kind() == reflect.Interface {
+				if !field.IsExported() {
 					continue
 				}
 
@@ -540,11 +488,12 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 					structFieldsJsonSchemaCache[field.Type] = fieldJsonSchema
 				}
 
-				jsonName := generic.GetJsonTag(field)
+				jsonName := generic.GetJsonName(field)
 
 				if jsonName == "-" {
 					continue
 				}
+
 				jsonSchema.Properties[jsonName] = fieldJsonSchema
 				jsonSchema.PropertyOrder = append(jsonSchema.PropertyOrder, jsonName)
 				if generic.HasRequired(field) {
@@ -560,7 +509,6 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 			jsonSchema.Type = devmodel.JsonTypeOfObject
 			jsonSchema.Title = reflectType.String()
 			jsonSchema.AdditionalProperties = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
-
 			return jsonSchema
 
 		case reflect.Slice, reflect.Array:
@@ -568,29 +516,28 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 			jsonSchema.Title = reflectType.String()
 			jsonSchema.Items = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
 			return jsonSchema
+
 		case reflect.String:
 			jsonSchema.Type = devmodel.JsonTypeOfString
 			jsonSchema.Title = reflectType.String()
 			return jsonSchema
+
 		case reflect.Bool:
 			jsonSchema.Type = devmodel.JsonTypeOfBoolean
 			jsonSchema.Title = reflectType.String()
 			return jsonSchema
+
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Float32, reflect.Float64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			jsonSchema.Type = devmodel.JsonTypeOfNumber
 			jsonSchema.Title = reflectType.String()
 			return jsonSchema
+
 		case reflect.Interface:
-			jsonSchema.Type = ""
-			jsonSchema.AnyOf = make([]*devmodel.JsonSchema, 0, 5)
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfBoolean})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfString})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfNumber})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfArray})
-			jsonSchema.AnyOf = append(jsonSchema.AnyOf, &devmodel.JsonSchema{Type: devmodel.JsonTypeOfObject})
+			jsonSchema.Type = devmodel.JsonTypeOfInterface
 			return jsonSchema
+
 		default:
 			return jsonSchema
 		}
@@ -599,315 +546,6 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 	return recursionParseReflectTypeToJsonSchema(reflectType)
 }
 
-func reassembleJsonSchema(jsonSchema *devmodel.JsonSchema, hasInputOrOutputKey bool) *devmodel.JsonSchema {
-	if !hasInputOrOutputKey {
-		return jsonSchema
-	}
-
-	jsonSchema = &devmodel.JsonSchema{
-		Type:                 devmodel.JsonTypeOfObject,
-		Title:                reflect.TypeOf(map[string]interface{}{}).String(),
-		AdditionalProperties: jsonSchema,
-	}
-
-	return jsonSchema
-}
-
 func canvasEdgeName(source, target string) string {
 	return fmt.Sprintf("%v_to_%v", source, target)
-}
-
-// TODO@maronghong: improve design, too complicated now.
-type GraphInferType struct {
-	// InputType If start nodes have no inputKey, inputType is not nil.
-	InputType reflect.Type
-	// InputTypes InputKey vs inputType. If start nodes have inputKey, inputTypes is not nil.
-	InputTypes map[string]reflect.Type
-	// ComplicatedGraphInferType NodeKey vs subgraph inferType,
-	// it will set when the node is a subgraph with inputKey and its start nodes with inputKey.
-	ComplicatedGraphInferType map[string]GraphInferType
-}
-
-func (gi GraphInfo) defaultInferInputType() GraphInferType {
-	return GraphInferType{
-		InputType: gi.InputType,
-	}
-}
-
-func (gi GraphInfo) InferGraphInputType(node string) (inferType GraphInferType, supported bool, err error) {
-	if node == compose.END {
-		return inferType, false, fmt.Errorf("cannot infer inputType for end node")
-	}
-
-	if node == compose.START {
-		return gi.inferInputType()
-	}
-
-	ni, ok := gi.Nodes[node]
-	if !ok {
-		return inferType, false, fmt.Errorf("node=%s not found", node)
-	}
-
-	if ni.GraphInfo != nil {
-		inferType, supported, err = GraphInfo{GraphInfo: ni.GraphInfo}.inferInputType()
-		if err != nil {
-			return inferType, false, err
-		}
-		if ni.InputKey == "" {
-			return inferType, supported, nil
-		}
-
-		if inferType.InputType != nil {
-			inferType = GraphInferType{
-				InputTypes: map[string]reflect.Type{
-					ni.InputKey: inferType.InputType,
-				},
-			}
-		} else {
-			inferType = GraphInferType{
-				InputTypes: map[string]reflect.Type{
-					ni.InputKey: generic.TypeOf[map[string]any](),
-				},
-				ComplicatedGraphInferType: map[string]GraphInferType{
-					node: {
-						InputTypes:                inferType.InputTypes,
-						ComplicatedGraphInferType: inferType.ComplicatedGraphInferType,
-					},
-				},
-			}
-		}
-
-		return inferType, supported, nil
-	}
-
-	if generic.ValidateInputReflectTypeSupported(ni.InputType) {
-		if ni.InputKey == "" {
-			inferType = GraphInferType{
-				InputType: ni.InputType,
-			}
-		} else {
-			inferType = GraphInferType{
-				InputTypes: map[string]reflect.Type{
-					ni.InputKey: ni.InputType,
-				},
-			}
-		}
-		return inferType, true, nil
-	}
-
-	return inferType, false, nil
-}
-
-func (gi GraphInfo) inferInputType() (inferType GraphInferType, supported bool, err error) {
-	if generic.ValidateInputReflectTypeSupported(gi.InputType) {
-		return gi.defaultInferInputType(), true, nil
-	}
-
-	gTyp := gi.InputType
-	for gTyp.Kind() == reflect.Pointer {
-		gTyp = gTyp.Elem()
-	}
-
-	if gTyp.Kind() == reflect.Interface || gTyp.Kind() == reflect.Map {
-		return gi.inferGraphInputTypeByNodes()
-	}
-
-	return gi.defaultInferInputType(), false, nil
-}
-
-// TODO@maronghong: log error
-func (gi GraphInfo) inferGraphInputTypeByNodes() (git GraphInferType, supported bool, err error) {
-	defaultTyp := gi.defaultInferInputType()
-
-	etns := gi.Edges[compose.START]
-	bs := gi.Branches[compose.START]
-
-	startNodes := make(map[string]compose.GraphNodeInfo, len(etns)+len(bs)*2)
-	for _, tn := range etns {
-		startNodes[tn] = gi.Nodes[tn]
-	}
-	for _, b := range bs {
-		for tn := range b.GetEndNode() {
-			startNodes[tn] = gi.Nodes[tn]
-		}
-	}
-
-	git = GraphInferType{
-		ComplicatedGraphInferType: make(map[string]GraphInferType, len(startNodes)),
-		InputTypes:                make(map[string]reflect.Type, len(startNodes)),
-	}
-
-	withInputKeyNodes := make(map[string]compose.GraphNodeInfo, len(startNodes))
-	for nk, ni := range startNodes {
-		// If one of nodes has inputKey, all nodes should have inputKey for eino devops.
-		if ni.GraphInfo == nil && len(withInputKeyNodes) > 0 && ni.InputKey == "" {
-			return defaultTyp, false, nil
-		}
-		// Although the inputKey is the same, the type may be different.
-		// Eino will check in runtime, not check here.
-		if ni.InputKey != "" {
-			withInputKeyNodes[nk] = ni
-		}
-	}
-
-	if len(withInputKeyNodes) == 0 && gi.InputType.Kind() == reflect.Map {
-		return defaultTyp, false, nil
-	}
-
-	// handle withInputKey scene
-	if len(withInputKeyNodes) > 0 {
-		// handle with InputKey node
-		for nk, ni := range withInputKeyNodes {
-			if ni.GraphInfo == nil {
-				if !generic.ValidateInputReflectTypeSupported(ni.InputType) {
-					return defaultTyp, false, nil
-				}
-				git.InputTypes[ni.InputKey] = ni.InputType
-				continue
-			}
-
-			git_, ok, err := GraphInfo{GraphInfo: ni.GraphInfo}.inferInputType()
-			if err != nil {
-				return defaultTyp, false, err
-			}
-			if !ok {
-				return defaultTyp, false, nil
-			}
-
-			if git_.InputType != nil {
-				git.InputTypes[ni.InputKey] = git_.InputType
-			} else {
-				git.InputTypes[ni.InputKey] = generic.TypeOf[map[string]any]()
-				git.ComplicatedGraphInferType[nk] = git_
-			}
-		}
-
-		// handle without InputKey node, but with GraphInfo
-		for nk, ni := range startNodes {
-			if ni.GraphInfo == nil {
-				continue
-			}
-			if _, ok := withInputKeyNodes[nk]; ok {
-				continue
-			}
-
-			git_, ok, err := GraphInfo{GraphInfo: ni.GraphInfo}.inferInputType()
-			if err != nil {
-				return defaultTyp, false, err
-			}
-			if !ok {
-				return defaultTyp, false, nil
-			}
-			// If parent graph's start nodes have inputKey
-			// the subgraph's start nodes should have inputKey for eino devops.
-			if len(git_.InputTypes) == 0 {
-				return defaultTyp, false, nil
-			}
-			// merge inputTypes
-			for ipk, t := range git_.InputTypes {
-				git.InputTypes[ipk] = t
-			}
-		}
-
-		return git, true, nil
-	}
-
-	// handle withoutInputKey scene
-	for _, ni := range startNodes {
-		typ := ni.InputType
-		if ni.GraphInfo != nil {
-			git_, ok, err := GraphInfo{GraphInfo: ni.GraphInfo}.inferInputType()
-			if err != nil {
-				return defaultTyp, false, err
-			}
-			if !ok {
-				return defaultTyp, false, nil
-			}
-			// If parent graph's start nodes have no inputKey,
-			// the subgraph's start nodes have no inputKey for eino devops.
-			if len(git_.InputTypes) > 0 {
-				return defaultTyp, false, nil
-			}
-			typ = git_.InputType
-		}
-
-		if git.InputType == nil {
-			git.InputType = typ
-			if !generic.ValidateInputReflectTypeSupported(typ) {
-				return defaultTyp, false, nil
-			}
-		}
-		if git.InputType != typ {
-			return defaultTyp, false, nil
-		}
-	}
-
-	return git, true, nil
-}
-
-func (git GraphInferType) UnmarshalJson(jsonStr string) (reflect.Value, error) {
-	if git.InputType != nil {
-		return unmarshalJsonWithReflectType(jsonStr, git.InputType)
-	}
-	return unmarshalJsonWithGraphInferType(jsonStr, git)
-}
-
-func unmarshalJsonWithReflectType(jsonStr string, rt reflect.Type) (reflect.Value, error) {
-	it := rt
-	ptrLevel := 0
-	for it.Kind() == reflect.Pointer {
-		ptrLevel++
-		it = it.Elem()
-	}
-
-	input := reflect.New(it).Elem()
-	err := json.Unmarshal([]byte(jsonStr), input.Addr().Interface())
-	if err != nil {
-		return reflect.Value{}, err
-	}
-
-	input = getPtrValue(input, ptrLevel)
-
-	return input, nil
-}
-
-func unmarshalJsonWithGraphInferType(jsonStr string, git GraphInferType) (reflect.Value, error) {
-	if len(git.InputTypes) == 0 {
-		return reflect.Value{}, fmt.Errorf("inputTypes is nil")
-	}
-
-	var inputs map[string]json.RawMessage
-	err := json.Unmarshal([]byte(jsonStr), &inputs)
-	if err != nil {
-		return reflect.Value{}, err
-	}
-
-	input := reflect.MakeMap(reflect.TypeOf(map[string]any{}))
-
-	for inputKey, v := range inputs {
-		it, ok := git.InputTypes[inputKey]
-		if !ok {
-			continue
-		}
-
-		var inputVal reflect.Value
-		if !generic.IsMapType[string, any](it) {
-			inputVal, err = unmarshalJsonWithReflectType(string(v), it)
-			if err != nil {
-				return reflect.Value{}, err
-			}
-		} else {
-			for _, nit := range git.ComplicatedGraphInferType {
-				inputVal, err = unmarshalJsonWithGraphInferType(string(v), nit)
-				if err != nil {
-					return reflect.Value{}, err
-				}
-				break
-			}
-		}
-
-		input.SetMapIndex(reflect.ValueOf(inputKey), inputVal)
-	}
-
-	return input, nil
 }

@@ -20,22 +20,19 @@ import (
 	"context"
 	"time"
 
-	"github.com/cloudwego/eino/compose"
-
 	"github.com/cloudwego/eino-ext/devops/internal/apihandler"
-	"github.com/cloudwego/eino-ext/devops/internal/service"
+	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
 )
 
 // Init start eino devops server
-func Init(ctx context.Context, opts ...ServerOption) error {
-	compose.InitGraphCompileCallbacks([]compose.GraphCompileCallback{service.NewGlobalDevGraphCompileCallback()})
-
-	o := newServerOption(opts)
+func Init(ctx context.Context, opts ...model.DevOption) error {
+	opt := model.NewDevOpt(opts)
+	apihandler.InitDebug(opt)
 
 	errCh := make(chan error)
 	safego.Go(ctx, func() {
-		errCh <- apihandler.StartHTTPServer(ctx, o.port)
+		errCh <- apihandler.StartHTTPServer(ctx, opt.DevServerPort)
 	})
 
 	select {

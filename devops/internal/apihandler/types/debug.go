@@ -110,3 +110,7 @@ func (d DebugRunEventMsg) JsonBytes() []byte {
 	bytes, _ := json.Marshal(d)
 	return bytes
 }
+
+type ListInputTypesResponse struct {
+	Types []*devmodel.JsonSchema `json:"types,omitempty"`
+}

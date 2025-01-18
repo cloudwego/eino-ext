@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,25 @@
  * limitations under the License.
  */
 
-package devops
+package model
 
-import (
-	"testing"
-
-	"github.com/stretchr/testify/assert"
+const (
+	defaultHttpPort = "52538"
 )
 
-func Test_ServerOption(t *testing.T) {
-	so := &serverOption{}
+type DevOpt struct {
+	DevServerPort string
+	GoTypes       []RegisteredType
+}
 
-	WithDevServerPort("111")(so)
-	assert.Equal(t, so.port, "111")
-	op := newServerOption([]ServerOption{WithDevServerPort("111")})
-	assert.Equal(t, op.port, "111")
+type DevOption func(*DevOpt)
+
+func NewDevOpt(opts []DevOption) *DevOpt {
+	o := &DevOpt{
+		DevServerPort: defaultHttpPort,
+	}
+	for _, opt := range opts {
+		opt(o)
+	}
+	return o
 }

@@ -17,64 +17,33 @@
 package devops
 
 import (
-	"context"
-
-	"github.com/cloudwego/eino/compose"
+	"reflect"
 
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 )
 
-const (
-	defaultHttpPort = "52538"
-)
-
-type serverOption struct {
-	port string
-}
-
-// newServerOption create ServerOption.
-func newServerOption(options []ServerOption) *serverOption {
-	o := &serverOption{
-		port: defaultHttpPort,
-	}
-	for _, opt := range options {
-		opt(o)
-	}
-	return o
-}
-
-type ServerOption func(*serverOption)
-
-// WithDevServerPort dev server port, default to 52538
-func WithDevServerPort(port string) ServerOption {
-	return func(o *serverOption) {
-		o.port = port
+// WithDevServerPort sets dev server port, default to 52538
+func WithDevServerPort(port string) model.DevOption {
+	return func(o *model.DevOpt) {
+		o.DevServerPort = port
 	}
 }
 
-type devOption struct {
-	genLocalState     func(ctx context.Context) any
-	inputUnmarshalFns []model.NodeUnmarshalInput
-}
-
-type DevOption func(*devOption)
-
-// Deprecated: WithGenLocalState is useless, and will no longer be provided in the future.
-// WithGenLocalState generate local state function for state graph, need to be same as compose.GenLocalState definition.
-func WithGenLocalState[S any](genLocalState compose.GenLocalState[S]) DevOption {
-	return func(o *devOption) {
-		o.genLocalState = func(ctx context.Context) any {
-			return genLocalState(ctx)
-		}
-	}
-}
-
-// WithUnmarshalInput register unmarshal method for node debug input
-func WithUnmarshalInput(nodeKey string, f model.UnmarshalInput) DevOption {
-	return func(o *devOption) {
-		o.inputUnmarshalFns = append(o.inputUnmarshalFns, model.NodeUnmarshalInput{
-			NodeKey:        nodeKey,
-			UnmarshalInput: f,
+// AppendType registers a concrete type that can be chosen as an implementation of an interface
+// during mock debugging input in the Eino Dev plugin. The identifier is the type.String() value,
+// and some generic types are also registered in github.com/cloudwego/eino-ext/devops/internal/model/types.go:registeredTypes,
+// e.g.,
+// `*schema.Message`, `schema.Message`, `[]*schema.Message`, `map[string]interface {}`.
+//
+// Example:
+//
+//	AppendType(&MyConcreteType{}) // Registers MyConcreteType as an option for interfaces it implements.
+func AppendType(value any) model.DevOption {
+	return func(o *model.DevOpt) {
+		rt := reflect.TypeOf(value).Elem()
+		o.GoTypes = append(o.GoTypes, model.RegisteredType{
+			Identifier: rt.String(),
+			Type:       rt,
 		})
 	}
 }

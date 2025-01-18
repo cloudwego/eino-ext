@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,4 +14,19 @@
  * limitations under the License.
  */
 
-package apihandler
+package model
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func Test_NewDevOpt(t *testing.T) {
+	opt := NewDevOpt([]DevOption{
+		func(o *DevOpt) {
+			o.DevServerPort = "111"
+		},
+	})
+	assert.Equal(t, "111", opt.DevServerPort)
+}

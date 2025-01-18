@@ -55,7 +55,6 @@ func registerRoutes(r *mux.Router) {
 	const (
 		root     = "/eino/devops"
 		debugBiz = "/debug/v1"
-		evalBiz  = "/evaluation/v1"
 	)
 
 	r.Use(recoverMiddleware, corsMiddleware)
@@ -66,13 +65,11 @@ func registerRoutes(r *mux.Router) {
 
 	// debug routes
 	debugR := rootR.PathPrefix(debugBiz).Subrouter()
+	debugR.Path("/input_types").HandlerFunc(ListInputTypes).Methods(http.MethodGet)
 	debugR.Path("/graphs").HandlerFunc(ListGraphs).Methods(http.MethodGet)
 	debugR.Path("/graphs/{graph_id}/canvas").HandlerFunc(GetCanvasInfo).Methods(http.MethodGet)
 	debugR.Path("/graphs/{graph_id}/threads").HandlerFunc(CreateDebugThread).Methods(http.MethodPost)
 	debugR.Path("/graphs/{graph_id}/threads/{thread_id}/stream").HandlerFunc(StreamDebugRun).Methods(http.MethodPost)
-
-	// evaluation routes
-	// evalR := rootR.PathPrefix(evalBiz).Subrouter()
 }
 
 type HTTPResp struct {
