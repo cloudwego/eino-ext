@@ -37,6 +37,9 @@ var registeredTypeMap = make(map[string]reflect.Type)
 func init() {
 	for i, rt := range registeredTypes {
 		registeredTypes[i].Schema = parseReflectTypeToJsonSchema(rt.Type)
+		if registeredTypes[i].Schema.GoDefinition != nil && registeredTypes[i].Schema.GoDefinition.IsPtr {
+			registeredTypes[i].Schema.Title = "*" + registeredTypes[i].Schema.Title
+		}
 		registeredTypeMap[rt.Identifier] = rt.Type
 	}
 }
@@ -94,10 +97,15 @@ func RegisterType(rt reflect.Type) {
 		return
 	}
 	registeredTypeMap[rt.String()] = rt
+
+	registerSchema := parseReflectTypeToJsonSchema(rt)
+	if registerSchema.GoDefinition != nil && registerSchema.GoDefinition.IsPtr {
+		registerSchema.Title = "*" + registerSchema.Title
+	}
 	registeredTypes = append([]RegisteredType{{
 		Identifier: rt.String(),
 		Type:       rt,
-		Schema:     parseReflectTypeToJsonSchema(rt),
+		Schema:     registerSchema,
 	}}, registeredTypes...)
 }
 

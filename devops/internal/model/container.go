@@ -504,6 +504,9 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 			return jsonSchema
 		case reflect.Pointer:
 			jsonSchema = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
+			jsonSchema.GoDefinition = &devmodel.GoDefinition{
+				IsPtr: true,
+			}
 			return
 		case reflect.Map:
 			jsonSchema.Type = devmodel.JsonTypeOfObject
