@@ -454,11 +454,19 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema) {
 	processedTypes := make(map[reflect.Type]bool)
 
-	var recursionParseReflectTypeToJsonSchema func(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema)
+	var processPointer func(title string, ptrLevel int) (newTitle string)
+	processPointer = func(title string, ptrLevel int) (newTitle string) {
+		for i := 0; i < ptrLevel; i++ {
+			title = "*" + title
+		}
+		return title
+	}
 
-	recursionParseReflectTypeToJsonSchema = func(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema) {
+	var recursionParseReflectTypeToJsonSchema func(reflectType reflect.Type, ptrLevel int) (jsonSchema *devmodel.JsonSchema)
+
+	recursionParseReflectTypeToJsonSchema = func(reflectType reflect.Type, ptrLevel int) (jsonSchema *devmodel.JsonSchema) {
 		if processedTypes[reflectType] {
-			return recursionParseReflectTypeToJsonSchema(reflect.TypeOf(map[string]interface{}{}))
+			return recursionParseReflectTypeToJsonSchema(reflect.TypeOf(map[string]interface{}{}), 0)
 		}
 		if reflectType.Kind() == reflect.Struct {
 			processedTypes[reflectType] = true
@@ -469,7 +477,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 		switch reflectType.Kind() {
 		case reflect.Struct:
 			jsonSchema.Type = devmodel.JsonTypeOfObject
-			jsonSchema.Title = reflectType.String()
+			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
 			jsonSchema.Properties = make(map[string]*devmodel.JsonSchema, reflectType.NumField())
 			jsonSchema.PropertyOrder = make([]string, 0, reflectType.NumField())
 			jsonSchema.Required = make([]string, 0, reflectType.NumField())
@@ -484,7 +492,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 				if ts, ok := structFieldsJsonSchemaCache[field.Type]; ok {
 					fieldJsonSchema = ts
 				} else {
-					fieldJsonSchema = recursionParseReflectTypeToJsonSchema(field.Type)
+					fieldJsonSchema = recursionParseReflectTypeToJsonSchema(field.Type, 0)
 					structFieldsJsonSchemaCache[field.Type] = fieldJsonSchema
 				}
 
@@ -503,35 +511,35 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 			}
 			return jsonSchema
 		case reflect.Pointer:
-			jsonSchema = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
+			jsonSchema = recursionParseReflectTypeToJsonSchema(reflectType.Elem(), ptrLevel+1)
 			return
 		case reflect.Map:
 			jsonSchema.Type = devmodel.JsonTypeOfObject
-			jsonSchema.Title = reflectType.String()
-			jsonSchema.AdditionalProperties = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
+			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
+			jsonSchema.AdditionalProperties = recursionParseReflectTypeToJsonSchema(reflectType.Elem(), 0)
 			return jsonSchema
 
 		case reflect.Slice, reflect.Array:
 			jsonSchema.Type = devmodel.JsonTypeOfArray
-			jsonSchema.Title = reflectType.String()
-			jsonSchema.Items = recursionParseReflectTypeToJsonSchema(reflectType.Elem())
+			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
+			jsonSchema.Items = recursionParseReflectTypeToJsonSchema(reflectType.Elem(), 0)
 			return jsonSchema
 
 		case reflect.String:
 			jsonSchema.Type = devmodel.JsonTypeOfString
-			jsonSchema.Title = reflectType.String()
+			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
 			return jsonSchema
 
 		case reflect.Bool:
 			jsonSchema.Type = devmodel.JsonTypeOfBoolean
-			jsonSchema.Title = reflectType.String()
+			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
 			return jsonSchema
 
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Float32, reflect.Float64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			jsonSchema.Type = devmodel.JsonTypeOfNumber
-			jsonSchema.Title = reflectType.String()
+			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
 			return jsonSchema
 
 		case reflect.Interface:
@@ -543,7 +551,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 		}
 	}
 
-	return recursionParseReflectTypeToJsonSchema(reflectType)
+	return recursionParseReflectTypeToJsonSchema(reflectType, 0)
 }
 
 func canvasEdgeName(source, target string) string {

@@ -40,7 +40,7 @@ func WithDevServerPort(port string) model.DevOption {
 //	AppendType(&MyConcreteType{}) // Registers MyConcreteType as an option for interfaces it implements.
 func AppendType(value any) model.DevOption {
 	return func(o *model.DevOpt) {
-		rt := reflect.TypeOf(value).Elem()
+		rt := reflect.TypeOf(value)
 		o.GoTypes = append(o.GoTypes, model.RegisteredType{
 			Identifier: rt.String(),
 			Type:       rt,
