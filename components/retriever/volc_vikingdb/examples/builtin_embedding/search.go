@@ -18,8 +18,14 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"os"
+
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
+	callbacksHelper "github.com/cloudwego/eino/utils/callbacks"
 
 	"github.com/cloudwego/eino-ext/components/retriever/volc_vikingdb"
 )
@@ -71,20 +77,58 @@ func main() {
 		FilterDSL:      nil, // 对应索引中的【标量过滤字段】，未设置时至空即可，表达式详见 https://www.volcengine.com/docs/84313/1254609
 	}
 
-	ret, err := volc_vikingdb.NewRetriever(ctx, cfg)
+	volcRetriever, err := volc_vikingdb.NewRetriever(ctx, cfg)
 	if err != nil {
-		fmt.Printf("NewRetriever failed, %v\n", err)
+		log.Printf("NewRetriever failed, %v\n", err)
 		return
 	}
+
+	log.Printf("===== call Indexer directly =====")
 
 	query := "tourist attraction"
-	docs, err := ret.Retrieve(ctx, query)
+	docs, err := volcRetriever.Retrieve(ctx, query)
 	if err != nil {
-		fmt.Printf("vikingDB retrieve failed, %v\n", err)
+		log.Printf("vikingDB retrieve failed, %v\n", err)
 		return
 	}
 
-	fmt.Printf("vikingDB retrieve success, query=%v, docs=%v\n", query, docs)
+	log.Printf("vikingDB retrieve success, query=%v, docs=%v", query, docs)
+
+	log.Printf("===== call Indexer in chain =====")
+
+	// 创建 callback handler
+	handler := &callbacksHelper.RetrieverCallbackHandler{
+		OnStart: func(ctx context.Context, info *callbacks.RunInfo, input *retriever.CallbackInput) context.Context {
+			log.Printf("input access, content: %s\n", input.Query)
+			return ctx
+		},
+		OnEnd: func(ctx context.Context, info *callbacks.RunInfo, output *retriever.CallbackOutput) context.Context {
+			log.Printf("output finished, len: %v\n", len(output.Docs))
+			return ctx
+		},
+		// OnError
+	}
+
+	// 使用 callback handler
+	helper := callbacksHelper.NewHandlerHelper().
+		Retriever(handler).
+		Handler()
+
+	chain := compose.NewChain[string, []*schema.Document]()
+	chain.AppendRetriever(volcRetriever)
+
+	// 在运行时使用
+	run, err := chain.Compile(ctx)
+	if err != nil {
+		log.Fatalf("chain.Compile failed, err=%v", err)
+	}
+
+	outDocs, err := run.Invoke(ctx, query, compose.WithCallbacks(helper))
+	if err != nil {
+		log.Fatalf("run.Invoke failed, err=%v", err)
+	}
+
+	log.Printf("vikingDB retrieve success, query=%v, docs=%v", query, outDocs)
 }
 
 func of[T any](v T) *T {

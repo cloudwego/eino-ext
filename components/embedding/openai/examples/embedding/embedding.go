@@ -19,7 +19,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/compose"
+	callbacksHelper "github.com/cloudwego/eino/utils/callbacks"
 
 	"github.com/cloudwego/eino-ext/components/embedding/openai"
 )
@@ -33,7 +39,7 @@ func main() {
 		defaultDim = 1024
 	)
 
-	embedding, err := openai.NewEmbedder(ctx, &openai.EmbeddingConfig{
+	embedder, err := openai.NewEmbedder(ctx, &openai.EmbeddingConfig{
 		APIKey:     accessKey,
 		Model:      "text-embedding-3-large",
 		Dimensions: &defaultDim,
@@ -43,10 +49,44 @@ func main() {
 		panic(fmt.Errorf("new embedder error: %v\n", err))
 	}
 
-	resp, err := embedding.EmbedStrings(ctx, []string{"hello", "how are you"})
+	log.Printf("===== call Embedder directly =====")
+
+	vectors, err := embedder.EmbedStrings(ctx, []string{"hello", "how are you"})
 	if err != nil {
-		panic(fmt.Errorf("generate failed, err=%v", err))
+		panic(fmt.Errorf("embedder.EmbedStrings failed, err=%v", err))
 	}
 
-	fmt.Printf("output=%v", resp)
+	log.Printf("vectors : %v", vectors)
+
+	log.Printf("===== call Embedder in Chain =====")
+
+	handler := &callbacksHelper.EmbeddingCallbackHandler{
+		OnStart: func(ctx context.Context, runInfo *callbacks.RunInfo, input *embedding.CallbackInput) context.Context {
+			log.Printf("input access, len: %v, content: %s\n", len(input.Texts), input.Texts)
+			return ctx
+		},
+		OnEnd: func(ctx context.Context, runInfo *callbacks.RunInfo, output *embedding.CallbackOutput) context.Context {
+			log.Printf("output finished, len: %v\n", len(output.Embeddings))
+			return ctx
+		},
+	}
+
+	callbackHandler := callbacksHelper.NewHandlerHelper().Embedding(handler).Handler()
+
+	chain := compose.NewChain[[]string, [][]float64]()
+	chain.AppendEmbedding(embedder)
+
+	// 编译并运行
+	runnable, err := chain.Compile(ctx)
+	if err != nil {
+		panic(fmt.Errorf("chain.Compile failed, err=%v", err))
+	}
+
+	vectors, err = runnable.Invoke(ctx, []string{"hello", "how are you"},
+		compose.WithCallbacks(callbackHandler))
+	if err != nil {
+		panic(fmt.Errorf("runnable.Invoke failed, err=%v", err))
+	}
+
+	log.Printf("vectors in chain: %v", vectors)
 }

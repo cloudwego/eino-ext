@@ -19,10 +19,16 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/indexer/volc_vikingdb"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/indexer"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	callbacksHelper "github.com/cloudwego/eino/utils/callbacks"
+
+	"github.com/cloudwego/eino-ext/components/indexer/volc_vikingdb"
 )
 
 func main() {
@@ -65,7 +71,7 @@ func main() {
 		AddBatchSize: 10,
 	}
 
-	indexer, err := volc_vikingdb.NewIndexer(ctx, cfg)
+	volcIndexer, err := volc_vikingdb.NewIndexer(ctx, cfg)
 	if err != nil {
 		fmt.Printf("NewIndexer failed, %v\n", err)
 		return
@@ -79,11 +85,49 @@ func main() {
 	volc_vikingdb.SetExtraDataTTL(doc, 1000)
 
 	docs := []*schema.Document{doc}
-	resp, err := indexer.Store(ctx, docs)
+
+	log.Printf("===== call Indexer directly =====")
+
+	resp, err := volcIndexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("Store failed, %v\n", err)
 		return
 	}
 
 	fmt.Printf("vikingDB store success, docs=%v, resp ids=%v\n", docs, resp)
+
+	log.Printf("===== call Indexer in chain =====")
+
+	// 创建 callback handler
+	handler := &callbacksHelper.IndexerCallbackHandler{
+		OnStart: func(ctx context.Context, info *callbacks.RunInfo, input *indexer.CallbackInput) context.Context {
+			log.Printf("input access, len: %v, content: %s\n", len(input.Docs), input.Docs[0].Content)
+			return ctx
+		},
+		OnEnd: func(ctx context.Context, info *callbacks.RunInfo, output *indexer.CallbackOutput) context.Context {
+			log.Printf("output finished, len: %v, ids=%v\n", len(output.IDs), output.IDs)
+			return ctx
+		},
+		// OnError
+	}
+
+	// 使用 callback handler
+	helper := callbacksHelper.NewHandlerHelper().
+		Indexer(handler).
+		Handler()
+
+	chain := compose.NewChain[[]*schema.Document, []string]()
+	chain.AppendIndexer(volcIndexer)
+
+	// 在运行时使用
+	run, err := chain.Compile(ctx)
+	if err != nil {
+		log.Fatalf("chain.Compile failed, err=%v", err)
+	}
+
+	outIDs, err := run.Invoke(ctx, docs, compose.WithCallbacks(helper))
+	if err != nil {
+		log.Fatalf("run.Invoke failed, err=%v", err)
+	}
+	fmt.Printf("vikingDB store success, docs=%v, resp ids=%v\n", docs, outIDs)
 }
