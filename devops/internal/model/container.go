@@ -452,8 +452,6 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 }
 
 func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmodel.JsonSchema) {
-	processedTypes := make(map[reflect.Type]bool)
-
 	var processPointer func(title string, ptrLevel int) (newTitle string)
 	processPointer = func(title string, ptrLevel int) (newTitle string) {
 		for i := 0; i < ptrLevel; i++ {
@@ -462,28 +460,29 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 		return title
 	}
 
-	var recursionParseReflectTypeToJsonSchema func(reflectType reflect.Type, ptrLevel int) (jsonSchema *devmodel.JsonSchema)
+	var recursionParseReflectTypeToJsonSchema func(reflectType reflect.Type, ptrLevel int, visited map[reflect.Type]bool) (jsonSchema *devmodel.JsonSchema)
 
-	recursionParseReflectTypeToJsonSchema = func(reflectType reflect.Type, ptrLevel int) (jsonSchema *devmodel.JsonSchema) {
-		if processedTypes[reflectType] {
-			return recursionParseReflectTypeToJsonSchema(reflect.TypeOf(map[string]interface{}{}), ptrLevel)
-		}
-		if reflectType.Kind() == reflect.Struct {
-			processedTypes[reflectType] = true
-		}
+	recursionParseReflectTypeToJsonSchema = func(rt reflect.Type, ptrLevel int, visited map[reflect.Type]bool) (jsc *devmodel.JsonSchema) {
+		jsc = &devmodel.JsonSchema{}
+		jsc.Type = devmodel.JsonTypeOfNull
 
-		jsonSchema = &devmodel.JsonSchema{}
-		jsonSchema.Type = devmodel.JsonTypeOfNull
-		switch reflectType.Kind() {
+		switch rt.Kind() {
 		case reflect.Struct:
-			jsonSchema.Type = devmodel.JsonTypeOfObject
-			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
-			jsonSchema.Properties = make(map[string]*devmodel.JsonSchema, reflectType.NumField())
-			jsonSchema.PropertyOrder = make([]string, 0, reflectType.NumField())
-			jsonSchema.Required = make([]string, 0, reflectType.NumField())
-			structFieldsJsonSchemaCache := make(map[reflect.Type]*devmodel.JsonSchema, reflectType.NumField())
-			for i := 0; i < reflectType.NumField(); i++ {
-				field := reflectType.Field(i)
+			if visited[rt] {
+				return
+			}
+
+			visited[rt] = true
+
+			jsc.Type = devmodel.JsonTypeOfObject
+			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Properties = make(map[string]*devmodel.JsonSchema, rt.NumField())
+			jsc.PropertyOrder = make([]string, 0, rt.NumField())
+			jsc.Required = make([]string, 0, rt.NumField())
+			structFieldsJsonSchemaCache := make(map[reflect.Type]*devmodel.JsonSchema, rt.NumField())
+
+			for i := 0; i < rt.NumField(); i++ {
+				field := rt.Field(i)
 				if !field.IsExported() {
 					continue
 				}
@@ -492,7 +491,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 				if ts, ok := structFieldsJsonSchemaCache[field.Type]; ok {
 					fieldJsonSchema = ts
 				} else {
-					fieldJsonSchema = recursionParseReflectTypeToJsonSchema(field.Type, 0)
+					fieldJsonSchema = recursionParseReflectTypeToJsonSchema(field.Type, 0, visited)
 					structFieldsJsonSchemaCache[field.Type] = fieldJsonSchema
 				}
 
@@ -502,56 +501,58 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 					continue
 				}
 
-				jsonSchema.Properties[jsonName] = fieldJsonSchema
-				jsonSchema.PropertyOrder = append(jsonSchema.PropertyOrder, jsonName)
+				jsc.Properties[jsonName] = fieldJsonSchema
+				jsc.PropertyOrder = append(jsc.PropertyOrder, jsonName)
 				if generic.HasRequired(field) {
-					jsonSchema.Required = append(jsonSchema.Required, jsonName)
+					jsc.Required = append(jsc.Required, jsonName)
 				}
-
 			}
-			return jsonSchema
+
+			visited[rt] = false
+
+			return jsc
+
 		case reflect.Pointer:
-			jsonSchema = recursionParseReflectTypeToJsonSchema(reflectType.Elem(), ptrLevel+1)
-			return
+			return recursionParseReflectTypeToJsonSchema(rt.Elem(), ptrLevel+1, visited)
 		case reflect.Map:
-			jsonSchema.Type = devmodel.JsonTypeOfObject
-			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
-			jsonSchema.AdditionalProperties = recursionParseReflectTypeToJsonSchema(reflectType.Elem(), 0)
-			return jsonSchema
+			jsc.Type = devmodel.JsonTypeOfObject
+			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.AdditionalProperties = recursionParseReflectTypeToJsonSchema(rt.Elem(), 0, visited)
+			return jsc
 
 		case reflect.Slice, reflect.Array:
-			jsonSchema.Type = devmodel.JsonTypeOfArray
-			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
-			jsonSchema.Items = recursionParseReflectTypeToJsonSchema(reflectType.Elem(), 0)
-			return jsonSchema
+			jsc.Type = devmodel.JsonTypeOfArray
+			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Items = recursionParseReflectTypeToJsonSchema(rt.Elem(), 0, visited)
+			return jsc
 
 		case reflect.String:
-			jsonSchema.Type = devmodel.JsonTypeOfString
-			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
-			return jsonSchema
+			jsc.Type = devmodel.JsonTypeOfString
+			jsc.Title = processPointer(rt.String(), ptrLevel)
+			return jsc
 
 		case reflect.Bool:
-			jsonSchema.Type = devmodel.JsonTypeOfBoolean
-			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
-			return jsonSchema
+			jsc.Type = devmodel.JsonTypeOfBoolean
+			jsc.Title = processPointer(rt.String(), ptrLevel)
+			return jsc
 
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Float32, reflect.Float64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			jsonSchema.Type = devmodel.JsonTypeOfNumber
-			jsonSchema.Title = processPointer(reflectType.String(), ptrLevel)
-			return jsonSchema
+			jsc.Type = devmodel.JsonTypeOfNumber
+			jsc.Title = processPointer(rt.String(), ptrLevel)
+			return jsc
 
 		case reflect.Interface:
-			jsonSchema.Type = devmodel.JsonTypeOfInterface
-			return jsonSchema
+			jsc.Type = devmodel.JsonTypeOfInterface
+			return jsc
 
 		default:
-			return jsonSchema
+			return jsc
 		}
 	}
 
-	return recursionParseReflectTypeToJsonSchema(reflectType, 0)
+	return recursionParseReflectTypeToJsonSchema(reflectType, 0, make(map[reflect.Type]bool))
 }
 
 func canvasEdgeName(source, target string) string {

@@ -25,9 +25,9 @@ import (
 	"strings"
 	"testing"
 
-	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/stretchr/testify/assert"
 
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
@@ -1769,7 +1769,7 @@ func Test_parseReflectTypeToTypeSchema(t *testing.T) {
 	data := parseReflectTypeToJsonSchema(reflectType)
 
 	assert.Len(t, data.Properties, 12)
-	assert.Equal(t, data.Properties["child"].Type, devmodel.JsonTypeOfObject)
+	assert.Equal(t, data.Properties["child"].Type, devmodel.JsonTypeOfNull)
 	assert.Equal(t, data.Properties["child2"].Type, devmodel.JsonTypeOfArray)
 	assert.Equal(t, data.Properties["child4"].Title, "*model.DemoV2")
 	assert.Equal(t, data.Properties["child5"].Title, "*model.DemoV2")
@@ -1778,5 +1778,4 @@ func Test_parseReflectTypeToTypeSchema(t *testing.T) {
 	assert.Equal(t, data.Properties["child9"].Title, "***map[string]string")
 	assert.Equal(t, data.Properties["child10"].Title, "***string")
 	assert.Equal(t, data.Properties["child11"].Title, "***map[string]***model.DemoV1")
-
 }
