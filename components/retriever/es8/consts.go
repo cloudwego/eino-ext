@@ -18,6 +18,10 @@ package es8
 
 const typ = "ElasticSearch8"
 
+const (
+	defaultTopK = 10
+)
+
 func GetType() string {
 	return typ
 }

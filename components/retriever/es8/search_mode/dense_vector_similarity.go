@@ -47,7 +47,7 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 		Embedding:      conf.Embedding,
 	}, opts...)
 
-	io := retriever.GetImplSpecificOptions[es8.ESImplOptions](nil, opts...)
+	io := retriever.GetImplSpecificOptions[es8.ImplOptions](nil, opts...)
 
 	emb := co.Embedding
 	if emb == nil {

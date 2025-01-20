@@ -32,9 +32,11 @@ import (
 )
 
 type IndexerConfig struct {
-	ESConfig elasticsearch.Config `json:"es_config"`
-	Index    string               `json:"index"`
-	// BatchSize controls max texts size for embedding
+	Client *elasticsearch.Client `json:"client"`
+
+	Index string `json:"index"`
+	// BatchSize controls max texts size for embedding.
+	// Default is 5.
 	BatchSize int `json:"batch_size"`
 	// FieldMapping supports customize es fields from eino document.
 	// Each key - FieldValue.Value from field2Value will be saved, and
@@ -63,9 +65,8 @@ type Indexer struct {
 }
 
 func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
-	client, err := elasticsearch.NewClient(conf.ESConfig)
-	if err != nil {
-		return nil, fmt.Errorf("[NewIndexer] new es client failed, %w", err)
+	if conf.Client == nil {
+		return nil, fmt.Errorf("[NewIndexer] es client not provided")
 	}
 
 	if conf.DocumentToFields == nil {
@@ -77,7 +78,7 @@ func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
 	}
 
 	return &Indexer{
-		client: client,
+		client: conf.Client,
 		config: conf,
 	}, nil
 }

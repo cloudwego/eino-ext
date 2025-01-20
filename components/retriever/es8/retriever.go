@@ -31,9 +31,11 @@ import (
 )
 
 type RetrieverConfig struct {
-	ESConfig elasticsearch.Config `json:"es_config"`
+	Client *elasticsearch.Client `json:"client"`
 
-	Index          string   `json:"index"`
+	Index string `json:"index"`
+	// TopK number of result to return as top hits.
+	// Default is 10
 	TopK           int      `json:"top_k"`
 	ScoreThreshold *float64 `json:"score_threshold"`
 
@@ -54,12 +56,12 @@ type RetrieverConfig struct {
 type SearchMode interface {
 	// BuildRequest generate search request from config, query and options.
 	// Additionally, some specified options (like filters for query) will be provided in options,
-	// and use retriever.GetImplSpecificOptions[options.ESImplOptions] to get it.
+	// and use retriever.GetImplSpecificOptions[options.ImplOptions] to get it.
 	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error)
 }
 
 type Retriever struct {
-	client *elasticsearch.TypedClient
+	client *elasticsearch.Client
 	config *RetrieverConfig
 }
 
@@ -68,17 +70,19 @@ func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) 
 		return nil, fmt.Errorf("[NewRetriever] search mode not provided")
 	}
 
+	if conf.TopK == 0 {
+		conf.TopK = defaultTopK
+	}
+
 	if conf.ResultParser == nil {
 		return nil, fmt.Errorf("[NewRetriever] result parser not provided")
 	}
 
-	client, err := elasticsearch.NewTypedClient(conf.ESConfig)
-	if err != nil {
-		return nil, fmt.Errorf("[NewRetriever] new es client failed, %w", err)
+	if conf.Client == nil {
+		return nil, fmt.Errorf("[NewRetriever] es client not provided")
 	}
-
 	return &Retriever{
-		client: client,
+		client: conf.Client,
 		config: conf,
 	}, nil
 }
@@ -108,7 +112,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		return nil, err
 	}
 
-	resp, err := r.client.Search().
+	resp, err := search.NewSearchFunc(r.client)().
 		Index(r.config.Index).
 		Request(req).
 		Do(ctx)

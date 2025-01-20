@@ -66,10 +66,8 @@ func TestSearchModeDenseVectorSimilarity(t *testing.T) {
 					req, err := similarity.BuildRequest(ctx, conf, query, retriever.WithEmbedding(&mockEmbedding{size: 1, mockVector: []float64{1.1, 1.2}}),
 						retriever.WithTopK(10),
 						retriever.WithScoreThreshold(1.1),
-						retriever.WrapImplSpecificOptFn[es8.ESImplOptions](func(o *es8.ESImplOptions) {
-							o.Filters = []types.Query{
-								{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-							}
+						es8.WithFilters([]types.Query{
+							{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
 						}))
 
 					convey.So(err, convey.ShouldBeNil)

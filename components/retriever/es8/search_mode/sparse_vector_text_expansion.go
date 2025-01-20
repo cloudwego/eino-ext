@@ -48,7 +48,7 @@ func (s sparseVectorTextExpansion) BuildRequest(ctx context.Context, conf *es8.R
 		Embedding:      conf.Embedding,
 	}, opts...)
 
-	io := retriever.GetImplSpecificOptions[es8.ESImplOptions](nil, opts...)
+	io := retriever.GetImplSpecificOptions[es8.ImplOptions](nil, opts...)
 
 	name := fmt.Sprintf("%s.tokens", s.vectorFieldName)
 	teq := types.TextExpansionQuery{

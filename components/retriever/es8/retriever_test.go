@@ -36,9 +36,9 @@ func TestNewRetriever(t *testing.T) {
 
 	t.Run("retrieve_documents", func(t *testing.T) {
 		r, err := NewRetriever(ctx, &RetrieverConfig{
-			ESConfig: elasticsearch.Config{},
-			Index:    "eino_ut",
-			TopK:     10,
+			Client: &elasticsearch.Client{},
+			Index:  "eino_ut",
+			TopK:   10,
 			ResultParser: func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error) {
 				var mp map[string]any
 				if err := json.Unmarshal(hit.Source_, &mp); err != nil {
@@ -65,13 +65,15 @@ func TestNewRetriever(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		defer mockey.Mock(mockey.GetMethod(r.client.Search(), "Index")).
-			Return(r.client.Search()).Build().Patch().UnPatch()
+		mockSearch := search.NewSearchFunc(r.client)()
 
-		defer mockey.Mock(mockey.GetMethod(r.client.Search(), "Request")).
-			Return(r.client.Search()).Build().Patch().UnPatch()
+		defer mockey.Mock(mockey.GetMethod(mockSearch, "Index")).
+			Return(mockSearch).Build().Patch().UnPatch()
 
-		defer mockey.Mock(mockey.GetMethod(r.client.Search(), "Do")).Return(&search.Response{
+		defer mockey.Mock(mockey.GetMethod(mockSearch, "Request")).
+			Return(mockSearch).Build().Patch().UnPatch()
+
+		defer mockey.Mock(mockey.GetMethod(mockSearch, "Do")).Return(&search.Response{
 			Hits: types.HitsMetadata{
 				Hits: []types.Hit{
 					{

@@ -17,11 +17,31 @@
 package es8
 
 import (
+	"github.com/cloudwego/eino/components/retriever"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 )
 
-// ESImplOptions es specified options
-// Use retriever.GetImplSpecificOptions[ESImplOptions] to get ESImplOptions from options.
-type ESImplOptions struct {
-	Filters []types.Query `json:"filters,omitempty"`
+// ImplOptions es specified options
+// Use retriever.GetImplSpecificOptions[ImplOptions] to get ImplOptions from options.
+type ImplOptions struct {
+	Filters      []types.Query      `json:"filters,omitempty"`
+	SparseVector map[string]float32 `json:"sparse_vector,omitempty"`
+}
+
+// WithFilters set filters for retrieve query.
+// This may take effect in search modes.
+func WithFilters(filters []types.Query) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
+		o.Filters = filters
+	})
+}
+
+// WithSparseVector set sparse vector for retrieve query.
+// For example, a stored vector {"feature_0": 0.12, "feature_1": 1.2, "feature_2": 3.0}.
+// Eino prefers to define sparse vector as int token id to float32 vector mapping, so you may
+// convert integer token id to string token.
+func WithSparseVector(sparse map[string]float32) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
+		o.SparseVector = sparse
+	})
 }

@@ -1,6 +1,8 @@
 module github.com/cloudwego/eino-ext/components/model/claude
 
-go 1.18
+go 1.21
+
+toolchain go1.22.2
 
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.8

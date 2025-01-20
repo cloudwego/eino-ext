@@ -39,10 +39,8 @@ func TestSearchModeSparseVectorTextExpansion(t *testing.T) {
 			req, err := s.BuildRequest(ctx, conf, "content",
 				retriever.WithTopK(10),
 				retriever.WithScoreThreshold(1.1),
-				retriever.WrapImplSpecificOptFn[es8.ESImplOptions](func(o *es8.ESImplOptions) {
-					o.Filters = []types.Query{
-						{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
-					}
+				es8.WithFilters([]types.Query{
+					{Match: map[string]types.MatchQuery{"label": {Query: "good"}}},
 				}))
 
 			convey.So(err, convey.ShouldBeNil)

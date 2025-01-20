@@ -42,6 +42,7 @@ type ApproximateConfig struct {
 	Hybrid bool
 	// RRF (Reciprocal Rank Fusion) is a method for combining multiple result sets, is used to
 	// even the score from the knn query and text query
+	// RRF only available with specific licenses, see: https://www.elastic.co/subscriptions
 	RRF bool
 	// RRFRankConstant determines how much influence documents in
 	// individual result sets per query have over the final ranked result set
@@ -77,7 +78,7 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *es8.RetrieverConfi
 		Embedding:      conf.Embedding,
 	}, opts...)
 
-	io := retriever.GetImplSpecificOptions[es8.ESImplOptions](nil, opts...)
+	io := retriever.GetImplSpecificOptions[es8.ImplOptions](nil, opts...)
 
 	knn := types.KnnSearch{
 		Boost:              a.config.Boost,
