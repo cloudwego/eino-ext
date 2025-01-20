@@ -71,14 +71,11 @@ type testCallback struct {
 }
 
 func (tt *testCallback) OnFinish(ctx context.Context, graphInfo *compose.GraphInfo) {
-	c, ok := ctx.Value(testCtxKey{}).(*testCallback)
-	if !ok {
-		return
-	}
-	c.gi = &GraphInfo{
+
+	tt.gi = &GraphInfo{
 		GraphInfo: graphInfo,
 		Option: GraphOption{
-			GenState: c.genState,
+			GenState: graphInfo.GenStateFn,
 		},
 	}
 }
@@ -158,8 +155,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
-
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
@@ -222,8 +217,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
-
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
@@ -285,7 +278,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
 
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
@@ -352,7 +344,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
 
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
@@ -410,7 +401,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
 
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
@@ -468,7 +458,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
 
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
@@ -527,7 +516,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
 
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
@@ -599,7 +587,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
 
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
@@ -685,11 +672,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 		err = g.AddEdge("node_5", compose.END)
 		assert.NoError(t, err)
-
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
-
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
@@ -721,6 +705,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 	})
 
 	t.Run("graph-parallel: has compositeType", func(t *testing.T) {
+
 		g := compose.NewGraph[mockContainerImpl, map[string][]string]()
 		err := g.AddLambdaNode("node_1", compose.InvokableLambda(func(ctx context.Context, input mockContainerImpl) (output mockContainer, err error) {
 			assert.Equal(t, input.NN, "start")
@@ -798,15 +783,10 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
-
 		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
 		ng, err := BuildDevGraph(tc.gi, compose.START)
-		assert.NoError(t, err)
-
-		r, err := ng.Compile()
 		assert.NoError(t, err)
 
 		ift, ok, err := tc.gi.InferGraphInputType(compose.START)
@@ -814,8 +794,12 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.True(t, ok)
 
 		userMsg := `{"nn": "start", "age": -1}`
+
+		r, err := ng.Compile()
+		assert.NoError(t, err)
 		input, err := ift.UnmarshalJson(userMsg)
 		assert.NoError(t, err)
+
 		resp, err := r.Invoke(ctx, input)
 
 		_, err = json.Marshal(resp)
@@ -1205,22 +1189,21 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		tc := &testCallback{}
 		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
 
 		_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 		assert.NoError(t, err)
 
-		t.Run("Chain[2]_Lambda", func(t *testing.T) {
-			newChain, err := BuildDevGraph(tc.gi, "Chain[2]_Lambda")
+		t.Run("node_2", func(t *testing.T) {
+
+			newChain, err := BuildDevGraph(tc.gi, "node_2")
 			assert.NoError(t, err)
 
-			r, err := newChain.Compile()
-			assert.NoError(t, err)
-
-			ift, ok, err := tc.gi.InferGraphInputType("Chain[2]_Lambda")
+			ift, ok, err := tc.gi.InferGraphInputType("node_2")
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
+			r, err := newChain.Compile()
+			assert.NoError(t, err)
 			userMsg := `["from_Chain[2]_Lambda"]`
 			input, err := ift.UnmarshalJson(userMsg)
 			assert.NoError(t, err)
@@ -1237,14 +1220,14 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			assert.True(t, reflect.DeepEqual(ground, resp))
 		})
 
-		t.Run("Chain[3]_Parallel[0]_Lambda", func(t *testing.T) {
-			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Parallel[0]_Lambda")
+		t.Run("node_3_parallel_0", func(t *testing.T) {
+			newChain, err := BuildDevGraph(tc.gi, "node_3_parallel_0")
 			assert.NoError(t, err)
 
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Parallel[0]_Lambda")
+			ift, ok, err := tc.gi.InferGraphInputType("node_3_parallel_0")
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
@@ -1263,17 +1246,22 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			assert.True(t, reflect.DeepEqual(ground, resp))
 		})
 
-		t.Run("Chain[3]_Parallel[1]_Lambda", func(t *testing.T) {
-			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Parallel[1]_Lambda")
+		t.Run("node_3_parallel_1", func(t *testing.T) {
+			tc := &testCallback{}
+			ctx := context.Background()
+
+			_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
 			assert.NoError(t, err)
 
-			r, err := newChain.Compile()
+			newChain, err := BuildDevGraph(tc.gi, "node_3_parallel_1")
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Parallel[1]_Lambda")
+			ift, ok, err := tc.gi.InferGraphInputType("node_3_parallel_1")
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
+			r, err := newChain.Compile()
+			assert.NoError(t, err)
 			userMsg := `["from_p1"]`
 			input, err := ift.UnmarshalJson(userMsg)
 			assert.NoError(t, err)
@@ -1289,7 +1277,6 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			assert.True(t, reflect.DeepEqual(ground, resp))
 		})
 	})
-
 	t.Run("chain-branch: start from here", func(t *testing.T) {
 		c := compose.NewChain[int, map[string][]string]()
 		c.AppendLambda(compose.InvokableLambda(func(ctx context.Context, input int) (output []string, err error) {
@@ -1324,21 +1311,20 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		})
 		c.AppendBranch(compose.NewChainBranch[[]string](branchCond).AddLambda("b1", b1).AddLambda("b2", b2))
 
-		tc := &testCallback{}
-		ctx := context.Background()
-		ctx = context.WithValue(ctx, testCtxKey{}, tc)
+		t.Run("node_3_branch_b1", func(t *testing.T) {
+			tc := &testCallback{}
+			ctx := context.Background()
+			ctx = context.WithValue(ctx, testCtxKey{}, tc)
+			_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
+			assert.NoError(t, err)
 
-		_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
-		assert.NoError(t, err)
-
-		t.Run("Chain[3]_Branch[b1]_Lambda", func(t *testing.T) {
-			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Branch[b1]_Lambda")
+			newChain, err := BuildDevGraph(tc.gi, "node_3_branch_b1")
 			assert.NoError(t, err)
 
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Branch[b1]_Lambda")
+			ift, ok, err := tc.gi.InferGraphInputType("node_3_branch_b1")
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
@@ -1357,14 +1343,21 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			assert.True(t, reflect.DeepEqual(ground, resp))
 		})
 
-		t.Run("Chain[3]_Branch[b2]_Lambda", func(t *testing.T) {
-			newChain, err := BuildDevGraph(tc.gi, "Chain[3]_Branch[b2]_Lambda")
+		t.Run("node_3_branch_b2", func(t *testing.T) {
+			tc := &testCallback{}
+			ctx := context.Background()
+			ctx = context.WithValue(ctx, testCtxKey{}, tc)
+
+			_, err := c.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
+			assert.NoError(t, err)
+
+			newChain, err := BuildDevGraph(tc.gi, "node_3_branch_b2")
 			assert.NoError(t, err)
 
 			r, err := newChain.Compile()
 			assert.NoError(t, err)
 
-			ift, ok, err := tc.gi.InferGraphInputType("Chain[3]_Branch[b2]_Lambda")
+			ift, ok, err := tc.gi.InferGraphInputType("node_3_branch_b2")
 			assert.NoError(t, err)
 			assert.True(t, ok)
 
