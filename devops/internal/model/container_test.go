@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino/components"
@@ -34,7 +35,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
-	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 type mockContainer interface {
@@ -1757,14 +1757,26 @@ type DemoV1 struct {
 
 	Child6 *DemoV2 `json:"child6" binding:"required"`
 	Child7 *DemoV3 `json:"child7" binding:"required"`
+
+	Child12 **DemoV2                `json:"child12" binding:"required"`
+	Child9  ***map[string]string    `json:"child9" binding:"required"`
+	Child10 ***string               `json:"child10" binding:"required"`
+	Child11 ***map[string]***DemoV1 `json:"child11" binding:"required"`
 }
 
 func Test_parseReflectTypeToTypeSchema(t *testing.T) {
-	data := parseReflectTypeToJsonSchema(reflect.TypeOf(&DemoV1{}))
+	reflectType := reflect.TypeOf(&DemoV1{})
+	data := parseReflectTypeToJsonSchema(reflectType)
 
-	assert.Len(t, data.Properties, 8)
+	assert.Len(t, data.Properties, 12)
 	assert.Equal(t, data.Properties["child"].Type, devmodel.JsonTypeOfObject)
 	assert.Equal(t, data.Properties["child2"].Type, devmodel.JsonTypeOfArray)
-	assert.Equal(t, data.Properties["child4"].Title, "model.DemoV2")
-	assert.Equal(t, data.Properties["child5"].Title, "model.DemoV2")
+	assert.Equal(t, data.Properties["child4"].Title, "*model.DemoV2")
+	assert.Equal(t, data.Properties["child5"].Title, "*model.DemoV2")
+
+	assert.Equal(t, data.Properties["child12"].Title, "**model.DemoV2")
+	assert.Equal(t, data.Properties["child9"].Title, "***map[string]string")
+	assert.Equal(t, data.Properties["child10"].Title, "***string")
+	assert.Equal(t, data.Properties["child11"].Title, "***map[string]***model.DemoV1")
+
 }

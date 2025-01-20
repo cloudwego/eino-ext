@@ -466,7 +466,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 	recursionParseReflectTypeToJsonSchema = func(reflectType reflect.Type, ptrLevel int) (jsonSchema *devmodel.JsonSchema) {
 		if processedTypes[reflectType] {
-			return recursionParseReflectTypeToJsonSchema(reflect.TypeOf(map[string]interface{}{}), 0)
+			return recursionParseReflectTypeToJsonSchema(reflect.TypeOf(map[string]interface{}{}), ptrLevel)
 		}
 		if reflectType.Kind() == reflect.Struct {
 			processedTypes[reflectType] = true
