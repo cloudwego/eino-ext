@@ -27,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
@@ -34,7 +35,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
-	devmodel "github.com/cloudwego/eino-ext/devops/model"
 )
 
 type mockContainer interface {
@@ -71,7 +71,6 @@ type testCallback struct {
 }
 
 func (tt *testCallback) OnFinish(ctx context.Context, graphInfo *compose.GraphInfo) {
-
 	tt.gi = &GraphInfo{
 		GraphInfo: graphInfo,
 		Option: GraphOption{
@@ -165,7 +164,8 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `{"input":"mock_input"}`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
+
 		assert.NoError(t, err)
 		resp, err := r.Invoke(ctx, input)
 
@@ -237,7 +237,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 
 		RegisterType(generic.TypeOf[*mockInputType]())
 
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -296,7 +296,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `{"input":"mock_input"}`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -360,7 +360,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `-1`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -415,7 +415,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `{"input":"mock_input"}`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -470,7 +470,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `mock_input`
-		input, err := UnmarshalJson([]byte(fmt.Sprintf(`"%s"`, userMsg)), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(fmt.Sprintf(`"%s"`, userMsg)), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -525,7 +525,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `1`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -594,7 +594,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `1`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -678,7 +678,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `1`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -784,7 +784,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		assert.NoError(t, err)
 
 		userMsg := `{"nn": "start", "age": -1}`
-		input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+		input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 		assert.NoError(t, err)
 
 		resp, err := r.Invoke(ctx, input)
@@ -1118,7 +1118,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			assert.NoError(t, err)
 
 			userMsg := `-1`
-			input, err := UnmarshalJson([]byte(userMsg), tc.gi.InputType)
+			input, err := UnmarshalJson([]byte(userMsg), ng.GraphInfo.InputType)
 			assert.NoError(t, err)
 			resp, err := r.Invoke(ctx, input)
 
@@ -1166,10 +1166,11 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 			assert.NoError(t, err)
 
 			userMsg := `["from_Chain[2]_Lambda"]`
-			input, err := UnmarshalJson([]byte(userMsg), tc.gi.Nodes["Chain[2]_Lambda"].InputType)
-
+			input, err := UnmarshalJson([]byte(userMsg), newChain.GraphInfo.Nodes["node_2"].InputType)
 			assert.NoError(t, err)
+
 			resp, err := r.Invoke(ctx, input)
+			assert.NoError(t, err)
 
 			_, err = json.Marshal(resp)
 			assert.NoError(t, err)
@@ -1772,14 +1773,25 @@ type DemoV1 struct {
 
 	Child6 *DemoV2 `json:"child6" binding:"required"`
 	Child7 *DemoV3 `json:"child7" binding:"required"`
+
+	Child12 **DemoV2                `json:"child12" binding:"required"`
+	Child9  ***map[string]string    `json:"child9" binding:"required"`
+	Child10 ***string               `json:"child10" binding:"required"`
+	Child11 ***map[string]***DemoV1 `json:"child11" binding:"required"`
 }
 
 func Test_parseReflectTypeToTypeSchema(t *testing.T) {
-	data := parseReflectTypeToJsonSchema(reflect.TypeOf(&DemoV1{}))
+	reflectType := reflect.TypeOf(&DemoV1{})
+	data := parseReflectTypeToJsonSchema(reflectType)
 
-	assert.Len(t, data.Properties, 8)
-	assert.Equal(t, data.Properties["child"].Type, devmodel.JsonTypeOfObject)
+	assert.Len(t, data.Properties, 12)
+	assert.Equal(t, data.Properties["child"].Type, devmodel.JsonTypeOfNull)
 	assert.Equal(t, data.Properties["child2"].Type, devmodel.JsonTypeOfArray)
-	assert.Equal(t, data.Properties["child4"].Title, "model.DemoV2")
-	assert.Equal(t, data.Properties["child5"].Title, "model.DemoV2")
+	assert.Equal(t, data.Properties["child4"].Title, "*model.DemoV2")
+	assert.Equal(t, data.Properties["child5"].Title, "*model.DemoV2")
+
+	assert.Equal(t, data.Properties["child12"].Title, "**model.DemoV2")
+	assert.Equal(t, data.Properties["child9"].Title, "***map[string]string")
+	assert.Equal(t, data.Properties["child10"].Title, "***string")
+	assert.Equal(t, data.Properties["child11"].Title, "***map[string]***model.DemoV1")
 }

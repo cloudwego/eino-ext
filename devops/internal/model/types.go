@@ -94,6 +94,7 @@ func RegisterType(rt reflect.Type) {
 		return
 	}
 	registeredTypeMap[rt.String()] = rt
+
 	registeredTypes = append([]RegisteredType{{
 		Identifier: rt.String(),
 		Type:       rt,
