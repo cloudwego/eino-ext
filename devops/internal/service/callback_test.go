@@ -76,8 +76,8 @@ func (c *callbackTestSuite) buildCallbackChain() {
 
 func (c *callbackTestSuite) Test_NewGlobalDevGraphCompileCallback() {
 	mockey.PatchConvey("add graph with no graph name", c.T(), func() {
-		c.mockContainer.EXPECT().AddGraphInfo(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-			func(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error) {
+		c.mockContainer.EXPECT().AddGraphInfo(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(graphName string, graphInfo *compose.GraphInfo) (graphID string, err error) {
 				assert.Equal(c.T(), "callback_test.buildCallbackGraph:64", graphName)
 				return "", nil
 			}).Times(1)
@@ -86,8 +86,8 @@ func (c *callbackTestSuite) Test_NewGlobalDevGraphCompileCallback() {
 	})
 
 	mockey.PatchConvey("add chain with no chian name", c.T(), func() {
-		c.mockContainer.EXPECT().AddGraphInfo(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-			func(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error) {
+		c.mockContainer.EXPECT().AddGraphInfo(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(graphName string, graphInfo *compose.GraphInfo) (graphID string, err error) {
 				assert.Equal(c.T(), "callback_test.buildCallbackChain:73", graphName)
 				return "", nil
 			}).Times(1)
@@ -97,11 +97,10 @@ func (c *callbackTestSuite) Test_NewGlobalDevGraphCompileCallback() {
 
 	mockey.PatchConvey("skip eino devops compile graph", c.T(), func() {
 		var gi model.GraphInfo
-		c.mockContainer.EXPECT().AddGraphInfo(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
-			func(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error) {
+		c.mockContainer.EXPECT().AddGraphInfo(gomock.Any(), gomock.Any()).DoAndReturn(
+			func(graphName string, graphInfo *compose.GraphInfo) (graphID string, err error) {
 				gi = model.GraphInfo{
 					GraphInfo: graphInfo,
-					Option:    graphOpt,
 				}
 
 				assert.Equal(c.T(), "callback_test.buildCallbackGraph:64", graphName)

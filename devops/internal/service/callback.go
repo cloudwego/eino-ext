@@ -23,7 +23,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 	"github.com/cloudwego/eino/compose"
 )
@@ -49,16 +48,12 @@ func NewGlobalDevGraphCompileCallback() compose.GraphCompileCallback {
 			return
 		}
 
-		opt := model.GraphOption{
-			GenState: graphInfo.GenStateFn,
-		}
-
 		graphName := graphInfo.Name
 		if graphName == "" {
 			graphName = genGraphName(frame)
 		}
 
-		_, err := ContainerSVC.AddGraphInfo(graphName, graphInfo, opt)
+		_, err := ContainerSVC.AddGraphInfo(graphName, graphInfo)
 		if err != nil {
 			log.Errorf(err.Error())
 		}
