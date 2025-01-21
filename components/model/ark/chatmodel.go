@@ -183,10 +183,9 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 	}
 
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages:   in,
-		Tools:      append(cm.rawTools), // join tool info from call options
-		ToolChoice: nil,                 // not support in api
-		Config:     reqConf,
+		Messages: in,
+		Tools:    append(cm.rawTools), // join tool info from call options
+		Config:   reqConf,
 	})
 
 	resp, err := cm.client.CreateChatCompletion(ctx, *req)
@@ -234,10 +233,9 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	}
 
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages:   in,
-		Tools:      append(cm.rawTools), // join tool info from call options
-		ToolChoice: nil,                 // not support in api
-		Config:     reqConf,
+		Messages: in,
+		Tools:    append(cm.rawTools), // join tool info from call options
+		Config:   reqConf,
 	})
 
 	stream, err := cm.client.CreateChatCompletionStream(ctx, *req)

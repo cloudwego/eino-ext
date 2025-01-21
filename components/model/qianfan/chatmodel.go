@@ -118,10 +118,9 @@ func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages:   input,
-		Tools:      c.rawTools,
-		ToolChoice: c.config.ToolChoice,
-		Config:     cfg,
+		Messages: input,
+		Tools:    c.rawTools,
+		Config:   cfg,
 	})
 
 	r, err := c.cc.Do(ctx, &qianfan.ChatCompletionV2Request{
@@ -187,10 +186,9 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages:   input,
-		Tools:      c.rawTools,
-		ToolChoice: c.config.ToolChoice,
-		Config:     cfg,
+		Messages: input,
+		Tools:    c.rawTools,
+		Config:   cfg,
 	})
 
 	r, err := c.cc.Stream(ctx, &qianfan.ChatCompletionV2Request{
