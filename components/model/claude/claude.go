@@ -24,7 +24,7 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/cloudwego/eino-ext/libs/acl/claude"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -48,21 +48,34 @@ import (
 //	    Model:  "claude-3-opus-20240229",
 //	    MaxTokens: 2000,
 //	})
-func NewChatModel(ctx context.Context, conf *Config) (model.ChatModel, error) {
-	var cli *anthropic.Client
-	if conf.BaseURL != nil {
-		cli = anthropic.NewClient(option.WithBaseURL(*conf.BaseURL), option.WithAPIKey(conf.APIKey))
-	} else {
-		cli = anthropic.NewClient(option.WithAPIKey(conf.APIKey))
+func NewChatModel(ctx context.Context, config *Config) (model.ChatModel, error) {
+	var nConf *claude.Config
+	if config != nil {
+		nConf = &claude.Config{
+			ByBedrock:       config.ByBedrock,
+			BaseURL:         config.BaseURL,
+			APIKey:          config.APIKey,
+			Region:          config.Region,
+			AccessKey:       config.AccessKey,
+			SecretAccessKey: config.SecretAccessKey,
+			Model:           config.Model,
+			MaxTokens:       config.MaxTokens,
+			Temperature:     config.Temperature,
+			TopP:            config.TopP,
+		}
 	}
-	return &claude{
+	cli, err := claude.NewClient(ctx, nConf)
+	if err != nil {
+		return nil, err
+	}
+	return &ChatModel{
 		cli:           cli,
-		maxTokens:     conf.MaxTokens,
-		model:         conf.Model,
-		stopSequences: conf.StopSequences,
-		temperature:   conf.Temperature,
-		topK:          conf.TopK,
-		topP:          conf.TopP,
+		maxTokens:     config.MaxTokens,
+		model:         config.Model,
+		stopSequences: config.StopSequences,
+		temperature:   config.Temperature,
+		topK:          config.TopK,
+		topP:          config.TopP,
 	}, nil
 }
 
@@ -73,10 +86,29 @@ type Config struct {
 	// Optional. Example: "https://custom-claude-api.example.com"
 	BaseURL *string
 
-	// APIKey is your Anthropic API key
+	// ByBedrock indicates whether to use Bedrock Service
+	// Required for Bedrock
+	ByBedrock bool
+
+	// APIKey is your Bedrock API key
 	// Obtain from: https://console.anthropic.com/account/keys
 	// Required
 	APIKey string
+
+	// AccessKey is your Bedrock API Access key
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	AccessKey string
+
+	// SecretAccessKey is your Bedrock API Secret Access key
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	SecretAccessKey string
+
+	// Region is your Bedrock API region
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	Region string
 
 	// Model specifies which Claude model to use
 	// Required
@@ -107,7 +139,7 @@ type Config struct {
 	StopSequences []string
 }
 
-type claude struct {
+type ChatModel struct {
 	cli *anthropic.Client
 
 	maxTokens     int
@@ -120,7 +152,7 @@ type claude struct {
 	origTools     []*schema.ToolInfo
 }
 
-func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
+func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
 	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input))
 	defer func() {
 		if err != nil {
@@ -144,7 +176,7 @@ func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...
 	return message, nil
 }
 
-func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
+func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input))
 	defer func() {
 		if err != nil {
@@ -219,7 +251,7 @@ func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...mo
 	}), nil
 }
 
-func (c *claude) BindTools(tools []*schema.ToolInfo) error {
+func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 	result := make([]anthropic.ToolParam, 0, len(tools))
 	for _, tool := range tools {
 		s, err := tool.ToOpenAPIV3()
@@ -237,7 +269,7 @@ func (c *claude) BindTools(tools []*schema.ToolInfo) error {
 	return nil
 }
 
-func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
+func (c *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
 	}
@@ -297,7 +329,7 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 	return param, nil
 }
 
-func (c *claude) getCallbackInput(input []*schema.Message) *model.CallbackInput {
+func (c *ChatModel) getCallbackInput(input []*schema.Message) *model.CallbackInput {
 	result := &model.CallbackInput{
 		Messages: input,
 		Tools:    c.origTools,
@@ -306,7 +338,7 @@ func (c *claude) getCallbackInput(input []*schema.Message) *model.CallbackInput 
 	return result
 }
 
-func (c *claude) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
+func (c *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
 	result := &model.CallbackOutput{
 		Message: output,
 		Config:  c.getConfig(),
@@ -321,7 +353,7 @@ func (c *claude) getCallbackOutput(output *schema.Message) *model.CallbackOutput
 	return result
 }
 
-func (c *claude) getConfig() *model.Config {
+func (c *ChatModel) getConfig() *model.Config {
 	result := &model.Config{
 		Model:     c.model,
 		MaxTokens: c.maxTokens,
