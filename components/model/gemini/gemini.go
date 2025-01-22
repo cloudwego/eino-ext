@@ -126,7 +126,11 @@ func (c *chatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 	if err != nil {
 		return nil, err
 	}
-	ctx = callbacks.OnStart(ctx, conf)
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages: input,
+		Tools:    model.GetCommonOptions(&model.Options{Tools: c.origTools}, opts...).Tools,
+		Config:   conf,
+	})
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -163,7 +167,11 @@ func (c *chatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 	if err != nil {
 		return nil, err
 	}
-	ctx = callbacks.OnStart(ctx, conf)
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages: input,
+		Tools:    model.GetCommonOptions(&model.Options{Tools: c.origTools}, opts...).Tools,
+		Config:   conf,
+	})
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -225,26 +233,11 @@ func (c *chatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 }
 
 func (c *chatModel) BindTools(tools []*schema.ToolInfo) error {
-	gTools := make([]*genai.Tool, len(tools))
-	for i, tool := range tools {
-		funcDecl := &genai.FunctionDeclaration{
-			Name:        tool.Name,
-			Description: tool.Desc,
-		}
-
-		openSchema, err := tool.ToOpenAPIV3()
-		if err != nil {
-			return fmt.Errorf("get open schema fail: %w", err)
-		}
-		funcDecl.Parameters, err = c.convOpenSchema(openSchema)
-		if err != nil {
-			return fmt.Errorf("convert open schema fail: %w", err)
-		}
-
-		gTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
-		}
+	gTools, err := c.toGeminiTools(tools)
+	if err != nil {
+		return err
 	}
+
 	c.tools = gTools
 	c.origTools = tools
 	return nil
@@ -255,6 +248,7 @@ func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Cha
 		Temperature: c.temperature,
 		MaxTokens:   c.maxTokens,
 		TopP:        c.topP,
+		Tools:       nil,
 	}, opts...)
 	geminiOptions := model.GetImplSpecificOptions(&options{
 		TopK:           c.topK,
@@ -272,8 +266,17 @@ func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Cha
 	}
 	m.SafetySettings = c.safetySettings
 
-	m.Tools = make([]*genai.Tool, len(c.tools))
-	copy(m.Tools, c.tools)
+	tools := c.tools
+	if commonOptions.Tools != nil {
+		var err error
+		tools, err = c.toGeminiTools(commonOptions.Tools)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	m.Tools = make([]*genai.Tool, len(tools))
+	copy(m.Tools, tools)
 	if c.enableCodeExecution {
 		m.Tools = append(m.Tools, &genai.Tool{
 			CodeExecution: &genai.CodeExecution{},
@@ -304,6 +307,31 @@ func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Cha
 		}
 	}
 	return m.StartChat(), conf, nil
+}
+
+func (c *chatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, error) {
+	gTools := make([]*genai.Tool, len(tools))
+	for i, tool := range tools {
+		funcDecl := &genai.FunctionDeclaration{
+			Name:        tool.Name,
+			Description: tool.Desc,
+		}
+
+		openSchema, err := tool.ToOpenAPIV3()
+		if err != nil {
+			return nil, fmt.Errorf("get open schema fail: %w", err)
+		}
+		funcDecl.Parameters, err = c.convOpenSchema(openSchema)
+		if err != nil {
+			return nil, fmt.Errorf("convert open schema fail: %w", err)
+		}
+
+		gTools[i] = &genai.Tool{
+			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
+		}
+	}
+
+	return gTools, nil
 }
 
 func (c *chatModel) convOpenSchema(schema *openapi3.Schema) (*genai.Schema, error) {

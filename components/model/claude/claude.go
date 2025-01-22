@@ -121,7 +121,7 @@ type claude struct {
 }
 
 func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
-	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input))
+	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -145,7 +145,7 @@ func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...
 }
 
 func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
-	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input))
+	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -220,11 +220,26 @@ func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...mo
 }
 
 func (c *claude) BindTools(tools []*schema.ToolInfo) error {
+	result, err := toAnthropicToolParam(tools)
+	if err != nil {
+		return err
+	}
+
+	c.tools = result
+	c.origTools = tools
+	return nil
+}
+
+func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolParam, error) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+
 	result := make([]anthropic.ToolParam, 0, len(tools))
 	for _, tool := range tools {
 		s, err := tool.ToOpenAPIV3()
 		if err != nil {
-			return fmt.Errorf("convert to openapi v3 schema fail: %w", err)
+			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
 		}
 		result = append(result, anthropic.ToolParam{
 			Name:        anthropic.F(tool.Name),
@@ -232,9 +247,8 @@ func (c *claude) BindTools(tools []*schema.ToolInfo) error {
 			InputSchema: anthropic.F[any](s),
 		})
 	}
-	c.tools = result
-	c.origTools = tools
-	return nil
+
+	return result, nil
 }
 
 func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
@@ -248,6 +262,7 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 		MaxTokens:   &c.maxTokens,
 		TopP:        c.topP,
 		Stop:        c.stopSequences,
+		Tools:       nil,
 	}, opts...)
 	claudeOptions := model.GetImplSpecificOptions(&options{TopK: c.topK}, opts...)
 
@@ -270,7 +285,16 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 	if claudeOptions.TopK != nil {
 		param.TopK = anthropic.F(int64(*claudeOptions.TopK))
 	}
-	if len(c.tools) > 0 {
+
+	tools := c.tools
+	if commonOptions.Tools != nil {
+		var err error
+		if tools, err = toAnthropicToolParam(commonOptions.Tools); err != nil {
+			return anthropic.MessageNewParams{}, err
+		}
+	}
+
+	if len(tools) > 0 {
 		param.Tools = anthropic.F(c.tools)
 	}
 
@@ -297,11 +321,13 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 	return param, nil
 }
 
-func (c *claude) getCallbackInput(input []*schema.Message) *model.CallbackInput {
+func (c *claude) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
 	result := &model.CallbackInput{
 		Messages: input,
-		Tools:    c.origTools,
-		Config:   c.getConfig(),
+		Tools: model.GetCommonOptions(&model.Options{
+			Tools: c.origTools,
+		}, opts...).Tools,
+		Config: c.getConfig(),
 	}
 	return result
 }

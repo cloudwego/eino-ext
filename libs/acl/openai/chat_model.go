@@ -287,7 +287,18 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 	return ret
 }
 
-func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*openai.ChatCompletionRequest, error) {
+func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionRequest, *model.CallbackInput, error) {
+
+	options := model.GetCommonOptions(&model.Options{
+		Temperature: cm.config.Temperature,
+		MaxTokens:   cm.config.MaxTokens,
+		Model:       &cm.config.Model,
+		TopP:        cm.config.TopP,
+		Stop:        cm.config.Stop,
+		Tools:       nil,
+		ToolChoice:  cm.toolChoice,
+	}, opts...)
+
 	req := &openai.ChatCompletionRequest{
 		Model:            *options.Model,
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
@@ -301,10 +312,31 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 		User:             dereferenceOrZero(cm.config.User),
 	}
 
-	if len(cm.tools) > 0 {
+	cbInput := &model.CallbackInput{
+		Messages: in,
+		Tools:    cm.rawTools,
+		Config: &model.Config{
+			Model:       req.Model,
+			MaxTokens:   req.MaxTokens,
+			Temperature: req.Temperature,
+			TopP:        req.TopP,
+			Stop:        req.Stop,
+		},
+	}
+
+	tools := cm.tools
+	if options.Tools != nil {
+		var err error
+		if tools, err = toTools(options.Tools); err != nil {
+			return nil, nil, err
+		}
+		cbInput.Tools = options.Tools
+	}
+
+	if len(tools) > 0 {
 		req.Tools = make([]openai.Tool, len(cm.tools))
-		for i := range cm.tools {
-			t := cm.tools[i]
+		for i := range tools {
+			t := tools[i]
 
 			req.Tools[i] = openai.Tool{
 				Type: openai.ToolTypeFunction,
@@ -315,40 +347,42 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 				},
 			}
 		}
+	}
 
-		if options.ToolChoice != nil {
-			/*
-				tool_choice is string or object
-				Controls which (if any) tool is called by the model.
-				"none" means the model will not call any tool and instead generates a message.
-				"auto" means the model can pick between generating a message or calling one or more tools.
-				"required" means the model must call one or more tools.
+	if options.ToolChoice != nil {
+		/*
+			tool_choice is string or object
+			Controls which (if any) tool is called by the model.
+			"none" means the model will not call any tool and instead generates a message.
+			"auto" means the model can pick between generating a message or calling one or more tools.
+			"required" means the model must call one or more tools.
 
-				Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
+			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
 
-				"none" is the default when no tools are present.
-				"auto" is the default if tools are present.
-			*/
+			"none" is the default when no tools are present.
+			"auto" is the default if tools are present.
+		*/
 
-			switch *options.ToolChoice {
-			case schema.ToolChoiceForbidden:
-				req.ToolChoice = toolChoiceNone
-			case schema.ToolChoiceAllowed:
-				req.ToolChoice = toolChoiceAuto
-			case schema.ToolChoiceForced:
-				if len(req.Tools) > 1 {
-					req.ToolChoice = toolChoiceRequired
-				} else {
-					req.ToolChoice = openai.ToolChoice{
-						Type: req.Tools[0].Type,
-						Function: openai.ToolFunction{
-							Name: req.Tools[0].Function.Name,
-						},
-					}
+		switch *options.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			req.ToolChoice = toolChoiceNone
+		case schema.ToolChoiceAllowed:
+			req.ToolChoice = toolChoiceAuto
+		case schema.ToolChoiceForced:
+			if len(req.Tools) == 0 {
+				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
+			} else if len(req.Tools) > 1 {
+				req.ToolChoice = toolChoiceRequired
+			} else {
+				req.ToolChoice = openai.ToolChoice{
+					Type: req.Tools[0].Type,
+					Function: openai.ToolFunction{
+						Name: req.Tools[0].Function.Name,
+					},
 				}
-			default:
-				return nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
 			}
+		default:
+			return nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
 		}
 	}
 
@@ -356,7 +390,7 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 	for _, inMsg := range in {
 		mc, e := toOpenAIMultiContent(inMsg.MultiContent)
 		if e != nil {
-			return nil, e
+			return nil, nil, e
 		}
 		msg := openai.ChatCompletionMessage{
 			Role:         toOpenAIRole(inMsg.Role),
@@ -386,7 +420,7 @@ func (cm *Client) genRequest(in []*schema.Message, options *model.Options) (*ope
 		}
 	}
 
-	return req, nil
+	return req, cbInput, nil
 }
 
 func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
@@ -398,33 +432,12 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 		}
 	}()
 
-	options := model.GetCommonOptions(&model.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-		ToolChoice:  cm.toolChoice,
-	}, opts...)
-
-	req, err := cm.genRequest(in, options)
+	req, cbInput, err := cm.genRequest(in, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
 	}
 
-	reqConf := &model.Config{
-		Model:       req.Model,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		Stop:        req.Stop,
-	}
-
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: in,
-		Tools:    append(cm.rawTools), // join tool info from call options
-		Config:   reqConf,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
 	resp, err := cm.cli.CreateChatCompletion(ctx, *req)
 	if err != nil {
@@ -468,7 +481,7 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
-		Config:     reqConf,
+		Config:     cbInput.Config,
 		TokenUsage: usage,
 	})
 
@@ -484,16 +497,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 		}
 	}()
 
-	options := model.GetCommonOptions(&model.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-		ToolChoice:  cm.toolChoice,
-	}, opts...)
-
-	req, err := cm.genRequest(in, options)
+	req, cbInput, err := cm.genRequest(in, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -501,19 +505,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 	req.Stream = true
 	req.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
 
-	reqConf := &model.Config{
-		Model:       req.Model,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		Stop:        req.Stop,
-	}
-
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: in,
-		Tools:    append(cm.rawTools), // join tool info from call options
-		Config:   reqConf,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
 	stream, err := cm.cli.CreateChatCompletionStream(ctx, *req)
 	if err != nil {
@@ -541,7 +533,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 				if lastEmptyMsg != nil {
 					sw.Send(&model.CallbackOutput{
 						Message:    lastEmptyMsg,
-						Config:     reqConf,
+						Config:     cbInput.Config,
 						TokenUsage: toModelCallbackUsage(lastEmptyMsg.ResponseMeta),
 					}, nil)
 				}
@@ -583,7 +575,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 
 			closed := sw.Send(&model.CallbackOutput{
 				Message:    msg,
-				Config:     reqConf,
+				Config:     cbInput.Config,
 				TokenUsage: toModelCallbackUsage(msg.ResponseMeta),
 			}, nil)
 
