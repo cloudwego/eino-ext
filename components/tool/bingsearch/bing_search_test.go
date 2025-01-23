@@ -232,8 +232,8 @@ func Test_bingSearch_Search(t *testing.T) {
 			args: args{
 				ctx: nil,
 				request: &SearchRequest{
-					Query:  "test",
-					Offset: 0,
+					Query: "test",
+					Page:  1,
 				},
 			},
 			wantResponse: &SearchResponse{
@@ -261,8 +261,8 @@ func Test_bingSearch_Search(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				request: &SearchRequest{
-					Query:  "test",
-					Offset: 0,
+					Query: "test",
+					Page:  1,
 				},
 			},
 			wantResponse: &SearchResponse{

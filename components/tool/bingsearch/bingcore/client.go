@@ -22,21 +22,46 @@ type BingClient struct {
 
 // Config represents the Bing search client configuration.
 type Config struct {
+	// Headers specifies custom HTTP headers to be sent with each request.
+	// Common headers like "User-Agent" can be set here.
+	// Example:
+	//   Headers: map[string]string{
+	//     "User-Agent": "MyApp/1.0",
+	//     "Accept-Language": "en-US",
+	//   }
+	// The "Ocp-Apim-Subscription-Key" header will automatic setting witch is required for Bing API.
 	Headers map[string]string `json:"headers"`
 
-	Timeout time.Duration `json:"timeout"`
+	// Timeout specifies the maximum duration for a single request.
+	// Default is 30 seconds if not specified.
+	// Example: 5 * time.Second
+	Timeout time.Duration `json:"timeout"` // default: 30 seconds
 
+	// ProxyURL specifies the proxy server URL for all requests.
+	// Supports HTTP, HTTPS, and SOCKS5 proxies.
+	// Example values:
+	//   - "http://proxy.example.com:8080"
+	//   - "socks5://localhost:1080"
+	//   - "tb" (special alias for Tor Browser)
 	ProxyURL string `json:"proxy_url"`
 
+	// Cache enables in-memory caching of search results.
+	// When enabled, identical search requests will return cached results
+	// for improved performance. Cache entries expire after 5 minutes.
 	Cache bool `json:"cache"`
 
-	MaxRetries int `json:"max_retries"`
+	// MaxRetries specifies the maximum number of retry attempts for failed requests.
+	MaxRetries int `json:"max_retries"` // default: 3
 }
 
 // New creates a new BingClient instance.
 func New(config *Config) (*BingClient, error) {
 	if config.Timeout == 0 {
 		config.Timeout = 30 * time.Second
+	}
+
+	if config.MaxRetries == 0 {
+		config.MaxRetries = 3
 	}
 
 	c := &BingClient{
@@ -136,14 +161,15 @@ func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*Searc
 		return nil, errors.New("params is nil")
 	}
 
-	err := params.validate()
-	if err != nil {
+	// Validate search query
+	if err := params.validate(); err != nil {
 		return nil, err
 	}
 
 	// Set default SafeSearch if not provided
 	query := params.build()
 
+	// Check cache for existing results
 	if b.cache != nil {
 		params.cacheKey = params.getCacheKey()
 
@@ -177,10 +203,12 @@ func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*Searc
 		return nil, err
 	}
 
+	// Apply max results limit if specified
 	if params.Count > 0 && len(results) > params.Count {
 		results = results[:params.Count]
 	}
 
+	// Cache search results
 	if b.cache != nil && params.cacheKey != "" {
 		b.cache.set(params.cacheKey, results)
 	}

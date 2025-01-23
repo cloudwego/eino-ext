@@ -41,6 +41,7 @@ func NewTool(ctx context.Context, config *Config) (tool.InvokableTool, error) {
 
 // validate validates the Bing search tool configuration.
 func (c *Config) validate() error {
+	// Set default values
 	if c.ToolName == "" {
 		c.ToolName = "bing_search"
 	}
@@ -61,6 +62,7 @@ func (c *Config) validate() error {
 		c.BingConfig.Headers = make(map[string]string)
 	}
 
+	// Validate required fields
 	if c.APIKey == "" {
 		return errors.New("bing search tool config is missing API key")
 	} else {
@@ -114,8 +116,8 @@ func newBingSearch(config *Config) (*bingSearch, error) {
 }
 
 type SearchRequest struct {
-	Query  string `json:"query" jsonschema_description:"The query to search the web for"`
-	Offset int    `json:"offset" jsonschema_description:"Subtract 1 from the page number of the search results, default: 0"`
+	Query string `json:"query" jsonschema_description:"The query to search the web for"`
+	Page  int    `json:"page" jsonschema_description:"The page number to search for, default: 1"`
 }
 
 type SearchResult struct {
@@ -136,7 +138,7 @@ func (s *bingSearch) Search(ctx context.Context, request *SearchRequest) (respon
 		Region:     s.config.Region,
 		SafeSearch: s.config.SafeSearch,
 		TimeRange:  s.config.TimeRange,
-		Offset:     request.Offset,
+		Offset:     request.Page - 1,
 		Count:      s.config.MaxResults,
 	})
 	if err != nil {
@@ -153,6 +155,7 @@ func (s *bingSearch) Search(ctx context.Context, request *SearchRequest) (respon
 		})
 	}
 
+	// Apply max results limit if specified
 	if len(results) >= s.config.MaxResults {
 		results = results[:s.config.MaxResults]
 	}
