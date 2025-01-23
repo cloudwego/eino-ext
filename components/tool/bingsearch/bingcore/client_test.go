@@ -154,7 +154,6 @@ func TestBingClient_sendRequestWithRetry(t *testing.T) {
 		want    []*SearchResult
 		wantErr bool
 	}{
-		// TODO: Add test cases.
 		{
 			name: "TestBingClient_sendRequestWithRetry_Base",
 			fields: fields{

@@ -68,7 +68,6 @@ func Test_parseSearchResponse(t *testing.T) {
 		want    []*SearchResult
 		wantErr bool
 	}{
-		// TODO: Add test cases.
 		{
 			name: "Test_parseSearchResponse_Base",
 			args: args{
