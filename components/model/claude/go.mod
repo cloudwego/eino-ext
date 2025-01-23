@@ -8,7 +8,6 @@ require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.8
 	github.com/bytedance/mockey v1.2.13
 	github.com/cloudwego/eino v0.3.2
-	github.com/cloudwego/eino-ext/libs/acl/claude v0.0.0-00010101000000-000000000000
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0
 )
@@ -68,5 +67,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/cloudwego/eino-ext/libs/acl/claude => ../../../libs/acl/claude

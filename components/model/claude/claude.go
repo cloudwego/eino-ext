@@ -20,11 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
+	"github.com/anthropics/anthropic-sdk-go/option"
+	awsCofig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"runtime/debug"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/cloudwego/eino-ext/libs/acl/claude"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -49,24 +52,23 @@ import (
 //	    MaxTokens: 2000,
 //	})
 func NewChatModel(ctx context.Context, config *Config) (model.ChatModel, error) {
-	var nConf *claude.Config
-	if config != nil {
-		nConf = &claude.Config{
-			ByBedrock:       config.ByBedrock,
-			BaseURL:         config.BaseURL,
-			APIKey:          config.APIKey,
-			Region:          config.Region,
-			AccessKey:       config.AccessKey,
-			SecretAccessKey: config.SecretAccessKey,
-			Model:           config.Model,
-			MaxTokens:       config.MaxTokens,
-			Temperature:     config.Temperature,
-			TopP:            config.TopP,
+	var cli *anthropic.Client
+	if !config.ByBedrock {
+		if config.BaseURL != nil {
+			cli = anthropic.NewClient(option.WithBaseURL(*config.BaseURL), option.WithAPIKey(config.APIKey))
+		} else {
+			cli = anthropic.NewClient(option.WithAPIKey(config.APIKey))
 		}
-	}
-	cli, err := claude.NewClient(ctx, nConf)
-	if err != nil {
-		return nil, err
+	} else {
+		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx,
+			awsCofig.WithRegion(config.Region),
+			awsCofig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				config.AccessKey,
+				config.SecretAccessKey,
+				"",
+			)),
+			awsCofig.WithHTTPClient(nil)),
+		)
 	}
 	return &ChatModel{
 		cli:           cli,
