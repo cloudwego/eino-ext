@@ -1,6 +1,8 @@
 package bingcore
 
 import (
+	"crypto/md5"
+	"fmt"
 	"net/url"
 	"strconv"
 	"time"
@@ -44,6 +46,8 @@ type SearchParams struct {
 	Offset int `json:"offset"`
 
 	Count int `json:"count"`
+
+	cacheKey string
 }
 
 func (s *SearchParams) NextPage() *SearchParams {
@@ -77,6 +81,29 @@ func (s *SearchParams) build() url.Values {
 	}
 
 	return params
+}
+
+func (s *SearchParams) getCacheKey() string {
+	params := s.build().Encode()
+	hash := md5.Sum([]byte(params))
+	return fmt.Sprintf("%s_%x", s.Query, hash)
+}
+
+func (s *SearchParams) validate() error {
+	// Validate params
+	if s.Query == "" {
+		return fmt.Errorf("search query cannot be empty")
+	}
+
+	if s.Count <= 0 {
+		return fmt.Errorf("search count must be greater than 0")
+	}
+
+	if s.Offset < 0 {
+		return fmt.Errorf("search offset must be greater than or equal to 0")
+	}
+
+	return nil
 }
 
 type SearchResult struct {
