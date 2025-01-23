@@ -5,6 +5,7 @@ import (
 	"github.com/bytedance/sonic"
 )
 
+// BingAnswer represents the response from Bing search API.
 func parseSearchResponse(body []byte) ([]*SearchResult, error) {
 	var response BingAnswer
 	err := sonic.Unmarshal(body, &response)

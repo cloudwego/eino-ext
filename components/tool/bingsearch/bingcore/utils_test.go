@@ -65,15 +65,16 @@ func Test_parseSearchResponse(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    []*searchResult
+		want    []*SearchResult
 		wantErr bool
 	}{
+		// TODO: Add test cases.
 		{
 			name: "Test_parseSearchResponse_Base",
 			args: args{
 				body: response,
 			},
-			want: []*searchResult{
+			want: []*SearchResult{
 				{
 					Title:       "The Better Web Browser for Windows...",
 					URL:         "https://ww.microsoft.com/en-us/...",
