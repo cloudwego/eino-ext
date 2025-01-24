@@ -19,10 +19,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/recursive"
 )
 
 func main() {
@@ -34,13 +36,13 @@ func main() {
 		KeepType:    recursive.KeepTypeNone,
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	file := "./testdata/eino_readme.md"
+	file := "./testdata/einodoc.md"
 	data, err := os.ReadFile(file)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	docs, err := splitter.Transform(ctx, []*schema.Document{
@@ -50,7 +52,7 @@ func main() {
 	})
 
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	for idx, doc := range docs {
