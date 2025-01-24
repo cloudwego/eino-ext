@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	awsCofig "github.com/aws/aws-sdk-go-v2/config"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"runtime/debug"
 	"strings"
@@ -61,13 +61,13 @@ func NewChatModel(ctx context.Context, config *Config) (model.ChatModel, error) 
 		}
 	} else {
 		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx,
-			awsCofig.WithRegion(config.Region),
-			awsCofig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			awsConfig.WithRegion(config.Region),
+			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				config.AccessKey,
 				config.SecretAccessKey,
 				"",
 			)),
-			awsCofig.WithHTTPClient(nil)),
+			awsConfig.WithHTTPClient(nil)),
 		)
 	}
 	return &claude{
