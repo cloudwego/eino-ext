@@ -30,8 +30,8 @@ func main() {
 
 	// Create a search request
 	request := &bingsearch.SearchRequest{
-		Query:  "Eino",
-		Offset: 0,
+		Query: "Eino",
+		Page:  1,
 	}
 
 	jsonReq, err := sonic.Marshal(request)
