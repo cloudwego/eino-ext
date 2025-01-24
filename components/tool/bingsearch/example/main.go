@@ -3,13 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
-	"os"
-
 	"github.com/bytedance/sonic"
-
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch"
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
+	"log"
+	"os"
 )
 
 func main() {
@@ -32,8 +30,8 @@ func main() {
 
 	// Create a search request
 	request := &bingsearch.SearchRequest{
-		Query: "Eino",
-		Page:  1,
+		Query:  "Eino",
+		Offset: 0,
 	}
 
 	jsonReq, err := sonic.Marshal(request)
