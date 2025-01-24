@@ -197,8 +197,12 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 		key2Idx := make(map[string]int, embSize)
 		for k, v := range fields {
 			if v.EmbedKey != "" {
-				if v.EmbedKey == k {
-					return fmt.Errorf("[bulkAdd] duplicate key for value and vector, field=%s", k)
+				if _, found := fields[v.EmbedKey]; found {
+					return fmt.Errorf("[bulkAdd] duplicate key for origin key, key=%s", k)
+				}
+
+				if _, found := key2Idx[v.EmbedKey]; found {
+					return fmt.Errorf("[bulkAdd] duplicate key from embed_key, key=%s", v.EmbedKey)
 				}
 
 				var text string
