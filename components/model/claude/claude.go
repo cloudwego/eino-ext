@@ -41,7 +41,7 @@ import (
 //   - conf: Configuration for the Claude model
 //
 // Returns:
-//   - model.claude: A chat model interface implementation
+//   - model.ChatModel: A chat model interface implementation
 //   - error: Any error that occurred during creation
 //
 // Example:
@@ -65,7 +65,7 @@ func NewChatModel(ctx context.Context, config *Config) (model.ChatModel, error) 
 			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				config.AccessKey,
 				config.SecretAccessKey,
-				"",
+				"", // SessionToken is not required in this context as we are using long-term credentials
 			)),
 			awsConfig.WithHTTPClient(nil)),
 		)
