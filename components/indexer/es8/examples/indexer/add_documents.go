@@ -24,10 +24,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cloudwego/eino-ext/components/indexer/es8"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v8"
+
+	"github.com/cloudwego/eino-ext/components/indexer/es8"
 )
 
 const (
@@ -61,20 +62,10 @@ func main() {
 		panic(err)
 	}
 
-	// create index if needed.
-	// comment out the code if index has been created.
-	if err = createIndex(ctx, client); err != nil {
-		panic(err)
-	}
-
-	// load embeddings from local
-	emb, err := prepareEmbeddings()
-	if err != nil {
-		panic(err)
-	}
+	emb := createYourEmbedding()
 
 	// load docs
-	docs := prepareDocs()
+	docs := loadYourDocs()
 
 	// create es indexer component
 	indexer, err := es8.NewIndexer(ctx, &es8.IndexerConfig{

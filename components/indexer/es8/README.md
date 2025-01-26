@@ -17,60 +17,78 @@ An Elasticsearch 8.x indexer implementation for [Eino](https://github.com/cloudw
 ## Installation
 
 ```bash
-go get github.com/cloudwego/eino-ext/components/indexer/es8
+go get github.com/cloudwego/eino-ext/components/indexer/es8@latest
 ```
 
 ## Quick Start
+
+Here's a quick example of how to use the indexer, you could read components/indexer/es8/examples/indexer/add_documents.go for more details:
+
 ```go
-package main
-
 import (
-    "context"
-    "log"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/schema"
+	"github.com/elastic/go-elasticsearch/v8"
 
-    "github.com/cloudwego/eino-ext/components/indexer/es8"
-    "github.com/elastic/go-elasticsearch/v8"
-    "github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino-ext/components/indexer/es8"
+)
+
+const (
+	indexName          = "eino_example"
+	fieldContent       = "content"
+	fieldContentVector = "content_vector"
+	fieldExtraLocation = "location"
+	docExtraLocation   = "location"
 )
 
 func main() {
-    // Create ES client
-    esClient, err := elasticsearch.NewClient(elasticsearch.Config{
-        Addresses: []string{"http://localhost:9200"},
-        Username:  "elastic",
-        Password:  "your_password",
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
+	ctx := context.Background()
 
-    // Create indexer config
-    cfg := &es8.IndexerConfig{
-        Client: esClient,
-        Index:  "your_index_name",
-        BatchSize: 5,  // Optional: controls max texts size for embedding
-        DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]es8.FieldValue, error) {
-            // Define how document fields should be mapped to Elasticsearch fields
-            return map[string]es8.FieldValue{
-                "content": {
-                    Value:    doc.Content,
-                    EmbedKey: "content_vector", // Field will be vectorized
-                },
-                "metadata": {
-                    Value: doc.Metadata,
-                },
-            }, nil
-        },
-        // Optional: provide embedder if vectorization is needed
-        Embedding: yourEmbedder,
-    }
+	// es supports multiple ways to connect
+	username := os.Getenv("ES_USERNAME")
+	password := os.Getenv("ES_PASSWORD")
+	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 
-    // Create the ES8 indexer
-    indexer, err := es8.NewIndexer(context.Background(), cfg)
-    if err != nil {
-        log.Fatal(err)
-    }
+	cert, err := os.ReadFile(httpCACertPath)
+	if err != nil {
+		panic(err)
+	}
 
+	client, _ := elasticsearch.NewClient(elasticsearch.Config{
+		Addresses: []string{"https://localhost:9200"},
+		Username:  username,
+		Password:  password,
+		CACert:    cert,
+	})
+
+	// create embedding component
+	emb := createYourEmbedding()
+
+	// load docs
+	docs := loadYourDocs()
+
+	// create es indexer component
+	indexer, _ := es8.NewIndexer(ctx, &es8.IndexerConfig{
+		Client:    client,
+		Index:     indexName,
+		BatchSize: 10,
+		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]es8.FieldValue, err error) {
+			return map[string]es8.FieldValue{
+				fieldContent: {
+					Value:    doc.Content,
+					EmbedKey: fieldContentVector, // vectorize doc content and save vector to field "content_vector"
+				},
+				fieldExtraLocation: {
+					Value: doc.MetaData[docExtraLocation],
+				},
+			}, nil
+		},
+		Embedding: &mockEmbedding{emb.Dense}, // replace it with real embedding component
+	})
+
+	ids, _ := indexer.Store(ctx, docs)
+
+	fmt.Println(ids)
     // Use with Eino's system
     // ... configure and use with Eino
 }
