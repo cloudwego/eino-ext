@@ -83,7 +83,7 @@ func main() {
 				},
 			}, nil
 		},
-		Embedding: &mockEmbedding{emb.Dense}, // replace it with real embedding component
+		Embedding: emb, // replace it with real embedding component
 	})
 
 	ids, _ := indexer.Store(ctx, docs)
