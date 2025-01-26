@@ -21,9 +21,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/indexer/volc_vikingdb"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/indexer/volc_vikingdb"
 )
 
 func main() {
