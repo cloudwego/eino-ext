@@ -26,7 +26,21 @@ import (
 )
 
 type HeaderConfig struct {
-	// Headers specify the headers to be identified and their names in document metadata. Headers can only consist of '#'.
+	// Headers specify the headers to be identified and their names in document metadata.
+	// Headers can only consist of '#'.
+	// e.g.
+	//   headers = map[string]string{ "##": "headerNameOfLevel2" }
+	// then the document split from original documents:
+	//   originDoc := &schema.Document{
+	//   	Content: "hell\n##Title 2\n hello world",
+	//   }
+	//   splitDoc := &schema.Document{
+	//		Content: "## Title 2\n hello world",
+	// 		Metadata: map[string]any{
+	//			// other fields
+	// 			"headerNameOfLevel2": "Title 2",
+	// 		},
+	//   }
 	Headers map[string]string
 	// TrimHeaders specify if results contain header lines.
 	TrimHeaders bool

@@ -60,7 +60,7 @@ func main() {
 
 	log.Printf("===== call Embedder in Chain =====")
 
-	handler := &callbacksHelper.EmbeddingCallbackHandler{
+	handlerHelper := &callbacksHelper.EmbeddingCallbackHandler{
 		OnStart: func(ctx context.Context, runInfo *callbacks.RunInfo, input *embedding.CallbackInput) context.Context {
 			log.Printf("input access, len: %v, content: %s\n", len(input.Texts), input.Texts)
 			return ctx
@@ -71,7 +71,9 @@ func main() {
 		},
 	}
 
-	callbackHandler := callbacksHelper.NewHandlerHelper().Embedding(handler).Handler()
+	handler := callbacksHelper.NewHandlerHelper().
+		Embedding(handlerHelper).
+		Handler()
 
 	chain := compose.NewChain[[]string, [][]float64]()
 	chain.AppendEmbedding(embedder)
@@ -83,7 +85,7 @@ func main() {
 	}
 
 	vectors, err = runnable.Invoke(ctx, []string{"hello", "how are you"},
-		compose.WithCallbacks(callbackHandler))
+		compose.WithCallbacks(handler))
 	if err != nil {
 		panic(fmt.Errorf("runnable.Invoke failed, err=%v", err))
 	}

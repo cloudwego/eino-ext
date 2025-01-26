@@ -99,7 +99,7 @@ func main() {
 	log.Printf("===== call Indexer in chain =====")
 
 	// 创建 callback handler
-	handler := &callbacksHelper.IndexerCallbackHandler{
+	handlerHelper := &callbacksHelper.IndexerCallbackHandler{
 		OnStart: func(ctx context.Context, info *callbacks.RunInfo, input *indexer.CallbackInput) context.Context {
 			log.Printf("input access, len: %v, content: %s\n", len(input.Docs), input.Docs[0].Content)
 			return ctx
@@ -112,8 +112,8 @@ func main() {
 	}
 
 	// 使用 callback handler
-	helper := callbacksHelper.NewHandlerHelper().
-		Indexer(handler).
+	handler := callbacksHelper.NewHandlerHelper().
+		Indexer(handlerHelper).
 		Handler()
 
 	chain := compose.NewChain[[]*schema.Document, []string]()
@@ -125,7 +125,7 @@ func main() {
 		log.Fatalf("chain.Compile failed, err=%v", err)
 	}
 
-	outIDs, err := run.Invoke(ctx, docs, compose.WithCallbacks(helper))
+	outIDs, err := run.Invoke(ctx, docs, compose.WithCallbacks(handler))
 	if err != nil {
 		log.Fatalf("run.Invoke failed, err=%v", err)
 	}

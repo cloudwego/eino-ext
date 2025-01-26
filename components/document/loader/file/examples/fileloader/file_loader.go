@@ -57,7 +57,7 @@ func main() {
 
 	log.Printf("===== call File Loader in Chain =====")
 	// 创建 callback handler
-	handler := &callbacksHelper.LoaderCallbackHandler{
+	handlerHelper := &callbacksHelper.LoaderCallbackHandler{
 		OnStart: func(ctx context.Context, info *callbacks.RunInfo, input *document.LoaderCallbackInput) context.Context {
 			log.Printf("start loading docs...: %s\n", input.Source.URI)
 			return ctx
@@ -70,8 +70,8 @@ func main() {
 	}
 
 	// 使用 callback handler
-	helper := callbacksHelper.NewHandlerHelper().
-		Loader(handler).
+	handler := callbacksHelper.NewHandlerHelper().
+		Loader(handlerHelper).
 		Handler()
 
 	chain := compose.NewChain[document.Source, []*schema.Document]()
@@ -84,7 +84,7 @@ func main() {
 
 	outDocs, err := run.Invoke(ctx, document.Source{
 		URI: filePath,
-	}, compose.WithCallbacks(helper))
+	}, compose.WithCallbacks(handler))
 	if err != nil {
 		log.Fatalf("run.Invoke failed, err=%v", err)
 	}

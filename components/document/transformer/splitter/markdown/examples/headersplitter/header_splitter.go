@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package main
 
 import (
@@ -20,7 +36,7 @@ func main() {
 	transformer, err := markdown.NewHeaderSplitter(ctx, &markdown.HeaderConfig{
 		// 配置参数
 		Headers: map[string]string{
-			"##": "",
+			"##": "headerNameOfLevel2",
 		},
 	})
 	if err != nil {
@@ -46,7 +62,7 @@ func main() {
 	log.Printf("===== call Header Splitter in chain =====")
 
 	// 创建 callback handler
-	handler := &callbacksHelper.TransformerCallbackHandler{
+	handlerHelper := &callbacksHelper.TransformerCallbackHandler{
 		OnStart: func(ctx context.Context, info *callbacks.RunInfo, input *document.TransformerCallbackInput) context.Context {
 			log.Printf("input access, len: %v, content: %s\n", len(input.Input), input.Input[0].Content)
 			return ctx
@@ -59,8 +75,8 @@ func main() {
 	}
 
 	// 使用 callback handler
-	helper := callbacksHelper.NewHandlerHelper().
-		Transformer(handler).
+	handler := callbacksHelper.NewHandlerHelper().
+		Transformer(handlerHelper).
 		Handler()
 
 	chain := compose.NewChain[[]*schema.Document, []*schema.Document]()
@@ -72,7 +88,7 @@ func main() {
 		log.Fatalf("chain.Compile failed, err=%v", err)
 	}
 
-	outDocs, err := run.Invoke(ctx, []*schema.Document{markdownDoc}, compose.WithCallbacks(helper))
+	outDocs, err := run.Invoke(ctx, []*schema.Document{markdownDoc}, compose.WithCallbacks(handler))
 	if err != nil {
 		log.Fatalf("run.Invoke failed, err=%v", err)
 	}

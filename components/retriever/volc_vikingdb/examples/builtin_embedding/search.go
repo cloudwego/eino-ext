@@ -97,7 +97,7 @@ func main() {
 	log.Printf("===== call Indexer in chain =====")
 
 	// 创建 callback handler
-	handler := &callbacksHelper.RetrieverCallbackHandler{
+	handlerHelper := &callbacksHelper.RetrieverCallbackHandler{
 		OnStart: func(ctx context.Context, info *callbacks.RunInfo, input *retriever.CallbackInput) context.Context {
 			log.Printf("input access, content: %s\n", input.Query)
 			return ctx
@@ -110,8 +110,8 @@ func main() {
 	}
 
 	// 使用 callback handler
-	helper := callbacksHelper.NewHandlerHelper().
-		Retriever(handler).
+	handler := callbacksHelper.NewHandlerHelper().
+		Retriever(handlerHelper).
 		Handler()
 
 	chain := compose.NewChain[string, []*schema.Document]()
@@ -123,7 +123,7 @@ func main() {
 		log.Fatalf("chain.Compile failed, err=%v", err)
 	}
 
-	outDocs, err := run.Invoke(ctx, query, compose.WithCallbacks(helper))
+	outDocs, err := run.Invoke(ctx, query, compose.WithCallbacks(handler))
 	if err != nil {
 		log.Fatalf("run.Invoke failed, err=%v", err)
 	}
