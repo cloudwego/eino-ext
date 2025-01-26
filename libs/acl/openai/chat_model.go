@@ -410,10 +410,9 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages:   in,
-		Tools:      append(cm.rawTools), // join tool info from call options
-		ToolChoice: getToolChoice(req.ToolChoice),
-		Config:     reqConf,
+		Messages: in,
+		Tools:    append(cm.rawTools), // join tool info from call options
+		Config:   reqConf,
 	})
 
 	resp, err := cm.cli.CreateChatCompletion(ctx, *req)
@@ -499,10 +498,9 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages:   in,
-		Tools:      append(cm.rawTools), // join tool info from call options
-		ToolChoice: getToolChoice(req.ToolChoice),
-		Config:     reqConf,
+		Messages: in,
+		Tools:    append(cm.rawTools), // join tool info from call options
+		Config:   reqConf,
 	})
 
 	stream, err := cm.cli.CreateChatCompletionStream(ctx, *req)
@@ -711,17 +709,4 @@ func (cm *Client) BindForcedTools(tools []*schema.ToolInfo) error {
 	cm.rawTools = tools
 
 	return nil
-}
-
-func getToolChoice(choice any) any {
-	switch t := choice.(type) {
-	case string:
-		return t
-	case openai.ToolChoice:
-		return &schema.ToolInfo{
-			Name: t.Function.Name,
-		}
-	default:
-		return nil
-	}
 }

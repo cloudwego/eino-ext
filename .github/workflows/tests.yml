@@ -100,4 +100,4 @@ jobs:
           if [[ ! -f "go.work" ]];then go work init;fi
           for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
           go work sync
-          go test -bench=. -run=none $list
+          go test -bench=. -run=none -gcflags="all=-N -l" $list
