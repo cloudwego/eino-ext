@@ -62,10 +62,20 @@ func main() {
 		panic(err)
 	}
 
-	emb := createYourEmbedding()
+	// create index if needed.
+	// comment out the code if index has been created.
+	if err = createIndex(ctx, client); err != nil {
+		panic(err)
+	}
+
+	// load embeddings from local
+	emb, err := prepareEmbeddings()
+	if err != nil {
+		panic(err)
+	}
 
 	// load docs
-	docs := loadYourDocs()
+	docs := prepareDocs()
 
 	// create es indexer component
 	indexer, err := es8.NewIndexer(ctx, &es8.IndexerConfig{
