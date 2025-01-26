@@ -22,7 +22,7 @@ go get github.com/cloudwego/eino-ext/components/retriever/es8@latest
 
 ## Quick Start
 
-Here's a quick example of how to use the retriever with approximate search mode:
+Here's a quick example of how to use the retriever with approximate search mode, you could read components/retriever/es8/examples/approximate/approximate.go for more details:
 
 ```go
 import (
