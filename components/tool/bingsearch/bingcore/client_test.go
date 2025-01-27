@@ -17,7 +17,7 @@ func TestBingClient_Search(t *testing.T) {
 		name    string
 		fields  *Config
 		args    args
-		want    []*SearchResult
+		want    []*searchResult
 		wantErr bool
 	}{
 		{
@@ -82,7 +82,7 @@ func TestBingClient_Search(t *testing.T) {
 					Count: 10,
 				},
 			},
-			want: []*SearchResult{
+			want: []*searchResult{
 				{
 					Title:       "The Better Web Browser for Windows...",
 					URL:         "https://ww.microsoft.com/en-us/...",
@@ -109,7 +109,7 @@ func TestBingClient_Search(t *testing.T) {
 					return
 				}
 				cacheKey := tt.args.params.getCacheKey()
-				b.cache.set(cacheKey, []*SearchResult{
+				b.cache.set(cacheKey, []*searchResult{
 					{
 						Title:       "The Better Web Browser for Windows...",
 						URL:         "https://ww.microsoft.com/en-us/...",
@@ -151,7 +151,7 @@ func TestBingClient_sendRequestWithRetry(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    []*SearchResult
+		want    []*searchResult
 		wantErr bool
 	}{
 		{
@@ -239,7 +239,7 @@ func TestBingClient_sendRequestWithRetry(t *testing.T) {
 				cancel()
 				tt.args.ctx = ctx
 			}
-			got, err := b.sendRequestWithRetry(tt.args.ctx, tt.args.req, tt.args.params)
+			got, err := b.sendRequestWithRetry(tt.args.ctx, tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("sendRequestWithRetry() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -281,7 +281,8 @@ func TestNew(t *testing.T) {
 					Headers: map[string]string{
 						"Ocp-Apim-Subscription-Key": "api_key_to_test",
 					},
-					Timeout: 30 * time.Second,
+					Timeout:    30 * time.Second,
+					MaxRetries: 3,
 				},
 			},
 			wantErr: false,
@@ -321,8 +322,9 @@ func TestNew(t *testing.T) {
 					Headers: map[string]string{
 						"Ocp-Apim-Subscription-Key": "api_key_to_test",
 					},
-					Timeout: 30 * time.Second,
-					Cache:   true,
+					Timeout:    30 * time.Second,
+					Cache:      true,
+					MaxRetries: 3,
 				},
 			},
 		},

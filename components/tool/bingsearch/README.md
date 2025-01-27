@@ -100,10 +100,10 @@ type SearchRequest struct {
 ### Response Schema
 ```go
 type SearchResponse struct {
-    Results []*SearchResult `json:"results" jsonschema_description:"The results of the search"`
+    Results []*searchResult `json:"results" jsonschema_description:"The results of the search"`
 }
 
-type SearchResult struct {
+type searchResult struct {
     Title       string `json:"title" jsonschema_description:"The title of the search result"`
     URL         string `json:"url" jsonschema_description:"The link of the search result"`
     Description string `json:"description" jsonschema_description:"The description of the search result"`

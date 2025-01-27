@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch"
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 	"log"
 	"os"
+
+	"github.com/bytedance/sonic"
+
+	"github.com/cloudwego/eino-ext/components/tool/bingsearch"
+	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 )
 
 func main() {

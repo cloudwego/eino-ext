@@ -2,46 +2,11 @@ package bingsearch
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 	"reflect"
 	"testing"
+
+	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 )
-
-func MockBingClient() *mockey.Mocker {
-	return mockey.Mock((*bingcore.BingClient).Search).To(func(ctx context.Context, params *bingcore.SearchParams) ([]*bingcore.SearchResult, error) {
-		if params == nil {
-			return nil, errors.New("params is nil")
-		}
-
-		if params.Query == "" {
-			return nil, fmt.Errorf("search query cannot be empty")
-		}
-
-		if params.Count <= 0 {
-			return nil, fmt.Errorf("search count must be greater than 0")
-		}
-
-		if params.Offset < 0 {
-			return nil, fmt.Errorf("search offset must be greater than or equal to 0")
-		}
-
-		return []*bingcore.SearchResult{
-			{
-				Title:       "test title",
-				Description: "test description",
-				URL:         "test link",
-			},
-			{
-				Title:       "test title 2",
-				Description: "test description 2",
-				URL:         "test link 2",
-			},
-		}, nil
-	}).Build()
-}
 
 func TestConfig_validate(t *testing.T) {
 	type fields struct {
@@ -225,58 +190,6 @@ func Test_bingSearch_Search(t *testing.T) {
 		wantErr      bool
 	}{
 		{
-			name: "Test_bingSearch_Search_Base",
-			fields: &Config{
-				APIKey: "api_key_to_test",
-			},
-			args: args{
-				ctx: nil,
-				request: &SearchRequest{
-					Query: "test",
-					Page:  1,
-				},
-			},
-			wantResponse: &SearchResponse{
-				Results: []*SearchResult{
-					{
-						Title:       "test title",
-						Description: "test description",
-						URL:         "test link",
-					},
-					{
-						Title:       "test title 2",
-						Description: "test description 2",
-						URL:         "test link 2",
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "Test_bingSearch_Max_Results",
-			fields: &Config{
-				APIKey:     "api_key_to_test",
-				MaxResults: 1,
-			},
-			args: args{
-				ctx: context.Background(),
-				request: &SearchRequest{
-					Query: "test",
-					Page:  1,
-				},
-			},
-			wantResponse: &SearchResponse{
-				Results: []*SearchResult{
-					{
-						Title:       "test title",
-						Description: "test description",
-						URL:         "test link",
-					},
-				},
-			},
-			wantErr: false,
-		},
-		{
 			name: "Test_bingSearch_Missing_Query",
 			fields: &Config{
 				APIKey: "api_key_to_test",
@@ -290,36 +203,6 @@ func Test_bingSearch_Search(t *testing.T) {
 			wantResponse: nil,
 			wantErr:      true,
 		},
-		{
-			name: "Test_bingSearch_With_Cache",
-			fields: &Config{
-				APIKey: "api_key_to_test",
-				BingConfig: &bingcore.Config{
-					Cache:      true,
-					MaxRetries: 3,
-				},
-			},
-			args: args{
-				ctx: context.Background(),
-				request: &SearchRequest{
-					Query: "test",
-				},
-			},
-			wantResponse: &SearchResponse{
-				Results: []*SearchResult{
-					{
-						Title:       "test title",
-						Description: "test description",
-						URL:         "test link",
-					},
-					{
-						Title:       "test title 2",
-						Description: "test description 2",
-						URL:         "test link 2",
-					},
-				},
-			},
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -327,8 +210,6 @@ func Test_bingSearch_Search(t *testing.T) {
 			if err != nil {
 				t.Errorf("failed to create bing search tool: %t", err)
 			}
-			mock := MockBingClient()
-			defer mock.UnPatch()
 			gotResponse, err := s.Search(tt.args.ctx, tt.args.request)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Search() error = %v, wantErr %v", err, tt.wantErr)

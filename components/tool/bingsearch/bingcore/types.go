@@ -56,16 +56,30 @@ const (
 // The search parameters are used to customize the search results.
 // Please refer to https://learn.microsoft.com/en-us/bing/search-apis/bing-web-search/reference/query-parameters
 type SearchParams struct {
+	// Query specifies the search query.
+	// The search query is the keyword or phrase to search the web for. And it's required.
 	Query string `json:"q"`
 
+	// Region specifies the search region.
+	// The search region is used to customize the search results for a specific country or language.
 	Region Region `json:"mkt"`
 
+	// SafeSearch specifies the safe search setting.
+	// The safe search setting filters adult content from the search results. Default is "Moderate".
 	SafeSearch SafeSearch `json:"safe_search"`
 
+	// TimeRange specifies the time range for the search results.
+	// The time range filters the search results by the date they were last crawled.
 	TimeRange TimeRange `json:"freshness"`
 
+	// Offset specifies the search result offset.
+	// The search result offset is the number of search results to skip before returning the search results.
+	// Default is 0 and must be greater than 0.
 	Offset int `json:"offset"`
 
+	// Count specifies the number of search results to return.
+	// The number of search results to return must be greater than 0 and less than or equal to 50.
+	// Default is 10 and must be greater than 0.
 	Count int `json:"count"`
 
 	cacheKey string
@@ -89,15 +103,15 @@ func (s *SearchParams) build() url.Values {
 	params := url.Values{}
 
 	params.Set("q", s.Query)
-	params.Set("mkt", string(s.Region))
 	params.Set("count", strconv.Itoa(s.Count))
+	params.Set("offset", strconv.Itoa(s.Offset))
+
+	if s.Region != "" {
+		params.Set("mkt", string(s.Region))
+	}
 
 	if s.TimeRange != "" {
 		params.Set("freshness", string(s.TimeRange))
-	}
-
-	if s.Offset > 0 {
-		params.Set("offset", strconv.Itoa(s.Offset))
 	}
 
 	if s.SafeSearch != "" {
@@ -122,26 +136,38 @@ func (s *SearchParams) validate() error {
 		return fmt.Errorf("search query cannot be empty")
 	}
 
-	if s.Count <= 0 {
+	if s.Offset < 0 {
+		return fmt.Errorf("search offset must be greater than or equal to 0")
+	}
+
+	if s.Count < 0 {
 		return fmt.Errorf("search count must be greater than 0")
 	}
 
-	if s.Offset < 0 {
-		return fmt.Errorf("search offset must be greater than or equal to 0")
+	if s.SafeSearch == "" {
+		s.SafeSearch = SafeSearchModerate
+	}
+
+	if s.Count == 0 {
+		s.Count = 10
+	}
+
+	if s.Count > 50 {
+		s.Count = 50
 	}
 
 	return nil
 }
 
-// SearchResult This struct formats the search results provided by the Bing Web Search API.
-type SearchResult struct {
+// searchResult This struct formats the search results provided by the Bing Web Search API.
+type searchResult struct {
 	Title       string `json:"title"`
 	URL         string `json:"url"`
 	Description string `json:"description"`
 }
 
-// BingAnswer This struct formats the answers provided by the Bing Web Search API.
-type BingAnswer struct {
+// bingAnswer This struct formats the answers provided by the Bing Web Search API.
+type bingAnswer struct {
 	Type         string `json:"_type"`
 	QueryContext struct {
 		OriginalQuery string `json:"originalQuery"`
