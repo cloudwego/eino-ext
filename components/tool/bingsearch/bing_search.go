@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"time"
 )
 
 // Config represents the Bing search tool configuration.

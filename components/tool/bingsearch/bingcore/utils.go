@@ -2,6 +2,7 @@ package bingcore
 
 import (
 	"fmt"
+
 	"github.com/bytedance/sonic"
 )
 

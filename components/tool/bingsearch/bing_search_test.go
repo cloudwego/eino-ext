@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 	"reflect"
 	"testing"
+
+	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 )
 
 func MockBingClient() *mockey.Mocker {
