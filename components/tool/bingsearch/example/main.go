@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/bytedance/sonic"
+
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch"
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 )

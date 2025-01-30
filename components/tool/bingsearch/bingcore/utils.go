@@ -6,9 +6,9 @@ import (
 	"github.com/bytedance/sonic"
 )
 
-// BingAnswer represents the response from Bing search API.
-func parseSearchResponse(body []byte) ([]*SearchResult, error) {
-	var response BingAnswer
+// bingAnswer represents the response from Bing search API.
+func parseSearchResponse(body []byte) ([]*searchResult, error) {
+	var response bingAnswer
 
 	// Unmarshal response body
 	err := sonic.Unmarshal(body, &response)
@@ -17,9 +17,9 @@ func parseSearchResponse(body []byte) ([]*SearchResult, error) {
 	}
 
 	// Convert response to search results
-	results := make([]*SearchResult, 0, len(response.WebPages.Value))
+	results := make([]*searchResult, 0, len(response.WebPages.Value))
 	for _, resp := range response.WebPages.Value {
-		results = append(results, &SearchResult{
+		results = append(results, &searchResult{
 			Title:       resp.Name,
 			URL:         resp.URL,
 			Description: resp.Snippet,

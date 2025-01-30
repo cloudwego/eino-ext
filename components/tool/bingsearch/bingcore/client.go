@@ -24,12 +24,15 @@ type BingClient struct {
 type Config struct {
 	// Headers specifies custom HTTP headers to be sent with each request.
 	// Common headers like "User-Agent" can be set here.
+	// Default:
+	//   Headers: map[string]string{
+	//     "Ocp-Apim-Subscription-Key": "YOUR_API_KEY",
+	//     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 	// Example:
 	//   Headers: map[string]string{
 	//     "User-Agent": "MyApp/1.0",
 	//     "Accept-Language": "en-US",
 	//   }
-	// The "Ocp-Apim-Subscription-Key" header will automatic setting witch is required for Bing API.
 	Headers map[string]string `json:"headers"`
 
 	// Timeout specifies the maximum duration for a single request.
@@ -77,6 +80,7 @@ func New(config *Config) (*BingClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid proxy URL: %w", err)
 		}
+
 		// Validate proxy scheme
 		switch proxyURL.Scheme {
 		case "http", "https", "socks5":
@@ -96,7 +100,7 @@ func New(config *Config) (*BingClient, error) {
 }
 
 // sendRequestWithRetry sends the request with retry logic.
-func (b *BingClient) sendRequestWithRetry(ctx context.Context, req *http.Request, params *SearchParams) ([]*SearchResult, error) {
+func (b *BingClient) sendRequestWithRetry(ctx context.Context, req *http.Request) ([]*searchResult, error) {
 	var resp *http.Response
 	var err error
 	var attempt int
@@ -147,16 +151,11 @@ func (b *BingClient) sendRequestWithRetry(ctx context.Context, req *http.Request
 		return nil, errors.New("no search results found")
 	}
 
-	// Apply max results limit if specified
-	if params.Count > 0 && len(response) > params.Count {
-		response = response[:params.Count]
-	}
-
 	return response, nil
 }
 
 // Search sends a search request to Bing API and returns the search results.
-func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*SearchResult, error) {
+func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*searchResult, error) {
 	if params == nil {
 		return nil, errors.New("params is nil")
 	}
@@ -174,9 +173,7 @@ func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*Searc
 		params.cacheKey = params.getCacheKey()
 
 		if results, ok := b.cache.get(params.cacheKey); ok {
-			if response, ok := results.([]*SearchResult); ok {
-				return response, nil
-			}
+			return results.([]*searchResult), nil
 		}
 	}
 
@@ -198,14 +195,9 @@ func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*Searc
 	}
 
 	// Send request with retry
-	results, err := b.sendRequestWithRetry(ctx, req, params)
+	results, err := b.sendRequestWithRetry(ctx, req)
 	if err != nil {
 		return nil, err
-	}
-
-	// Apply max results limit if specified
-	if params.Count > 0 && len(results) > params.Count {
-		results = results[:params.Count]
 	}
 
 	// Cache search results

@@ -65,7 +65,7 @@ func Test_parseSearchResponse(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    []*SearchResult
+		want    []*searchResult
 		wantErr bool
 	}{
 		{
@@ -73,7 +73,7 @@ func Test_parseSearchResponse(t *testing.T) {
 			args: args{
 				body: response,
 			},
-			want: []*SearchResult{
+			want: []*searchResult{
 				{
 					Title:       "The Better Web Browser for Windows...",
 					URL:         "https://ww.microsoft.com/en-us/...",

@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
+
+	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 )
 
 // Config represents the Bing search tool configuration.
@@ -51,11 +51,14 @@ func (c *Config) validate() error {
 		c.ToolDesc = "search web for information by bing"
 	}
 
+	// Validate required fields
+	if c.APIKey == "" {
+		return errors.New("bing search tool config is missing API key")
+	}
+
 	if c.BingConfig == nil {
 		c.BingConfig = &bingcore.Config{
-			Headers:    make(map[string]string),
-			Timeout:    30 * time.Second,
-			MaxRetries: 3,
+			Headers: make(map[string]string),
 		}
 	}
 
@@ -63,28 +66,7 @@ func (c *Config) validate() error {
 		c.BingConfig.Headers = make(map[string]string)
 	}
 
-	// Validate required fields
-	if c.APIKey == "" {
-		return errors.New("bing search tool config is missing API key")
-	} else {
-		c.BingConfig.Headers["Ocp-Apim-Subscription-Key"] = c.APIKey
-	}
-
-	if c.Region == "" {
-		c.Region = bingcore.RegionUS
-	}
-
-	if c.MaxResults <= 0 {
-		c.MaxResults = 10
-	}
-
-	if c.MaxResults > 50 {
-		c.MaxResults = 50
-	}
-
-	if c.SafeSearch == "" {
-		c.SafeSearch = bingcore.SafeSearchModerate
-	}
+	c.BingConfig.Headers["Ocp-Apim-Subscription-Key"] = c.APIKey
 
 	return nil
 }
@@ -154,11 +136,6 @@ func (s *bingSearch) Search(ctx context.Context, request *SearchRequest) (respon
 			URL:         r.URL,
 			Description: r.Description,
 		})
-	}
-
-	// Apply max results limit if specified
-	if len(results) >= s.config.MaxResults {
-		results = results[:s.config.MaxResults]
 	}
 
 	return &SearchResponse{
