@@ -30,23 +30,30 @@ import (
 type Config struct {
 	// baseUrl is the base url of the wikipedia api.
 	// format: https://<language>.wikipedia.org/w/api.php
-	baseUrl string // default: "https://en.wikipedia.org/w/api.php"
+	// default: "https://en.wikipedia.org/w/api.php"
+	baseUrl string
 
 	// UserAgent is the user agent to use for the http client.
 	// It is recommended to follow Wikipedia's robot specification:
 	// https://en.wikipedia.org/robots.txt
-	UserAgent string `json:"user_agent"` // default: "eino (https://github.com/cloudwego/eino)"
+	// default: "eino (https://github.com/cloudwego/eino)"
+	UserAgent string `json:"user_agent"`
 	// DocMaxChars is the maximum number of characters as extract for returning in the page content.
 	// If the content is longer than this, it will be truncated.
-	DocMaxChars int `json:"doc_max_chars"` // default: 2000
+	// default: 2000
+	DocMaxChars int `json:"doc_max_chars"`
 	// Timeout is the maximum time to wait for the http client to return a response.
-	Timeout time.Duration `json:"timeout"` // default: 15s
+	// default: 15s
+	Timeout time.Duration `json:"timeout"`
 	// TopK is the number of search results to return.
-	TopK int `json:"top_k"` // default: 3
+	// default: 3
+	TopK int `json:"top_k"`
 	// MaxRedirect is the maximum number of redirects to follow.
-	MaxRedirect int `json:"max_redirect"` // default: 3
+	// default: 3
+	MaxRedirect int `json:"max_redirect"`
 	// Language is the language to use for the wikipedia search.
-	Language string `json:"language"` // default: "en"
+	// default: "en"
+	Language string `json:"language"`
 
 	ToolName string `json:"tool_name"` // default: "wikipedia"
 	ToolDesc string `json:"tool_desc"` // default: "wikipedia search tool"
@@ -151,6 +158,7 @@ func (w *wikipedia) Search(ctx context.Context, query SearchRequest) (*SearchRes
 			Title:   pr.Title,
 			URL:     pr.URL,
 			Extract: extract,
+			Snippet: search.Snippet,
 		})
 	}
 	return &SearchResponse{Results: res}, nil
@@ -165,6 +173,7 @@ type Result struct {
 	Title   string `json:"title" jsonschema_description:"The title of the search result"`
 	URL     string `json:"url" jsonschema_description:"The url of the search result"`
 	Extract string `json:"extract" jsonschema_description:"The extract of the search result"`
+	Snippet string `json:"snippet" jsonschema_description:"The snippet of the search result"`
 }
 
 type SearchRequest struct {
