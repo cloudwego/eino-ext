@@ -1,3 +1,19 @@
+/*
+ * Copyright 2024 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package wikipedia
 
 import (
@@ -10,20 +26,33 @@ import (
 	"time"
 )
 
+// Config is the configuration for the wikipedia search tool.
 type Config struct {
+	// baseUrl is the base url of the wikipedia api.
+	// format: https://<language>.wikipedia.org/w/api.php
 	baseUrl string // default: "https://en.wikipedia.org/w/api.php"
 
-	UserAgent   string        `json:"user_agent"`    // default: "eino (https://github.com/cloudwego/eino)"
-	DocMaxChars int           `json:"doc_max_chars"` // default: 2000
-	Timeout     time.Duration `json:"timeout"`       // default: 15s
-	TopK        int           `json:"top_k"`         // default: 4
-	MaxRedirect int           `json:"max_redirect"`  // default: 3
-	Language    string        `json:"language"`      // default: "en"
+	// UserAgent is the user agent to use for the http client.
+	// It is recommended to follow Wikipedia's robot specification:
+	// https://en.wikipedia.org/robots.txt
+	UserAgent string `json:"user_agent"` // default: "eino (https://github.com/cloudwego/eino)"
+	// DocMaxChars is the maximum number of characters as extract for returning in the page content.
+	// If the content is longer than this, it will be truncated.
+	DocMaxChars int `json:"doc_max_chars"` // default: 2000
+	// Timeout is the maximum time to wait for the http client to return a response.
+	Timeout time.Duration `json:"timeout"` // default: 15s
+	// TopK is the number of search results to return.
+	TopK int `json:"top_k"` // default: 3
+	// MaxRedirect is the maximum number of redirects to follow.
+	MaxRedirect int `json:"max_redirect"` // default: 3
+	// Language is the language to use for the wikipedia search.
+	Language string `json:"language"` // default: "en"
 
 	ToolName string `json:"tool_name"` // default: "wikipedia"
 	ToolDesc string `json:"tool_desc"` // default: "wikipedia search tool"
 }
 
+// NewTool creates a new wikipedia search tool.
 func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 	err := conf.validate()
 	if err != nil {
@@ -40,6 +69,7 @@ func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 	return t, nil
 }
 
+// validate validates the configuration and sets default values if not provided.
 func (conf *Config) validate() error {
 	if conf == nil {
 		return fmt.Errorf("config is nil")
@@ -50,6 +80,12 @@ func (conf *Config) validate() error {
 	if conf.ToolDesc == "" {
 		conf.ToolDesc = "wikipedia search tool"
 	}
+	if conf.baseUrl == "" {
+		conf.baseUrl = fmt.Sprintf("https://%s.wikipedia.org/w/api.php", conf.Language)
+	}
+	if conf.UserAgent == "" {
+		conf.UserAgent = "eino (https://github.com/cloudwego/eino)"
+	}
 	if conf.DocMaxChars <= 0 {
 		conf.DocMaxChars = 2000
 	}
@@ -59,25 +95,21 @@ func (conf *Config) validate() error {
 	if conf.Timeout <= 0 {
 		conf.Timeout = 15 * time.Second
 	}
-	if conf.Language == "" {
-		conf.Language = "en"
-	}
 	if conf.MaxRedirect <= 0 {
 		conf.MaxRedirect = 3
 	}
-	if conf.UserAgent == "" {
-		conf.UserAgent = "eino (https://github.com/cloudwego/eino)"
-	}
-	if conf.baseUrl == "" {
-		conf.baseUrl = fmt.Sprintf("https://%s.wikipedia.org/w/api.php", conf.Language)
+	if conf.Language == "" {
+		conf.Language = "en"
 	}
 	return nil
 }
 
+// newWikipedia creates a new wikipedia search tool.
 func newWikipedia(_ context.Context, conf *Config) (*wikipedia, error) {
 	c := wikipediaclient.NewClient(
 		wikipediaclient.WithLanguage(conf.Language),
 		wikipediaclient.WithUserAgent(conf.UserAgent),
+		wikipediaclient.WithTopK(conf.TopK),
 		wikipediaclient.WithHTTPClient(
 			&http.Client{
 				Timeout: conf.Timeout,
@@ -94,11 +126,7 @@ func newWikipedia(_ context.Context, conf *Config) (*wikipedia, error) {
 	}, nil
 }
 
-type wikipedia struct {
-	conf   *Config
-	client *wikipediaclient.WikipediaClient
-}
-
+// Search searches the web for the query and returns the search results.
 func (w *wikipedia) Search(ctx context.Context, query SearchRequest) (*SearchResponse, error) {
 	sr, err := w.client.Search(ctx, query.Query)
 	if err != nil {
@@ -126,6 +154,11 @@ func (w *wikipedia) Search(ctx context.Context, query SearchRequest) (*SearchRes
 		})
 	}
 	return &SearchResponse{Results: res}, nil
+}
+
+type wikipedia struct {
+	conf   *Config
+	client *wikipediaclient.WikipediaClient
 }
 
 type Result struct {
