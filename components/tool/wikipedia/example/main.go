@@ -52,6 +52,7 @@ func main() {
 		fmt.Printf("Title: %s\n", r.Title)
 		fmt.Printf("URL: %s\n", r.URL)
 		fmt.Printf("Summary: %s\n", r.Extract)
+		fmt.Printf("Snippet: %s\n", r.Snippet)
 	}
 	fmt.Println("")
 	fmt.Println("==============")
