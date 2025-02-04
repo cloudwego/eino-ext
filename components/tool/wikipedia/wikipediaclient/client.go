@@ -1,3 +1,19 @@
+/*
+ * Copyright 2024 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package wikipediaclient
 
 import (
@@ -17,14 +33,20 @@ const (
 	_defaultLanguage  = "en"
 	_defaultTimeout   = 15 * time.Second
 	_maxRedirects     = 3
-	_resultLimit      = 3
 )
 
+// WikipediaClient is a client for the Wikipedia API.
 type WikipediaClient struct {
+	// httpClient is the HTTP client used to make requests.
 	httpClient *http.Client
-	baseURL    string
-	userAgent  string
-	language   string
+	// baseURL is the base URL for the Wikipedia API.
+	baseURL string
+	// userAgent is the user agent used in the requests.
+	userAgent string
+	// language is the language used in the requests.
+	language string
+	// topK is the number of search results to return.
+	topK int
 }
 
 type Page struct {
@@ -35,6 +57,7 @@ type Page struct {
 	LastUpdated time.Time `json:"last_updated"`
 }
 
+// SearchResult represents a search result from the Wikipedia.
 func NewClient(opts ...ClientOption) *WikipediaClient {
 	c := &WikipediaClient{
 		httpClient: &http.Client{
@@ -61,6 +84,7 @@ func NewClient(opts ...ClientOption) *WikipediaClient {
 	return c
 }
 
+// Search searches the Wikipedia for the query and returns the search results.
 func (c *WikipediaClient) Search(ctx context.Context, query string) ([]SearchResult, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, ErrInvalidParameters
@@ -70,7 +94,7 @@ func (c *WikipediaClient) Search(ctx context.Context, query string) ([]SearchRes
 		"action":   []string{"query"},
 		"list":     []string{"search"},
 		"srsearch": []string{query},
-		"srlimit":  []string{fmt.Sprintf("%d", _resultLimit)},
+		"srlimit":  []string{fmt.Sprintf("%d", c.topK)},
 		"srprop":   []string{"wordcount|snippet"},
 		"format":   []string{"json"},
 	}
@@ -110,6 +134,7 @@ func (c *WikipediaClient) Search(ctx context.Context, query string) ([]SearchRes
 	return results, nil
 }
 
+// GetPage retrieves the Wikipedia page by title.
 func (c *WikipediaClient) GetPage(ctx context.Context, title string) (*Page, error) {
 	params := url.Values{
 		"action":      []string{"query"},
@@ -161,14 +186,17 @@ func (c *WikipediaClient) GetPage(ctx context.Context, title string) (*Page, err
 	return nil, ErrPageNotFound
 }
 
+// ClientOption is a functional option for the Wikipedia client.
 type ClientOption func(*WikipediaClient)
 
+// WithHTTPClient sets the HTTP client for the Wikipedia client.
 func WithHTTPClient(client *http.Client) ClientOption {
 	return func(c *WikipediaClient) {
 		c.httpClient = client
 	}
 }
 
+// WithLanguage sets the language for the Wikipedia client.
 func WithLanguage(lang string) ClientOption {
 	return func(c *WikipediaClient) {
 		c.language = lang
@@ -176,18 +204,28 @@ func WithLanguage(lang string) ClientOption {
 	}
 }
 
+// WithUserAgent sets the user agent for the Wikipedia client.
 func WithUserAgent(ua string) ClientOption {
 	return func(c *WikipediaClient) {
 		c.userAgent = ua
 	}
 }
 
+// WithTopK sets the number of search results to return.
+func WithTopK(topK int) ClientOption {
+	return func(c *WikipediaClient) {
+		c.topK = topK
+	}
+}
+
+// buildPageURL builds the URL for the Wikipedia page.
 func (c *WikipediaClient) buildPageURL(title string) string {
 	return fmt.Sprintf("https://%s.wikipedia.org/wiki/%s",
 		c.language,
 		url.PathEscape(title))
 }
 
+// makeRequest makes a request to the Wikipedia API.
 func (c *WikipediaClient) makeRequest(ctx context.Context, params url.Values, result interface{}) error {
 	req, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"?"+params.Encode(), nil)
 	if err != nil {
@@ -219,6 +257,7 @@ func (c *WikipediaClient) makeRequest(ctx context.Context, params url.Values, re
 	return nil
 }
 
+// cleanBasicHTML removes some basic HTML tags from the snippet.
 func cleanBasicHTML(snippet string) string {
 	return strings.NewReplacer(
 		"<span class=\"searchmatch\">", "",
