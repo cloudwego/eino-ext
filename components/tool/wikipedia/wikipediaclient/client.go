@@ -49,6 +49,7 @@ type WikipediaClient struct {
 	topK int
 }
 
+// Page represents a Wikipedia page.
 type Page struct {
 	Title       string    `json:"title"`
 	PageID      int       `json:"pageid"`
@@ -57,7 +58,7 @@ type Page struct {
 	LastUpdated time.Time `json:"last_updated"`
 }
 
-// SearchResult represents a search result from the Wikipedia.
+// NewClient creates a new Wikipedia client.
 func NewClient(opts ...ClientOption) *WikipediaClient {
 	c := &WikipediaClient{
 		httpClient: &http.Client{
