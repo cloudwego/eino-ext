@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/bytedance/sonic"
 
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch"
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 )
 
 func main() {
@@ -22,8 +22,8 @@ func main() {
 	// Create the Bing Search tool
 	bingSearchTool, err := bingsearch.NewTool(ctx, &bingsearch.Config{
 		APIKey: bingSearchAPIKey,
-		BingConfig: &bingcore.Config{
-			Cache: true,
+		BingConfig: &bingsearch.BingConfig{
+			Cache: 5 * time.Minute,
 		},
 	})
 	if err != nil {

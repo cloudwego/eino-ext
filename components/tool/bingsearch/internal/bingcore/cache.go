@@ -22,15 +22,16 @@ import (
 	"time"
 )
 
-// janitor is a background task that cleans up expired cache items
+// janitor is a background task that cleans up expired Cache items
 type janitor struct {
 	interval time.Duration
 	stop     chan struct{}
 }
 
 // Run starts the janitor in a new goroutine
-func (j *janitor) Run(c *cache) {
+func (j *janitor) Run(c *Cache) {
 	ticker := time.NewTicker(j.interval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
@@ -43,7 +44,7 @@ func (j *janitor) Run(c *cache) {
 }
 
 // stopJanitor stops the janitor
-func stopJanitor(c *cache) {
+func stopJanitor(c *Cache) {
 	c.janitor.stop <- struct{}{}
 }
 
@@ -55,8 +56,8 @@ func newJanitor(interval time.Duration) *janitor {
 	}
 }
 
-// cache implements a simple in-memory cache with expiration
-type cache struct {
+// Cache implements a simple in-memory Cache with expiration
+type Cache struct {
 	mu      sync.RWMutex
 	items   map[string]*cacheItem
 	maxAge  time.Duration
@@ -64,14 +65,14 @@ type cache struct {
 }
 
 type cacheItem struct {
-	value      interface{}
+	value      []*searchResult
 	expiration time.Time
 }
 
-func newCache(maxAge time.Duration) *cache {
+func newCache(maxAge time.Duration) *Cache {
 	j := newJanitor(maxAge)
 
-	c := &cache{
+	c := &Cache{
 		items:   make(map[string]*cacheItem),
 		maxAge:  maxAge,
 		janitor: j,
@@ -83,7 +84,7 @@ func newCache(maxAge time.Duration) *cache {
 	return c
 }
 
-func (c *cache) get(key string) (interface{}, bool) {
+func (c *Cache) Get(key string) ([]*searchResult, bool) {
 	c.mu.RLock()
 	item, exists := c.items[key]
 	c.mu.RUnlock()
@@ -93,14 +94,14 @@ func (c *cache) get(key string) (interface{}, bool) {
 	}
 
 	if time.Now().After(item.expiration) { // expiration check
-		c.delete(key) // delete expired items directly
+		c.Delete(key) // Delete expired items directly
 		return nil, false
 	}
 
 	return item.value, true
 }
 
-func (c *cache) set(key string, value interface{}) {
+func (c *Cache) Set(key string, value []*searchResult) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -110,13 +111,13 @@ func (c *cache) set(key string, value interface{}) {
 	}
 }
 
-func (c *cache) delete(key string) {
+func (c *Cache) Delete(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.items, key)
 }
 
-func (c *cache) deleteExpired() {
+func (c *Cache) deleteExpired() {
 	now := time.Now()
 	expiredKeys := make([]string, 0)
 
@@ -128,14 +129,14 @@ func (c *cache) deleteExpired() {
 	}
 	c.mu.RUnlock()
 
-	c.mu.Lock() // add write locks delete expired keys
+	c.mu.Lock() // add write locks Delete expired keys
 	defer c.mu.Unlock()
 	for _, k := range expiredKeys {
 		delete(c.items, k)
 	}
 }
 
-func (c *cache) clear() {
+func (c *Cache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.items = make(map[string]*cacheItem)

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
+	"github.com/cloudwego/eino-ext/components/tool/bingsearch/internal/bingcore"
 )
 
 func TestConfig_validate(t *testing.T) {
@@ -17,7 +17,7 @@ func TestConfig_validate(t *testing.T) {
 		MaxResults int
 		SafeSearch bingcore.SafeSearch
 		TimeRange  bingcore.TimeRange
-		BingConfig *bingcore.Config
+		BingConfig *BingConfig
 	}
 	tests := []struct {
 		name    string
@@ -142,7 +142,7 @@ func TestNewTool(t *testing.T) {
 				ctx: context.Background(),
 				config: &Config{
 					APIKey: "api_key_to_test",
-					BingConfig: &bingcore.Config{
+					BingConfig: &BingConfig{
 						ProxyURL: "http://localhost:9878",
 					},
 				},
@@ -155,7 +155,7 @@ func TestNewTool(t *testing.T) {
 				ctx: context.Background(),
 				config: &Config{
 					APIKey: "api_key_to_validate",
-					BingConfig: &bingcore.Config{
+					BingConfig: &BingConfig{
 						ProxyURL: "ftp://proxy.example.com",
 					},
 				},

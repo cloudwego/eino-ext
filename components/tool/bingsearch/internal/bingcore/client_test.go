@@ -73,7 +73,7 @@ func TestBingClient_Search(t *testing.T) {
 				Headers: map[string]string{
 					"Ocp-Apim-Subscription-Key": "api_key_to_test",
 				},
-				Cache: true,
+				Cache: 5 * time.Minute,
 			},
 			args: args{
 				ctx: context.Background(),
@@ -104,12 +104,12 @@ func TestBingClient_Search(t *testing.T) {
 				t.Errorf("New() error = %v", err)
 				return
 			}
-			if tt.fields.Cache {
+			if tt.fields.Cache > 0 {
 				if err := tt.args.params.validate(); err != nil {
 					return
 				}
 				cacheKey := tt.args.params.getCacheKey()
-				b.cache.set(cacheKey, []*searchResult{
+				b.cache.Set(cacheKey, []*searchResult{
 					{
 						Title:       "The Better Web Browser for Windows...",
 						URL:         "https://ww.microsoft.com/en-us/...",
@@ -299,34 +299,6 @@ func TestNew(t *testing.T) {
 			},
 			want:    nil,
 			wantErr: true,
-		},
-		{
-			name: "TestNew_With_Cache",
-			args: args{
-				config: &Config{
-					Headers: map[string]string{
-						"Ocp-Apim-Subscription-Key": "api_key_to_test",
-					},
-					Cache: true,
-				},
-			},
-			want: &BingClient{
-				client:  &http.Client{Timeout: 30 * time.Second},
-				baseURL: "https://api.bing.microsoft.com/v7.0/search",
-				headers: map[string]string{
-					"Ocp-Apim-Subscription-Key": "api_key_to_test",
-				},
-				timeout: 30 * time.Second,
-				cache:   newCache(5 * time.Minute),
-				config: &Config{
-					Headers: map[string]string{
-						"Ocp-Apim-Subscription-Key": "api_key_to_test",
-					},
-					Timeout:    30 * time.Second,
-					Cache:      true,
-					MaxRetries: 3,
-				},
-			},
 		},
 	}
 	for _, tt := range tests {

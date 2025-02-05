@@ -16,7 +16,7 @@ type BingClient struct {
 	baseURL string
 	headers map[string]string
 	timeout time.Duration
-	cache   *cache
+	cache   *Cache
 	config  *Config
 }
 
@@ -27,7 +27,6 @@ type Config struct {
 	// Default:
 	//   Headers: map[string]string{
 	//     "Ocp-Apim-Subscription-Key": "YOUR_API_KEY",
-	//     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 	// Example:
 	//   Headers: map[string]string{
 	//     "User-Agent": "MyApp/1.0",
@@ -51,7 +50,8 @@ type Config struct {
 	// Cache enables in-memory caching of search results.
 	// When enabled, identical search requests will return cached results
 	// for improved performance. Cache entries expire after 5 minutes.
-	Cache bool `json:"cache"`
+	// Example: 5 * time.Minute
+	Cache time.Duration `json:"cache"` // default: 0 (disabled)
 
 	// MaxRetries specifies the maximum number of retry attempts for failed requests.
 	MaxRetries int `json:"max_retries"` // default: 3
@@ -92,8 +92,8 @@ func New(config *Config) (*BingClient, error) {
 		}
 	}
 
-	if config.Cache {
-		c.cache = newCache(5 * time.Minute) // 5 minutes cache
+	if config.Cache > 0 {
+		c.cache = newCache(config.Cache)
 	}
 
 	return c, nil
@@ -172,8 +172,8 @@ func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*searc
 	if b.cache != nil {
 		params.cacheKey = params.getCacheKey()
 
-		if results, ok := b.cache.get(params.cacheKey); ok {
-			return results.([]*searchResult), nil
+		if results, ok := b.cache.Get(params.cacheKey); ok {
+			return results, nil
 		}
 	}
 
@@ -202,7 +202,7 @@ func (b *BingClient) Search(ctx context.Context, params *SearchParams) ([]*searc
 
 	// Cache search results
 	if b.cache != nil && params.cacheKey != "" {
-		b.cache.set(params.cacheKey, results)
+		b.cache.Set(params.cacheKey, results)
 	}
 
 	return results, nil
