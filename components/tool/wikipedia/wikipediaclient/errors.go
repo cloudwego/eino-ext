@@ -19,9 +19,12 @@ package wikipediaclient
 import "fmt"
 
 var (
-	ErrPageNotFound      = fmt.Errorf("page not found")
+	// ErrPageNotFound is returned when the requested page is not found.
+	ErrPageNotFound = fmt.Errorf("page not found")
+	// ErrInvalidParameters is returned when the request parameters are invalid.
 	ErrInvalidParameters = fmt.Errorf("invalid parameters")
-	ErrTooManyRedirects  = fmt.Errorf("too many redirects")
+	// ErrTooManyRedirects is returned when too many redirects are followed.
+	ErrTooManyRedirects = fmt.Errorf("too many redirects")
 )
 
 // APIError represents an error returned by the Wikipedia API.

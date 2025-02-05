@@ -16,6 +16,7 @@
 
 package wikipediaclient
 
+// SearchResult represents a search result from the Wikipedia.
 type SearchResult struct {
 	Title     string `json:"title"`
 	PageID    int    `json:"pageid"`

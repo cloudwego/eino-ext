@@ -28,10 +28,10 @@ import (
 
 // Config is the configuration for the wikipedia search tool.
 type Config struct {
-	// baseUrl is the base url of the wikipedia api.
+	// baseURL is the base url of the wikipedia api.
 	// format: https://<language>.wikipedia.org/w/api.php
 	// default: "https://en.wikipedia.org/w/api.php"
-	baseUrl string
+	baseURL string
 
 	// UserAgent is the user agent to use for the http client.
 	// It is recommended to follow Wikipedia's robot specification:
@@ -87,8 +87,8 @@ func (conf *Config) validate() error {
 	if conf.ToolDesc == "" {
 		conf.ToolDesc = "wikipedia search tool"
 	}
-	if conf.baseUrl == "" {
-		conf.baseUrl = fmt.Sprintf("https://%s.wikipedia.org/w/api.php", conf.Language)
+	if conf.baseURL == "" {
+		conf.baseURL = fmt.Sprintf("https://%s.wikipedia.org/w/api.php", conf.Language)
 	}
 	if conf.UserAgent == "" {
 		conf.UserAgent = "eino (https://github.com/cloudwego/eino)"
@@ -169,6 +169,7 @@ type wikipedia struct {
 	client *wikipediaclient.WikipediaClient
 }
 
+// Result is the page search result.
 type Result struct {
 	Title   string `json:"title" jsonschema_description:"The title of the search result"`
 	URL     string `json:"url" jsonschema_description:"The url of the search result"`
@@ -176,10 +177,12 @@ type Result struct {
 	Snippet string `json:"snippet" jsonschema_description:"The snippet of the search result"`
 }
 
+// SearchRequest is the search request.
 type SearchRequest struct {
 	Query string `json:"query" jsonschema_description:"The query to search the web for"`
 }
 
+// SearchResponse is the search response.
 type SearchResponse struct {
 	Results []*Result `json:"results" jsonschema_description:"The results of the search"`
 }
