@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch"
 )
 
@@ -22,9 +21,7 @@ func main() {
 	// Create the Bing Search tool
 	bingSearchTool, err := bingsearch.NewTool(ctx, &bingsearch.Config{
 		APIKey: bingSearchAPIKey,
-		BingConfig: &bingsearch.BingConfig{
-			Cache: 5 * time.Minute,
-		},
+		Cache:  5 * time.Minute,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create tool: %v", err)
