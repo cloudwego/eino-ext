@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/internal/bingcore"
 	"time"
 
+	"github.com/cloudwego/eino-ext/components/tool/bingsearch/internal/bingcore"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 )
