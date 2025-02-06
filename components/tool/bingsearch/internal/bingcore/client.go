@@ -29,7 +29,7 @@ type Config struct {
 	//     "Ocp-Apim-Subscription-Key": "YOUR_API_KEY",
 	// Example:
 	//   Headers: map[string]string{
-	//     "User-Agent": "MyApp/1.0",
+	//     "User-Agent": "Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; Touch; rv:11.0) like Gecko",
 	//     "Accept-Language": "en-US",
 	//   }
 	Headers map[string]string `json:"headers"`

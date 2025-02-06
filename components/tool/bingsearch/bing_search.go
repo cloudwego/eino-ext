@@ -56,10 +56,9 @@ type BingConfig struct {
 	// Default:
 	//   Headers: map[string]string{
 	//     "Ocp-Apim-Subscription-Key": "YOUR_API_KEY",
-	//     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 	// Example:
 	//   Headers: map[string]string{
-	//     "User-Agent": "MyApp/1.0",
+	//     "User-Agent": "Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; Touch; rv:11.0) like Gecko",
 	//     "Accept-Language": "en-US",
 	//   }
 	Headers map[string]string `json:"headers"`
