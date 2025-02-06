@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch/internal/bingcore"
 )
@@ -17,7 +18,11 @@ func TestConfig_validate(t *testing.T) {
 		MaxResults int
 		SafeSearch bingcore.SafeSearch
 		TimeRange  bingcore.TimeRange
-		BingConfig *BingConfig
+		Headers    map[string]string
+		Timeout    time.Duration
+		ProxyURL   string
+		Cache      time.Duration
+		MaxRetries int
 	}
 	tests := []struct {
 		name    string
@@ -34,7 +39,11 @@ func TestConfig_validate(t *testing.T) {
 				MaxResults: 0,
 				SafeSearch: "",
 				TimeRange:  "",
-				BingConfig: nil,
+				Headers:    nil,
+				Timeout:    0,
+				ProxyURL:   "",
+				Cache:      0,
+				MaxRetries: 0,
 			},
 			wantErr: false,
 		},
@@ -48,7 +57,11 @@ func TestConfig_validate(t *testing.T) {
 				MaxResults: 10,
 				SafeSearch: bingcore.SafeSearchModerate,
 				TimeRange:  "",
-				BingConfig: nil,
+				Headers:    nil,
+				Timeout:    0,
+				ProxyURL:   "",
+				Cache:      0,
+				MaxRetries: 0,
 			},
 			wantErr: true,
 		},
@@ -62,7 +75,11 @@ func TestConfig_validate(t *testing.T) {
 				MaxResults: 100,
 				SafeSearch: bingcore.SafeSearchModerate,
 				TimeRange:  "",
-				BingConfig: nil,
+				Headers:    nil,
+				Timeout:    0,
+				ProxyURL:   "",
+				Cache:      0,
+				MaxRetries: 0,
 			},
 			wantErr: false,
 		},
@@ -76,7 +93,11 @@ func TestConfig_validate(t *testing.T) {
 				MaxResults: 0,
 				SafeSearch: "",
 				TimeRange:  "",
-				BingConfig: nil,
+				Headers:    nil,
+				Timeout:    0,
+				ProxyURL:   "",
+				Cache:      0,
+				MaxRetries: 0,
 			},
 			wantErr: false,
 		},
@@ -91,7 +112,11 @@ func TestConfig_validate(t *testing.T) {
 				MaxResults: tt.fields.MaxResults,
 				SafeSearch: tt.fields.SafeSearch,
 				TimeRange:  tt.fields.TimeRange,
-				BingConfig: tt.fields.BingConfig,
+				Headers:    tt.fields.Headers,
+				Timeout:    tt.fields.Timeout,
+				ProxyURL:   tt.fields.ProxyURL,
+				Cache:      tt.fields.Cache,
+				MaxRetries: tt.fields.MaxRetries,
 			}
 			if err := c.validate(); (err != nil) != tt.wantErr {
 				t.Errorf("validate() error = %v, wantErr %v", err, tt.wantErr)
@@ -141,10 +166,8 @@ func TestNewTool(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				config: &Config{
-					APIKey: "api_key_to_test",
-					BingConfig: &BingConfig{
-						ProxyURL: "http://localhost:9878",
-					},
+					APIKey:   "api_key_to_test",
+					ProxyURL: "http://localhost:9878",
 				},
 			},
 			wantErr: false,
@@ -154,10 +177,8 @@ func TestNewTool(t *testing.T) {
 			args: args{
 				ctx: context.Background(),
 				config: &Config{
-					APIKey: "api_key_to_validate",
-					BingConfig: &BingConfig{
-						ProxyURL: "ftp://proxy.example.com",
-					},
+					APIKey:   "api_key_to_validate",
+					ProxyURL: "ftp://proxy.example.com",
 				},
 			},
 			wantErr: true,

@@ -47,43 +47,11 @@ type Config struct {
 	SafeSearch bingcore.SafeSearch `json:"safe_search"` // optional, default: bingcore.SafeSearchModerate
 	TimeRange  bingcore.TimeRange  `json:"time_range"`  // optional, default: nil
 
-	BingConfig *BingConfig `json:"bing_config"`
-}
-
-type BingConfig struct {
-	// Headers specifies custom HTTP headers to be sent with each request.
-	// Common headers like "User-Agent" can be set here.
-	// Default:
-	//   Headers: map[string]string{
-	//     "Ocp-Apim-Subscription-Key": "YOUR_API_KEY",
-	// Example:
-	//   Headers: map[string]string{
-	//     "User-Agent": "Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; Touch; rv:11.0) like Gecko",
-	//     "Accept-Language": "en-US",
-	//   }
-	Headers map[string]string `json:"headers"`
-
-	// Timeout specifies the maximum duration for a single request.
-	// Default is 30 seconds if not specified.
-	// Example: 5 * time.Second
-	Timeout time.Duration `json:"timeout"` // default: 30 seconds
-
-	// ProxyURL specifies the proxy server URL for all requests.
-	// Supports HTTP, HTTPS, and SOCKS5 proxies.
-	// Example values:
-	//   - "http://proxy.example.com:8080"
-	//   - "socks5://localhost:1080"
-	//   - "tb" (special alias for Tor Browser)
-	ProxyURL string `json:"proxy_url"`
-
-	// Cache enables in-memory caching of search results.
-	// When enabled, identical search requests will return cached results
-	// for improved performance. Cache entries expire after 5 minutes.
-	// Example: 5 * time.Minute
-	Cache time.Duration `json:"cache"` // default: 0 (disabled)
-
-	// MaxRetries specifies the maximum number of retry attempts for failed requests.
-	MaxRetries int `json:"max_retries"` // default: 3
+	Headers    map[string]string `json:"headers"`     // optional, default: map[string]string{}
+	Timeout    time.Duration     `json:"timeout"`     // optional, default: 30 * time.Second
+	ProxyURL   string            `json:"proxy_url"`   // optional, default: ""
+	Cache      time.Duration     `json:"cache"`       // optional, default: 0 (disabled)
+	MaxRetries int               `json:"max_retries"` // optional, default: 3
 }
 
 // NewTool creates a new Bing search tool instance.
@@ -117,17 +85,11 @@ func (c *Config) validate() error {
 		return errors.New("bing search tool config is missing API key")
 	}
 
-	if c.BingConfig == nil {
-		c.BingConfig = &BingConfig{
-			Headers: make(map[string]string),
-		}
+	if c.Headers == nil {
+		c.Headers = make(map[string]string)
 	}
 
-	if c.BingConfig.Headers == nil {
-		c.BingConfig.Headers = make(map[string]string)
-	}
-
-	c.BingConfig.Headers["Ocp-Apim-Subscription-Key"] = c.APIKey
+	c.Headers["Ocp-Apim-Subscription-Key"] = c.APIKey
 
 	return nil
 }
@@ -149,11 +111,11 @@ func newBingSearch(config *Config) (*bingSearch, error) {
 	}
 
 	bingConfig := &bingcore.Config{
-		Headers:    config.BingConfig.Headers,
-		Timeout:    config.BingConfig.Timeout,
-		ProxyURL:   config.BingConfig.ProxyURL,
-		Cache:      config.BingConfig.Cache,
-		MaxRetries: config.BingConfig.MaxRetries,
+		Headers:    config.Headers,
+		Timeout:    config.Timeout,
+		ProxyURL:   config.ProxyURL,
+		Cache:      config.Cache,
+		MaxRetries: config.MaxRetries,
 	}
 
 	client, err := bingcore.New(bingConfig)
