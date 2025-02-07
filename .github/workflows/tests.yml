@@ -1,4 +1,4 @@
-name: EinoExtTest
+name: EinoExt CI
 
 on:
   pull_request:
@@ -7,52 +7,58 @@ on:
       - main
 
 jobs:
-  unit_test:
-    name: "eino ext test"
+  unit-test:
     runs-on: ubuntu-latest
     env:
       COVERAGE_FILE: coverage.out
       BREAKDOWN_FILE: base.coverage
     steps:
       - uses: actions/checkout@v4
-      - name: "Set up Go"
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - name: go test for every module
+      - name: Go test for every module
         run: |
           modules=`find . -name "go.mod" -exec dirname {} \;`
-          echo $modules
+          echo "all the modules in eino-ext: "
+          echo "${modules}"
+
           coverprofiles=""
           for module in $modules; do
-            go test -race -coverprofile=${module}/${COVERAGE_FILE} -gcflags="all=-l -N" -coverpkg=${module}/... ${module}/...
+            echo ""
+            echo "run unit test for ${module}"
+            echo ""
+            cd ${module}
+            go test -race -coverprofile=./${COVERAGE_FILE} -gcflags="all=-l -N" -coverpkg=./... ./...
+            cd -
             coverprofiles="${module}/${COVERAGE_FILE},$coverprofiles"
           done
           echo "COVERAGE_PROFILES=$coverprofiles" >> $GITHUB_ENV
           
-      - name: download base.coverage for diff coverage rate
+      - name: Download base.coverage for diff coverage rate
         id: download-base-coverage
         uses: actions/download-artifact@v4
         continue-on-error: true
         with:
           name: ${{ env.BREAKDOWN_FILE }}
 
-      - name: calculate coverage
+      - name: Calculate coverage
+        id: calculate-coverage
         uses: vladopajic/go-test-coverage@v2
         with:
           profile: ${{env.COVERAGE_PROFILES}}
           config: ./.testcoverage.yml
           breakdown-file-name: ${{ github.ref_name == 'main' && env.BREAKDOWN_FILE || '' }}
-          diff-base-breakdown-file-name: ${{ steps.download-base-coverage.outcome == 'success' && env.BREAKDOWN_FILE || '' }}
+          diff-base-breakdown-file-name: ${{ steps.download-base-coverage.download-path != '' && env.BREAKDOWN_FILE || '' }}
           
-      - name: Upload Artifact (main.breakdown)
+      - name: Upload base.coverage of main branch
         uses: actions/upload-artifact@v4
         if: github.ref_name == 'main'
         with:
-          name: main.breakdown
-          path: main.breakdown # as specified via `breakdown-file-name`
+          name: ${{env.BREAKDOWN_FILE}}
+          path: ${{env.BREAKDOWN_FILE}}
           if-no-files-found: error
-      - name: find if coverage report is already present
+      - name: Find coverage report
         if: ${{ github.event.pull_request.number != null }}
         uses: peter-evans/find-comment@v3
         id: find-comment
@@ -60,23 +66,19 @@ jobs:
           issue-number: ${{ github.event.pull_request.number }}
           comment-author: 'github-actions[bot]'
           body-includes: 'go-test-coverage report:'
-      - name: post coverage report
+      - name: Post coverage report
         if: ${{ github.event.pull_request.number != null }}
         uses: peter-evans/create-or-update-comment@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id || '' }}
           edit-mode: replace
           body: |
             go-test-coverage report:
             ```
-            ${{ steps.coverage.outputs.report && fromJSON(steps.coverage.outputs.report) || 'No coverage report available' }} ```
-
-      - name: "finally check coverage"
-        if: steps.coverage.outcome == 'failure'
-        shell: bash
-        run: echo "coverage check failed" && exit 1
+            ${{ steps.calculate-coverage.outputs.report && fromJSON(steps.calculate-coverage.outputs.report) || 'No coverage report available' }} ```
+          reactions: heart
+          reactions-edit-mode: append
   unit-benchmark-test:
     runs-on: ubuntu-latest
     steps:
