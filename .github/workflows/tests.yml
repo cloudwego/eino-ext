@@ -1,55 +1,50 @@
 name: EinoExtTest
 
-on: [ pull_request ]
+on:
+  pull_request:
+  push:
+    branches:
+      - main
 
 jobs:
   unit_test:
-    name: "eino ext unit test"
+    name: "eino ext test"
     runs-on: ubuntu-latest
+    env:
+      COVERAGE_FILE: coverage.out
+      BREAKDOWN_FILE: base.coverage
     steps:
       - uses: actions/checkout@v4
       - name: "Set up Go"
         uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - name: "GoTest"
+      - name: go test for every module
         run: |
           modules=`find . -name "go.mod" -exec dirname {} \;`
           echo $modules
-          list=""
-          coverpkg=""
-          if [[ ! -f "go.work" ]];then go work init;fi
-          for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
-          go work sync
-          go test -race -coverprofile=coverage.out -gcflags="all=-l -N" -coverpkg=$coverpkg $list
-      # Download main (aka base) branch breakdown
-      - name: Download Artifact (main.breakdown)
-        id: download-main-breakdown
-        uses: dawidd6/action-download-artifact@v6
+          coverprofiles=""
+          for module in $modules; do
+            go test -race -coverprofile=${module}/${COVERAGE_FILE} -gcflags="all=-l -N" -coverpkg=${module}/... ${module}/...
+            coverprofiles="${module}/${COVERAGE_FILE},$coverprofiles"
+          done
+          echo "COVERAGE_PROFILES=$coverprofiles" >> $GITHUB_ENV
+          
+      - name: download base.coverage for diff coverage rate
+        id: download-base-coverage
+        uses: actions/download-artifact@v4
+        continue-on-error: true
         with:
-          branch: main
-          workflow_conclusion: success
-          name: main.breakdown
-          if_no_artifact_found: warn
-      - name: Ensure default.breakdown exists if download fails
-        run: |
-          if [ ! -f main.breakdown ]; then
-            echo "main.breakdown not found. Creating an empty main.breakdown file."
-            touch main.breakdown
-          else
-            echo "main.breakdown found."
-          fi
-      - name: "Test Coverage"
+          name: ${{ env.BREAKDOWN_FILE }}
+
+      - name: calculate coverage
         uses: vladopajic/go-test-coverage@v2
         with:
+          profile: ${{env.COVERAGE_PROFILES}}
           config: ./.testcoverage.yml
-          # Save current coverage breakdown if current branch is main. It will be
-          # uploaded as artifact in step below.
-          breakdown-file-name: ${{ github.ref_name == 'main' && 'main.breakdown' || '' }}
-
-          # If this is not main branch we want to show report including
-          # file coverage difference from main branch.
-          diff-base-breakdown-file-name: ${{ steps.download-main-breakdown.outputs.found_artifact && 'main.breakdown' || 'main.breakdown' }}
+          breakdown-file-name: ${{ github.ref_name == 'main' && env.BREAKDOWN_FILE || '' }}
+          diff-base-breakdown-file-name: ${{ steps.download-base-coverage.outcome == 'success' && env.BREAKDOWN_FILE || '' }}
+          
       - name: Upload Artifact (main.breakdown)
         uses: actions/upload-artifact@v4
         if: github.ref_name == 'main'

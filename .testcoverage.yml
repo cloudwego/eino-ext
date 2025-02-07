@@ -9,13 +9,14 @@ profile: coverage.out
 
 # (optional; but recommended to set)
 # When specified reported file paths will not contain local prefix in the output.
-local-prefix: "github.com/cloudwego/eino"
+local-prefix: "github.com/cloudwego/eino-ext"
 
 # Holds coverage thresholds percentages, values should be in range [0-100].
 threshold:
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
   total: 68
+  package: 70
 
 # Holds regexp rules which will exclude matched files or packages
 # from coverage statistics.
