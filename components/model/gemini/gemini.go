@@ -117,6 +117,7 @@ type chatModel struct {
 	responseSchema      *openapi3.Schema
 	tools               []*genai.Tool
 	origTools           []*schema.ToolInfo
+	toolChoice          *schema.ToolChoice
 	enableCodeExecution bool
 	safetySettings      []*genai.SafetySetting
 }
@@ -240,6 +241,21 @@ func (c *chatModel) BindTools(tools []*schema.ToolInfo) error {
 
 	c.tools = gTools
 	c.origTools = tools
+	tc := schema.ToolChoiceAllowed
+	c.toolChoice = &tc
+	return nil
+}
+
+func (c *chatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	gTools, err := c.toGeminiTools(tools)
+	if err != nil {
+		return err
+	}
+
+	c.tools = gTools
+	c.origTools = tools
+	tc := schema.ToolChoiceForced
+	c.toolChoice = &tc
 	return nil
 }
 
@@ -294,6 +310,29 @@ func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Cha
 	if commonOptions.Temperature != nil {
 		conf.Temperature = *commonOptions.Temperature
 		m.SetTemperature(*commonOptions.Temperature)
+	}
+	if commonOptions.ToolChoice != nil {
+		switch *commonOptions.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode: genai.FunctionCallingNone,
+			}}
+		case schema.ToolChoiceAllowed:
+			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode: genai.FunctionCallingAuto,
+			}}
+		case schema.ToolChoiceForced:
+			// The predicted function call will be any one of the provided "functionDeclarations".
+			if len(m.Tools) == 0 {
+				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
+			} else {
+				m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+					Mode: genai.FunctionCallingAny,
+				}}
+			}
+		default:
+			return nil, nil, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
+		}
 	}
 	if geminiOptions.TopK != nil {
 		m.SetTopK(*geminiOptions.TopK)
