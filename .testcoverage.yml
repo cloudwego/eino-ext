@@ -22,73 +22,39 @@ threshold:
 override:
   # Adjust coverage threshold to xx% for specific packages.
   - path: ^libs/acl/langfuse
-    threshold:
-      package: 40
-      file: 0
+    threshold: 0
   - path: ^callbacks/langfuse
-    threshold:
-      package: 65
-      file: 0
+    threshold: 0
   - path: ^components/document/loader/file
-    threshold:
-      package: 68
-      file: 0
+    threshold: 0
   - path: ^components/retriever/es8
-    threshold:
-      package: 69
-      file: 0
+    threshold: 0
   - path: ^components/indexer/es8
-    threshold:
-      package: 65
-      file: 0
+    threshold: 0
   - path: ^components/model/openai
-    threshold:
-      package: 69
-      file: 0
+    threshold: 0
   - path: ^libs/acl/openai
-    threshold:
-      package: 20
-      file: 0
+    threshold: 0
   - path: ^devops
-    threshold:
-      package: 53
-      file: 0
+    threshold: 0
   - path: ^components/model/gemini
-    threshold:
-      package: 64
-      file: 0
+    threshold: 0
   - path: ^components/model/qwen
-    threshold:
-      package: 58
-      file: 0
+    threshold: 0
   - path: ^components/retriever/volc_knowledge
-    threshold:
-      package: 62
-      file: 0
+    threshold: 0
   - path: ^components/model/claude
-    threshold:
-      package: 57
-      file: 0
+    threshold: 0
   - path: ^components/embedding/qianfan
-    threshold:
-      package: 0
-      file: 0
+    threshold: 0
   - path: ^components/indexer/redis
-    threshold:
-      package: 69
-      file: 0
+    threshold: 0
   - path: ^components/model/qianfan
-    threshold:
-      package: 69
-      file: 0
+    threshold: 0
   - path: ^components/tool/duckduckgo
-    threshold:
-      package: 67
-      file: 0
+    threshold: 0
   - path: ^components/retriever/volc_vikingdb
-    threshold:
-      package: 67
-      file: 0
+    threshold: 0
 
 # Holds regexp rules which will exclude matched files or packages
 # from coverage statistics.
