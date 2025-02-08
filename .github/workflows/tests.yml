@@ -65,6 +65,7 @@ jobs:
       - name: Find coverage report
         if: ${{ always() && github.event.pull_request.number != null }}
         uses: peter-evans/find-comment@v3
+        continue-on-error: true
         id: find-comment
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -73,6 +74,7 @@ jobs:
       - name: Post coverage report
         if: ${{ always() && github.event.pull_request.number != null }}
         uses: peter-evans/create-or-update-comment@v4
+        continue-on-error: true
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id || '' }}
