@@ -48,14 +48,14 @@ import (
 //	    Model:  "claude-3-opus-20240229",
 //	    MaxTokens: 2000,
 //	})
-func NewChatModel(ctx context.Context, conf *Config) (model.ChatModel, error) {
+func NewChatModel(ctx context.Context, conf *Config) (*ChatModel, error) {
 	var cli *anthropic.Client
 	if conf.BaseURL != nil {
 		cli = anthropic.NewClient(option.WithBaseURL(*conf.BaseURL), option.WithAPIKey(conf.APIKey))
 	} else {
 		cli = anthropic.NewClient(option.WithAPIKey(conf.APIKey))
 	}
-	return &claude{
+	return &ChatModel{
 		cli:           cli,
 		maxTokens:     conf.MaxTokens,
 		model:         conf.Model,
@@ -107,7 +107,7 @@ type Config struct {
 	StopSequences []string
 }
 
-type claude struct {
+type ChatModel struct {
 	cli *anthropic.Client
 
 	maxTokens     int
@@ -121,7 +121,7 @@ type claude struct {
 	toolChoice    *schema.ToolChoice
 }
 
-func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
+func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
 	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
@@ -145,7 +145,7 @@ func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...
 	return message, nil
 }
 
-func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
+func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
@@ -220,7 +220,7 @@ func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...mo
 	}), nil
 }
 
-func (c *claude) BindTools(tools []*schema.ToolInfo) error {
+func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 	result, err := toAnthropicToolParam(tools)
 	if err != nil {
 		return err
@@ -233,7 +233,7 @@ func (c *claude) BindTools(tools []*schema.ToolInfo) error {
 	return nil
 }
 
-func (c *claude) BindForcedTools(tools []*schema.ToolInfo) error {
+func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	result, err := toAnthropicToolParam(tools)
 	if err != nil {
 		return err
@@ -267,7 +267,7 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolParam, erro
 	return result, nil
 }
 
-func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
+func (c *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
 	}
@@ -364,7 +364,7 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 	return param, nil
 }
 
-func (c *claude) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
+func (c *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
 	result := &model.CallbackInput{
 		Messages: input,
 		Tools: model.GetCommonOptions(&model.Options{
@@ -375,7 +375,7 @@ func (c *claude) getCallbackInput(input []*schema.Message, opts ...model.Option)
 	return result
 }
 
-func (c *claude) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
+func (c *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
 	result := &model.CallbackOutput{
 		Message: output,
 		Config:  c.getConfig(),
@@ -390,7 +390,7 @@ func (c *claude) getCallbackOutput(output *schema.Message) *model.CallbackOutput
 	return result
 }
 
-func (c *claude) getConfig() *model.Config {
+func (c *ChatModel) getConfig() *model.Config {
 	result := &model.Config{
 		Model:     c.model,
 		MaxTokens: c.maxTokens,
