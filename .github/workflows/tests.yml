@@ -63,7 +63,7 @@ jobs:
           path: ${{env.BREAKDOWN_FILE}}
           if-no-files-found: error
       - name: Find coverage report
-        if: ${{ github.event.pull_request.number != null }}
+        if: ${{ always() && github.event.pull_request.number != null }}
         uses: peter-evans/find-comment@v3
         id: find-comment
         with:
@@ -71,7 +71,7 @@ jobs:
           comment-author: 'github-actions[bot]'
           body-includes: 'go-test-coverage report:'
       - name: Post coverage report
-        if: ${{ github.event.pull_request.number != null }}
+        if: ${{ always() && github.event.pull_request.number != null }}
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}

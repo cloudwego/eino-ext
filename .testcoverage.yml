@@ -18,6 +18,43 @@ threshold:
   total: 68
   package: 70
 
+override:
+  # Increase coverage threshold to xx% for specific packages.
+  - path: ^libs/acl/langfuse
+    threshold: 75
+  - path: ^callbacks/langfuse
+    threshold: 75
+  - path: ^components/document/loader/file
+    threshold: 75
+  - path: ^components/retriever/es8
+    threshold: 75
+  - path: ^components/indexer/es8
+    threshold: 75
+  - path: ^components/model/openai
+    threshold: 75
+  - path: ^libs/acl/openai
+    threshold: 75
+  - path: ^devops
+    threshold: 75
+  - path: ^components/model/gemini
+    threshold: 75
+  - path: ^components/model/qwen
+    threshold: 75
+  - path: ^components/retriever/volc_knowledge
+    threshold: 75
+  - path: ^components/model/claude
+    threshold: 75
+  - path: ^components/embedding/qianfan
+    threshold: 75
+  - path: ^components/indexer/redis
+    threshold: 75
+  - path: ^components/model/qianfan
+    threshold: 75
+  - path: ^components/tool/duckduckgo
+    threshold: 75
+  - path: ^components/retriever/volc_vikingdb
+    threshold: 75
+
 # Holds regexp rules which will exclude matched files or packages
 # from coverage statistics.
 exclude:
