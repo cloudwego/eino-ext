@@ -25,14 +25,18 @@ jobs:
 
           coverprofiles=""
           for module in $modules; do
-            echo ""
+            echo "--------------------------------------------------"
             echo "run unit test for ${module}"
-            echo ""
+            
             cd ${module}
             go test -race -coverprofile=./${COVERAGE_FILE} -gcflags="all=-l -N" -coverpkg=./... ./...
             cd -
             coverprofiles="${module}/${COVERAGE_FILE},$coverprofiles"
           done
+          
+          # Remove trailing comma from coverprofiles
+          coverprofiles=${coverprofiles%,}
+          
           echo "COVERAGE_PROFILES=$coverprofiles" >> $GITHUB_ENV
           
       - name: Download base.coverage for diff coverage rate
