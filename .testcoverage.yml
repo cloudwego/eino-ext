@@ -17,6 +17,7 @@ threshold:
   # Minimum overall project coverage percentage required.
   total: 66
   package: 70
+  file: 0  # Set to 0 to effectively ignore file-level coverage checks
 
 override:
   # Adjust coverage threshold to xx% for specific packages.
