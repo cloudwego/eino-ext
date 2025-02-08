@@ -39,6 +39,11 @@ func main() {
 
 	// 创建 Claude 模型
 	cm, err := claude.NewChatModel(ctx, &claude.Config{
+		// if you want to use Aws Bedrock Service, set these four field.
+		// ByBedrock:       true,
+		// AccessKey:       "",
+		// SecretAccessKey: "",
+		// Region:          "us-west-2",
 		APIKey:    apiKey,
 		Model:     "claude-3-opus-20240229",
 		MaxTokens: 2000,

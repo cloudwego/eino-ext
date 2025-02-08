@@ -20,11 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
+	"github.com/anthropics/anthropic-sdk-go/option"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"runtime/debug"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -48,21 +51,33 @@ import (
 //	    Model:  "claude-3-opus-20240229",
 //	    MaxTokens: 2000,
 //	})
-func NewChatModel(ctx context.Context, conf *Config) (model.ChatModel, error) {
+func NewChatModel(ctx context.Context, config *Config) (model.ChatModel, error) {
 	var cli *anthropic.Client
-	if conf.BaseURL != nil {
-		cli = anthropic.NewClient(option.WithBaseURL(*conf.BaseURL), option.WithAPIKey(conf.APIKey))
+	if !config.ByBedrock {
+		if config.BaseURL != nil {
+			cli = anthropic.NewClient(option.WithBaseURL(*config.BaseURL), option.WithAPIKey(config.APIKey))
+		} else {
+			cli = anthropic.NewClient(option.WithAPIKey(config.APIKey))
+		}
 	} else {
-		cli = anthropic.NewClient(option.WithAPIKey(conf.APIKey))
+		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx,
+			awsConfig.WithRegion(config.Region),
+			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				config.AccessKey,
+				config.SecretAccessKey,
+				"", // SessionToken is not required in this context as we are using long-term credentials
+			)),
+			awsConfig.WithHTTPClient(nil)),
+		)
 	}
 	return &claude{
 		cli:           cli,
-		maxTokens:     conf.MaxTokens,
-		model:         conf.Model,
-		stopSequences: conf.StopSequences,
-		temperature:   conf.Temperature,
-		topK:          conf.TopK,
-		topP:          conf.TopP,
+		maxTokens:     config.MaxTokens,
+		model:         config.Model,
+		stopSequences: config.StopSequences,
+		temperature:   config.Temperature,
+		topK:          config.TopK,
+		topP:          config.TopP,
 	}, nil
 }
 
@@ -73,10 +88,29 @@ type Config struct {
 	// Optional. Example: "https://custom-claude-api.example.com"
 	BaseURL *string
 
-	// APIKey is your Anthropic API key
+	// ByBedrock indicates whether to use Bedrock Service
+	// Required for Bedrock
+	ByBedrock bool
+
+	// APIKey is your Bedrock API key
 	// Obtain from: https://console.anthropic.com/account/keys
 	// Required
 	APIKey string
+
+	// AccessKey is your Bedrock API Access key
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	AccessKey string
+
+	// SecretAccessKey is your Bedrock API Secret Access key
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	SecretAccessKey string
+
+	// Region is your Bedrock API region
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	Region string
 
 	// Model specifies which Claude model to use
 	// Required
