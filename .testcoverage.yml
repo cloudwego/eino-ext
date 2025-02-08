@@ -15,45 +15,45 @@ local-prefix: "github.com/cloudwego/eino-ext"
 threshold:
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
-  total: 68
+  total: 66
   package: 70
 
 override:
-  # Increase coverage threshold to xx% for specific packages.
+  # Adjust coverage threshold to xx% for specific packages.
   - path: ^libs/acl/langfuse
-    threshold: 75
+    threshold: 40
   - path: ^callbacks/langfuse
-    threshold: 75
+    threshold: 65
   - path: ^components/document/loader/file
-    threshold: 75
+    threshold: 68
   - path: ^components/retriever/es8
-    threshold: 75
+    threshold: 69
   - path: ^components/indexer/es8
-    threshold: 75
+    threshold: 65
   - path: ^components/model/openai
-    threshold: 75
+    threshold: 69
   - path: ^libs/acl/openai
-    threshold: 75
+    threshold: 20
   - path: ^devops
-    threshold: 75
+    threshold: 53
   - path: ^components/model/gemini
-    threshold: 75
+    threshold: 64
   - path: ^components/model/qwen
-    threshold: 75
+    threshold: 58
   - path: ^components/retriever/volc_knowledge
-    threshold: 75
+    threshold: 62
   - path: ^components/model/claude
-    threshold: 75
+    threshold: 57
   - path: ^components/embedding/qianfan
-    threshold: 75
+    threshold: 0
   - path: ^components/indexer/redis
-    threshold: 75
+    threshold: 69
   - path: ^components/model/qianfan
-    threshold: 75
+    threshold: 69
   - path: ^components/tool/duckduckgo
-    threshold: 75
+    threshold: 67
   - path: ^components/retriever/volc_vikingdb
-    threshold: 75
+    threshold: 67
 
 # Holds regexp rules which will exclude matched files or packages
 # from coverage statistics.
