@@ -3,6 +3,7 @@
 English | [中文](README.zh_CN.md)
 
 ## Overview
+EinoExt/Devops project provides visual debugging capabilities for [Eino](https://github.com/cloudwego/eino). Please refer to the [Eino Dev Plugin Debugging Usage Document](https://www.cloudwego.io/zh/docs/eino/core_modules/devops/visual_debug_plugin_guide/).
 
 ## Security
 
