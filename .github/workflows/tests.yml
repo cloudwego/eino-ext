@@ -17,26 +17,50 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
-      - name: Go test for every module
+      # - name: Go test for every module
+      #   run: |
+      #     modules=`find . -name "go.mod" -exec dirname {} \;`
+      #     echo "all the modules in eino-ext: "
+      #     echo "${modules}"
+
+      #     coverprofiles=""
+      #     for module in $modules; do
+      #       echo "--------------------------------------------------"
+      #       echo "run unit test for ${module}"
+            
+      #       cd ${module}
+      #       go test -race -coverprofile=./${COVERAGE_FILE} -gcflags="all=-l -N" -coverpkg=./... ./...
+      #       cd -
+      #       coverprofiles="${module}/${COVERAGE_FILE},$coverprofiles"
+      #     done
+          
+      #     # Remove trailing comma from coverprofiles
+      #     coverprofiles=${coverprofiles%,}
+          
+      #     echo "COVERAGE_PROFILES=$coverprofiles" >> $GITHUB_ENV
+
+      - name: Go test in go workspace
         run: |
           modules=`find . -name "go.mod" -exec dirname {} \;`
           echo "all the modules in eino-ext: "
           echo "${modules}"
 
-          coverprofiles=""
+          if [[ ! -f "go.work" ]];then go work init;fi
+
+          list=""
+          coverpkg=""
           for module in $modules; do
-            echo "--------------------------------------------------"
-            echo "run unit test for ${module}"
-            
-            cd ${module}
-            go test -race -coverprofile=./${COVERAGE_FILE} -gcflags="all=-l -N" -coverpkg=./... ./...
-            cd -
-            coverprofiles="${module}/${COVERAGE_FILE},$coverprofiles"
+            go work use ${module}
+            list="${module}/... ${list}"
+            coverpkg="${module}/...,${coverpkg}"
           done
-          
-          # Remove trailing comma from coverprofiles
-          coverprofiles=${coverprofiles%,}
-          
+
+          go work sync
+
+          coverprofiles=${COVERAGE_FILE}
+
+          go test -race -coverprofile=coverage.out -gcflags="all=-l -N" -coverpkg=$coverpkg $list
+
           echo "COVERAGE_PROFILES=$coverprofiles" >> $GITHUB_ENV
           
       - name: Download base.coverage for diff coverage rate
