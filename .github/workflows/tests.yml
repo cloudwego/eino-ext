@@ -55,6 +55,9 @@ jobs:
             coverpkg="${module}/...,${coverpkg}"
           done
 
+          # trim the last comma
+          coverpkg=${coverpkg%,}
+
           go work sync
 
           coverprofiles=${COVERAGE_FILE}
