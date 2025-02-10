@@ -91,21 +91,17 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	}()
 
 	var req *api.ChatRequest
-	var reqConf *model.Config
-	req, reqConf, err = cm.genRequest(ctx, false, input, opts...)
+	var cbInput *model.CallbackInput
+	req, cbInput, err = cm.genRequest(ctx, false, input, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error generating request: %w", err)
 	}
 
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    append([]*schema.ToolInfo{}, cm.tools...),
-		Config:   reqConf,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
 	cbOutput := &model.CallbackOutput{
 		Message: outMsg,
-		Config:  reqConf,
+		Config:  cbInput.Config,
 		Extra:   map[string]any{},
 	}
 
@@ -132,17 +128,13 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	}()
 
 	var req *api.ChatRequest
-	var reqConf *model.Config
-	req, reqConf, err = cm.genRequest(ctx, true, input, opts...)
+	var cbInput *model.CallbackInput
+	req, cbInput, err = cm.genRequest(ctx, true, input, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error generating request: %w", err)
 	}
 
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: append([]*schema.Message{}, input...),
-		Tools:    append([]*schema.ToolInfo{}, cm.tools...),
-		Config:   reqConf,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func(ctx context.Context, conf *model.Config) {
@@ -178,7 +170,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		if reqErr != nil {
 			sw.Send(nil, reqErr)
 		}
-	}(ctx, reqConf)
+	}(ctx, cbInput.Config)
 
 	ctx, s := callbacks.OnEndWithStreamOutput(ctx, sr)
 
@@ -207,9 +199,25 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.Message, opts ...model.Option) (req *api.ChatRequest, modelConfig *model.Config, err error) {
-	commonOptions := model.GetCommonOptions(&model.Options{}, opts...)
-	specificOptions := model.GetImplSpecificOptions(&options{}, opts...)
+func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.Message, opts ...model.Option) (
+	req *api.ChatRequest, cbInput *model.CallbackInput, err error) {
+
+	var (
+		o  = &options{}
+		mo = &model.Options{
+			Model: &cm.config.Model,
+			Tools: cm.tools,
+		}
+	)
+	if cm.config.Options != nil {
+		mo.Temperature = &cm.config.Options.Temperature
+		mo.TopP = &cm.config.Options.TopP
+		mo.Stop = cm.config.Options.Stop
+		o.Seed = &cm.config.Options.Seed
+	}
+
+	commonOptions := model.GetCommonOptions(mo, opts...)
+	specificOptions := model.GetImplSpecificOptions(o, opts...)
 
 	ollamaOptions := &api.Options{}
 	conf := cm.config.Options
@@ -230,11 +238,6 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		ollamaOptions.Seed = *specificOptions.Seed
 	}
 
-	modelName := cm.config.Model
-	if commonOptions.Model != nil {
-		modelName = *commonOptions.Model
-	}
-
 	reqOptions := make(map[string]any, 5)
 	optBytes, err := json.Marshal(ollamaOptions)
 	if err != nil {
@@ -250,13 +253,13 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		return nil, nil, fmt.Errorf("error convert messages: %w", err)
 	}
 
-	tools, err := toOllamaTools(cm.tools)
+	tools, err := toOllamaTools(mo.Tools)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error convert tools: %w", err)
 	}
 
 	req = &api.ChatRequest{
-		Model:    modelName,
+		Model:    *commonOptions.Model,
 		Messages: msgs,
 		Stream:   ptrOf(stream),
 		Format:   cm.config.Format,
@@ -270,14 +273,18 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		req.KeepAlive = &api.Duration{Duration: *cm.config.KeepAlive}
 	}
 
-	modelConfig = &model.Config{
-		Model:       req.Model,
-		Temperature: ollamaOptions.Temperature,
-		TopP:        ollamaOptions.TopP,
-		Stop:        ollamaOptions.Stop,
+	cbInput = &model.CallbackInput{
+		Messages: in,
+		Tools:    commonOptions.Tools,
+		Config: &model.Config{
+			Model:       req.Model,
+			Temperature: ollamaOptions.Temperature,
+			TopP:        ollamaOptions.TopP,
+			Stop:        ollamaOptions.Stop,
+		},
 	}
 
-	return req, modelConfig, nil
+	return req, cbInput, nil
 }
 
 func toOllamaMessages(messages []*schema.Message) ([]api.Message, error) {

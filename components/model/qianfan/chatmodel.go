@@ -53,16 +53,16 @@ type ChatModelConfig struct {
 	User                *string  // 表示最终用户的唯一标识符
 	FrequencyPenalty    *float64 // 指定频率惩罚，用于控制生成文本的重复程度。取值范围 [-2.0, 2.0]
 	PresencePenalty     *float64 // 指定存在惩罚，用于控制生成文本的重复程度。取值范围 [-2.0, 2.0]
-	ToolChoice          any      // one of "none" / "auto" / "required" / qianfan.ToolChoice
 	ParallelToolCalls   *bool    // 是否并行调用工具, 默认开启
 	ResponseFormat      *qianfan.ResponseFormat
 }
 
 type ChatModel struct {
-	cc       *qianfan.ChatCompletionV2
-	rawTools []*schema.ToolInfo
-	tools    []qianfan.Tool
-	config   *ChatModelConfig
+	cc         *qianfan.ChatCompletionV2
+	rawTools   []*schema.ToolInfo
+	tools      []qianfan.Tool
+	toolChoice *schema.ToolChoice
+	config     *ChatModelConfig
 }
 
 func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
@@ -89,19 +89,11 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 
 	cc := qianfan.NewChatCompletionV2(opts...)
 
-	return &ChatModel{cc, nil, nil, config}, nil
+	return &ChatModel{cc, nil, nil, nil, config}, nil
 }
 
 func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
-
-	options := model.GetCommonOptions(&model.Options{
-		Temperature: c.config.Temperature,
-		MaxTokens:   c.config.MaxCompletionTokens,
-		Model:       &c.config.Model,
-		TopP:        c.config.TopP,
-		Stop:        c.config.Stop,
-	}, opts...)
 
 	defer func() {
 		if err != nil {
@@ -109,39 +101,14 @@ func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 		}
 	}()
 
-	cfg := &model.Config{
-		Model:       dereferenceOrZero(options.Model),
-		MaxTokens:   dereferenceOrZero(options.MaxTokens),
-		Temperature: dereferenceOrZero(options.Temperature),
-		TopP:        dereferenceOrZero(options.TopP),
-		Stop:        options.Stop,
+	req, cbInput, err := c.genRequest(input, false, opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    c.rawTools,
-		Config:   cfg,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
-	r, err := c.cc.Do(ctx, &qianfan.ChatCompletionV2Request{
-		BaseRequestBody:     qianfan.BaseRequestBody{},
-		Model:               *options.Model,
-		Messages:            toQianfanMessages(input),
-		StreamOptions:       nil,
-		Temperature:         float64(dereferenceOrZero(options.Temperature)),
-		TopP:                float64(dereferenceOrZero(options.TopP)),
-		PenaltyScore:        dereferenceOrZero(c.config.PenaltyScore),
-		MaxCompletionTokens: dereferenceOrZero(options.MaxTokens),
-		Seed:                dereferenceOrZero(c.config.Seed),
-		Stop:                options.Stop,
-		User:                dereferenceOrZero(c.config.User),
-		FrequencyPenalty:    dereferenceOrZero(c.config.FrequencyPenalty),
-		PresencePenalty:     dereferenceOrZero(c.config.PresencePenalty),
-		Tools:               c.tools,
-		ToolChoice:          c.config.ToolChoice,
-		ParallelToolCalls:   dereferenceOrZero(c.config.ParallelToolCalls),
-		ResponseFormat:      c.config.ResponseFormat,
-	})
+	r, err := c.cc.Do(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("[qianfan][Generate] ChatCompletionV2 error, %w", err)
 	}
@@ -153,7 +120,7 @@ func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 
 	ctx = callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
-		Config:     cfg,
+		Config:     cbInput.Config,
 		TokenUsage: toModelCallbackUsage(outMsg),
 	})
 
@@ -163,53 +130,20 @@ func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	outStream *schema.StreamReader[*schema.Message], err error) {
 
-	options := model.GetCommonOptions(&model.Options{
-		Temperature: c.config.Temperature,
-		MaxTokens:   c.config.MaxCompletionTokens,
-		Model:       &c.config.Model,
-		TopP:        c.config.TopP,
-		Stop:        c.config.Stop,
-	}, opts...)
-
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
 
-	cfg := &model.Config{
-		Model:       dereferenceOrZero(options.Model),
-		MaxTokens:   dereferenceOrZero(options.MaxTokens),
-		Temperature: dereferenceOrZero(options.Temperature),
-		TopP:        dereferenceOrZero(options.TopP),
-		Stop:        options.Stop,
+	req, cbInput, err := c.genRequest(input, true, opts...)
+	if err != nil {
+		return nil, err
 	}
 
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    c.rawTools,
-		Config:   cfg,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
-	r, err := c.cc.Stream(ctx, &qianfan.ChatCompletionV2Request{
-		BaseRequestBody:     qianfan.BaseRequestBody{},
-		Model:               *options.Model,
-		Messages:            toQianfanMessages(input),
-		StreamOptions:       &qianfan.StreamOptions{IncludeUsage: true},
-		Temperature:         float64(dereferenceOrZero(options.Temperature)),
-		TopP:                float64(dereferenceOrZero(options.TopP)),
-		PenaltyScore:        dereferenceOrZero(c.config.PenaltyScore),
-		MaxCompletionTokens: dereferenceOrZero(options.MaxTokens),
-		Seed:                dereferenceOrZero(c.config.Seed),
-		Stop:                options.Stop,
-		User:                dereferenceOrZero(c.config.User),
-		FrequencyPenalty:    dereferenceOrZero(c.config.FrequencyPenalty),
-		PresencePenalty:     dereferenceOrZero(c.config.PresencePenalty),
-		Tools:               c.tools,
-		ToolChoice:          c.config.ToolChoice,
-		ParallelToolCalls:   dereferenceOrZero(c.config.ParallelToolCalls),
-		ResponseFormat:      c.config.ResponseFormat,
-	})
+	r, err := c.cc.Stream(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("[qianfan][Stream] ChatCompletionV2 error, %w", err)
 	}
@@ -244,7 +178,7 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 
 			if closed := sw.Send(&model.CallbackOutput{
 				Message:    msg,
-				Config:     cfg,
+				Config:     cbInput.Config,
 				TokenUsage: toModelCallbackUsage(msg),
 			}, nil); closed {
 				return
@@ -280,7 +214,104 @@ func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 		return err
 	}
 	c.rawTools = tools
+	tc := schema.ToolChoiceAllowed
+	c.toolChoice = &tc
 	return nil
+}
+
+func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	var err error
+	c.tools, err = toQianfanTools(tools)
+	if err != nil {
+		return err
+	}
+	c.rawTools = tools
+	tc := schema.ToolChoiceForced
+	c.toolChoice = &tc
+	return nil
+}
+
+func (c *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...model.Option) (
+	*qianfan.ChatCompletionV2Request, *model.CallbackInput, error) {
+
+	options := model.GetCommonOptions(&model.Options{
+		Temperature: c.config.Temperature,
+		MaxTokens:   c.config.MaxCompletionTokens,
+		Model:       &c.config.Model,
+		TopP:        c.config.TopP,
+		Stop:        c.config.Stop,
+		ToolChoice:  c.toolChoice,
+	}, opts...)
+
+	cbInput := &model.CallbackInput{
+		Messages: input,
+		Tools:    c.rawTools,
+		Config: &model.Config{
+			Model:       dereferenceOrZero(options.Model),
+			MaxTokens:   dereferenceOrZero(options.MaxTokens),
+			Temperature: dereferenceOrZero(options.Temperature),
+			TopP:        dereferenceOrZero(options.TopP),
+			Stop:        options.Stop,
+		},
+	}
+
+	tools := c.tools
+	if options.Tools != nil {
+		var err error
+		if tools, err = toQianfanTools(options.Tools); err != nil {
+			return nil, nil, err
+		}
+		cbInput.Tools = options.Tools
+	}
+
+	req := &qianfan.ChatCompletionV2Request{
+		BaseRequestBody:     qianfan.BaseRequestBody{},
+		Model:               *options.Model,
+		Messages:            toQianfanMessages(input),
+		StreamOptions:       nil,
+		Temperature:         float64(dereferenceOrZero(options.Temperature)),
+		TopP:                float64(dereferenceOrZero(options.TopP)),
+		PenaltyScore:        dereferenceOrZero(c.config.PenaltyScore),
+		MaxCompletionTokens: dereferenceOrZero(options.MaxTokens),
+		Seed:                dereferenceOrZero(c.config.Seed),
+		Stop:                options.Stop,
+		User:                dereferenceOrZero(c.config.User),
+		FrequencyPenalty:    dereferenceOrZero(c.config.FrequencyPenalty),
+		PresencePenalty:     dereferenceOrZero(c.config.PresencePenalty),
+		Tools:               tools,
+		ParallelToolCalls:   dereferenceOrZero(c.config.ParallelToolCalls),
+		ResponseFormat:      c.config.ResponseFormat,
+	}
+
+	if isStream {
+		req.StreamOptions = &qianfan.StreamOptions{IncludeUsage: true}
+	}
+
+	if options.ToolChoice != nil {
+		switch *options.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			req.ToolChoice = toolChoiceNone
+		case schema.ToolChoiceAllowed:
+			req.ToolChoice = toolChoiceAuto
+		case schema.ToolChoiceForced:
+			if len(req.Tools) == 0 {
+				return nil, nil, fmt.Errorf("[qianfan][genRequest] tool choice is forced but tool is not provided")
+			} else if len(req.Tools) > 1 {
+				req.ToolChoice = toolChoiceRequired
+			} else {
+				req.ToolChoice = qianfan.ToolChoice{
+					Type: "function",
+					Function: &qianfan.Function{
+						Name: req.Tools[0].Function.Name,
+					},
+				}
+			}
+		default:
+			return nil, nil, fmt.Errorf("[qianfan][genRequest] tool choice=%s not support", *options.ToolChoice)
+		}
+	}
+
+	return req, cbInput, nil
 }
 
 func toQianfanMessages(input []*schema.Message) []qianfan.ChatCompletionV2Message {

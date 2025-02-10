@@ -169,7 +169,16 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		}
 	}()
 
-	req, err := cm.genRequest(in, opts...)
+	options := fmodel.GetCommonOptions(&fmodel.Options{
+		Temperature: cm.config.Temperature,
+		MaxTokens:   cm.config.MaxTokens,
+		Model:       &cm.config.Model,
+		TopP:        cm.config.TopP,
+		Stop:        cm.config.Stop,
+		Tools:       nil,
+	}, opts...)
+
+	req, err := cm.genRequest(in, options)
 	if err != nil {
 		return nil, err
 	}
@@ -182,9 +191,14 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		Stop:        req.Stop,
 	}
 
+	tools := cm.rawTools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
 		Messages: in,
-		Tools:    append(cm.rawTools), // join tool info from call options
+		Tools:    tools, // join tool info from call options
 		Config:   reqConf,
 	})
 
@@ -216,7 +230,16 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		}
 	}()
 
-	req, err := cm.genRequest(in, opts...)
+	options := fmodel.GetCommonOptions(&fmodel.Options{
+		Temperature: cm.config.Temperature,
+		MaxTokens:   cm.config.MaxTokens,
+		Model:       &cm.config.Model,
+		TopP:        cm.config.TopP,
+		Stop:        cm.config.Stop,
+		Tools:       nil,
+	}, opts...)
+
+	req, err := cm.genRequest(in, options)
 	if err != nil {
 		return nil, err
 	}
@@ -232,9 +255,14 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		Stop:        req.Stop,
 	}
 
+	tools := cm.rawTools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
 		Messages: in,
-		Tools:    append(cm.rawTools), // join tool info from call options
+		Tools:    tools,
 		Config:   reqConf,
 	})
 
@@ -307,15 +335,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	return outStream, nil
 }
 
-func (cm *ChatModel) genRequest(in []*schema.Message, opts ...fmodel.Option) (req *model.ChatCompletionRequest, err error) {
-	options := fmodel.GetCommonOptions(&fmodel.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-	}, opts...)
-
+func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (req *model.ChatCompletionRequest, err error) {
 	req = &model.ChatCompletionRequest{
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
 		Temperature:      dereferenceOrZero(options.Temperature),
@@ -341,19 +361,28 @@ func (cm *ChatModel) genRequest(in []*schema.Message, opts ...fmodel.Option) (re
 		})
 	}
 
-	req.Tools = make([]*model.Tool, 0, len(cm.tools))
-
-	for _, tool := range cm.tools {
-		arkTool := &model.Tool{
-			Type: model.ToolTypeFunction,
-			Function: &model.FunctionDefinition{
-				Name:        tool.Function.Name,
-				Description: tool.Function.Description,
-				Parameters:  tool.Function.Parameters,
-			},
+	tools := cm.tools
+	if options.Tools != nil {
+		if tools, err = toTools(options.Tools); err != nil {
+			return nil, err
 		}
+	}
 
-		req.Tools = append(req.Tools, arkTool)
+	if tools != nil {
+		req.Tools = make([]*model.Tool, 0, len(cm.tools))
+
+		for _, tool := range cm.tools {
+			arkTool := &model.Tool{
+				Type: model.ToolTypeFunction,
+				Function: &model.FunctionDefinition{
+					Name:        tool.Function.Name,
+					Description: tool.Function.Description,
+					Parameters:  tool.Function.Parameters,
+				},
+			}
+
+			req.Tools = append(req.Tools, arkTool)
+		}
 	}
 
 	return req, nil
@@ -564,7 +593,7 @@ func toTools(tls []*schema.ToolInfo) ([]tool, error) {
 	for i := range tls {
 		ti := tls[i]
 		if ti == nil {
-			return nil, fmt.Errorf("tool info cannot be nil in BindTools")
+			return nil, fmt.Errorf("tool info cannot be nil")
 		}
 
 		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
