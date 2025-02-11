@@ -37,7 +37,7 @@ func Test_containerServiceImpl_AddGraphInfo(t *testing.T) {
 			container:        map[string]*model.GraphContainer{},
 			graphNameCounter: map[string]int{},
 		}
-		graphID, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{}, model.GraphOption{})
+		graphID, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{})
 		assert.Nil(t, err)
 		g, ok := s.container[graphID]
 		assert.True(t, ok)
@@ -47,23 +47,19 @@ func Test_containerServiceImpl_AddGraphInfo(t *testing.T) {
 	t.Run("add graph info, many times", func(t *testing.T) {
 		mockGraphName := "mock_graph"
 		s := &containerServiceImpl{
-			container: map[string]*model.GraphContainer{
-				"mock_id": {
-					GraphName: mockGraphName,
-				},
-			},
+			container:        map[string]*model.GraphContainer{},
 			graphNameCounter: map[string]int{},
 		}
 
 		for i := 0; i < 10; i++ {
-			graphID, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{}, model.GraphOption{})
+			graphID, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{})
 			assert.Nil(t, err)
 			g, ok := s.container[graphID]
 			assert.True(t, ok)
 			if i == 0 {
-				assert.Equal(t, mockGraphName, g.GraphName)
+				assert.Equal(t, mockGraphName, g.Name)
 			} else {
-				assert.Equal(t, fmt.Sprintf("%s_%d", mockGraphName, i), g.GraphName)
+				assert.Equal(t, fmt.Sprintf("%s_%d", mockGraphName, i), g.Name)
 			}
 		}
 
@@ -126,7 +122,7 @@ func Test_containerServiceImpl_CreateDevGraph(t *testing.T) {
 			_, err = s.CreateDevGraph(mockGraphID, compose.START)
 			assert.Nil(t, err)
 
-			_, exist := s.container[mockGraphID].NodesGraph[compose.START]
+			_, exist := s.container[mockGraphID].NodeGraphs[compose.START]
 			assert.True(t, exist)
 		})
 
@@ -144,7 +140,7 @@ func Test_containerServiceImpl_CreateDevGraph(t *testing.T) {
 			_, err = s.CreateDevGraph(mockGraphID, "node_2")
 			assert.Nil(t, err)
 
-			_, exist := s.container[mockGraphID].NodesGraph["node_2"]
+			_, exist := s.container[mockGraphID].NodeGraphs["node_2"]
 			assert.True(t, exist)
 		})
 	})
@@ -180,7 +176,7 @@ func Test_containerServiceImpl_GetDevGraph(t *testing.T) {
 		s := &containerServiceImpl{
 			container: map[string]*model.GraphContainer{
 				mockGraphID: {
-					NodesGraph: map[string]*model.Graph{
+					NodeGraphs: map[string]*model.Graph{
 						mockNode: {},
 					},
 				},
@@ -199,16 +195,16 @@ func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 		c, ok := s.GetCanvas("graph_id")
 		assert.False(t, ok)
 		assert.NotNil(t, c)
-
 	})
 
 	t.Run("create canvas and get this", func(t *testing.T) {
 		s := newContainerService()
 		g := &compose.GraphInfo{
+			Name:       "graph",
 			InputType:  reflect.TypeOf(map[string]any{}),
 			OutputType: reflect.TypeOf(map[string]any{}),
 		}
-		id, err := s.AddGraphInfo("graph", g, model.GraphOption{})
+		id, err := s.AddGraphInfo("graph", g)
 		assert.Nil(t, err)
 		c, err := s.CreateCanvas(id)
 		assert.Nil(t, err)
@@ -223,8 +219,8 @@ func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 func Test_containerServiceImpl_ListGraphs(t *testing.T) {
 	s := &containerServiceImpl{
 		container: map[string]*model.GraphContainer{
-			"g1": {GraphID: "1", GraphName: "g1"},
-			"g2": {GraphID: "2", GraphName: "g2"},
+			"g1": {GraphID: "1", Name: "g1"},
+			"g2": {GraphID: "2", Name: "g2"},
 		},
 	}
 	assert.True(t, reflect.DeepEqual(s.ListGraphs(), map[string]string{
