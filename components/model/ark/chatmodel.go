@@ -304,7 +304,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				return
 			}
 
-			msg, msgFound, e := cm.resolveStreamResponse(resp)
+			msg, msgFound, e := resolveStreamResponse(resp)
 			if e != nil {
 				_ = sw.Send(nil, e)
 				return
@@ -444,7 +444,7 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 	return msg, nil
 }
 
-func (cm *ChatModel) resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema.Message, msgFound bool, err error) {
+func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema.Message, msgFound bool, err error) {
 	if len(resp.Choices) > 0 {
 
 		for _, choice := range resp.Choices {
