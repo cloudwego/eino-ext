@@ -16,6 +16,8 @@
 
 package wikipediaclient
 
+import "time"
+
 // SearchResult represents a search result from the Wikipedia.
 type SearchResult struct {
 	Title     string `json:"title"`
@@ -24,4 +26,13 @@ type SearchResult struct {
 	Snippet   string `json:"snippet"`
 	WordCount int    `json:"wordcount"`
 	Language  string `json:"language"`
+}
+
+// Page represents a Wikipedia page.
+type Page struct {
+	Title       string    `json:"title"`
+	PageID      int       `json:"pageid"`
+	Content     string    `json:"content"`
+	URL         string    `json:"url"`
+	LastUpdated time.Time `json:"last_updated"`
 }

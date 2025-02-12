@@ -49,15 +49,6 @@ type WikipediaClient struct {
 	topK int
 }
 
-// Page represents a Wikipedia page.
-type Page struct {
-	Title       string    `json:"title"`
-	PageID      int       `json:"pageid"`
-	Content     string    `json:"content"`
-	URL         string    `json:"url"`
-	LastUpdated time.Time `json:"last_updated"`
-}
-
 // NewClient creates a new Wikipedia client.
 func NewClient(opts ...ClientOption) *WikipediaClient {
 	c := &WikipediaClient{
@@ -185,38 +176,6 @@ func (c *WikipediaClient) GetPage(ctx context.Context, title string) (*Page, err
 	}
 
 	return nil, ErrPageNotFound
-}
-
-// ClientOption is a functional option for the Wikipedia client.
-type ClientOption func(*WikipediaClient)
-
-// WithHTTPClient sets the HTTP client for the Wikipedia client.
-func WithHTTPClient(client *http.Client) ClientOption {
-	return func(c *WikipediaClient) {
-		c.httpClient = client
-	}
-}
-
-// WithLanguage sets the language for the Wikipedia client.
-func WithLanguage(lang string) ClientOption {
-	return func(c *WikipediaClient) {
-		c.language = lang
-		c.baseURL = fmt.Sprintf(_defaultBaseURL, lang)
-	}
-}
-
-// WithUserAgent sets the user agent for the Wikipedia client.
-func WithUserAgent(ua string) ClientOption {
-	return func(c *WikipediaClient) {
-		c.userAgent = ua
-	}
-}
-
-// WithTopK sets the number of search results to return.
-func WithTopK(topK int) ClientOption {
-	return func(c *WikipediaClient) {
-		c.topK = topK
-	}
 }
 
 // buildPageURL builds the URL for the Wikipedia page.
