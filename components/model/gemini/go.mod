@@ -2,8 +2,6 @@ module github.com/cloudwego/eino-ext/components/model/gemini
 
 go 1.21
 
-toolchain go1.23.0
-
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.12.2
