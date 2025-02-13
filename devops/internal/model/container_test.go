@@ -1781,7 +1781,7 @@ type DemoV1 struct {
 }
 
 func Test_parseReflectTypeToTypeSchema(t *testing.T) {
-	reflectType := reflect.TypeOf(&DemoV1{})
+	reflectType := reflect.TypeOf(schema.Message{})
 	data := parseReflectTypeToJsonSchema(reflectType)
 
 	assert.Len(t, data.Properties, 12)
@@ -1794,4 +1794,221 @@ func Test_parseReflectTypeToTypeSchema(t *testing.T) {
 	assert.Equal(t, data.Properties["child9"].Title, "***map[string]string")
 	assert.Equal(t, data.Properties["child10"].Title, "***string")
 	assert.Equal(t, data.Properties["child11"].Title, "***map[string]***model.DemoV1")
+}
+
+type custom struct {
+	Data      any               `json:"data"`
+	State     bool              `json:"state"`
+	Histories []*message        `json:"histories"`
+	Code      int64             `json:"code"`
+	MapInfo   map[string]string `json:"map_info"`
+}
+
+type message struct {
+	Content string            `json:"content"`
+	Ext     map[string]string `json:"ext"`
+}
+
+func Test_debugServiceImpl_run(t *testing.T) {
+	t.Run("custom struct", func(t *testing.T) {
+		reflectType := reflect.TypeOf(custom{})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = custom{
+			Data: "date",
+			State: true,
+			Histories: []*message{
+				{
+					Content: "content",
+					Ext: map[string]string{
+						"a": "b",
+					},
+				},
+			},
+			Code: 1,
+			MapInfo: map[string]string{
+				"a": "b",
+			},
+		}
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "{\n    \"code\": 1,\n    \"data\": \"date\",\n    \"histories\": [\n        {\n            \"content\": \"content\",\n            \"ext\": {\n                \"a\": \"b\"\n            }\n        }\n    ],\n    \"map_info\": {\n        \"a\": \"b\"\n    },\n    \"state\": true\n}")
+	})
+
+	t.Run("custom struct", func(t *testing.T) {
+		reflectType := reflect.TypeOf([]*custom{})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = []*custom{
+			{
+				Data:  "date",
+				State: true,
+				Histories: []*message{
+					{
+						Content: "content",
+						Ext: map[string]string{
+							"a": "b",
+						},
+					},
+				},
+				Code: 1,
+				MapInfo: map[string]string{
+					"a": "b",
+				},
+			},
+		}
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "[\n    {\n        \"code\": 1,\n        \"data\": \"date\",\n        \"histories\": [\n            {\n                \"content\": \"content\",\n                \"ext\": {\n                    \"a\": \"b\"\n                }\n            }\n        ],\n        \"map_info\": {\n            \"a\": \"b\"\n        },\n        \"state\": true\n    }\n]")
+	})
+
+	t.Run("struct", func(t *testing.T) {
+
+		reflectType := reflect.TypeOf(schema.Message{})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = schema.Message{
+			Content: "hello from code",
+			Role:    "user",
+			Name:    "input",
+			MultiContent: []schema.ChatMessagePart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "hello from multi content 1",
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: "www.xxx.com",
+						URI: "URL_ADDRESS.b.c.1",
+					},
+				},
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "hello from multi content 2",
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: "www.xxx.com",
+						URI: "URL_ADDRESS.b.c.2",
+					},
+				},
+			},
+			Extra: map[string]interface{}{
+				"a": "b",
+			},
+			ToolCalls: []schema.ToolCall{
+				{
+					ID:   "ID",
+					Type: "Type",
+					Function: schema.FunctionCall{
+						Name:      "Name",
+						Arguments: "Arguments",
+					},
+				},
+			},
+			ToolCallID: "ToolCallID",
+		}
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "{\n    \"content\": \"hello from code\",\n    \"extra\": {\n        \"a\": \"b\"\n    },\n    \"multi_content\": [\n        {\n            \"image_url\": {\n                \"uri\": \"URL_ADDRESS.b.c.1\",\n                \"url\": \"www.xxx.com\"\n            },\n            \"text\": \"hello from multi content 1\",\n            \"type\": \"schema.ChatMessagePartTypeText\"\n        },\n        {\n            \"image_url\": {\n                \"uri\": \"URL_ADDRESS.b.c.2\",\n                \"url\": \"www.xxx.com\"\n            },\n            \"text\": \"hello from multi content 2\",\n            \"type\": \"schema.ChatMessagePartTypeText\"\n        }\n    ],\n    \"name\": \"input\",\n    \"role\": \"user\",\n    \"tool_call_id\": \"ToolCallID\",\n    \"tool_calls\": [\n        {\n            \"function\": {\n                \"arguments\": \"Arguments\",\n                \"name\": \"Name\"\n            },\n            \"id\": \"ID\",\n            \"type\": \"Type\"\n        }\n    ]\n}")
+
+		input, err := ConvertCodeToValue(code, data, reflectType)
+		res, err := json.Marshal(input)
+		assert.Nil(t, err)
+		assert.Equal(t, jsonData, string(res))
+
+	})
+
+	t.Run("basic string", func(t *testing.T) {
+		reflectType := reflect.TypeOf("")
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = "input"
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "\"input\"")
+	})
+
+	t.Run("basic int", func(t *testing.T) {
+		reflectType := reflect.TypeOf(1)
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = 1
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "1")
+	})
+
+	t.Run("basic bool", func(t *testing.T) {
+		reflectType := reflect.TypeOf(true)
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = true
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "true")
+	})
+
+	t.Run("basic string slice", func(t *testing.T) {
+		reflectType := reflect.TypeOf([]string{"input"})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = []string{"input"}
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "[\n    \"input\"\n]")
+	})
+
+	t.Run("basic int slice", func(t *testing.T) {
+		reflectType := reflect.TypeOf([]int{1})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = []int{1}
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "[\n    1\n]")
+	})
+
+	t.Run("basic map one", func(t *testing.T) {
+		reflectType := reflect.TypeOf(map[string]interface{}{})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = map[string]interface{}{
+			"a": "b",
+			"c": 1,
+		}
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "{\n    \"a\": \"b\",\n    \"c\": 1\n}")
+	})
+
+	t.Run("basic map one", func(t *testing.T) {
+		reflectType := reflect.TypeOf(map[string]int{})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = map[string]interface{}{
+			"a": 1,
+			"c": 1,
+		}
+		`
+		jsonData, err := ConvertCodeToJsonData(code, data)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "{\n    \"a\": 1,\n    \"c\": 1\n}")
+	})
+
 }

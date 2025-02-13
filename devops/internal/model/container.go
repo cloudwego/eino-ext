@@ -18,8 +18,13 @@ package model
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"reflect"
+	"strconv"
 
 	"github.com/google/uuid"
 	"golang.org/x/exp/slices"
@@ -489,9 +494,17 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 				var fieldJsonSchema *devmodel.JsonSchema
 				if ts, ok := structFieldsJsonSchemaCache[field.Type]; ok {
-					fieldJsonSchema = ts
+					fieldJsonSchema = &devmodel.JsonSchema{
+						Type:                 ts.Type,
+						Title:                ts.Title,
+						Properties:           ts.Properties,
+						Items:                ts.Items,
+						AdditionalProperties: ts.AdditionalProperties,
+						Description:          field.Name,
+					}
 				} else {
 					fieldJsonSchema = recursionParseReflectTypeToJsonSchema(field.Type, 0, visited)
+					fieldJsonSchema.Description = field.Name
 					structFieldsJsonSchemaCache[field.Type] = fieldJsonSchema
 				}
 
@@ -557,4 +570,360 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 func canvasEdgeName(source, target string) string {
 	return fmt.Sprintf("%v_to_%v", source, target)
+}
+
+type FieldInfo struct {
+	JSONKey string
+	Schema  *devmodel.JsonSchema
+}
+
+func ConvertCodeToJsonData(code string, schema *devmodel.JsonSchema) (jsonData string, err error) {
+	node, err := parser.ParseFile(token.NewFileSet(), "", "package main\n"+code, parser.ParseComments)
+	if err != nil {
+		return "", err
+	}
+
+	var result interface{}
+	ast.Inspect(node, func(n ast.Node) bool {
+		vs, ok := n.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+
+		for _, value := range vs.Values {
+			var cl *ast.CompositeLit
+			switch v := value.(type) {
+			case *ast.UnaryExpr:
+				cl, ok = v.X.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+				result = parseCompositeLit(cl, schema)
+			case *ast.CompositeLit:
+				if schema.Type == devmodel.JsonTypeOfArray {
+					result = parseArrayLit(v, schema)
+				} else if schema.Type == devmodel.JsonTypeOfObject && schema.AdditionalProperties != nil {
+					result = parseMapLit(v, schema)
+				} else {
+					result = parseCompositeLit(v, schema)
+				}
+			case *ast.BasicLit:
+				result = parseBasicLit(v)
+			case *ast.Ident:
+				switch v.Name {
+				case "true":
+					result = true
+				case "false":
+					result = false
+				case "nil":
+					result = nil
+				default:
+					result = v.Name
+				}
+			default:
+				continue
+			}
+		}
+		return false
+	})
+
+	jsonBytes, err := json.MarshalIndent(result, "", "    ")
+	if err != nil {
+		return "", err
+	}
+
+	return string(jsonBytes), nil
+}
+
+func parseCompositeLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) map[string]interface{} {
+	data := make(map[string]interface{})
+	fieldTagMap := buildFieldTagMap(schema)
+
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		keyIdent, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		fieldName := keyIdent.Name
+
+		fieldInfo, ok := fieldTagMap[fieldName]
+		if !ok {
+			continue
+		}
+
+		// todo key不设置为json key
+		// jsonKey := fieldInfo.JSONKey
+		jsonKey := fieldInfo.Schema.Description
+		fieldSchema := fieldInfo.Schema
+		value := parseExpr(kv.Value, fieldSchema)
+		data[jsonKey] = value
+	}
+	return data
+}
+
+func parseExpr(expr ast.Expr, schema *devmodel.JsonSchema) interface{} {
+	switch v := expr.(type) {
+	case *ast.Ident:
+		// 处理标识符
+		switch v.Name {
+		case "true":
+			return true
+		case "false":
+			return false
+		case "nil":
+			return nil
+		default:
+			return v.Name
+		}
+	case *ast.BasicLit:
+		return parseBasicLit(v)
+	case *ast.CompositeLit:
+		switch schema.Type {
+		case devmodel.JsonTypeOfObject:
+			if schema.AdditionalProperties != nil {
+				return parseMapLit(v, schema)
+			}
+			return parseCompositeLit(v, schema)
+		case devmodel.JsonTypeOfArray:
+			return parseArrayLit(v, schema)
+		default:
+			return nil
+		}
+	case *ast.SelectorExpr:
+		//todo useless, to delete
+		return parseSelectorExpr(v)
+	case *ast.UnaryExpr:
+		if v.Op == token.AND {
+			return parseExpr(v.X, schema)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func parseMapLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) map[string]interface{} {
+	m := make(map[string]interface{})
+	valueSchema := schema.AdditionalProperties
+
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+
+		// parse key
+		var key string
+		switch k := kv.Key.(type) {
+		case *ast.BasicLit:
+			if k.Kind == token.STRING {
+				key, _ = strconv.Unquote(k.Value)
+			} else {
+				key = k.Value
+			}
+		case *ast.Ident:
+			key = k.Name
+		default:
+			continue
+		}
+
+		// parse value
+		var value interface{}
+		switch v := kv.Value.(type) {
+		case *ast.CompositeLit:
+			if valueSchema.Type == devmodel.JsonTypeOfObject && valueSchema.AdditionalProperties != nil {
+				value = parseMapLit(v, valueSchema)
+			} else if valueSchema.Type == devmodel.JsonTypeOfArray {
+				value = parseArrayLit(v, valueSchema)
+			} else {
+				value = parseCompositeLit(v, valueSchema)
+			}
+		default:
+			value = parseExpr(kv.Value, valueSchema)
+		}
+		m[key] = value
+	}
+	return m
+}
+
+func buildFieldTagMap(schema *devmodel.JsonSchema) map[string]*FieldInfo {
+	fieldTagMap := make(map[string]*FieldInfo)
+	for jsonKey, propSchema := range schema.Properties {
+		if propSchema.Description == "" {
+			continue
+		}
+
+		fieldName := propSchema.Description
+		fieldTagMap[fieldName] = &FieldInfo{
+			JSONKey: jsonKey,
+			Schema:  propSchema,
+		}
+	}
+	return fieldTagMap
+}
+
+func parseArrayLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) []interface{} {
+	var arr []interface{}
+	itemSchema := schema.Items
+	for _, elt := range cl.Elts {
+		value := parseExpr(elt, itemSchema)
+		arr = append(arr, value)
+	}
+	return arr
+}
+
+func parseBasicLit(bl *ast.BasicLit) interface{} {
+	switch bl.Kind {
+	case token.STRING:
+		str, _ := strconv.Unquote(bl.Value)
+		return str
+	case token.INT:
+		i, _ := strconv.Atoi(bl.Value)
+		return i
+	default:
+		return bl.Value
+	}
+}
+
+func parseSelectorExpr(se *ast.SelectorExpr) string {
+	x, ok := se.X.(*ast.Ident)
+	if !ok {
+		return se.Sel.Name
+	}
+	return x.Name + "." + se.Sel.Name
+}
+
+func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType reflect.Type) (reflect.Value, error) {
+	node, err := parser.ParseFile(token.NewFileSet(), "", "package main\n"+code, parser.ParseComments)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+
+	var result interface{}
+	ast.Inspect(node, func(n ast.Node) bool {
+		vs, ok := n.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+
+		for _, value := range vs.Values {
+			var cl *ast.CompositeLit
+			switch v := value.(type) {
+			case *ast.UnaryExpr:
+				cl, ok = v.X.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+				result = parseCompositeLit(cl, schema)
+			case *ast.CompositeLit:
+				if schema.Type == devmodel.JsonTypeOfArray {
+					result = parseArrayLit(v, schema)
+				} else if schema.Type == devmodel.JsonTypeOfObject && schema.AdditionalProperties != nil {
+					result = parseMapLit(v, schema)
+				} else {
+					result = parseCompositeLit(v, schema)
+				}
+			case *ast.BasicLit:
+				result = parseBasicLit(v)
+			case *ast.Ident:
+				switch v.Name {
+				case "true":
+					result = true
+				case "false":
+					result = false
+				case "nil":
+					result = nil
+				default:
+					result = v.Name
+				}
+			default:
+				continue
+			}
+		}
+		return false
+	})
+
+	// 创建一个新的 reflect.Value
+	val := reflect.New(inputType)
+
+	// 将解析结果转换为目标类型
+	if err := convertToValue(result, val.Elem()); err != nil {
+		return reflect.Value{}, err
+	}
+
+	return val.Elem(), nil
+}
+
+// 辅助函数：将解析的结果转换为目标类型
+func convertToValue(src interface{}, dst reflect.Value) error {
+	if src == nil {
+		return nil
+	}
+
+	switch dst.Kind() {
+	case reflect.Struct:
+		srcMap, ok := src.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("expected map for struct, got %T", src)
+		}
+		for k, v := range srcMap {
+			field := dst.FieldByName(k)
+			if !field.IsValid() {
+				continue
+			}
+			if err := convertToValue(v, field); err != nil {
+				return err
+			}
+		}
+	case reflect.Map:
+		srcMap, ok := src.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("expected map, got %T", src)
+		}
+		if dst.IsNil() {
+			dst.Set(reflect.MakeMap(dst.Type()))
+		}
+		for k, v := range srcMap {
+			newVal := reflect.New(dst.Type().Elem()).Elem()
+			if err := convertToValue(v, newVal); err != nil {
+				return err
+			}
+			dst.SetMapIndex(reflect.ValueOf(k), newVal)
+		}
+	case reflect.Slice:
+		srcSlice, ok := src.([]interface{})
+		if !ok {
+			return fmt.Errorf("expected slice, got %T", src)
+		}
+		slice := reflect.MakeSlice(dst.Type(), len(srcSlice), len(srcSlice))
+		for i, v := range srcSlice {
+			if err := convertToValue(v, slice.Index(i)); err != nil {
+				return err
+			}
+		}
+		dst.Set(slice)
+	case reflect.String:
+		str, ok := src.(string)
+		if !ok {
+			return fmt.Errorf("expected string, got %T", src)
+		}
+		dst.SetString(str)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		num, ok := src.(int)
+		if !ok {
+			return fmt.Errorf("expected int, got %T", src)
+		}
+		dst.SetInt(int64(num))
+	case reflect.Bool:
+		b, ok := src.(bool)
+		if !ok {
+			return fmt.Errorf("expected bool, got %T", src)
+		}
+		dst.SetBool(b)
+	}
+	return nil
 }
