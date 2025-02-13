@@ -3,8 +3,8 @@ module github.com/cloudwego/eino-ext/components/model/ark
 go 1.18
 
 require (
-	github.com/bytedance/mockey v1.2.10
-	github.com/cloudwego/eino v0.3.8
+	github.com/bytedance/mockey v1.2.14
+	github.com/cloudwego/eino v0.3.9
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.9.0
@@ -44,7 +44,7 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/volcengine/volc-sdk-golang v1.0.23 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
-	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
+	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/sys v0.28.0 // indirect
