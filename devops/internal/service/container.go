@@ -37,6 +37,7 @@ type ContainerService interface {
 	GetDevGraph(graphID, fromNode string) (devGraph *model.Graph, exist bool)
 	CreateCanvas(graphID string) (canvas devmodel.CanvasInfo, err error)
 	GetCanvas(graphID string) (canvas devmodel.CanvasInfo, exist bool)
+	GetNodeInfo(graphID, nodeKey string) (node *devmodel.Node, exist bool)
 }
 
 const maxGraphNum = 100
@@ -197,4 +198,18 @@ func (s *containerServiceImpl) GetCanvas(graphID string) (canvasInfo devmodel.Ca
 	}
 
 	return *c.CanvasInfo, true
+}
+
+func (s *containerServiceImpl) GetNodeInfo(graphID, nodeKey string) (node *devmodel.Node, exist bool) {
+	canvasInfo, ok := s.GetCanvas(graphID)
+	if !ok {
+		return node, false
+	}
+
+	for _, n := range canvasInfo.Nodes {
+		if n.Key == nodeKey {
+			return n, true
+		}
+	}
+	return node, false
 }

@@ -19,10 +19,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/google/uuid"
 
+	"github.com/cloudwego/eino-ext/devops/internal/apihandler/types"
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
@@ -36,7 +38,7 @@ var _ DebugService = &debugServiceImpl{}
 //go:generate mockgen -source=debug_run.go -destination=../mock/debug_run_mock.go -package=mock
 type DebugService interface {
 	CreateDebugThread(ctx context.Context, graphID string) (threadID string, err error)
-	DebugRun(ctx context.Context, m *model.DebugRunMeta, userInput string) (debugID string, stateCh chan *model.NodeDebugState, errCh chan error, err error)
+	DebugRun(ctx context.Context, m *model.DebugRunMeta, userInput string, inputFormat types.InputFormat) (debugID string, stateCh chan *model.NodeDebugState, errCh chan error, err error)
 }
 
 type debugServiceImpl struct {
@@ -75,7 +77,7 @@ func (d *debugServiceImpl) CreateDebugThread(ctx context.Context, graphID string
 	return threadID, nil
 }
 
-func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta, userInput string) (debugID string,
+func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta, userInput string, inputFormat types.InputFormat) (debugID string,
 	stateCh chan *model.NodeDebugState, errCh chan error, err error) {
 	d.mu.RLock()
 	dg := d.debugGraphs[rm.GraphID]
@@ -113,9 +115,22 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 		inputType = fromNode.InputType
 	}
 
-	input, err := model.UnmarshalJson([]byte(userInput), inputType)
-	if err != nil {
-		return "", nil, nil, err
+	var input reflect.Value
+	if inputFormat == types.InputFormatOfCode {
+		nodeInfo, ok := ContainerSVC.GetNodeInfo(rm.GraphID, rm.FromNode)
+		if !ok {
+			return "", nil, nil, fmt.Errorf("graph %s, node_key %s not found", rm.GraphID, rm.FromNode)
+		}
+
+		input, err = model.ConvertCodeToValue(userInput, nodeInfo.ComponentSchema.InputType, inputType)
+		if err != nil {
+			return "", nil, nil, err
+		}
+	} else {
+		input, err = model.UnmarshalJson([]byte(userInput), inputType)
+		if err != nil {
+			return "", nil, nil, err
+		}
 	}
 
 	stateCh = make(chan *model.NodeDebugState, 100)
