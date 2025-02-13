@@ -18,7 +18,13 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	model2 "github.com/cloudwego/eino-ext/devops/model"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
@@ -113,6 +119,16 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 		inputType = fromNode.InputType
 	}
 
+	nodeInfo, ok := ContainerSVC.GetNodeInfo(rm.GraphID, rm.FromNode)
+	if !ok {
+		return "", nil, nil, fmt.Errorf("graph %s, node_key %s not found", rm.GraphID, rm.FromNode)
+	}
+
+	userInput, err = getJsonDate(userInput, nodeInfo.ComponentSchema.InputType)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
 	input, err := model.UnmarshalJson([]byte(userInput), inputType)
 	if err != nil {
 		return "", nil, nil, err
@@ -156,4 +172,162 @@ func (d *debugServiceImpl) getInvokeOptions(gi *model.GraphInfo, threadID string
 	}
 
 	return opts, nil
+}
+
+func getJsonDate(code string, schema *model2.JsonSchema) (jsonDate string, err error) {
+	code = `
+    var input = schema.Message{
+		content: "hello from code",
+		Role:    schema.User,
+		Name:    "input",
+		Num:     1,
+		Extra: map[string]interface{}{
+			"a": "b",
+		},
+		ToolCalls: []schema.ToolCall{
+			{
+				ID:   "1",
+				Type: "1",
+			},
+		},
+	}
+    `
+
+	// 1. 解析代码生成 AST
+	fset := token.NewFileSet()
+	node, err := parser.ParseFile(fset, "", "package main\n"+code, parser.ParseComments)
+	if err != nil {
+		return "", err
+	}
+
+	// 2. 遍历 AST 提取信息
+	var result map[string]interface{}
+	ast.Inspect(node, func(n ast.Node) bool {
+		// 查找变量声明
+		vs, ok := n.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+		for _, value := range vs.Values {
+			var cl *ast.CompositeLit
+			switch v := value.(type) {
+			case *ast.UnaryExpr:
+				// 指针类型
+				cl, ok = v.X.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+			case *ast.CompositeLit:
+				// 非指针类型
+				cl = v
+			default:
+				continue
+			}
+			result = parseCompositeLit(cl)
+		}
+		return false
+	})
+
+	// 3. 序列化为 JSON
+	jsonData, err := json.MarshalIndent(result, "", "    ")
+	if err != nil {
+		return "", err
+	}
+	return string(jsonData), err
+}
+
+// 解析复合字面量
+func parseCompositeLit(cl *ast.CompositeLit) map[string]interface{} {
+	data := make(map[string]interface{})
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key := kv.Key.(*ast.Ident).Name
+		value := parseExpr(kv.Value)
+		data[key] = value
+	}
+	return data
+}
+
+// 解析表达式
+func parseExpr(expr ast.Expr) interface{} {
+	switch v := expr.(type) {
+	case *ast.BasicLit:
+		// 基本字面量，如字符串、数字
+		return parseBasicLit(v)
+	case *ast.CompositeLit:
+		// 复合字面量，如结构体、数组、映射
+		if _, ok := v.Type.(*ast.MapType); ok {
+			// 映射类型
+			return parseMapLit(v)
+		} else if _, ok := v.Type.(*ast.ArrayType); ok {
+			// 数组或切片类型
+			return parseArrayLit(v)
+		} else {
+			// 结构体类型
+			return parseCompositeLit(v)
+		}
+	case *ast.SelectorExpr:
+		// 选择器表达式，如 schema.User
+		return parseSelectorExpr(v)
+	case *ast.UnaryExpr:
+		// 一元表达式，处理取地址符号 &
+		if v.Op == token.AND {
+			return parseExpr(v.X)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+// 解析基本字面量
+func parseBasicLit(bl *ast.BasicLit) interface{} {
+	switch bl.Kind {
+	case token.STRING:
+		// 去除引号
+		str, _ := strconv.Unquote(bl.Value)
+		return str
+	case token.INT:
+		i, _ := strconv.Atoi(bl.Value)
+		return i
+	default:
+		return bl.Value
+	}
+}
+
+// 解析选择器表达式
+func parseSelectorExpr(se *ast.SelectorExpr) string {
+	x, ok := se.X.(*ast.Ident)
+	if !ok {
+		return se.Sel.Name
+	}
+	return x.Name + "." + se.Sel.Name
+}
+
+// 解析映射字面量
+func parseMapLit(cl *ast.CompositeLit) map[string]interface{} {
+	m := make(map[string]interface{})
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key := parseExpr(kv.Key).(string)
+		value := parseExpr(kv.Value)
+		m[key] = value
+	}
+	return m
+}
+
+// 解析数组或切片字面量
+func parseArrayLit(cl *ast.CompositeLit) []interface{} {
+	var arr []interface{}
+	for _, elt := range cl.Elts {
+		value := parseExpr(elt)
+		arr = append(arr, value)
+	}
+	return arr
 }
