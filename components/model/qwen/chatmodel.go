@@ -144,15 +144,27 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 		return nil, err
 	}
 
-	// if tool calls is empty, remove it
+	var lastIndex *int
+
 	sr := schema.StreamReaderWithConvert(outStream, func(msg *schema.Message) (*schema.Message, error) {
 		if len(msg.ToolCalls) > 0 {
+			if msg.ResponseMeta == nil {
+				return msg, nil
+			}
+
 			toolCalls := make([]schema.ToolCall, 0, len(msg.ToolCalls))
 			for idx := range msg.ToolCalls {
 				toolCall := msg.ToolCalls[idx]
-				if toolCall.Index == nil && toolCall.Function.Name == "" && toolCall.Function.Arguments == "" {
-					continue
+
+				// issue: https://github.com/cloudwego/eino-examples/issues/23
+				// for some case, the response toolcall index is nil, but content is not empty
+				// use the last index as the toolcall index, so the concat can be correct
+				if toolCall.Index == nil && len(msg.ResponseMeta.FinishReason) != 0 {
+					toolCall.Index = lastIndex
 				}
+
+				lastIndex = toolCall.Index
+
 				toolCalls = append(toolCalls, toolCall)
 			}
 			msg.ToolCalls = toolCalls
