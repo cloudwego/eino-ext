@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino-ext/components/model/qwen"
@@ -40,7 +41,7 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	err = cm.BindTools([]*schema.ToolInfo{
@@ -76,7 +77,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	resp, err := cm.Generate(ctx, []*schema.Message{
@@ -91,7 +92,7 @@ func main() {
 	})
 
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	fmt.Println(resp)
@@ -114,7 +115,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	msgs := make([]*schema.Message, 0)
@@ -125,7 +126,7 @@ func main() {
 		}
 		jsonMsg, err := json.Marshal(msg)
 		if err != nil {
-			panic(err)
+			log.Fatal(err)
 		}
 		fmt.Printf("%s\n", jsonMsg)
 		msgs = append(msgs, msg)
@@ -133,11 +134,11 @@ func main() {
 
 	msg, err := schema.ConcatMessages(msgs)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	jsonMsg, err := json.Marshal(msg)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	fmt.Printf("final: %s\n", jsonMsg)
 }

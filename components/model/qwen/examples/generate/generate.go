@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino-ext/components/model/qwen"
@@ -39,14 +40,14 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	ir, err := cm.Generate(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	fmt.Println(ir)
