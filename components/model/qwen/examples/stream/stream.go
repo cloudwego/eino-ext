@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino-ext/components/model/qwen"
@@ -40,14 +41,14 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	sr, err := cm.Stream(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	var msgs []*schema.Message
@@ -58,7 +59,7 @@ func main() {
 				break
 			}
 
-			panic(err)
+			log.Fatal(err)
 		}
 
 		fmt.Println(msg)
@@ -80,7 +81,7 @@ func main() {
 
 	msg, err := schema.ConcatMessages(msgs)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	fmt.Println(msg)
