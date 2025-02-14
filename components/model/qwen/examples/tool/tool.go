@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -98,6 +99,47 @@ func main() {
 	// tool_calls: [{0x14000275930 call_1e25169e05fc4596a55afb function {user_company {"email": "zhangsan@bytedance.com", "name": "zhangsan"}} map[]}]
 	// finish_reason: tool_calls
 	// usage: &{316 32 348}
+
+	// ==========================
+	// using stream
+	fmt.Printf("\n\n======== Stream ========\n")
+	sr, err := cm.Stream(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "你是一名房产经纪人，结合用户的薪酬和工作，使用 user_company、user_salary 两个 API，为其提供相关的房产信息。邮箱是必须的",
+		},
+		{
+			Role:    schema.User,
+			Content: "我的姓名是 lisi，我的邮箱是 lisi@bytedance.com，请帮我推荐一些适合我的房子。",
+		},
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	msgs := make([]*schema.Message, 0)
+	for {
+		msg, err := sr.Recv()
+		if err != nil {
+			break
+		}
+		jsonMsg, err := json.Marshal(msg)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("%s\n", jsonMsg)
+		msgs = append(msgs, msg)
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	if err != nil {
+		panic(err)
+	}
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("final: %s\n", jsonMsg)
 }
 
 func of[T any](t T) *T {
