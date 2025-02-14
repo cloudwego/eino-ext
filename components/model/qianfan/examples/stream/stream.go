@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 
 	"github.com/cloudwego/eino-ext/components/model/qianfan"
 	"github.com/cloudwego/eino/schema"
@@ -39,14 +40,14 @@ func main() {
 		MaxCompletionTokens: of(1024),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	sr, err := cm.Stream(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	var ms []*schema.Message
@@ -57,7 +58,7 @@ func main() {
 				break
 			}
 
-			panic(err)
+			log.Fatal(err)
 		}
 
 		fmt.Println(m)
@@ -84,7 +85,7 @@ func main() {
 
 	sm, err := schema.ConcatMessages(ms)
 	if err != nil {
-		panic("err")
+		log.Fatal("err")
 	}
 
 	fmt.Println(sm)
