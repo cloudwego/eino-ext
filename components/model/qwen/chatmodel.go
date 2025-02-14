@@ -139,7 +139,27 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-	return cm.cli.Stream(ctx, in, opts...)
+	outStream, err = cm.cli.Stream(ctx, in, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// if tool calls is empty, remove it
+	sr := schema.StreamReaderWithConvert(outStream, func(msg *schema.Message) (*schema.Message, error) {
+		if len(msg.ToolCalls) > 0 {
+			toolCalls := make([]schema.ToolCall, 0, len(msg.ToolCalls))
+			for idx := range msg.ToolCalls {
+				toolCall := msg.ToolCalls[idx]
+				if toolCall.Index == nil && toolCall.Function.Name == "" && toolCall.Function.Arguments == "" {
+					continue
+				}
+				toolCalls = append(toolCalls, toolCall)
+			}
+			msg.ToolCalls = toolCalls
+		}
+		return msg, nil
+	})
+	return sr, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
