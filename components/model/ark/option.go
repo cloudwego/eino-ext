@@ -24,6 +24,8 @@ type arkOptions struct {
 	customHeaders map[string]string
 }
 
+// WithCustomHeader sets custom headers for a single request
+// the headers will override all the headers given in ChatModelConfig.CustomHeader
 func WithCustomHeader(m map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.customHeaders = m

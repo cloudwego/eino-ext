@@ -111,6 +111,7 @@ type ChatModelConfig struct {
 	// Optional. Default: 0
 	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
 
+	// CustomHeader the http header passed to model when requesting model
 	CustomHeader map[string]string `json:"custom_header"`
 }
 
@@ -427,6 +428,9 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 			FinishReason: string(choice.FinishReason),
 			Usage:        toEinoTokenUsage(&resp.Usage),
 		},
+		Extra: map[string]any{
+			keyOfRequestID: arkRequestID(resp.ID),
+		},
 	}
 
 	if content != nil && content.StringValue != nil {
@@ -453,6 +457,9 @@ func (cm *ChatModel) resolveStreamResponse(resp model.ChatCompletionStreamRespon
 					FinishReason: string(choice.FinishReason),
 					Usage:        toEinoTokenUsage(resp.Usage),
 				},
+				Extra: map[string]any{
+					keyOfRequestID: arkRequestID(resp.ID),
+				},
 			}
 
 			break
@@ -464,6 +471,9 @@ func (cm *ChatModel) resolveStreamResponse(resp model.ChatCompletionStreamRespon
 		msg = &schema.Message{
 			ResponseMeta: &schema.ResponseMeta{
 				Usage: toEinoTokenUsage(resp.Usage),
+			},
+			Extra: map[string]any{
+				keyOfRequestID: arkRequestID(resp.ID),
 			},
 		}
 	}
