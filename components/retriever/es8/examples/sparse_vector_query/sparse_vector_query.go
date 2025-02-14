@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 
@@ -50,7 +51,7 @@ func main() {
 
 	cert, err := os.ReadFile(httpCACertPath)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
@@ -60,12 +61,12 @@ func main() {
 		CACert:    cert,
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	emb, err := prepareEmbeddings()
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	r, err := es8.NewRetriever(ctx, &es8.RetrieverConfig{
@@ -134,7 +135,7 @@ func main() {
 		es8.WithSparseVector(convertSparse(emb.Sparse[0])),
 	)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	fmt.Println("Without Filters")
@@ -161,7 +162,7 @@ func main() {
 		}),
 	)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	fmt.Println("With Filters")

@@ -35,12 +35,12 @@ func main() {
 		Model: "Embedding-V1",
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	v, err := emb.EmbedStrings(ctx, []string{"hello world", "bye world"})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	b, _ := json.Marshal(v)
