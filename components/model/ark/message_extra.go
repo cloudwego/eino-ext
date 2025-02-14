@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	keyOfRequestID = "ark-request-id"
+	keyOfRequestID        = "ark-request-id"
+	keyOfReasoningContent = "ark-reasoning-content"
 )
 
 type arkRequestID string
@@ -43,4 +44,13 @@ func GetArkRequestID(msg *schema.Message) string {
 		return ""
 	}
 	return string(reqID)
+}
+
+func GetReasoningContent(msg *schema.Message) (string, bool) {
+	reasoningContent, ok := msg.Extra[keyOfReasoningContent].(string)
+	if !ok {
+		return "", false
+	}
+
+	return reasoningContent, true
 }

@@ -27,16 +27,18 @@ func TestConcatMessages(t *testing.T) {
 	msgs := []*schema.Message{
 		{
 			Extra: map[string]any{
-				"key_of_string": "hi!",
-				"key_of_int":    int(10),
-				keyOfRequestID:  arkRequestID("123456"),
+				"key_of_string":       "hi!",
+				"key_of_int":          int(10),
+				keyOfRequestID:        arkRequestID("123456"),
+				keyOfReasoningContent: "how ",
 			},
 		},
 		{
 			Extra: map[string]any{
-				"key_of_string": "hello!",
-				"key_of_int":    int(50),
-				keyOfRequestID:  arkRequestID("123456"),
+				"key_of_string":       "hello!",
+				"key_of_int":          int(50),
+				keyOfRequestID:        arkRequestID("123456"),
+				keyOfReasoningContent: "are you",
 			},
 		},
 	}
@@ -46,4 +48,8 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, "123456", GetArkRequestID(msg))
 	assert.Equal(t, "hi!hello!", msg.Extra["key_of_string"])
 	assert.Equal(t, int(50), msg.Extra["key_of_int"])
+
+	reasoningContent, ok := GetReasoningContent(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "how are you", reasoningContent)
 }

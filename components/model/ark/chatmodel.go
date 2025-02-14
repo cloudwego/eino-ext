@@ -437,6 +437,10 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 		msg.Content = *content.StringValue
 	}
 
+	if choice.Message.ReasoningContent != nil {
+		msg.Extra[keyOfReasoningContent] = *choice.Message.ReasoningContent
+	}
+
 	return msg, nil
 }
 
@@ -460,6 +464,10 @@ func (cm *ChatModel) resolveStreamResponse(resp model.ChatCompletionStreamRespon
 				Extra: map[string]any{
 					keyOfRequestID: arkRequestID(resp.ID),
 				},
+			}
+
+			if choice.Delta.ReasoningContent != nil {
+				msg.Extra[keyOfReasoningContent] = *choice.Delta.ReasoningContent
 			}
 
 			break
