@@ -48,14 +48,14 @@ import (
 //	    Model:  "claude-3-opus-20240229",
 //	    MaxTokens: 2000,
 //	})
-func NewChatModel(ctx context.Context, conf *Config) (model.ChatModel, error) {
+func NewChatModel(ctx context.Context, conf *Config) (*ChatModel, error) {
 	var cli *anthropic.Client
 	if conf.BaseURL != nil {
 		cli = anthropic.NewClient(option.WithBaseURL(*conf.BaseURL), option.WithAPIKey(conf.APIKey))
 	} else {
 		cli = anthropic.NewClient(option.WithAPIKey(conf.APIKey))
 	}
-	return &claude{
+	return &ChatModel{
 		cli:           cli,
 		maxTokens:     conf.MaxTokens,
 		model:         conf.Model,
@@ -107,7 +107,7 @@ type Config struct {
 	StopSequences []string
 }
 
-type claude struct {
+type ChatModel struct {
 	cli *anthropic.Client
 
 	maxTokens     int
@@ -118,10 +118,11 @@ type claude struct {
 	topP          *float32
 	tools         []anthropic.ToolParam
 	origTools     []*schema.ToolInfo
+	toolChoice    *schema.ToolChoice
 }
 
-func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
-	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input))
+func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
+	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -144,8 +145,8 @@ func (c *claude) Generate(ctx context.Context, input []*schema.Message, opts ...
 	return message, nil
 }
 
-func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
-	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input))
+func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
+	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -219,12 +220,42 @@ func (c *claude) Stream(ctx context.Context, input []*schema.Message, opts ...mo
 	}), nil
 }
 
-func (c *claude) BindTools(tools []*schema.ToolInfo) error {
+func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	result, err := toAnthropicToolParam(tools)
+	if err != nil {
+		return err
+	}
+
+	c.tools = result
+	c.origTools = tools
+	tc := schema.ToolChoiceAllowed
+	c.toolChoice = &tc
+	return nil
+}
+
+func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	result, err := toAnthropicToolParam(tools)
+	if err != nil {
+		return err
+	}
+
+	c.tools = result
+	c.origTools = tools
+	tc := schema.ToolChoiceForced
+	c.toolChoice = &tc
+	return nil
+}
+
+func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolParam, error) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+
 	result := make([]anthropic.ToolParam, 0, len(tools))
 	for _, tool := range tools {
 		s, err := tool.ToOpenAPIV3()
 		if err != nil {
-			return fmt.Errorf("convert to openapi v3 schema fail: %w", err)
+			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
 		}
 		result = append(result, anthropic.ToolParam{
 			Name:        anthropic.F(tool.Name),
@@ -232,12 +263,11 @@ func (c *claude) BindTools(tools []*schema.ToolInfo) error {
 			InputSchema: anthropic.F[any](s),
 		})
 	}
-	c.tools = result
-	c.origTools = tools
-	return nil
+
+	return result, nil
 }
 
-func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
+func (c *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
 	}
@@ -248,6 +278,8 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 		MaxTokens:   &c.maxTokens,
 		TopP:        c.topP,
 		Stop:        c.stopSequences,
+		Tools:       nil,
+		ToolChoice:  c.toolChoice,
 	}, opts...)
 	claudeOptions := model.GetImplSpecificOptions(&options{TopK: c.topK}, opts...)
 
@@ -270,8 +302,43 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 	if claudeOptions.TopK != nil {
 		param.TopK = anthropic.F(int64(*claudeOptions.TopK))
 	}
-	if len(c.tools) > 0 {
-		param.Tools = anthropic.F(c.tools)
+
+	tools := c.tools
+	if commonOptions.Tools != nil {
+		var err error
+		if tools, err = toAnthropicToolParam(commonOptions.Tools); err != nil {
+			return anthropic.MessageNewParams{}, err
+		}
+	}
+
+	if len(tools) > 0 {
+		param.Tools = anthropic.F(tools)
+	}
+
+	if commonOptions.ToolChoice != nil {
+		switch *commonOptions.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			param.Tools = anthropic.F([]anthropic.ToolParam{}) // act like forbid tools
+		case schema.ToolChoiceAllowed:
+			param.ToolChoice = anthropic.F(anthropic.ToolChoiceUnionParam(anthropic.ToolChoiceAutoParam{
+				Type: anthropic.F(anthropic.ToolChoiceAutoTypeAuto),
+			}))
+		case schema.ToolChoiceForced:
+			if len(tools) == 0 {
+				return anthropic.MessageNewParams{}, fmt.Errorf("tool choice is forced but tool is not provided")
+			} else if len(tools) == 1 {
+				param.ToolChoice = anthropic.F(anthropic.ToolChoiceUnionParam(anthropic.ToolChoiceToolParam{
+					Name: tools[0].Name,
+					Type: anthropic.F(anthropic.ToolChoiceToolTypeTool),
+				}))
+			} else {
+				param.ToolChoice = anthropic.F(anthropic.ToolChoiceUnionParam(anthropic.ToolChoiceAnyParam{
+					Type: anthropic.F(anthropic.ToolChoiceAnyTypeAny),
+				}))
+			}
+		default:
+			return anthropic.MessageNewParams{}, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
+		}
 	}
 
 	// Convert messages
@@ -297,16 +364,18 @@ func (c *claude) genMessageNewParams(input []*schema.Message, opts ...model.Opti
 	return param, nil
 }
 
-func (c *claude) getCallbackInput(input []*schema.Message) *model.CallbackInput {
+func (c *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
 	result := &model.CallbackInput{
 		Messages: input,
-		Tools:    c.origTools,
-		Config:   c.getConfig(),
+		Tools: model.GetCommonOptions(&model.Options{
+			Tools: c.origTools,
+		}, opts...).Tools,
+		Config: c.getConfig(),
 	}
 	return result
 }
 
-func (c *claude) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
+func (c *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
 	result := &model.CallbackOutput{
 		Message: output,
 		Config:  c.getConfig(),
@@ -321,7 +390,7 @@ func (c *claude) getCallbackOutput(output *schema.Message) *model.CallbackOutput
 	return result
 }
 
-func (c *claude) getConfig() *model.Config {
+func (c *ChatModel) getConfig() *model.Config {
 	result := &model.Config{
 		Model:     c.model,
 		MaxTokens: c.maxTokens,

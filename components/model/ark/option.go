@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package qianfan
+package ark
 
-const (
-	defaultTemperature       = float32(0.95)
-	defaultTopP              = float32(0.7)
-	defaultParallelToolCalls = true
+import (
+	"github.com/cloudwego/eino/components/model"
 )
 
-const (
-	toolChoiceNone     = "none"     // 不希望模型调用任何function，只生成面向用户的文本消息
-	toolChoiceAuto     = "auto"     // 模型会根据输入内容自动决定是否调用函数以及调用哪些function
-	toolChoiceRequired = "required" // 希望模型总是调用一个或多个function
-)
+type arkOptions struct {
+	customHeaders map[string]string
+}
 
-func of[T any](v T) *T {
-	return &v
+// WithCustomHeader sets custom headers for a single request
+// the headers will override all the headers given in ChatModelConfig.CustomHeader
+func WithCustomHeader(m map[string]string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.customHeaders = m
+	})
 }

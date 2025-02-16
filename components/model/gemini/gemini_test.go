@@ -134,7 +134,7 @@ func TestGemini(t *testing.T) {
 				},
 			},
 		}
-		model.(*chatModel).responseSchema = responseSchema
+		model.responseSchema = responseSchema
 
 		// Mock Gemini API 响应
 		defer mockey.Mock((*genai.ChatSession).SendMessage).Return(&genai.GenerateContentResponse{

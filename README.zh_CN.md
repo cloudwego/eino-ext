@@ -26,7 +26,7 @@ EinoExt 项目为 [Eino](https://github.com/cloudwego/eino) 框架提供了各�
 有关组件实现的更多详细信息，请参阅 [Eino 生态系统文档.](https://www.cloudwego.io/zh/docs/eino/ecosystem_integration/)
 
 - **callback handlers**: 实现 Eino 的 callbacks.Handler 接口的官方 callback handler，例如[Langfuse tracing](https://langfuse.com/docs/tracing) 回调.
-- **DevOps 工具**: 用于 Eino 的 IDE 插件，支持可视化调试、基于 UI 的图形编辑等功能。更多详细信息，请参阅 [Eino DevOps 工具文档.](https://www.cloudwego.io/zh/docs/eino/core_modules/application_development_toolchain/)
+- **DevOps 工具**: 用于 Eino 的 IDE 插件，支持可视化调试、基于 UI 的图形编辑等功能。更多详细信息，请参阅 [Eino Dev 工具文档.](https://www.cloudwego.io/zh/docs/eino/core_modules/devops/)
 
 ## 安全
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,20 +14,20 @@
  * limitations under the License.
  */
 
-package qianfan
+package ark
 
-const (
-	defaultTemperature       = float32(0.95)
-	defaultTopP              = float32(0.7)
-	defaultParallelToolCalls = true
+import (
+	"testing"
+
+	"github.com/cloudwego/eino/components/model"
+	"github.com/stretchr/testify/assert"
 )
 
-const (
-	toolChoiceNone     = "none"     // 不希望模型调用任何function，只生成面向用户的文本消息
-	toolChoiceAuto     = "auto"     // 模型会根据输入内容自动决定是否调用函数以及调用哪些function
-	toolChoiceRequired = "required" // 希望模型总是调用一个或多个function
-)
+func TestOptions(t *testing.T) {
 
-func of[T any](v T) *T {
-	return &v
+	opt := model.GetImplSpecificOptions(&arkOptions{
+		customHeaders: nil,
+	}, WithCustomHeader(map[string]string{"k1": "v1"}))
+
+	assert.Equal(t, map[string]string{"k1": "v1"}, opt.customHeaders)
 }
