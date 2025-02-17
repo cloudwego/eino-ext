@@ -41,7 +41,7 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
 	err = cm.BindTools([]*schema.ToolInfo{
@@ -77,7 +77,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("BindTools of qwen failed, err=%v", err)
 	}
 
 	resp, err := cm.Generate(ctx, []*schema.Message{
@@ -92,7 +92,7 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Generate of qwen failed, err=%v", err)
 	}
 
 	fmt.Println(resp)
@@ -115,7 +115,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Stream of qwen failed, err=%v", err)
 	}
 
 	msgs := make([]*schema.Message, 0)
@@ -126,7 +126,7 @@ func main() {
 		}
 		jsonMsg, err := json.Marshal(msg)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("json.Marshal failed, err=%v", err)
 		}
 		fmt.Printf("%s\n", jsonMsg)
 		msgs = append(msgs, msg)
@@ -134,11 +134,11 @@ func main() {
 
 	msg, err := schema.ConcatMessages(msgs)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
 	jsonMsg, err := json.Marshal(msg)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("json.Marshal failed, err=%v", err)
 	}
 	fmt.Printf("final: %s\n", jsonMsg)
 }

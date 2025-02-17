@@ -37,14 +37,14 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewLoader failed, err=%v", err)
 	}
 
 	docs, err := loader.Load(ctx, document.Source{
 		URI: "file:///test.html",
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Load failed, err=%v", err)
 	}
 
 	for _, doc := range docs {

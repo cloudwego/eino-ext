@@ -41,7 +41,7 @@ func main() {
 		Model:  "gpt-4o-2024-05-13",
 	})
 	if err != nil {
-		log.Fatal(fmt.Errorf("NewChatModel failed, err=%v", err))
+		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
 	resp, err := chatModel.Generate(ctx, []*schema.Message{
@@ -51,7 +51,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatal(fmt.Errorf("generate failed, err=%v", err))
+		log.Fatalf("Generate failed, err=%v", err)
 	}
 
 	fmt.Printf("output: \n%v", resp)

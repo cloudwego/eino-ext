@@ -50,7 +50,7 @@ func main() {
 
 	cert, err := os.ReadFile(httpCACertPath)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("read file failed, err=%v", err)
 	}
 
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
@@ -60,12 +60,12 @@ func main() {
 		CACert:    cert,
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewClient of es8 failed, err=%v", err)
 	}
 
 	emb, err := prepareEmbeddings()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("prepareEmbeddings failed, err=%v", err)
 	}
 
 	r, err := es8.NewRetriever(ctx, &es8.RetrieverConfig{
@@ -126,7 +126,7 @@ func main() {
 	// search without filter
 	docs, err := r.Retrieve(ctx, "tourist attraction")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Retrieve of es8 failed, err=%v", err)
 	}
 
 	fmt.Println("Without Filters")
@@ -156,7 +156,7 @@ func main() {
 		}),
 	)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Retrieve of es8 failed, err=%v", err)
 	}
 
 	fmt.Println("With Filters")

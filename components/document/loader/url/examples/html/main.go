@@ -45,14 +45,14 @@ func main() {
 	ctx := context.Background()
 	loader, err := url.NewLoader(ctx, &url.LoaderConfig{})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewLoader failed, err=%v", err)
 	}
 
 	docs, err := loader.Load(ctx, document.Source{
 		URI: fmt.Sprintf("http://%s/test.html", addr),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Load failed, err=%v", err)
 	}
 
 	for _, doc := range docs {

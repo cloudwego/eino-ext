@@ -39,14 +39,14 @@ func main() {
 		MaxCompletionTokens: of(1024),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
 	}
 
 	ir, err := cm.Generate(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Generate of qianfan failed, err=%v", err)
 	}
 
 	fmt.Println(ir)

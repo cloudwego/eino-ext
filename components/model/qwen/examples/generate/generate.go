@@ -40,14 +40,14 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
 	ir, err := cm.Generate(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Generate of qwen failed, err=%v", err)
 	}
 
 	fmt.Println(ir)

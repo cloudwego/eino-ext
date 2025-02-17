@@ -41,14 +41,14 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
 	sr, err := cm.Stream(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Stream of qwen failed, err=%v", err)
 	}
 
 	var msgs []*schema.Message
@@ -59,7 +59,7 @@ func main() {
 				break
 			}
 
-			log.Fatal(err)
+			log.Fatalf("Stream of qwen failed, err=%v", err)
 		}
 
 		fmt.Println(msg)
@@ -81,7 +81,7 @@ func main() {
 
 	msg, err := schema.ConcatMessages(msgs)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
 
 	fmt.Println(msg)

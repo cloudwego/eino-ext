@@ -40,14 +40,14 @@ func main() {
 		MaxCompletionTokens: of(1024),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
 	}
 
 	sr, err := cm.Stream(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Stream of qianfan failed, err=%v", err)
 	}
 
 	var ms []*schema.Message
@@ -58,7 +58,7 @@ func main() {
 				break
 			}
 
-			log.Fatal(err)
+			log.Fatalf("Stream of qianfan failed, err=%v", err)
 		}
 
 		fmt.Println(m)
@@ -85,7 +85,7 @@ func main() {
 
 	sm, err := schema.ConcatMessages(ms)
 	if err != nil {
-		log.Fatal("err")
+		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
 
 	fmt.Println(sm)
