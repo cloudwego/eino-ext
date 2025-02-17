@@ -148,10 +148,6 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 
 	sr := schema.StreamReaderWithConvert(outStream, func(msg *schema.Message) (*schema.Message, error) {
 		if len(msg.ToolCalls) > 0 {
-			if msg.ResponseMeta == nil {
-				return msg, nil
-			}
-
 			toolCalls := make([]schema.ToolCall, 0, len(msg.ToolCalls))
 			for idx := range msg.ToolCalls {
 				toolCall := msg.ToolCalls[idx]
