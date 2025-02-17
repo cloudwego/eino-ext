@@ -147,23 +147,22 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 	var lastIndex *int
 
 	sr := schema.StreamReaderWithConvert(outStream, func(msg *schema.Message) (*schema.Message, error) {
+		// issue: https://github.com/cloudwego/eino-examples/issues/23
+		// for some case, the response toolcall index is nil, but content is not empty
+		// use the last index as the toolcall index, so the concat can be correct
+		// suppose only the first toolcall should be fixed.
 		if len(msg.ToolCalls) > 0 {
-			toolCalls := make([]schema.ToolCall, 0, len(msg.ToolCalls))
-			for idx := range msg.ToolCalls {
-				toolCall := msg.ToolCalls[idx]
+			firstToolCall := msg.ToolCalls[0]
 
-				// issue: https://github.com/cloudwego/eino-examples/issues/23
-				// for some case, the response toolcall index is nil, but content is not empty
-				// use the last index as the toolcall index, so the concat can be correct
-				if toolCall.Index == nil && len(msg.ResponseMeta.FinishReason) != 0 {
-					toolCall.Index = lastIndex
-				}
-
-				lastIndex = toolCall.Index
-
-				toolCalls = append(toolCalls, toolCall)
+			if msg.ResponseMeta == nil || len(msg.ResponseMeta.FinishReason) == 0 {
+				lastIndex = firstToolCall.Index
+				return msg, nil
 			}
-			msg.ToolCalls = toolCalls
+
+			if firstToolCall.Index == nil && len(msg.ResponseMeta.FinishReason) != 0 {
+				firstToolCall.Index = lastIndex
+				msg.ToolCalls[0] = firstToolCall
+			}
 		}
 		return msg, nil
 	})
