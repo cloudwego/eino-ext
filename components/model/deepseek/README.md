@@ -1,6 +1,6 @@
-# Volcengine DeepSeek Model
+# DeepSeek Model
 
-A Volcengine DeepSeek model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Model` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+A DeepSeek model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Model` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
 
 ## Features
 
