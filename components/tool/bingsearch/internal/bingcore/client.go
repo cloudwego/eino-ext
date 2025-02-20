@@ -27,6 +27,7 @@ type Config struct {
 	// Default:
 	//   Headers: map[string]string{
 	//     "Ocp-Apim-Subscription-Key": "YOUR_API_KEY",
+	//   }
 	// Example:
 	//   Headers: map[string]string{
 	//     "User-Agent": "Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; Touch; rv:11.0) like Gecko",
@@ -36,11 +37,13 @@ type Config struct {
 
 	// Timeout specifies the maximum duration for a single request.
 	// Default is 30 seconds if not specified.
+	// Default: 30 seconds
 	// Example: 5 * time.Second
-	Timeout time.Duration `json:"timeout"` // default: 30 seconds
+	Timeout time.Duration `json:"timeout"`
 
 	// ProxyURL specifies the proxy server URL for all requests.
 	// Supports HTTP, HTTPS, and SOCKS5 proxies.
+	// Default: ""
 	// Example values:
 	//   - "http://proxy.example.com:8080"
 	//   - "socks5://localhost:1080"
@@ -50,11 +53,13 @@ type Config struct {
 	// Cache enables in-memory caching of search results.
 	// When enabled, identical search requests will return cached results
 	// for improved performance. Cache entries expire after 5 minutes.
+	// Default: 0 (disabled)
 	// Example: 5 * time.Minute
-	Cache time.Duration `json:"cache"` // default: 0 (disabled)
+	Cache time.Duration `json:"cache"`
 
 	// MaxRetries specifies the maximum number of retry attempts for failed requests.
-	MaxRetries int `json:"max_retries"` // default: 3
+	// Default: 3
+	MaxRetries int `json:"max_retries"`
 }
 
 // New creates a new BingClient instance.

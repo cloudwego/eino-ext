@@ -23,33 +23,30 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
+	"time"
 	
 	"github.com/bytedance/sonic"
-	
 	"github.com/cloudwego/eino-ext/components/tool/bingsearch"
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/bingcore"
 )
 
 func main() {
-    // 设置 Bing 搜索的 API key
-    bingSearchAPIKey := os.Getenv("BING_SEARCH_API_KEY")
-    
-    // 创建上下文
-    ctx := context.Background()
-    
-    // 创建 Bing 搜索工具
-    bingSearchTool, err := bingsearch.NewTool(ctx, &bingsearch.Config{
-        APIKey: bingSearchAPIKey,
-        BingConfig: &bingcore.Config{
-            Cache: true,
-        },
-    })
-    if err != nil {
-        log.Fatalf("Failed to create tool: %v", err)
-    }
+	// 设置 Bing Search API 密钥
+	bingSearchAPIKey := os.Getenv("BING_SEARCH_API_KEY")
+	
+	// 创建上下文
+	ctx := context.Background()
+	
+	// 创建 Bing Search 工具
+	bingSearchTool, err := bingsearch.NewTool(ctx, &bingsearch.Config{
+		APIKey: bingSearchAPIKey,
+		Cache:  5 * time.Minute,
+	})
+	
+	if err != nil {
+		log.Fatalf("Failed to create tool: %v", err)
+	}
     // ... 配置并使用 ToolsNode
 ```
 
@@ -60,32 +57,22 @@ func main() {
 ```go
 // Config represents the Bing search tool configuration.
 type Config struct {
-    ToolName string `json:"tool_name"` // default: bing_search
-    ToolDesc string `json:"tool_desc"` // default: "search web for information by bing"
+// Config represents the Bing search tool configuration.
+type Config struct {
+    ToolName string `json:"tool_name"` // optional, default is "bing_search"
+    ToolDesc string `json:"tool_desc"` // optional, default is "search web for information by bing"
 
-    APIKey     string              `json:"api_key"`     // default: ""
-    Region     bingcore.Region     `json:"region"`      // default: "wt-wt"
-    MaxResults int                 `json:"max_results"` // default: 10
-    SafeSearch bingcore.SafeSearch `json:"safe_search"` // default: bingcore.SafeSearchModerate
-    TimeRange  bingcore.TimeRange  `json:"time_range"`  // default: nil
+    APIKey     string     `json:"api_key"`     // required
+    Region     Region     `json:"region"`      // optional, default: ""
+    MaxResults int        `json:"max_results"` // optional, default: 10
+    SafeSearch SafeSearch `json:"safe_search"` // optional, default: SafeSearchModerate
+    TimeRange  TimeRange  `json:"time_range"`  // optional, default: nil
 
-    // Bing search configuration
-    BingConfig struct{
-        // Headers specifies custom HTTP headers to be sent with each request.
-        Headers map[string]string `json:"headers"`
-
-        // Timeout specifies the maximum duration for a single request.
-        Timeout time.Duration `json:"timeout"`  // default: 10s
-
-        // ProxyURL specifies the proxy server URL for all requests.
-        ProxyURL string `json:"proxy_url"`
-
-        // Cache enables in-memory caching of search results.
-        Cache bool `json:"cache"`
-
-        // MaxRetries specifies the maximum number of retry attempts for failed requests.
-        MaxRetries int `json:"max_retries"` // default: 3
-    }
+    Headers    map[string]string `json:"headers"`     // optional, default: map[string]string{}
+    Timeout    time.Duration     `json:"timeout"`     // optional, default: 30 * time.Second
+    ProxyURL   string            `json:"proxy_url"`   // optional, default: ""
+    Cache      time.Duration     `json:"cache"`       // optional, default: 0 (disabled)
+    MaxRetries int               `json:"max_retries"` // optional, default: 3
 }
 ```
 
@@ -94,8 +81,8 @@ type Config struct {
 ### 请求 Schema
 ```go
 type SearchRequest struct {
-    Query string `json:"query" jsonschema_description:"The query to search the web for"`
-    Page  int    `json:"page" jsonschema_description:"The page number to search for, default: 1"`
+    Query  string `json:"query" jsonschema_description:"The query to search the web for"`
+    Offset int    `json:"page" jsonschema_description:"The index of the first result to return, default is 0"`
 }
 ```
 

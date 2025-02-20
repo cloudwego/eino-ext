@@ -29,8 +29,8 @@ func main() {
 
 	// Create a search request
 	request := &bingsearch.SearchRequest{
-		Query: "Eino",
-		Page:  1,
+		Query:  "Eino",
+		Offset: 0,
 	}
 
 	jsonReq, err := sonic.Marshal(request)

@@ -5,8 +5,6 @@ import (
 	"reflect"
 	"testing"
 	"time"
-
-	"github.com/cloudwego/eino-ext/components/tool/bingsearch/internal/bingcore"
 )
 
 func TestConfig_validate(t *testing.T) {
@@ -14,10 +12,10 @@ func TestConfig_validate(t *testing.T) {
 		ToolName   string
 		ToolDesc   string
 		APIKey     string
-		Region     bingcore.Region
+		Region     Region
 		MaxResults int
-		SafeSearch bingcore.SafeSearch
-		TimeRange  bingcore.TimeRange
+		SafeSearch SafeSearch
+		TimeRange  TimeRange
 		Headers    map[string]string
 		Timeout    time.Duration
 		ProxyURL   string
@@ -35,7 +33,7 @@ func TestConfig_validate(t *testing.T) {
 				ToolName:   "TestConfig_validate",
 				ToolDesc:   "test config validate",
 				APIKey:     "api_key_to_validate",
-				Region:     bingcore.RegionUS,
+				Region:     RegionUS,
 				MaxResults: 0,
 				SafeSearch: "",
 				TimeRange:  "",
@@ -53,9 +51,9 @@ func TestConfig_validate(t *testing.T) {
 				ToolName:   "TestConfig_validate",
 				ToolDesc:   "test config validate",
 				APIKey:     "",
-				Region:     bingcore.RegionUS,
+				Region:     RegionUS,
 				MaxResults: 10,
-				SafeSearch: bingcore.SafeSearchModerate,
+				SafeSearch: SafeSearchModerate,
 				TimeRange:  "",
 				Headers:    nil,
 				Timeout:    0,
@@ -71,9 +69,9 @@ func TestConfig_validate(t *testing.T) {
 				ToolName:   "TestConfig_validate",
 				ToolDesc:   "test config validate",
 				APIKey:     "api_key_to_validate",
-				Region:     bingcore.RegionUS,
+				Region:     RegionUS,
 				MaxResults: 100,
-				SafeSearch: bingcore.SafeSearchModerate,
+				SafeSearch: SafeSearchModerate,
 				TimeRange:  "",
 				Headers:    nil,
 				Timeout:    0,

@@ -11,47 +11,96 @@ import (
 	"github.com/cloudwego/eino/components/tool/utils"
 )
 
+type Region string
+type SafeSearch string
+type TimeRange string
+
 const (
 	// Regions settings
-	RegionUS = bingcore.RegionUS
-	RegionGB = bingcore.RegionGB
-	RegionCA = bingcore.RegionCA
-	RegionAU = bingcore.RegionAU
-	RegionDE = bingcore.RegionDE
-	RegionFR = bingcore.RegionFR
-	RegionCN = bingcore.RegionCN
-	RegionHK = bingcore.RegionHK
-	RegionTW = bingcore.RegionTW
-	RegionJP = bingcore.RegionJP
-	RegionKR = bingcore.RegionKR
+	RegionUS Region = "en-US"
+	RegionGB Region = "en-GB"
+	RegionCA Region = "en-CA"
+	RegionAU Region = "en-AU"
+	RegionDE Region = "de-DE"
+	RegionFR Region = "fr-FR"
+	RegionCN Region = "zh-CN"
+	RegionHK Region = "zh-HK"
+	RegionTW Region = "zh-TW"
+	RegionJP Region = "ja-JP"
+	RegionKR Region = "ko-KR"
 
 	// SafeSearch settings
-	SafeSearchOff      = bingcore.SafeSearchOff
-	SafeSearchModerate = bingcore.SafeSearchModerate
-	SafeSearchStrict   = bingcore.SafeSearchStrict
+	SafeSearchOff      SafeSearch = "Off"
+	SafeSearchModerate SafeSearch = "Moderate"
+	SafeSearchStrict   SafeSearch = "Strict"
 
 	// TimeRange settings
-	TimeRangeDay   = bingcore.TimeRangeDay
-	TimeRangeWeek  = bingcore.TimeRangeWeek
-	TimeRangeMonth = bingcore.TimeRangeMonth
+	TimeRangeDay   TimeRange = "Day"
+	TimeRangeWeek  TimeRange = "Week"
+	TimeRangeMonth TimeRange = "Month"
 )
 
 // Config represents the Bing search tool configuration.
 type Config struct {
+	// Eino tool settings
 	ToolName string `json:"tool_name"` // optional, default is "bing_search"
 	ToolDesc string `json:"tool_desc"` // optional, default is "search web for information by bing"
 
-	APIKey     string              `json:"api_key"`     // required
-	Region     bingcore.Region     `json:"region"`      // optional, default: ""
-	MaxResults int                 `json:"max_results"` // optional, default: 10
-	SafeSearch bingcore.SafeSearch `json:"safe_search"` // optional, default: bingcore.SafeSearchModerate
-	TimeRange  bingcore.TimeRange  `json:"time_range"`  // optional, default: nil
+	// Bing search settings
+	// APIKey The API key is required to access the Bing Web Search API.
+	APIKey string `json:"api_key"`
 
-	Headers    map[string]string `json:"headers"`     // optional, default: map[string]string{}
-	Timeout    time.Duration     `json:"timeout"`     // optional, default: 30 * time.Second
-	ProxyURL   string            `json:"proxy_url"`   // optional, default: ""
-	Cache      time.Duration     `json:"cache"`       // optional, default: 0 (disabled)
-	MaxRetries int               `json:"max_retries"` // optional, default: 3
+	// Region specifies the Bing search region and is used to customize the search results for a specific country or language.
+	// Optional, default: ""
+	Region Region `json:"region"`
+
+	// MaxResults specifies the maximum number of search results to return.
+	// Optional, default: 10
+	MaxResults int `json:"max_results"`
+
+	// SafeSearch specifies the Bing search safe search setting.
+	// Optional, default: SafeSearchModerate
+	SafeSearch SafeSearch `json:"safe_search"`
+
+	// TimeRange specifies the Bing search time range.
+	// Optional, default: ""
+	TimeRange TimeRange `json:"time_range"`
+
+	// Bing client settings
+	// Headers specifies custom HTTP headers to be sent with each request.
+	// Common headers like "User-Agent" can be set here.
+	// Optional, default: map[string]string{}
+	// Example:
+	//   Headers: map[string]string{
+	//     "User-Agent": "Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; Touch; rv:11.0) like Gecko",
+	//     "Accept-Language": "en-US",
+	//   }
+	Headers map[string]string `json:"headers"`
+
+	// Timeout specifies the maximum duration for a single request.
+	// Optional, default: 30 * time.Second
+	// Example: 5 * time.Second
+	Timeout time.Duration `json:"timeout"`
+
+	// ProxyURL specifies the proxy server URL for all requests.
+	// Supports HTTP, HTTPS, and SOCKS5 proxies.
+	// Optional, default: ""
+	// Example values:
+	//   - "http://proxy.example.com:8080"
+	//   - "socks5://localhost:1080"
+	//   - "tb" (special alias for Tor Browser)
+	ProxyURL string `json:"proxy_url"`
+
+	// Cache enables in-memory caching of search results.
+	// When enabled, identical search requests will return cached results
+	// for improved performance. Cache entries expire after 5 minutes.
+	// Optional, default: 0 (disabled)
+	// Example: 5 * time.Minute
+	Cache time.Duration `json:"cache"`
+
+	// MaxRetries specifies the maximum number of retry attempts for failed requests.
+	// Optional, default: 3
+	MaxRetries int `json:"max_retries"`
 }
 
 // NewTool creates a new Bing search tool instance.
@@ -130,8 +179,8 @@ func newBingSearch(config *Config) (*bingSearch, error) {
 }
 
 type SearchRequest struct {
-	Query string `json:"query" jsonschema_description:"The query to search the web for"`
-	Page  int    `json:"page" jsonschema_description:"The page number to search for, default: 1"`
+	Query  string `json:"query" jsonschema_description:"The query to search the web for"`
+	Offset int    `json:"page" jsonschema_description:"The index of the first result to return, default is 0"`
 }
 
 type SearchResult struct {
@@ -149,10 +198,10 @@ func (s *bingSearch) Search(ctx context.Context, request *SearchRequest) (respon
 	// Search the web for information
 	searchResults, err := s.client.Search(ctx, &bingcore.SearchParams{
 		Query:      request.Query,
-		Region:     s.config.Region,
-		SafeSearch: s.config.SafeSearch,
-		TimeRange:  s.config.TimeRange,
-		Offset:     request.Page - 1,
+		Region:     bingcore.Region(s.config.Region),
+		SafeSearch: bingcore.SafeSearch(s.config.SafeSearch),
+		TimeRange:  bingcore.TimeRange(s.config.TimeRange),
+		Offset:     request.Offset,
 		Count:      s.config.MaxResults,
 	})
 	if err != nil {
