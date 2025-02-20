@@ -139,7 +139,34 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-	return cm.cli.Stream(ctx, in, opts...)
+	outStream, err = cm.cli.Stream(ctx, in, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	var lastIndex *int
+
+	sr := schema.StreamReaderWithConvert(outStream, func(msg *schema.Message) (*schema.Message, error) {
+		// issue: https://github.com/cloudwego/eino-examples/issues/23
+		// for some case, the response toolcall index is nil, but content is not empty
+		// use the last index as the toolcall index, so the concat can be correct
+		// suppose only the first toolcall should be fixed.
+		if len(msg.ToolCalls) > 0 {
+			firstToolCall := msg.ToolCalls[0]
+
+			if msg.ResponseMeta == nil || len(msg.ResponseMeta.FinishReason) == 0 {
+				lastIndex = firstToolCall.Index
+				return msg, nil
+			}
+
+			if firstToolCall.Index == nil && len(msg.ResponseMeta.FinishReason) != 0 {
+				firstToolCall.Index = lastIndex
+				msg.ToolCalls[0] = firstToolCall
+			}
+		}
+		return msg, nil
+	})
+	return sr, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {

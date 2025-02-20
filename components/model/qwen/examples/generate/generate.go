@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino-ext/components/model/qwen"
@@ -39,14 +40,14 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
 	ir, err := cm.Generate(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("Generate of qwen failed, err=%v", err)
 	}
 
 	fmt.Println(ir)

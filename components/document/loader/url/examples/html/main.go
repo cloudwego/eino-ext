@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/cloudwego/eino-ext/components/document/loader/url"
@@ -44,14 +45,14 @@ func main() {
 	ctx := context.Background()
 	loader, err := url.NewLoader(ctx, &url.LoaderConfig{})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewLoader failed, err=%v", err)
 	}
 
 	docs, err := loader.Load(ctx, document.Source{
 		URI: fmt.Sprintf("http://%s/test.html", addr),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("Load failed, err=%v", err)
 	}
 
 	for _, doc := range docs {

@@ -548,7 +548,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 			// stream usage return in last chunk without message content, then
 			// last message received from callback output stream: Message == nil and TokenUsage != nil
 			// last message received from outStream: Message != nil
-			msg, found := cm.resolveStreamResponse(chunk)
+			msg, found := resolveStreamResponse(chunk)
 			if !found {
 				continue
 			}
@@ -605,7 +605,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
-func (cm *Client) resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool) {
+func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
 		if choice.Index != 0 {

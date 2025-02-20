@@ -19,6 +19,7 @@ package redis
 import (
 	"context"
 	"fmt"
+	"log"
 	"testing"
 
 	. "github.com/bytedance/mockey"
@@ -194,7 +195,7 @@ type mockEmbedding struct {
 
 func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
 	if m.cnt > len(m.sizeForCall) {
-		panic("unexpected")
+		log.Fatal("unexpected")
 	}
 
 	if m.err != nil {

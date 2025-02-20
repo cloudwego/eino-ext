@@ -51,7 +51,7 @@ func main() {
 
 	cert, err := os.ReadFile(httpCACertPath)
 	if err != nil {
-		panic(err)
+		log.Fatalf("read file failed, err=%v", err)
 	}
 
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{

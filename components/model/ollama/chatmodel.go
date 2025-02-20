@@ -99,15 +99,18 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	cbOutput := &model.CallbackOutput{
-		Message: outMsg,
-		Config:  cbInput.Config,
-		Extra:   map[string]any{},
-	}
+	var cbOutput *model.CallbackOutput
 
 	err = cm.cli.Chat(ctx, req, func(resp api.ChatResponse) error {
 		outMsg = toEinoMessage(resp)
-		cbOutput.Extra[CallbackMetricsExtraKey] = resp.Metrics
+		cbOutput = &model.CallbackOutput{
+			Message: outMsg,
+			Config:  cbInput.Config,
+			Extra: map[string]any{
+				CallbackMetricsExtraKey: resp.Metrics,
+			},
+		}
+
 		return nil
 	})
 

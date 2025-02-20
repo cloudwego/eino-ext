@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.12.2
-	github.com/cloudwego/eino v0.3.8
+	github.com/cloudwego/eino v0.3.10
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/google/generative-ai-go v0.19.0
 	github.com/stretchr/testify v1.9.0

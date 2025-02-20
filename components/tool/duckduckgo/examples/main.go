@@ -43,7 +43,7 @@ func main() {
 	// Create search client
 	tool, err := duckduckgo.NewTool(ctx, config)
 	if err != nil {
-		log.Fatal("Failed to create tool:", err)
+		log.Fatalf("NewTool of duckduckgo failed, err=%v", err)
 	}
 
 	// Create search request
@@ -54,18 +54,18 @@ func main() {
 
 	jsonReq, err := json.Marshal(searchReq)
 	if err != nil {
-		log.Fatal("Failed to marshal search request:", err)
+		log.Fatalf("Marshal of search request failed, err=%v", err)
 	}
 
 	// Execute search
 	resp, err := tool.InvokableRun(ctx, string(jsonReq))
 	if err != nil {
-		log.Fatal("Search failed:", err)
+		log.Fatalf("Search of duckduckgo failed, err=%v", err)
 	}
 
 	var searchResp duckduckgo.SearchResponse
 	if err := json.Unmarshal([]byte(resp), &searchResp); err != nil {
-		log.Fatal("Failed to unmarshal search response:", err)
+		log.Fatalf("Unmarshal of search response failed, err=%v", err)
 	}
 
 	// Print results

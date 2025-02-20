@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/getkin/kin-openapi/openapi3gen"
@@ -40,7 +41,7 @@ func main() {
 	}
 	personSchema, err := openapi3gen.NewSchemaRefForValue(&Person{}, nil)
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewSchemaRefForValue failed, err=%v", err)
 	}
 
 	ctx := context.Background()
@@ -58,7 +59,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(fmt.Errorf("NewChatModel failed, err=%v", err))
+		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
 	resp, err := chatModel.Generate(ctx, []*schema.Message{
@@ -73,13 +74,13 @@ func main() {
 	})
 
 	if err != nil {
-		panic(fmt.Errorf("generate failed, err=%v", err))
+		log.Fatalf("Generate of openai failed, err=%v", err)
 	}
 
 	result := &Person{}
 	err = json.Unmarshal([]byte(resp.Content), result)
 	if err != nil {
-		panic(fmt.Errorf("unmarshal failed, err=%v", err))
+		log.Fatalf("Unmarshal of openai failed, err=%v", err)
 	}
 	fmt.Printf("%+v", *result)
 }
