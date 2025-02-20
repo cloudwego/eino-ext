@@ -105,7 +105,7 @@ func Test_parseSearchResponse(t *testing.T) {
 		}, {
 			name: "Test_parseSearchResponse_JSON_Error",
 			args: args{
-				body: []byte(`"error": "erro"}`),
+				body: []byte(`"error": "error"}`),
 			},
 			want:    nil,
 			wantErr: true,
