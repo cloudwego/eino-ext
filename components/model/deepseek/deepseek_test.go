@@ -163,3 +163,8 @@ func (m *mockStream) Recv() (*deepseek.StreamChatCompletionResponse, error) {
 func (m *mockStream) Close() error {
 	return nil
 }
+
+func TestPanicErr(t *testing.T) {
+	err := newPanicErr("info", []byte("stack"))
+	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
+}

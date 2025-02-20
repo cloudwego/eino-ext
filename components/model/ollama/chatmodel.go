@@ -31,7 +31,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino/utils/safe"
 )
 
 var CallbackMetricsExtraKey = "ollama_metrics"
@@ -145,7 +144,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			panicErr := recover()
 
 			if panicErr != nil {
-				_ = sw.Send(nil, safe.NewPanicErr(panicErr, debug.Stack()))
+				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
 			}
 
 			sw.Close()
@@ -417,4 +416,20 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		ollamaTools = append(ollamaTools, ollamaTool)
 	}
 	return ollamaTools, nil
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }

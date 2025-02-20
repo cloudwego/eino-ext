@@ -29,7 +29,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino/utils/safe"
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
@@ -519,7 +518,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 			_ = stream.Close()
 
 			if panicErr != nil {
-				_ = sw.Send(nil, safe.NewPanicErr(panicErr, debug.Stack()))
+				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
 			}
 
 			sw.Close()
@@ -715,4 +714,20 @@ func (cm *Client) BindForcedTools(tools []*schema.ToolInfo) error {
 	cm.rawTools = tools
 
 	return nil
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }
