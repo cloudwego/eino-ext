@@ -86,7 +86,7 @@ type googleSearch struct {
 	cseSvr *customsearch.Service
 }
 
-func (gs *googleSearch) search(ctx context.Context, req *googleSearchRequest) (*customsearch.Search, error) {
+func (gs *googleSearch) search(ctx context.Context, req *SearchRequest) (*customsearch.Search, error) {
 
 	num := req.Num
 	if num <= 0 {
@@ -213,7 +213,7 @@ func getDescFromPageMap(pageMap googleapi.RawMessage) (string, bool, error) {
 	return siteDesc.String(), foundDesc, nil
 }
 
-type googleSearchRequest struct {
+type SearchRequest struct {
 	Query  string `json:"query" jsonschema:"description=queried string to the search engine"`
 	Num    int    `json:"num,omitempty" jsonschema:"description=number of search results to return, valid values are between 1 and 10, inclusive"`
 	Offset int    `json:"offset,omitempty" jsonschema:"description=the index of the first result to return."`
