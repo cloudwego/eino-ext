@@ -3,10 +3,11 @@ module github.com/cloudwego/eino-ext/callbacks/apmplus
 go 1.23.1
 
 require (
-	github.com/bytedance/mockey v1.2.13
+	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.12.6
 	github.com/cloudwego/eino v0.3.9
 	github.com/cloudwego/eino-ext/libs/acl/opentelemetry v0.0.0-20250214075436-16502e96e713
+	github.com/smartystreets/goconvey v1.8.1
 	go.opentelemetry.io/otel v1.34.0
 	go.opentelemetry.io/otel/trace v1.34.0
 )
@@ -42,7 +43,6 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/smarty/assertions v1.15.0 // indirect
-	github.com/smartystreets/goconvey v1.8.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect

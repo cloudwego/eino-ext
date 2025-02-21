@@ -18,7 +18,7 @@ jobs:
       - name: Check Spell
         uses: crate-ci/typos@master
         with:
-          extend_identifiers: ot,OT
+          extend_words: "ot,OT"
 
       - name: Check README.md and examples
         run: |-
