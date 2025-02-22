@@ -37,16 +37,15 @@ import (
 )
 
 type Config struct {
-	// Host is the Apmplus server URL (Required)
-	// Example: "https://apmplus-cn-beijing.ivolces.com:4317"
+	// Host is the Apmplus URL (Required)
+	// Example: "https://apmplus-cn-beijing.volces.com:4317"
 	Host string
 
-	// AppKey is the public key for authentication (Required)
+	// AppKey is the key for authentication (Required)
 	// Example: "abc..."
 	AppKey string
 
 	// ServiceName is the name of service (Required)
-	// Default: ""
 	// Example: "my-app"
 	ServiceName string
 
