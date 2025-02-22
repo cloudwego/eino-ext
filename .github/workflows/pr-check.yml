@@ -18,7 +18,7 @@ jobs:
       - name: Check Spell
         uses: crate-ci/typos@master
         with:
-          extend_words: "ot,OT"
+          config: .github/workflows/typos.toml
 
       - name: Check README.md and examples
         run: |-
