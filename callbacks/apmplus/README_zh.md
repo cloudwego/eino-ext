@@ -1,8 +1,8 @@
-# APMPlus 回调
+# 火山引擎 APMPlus 回调
 
 [English](README.md) | 简体中文
 
-这是一个为 [Eino](https://github.com/cloudwego/eino) 实现的 APMPlus 回调。该工具实现了 `Handler` 接口，可以与 Eino 的 应用 无缝集成以提供增强的可观测能力。
+这是一个为 [Eino](https://github.com/cloudwego/eino) 实现的 火山引擎 APMPlus 回调。该工具实现了 `Handler` 接口，可以与 Eino 的应用无缝集成以提供增强的可观测能力。
 
 ## 特性
 
@@ -74,5 +74,5 @@ type Config struct {
 
 ## 更多详情
 
-- [APMPlus 文档](https://www.volcengine.com/docs/6431/69092)
+- [火山引擎 APMPlus 文档](https://www.volcengine.com/docs/6431/69092)
 - [Eino 文档](https://github.com/cloudwego/eino) 

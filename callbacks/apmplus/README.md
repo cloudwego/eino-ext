@@ -1,8 +1,8 @@
-# APMPlus Callbacks
+# Volcengine APMPlus Callbacks
 
 English | [简体中文](README_zh.md)
 
-An APMPlus callback implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Handler` interface. This enables seamless integration with Eino's application for enhanced observability.
+A Volcengine APMPlus callback implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Handler` interface. This enables seamless integration with Eino's application for enhanced observability.
 
 ## Features
 
