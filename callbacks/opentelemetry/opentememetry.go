@@ -2,7 +2,6 @@ package opentelemetry
 
 import (
 	"context"
-	"log"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
@@ -67,12 +66,9 @@ func (h *Handler) OnStart(ctx context.Context, info *callbacks.RunInfo, input ca
 		)
 	}
 
-	in, err := sonic.MarshalString(input)
-	if err != nil {
-		log.Printf("marshal input error: %v, runinfo: %+v", err, info)
-		return ctx
+	if in, err := sonic.MarshalString(input); err == nil {
+		span.SetAttributes(attribute.String("eino.input.messages", in))
 	}
-	span.SetAttributes(attribute.String("eino.input.messages", in))
 
 	return context.WithValue(ctx, spanKey{}, span)
 }
@@ -98,12 +94,9 @@ func (h *Handler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output cal
 			attribute.Int("gen_ai.usage.output_tokens", mcbo.TokenUsage.CompletionTokens),
 		)
 	}
-	out, err := sonic.MarshalString(output)
-	if err != nil {
-		log.Printf("marshal output error: %v, runinfo: %+v", err, info)
-		return ctx
+	if out, err := sonic.MarshalString(output); err == nil {
+		span.SetAttributes(attribute.String("eino.output.messages", out))
 	}
-	span.SetAttributes(attribute.String("eino.output.messages", out))
 
 	return ctx
 }
