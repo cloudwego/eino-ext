@@ -1,4 +1,4 @@
-package opentelemetry
+package otel
 
 import (
 	"context"
@@ -8,29 +8,13 @@ import (
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"go.opentelemetry.io/otel"
+	"github.com/davecgh/go-spew/spew"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
-type options struct {
-	scopeName string
-	tp        trace.TracerProvider
-}
-
-type Option func(*options)
-
-func newOptions(opts ...Option) *options {
-	o := &options{
-		scopeName: "github.com/cloudwego/eino-ext/callbacks/opentelemetry",
-		tp:        otel.GetTracerProvider(),
-	}
-	for _, opt := range opts {
-		opt(o)
-	}
-	return o
-}
+const scopeName = "github.com/cloudwego/eino-ext/callbacks/otel"
 
 type Handler struct {
 	tracer trace.Tracer
@@ -38,7 +22,7 @@ type Handler struct {
 
 var _ callbacks.Handler = (*Handler)(nil)
 
-func NewOpenTelemetryHandler(opts ...Option) *Handler {
+func NewOTelHandler(opts ...Option) *Handler {
 	o := newOptions(opts...)
 
 	return &Handler{
@@ -53,17 +37,21 @@ func (h *Handler) OnStart(ctx context.Context, info *callbacks.RunInfo, input ca
 		return ctx
 	}
 
-	ctx, span := h.tracer.Start(ctx, getName(info))
+	ctx, span := h.tracer.Start(ctx, getName(info),
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
 
 	if info.Component == components.ComponentOfChatModel {
 		mcbi := model.ConvCallbackInput(input)
-		span.SetAttributes(
-			attribute.String("gen_ai.request.model", mcbi.Config.Model),
-			attribute.Int("gen_ai.request.max_tokens", mcbi.Config.MaxTokens),
-			attribute.Float64("gen_ai.request.temperature", float64(mcbi.Config.Temperature)),
-			attribute.Float64("gen_ai.request.top_p", float64(mcbi.Config.TopP)),
-			attribute.StringSlice("gen_ai.response.finish_reasons", mcbi.Config.Stop),
-		)
+		if mcbi.Config != nil {
+			span.SetAttributes(
+				attribute.String("gen_ai.request.model", mcbi.Config.Model),
+				attribute.Int("gen_ai.request.max_tokens", mcbi.Config.MaxTokens),
+				attribute.Float64("gen_ai.request.temperature", float64(mcbi.Config.Temperature)),
+				attribute.Float64("gen_ai.request.top_p", float64(mcbi.Config.TopP)),
+				attribute.StringSlice("gen_ai.response.finish_reasons", mcbi.Config.Stop),
+			)
+		}
 	}
 
 	if in, err := sonic.MarshalString(input); err == nil {
@@ -89,10 +77,12 @@ func (h *Handler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output cal
 
 	if info.Component == components.ComponentOfChatModel {
 		mcbo := model.ConvCallbackOutput(output)
-		span.SetAttributes(
-			attribute.Int("gen_ai.usage.input_tokens", mcbo.TokenUsage.PromptTokens),
-			attribute.Int("gen_ai.usage.output_tokens", mcbo.TokenUsage.CompletionTokens),
-		)
+		if mcbo.TokenUsage != nil {
+			span.SetAttributes(
+				attribute.Int("gen_ai.usage.input_tokens", mcbo.TokenUsage.PromptTokens),
+				attribute.Int("gen_ai.usage.output_tokens", mcbo.TokenUsage.CompletionTokens),
+			)
+		}
 	}
 	if out, err := sonic.MarshalString(output); err == nil {
 		span.SetAttributes(attribute.String("eino.output.messages", out))
@@ -137,6 +127,7 @@ func (h *Handler) OnEndWithStreamOutput(ctx context.Context, info *callbacks.Run
 }
 
 func getName(info *callbacks.RunInfo) string {
+	spew.Dump(info)
 	if len(info.Name) != 0 {
 		return info.Name
 	}
