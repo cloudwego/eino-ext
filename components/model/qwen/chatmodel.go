@@ -38,8 +38,14 @@ type ChatModelConfig struct {
 	APIKey string `json:"api_key"`
 
 	// Timeout specifies the maximum duration to wait for API responses
+	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default: no timeout
 	Timeout time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	// BaseURL specifies the QWen endpoint URL
 	// Required. Example: https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -108,10 +114,18 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		return nil, fmt.Errorf("[NewChatModel] config not provided")
 	}
 
+	var httpClient *http.Client
+
+	if config.HTTPClient != nil {
+		httpClient = config.HTTPClient
+	} else {
+		httpClient = &http.Client{Timeout: config.Timeout}
+	}
+
 	cli, err := openai.NewClient(ctx, &openai.Config{
 		BaseURL:          config.BaseURL,
 		APIKey:           config.APIKey,
-		HTTPClient:       &http.Client{Timeout: config.Timeout},
+		HTTPClient:       httpClient,
 		Model:            config.Model,
 		MaxTokens:        config.MaxTokens,
 		Temperature:      config.Temperature,

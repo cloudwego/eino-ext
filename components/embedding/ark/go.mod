@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.2.12
 	github.com/cloudwego/eino v0.3.10
 	github.com/smartystreets/goconvey v1.8.1
-	github.com/volcengine/volcengine-go-sdk v1.0.160
+	github.com/volcengine/volcengine-go-sdk v1.0.181
 )
 
 require (

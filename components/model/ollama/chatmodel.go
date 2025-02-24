@@ -40,6 +40,11 @@ type ChatModelConfig struct {
 	BaseURL string        `json:"base_url"`
 	Timeout time.Duration `json:"timeout"` // request timeout for http client
 
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
+
 	Model     string         `json:"model"`
 	Format    string         `json:"format"` // "json" or ""
 	KeepAlive *time.Duration `json:"keep_alive"`
@@ -64,8 +69,12 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		return nil, errors.New("config must not be nil")
 	}
 
-	httpClient := http.Client{
-		Timeout: config.Timeout,
+	var httpClient *http.Client
+
+	if config.HTTPClient != nil {
+		httpClient = config.HTTPClient
+	} else {
+		httpClient = &http.Client{Timeout: config.Timeout}
 	}
 
 	baseURL, err := url.Parse(config.BaseURL)
@@ -73,7 +82,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	cli := api.NewClient(baseURL, &httpClient)
+	cli := api.NewClient(baseURL, httpClient)
 
 	return &ChatModel{
 		cli:    cli,

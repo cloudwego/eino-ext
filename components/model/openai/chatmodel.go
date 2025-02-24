@@ -34,8 +34,14 @@ type ChatModelConfig struct {
 	APIKey string `json:"api_key"`
 
 	// Timeout specifies the maximum duration to wait for API responses
+	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default: no timeout
 	Timeout time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
 	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
@@ -116,12 +122,20 @@ type ChatModel struct {
 func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
 	var nConf *openai.Config
 	if config != nil {
+		var httpClient *http.Client
+
+		if config.HTTPClient != nil {
+			httpClient = config.HTTPClient
+		} else {
+			httpClient = &http.Client{Timeout: config.Timeout}
+		}
+
 		nConf = &openai.Config{
 			ByAzure:          config.ByAzure,
 			BaseURL:          config.BaseURL,
 			APIVersion:       config.APIVersion,
 			APIKey:           config.APIKey,
-			HTTPClient:       &http.Client{Timeout: config.Timeout},
+			HTTPClient:       httpClient,
 			Model:            config.Model,
 			MaxTokens:        config.MaxTokens,
 			Temperature:      config.Temperature,
