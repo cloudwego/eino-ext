@@ -31,10 +31,10 @@ import (
 )
 
 func TestApmplusCallback(t *testing.T) {
-	cbh, _ := NewApmplusHandler(&Config{
+	cbh, _, _ := NewApmplusHandler(&Config{
 		Host:        "apmplus host",
 		AppKey:      "app key",
-		ServiceName: "MyTrace",
+		ServiceName: "MyService",
 		Release:     "release",
 	})
 	callbacks.InitCallbackHandlers([]callbacks.Handler{cbh})

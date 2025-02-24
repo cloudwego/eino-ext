@@ -1,12 +1,11 @@
 module github.com/cloudwego/eino-ext/libs/acl/opentelemetry
 
-go 1.23.1
+go 1.22.0
 
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.10.0
-	go.opentelemetry.io/contrib/instrumentation/runtime v0.59.0
 	go.opentelemetry.io/contrib/propagators/b3 v1.34.0
 	go.opentelemetry.io/contrib/propagators/ot v1.34.0
 	go.opentelemetry.io/otel v1.34.0

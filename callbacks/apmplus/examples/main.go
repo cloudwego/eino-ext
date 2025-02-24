@@ -20,14 +20,10 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/cloudwego/eino-ext/callbacks/apmplus"
 	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components"
 )
-
-var cbHandler callbacks.Handler
 
 func main() {
 	ctx := context.Background()
@@ -35,37 +31,19 @@ func main() {
 	// init apmplus callback, for trace metrics and log
 	fmt.Println("INFO: use apmplus as callback, watch at: https://console.volcengine.com/apmplus-server/region:apmplus-server+cn-beijing/console/overview/server?")
 
-	cbh, shutdown := apmplus.NewApmplusHandler(&apmplus.Config{
+	cbh, shutdown, err := apmplus.NewApmplusHandler(&apmplus.Config{
 		Host:        "apmplus-cn-beijing.volces.com:4317",
 		AppKey:      "xxx",
 		ServiceName: "eino-chat",
 		Release:     "release/v0.0.1",
 	})
-	defer shutdown(ctx)
+	if shutdown != nil {
+		defer shutdown(ctx)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	// Set apmplus as a global callback
 	callbacks.InitCallbackHandlers([]callbacks.Handler{cbh})
-	ctx = callbacks.InitCallbacks(ctx, &callbacks.RunInfo{
-		Name:      "chat",
-		Type:      "llm",
-		Component: components.ComponentOfChatModel,
-	}, cbh)
-
-	// 使用模版创建messages
-	log.Printf("===create messages===\n")
-	messages := createMessagesFromTemplate()
-	log.Printf("messages: %+v\n\n", messages)
-
-	// 创建llm
-	log.Printf("===create llm===\n")
-	cm := createOllamaChatModel(ctx)
-	log.Printf("create llm success\n\n")
-	//
-	log.Printf("===llm generate===\n")
-	result := generate(ctx, cm, messages)
-	log.Printf("result: %+v\n\n", result)
-
-	log.Printf("===llm stream generate===\n")
-	streamResult := stream(ctx, cm, messages)
-	reportStream(streamResult)
-	time.Sleep(10 * time.Second)
 }

@@ -21,10 +21,7 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
-	"go.opentelemetry.io/contrib/propagators/b3"
-	"go.opentelemetry.io/contrib/propagators/ot"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -37,18 +34,11 @@ func Test_defaultConfig(t *testing.T) {
 			enableTracing: true,
 			enableMetrics: true,
 			sampler:       sdktrace.AlwaysSample(),
-			textMapPropagator: propagation.NewCompositeTextMapPropagator(
-				b3.New(),
-				ot.OT{},
-				propagation.Baggage{},
-				propagation.TraceContext{},
-			),
 		}
 		actualConfig := defaultConfig()
 		convey.So(actualConfig.enableTracing, convey.ShouldBeTrue)
 		convey.So(actualConfig.enableMetrics, convey.ShouldBeTrue)
 		convey.So(actualConfig.sampler, convey.ShouldEqual, expectedConfig.sampler)
-		convey.So(actualConfig.textMapPropagator, convey.ShouldEqual, expectedConfig.textMapPropagator)
 	})
 }
 

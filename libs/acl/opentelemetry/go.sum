@@ -37,8 +37,6 @@ github.com/stretchr/testify v1.10.0 h1:Xv5erBjTwe/5IxqUQTdXv5kgmIvbHo3QQyRwhJsOf
 github.com/stretchr/testify v1.10.0/go.mod h1:r2ic/lqez/lEtzL7wO/rwa5dbSLXVDPFyf8C91i36aY=
 go.opentelemetry.io/auto/sdk v1.1.0 h1:cH53jehLUN6UFLY71z+NDOiNJqDdPRaXzTel0sJySYA=
 go.opentelemetry.io/auto/sdk v1.1.0/go.mod h1:3wSPjt5PWp2RhlCcmmOial7AvC4DQqZb7a7wCow3W8A=
-go.opentelemetry.io/contrib/instrumentation/runtime v0.59.0 h1:rfi2MMujBc4yowE0iHckZX4o4jg6SA67EnFVL8ldVvU=
-go.opentelemetry.io/contrib/instrumentation/runtime v0.59.0/go.mod h1:IO/gfPEcQYpOpPxn1OXFp1DvRY0viP8ONMedXLjjHIU=
 go.opentelemetry.io/contrib/propagators/b3 v1.34.0 h1:9pQdCEvV/6RWQmag94D6rhU+A4rzUhYBEJ8bpscx5p8=
 go.opentelemetry.io/contrib/propagators/b3 v1.34.0/go.mod h1:FwM71WS8i1/mAK4n48t0KU6qUS/OZRBgDrHZv3RlJ+w=
 go.opentelemetry.io/contrib/propagators/ot v1.34.0 h1:fcA0FMvHmco/mjXbmRoNx9IRs6+UuRVyXhMHzP+pEc8=

@@ -18,6 +18,7 @@ package apmplus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -60,7 +61,7 @@ type Config struct {
 	Release string
 }
 
-func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ctx context.Context) error) {
+func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ctx context.Context) error, err error) {
 	p := opentelemetry.NewOpenTelemetryProvider(
 		opentelemetry.WithServiceName(cfg.ServiceName),
 		opentelemetry.WithExportEndpoint(cfg.Host),
@@ -68,14 +69,18 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 		opentelemetry.WithHeaders(map[string]string{"X-ByteAPM-AppKey": cfg.AppKey}),
 		opentelemetry.WithResourceAttribute(attribute.String("apmplus.business_type", "llm")),
 	)
-	if p == nil || p.TracerProvider == nil || p.MeterProvider == nil {
-		log.Fatalf("Failed to init apmplus provider")
+	if p == nil {
+		return nil, nil, errors.New("init opentelemetry provider failed")
 	}
 
-	otel.SetTracerProvider(p.TracerProvider)
-	otel.SetMeterProvider(p.MeterProvider)
-	err := runtimemetrics.Start()
-	handleInitErr(err, "Failed to start runtime metrics collector")
+	if p.TracerProvider == nil || p.MeterProvider == nil {
+		return nil, p.Shutdown, errors.New("tracer provider or meter provider is nil")
+	}
+
+	err = runtimemetrics.Start(runtimemetrics.WithMeterProvider(p.MeterProvider))
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	meter := p.MeterProvider.Meter(scopeName)
 
@@ -84,56 +89,72 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 		metric.WithDescription("Number of tokens used in prompt and completions"),
 		metric.WithUnit("token"),
 	)
-	handleInitErr(err, "Failed to init token usage metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	chatCount, err := meter.Int64Counter(
 		"llm.chat.count",
 		metric.WithDescription("Number of chat"),
 		metric.WithUnit("time"),
 	)
-	handleInitErr(err, "Failed to init chat count metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	chatChoiceCounter, err := meter.Int64Counter(
 		"llm.chat_completions.choices",
 		metric.WithDescription("Number of choices returned by chat completions call"),
 		metric.WithUnit("choice"),
 	)
-	handleInitErr(err, "Failed to init chat completion choice metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	chatDurationHistogram, err := meter.Float64Histogram(
 		"llm.chat_completions.duration",
 		metric.WithDescription("Duration of chat completion operation"),
 		metric.WithUnit("ms"),
 	)
-	handleInitErr(err, "Failed to init chat completion duration metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	chatExceptionCounter, err := meter.Int64Counter(
 		"llm.chat_completions.exceptions",
 		metric.WithDescription("Number of exceptions occurred during chat completions"),
 		metric.WithUnit("time"),
 	)
-	handleInitErr(err, "Failed to init chat completion exception metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	streamingTimeToFirstToken, err := meter.Float64Histogram(
 		"llm.chat_completions.streaming_time_to_first_token",
 		metric.WithDescription("Time to first token in streaming chat completions"),
 		metric.WithUnit("ms"),
 	)
-	handleInitErr(err, "Failed to init streaming time to first token metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	streamingTimeToGenerate, err := meter.Float64Histogram(
 		"llm.chat_completions.streaming_time_to_generate",
 		metric.WithDescription("Time between first token and completion in streaming chat completions"),
 		metric.WithUnit("ms"),
 	)
-	handleInitErr(err, "Failed to init streaming time to generate metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	streamingTimePerOutputToken, err := meter.Float64Histogram(
 		"llm.chat_completions.streaming_time_per_output_token",
 		metric.WithDescription("Time per output token in streaming chat completions"),
 		metric.WithUnit("ms"),
 	)
-	handleInitErr(err, "Failed to init streaming time per output token metric")
+	if err != nil {
+		return nil, p.Shutdown, err
+	}
 
 	return &apmplusHandler{
 		otelProvider: p,
@@ -150,7 +171,7 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 		streamingTimeToFirstToken:   streamingTimeToFirstToken,
 		streamingTimeToGenerate:     streamingTimeToGenerate,
 		streamingTimePerOutputToken: streamingTimePerOutputToken,
-	}, p.Shutdown
+	}, p.Shutdown, nil
 }
 
 type apmplusHandler struct {
@@ -338,8 +359,9 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 		out, err := sonic.MarshalString(output)
 		if err != nil {
 			log.Printf("marshal output error: %v, runinfo: %+v", err, info)
+		} else {
+			span.SetAttributes(attribute.String("llm.completions.0.content", out))
 		}
-		span.SetAttributes(attribute.String("llm.completions.0.content", out))
 	}
 	span.SetAttributes(attribute.Bool("llm.is_streaming", false))
 
@@ -449,9 +471,10 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 			in, err := sonic.MarshalString(ins)
 			if err != nil {
 				log.Printf("marshal input error: %v, runinfo: %+v", err, info)
+			} else {
+				span.SetAttributes(attribute.String("llm.prompts.0.role", string(schema.User)))
+				span.SetAttributes(attribute.String("llm.prompts.0.content", in))
 			}
-			span.SetAttributes(attribute.String("llm.prompts.0.role", string(schema.User)))
-			span.SetAttributes(attribute.String("llm.prompts.0.content", in))
 		}
 	}()
 	return context.WithValue(ctx, apmplusStateKey{}, &apmplusState{
@@ -541,8 +564,9 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 			out, err := sonic.MarshalString(outs)
 			if err != nil {
 				log.Printf("marshal stream output error: %v, runinfo: %+v", err, info)
+			} else {
+				span.SetAttributes(attribute.String("llm.completions.0.content", out))
 			}
-			span.SetAttributes(attribute.String("llm.completions.0.content", out))
 		}
 		span.SetAttributes(attribute.Bool("llm.is_streaming", true))
 
@@ -598,11 +622,5 @@ func (a *apmplusHandler) AddTokenUsage(ctx context.Context, usage *model.TokenUs
 			attribute.String("llm.usage.token_type", "prompt"),
 			attribute.Bool("stream", isStream),
 		))
-	}
-}
-
-func handleInitErr(err error, message string) {
-	if err != nil {
-		log.Fatalf("%s: %v", message, err)
 	}
 }
