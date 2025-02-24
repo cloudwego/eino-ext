@@ -36,6 +36,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+const scopeName = "github.com/cloudwego/eino-ext/callbacks/apmplus"
+
 type Config struct {
 	// Host is the Apmplus URL (Required)
 	// Example: "https://apmplus-cn-beijing.volces.com:4317"
@@ -67,6 +69,7 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 		otelProvider: p,
 		serviceName:  cfg.ServiceName,
 		release:      cfg.Release,
+		tracer:       otel.Tracer(scopeName),
 	}, p.Shutdown
 }
 
@@ -74,6 +77,7 @@ type apmplusHandler struct {
 	otelProvider opentelemetry.OtelProvider
 	serviceName  string
 	release      string
+	tracer       trace.Tracer
 }
 
 type apmplusStateKey struct{}
@@ -90,7 +94,7 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 	if len(spanName) == 0 {
 		spanName = "unset"
 	}
-	ctx, span := otel.GetTracerProvider().Tracer(spanName).Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindServer), trace.WithTimestamp(time.Now()))
+	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(time.Now()))
 
 	contentReady := false
 	config, inMessage, _, err := extractModelInput(convModelCallbackInput([]callbacks.CallbackInput{input}))
@@ -195,7 +199,6 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 		span.SetAttributes(attribute.String("llm.completions.0.content", out))
 	}
 	span.SetAttributes(attribute.Bool("llm.is_streaming", false))
-	span.SetStatus(codes.Ok, "success")
 
 	return ctx
 }
@@ -227,7 +230,7 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 	if len(spanName) == 0 {
 		spanName = "unset"
 	}
-	ctx, span := otel.GetTracerProvider().Tracer(spanName).Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindServer), trace.WithTimestamp(time.Now()))
+	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(time.Now()))
 
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
@@ -361,7 +364,6 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 			span.SetAttributes(attribute.String("llm.completions.0.content", out))
 		}
 		span.SetAttributes(attribute.Bool("llm.is_streaming", true))
-		span.SetStatus(codes.Ok, "success")
 	}()
 
 	return ctx
