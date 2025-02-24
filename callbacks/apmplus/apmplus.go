@@ -30,6 +30,7 @@ import (
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
+	runtimemetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -63,7 +64,16 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 		opentelemetry.WithExportEndpoint(cfg.Host),
 		opentelemetry.WithInsecure(),
 		opentelemetry.WithHeaders(map[string]string{"X-ByteAPM-AppKey": cfg.AppKey}),
+		opentelemetry.WithResourceAttribute(attribute.String("apmplus.business_type", "llm")),
 	)
+	if p == nil || p.TracerProvider == nil || p.MeterProvider == nil {
+		log.Fatalf("Failed to init apmplus provider")
+	}
+
+	otel.SetTracerProvider(p.TracerProvider)
+	otel.SetMeterProvider(p.MeterProvider)
+	err := runtimemetrics.Start()
+	handleInitErr(err, "Failed to start runtime metrics collector")
 
 	return &apmplusHandler{
 		otelProvider: p,
@@ -74,7 +84,7 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 }
 
 type apmplusHandler struct {
-	otelProvider opentelemetry.OtelProvider
+	otelProvider *opentelemetry.OtelProvider
 	serviceName  string
 	release      string
 	tracer       trace.Tracer
@@ -85,6 +95,9 @@ type apmplusState struct {
 	span trace.Span
 }
 
+type traceStreamInputAsyncKey struct{}
+type streamInputAsyncVal chan struct{}
+
 func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	if info == nil {
 		return ctx
@@ -94,9 +107,13 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 	if len(spanName) == 0 {
 		spanName = "unset"
 	}
-	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(time.Now()))
+	startTime := time.Now()
+	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(startTime))
 
 	contentReady := false
+
+	//TODO: covert input from other type of component
+	//ref: https://github.com/cloudwego/eino-ext/pull/103#discussion_r1967017732
 	config, inMessage, _, err := extractModelInput(convModelCallbackInput([]callbacks.CallbackInput{input}))
 	if err != nil {
 		log.Printf("extract stream model input error: %v, runinfo: %+v", err, info)
@@ -146,7 +163,13 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 		return ctx
 	}
 	span := state.span
-	defer span.End(trace.WithTimestamp(time.Now()))
+
+	defer func() {
+		if stopCh, ok := ctx.Value(traceStreamInputAsyncKey{}).(streamInputAsyncVal); ok {
+			<-stopCh
+		}
+		span.End(trace.WithTimestamp(time.Now()))
+	}()
 
 	contentReady := false
 	switch info.Component {
@@ -214,7 +237,12 @@ func (a *apmplusHandler) OnError(ctx context.Context, info *callbacks.RunInfo, e
 		return ctx
 	}
 	span := state.span
-	defer span.End()
+	defer func() {
+		if stopCh, ok := ctx.Value(traceStreamInputAsyncKey{}).(streamInputAsyncVal); ok {
+			<-stopCh
+		}
+		span.End(trace.WithTimestamp(time.Now()))
+	}()
 
 	span.SetStatus(codes.Error, err.Error())
 	span.RecordError(err)
@@ -236,6 +264,9 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
 
+	stopCh := make(streamInputAsyncVal)
+	ctx = context.WithValue(ctx, traceStreamInputAsyncKey{}, stopCh)
+
 	go func() {
 		defer func() {
 			e := recover()
@@ -243,6 +274,7 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 				log.Printf("recover update span panic: %v, runinfo: %+v, stack: %s", e, info, string(debug.Stack()))
 			}
 			input.Close()
+			close(stopCh)
 		}()
 		var ins []callbacks.CallbackInput
 		for {
@@ -285,6 +317,7 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 			span.SetAttributes(attribute.String("llm.prompts.0.role", string(schema.User)))
 			span.SetAttributes(attribute.String("llm.prompts.0.content", in))
 		}
+		close(stopCh)
 	}()
 	return context.WithValue(ctx, apmplusStateKey{}, &apmplusState{
 		span: span,
@@ -310,6 +343,9 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 				log.Printf("recover update span panic: %v, runinfo: %+v, stack: %s", e, info, string(debug.Stack()))
 			}
 			output.Close()
+			if stopCh, ok := ctx.Value(traceStreamInputAsyncKey{}).(streamInputAsyncVal); ok {
+				<-stopCh
+			}
 			span.End(trace.WithTimestamp(time.Now()))
 		}()
 		var outs []callbacks.CallbackOutput
@@ -367,4 +403,10 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 	}()
 
 	return ctx
+}
+
+func handleInitErr(err error, message string) {
+	if err != nil {
+		log.Fatalf("%s: %v", message, err)
+	}
 }
