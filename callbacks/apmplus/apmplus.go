@@ -29,11 +29,13 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	runtimemetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -75,11 +77,79 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 	err := runtimemetrics.Start()
 	handleInitErr(err, "Failed to start runtime metrics collector")
 
+	meter := p.MeterProvider.Meter(scopeName)
+
+	tokenUsage, err := meter.Int64Counter(
+		"llm.token.usage",
+		metric.WithDescription("Number of tokens used in prompt and completions"),
+		metric.WithUnit("token"),
+	)
+	handleInitErr(err, "Failed to init token usage metric")
+
+	chatCount, err := meter.Int64Counter(
+		"llm.chat.count",
+		metric.WithDescription("Number of chat"),
+		metric.WithUnit("time"),
+	)
+	handleInitErr(err, "Failed to init chat count metric")
+
+	chatChoiceCounter, err := meter.Int64Counter(
+		"llm.chat_completions.choices",
+		metric.WithDescription("Number of choices returned by chat completions call"),
+		metric.WithUnit("choice"),
+	)
+	handleInitErr(err, "Failed to init chat completion choice metric")
+
+	chatDurationHistogram, err := meter.Float64Histogram(
+		"llm.chat_completions.duration",
+		metric.WithDescription("Duration of chat completion operation"),
+		metric.WithUnit("ms"),
+	)
+	handleInitErr(err, "Failed to init chat completion duration metric")
+
+	chatExceptionCounter, err := meter.Int64Counter(
+		"llm.chat_completions.exceptions",
+		metric.WithDescription("Number of exceptions occurred during chat completions"),
+		metric.WithUnit("time"),
+	)
+	handleInitErr(err, "Failed to init chat completion exception metric")
+
+	streamingTimeToFirstToken, err := meter.Float64Histogram(
+		"llm.chat_completions.streaming_time_to_first_token",
+		metric.WithDescription("Time to first token in streaming chat completions"),
+		metric.WithUnit("ms"),
+	)
+	handleInitErr(err, "Failed to init streaming time to first token metric")
+
+	streamingTimeToGenerate, err := meter.Float64Histogram(
+		"llm.chat_completions.streaming_time_to_generate",
+		metric.WithDescription("Time between first token and completion in streaming chat completions"),
+		metric.WithUnit("ms"),
+	)
+	handleInitErr(err, "Failed to init streaming time to generate metric")
+
+	streamingTimePerOutputToken, err := meter.Float64Histogram(
+		"llm.chat_completions.streaming_time_per_output_token",
+		metric.WithDescription("Time per output token in streaming chat completions"),
+		metric.WithUnit("ms"),
+	)
+	handleInitErr(err, "Failed to init streaming time per output token metric")
+
 	return &apmplusHandler{
 		otelProvider: p,
 		serviceName:  cfg.ServiceName,
 		release:      cfg.Release,
 		tracer:       otel.Tracer(scopeName),
+		meter:        meter,
+
+		tokenUsage:                  tokenUsage,
+		chatCount:                   chatCount,
+		chatChoiceCounter:           chatChoiceCounter,
+		chatDurationHistogram:       chatDurationHistogram,
+		chatExceptionCounter:        chatExceptionCounter,
+		streamingTimeToFirstToken:   streamingTimeToFirstToken,
+		streamingTimeToGenerate:     streamingTimeToGenerate,
+		streamingTimePerOutputToken: streamingTimePerOutputToken,
 	}, p.Shutdown
 }
 
@@ -88,11 +158,27 @@ type apmplusHandler struct {
 	serviceName  string
 	release      string
 	tracer       trace.Tracer
+	meter        metric.Meter
+
+	tokenUsage                  metric.Int64Counter
+	chatCount                   metric.Int64Counter
+	chatChoiceCounter           metric.Int64Counter
+	chatDurationHistogram       metric.Float64Histogram
+	chatExceptionCounter        metric.Int64Counter
+	streamingTimeToFirstToken   metric.Float64Histogram
+	streamingTimeToGenerate     metric.Float64Histogram
+	streamingTimePerOutputToken metric.Float64Histogram
+}
+
+type requestInfo struct {
+	model string
 }
 
 type apmplusStateKey struct{}
 type apmplusState struct {
-	span trace.Span
+	startTime   time.Time
+	span        trace.Span
+	requestInfo *requestInfo
 }
 
 type traceStreamInputAsyncKey struct{}
@@ -108,6 +194,7 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 		spanName = "unset"
 	}
 	startTime := time.Now()
+	requestModel := ""
 	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(startTime))
 
 	contentReady := false
@@ -128,6 +215,7 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 
 		if config != nil {
 			span.SetAttributes(attribute.String("llm.request.model", config.Model))
+			requestModel = config.Model
 			span.SetAttributes(attribute.Int("llm.request.max_token", config.MaxTokens))
 			span.SetAttributes(attribute.Float64("llm.request.temperature", float64(config.Temperature)))
 			span.SetAttributes(attribute.Float64("llm.request.top_p", float64(config.TopP)))
@@ -147,8 +235,16 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
 
+	if info.Component == components.ComponentOfChatModel {
+		a.chatCount.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("llm.request.model", requestModel),
+		))
+	}
+
 	return context.WithValue(ctx, apmplusStateKey{}, &apmplusState{
-		span: span,
+		startTime:   startTime,
+		span:        span,
+		requestInfo: &requestInfo{model: requestModel},
 	})
 }
 
@@ -163,6 +259,8 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 		return ctx
 	}
 	span := state.span
+	startTime := state.startTime
+	endTime := time.Now()
 
 	defer func() {
 		if stopCh, ok := ctx.Value(traceStreamInputAsyncKey{}).(streamInputAsyncVal); ok {
@@ -184,6 +282,9 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 	default:
 		usage, outMessages, _, config, err := extractModelOutput(convModelCallbackOutput([]callbacks.CallbackOutput{output}))
 		if err == nil {
+			responseModel := ""
+			responseFinishReason := ""
+
 			for i, out := range outMessages {
 				if out != nil && len(out.Content) > 0 {
 					contentReady = true
@@ -191,6 +292,7 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 					span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.content", i), out.Content))
 					if out.ResponseMeta != nil {
 						span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.finish_reason", i), out.ResponseMeta.FinishReason))
+						responseFinishReason = out.ResponseMeta.FinishReason
 					}
 				}
 			}
@@ -204,12 +306,30 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 
 			if config != nil {
 				span.SetAttributes(attribute.String("llm.response.model", config.Model))
+				responseModel = config.Model
 			}
 
 			if usage != nil {
 				span.SetAttributes(attribute.Int("llm.usage.total_tokens", usage.TotalTokens))
 				span.SetAttributes(attribute.Int("llm.usage.prompt_tokens", usage.PromptTokens))
 				span.SetAttributes(attribute.Int("llm.usage.completion_tokens", usage.CompletionTokens))
+			}
+
+			if info.Component == components.ComponentOfChatModel {
+				if len(responseFinishReason) > 0 {
+					a.chatChoiceCounter.Add(ctx, 1, metric.WithAttributes(
+						attribute.String("llm.response.model", responseModel),
+						attribute.String("llm.response.finish_reason", responseFinishReason),
+						attribute.Bool("stream", false),
+					))
+				}
+				if usage != nil {
+					a.AddTokenUsage(ctx, usage, responseModel, false)
+				}
+				a.chatDurationHistogram.Record(ctx, float64(endTime.Sub(startTime).Milliseconds()), metric.WithAttributes(
+					attribute.String("llm.response.model", responseModel),
+					attribute.Bool("stream", false),
+				))
 			}
 		}
 	}
@@ -237,6 +357,7 @@ func (a *apmplusHandler) OnError(ctx context.Context, info *callbacks.RunInfo, e
 		return ctx
 	}
 	span := state.span
+	requestInfo := state.requestInfo
 	defer func() {
 		if stopCh, ok := ctx.Value(traceStreamInputAsyncKey{}).(streamInputAsyncVal); ok {
 			<-stopCh
@@ -246,6 +367,13 @@ func (a *apmplusHandler) OnError(ctx context.Context, info *callbacks.RunInfo, e
 
 	span.SetStatus(codes.Error, err.Error())
 	span.RecordError(err)
+
+	if requestInfo != nil && len(requestInfo.model) > 0 {
+		a.chatExceptionCounter.Add(ctx, 1, metric.WithAttributes(
+			attribute.String("llm.request.model", requestInfo.model),
+		))
+	}
+
 	return ctx
 }
 
@@ -258,7 +386,9 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 	if len(spanName) == 0 {
 		spanName = "unset"
 	}
-	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(time.Now()))
+	startTime := time.Now()
+	requestInfo := &requestInfo{}
+	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(startTime))
 
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
@@ -303,6 +433,12 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 
 			if config != nil {
 				span.SetAttributes(attribute.String("llm.request.model", config.Model))
+				requestInfo.model = config.Model
+				if info.Component == components.ComponentOfChatModel {
+					a.chatCount.Add(ctx, 1, metric.WithAttributes(
+						attribute.String("llm.request.model", requestInfo.model),
+					))
+				}
 				span.SetAttributes(attribute.Int("llm.request.max_token", config.MaxTokens))
 				span.SetAttributes(attribute.Float64("llm.request.temperature", float64(config.Temperature)))
 				span.SetAttributes(attribute.Float64("llm.request.top_p", float64(config.TopP)))
@@ -317,10 +453,11 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 			span.SetAttributes(attribute.String("llm.prompts.0.role", string(schema.User)))
 			span.SetAttributes(attribute.String("llm.prompts.0.content", in))
 		}
-		close(stopCh)
 	}()
 	return context.WithValue(ctx, apmplusStateKey{}, &apmplusState{
-		span: span,
+		span:        span,
+		startTime:   startTime,
+		requestInfo: requestInfo,
 	})
 }
 
@@ -335,8 +472,12 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 		return ctx
 	}
 	span := state.span
+	startTime := state.startTime
 
 	go func() {
+		responseModel := ""
+		responseFinishReason := ""
+
 		defer func() {
 			e := recover()
 			if e != nil {
@@ -349,6 +490,7 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 			span.End(trace.WithTimestamp(time.Now()))
 		}()
 		var outs []callbacks.CallbackOutput
+		timeOfFirstToken := time.Now()
 		for {
 			chunk, err := output.Recv()
 			if err == io.EOF {
@@ -359,6 +501,7 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 			}
 			outs = append(outs, chunk)
 		}
+		endTime := time.Now()
 		contentReady := false
 		// both work for ChatModel or not
 		usage, outMessages, _, config, err := extractModelOutput(convModelCallbackOutput(outs))
@@ -370,6 +513,7 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 					span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.content", i), out.Content))
 					if out.ResponseMeta != nil {
 						span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.finish_reason", i), out.ResponseMeta.FinishReason))
+						responseFinishReason = out.ResponseMeta.FinishReason
 					}
 				}
 			}
@@ -384,6 +528,7 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 
 			if config != nil {
 				span.SetAttributes(attribute.String("llm.response.model", config.Model))
+				responseModel = config.Model
 			}
 
 			if usage != nil {
@@ -400,9 +545,60 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 			span.SetAttributes(attribute.String("llm.completions.0.content", out))
 		}
 		span.SetAttributes(attribute.Bool("llm.is_streaming", true))
+
+		if info.Component == components.ComponentOfChatModel {
+			if len(responseFinishReason) > 0 {
+				a.chatChoiceCounter.Add(ctx, 1, metric.WithAttributes(
+					attribute.String("llm.response.model", responseModel),
+					attribute.String("llm.response.finish_reason", responseFinishReason),
+					attribute.Bool("stream", true),
+				))
+			}
+			if usage != nil {
+				a.AddTokenUsage(ctx, usage, responseModel, true)
+				a.streamingTimePerOutputToken.Record(ctx, float64(endTime.Sub(timeOfFirstToken).Milliseconds())/float64(usage.CompletionTokens), metric.WithAttributes(
+					attribute.String("llm.response.model", responseModel),
+					attribute.Bool("stream", true),
+				))
+			}
+			a.chatDurationHistogram.Record(ctx, float64(endTime.Sub(startTime).Milliseconds()), metric.WithAttributes(
+				attribute.String("llm.response.model", responseModel),
+				attribute.Bool("stream", true),
+			))
+
+			a.streamingTimeToFirstToken.Record(ctx, float64(timeOfFirstToken.Sub(startTime).Milliseconds()), metric.WithAttributes(
+				attribute.String("llm.response.model", responseModel),
+				attribute.Bool("stream", true),
+			))
+			a.streamingTimeToGenerate.Record(ctx, float64(endTime.Sub(timeOfFirstToken).Milliseconds()), metric.WithAttributes(
+				attribute.String("llm.response.model", responseModel),
+				attribute.Bool("stream", true),
+			))
+		}
+
 	}()
 
 	return ctx
+}
+
+func (a *apmplusHandler) AddTokenUsage(ctx context.Context, usage *model.TokenUsage, responseModel string, isStream bool) {
+	if usage != nil {
+		a.tokenUsage.Add(ctx, int64(usage.TotalTokens), metric.WithAttributes(
+			attribute.String("llm.request.model", responseModel),
+			attribute.String("llm.usage.token_type", "total"),
+			attribute.Bool("stream", isStream),
+		))
+		a.tokenUsage.Add(ctx, int64(usage.CompletionTokens), metric.WithAttributes(
+			attribute.String("llm.request.model", responseModel),
+			attribute.String("llm.usage.token_type", "completion"),
+			attribute.Bool("stream", isStream),
+		))
+		a.tokenUsage.Add(ctx, int64(usage.PromptTokens), metric.WithAttributes(
+			attribute.String("llm.request.model", responseModel),
+			attribute.String("llm.usage.token_type", "prompt"),
+			attribute.Bool("stream", isStream),
+		))
+	}
 }
 
 func handleInitErr(err error, message string) {

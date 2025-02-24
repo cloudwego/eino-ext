@@ -21,7 +21,6 @@ import (
 	"log"
 	"time"
 
-	runtimemetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -31,27 +30,22 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-type OtelProvider interface {
-	Shutdown(ctx context.Context) error
+type OtelProvider struct {
+	TracerProvider *sdktrace.TracerProvider
+	MeterProvider  *metric.MeterProvider
 }
 
-type otelProvider struct {
-	traceExp        *otlptrace.Exporter
-	tracerProvider  *sdktrace.TracerProvider
-	metricsProvider *metric.MeterProvider
-}
-
-func (p *otelProvider) Shutdown(ctx context.Context) error {
+func (p *OtelProvider) Shutdown(ctx context.Context) error {
 	var err error
 
-	if p.tracerProvider != nil {
-		if err = p.tracerProvider.Shutdown(ctx); err != nil {
+	if p.TracerProvider != nil {
+		if err = p.TracerProvider.Shutdown(ctx); err != nil {
 			otel.Handle(err)
 		}
 	}
 
-	if p.metricsProvider != nil {
-		if err = p.metricsProvider.Shutdown(ctx); err != nil {
+	if p.MeterProvider != nil {
+		if err = p.MeterProvider.Shutdown(ctx); err != nil {
 			otel.Handle(err)
 		}
 	}
@@ -60,10 +54,8 @@ func (p *otelProvider) Shutdown(ctx context.Context) error {
 }
 
 // NewOpenTelemetryProvider Initializes an otlp trace and metrics provider
-func NewOpenTelemetryProvider(opts ...Option) OtelProvider {
+func NewOpenTelemetryProvider(opts ...Option) *OtelProvider {
 	var (
-		err            error
-		traceExp       *otlptrace.Exporter
 		tracerProvider *sdktrace.TracerProvider
 		meterProvider  *metric.MeterProvider
 	)
@@ -80,7 +72,9 @@ func NewOpenTelemetryProvider(opts ...Option) OtelProvider {
 	res := newResource(cfg)
 
 	// propagator
-	otel.SetTextMapPropagator(cfg.textMapPropagator)
+	if cfg.textMapPropagator != nil {
+		otel.SetTextMapPropagator(cfg.textMapPropagator)
+	}
 
 	// Tracing
 	if cfg.enableTracing {
@@ -96,29 +90,23 @@ func NewOpenTelemetryProvider(opts ...Option) OtelProvider {
 			traceClientOpts = append(traceClientOpts, otlptracegrpc.WithInsecure())
 		}
 
-		traceClient := otlptracegrpc.NewClient(traceClientOpts...)
-
-		// trace exporter
-		traceExp, err = otlptrace.New(ctx, traceClient)
-		if err != nil {
-			log.Fatalf("failed to create otlp trace exporter: %s", err)
-			return nil
-		}
-
-		// trace processor
-		bsp := sdktrace.NewBatchSpanProcessor(traceExp)
-
 		// trace provider
 		tracerProvider = cfg.sdkTracerProvider
 		if tracerProvider == nil {
+			traceClient := otlptracegrpc.NewClient(traceClientOpts...)
+
+			// trace exporter
+			traceExp, err := otlptrace.New(ctx, traceClient)
+			handleInitErr(err, "Failed to create otlp trace exporter")
+
+			bsp := sdktrace.NewBatchSpanProcessor(traceExp)
+
 			tracerProvider = sdktrace.NewTracerProvider(
 				sdktrace.WithSampler(cfg.sampler),
 				sdktrace.WithResource(res),
 				sdktrace.WithSpanProcessor(bsp),
 			)
 		}
-
-		otel.SetTracerProvider(tracerProvider)
 	}
 
 	// Metrics
@@ -140,26 +128,17 @@ func NewOpenTelemetryProvider(opts ...Option) OtelProvider {
 		if meterProvider == nil {
 			// metrics exporter
 			metricExp, err := otlpmetricgrpc.New(context.Background(), metricsClientOpts...)
+			handleInitErr(err, "Failed to create otlp metric exporter")
 
-			handleInitErr(err, "Failed to create the metric exporter")
-
-			// reader := metric.NewPeriodicReader(exporter)
 			reader := metric.WithReader(metric.NewPeriodicReader(metricExp, metric.WithInterval(15*time.Second)))
 
 			meterProvider = metric.NewMeterProvider(reader, metric.WithResource(res))
 		}
-
-		// metrics pusher
-		otel.SetMeterProvider(meterProvider)
-
-		err = runtimemetrics.Start()
-		handleInitErr(err, "Failed to start runtime metrics collector")
 	}
 
-	return &otelProvider{
-		traceExp:        traceExp,
-		tracerProvider:  tracerProvider,
-		metricsProvider: meterProvider,
+	return &OtelProvider{
+		TracerProvider: tracerProvider,
+		MeterProvider:  meterProvider,
 	}
 }
 

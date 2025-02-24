@@ -17,8 +17,6 @@
 package opentelemetry
 
 import (
-	"go.opentelemetry.io/contrib/propagators/b3"
-	"go.opentelemetry.io/contrib/propagators/ot"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
@@ -74,12 +72,6 @@ func defaultConfig() *config {
 		enableTracing: true,
 		enableMetrics: true,
 		sampler:       sdktrace.AlwaysSample(),
-		textMapPropagator: propagation.NewCompositeTextMapPropagator(
-			b3.New(),
-			ot.OT{},
-			propagation.Baggage{},
-			propagation.TraceContext{},
-		),
 	}
 }
 
