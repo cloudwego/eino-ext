@@ -174,13 +174,15 @@ jobs:
               fi
             fi
           done
+
+          echo -e "\n⚠️ Please create and push new version tags for these modules after merging this PR." >> tag_message.txt
           
           # Save message and prepare webhook payload
           if [ "$need_tag" = true ]; then
             if [ "${{ github.event_name }}" == "push" ]; then
               # Read the message and create webhook payload
               message=$(cat tag_message.txt)
-              jq -n --arg text "$message"$'\n\nPlease create and push new version tags for these modules.' '{"text":$text}' > webhook_payload.json
+              jq -n --arg text "$message" '{"text":$text}' > webhook_payload.json
             fi
             echo "needs_tag=true" >> $GITHUB_OUTPUT
           else
