@@ -12,11 +12,6 @@ env:
   COVERAGE_PROFILES: coverage.out
   BREAKDOWN_FILE: base.coverage
 
-env:
-  COVERAGE_FILE: coverage.out
-  COVERAGE_PROFILES: coverage.out
-  BREAKDOWN_FILE: base.coverage
-
 jobs:
   unit-test:
     runs-on: ubuntu-latest
