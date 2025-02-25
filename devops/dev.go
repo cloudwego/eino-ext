@@ -28,6 +28,7 @@ import (
 // Init start eino devops server
 func Init(ctx context.Context, opts ...model.DevOption) error {
 	opt := model.NewDevOpt(opts)
+
 	apihandler.InitDebug(opt)
 
 	errCh := make(chan error)

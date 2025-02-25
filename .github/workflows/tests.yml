@@ -131,3 +131,72 @@ jobs:
           for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
           go work sync
           go test -bench=. -run=none -gcflags="all=-N -l" $list
+  suggest-for-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Suggest for tag
+        run: |
+          echo "Suggest for tag"
+          git tag -l
+  check-submodule-changes:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check modified files in submodules
+        id: check-mods
+        run: |
+          # Get all directories containing go.mod
+          modules=$(find . -name "go.mod" -exec dirname {} \;)
+          
+          # Get list of modified files in this PR
+          changed_files=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
+          
+          # Initialize message
+          message="### 🏷️ Tag Version Reminder\n\nThe following modules have changes and may need version updates:\n"
+          need_tag=false
+          
+          # Check each module
+          for module in $modules; do
+            module_name=${module#./}  # Remove leading ./
+            # Check if any changed file is in this module
+            if echo "$changed_files" | grep -q "^$module_name/"; then
+              # Get current tags for this module
+              latest_tag=$(git tag -l "${module_name}/v*" | sort -V | tail -n 1)
+              # Only add to message if the module has previous tags
+              if [ ! -z "$latest_tag" ]; then
+                need_tag=true
+                message="${message}\n- \`${module_name}\` (Current: ${latest_tag})"
+              fi
+            fi
+          done
+          
+          # Save message for next step
+          if [ "$need_tag" = true ]; then
+            echo "$message" > tag_message.txt
+            echo "needs_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_tag=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Find existing comment
+        if: steps.check-mods.outputs.needs_tag == 'true'
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: "### 🏷️ Tag Version Reminder"
+
+      - name: Post or update comment
+        if: steps.check-mods.outputs.needs_tag == 'true'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          body-file: tag_message.txt
+          edit-mode: replace
