@@ -193,7 +193,7 @@ jobs:
               repo_url="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
 
               # Read the message and create webhook payload for Feishu bot
-              message=$(cat tag_message.txt)
+              message="$(cat tag_message.txt)"
               jq -n --arg title "Need to create a new tag" \
                     --arg content "$message" \
                     --arg repo_url "$repo_url" \
@@ -203,7 +203,7 @@ jobs:
                         "elements": [
                           {
                             "tag": "markdown",
-                            "content": "$content"
+                            "content": $content
                           },
                           {
                             "tag": "action",
