@@ -22,8 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
-	semconv140 "go.opentelemetry.io/otel/semconv/v1.4.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 )
 
 func Test_newResource(t *testing.T) {
@@ -41,7 +40,7 @@ func Test_newResource(t *testing.T) {
 			args: args{
 				cfg: &config{
 					resourceAttributes: []attribute.KeyValue{
-						semconv140.ServiceNameKey.String("test-semconv-resource"),
+						semconv.ServiceNameKey.String("test-semconv-resource"),
 					},
 				},
 			},

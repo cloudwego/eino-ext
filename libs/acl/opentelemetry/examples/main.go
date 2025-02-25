@@ -25,11 +25,12 @@ import (
 func main() {
 	ctx := context.Background()
 
-	p := opentelemetry.NewOpenTelemetryProvider(
+	p, err := opentelemetry.NewOpenTelemetryProvider(
 		opentelemetry.WithServiceName("service"),
 		opentelemetry.WithExportEndpoint("127.0.0.1:4317"),
 		opentelemetry.WithInsecure(),
 	)
-
-	defer p.Shutdown(ctx)
+	if err == nil {
+		defer p.Shutdown(ctx)
+	}
 }

@@ -18,11 +18,10 @@ package opentelemetry
 
 import (
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 )
 
 // Option opts for opentelemetry tracer provider
@@ -51,8 +50,6 @@ type config struct {
 
 	resourceAttributes []attribute.KeyValue
 	resourceDetectors  []resource.Detector
-
-	textMapPropagator propagation.TextMapPropagator
 
 	meterProvider *metric.MeterProvider
 }
@@ -85,7 +82,7 @@ func WithServiceName(serviceName string) Option {
 // WithDeploymentEnvironment configures `deployment.environment` resource attribute
 func WithDeploymentEnvironment(env string) Option {
 	return option(func(cfg *config) {
-		cfg.resourceAttributes = append(cfg.resourceAttributes, semconv.DeploymentEnvironmentKey.String(env))
+		cfg.resourceAttributes = append(cfg.resourceAttributes, semconv.DeploymentEnvironmentNameKey.String(env))
 	})
 }
 
@@ -135,13 +132,6 @@ func WithEnableTracing(enableTracing bool) Option {
 func WithEnableMetrics(enableMetrics bool) Option {
 	return option(func(cfg *config) {
 		cfg.enableMetrics = enableMetrics
-	})
-}
-
-// WithTextMapPropagator configures propagation
-func WithTextMapPropagator(p propagation.TextMapPropagator) Option {
-	return option(func(cfg *config) {
-		cfg.textMapPropagator = p
 	})
 }
 

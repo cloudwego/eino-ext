@@ -25,7 +25,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.12.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 )
 
 func Test_defaultConfig(t *testing.T) {
@@ -71,7 +71,7 @@ func Test_WithDeploymentEnvironment(t *testing.T) {
 			env := "production"
 			opt := WithDeploymentEnvironment(env)
 			opt.apply(cfg)
-			expected := []attribute.KeyValue{semconv.DeploymentEnvironmentKey.String(env)}
+			expected := []attribute.KeyValue{semconv.DeploymentEnvironmentNameKey.String(env)}
 			convey.So(cfg.resourceAttributes, convey.ShouldResemble, expected)
 		})
 
@@ -80,7 +80,7 @@ func Test_WithDeploymentEnvironment(t *testing.T) {
 			env := ""
 			opt := WithDeploymentEnvironment(env)
 			opt.apply(cfg)
-			expected := []attribute.KeyValue{semconv.DeploymentEnvironmentKey.String(env)}
+			expected := []attribute.KeyValue{semconv.DeploymentEnvironmentNameKey.String(env)}
 			convey.So(cfg.resourceAttributes, convey.ShouldResemble, expected)
 		})
 	})

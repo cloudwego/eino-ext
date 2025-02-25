@@ -18,7 +18,7 @@ package opentelemetry
 
 import (
 	"context"
-	"log"
+	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -54,7 +54,7 @@ func (p *OtelProvider) Shutdown(ctx context.Context) error {
 }
 
 // NewOpenTelemetryProvider Initializes an otlp trace and metrics provider
-func NewOpenTelemetryProvider(opts ...Option) *OtelProvider {
+func NewOpenTelemetryProvider(opts ...Option) (*OtelProvider, error) {
 	var (
 		tracerProvider *sdktrace.TracerProvider
 		meterProvider  *metric.MeterProvider
@@ -65,16 +65,11 @@ func NewOpenTelemetryProvider(opts ...Option) *OtelProvider {
 	cfg := newConfig(opts)
 
 	if !cfg.enableTracing && !cfg.enableMetrics {
-		return nil
+		return nil, nil
 	}
 
 	// resource
 	res := newResource(cfg)
-
-	// propagator
-	if cfg.textMapPropagator != nil {
-		otel.SetTextMapPropagator(cfg.textMapPropagator)
-	}
 
 	// Tracing
 	if cfg.enableTracing {
@@ -97,7 +92,9 @@ func NewOpenTelemetryProvider(opts ...Option) *OtelProvider {
 
 			// trace exporter
 			traceExp, err := otlptrace.New(ctx, traceClient)
-			handleInitErr(err, "Failed to create otlp trace exporter")
+			if err != nil {
+				return nil, fmt.Errorf("failed to create otlp trace exporter: %v", err)
+			}
 
 			bsp := sdktrace.NewBatchSpanProcessor(traceExp)
 
@@ -128,7 +125,9 @@ func NewOpenTelemetryProvider(opts ...Option) *OtelProvider {
 		if meterProvider == nil {
 			// metrics exporter
 			metricExp, err := otlpmetricgrpc.New(context.Background(), metricsClientOpts...)
-			handleInitErr(err, "Failed to create otlp metric exporter")
+			if err != nil {
+				return nil, fmt.Errorf("failed to create otlp metric exporter: %v", err)
+			}
 
 			reader := metric.WithReader(metric.NewPeriodicReader(metricExp, metric.WithInterval(15*time.Second)))
 
@@ -139,7 +138,7 @@ func NewOpenTelemetryProvider(opts ...Option) *OtelProvider {
 	return &OtelProvider{
 		TracerProvider: tracerProvider,
 		MeterProvider:  meterProvider,
-	}
+	}, nil
 }
 
 func newResource(cfg *config) *resource.Resource {
@@ -160,10 +159,4 @@ func newResource(cfg *config) *resource.Resource {
 		return resource.Default()
 	}
 	return res
-}
-
-func handleInitErr(err error, message string) {
-	if err != nil {
-		log.Fatalf("%s: %v", message, err)
-	}
 }

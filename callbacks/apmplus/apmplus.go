@@ -62,14 +62,14 @@ type Config struct {
 }
 
 func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ctx context.Context) error, err error) {
-	p := opentelemetry.NewOpenTelemetryProvider(
+	p, err := opentelemetry.NewOpenTelemetryProvider(
 		opentelemetry.WithServiceName(cfg.ServiceName),
 		opentelemetry.WithExportEndpoint(cfg.Host),
 		opentelemetry.WithInsecure(),
 		opentelemetry.WithHeaders(map[string]string{"X-ByteAPM-AppKey": cfg.AppKey}),
 		opentelemetry.WithResourceAttribute(attribute.String("apmplus.business_type", "llm")),
 	)
-	if p == nil {
+	if p == nil || err != nil {
 		return nil, nil, errors.New("init opentelemetry provider failed")
 	}
 
