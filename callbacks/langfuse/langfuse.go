@@ -44,77 +44,77 @@ type Config struct {
 	// Example: "sk-lf-..."
 	SecretKey string
 
-	// Threads is the number of concurrent workers for processing events (Optional)
+	// Threads is the number of concurrent workers for processing events (optional)
 	// Default: 1
 	// Example: 5
 	Threads int
 
-	// Timeout is the HTTP request timeout (Optional)
+	// Timeout is the HTTP request timeout (optional)
 	// Default: no timeout
 	// Example: 30 * time.Second
 	Timeout time.Duration
 
-	// MaxTaskQueueSize is the maximum number of events to buffer (Optional)
+	// MaxTaskQueueSize is the maximum number of events to buffer (optional)
 	// Default: 100
 	// Example: 1000
 	MaxTaskQueueSize int
 
-	// FlushAt is the number of events to batch before sending (Optional)
+	// FlushAt is the number of events to batch before sending (optional)
 	// Default: 15
 	// Example: 50
 	FlushAt int
 
-	// FlushInterval is how often to flush events automatically (Optional)
+	// FlushInterval is how often to flush events automatically (optional)
 	// Default: 500 * time.MilliSecond
 	// Example: 10 * time.Second
 	FlushInterval time.Duration
 
-	// SampleRate is the percentage of events to send (Optional)
+	// SampleRate is the percentage of events to send (optional)
 	// Default: 1.0 (100%)
 	// Example: 0.5 (50%)
 	SampleRate float64
 
-	// LogMessage is the message to log when events exceed the limit length(1 000 000)  (Optional)
+	// LogMessage is the message to log when events exceed the limit length(1 000 000)  (optional)
 	// Default: ""
 	// Example: "langfuse event:"
 	LogMessage string
 
-	// MaskFunc is a function to mask sensitive data before sending (Optional)
+	// MaskFunc is a function to mask sensitive data before sending (optional)
 	// Default: nil
 	// Example: func(s string) string { return strings.ReplaceAll(s, "secret", "***") }
 	MaskFunc func(string) string
 
-	// MaxRetry is the maximum number of retry attempts for failed requests (Optional)
+	// MaxRetry is the maximum number of retry attempts for failed requests (optional)
 	// Default: 3
 	// Example: 5
 	MaxRetry uint64
 
-	// Name is the trace name (Optional)
+	// Name is the trace name (optional)
 	// Default: ""
 	// Example: "my-app-trace"
 	Name string
 
-	// UserID is the user identifier for the trace (Optional)
+	// UserID is the user identifier for the trace (optional)
 	// Default: ""
 	// Example: "user-123"
 	UserID string
 
-	// SessionID is the session identifier for the trace (Optional)
+	// SessionID is the session identifier for the trace (optional)
 	// Default: ""
 	// Example: "session-456"
 	SessionID string
 
-	// Release is the version or release identifier (Optional)
+	// Release is the version or release identifier (optional)
 	// Default: ""
 	// Example: "v1.2.3"
 	Release string
 
-	// Tags are labels attached to the trace (Optional)
+	// Tags are labels attached to the trace (optional)
 	// Default: nil
 	// Example: []string{"production", "feature-x"}
 	Tags []string
 
-	// Public determines if the trace is publicly accessible (Optional)
+	// Public determines if the trace is publicly accessible (optional)
 	// Default: false
 	// Example: true
 	Public bool
