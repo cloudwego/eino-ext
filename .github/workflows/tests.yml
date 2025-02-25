@@ -137,7 +137,6 @@ jobs:
       contents: write
       pull-requests: write
       repository-projects: write
-    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -149,38 +148,43 @@ jobs:
           # Get all directories containing go.mod
           modules=$(find . -name "go.mod" -exec dirname {} \;)
           
-          # Get list of modified files in this PR
-          changed_files=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
+          # Get list of modified files
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            changed_files=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
+          else
+            changed_files=$(git diff --name-only HEAD^ HEAD)
+          fi
           
           # Initialize message
-          message="### 🏷️ Tag Version Reminder\\n\\nThe following modules have changes and may need version updates:\\n"
+          message="### 🏷️ Tag Version Reminder\n\nThe following modules have changes and may need version updates:\n"
           need_tag=false
           
           # Check each module
           for module in $modules; do
-            module_name=${module#./}  # Remove leading ./
-            # Check if any changed file is in this module
+            module_name=${module#./}
             if echo "$changed_files" | grep -q "^$module_name/"; then
-              # Get current tags for this module
               latest_tag=$(git tag -l "${module_name}/v*" | sort -V | tail -n 1)
-              # Only add to message if the module has previous tags
               if [ ! -z "$latest_tag" ]; then
                 need_tag=true
-                message="${message}\\n- \`${module_name}\` (Current: ${latest_tag})"
+                message="${message}\n- \`${module_name}\` (Current: ${latest_tag})"
               fi
             fi
           done
           
-          # Save message for next step
+          # Save message
           if [ "$need_tag" = true ]; then
             echo "$message" > tag_message.txt
+            if [ "${{ github.event_name }}" == "push" ]; then
+              # Convert message to JSON for webhook
+              jq -n --arg text "$message\n\nPlease create and push new version tags for these modules." '{"text":$text}' > webhook_payload.json
+            fi
             echo "needs_tag=true" >> $GITHUB_OUTPUT
           else
             echo "needs_tag=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Find existing comment
-        if: steps.check-mods.outputs.needs_tag == 'true'
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
         uses: peter-evans/find-comment@v3
         id: find-comment
         with:
@@ -188,11 +192,16 @@ jobs:
           comment-author: 'github-actions[bot]'
           body-includes: "### 🏷️ Tag Version Reminder"
 
-      - name: Post or update comment
-        if: steps.check-mods.outputs.needs_tag == 'true'
+      - name: Post or update PR comment
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           body-file: tag_message.txt
           edit-mode: replace
+
+      - name: Send webhook notification
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          # curl -X POST -H "Content-Type: application/json" -d @webhook_payload.json ${{ secrets.TAG_WEBHOOK_URL }}
