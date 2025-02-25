@@ -6,6 +6,11 @@ on:
     branches:
       - main
 
+env:
+  COVERAGE_FILE: coverage.out
+  COVERAGE_PROFILES: coverage.out
+  BREAKDOWN_FILE: base.coverage
+
 jobs:
   unit-test:
     runs-on: ubuntu-latest
@@ -80,7 +85,7 @@ jobs:
           profile: ${{env.COVERAGE_PROFILES}}
           config: ./.testcoverage.yml
           breakdown-file-name: ${{ github.ref_name == 'main' && env.BREAKDOWN_FILE || '' }}
-          diff-base-breakdown-file-name: ${{ steps.download-base-coverage.download-path != '' && env.BREAKDOWN_FILE || '' }}
+          diff-base-breakdown-file-name: ${{ steps.download-base-coverage.outcome == 'success' && env.BREAKDOWN_FILE || '' }}
           
       - name: Upload base.coverage of main branch
         uses: actions/upload-artifact@v4
@@ -175,15 +180,46 @@ jobs:
             fi
           done
 
-          echo -e "\n⚠️ Please create and push new version tags for these modules after merging this PR." >> tag_message.txt
+          # Different message for PR and merge
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo -e "\n⚠️ Please create and push new version tags for these modules after merging this PR." >> tag_message.txt
+          else
+            echo -e "\n⚠️ Changes have been merged to main branch. Please create and push new version tags for these modules." >> tag_message.txt
+          fi
           
           # Save message and prepare webhook payload
           if [ "$need_tag" = true ]; then
-            if [ "${{ github.event_name }}" == "push" ]; then
-              # Read the message and create webhook payload
+              # Read the message and create webhook payload for Feishu bot
               message=$(cat tag_message.txt)
-              jq -n --arg text "$message" '{"text":$text}' > webhook_payload.json
-            fi
+              repo_url="https://github.com/${{ github.repository }}"
+              jq -n --arg title "🏷️ Tag Updates Required" \
+                    --arg content "$message" \
+                    --arg repo_url "$repo_url" \
+                    '{
+                      "msg_type": "post",
+                      "content": {
+                        "post": {
+                          "zh_cn": {
+                            "title": $title,
+                            "content": [
+                              [
+                                {
+                                  "tag": "text",
+                                  "text": $content
+                                }
+                              ],
+                              [
+                                {
+                                  "tag": "a",
+                                  "text": "🔗 View on GitHub",
+                                  "href": $repo_url
+                                }
+                              ]
+                            ]
+                          }
+                        }
+                      }
+                    }' > webhook_payload.json
             echo "needs_tag=true" >> $GITHUB_OUTPUT
           else
             echo "needs_tag=false" >> $GITHUB_OUTPUT
@@ -210,4 +246,7 @@ jobs:
       - name: Send webhook notification
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          # curl -X POST -H "Content-Type: application/json" -d @webhook_payload.json ${{ secrets.TAG_WEBHOOK_URL }}
+          curl -X POST \
+               -H "Content-Type: application/json" \
+               -d @webhook_payload.json \
+               "${{ secrets.FEISHU_WEBHOOK_URL }}"
