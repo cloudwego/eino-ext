@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-      - ci/test
 
 env:
   COVERAGE_FILE: coverage.out
@@ -137,6 +136,7 @@ jobs:
           for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
           go work sync
           go test -bench=. -run=none -gcflags="all=-N -l" $list
+
   check-submodule-changes:
     runs-on: ubuntu-latest
     permissions:
@@ -162,10 +162,8 @@ jobs:
           fi
           
           # Initialize message
-          echo "### 🏷️ Tag Version Reminder" > tag_message.txt
-          echo "" >> tag_message.txt
+          echo "### Need to create a new tag" > tag_message.txt
           echo "The following modules have changes and may need version updates:" >> tag_message.txt
-          echo "" >> tag_message.txt
           
           need_tag=false
 
@@ -176,7 +174,7 @@ jobs:
               latest_tag=$(git tag -l "${module_name}/v*" | sort -V | tail -n 1)
               if [ ! -z "$latest_tag" ]; then
                 need_tag=true
-                echo -e "\n- \`${module_name}\` (Current: ${latest_tag})" >> tag_message.txt
+                echo -e "- \`${module_name}\` (Current: ${latest_tag})\n" >> tag_message.txt
               fi
             fi
           done
@@ -185,7 +183,7 @@ jobs:
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo -e "\n⚠️ Please create and push new version tags for these modules after merging this PR." >> tag_message.txt
           else
-            echo -e "\n⚠️ Changes have been merged to main branch. Please create and push new version tags for these modules." >> tag_message.txt
+            echo -e "\n⚠️ Changes have been merged to main branch. \nPlease create new version tags for these modules." >> tag_message.txt
           fi
           
           # Save message and prepare webhook payload
@@ -255,8 +253,6 @@ jobs:
       - name: Send webhook notification
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push'
         run: |
-          echo "github.ref: ${{ github.ref }}"
-          ## if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
           curl -X POST \
                -H "Content-Type: application/json" \
                -d @webhook_payload.json \
