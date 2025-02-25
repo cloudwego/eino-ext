@@ -244,8 +244,9 @@ jobs:
           edit-mode: replace
 
       - name: Send webhook notification
-        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push'
         run: |
+          ## if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
           curl -X POST \
                -H "Content-Type: application/json" \
                -d @webhook_payload.json \
