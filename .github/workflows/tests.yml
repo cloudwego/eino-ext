@@ -203,7 +203,7 @@ jobs:
                         "elements": [
                           {
                             "tag": "markdown",
-                            "content": $content
+                            "content": "$content"
                           },
                           {
                             "tag": "action",
