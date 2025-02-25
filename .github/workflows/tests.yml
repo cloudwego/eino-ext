@@ -145,7 +145,7 @@ jobs:
       - name: Check modified files in submodules
         id: check-mods
         run: |
-          # Get all directories containing go.mod 
+          # Get all directories containing go.mod
           modules=$(find . -name "go.mod" -exec dirname {} \;)
           
           # Get list of modified files
@@ -156,7 +156,11 @@ jobs:
           fi
           
           # Initialize message
-          message="### 🏷️ Tag Version Reminder\n\nThe following modules have changes and may need version updates:\n"
+          echo "### 🏷️ Tag Version Reminder" > tag_message.txt
+          echo "" >> tag_message.txt
+          echo "The following modules have changes and may need version updates:" >> tag_message.txt
+          echo "" >> tag_message.txt
+          
           need_tag=false
           
           # Check each module
@@ -166,17 +170,17 @@ jobs:
               latest_tag=$(git tag -l "${module_name}/v*" | sort -V | tail -n 1)
               if [ ! -z "$latest_tag" ]; then
                 need_tag=true
-                message="${message}\n- \`${module_name}\` (Current: ${latest_tag})"
+                echo -e "\n- \`${module_name}\` (Current: ${latest_tag})" >> tag_message.txt
               fi
             fi
           done
           
-          # Save message
+          # Save message and prepare webhook payload
           if [ "$need_tag" = true ]; then
-            echo "$message" > tag_message.txt
             if [ "${{ github.event_name }}" == "push" ]; then
-              # Convert message to JSON for webhook
-              jq -n --arg text "$message\n\nPlease create and push new version tags for these modules." '{"text":$text}' > webhook_payload.json
+              # Read the message and create webhook payload
+              message=$(cat tag_message.txt)
+              jq -n --arg text "$message"$'\n\nPlease create and push new version tags for these modules.' '{"text":$text}' > webhook_payload.json
             fi
             echo "needs_tag=true" >> $GITHUB_OUTPUT
           else
