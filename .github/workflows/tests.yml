@@ -190,33 +190,41 @@ jobs:
           
           # Save message and prepare webhook payload
           if [ "$need_tag" = true ]; then
+              # Get the correct URL based on event type
+              repo_url="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+
               # Read the message and create webhook payload for Feishu bot
               message=$(cat tag_message.txt)
-              repo_url="https://github.com/${{ github.repository }}"
-              jq -n --arg title "🏷️ Tag Updates Required" \
+              jq -n --arg title "Need to create a new tag" \
                     --arg content "$message" \
                     --arg repo_url "$repo_url" \
                     '{
-                      "msg_type": "post",
-                      "content": {
-                        "post": {
-                          "zh_cn": {
-                            "title": $title,
-                            "content": [
-                              [
-                                {
-                                  "tag": "text",
-                                  "text": $content
-                                }
-                              ],
-                              [
-                                {
-                                  "tag": "a",
-                                  "text": "🔗 View on GitHub",
-                                  "href": $repo_url
-                                }
-                              ]
+                      "msg_type": "interactive",
+                      "card": {
+                        "elements": [
+                          {
+                            "tag": "markdown",
+                            "content": $content
+                          },
+                          {
+                            "tag": "action",
+                            "actions": [
+                              {
+                                "tag": "button",
+                                "text": {
+                                  "tag": "plain_text",
+                                  "content": "🔗 View on GitHub"
+                                },
+                                "url": $repo_url,
+                                "type": "default"
+                              }
                             ]
+                          }
+                        ],
+                        "header": {
+                          "title": {
+                            "tag": "plain_text",
+                            "content": "Need to create a new tag"
                           }
                         }
                       }
