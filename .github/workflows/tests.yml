@@ -131,16 +131,12 @@ jobs:
           for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
           go work sync
           go test -bench=. -run=none -gcflags="all=-N -l" $list
-  suggest-for-tag:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Suggest for tag
-        run: |
-          echo "Suggest for tag"
-          git tag -l
   check-submodule-changes:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
@@ -157,7 +153,7 @@ jobs:
           changed_files=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
           
           # Initialize message
-          message="### 🏷️ Tag Version Reminder\n\nThe following modules have changes and may need version updates:\n"
+          message="### 🏷️ Tag Version Reminder\\n\\nThe following modules have changes and may need version updates:\\n"
           need_tag=false
           
           # Check each module
@@ -170,7 +166,7 @@ jobs:
               # Only add to message if the module has previous tags
               if [ ! -z "$latest_tag" ]; then
                 need_tag=true
-                message="${message}\n- \`${module_name}\` (Current: ${latest_tag})"
+                message="${message}\\n- \`${module_name}\` (Current: ${latest_tag})"
               fi
             fi
           done
