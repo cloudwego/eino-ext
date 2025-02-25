@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.12.6
 	github.com/cloudwego/eino v0.3.10
-	github.com/cloudwego/eino-ext/libs/acl/opentelemetry v0.0.0-20250214075436-16502e96e713
+	github.com/cloudwego/eino-ext/libs/acl/opentelemetry v0.0.0-20250225080340-5935633151d3
 	github.com/smartystreets/goconvey v1.8.1
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.59.0
 	go.opentelemetry.io/otel v1.34.0
@@ -68,5 +68,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/cloudwego/eino-ext/libs/acl/opentelemetry => ../../libs/acl/opentelemetry
