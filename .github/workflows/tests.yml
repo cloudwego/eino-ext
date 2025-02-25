@@ -145,7 +145,7 @@ jobs:
       - name: Check modified files in submodules
         id: check-mods
         run: |
-          # Get all directories containing go.mod
+          # Get all directories containing go.mod 
           modules=$(find . -name "go.mod" -exec dirname {} \;)
           
           # Get list of modified files
