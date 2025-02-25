@@ -6,6 +6,11 @@ on:
     branches:
       - main
 
+env:
+  COVERAGE_FILE: coverage.out
+  COVERAGE_PROFILES: coverage.out
+  BREAKDOWN_FILE: base.coverage
+
 jobs:
   unit-test:
     runs-on: ubuntu-latest
@@ -80,7 +85,7 @@ jobs:
           profile: ${{env.COVERAGE_PROFILES}}
           config: ./.testcoverage.yml
           breakdown-file-name: ${{ github.ref_name == 'main' && env.BREAKDOWN_FILE || '' }}
-          diff-base-breakdown-file-name: ${{ steps.download-base-coverage.download-path != '' && env.BREAKDOWN_FILE || '' }}
+          diff-base-breakdown-file-name: ${{ steps.download-base-coverage.outcome == 'success' && env.BREAKDOWN_FILE || '' }}
           
       - name: Upload base.coverage of main branch
         uses: actions/upload-artifact@v4
@@ -131,3 +136,124 @@ jobs:
           for module in $modules; do go work use $module; list=$module"/... "$list; coverpkg=$module"/...,"$coverpkg; done
           go work sync
           go test -bench=. -run=none -gcflags="all=-N -l" $list
+
+  check-submodule-changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      repository-projects: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check modified files in submodules
+        id: check-mods
+        run: |
+          # Get all directories containing go.mod
+          modules=$(find . -name "go.mod" -exec dirname {} \;)
+          
+          # Get list of modified files
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            changed_files=$(git diff --name-only origin/${{ github.base_ref }} HEAD)
+          else
+            changed_files=$(git diff --name-only HEAD^ HEAD)
+          fi
+          
+          # Initialize message
+          echo "### Need to create a new tag" > tag_message.txt
+          echo "The following modules have changes and may need version updates:" >> tag_message.txt
+          
+          need_tag=false
+
+          # Check each module
+          for module in $modules; do
+            module_name=${module#./}
+            if echo "$changed_files" | grep -q "^$module_name/"; then
+              latest_tag=$(git tag -l "${module_name}/v*" | sort -V | tail -n 1)
+              if [ ! -z "$latest_tag" ]; then
+                need_tag=true
+                echo -e "- \`${module_name}\` (Current: ${latest_tag})\n" >> tag_message.txt
+              fi
+            fi
+          done
+
+          # Different message for PR and merge
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            echo -e "\n⚠️ Please create and push new version tags for these modules after merging this PR." >> tag_message.txt
+          else
+            echo -e "\n⚠️ Changes have been merged to main branch. \nPlease create new version tags for these modules." >> tag_message.txt
+          fi
+          
+          # Save message and prepare webhook payload
+          if [ "$need_tag" = true ]; then
+              # Get the correct URL based on event type
+              repo_url="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+
+              # Read the message and create webhook payload for Feishu bot
+              message="$(cat tag_message.txt)"
+              jq -n --arg title "Need to create a new tag" \
+                    --arg content "$message" \
+                    --arg repo_url "$repo_url" \
+                    '{
+                      "msg_type": "interactive",
+                      "card": {
+                        "elements": [
+                          {
+                            "tag": "markdown",
+                            "content": $content
+                          },
+                          {
+                            "tag": "action",
+                            "actions": [
+                              {
+                                "tag": "button",
+                                "text": {
+                                  "tag": "plain_text",
+                                  "content": "🔗 View on GitHub"
+                                },
+                                "url": $repo_url,
+                                "type": "default"
+                              }
+                            ]
+                          }
+                        ],
+                        "header": {
+                          "title": {
+                            "tag": "plain_text",
+                            "content": "Need to create a new tag"
+                          }
+                        }
+                      }
+                    }' > webhook_payload.json
+            echo "needs_tag=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_tag=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Find existing comment
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: "### 🏷️ Tag Version Reminder"
+
+      - name: Post or update PR comment
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          body-file: tag_message.txt
+          edit-mode: replace
+
+      - name: Send webhook notification
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push'
+        run: |
+          curl -X POST \
+               -H "Content-Type: application/json" \
+               -d @webhook_payload.json \
+               "${{ secrets.FEISHU_WEBHOOK_URL }}"
