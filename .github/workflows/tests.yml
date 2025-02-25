@@ -246,6 +246,7 @@ jobs:
       - name: Send webhook notification
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push'
         run: |
+          echo "github.ref: ${{ github.ref }}"
           ## if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
           curl -X POST \
                -H "Content-Type: application/json" \
