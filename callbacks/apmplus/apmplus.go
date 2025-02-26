@@ -33,7 +33,6 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	runtimemetrics "go.opentelemetry.io/contrib/instrumentation/runtime"
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
@@ -160,7 +159,7 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 		otelProvider: p,
 		serviceName:  cfg.ServiceName,
 		release:      cfg.Release,
-		tracer:       otel.Tracer(scopeName),
+		tracer:       p.TracerProvider.Tracer(scopeName),
 		meter:        meter,
 
 		tokenUsage:                  tokenUsage,
