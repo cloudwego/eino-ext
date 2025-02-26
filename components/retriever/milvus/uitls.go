@@ -31,9 +31,6 @@ func defaultDocumentConverter() func(ctx context.Context, doc client.SearchResul
 	return func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error) {
 		var err error
 		result := make([]*schema.Document, doc.IDs.Len(), doc.IDs.Len())
-		if doc.Err != nil {
-			return nil, doc.Err
-		}
 		for i := range result {
 			result[i] = &schema.Document{
 				MetaData: make(map[string]any),
@@ -45,14 +42,14 @@ func defaultDocumentConverter() func(ctx context.Context, doc client.SearchResul
 				for i, document := range result {
 					document.ID, err = doc.IDs.GetAsString(i)
 					if err != nil {
-						return nil, fmt.Errorf("[milvus retriever] failed to get id: %w", err)
+						return nil, fmt.Errorf("failed to get id: %w", err)
 					}
 				}
 			case "content":
 				for i, document := range result {
 					document.Content, err = field.GetAsString(i)
 					if err != nil {
-						return nil, fmt.Errorf("[milvus retriever] failed to get content: %w", err)
+						return nil, fmt.Errorf("failed to get content: %w", err)
 					}
 				}
 			case "metadata":
@@ -60,10 +57,10 @@ func defaultDocumentConverter() func(ctx context.Context, doc client.SearchResul
 					b, err := field.Get(i)
 					bytes, ok := b.([]byte)
 					if !ok {
-						return nil, fmt.Errorf("[milvus retriever] failed to get metadata: %w", err)
+						return nil, fmt.Errorf("failed to get metadata: %w", err)
 					}
 					if err := sonic.Unmarshal(bytes, &document.MetaData); err != nil {
-						return nil, fmt.Errorf("[milvus retriever] failed to unmarshal metadata: %w", err)
+						return nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
 					}
 				}
 			default:

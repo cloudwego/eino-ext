@@ -17,13 +17,13 @@ type ImplOptions struct {
 	SearchQueryOptFn func(option *client.SearchQueryOption)
 }
 
-func (i *ImplOptions) WithFilter(filter string) retriever.Option {
+func WithFilter(filter string) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
 		o.Filter = filter
 	})
 }
 
-func (i *ImplOptions) WithSearchQueryOptFn(f func(option *client.SearchQueryOption)) retriever.Option {
+func WithSearchQueryOptFn(f func(option *client.SearchQueryOption)) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
 		o.SearchQueryOptFn = f
 	})

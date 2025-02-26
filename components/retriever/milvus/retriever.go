@@ -65,13 +65,13 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 	// check the collection is existed
 	ok, err := config.Client.HasCollection(ctx, config.Collection)
 	if err != nil {
-		if errors.As(err, &client.ErrClientNotReady) {
+		if errors.Is(err, client.ErrClientNotReady) {
 			return nil, fmt.Errorf("[NewRetriever] milvus client not ready: %w", err)
 		}
-		if errors.As(err, &client.ErrStatusNil) {
+		if errors.Is(err, client.ErrStatusNil) {
 			return nil, fmt.Errorf("[NewRetriever] milvus client response status has error: %w", err)
 		}
-		return nil, err
+		return nil, fmt.Errorf("[NewRetriever] failed to check collection: %w", err)
 	}
 	if !ok {
 		return nil, fmt.Errorf("[NewRetriever] collection not found")
@@ -170,7 +170,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 	// check the embedding result
 	if len(vectors) != 1 {
-		return nil, fmt.Errorf("[redis retriever] invalid return length of vector, got=%d, expected=1", len(vectors))
+		return nil, fmt.Errorf("[milvus retriever] invalid return length of vector, got=%d, expected=1", len(vectors))
 	}
 	// convert the vector to binary vector
 	vec := make([]entity.Vector, 0, len(vectors))
@@ -180,36 +180,26 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 
 	// search the collection
 	var results []client.SearchResult
+	var searchParams []client.SearchQueryOptionFunc
 	if io.SearchQueryOptFn != nil {
-		results, err = r.config.Client.Search(
-			ctx,
-			r.config.Collection,
-			r.config.Partition,
-			io.Filter,
-			r.config.OutputFields,
-			vec,
-			r.config.VectorField,
-			r.config.MetricType,
-			*co.TopK,
-			r.config.Sp,
-			io.SearchQueryOptFn,
-		)
-	} else {
-		results, err = r.config.Client.Search(
-			ctx,
-			r.config.Collection,
-			r.config.Partition,
-			io.Filter,
-			r.config.OutputFields,
-			vec,
-			r.config.VectorField,
-			r.config.MetricType,
-			*co.TopK,
-			r.config.Sp,
-		)
+		searchParams = append(searchParams, io.SearchQueryOptFn)
 	}
+
+	results, err = r.config.Client.Search(
+		ctx,
+		r.config.Collection,
+		r.config.Partition,
+		io.Filter,
+		r.config.OutputFields,
+		vec,
+		r.config.VectorField,
+		r.config.MetricType,
+		*co.TopK,
+		r.config.Sp,
+		searchParams...,
+	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[milvus retriever] search has error: %w", err)
 	}
 	// check the search result
 	if len(results) == 0 {
@@ -219,9 +209,15 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	// convert the search result to schema.Document
 	documents := make([]*schema.Document, 0, len(results))
 	for _, result := range results {
+		if result.Err != nil {
+			return nil, fmt.Errorf("[milvus retriever] search result has error: %w", result.Err)
+		}
+		if result.IDs == nil || result.Fields == nil {
+			return nil, fmt.Errorf("[milvus retriever] search result has no ids or fields")
+		}
 		document, err := r.config.DocumentConverter(ctx, result)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("[milvus retriever] failed to convert search result to schema.Document: %w", err)
 		}
 		documents = append(documents, document...)
 	}

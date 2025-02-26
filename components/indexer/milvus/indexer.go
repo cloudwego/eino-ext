@@ -12,7 +12,6 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
 type IndexerConfig struct {
@@ -40,7 +39,7 @@ type IndexerConfig struct {
 	SharedNum int32
 	// ConsistencyLevel is the milvus collection consistency tactics
 	// Optional, and the default level is ClBounded(bounded consistency level with default tolerance of 5 seconds)
-	ConsistencyLevel entity.ConsistencyLevel
+	ConsistencyLevel ConsistencyLevel
 	// EnableDynamicSchema is means the collection is enabled to dynamic schema
 	// Optional, and the default value is false
 	// Enable to dynamic schema it could affect milvus performance
@@ -71,10 +70,10 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	// check the collection whether to be created
 	ok, err := conf.Client.HasCollection(ctx, conf.Collection)
 	if err != nil {
-		if errors.As(err, &client.ErrClientNotReady) {
+		if errors.Is(err, client.ErrClientNotReady) {
 			return nil, fmt.Errorf("[NewIndexer] milvus client not ready: %w", err)
 		}
-		if errors.As(err, &client.ErrStatusNil) {
+		if errors.Is(err, client.ErrStatusNil) {
 			return nil, fmt.Errorf("[NewIndexer] milvus client status is nil: %w", err)
 		}
 		return nil, fmt.Errorf("[NewIndexer] failed to check collection: %w", err)
@@ -89,7 +88,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 			getDefaultSchema(conf.Collection, conf.Description, isPartition, conf.Dim),
 			conf.SharedNum,
 			client.WithConsistencyLevel(
-				conf.ConsistencyLevel,
+				conf.ConsistencyLevel.getConsistencyLevel(),
 			),
 			client.WithEnableDynamicSchema(conf.EnableDynamicSchema),
 			client.WithPartitionNum(conf.PartitionNum),
@@ -227,8 +226,8 @@ func (i *IndexerConfig) check() error {
 	if i.SharedNum <= 0 {
 		i.SharedNum = 1
 	}
-	if i.ConsistencyLevel < 0 || i.ConsistencyLevel > 4 {
-		i.ConsistencyLevel = entity.DefaultConsistencyLevel
+	if i.ConsistencyLevel <= 0 || i.ConsistencyLevel > 5 {
+		i.ConsistencyLevel = defaultConsistencyLevel
 	}
 	if i.MetricType == "" {
 		i.MetricType = defaultMetricType

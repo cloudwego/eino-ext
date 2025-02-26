@@ -44,8 +44,8 @@ func getDefaultSchema(collection, description string, isPartition bool, dim int6
 		).
 		WithField(
 			entity.NewField().
-				WithName("metadata").
-				WithDescription("the metadata of the document").
+				WithName(defaultCollectionMetadata).
+				WithDescription(defaultCollectionMetadataDesc).
 				WithIsPrimaryKey(false).
 				WithDataType(entity.FieldTypeJSON),
 		)
@@ -68,6 +68,7 @@ func checkCollectionSchema(s *entity.Schema) bool {
 	var idType entity.FieldType
 	var vectorType entity.FieldType
 	var contentType entity.FieldType
+	var metadataType entity.FieldType
 	for _, field := range s.Fields {
 		switch field.Name {
 		case defaultCollectionID:
@@ -76,11 +77,13 @@ func checkCollectionSchema(s *entity.Schema) bool {
 			vectorType = field.DataType
 		case defaultCollectionContent:
 			contentType = field.DataType
+		case defaultCollectionMetadata:
+			metadataType = field.DataType
 		default:
 			continue
 		}
 	}
-	if idType != entity.FieldTypeVarChar || vectorType != entity.FieldTypeBinaryVector || contentType != entity.FieldTypeVarChar {
+	if idType != entity.FieldTypeVarChar || vectorType != entity.FieldTypeBinaryVector || contentType != entity.FieldTypeVarChar || metadataType != entity.FieldTypeJSON {
 		return false
 	}
 	return true

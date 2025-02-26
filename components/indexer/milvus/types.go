@@ -3,6 +3,12 @@ package milvus
 import "github.com/milvus-io/milvus-sdk-go/v2/entity"
 
 const (
+	ConsistencyLevelStrong     ConsistencyLevel = 1
+	ConsistencyLevelSession    ConsistencyLevel = 2
+	ConsistencyLevelBounded    ConsistencyLevel = 3
+	ConsistencyLevelEventually ConsistencyLevel = 4
+	ConsistencyLevelCustomized ConsistencyLevel = 5
+
 	HAMMING = MetricType(entity.HAMMING)
 	JACCARD = MetricType(entity.JACCARD)
 )
@@ -13,6 +19,12 @@ type defaultSchema struct {
 	Content  string `json:"content" milvus:"name:content"`
 	Vector   []byte `json:"vector" milvus:"name:vector"`
 	Metadata []byte `json:"metadata" milvus:"name:metadata"`
+}
+
+type ConsistencyLevel entity.ConsistencyLevel
+
+func (c *ConsistencyLevel) getConsistencyLevel() entity.ConsistencyLevel {
+	return entity.ConsistencyLevel(*c - 1)
 }
 
 // MetricType is the metric type for vector by eino
