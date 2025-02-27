@@ -38,7 +38,7 @@ func main() {
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
 	defer func() {
 		err = client.Close()
@@ -52,7 +52,7 @@ func main() {
 		Model:  "gemini-pro",
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
 	}
 
 	fmt.Println("\n=== Basic Chat ===")

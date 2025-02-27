@@ -44,7 +44,7 @@ func main() {
     // 创建搜索工具
     searchTool, err := duckduckgo.NewTool(context.Background(), cfg)
     if err != nil {
-        log.Fatal(err)
+        log.Fatalf("NewTool of duckduckgo failed, err=%v", err)
     }
 
     // 与 Eino 的 ToolsNode 一起使用

@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -33,7 +34,7 @@ func main() {
 	proxyURL := "http://127.0.0.1:1080"
 	u, err := url.Parse(proxyURL)
 	if err != nil {
-		panic(err)
+		log.Fatalf("parse proxy url failed, err=%v", err)
 	}
 
 	ctx := context.Background()
@@ -46,14 +47,14 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewLoader of url loader failed, err=%v", err)
 	}
 
 	docs, err := urlLoader.Load(ctx, document.Source{
 		URI: "https://some_private_site.com",
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("Load of url loader failed, err=%v", err)
 	}
 	for _, doc := range docs {
 		fmt.Printf("%+v\n", doc)

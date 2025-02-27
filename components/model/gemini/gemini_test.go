@@ -252,3 +252,8 @@ func TestGemini(t *testing.T) {
 		assert.Equal(t, "I see a beautiful sunset image", resp.Content)
 	})
 }
+
+func TestPanicErr(t *testing.T) {
+	err := newPanicErr("info", []byte("stack"))
+	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
+}

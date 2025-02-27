@@ -4,12 +4,12 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.4
+	github.com/bytedance/sonic v1.12.2
+	github.com/cloudwego/eino v0.3.10
 	github.com/smartystreets/goconvey v1.8.1
 )
 
 require (
-	github.com/bytedance/sonic v1.12.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect

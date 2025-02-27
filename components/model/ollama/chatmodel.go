@@ -31,7 +31,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino/utils/safe"
 )
 
 var CallbackMetricsExtraKey = "ollama_metrics"
@@ -40,6 +39,11 @@ var CallbackMetricsExtraKey = "ollama_metrics"
 type ChatModelConfig struct {
 	BaseURL string        `json:"base_url"`
 	Timeout time.Duration `json:"timeout"` // request timeout for http client
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	Model     string         `json:"model"`
 	Format    string         `json:"format"` // "json" or ""
@@ -65,8 +69,12 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		return nil, errors.New("config must not be nil")
 	}
 
-	httpClient := http.Client{
-		Timeout: config.Timeout,
+	var httpClient *http.Client
+
+	if config.HTTPClient != nil {
+		httpClient = config.HTTPClient
+	} else {
+		httpClient = &http.Client{Timeout: config.Timeout}
 	}
 
 	baseURL, err := url.Parse(config.BaseURL)
@@ -74,7 +82,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	cli := api.NewClient(baseURL, &httpClient)
+	cli := api.NewClient(baseURL, httpClient)
 
 	return &ChatModel{
 		cli:    cli,
@@ -99,15 +107,18 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	cbOutput := &model.CallbackOutput{
-		Message: outMsg,
-		Config:  cbInput.Config,
-		Extra:   map[string]any{},
-	}
+	var cbOutput *model.CallbackOutput
 
 	err = cm.cli.Chat(ctx, req, func(resp api.ChatResponse) error {
 		outMsg = toEinoMessage(resp)
-		cbOutput.Extra[CallbackMetricsExtraKey] = resp.Metrics
+		cbOutput = &model.CallbackOutput{
+			Message: outMsg,
+			Config:  cbInput.Config,
+			Extra: map[string]any{
+				CallbackMetricsExtraKey: resp.Metrics,
+			},
+		}
+
 		return nil
 	})
 
@@ -142,7 +153,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			panicErr := recover()
 
 			if panicErr != nil {
-				_ = sw.Send(nil, safe.NewPanicErr(panicErr, debug.Stack()))
+				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
 			}
 
 			sw.Close()
@@ -414,4 +425,20 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		ollamaTools = append(ollamaTools, ollamaTool)
 	}
 	return ollamaTools, nil
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }

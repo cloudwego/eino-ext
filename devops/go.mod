@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.12
-	github.com/cloudwego/eino v0.3.7
+	github.com/cloudwego/eino v0.3.10
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.9.0

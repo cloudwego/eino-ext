@@ -24,6 +24,7 @@ import (
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
+	"github.com/stretchr/testify/assert"
 
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -324,4 +325,8 @@ func TestBindTools(t *testing.T) {
 		convey.So(err, convey.ShouldBeNil)
 
 	})
+}
+func TestPanicErr(t *testing.T) {
+	err := newPanicErr("info", []byte("stack"))
+	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
 }

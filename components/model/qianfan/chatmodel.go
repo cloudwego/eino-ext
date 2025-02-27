@@ -26,7 +26,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino/utils/safe"
 )
 
 // GetQianfanSingletonConfig qianfan config is singleton, you should set ak+sk / bear_token before init chat model
@@ -152,7 +151,7 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 	go func() {
 		defer func() {
 			if pe := recover(); pe != nil {
-				_ = sw.Send(nil, safe.NewPanicErr(pe, debug.Stack()))
+				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
 
 			r.Close()
@@ -497,4 +496,20 @@ func (c *ChatModel) GetType() string {
 
 func (c *ChatModel) IsCallbacksEnabled() bool {
 	return true
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }

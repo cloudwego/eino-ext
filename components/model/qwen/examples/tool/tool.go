@@ -18,7 +18,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino-ext/components/model/qwen"
@@ -39,7 +41,7 @@ func main() {
 		TopP:        of(float32(0.7)),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
 	err = cm.BindTools([]*schema.ToolInfo{
@@ -75,7 +77,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("BindTools of qwen failed, err=%v", err)
 	}
 
 	resp, err := cm.Generate(ctx, []*schema.Message{
@@ -90,7 +92,7 @@ func main() {
 	})
 
 	if err != nil {
-		panic(err)
+		log.Fatalf("Generate of qwen failed, err=%v", err)
 	}
 
 	fmt.Println(resp)
@@ -98,6 +100,47 @@ func main() {
 	// tool_calls: [{0x14000275930 call_1e25169e05fc4596a55afb function {user_company {"email": "zhangsan@bytedance.com", "name": "zhangsan"}} map[]}]
 	// finish_reason: tool_calls
 	// usage: &{316 32 348}
+
+	// ==========================
+	// using stream
+	fmt.Printf("\n\n======== Stream ========\n")
+	sr, err := cm.Stream(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "你是一名房产经纪人，结合用户的薪酬和工作，使用 user_company、user_salary 两个 API，为其提供相关的房产信息。邮箱是必须的",
+		},
+		{
+			Role:    schema.User,
+			Content: "我的姓名是 lisi，我的邮箱是 lisi@bytedance.com，请帮我推荐一些适合我的房子。",
+		},
+	})
+	if err != nil {
+		log.Fatalf("Stream of qwen failed, err=%v", err)
+	}
+
+	msgs := make([]*schema.Message, 0)
+	for {
+		msg, err := sr.Recv()
+		if err != nil {
+			break
+		}
+		jsonMsg, err := json.Marshal(msg)
+		if err != nil {
+			log.Fatalf("json.Marshal failed, err=%v", err)
+		}
+		fmt.Printf("%s\n", jsonMsg)
+		msgs = append(msgs, msg)
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		log.Fatalf("json.Marshal failed, err=%v", err)
+	}
+	fmt.Printf("final: %s\n", jsonMsg)
 }
 
 func of[T any](t T) *T {

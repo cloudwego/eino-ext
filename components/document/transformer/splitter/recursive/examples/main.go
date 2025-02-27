@@ -36,13 +36,13 @@ func main() {
 		KeepType:    recursive.KeepTypeNone,
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewSplitter of recursive splitter failed, err=%v", err)
 	}
 
 	file := "./testdata/einodoc.md"
 	data, err := os.ReadFile(file)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("read file failed, err=%v", err)
 	}
 
 	docs, err := splitter.Transform(ctx, []*schema.Document{
@@ -52,7 +52,7 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Transform of recursive splitter failed, err=%v", err)
 	}
 
 	for idx, doc := range docs {

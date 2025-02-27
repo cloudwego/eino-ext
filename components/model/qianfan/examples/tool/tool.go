@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino-ext/components/model/qianfan"
 	"github.com/cloudwego/eino/schema"
@@ -38,7 +39,7 @@ func main() {
 		MaxCompletionTokens: of(1024),
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
 	}
 
 	err = cm.BindTools([]*schema.ToolInfo{
@@ -74,7 +75,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("BindTools of qianfan failed, err=%v", err)
 	}
 
 	resp, err := cm.Generate(ctx, []*schema.Message{
@@ -89,7 +90,7 @@ func main() {
 	})
 
 	if err != nil {
-		panic(err)
+		log.Fatalf("Generate of qianfan failed, err=%v", err)
 	}
 
 	fmt.Println(resp)

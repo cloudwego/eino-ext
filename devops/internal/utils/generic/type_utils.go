@@ -19,8 +19,6 @@ package generic
 import (
 	"reflect"
 	"strings"
-
-	"github.com/cloudwego/eino/utils/generic"
 )
 
 func GetJsonName(field reflect.StructField) string {
@@ -44,13 +42,17 @@ func IsMapType[K, V any](t reflect.Type) bool {
 	if t.Kind() != reflect.Map {
 		return false
 	}
-	if t.Key().Kind() != generic.TypeOf[K]().Kind() {
+	if t.Key().Kind() != typeOf[K]().Kind() {
 		return false
 	}
-	if t.Elem().Kind() != generic.TypeOf[V]().Kind() {
+	if t.Elem().Kind() != typeOf[V]().Kind() {
 		return false
 	}
 	return true
+}
+
+func typeOf[T any]() reflect.Type {
+	return reflect.TypeOf((*T)(nil)).Elem()
 }
 
 var comfortableKind = map[reflect.Kind]bool{

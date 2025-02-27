@@ -7,7 +7,7 @@ toolchain go1.22.2
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.8
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.8
+	github.com/cloudwego/eino v0.3.10
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0
 )

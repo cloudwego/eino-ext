@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.6
+	github.com/cloudwego/eino v0.3.10
 	github.com/elastic/go-elasticsearch/v8 v8.16.0
 	github.com/smartystreets/goconvey v1.8.1
 )

@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -50,7 +51,7 @@ func main() {
 
 	cert, err := os.ReadFile(httpCACertPath)
 	if err != nil {
-		panic(err)
+		log.Fatalf("read file failed, err=%v", err)
 	}
 
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
@@ -60,19 +61,19 @@ func main() {
 		CACert:    cert,
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewClient of es8 failed, err=%v", err)
 	}
 
 	// create index if needed.
 	// comment out the code if index has been created.
 	if err = createIndex(ctx, client); err != nil {
-		panic(err)
+		log.Fatalf("createIndex of es8 failed, err=%v", err)
 	}
 
 	// load embeddings from local
 	emb, err := prepareEmbeddings()
 	if err != nil {
-		panic(err)
+		log.Fatalf("prepareEmbeddings failed, err=%v", err)
 	}
 
 	// load docs, set sparse vector
@@ -100,12 +101,12 @@ func main() {
 		Embedding: &mockEmbedding{emb.Dense}, // replace it with real embedding component
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewIndexer of es8 failed, err=%v", err)
 	}
 
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Store of es8 failed, err=%v", err)
 	}
 
 	fmt.Println(ids) // [1 2 3 4 5 6 7 8 9 10]

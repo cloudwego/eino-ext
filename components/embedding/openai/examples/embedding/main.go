@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 
@@ -46,14 +45,14 @@ func main() {
 		Timeout:    0,
 	})
 	if err != nil {
-		panic(fmt.Errorf("new embedder error: %v\n", err))
+		log.Fatalf("NewEmbedder of openai failed, err=%v", err)
 	}
 
 	log.Printf("===== call Embedder directly =====")
 
 	vectors, err := embedder.EmbedStrings(ctx, []string{"hello", "how are you"})
 	if err != nil {
-		panic(fmt.Errorf("embedder.EmbedStrings failed, err=%v", err))
+		log.Fatalf("EmbedStrings of openai failed, err=%v", err)
 	}
 
 	log.Printf("vectors : %v", vectors)
@@ -81,13 +80,13 @@ func main() {
 	// 编译并运行
 	runnable, err := chain.Compile(ctx)
 	if err != nil {
-		panic(fmt.Errorf("chain.Compile failed, err=%v", err))
+		log.Fatalf("chain Compile failed, err=%v", err)
 	}
 
 	vectors, err = runnable.Invoke(ctx, []string{"hello", "how are you"},
 		compose.WithCallbacks(handler))
 	if err != nil {
-		panic(fmt.Errorf("runnable.Invoke failed, err=%v", err))
+		log.Fatalf("Invoke of runnable failed, err=%v", err)
 	}
 
 	log.Printf("vectors in chain: %v", vectors)

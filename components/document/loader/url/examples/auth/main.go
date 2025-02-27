@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -47,14 +48,14 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewLoader failed, err=%v", err)
 	}
 
 	docs, err := urlLoader.Load(ctx, document.Source{
 		URI: "https://some_private_site.com/some_path/some_file",
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("Load failed, err=%v", err)
 	}
 
 	for _, doc := range docs {

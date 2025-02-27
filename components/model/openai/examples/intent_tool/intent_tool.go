@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino/schema"
@@ -36,7 +37,7 @@ func main() {
 		Model:   "gpt-4o",
 	})
 	if err != nil {
-		panic(fmt.Errorf("NewChatModel failed, err=%v", err))
+		log.Fatalf("NewChatModel of openai failed, err=%v", err)
 	}
 	err = chatModel.BindForcedTools([]*schema.ToolInfo{
 		{
@@ -56,7 +57,7 @@ func main() {
 				}),
 		}})
 	if err != nil {
-		panic(fmt.Errorf("BindForcedTools failed, err=%v", err))
+		log.Fatalf("BindForcedTools of openai failed, err=%v", err)
 	}
 	resp, err := chatModel.Generate(ctx, []*schema.Message{{
 		Role:    schema.System,
@@ -66,7 +67,7 @@ func main() {
 		Content: "My name is John and my email is john@abc.com，Please recommend some houses that suit me.",
 	}})
 	if err != nil {
-		panic(fmt.Errorf("generate failed, err=%v", err))
+		log.Fatalf("Generate of openai failed, err=%v", err)
 	}
 	fmt.Printf("output: \n%v", resp)
 
@@ -80,7 +81,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		panic(fmt.Errorf("generate failed, err=%v", err))
+		log.Fatalf("Stream of openai failed, err=%v", err)
 	}
 	var messages []*schema.Message
 	for {
@@ -89,13 +90,13 @@ func main() {
 			break
 		}
 		if err != nil {
-			panic(fmt.Errorf("recv failed, err=%v", err))
+			log.Fatalf("Recv of streamResp failed, err=%v", err)
 		}
 		messages = append(messages, chunk)
 	}
 	resp, err = schema.ConcatMessages(messages)
 	if err != nil {
-		panic(fmt.Errorf("ConcatMessages failed, err=%v", err))
+		log.Fatalf("ConcatMessages of openai failed, err=%v", err)
 	}
 	fmt.Printf("stream output: \n%v", resp)
 }

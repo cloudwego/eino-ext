@@ -34,7 +34,12 @@ type EmbeddingConfig struct {
 	// APIKey is typically OPENAI_API_KEY, but if you have set up Azure, then it is Azure API_KEY.
 	APIKey string `json:"api_key"`
 	// Timeout specifies the http request timeout.
+	// If HTTPClient is set, Timeout will not be used.
 	Timeout time.Duration `json:"timeout"`
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	// The following fields have the same meaning as the fields in the openai embedding API request.
 	// OpenAI Ref: https://platform.openai.com/docs/api-reference/embeddings/create
@@ -54,10 +59,19 @@ type Embedder struct {
 
 func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error) {
 	encodingFmt := openai.EmbeddingEncodingFormatFloat // only support float currently
+
+	var httpClient *http.Client
+
+	if config.HTTPClient != nil {
+		httpClient = config.HTTPClient
+	} else {
+		httpClient = &http.Client{Timeout: config.Timeout}
+	}
+
 	ecfg := &openai.EmbeddingConfig{
 		BaseURL:        baseUrl,
 		APIKey:         config.APIKey,
-		HTTPClient:     &http.Client{Timeout: config.Timeout},
+		HTTPClient:     httpClient,
 		Model:          config.Model,
 		EncodingFormat: &encodingFmt,
 		Dimensions:     config.Dimensions,

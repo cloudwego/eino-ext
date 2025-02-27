@@ -44,7 +44,7 @@ func main() {
 		MaxTokens: 2000,
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("NewChatModel of claude failed, err=%v", err)
 	}
 
 	fmt.Println("\n=== Basic Chat ===")
@@ -200,7 +200,7 @@ func functionCalling(ctx context.Context, cm model.ChatModel) {
 func imageProcessing(ctx context.Context, cm model.ChatModel) {
 	imageBinary, err := os.ReadFile("./examples/test.jpg")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("read file failed, err=%v", err)
 	}
 	resp, err := cm.Generate(ctx, []*schema.Message{
 		{

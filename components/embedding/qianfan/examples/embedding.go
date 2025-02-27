@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino-ext/components/embedding/qianfan"
@@ -35,12 +36,12 @@ func main() {
 		Model: "Embedding-V1",
 	})
 	if err != nil {
-		panic(err)
+		log.Fatalf("NewEmbedder of qianfan embedding failed, err=%v", err)
 	}
 
 	v, err := emb.EmbedStrings(ctx, []string{"hello world", "bye world"})
 	if err != nil {
-		panic(err)
+		log.Fatalf("EmbedStrings of qianfan embedding failed, err=%v", err)
 	}
 
 	b, _ := json.Marshal(v)
