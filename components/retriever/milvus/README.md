@@ -2,7 +2,7 @@
 
 English | [简体中文](README_zh.md)
 
-An Milvus 2.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the Retriever interface. This enables seamless integration
+An Milvus 2.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration
 with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
 ## Quick Start
