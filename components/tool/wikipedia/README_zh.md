@@ -61,33 +61,47 @@ func main() {
 
 ```go
 type Config struct {
-    // baseUrl 是 Wikipedia API 的基础 URL。
-    // 格式： https://<language>.wikipedia.org/w/api.php
-    // 默认值: "https://en.wikipedia.org/w/api.php"
-    baseUrl string 
-
-    // UserAgent 是用于 HTTP 客户端的用户代理。
+    // BaseURL 是 Wikipedia API 的基础 URL。
+    // 格式: https://<language>.wikipedia.org/w/api.php
+    // URL 语言依赖于您为 Language 字段设置的语言。
+    // 可选。默认值: "https://en.wikipedia.org/w/api.php"。
+    BaseURL string
+    
+    // UserAgent 是 HTTP 客户端使用的用户代理。
+    // 可选，但强烈建议覆盖默认值并使用您项目的相关信息。
     // 建议遵循 Wikipedia 的机器人规范：
-    // https://en.wikipedia.org/robots.txt
-    // 默认值: "eino (https://github.com/cloudwego/eino)"
-    UserAgent string `json:"user_agent"` 
+    // https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy
+    // 可选。默认值: "eino (https://github.com/cloudwego/eino)"
+    UserAgent string `json:"user_agent"`
+    
     // DocMaxChars 是返回页面内容的最大字符数。
-    // 如果内容超过此限制，则会被截断。
-    // 默认值: 2000
-    DocMaxChars int `json:"doc_max_chars"` 
-    // Timeout 是等待 HTTP 客户端返回响应的最大时间。
-    // 默认值: 15秒
-    Timeout time.Duration `json:"timeout"` 
+    // 如果内容超过此值，将会被截断。
+    // 可选。默认值: 15s。
+    DocMaxChars int `json:"doc_max_chars"`
+    
+    // Timeout 是 HTTP 客户端返回响应的最大等待时间。
+    // 可选。默认值: 15s。
+    Timeout time.Duration `json:"timeout"`
+    
     // TopK 是返回的搜索结果数量。
-    // 默认值: 3
-    TopK int `json:"top_k"` 
-    // MaxRedirect 是最大跟随的重定向次数。
-    // 默认值: 3
-    MaxRedirect int `json:"max_redirect"` 
+    // 可选。默认值: 3。
+    TopK int `json:"top_k"`
+    
+    // MaxRedirect 是最大允许的重定向次数。
+    // 可选。默认值: 3。
+    MaxRedirect int `json:"max_redirect"`
+    
     // Language 是用于 Wikipedia 搜索的语言。
-    // 默认值: "en"
-    Language string `json:"language"` 
+    // 可选。默认值: "en"。
+    Language string `json:"language"`
+    
+    // ToolName 工具名称。可选。默认值: "wikipedia"。
+    ToolName string `json:"tool_name"`
+    
+    // ToolDesc 工具描述。可选。默认值: "wikipedia search tool"。
+    ToolDesc string `json:"tool_desc"`
 }
+
 ```
 
 ## Search

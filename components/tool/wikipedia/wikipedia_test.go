@@ -19,10 +19,11 @@ package wikipedia
 import (
 	"context"
 	"fmt"
-	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/components/tool/wikipedia/wikipediaclient"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino-ext/components/tool/wikipedia/internal"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewTool(t *testing.T) {
@@ -44,7 +45,7 @@ func TestWikipedia_Search(t *testing.T) {
 	}{
 		{"normal1", &SearchRequest{"bytedance"}, nil},
 		{"normal2", &SearchRequest{"Go programming language"}, nil},
-		{"InvalidParameters", &SearchRequest{""}, fmt.Errorf("[LocalFunc] failed to invoke tool: %w", wikipediaclient.ErrInvalidParameters)},
+		{"InvalidParameters", &SearchRequest{""}, fmt.Errorf("[LocalFunc] failed to invoke tool: %w", internal.ErrInvalidParameters)},
 	}
 	for _, tt := range test {
 		t.Run(tt.name, func(t *testing.T) {

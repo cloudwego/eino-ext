@@ -14,10 +14,9 @@
  * limitations under the License.
  */
 
-package wikipediaclient
+package internal
 
 import (
-	"fmt"
 	"net/http"
 )
 
@@ -35,7 +34,13 @@ func WithHTTPClient(client *http.Client) ClientOption {
 func WithLanguage(lang string) ClientOption {
 	return func(c *WikipediaClient) {
 		c.language = lang
-		c.baseURL = fmt.Sprintf(_defaultBaseURL, lang)
+	}
+}
+
+// WithBaseURL sets the base URL for the Wikipedia client.
+func WithBaseURL(url string) ClientOption {
+	return func(c *WikipediaClient) {
+		c.baseURL = url
 	}
 }
 

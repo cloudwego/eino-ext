@@ -19,44 +19,48 @@ package wikipedia
 import (
 	"context"
 	"fmt"
-	"github.com/cloudwego/eino-ext/components/tool/wikipedia/wikipediaclient"
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/components/tool/utils"
 	"net/http"
 	"time"
+
+	"github.com/cloudwego/eino-ext/components/tool/wikipedia/internal"
+
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/components/tool/utils"
 )
 
 // Config is the configuration for the wikipedia search tool.
 type Config struct {
-	// baseURL is the base url of the wikipedia api.
+	// BaseURL is the base url of the wikipedia api.
 	// format: https://<language>.wikipedia.org/w/api.php
-	// default: "https://en.wikipedia.org/w/api.php"
-	baseURL string
+	// The URL language depends on the settings you have set for the Language field
+	// Optional. Default: "https://en.wikipedia.org/w/api.php".
+	BaseURL string
 
 	// UserAgent is the user agent to use for the http client.
+	// Optional but HIGHLY RECOMMENDED to override the default with your project's info.
 	// It is recommended to follow Wikipedia's robot specification:
-	// https://en.wikipedia.org/robots.txt
-	// default: "eino (https://github.com/cloudwego/eino)"
+	// https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy
+	// Optional. Default: "eino (https://github.com/cloudwego/eino)"
 	UserAgent string `json:"user_agent"`
 	// DocMaxChars is the maximum number of characters as extract for returning in the page content.
 	// If the content is longer than this, it will be truncated.
-	// default: 2000
+	// Optional. Default: 15s.
 	DocMaxChars int `json:"doc_max_chars"`
 	// Timeout is the maximum time to wait for the http client to return a response.
-	// default: 15s
+	// Optional. Default: 15s.
 	Timeout time.Duration `json:"timeout"`
 	// TopK is the number of search results to return.
-	// default: 3
+	// Optional. Default: 3.
 	TopK int `json:"top_k"`
 	// MaxRedirect is the maximum number of redirects to follow.
-	// default: 3
+	// Optional. Default: 3.
 	MaxRedirect int `json:"max_redirect"`
 	// Language is the language to use for the wikipedia search.
-	// default: "en"
+	// Optional. Default: "en".
 	Language string `json:"language"`
 
-	ToolName string `json:"tool_name"` // default: "wikipedia"
-	ToolDesc string `json:"tool_desc"` // default: "wikipedia search tool"
+	ToolName string `json:"tool_name"` // Optional. Default: "wikipedia".
+	ToolDesc string `json:"tool_desc"` // Optional. Default: "wikipedia search tool".
 }
 
 // NewTool creates a new wikipedia search tool.
@@ -87,9 +91,6 @@ func (conf *Config) validate() error {
 	if conf.ToolDesc == "" {
 		conf.ToolDesc = "wikipedia search tool"
 	}
-	if conf.baseURL == "" {
-		conf.baseURL = fmt.Sprintf("https://%s.wikipedia.org/w/api.php", conf.Language)
-	}
 	if conf.UserAgent == "" {
 		conf.UserAgent = "eino (https://github.com/cloudwego/eino)"
 	}
@@ -97,7 +98,7 @@ func (conf *Config) validate() error {
 		conf.DocMaxChars = 2000
 	}
 	if conf.TopK <= 0 {
-		conf.TopK = 4
+		conf.TopK = 3
 	}
 	if conf.Timeout <= 0 {
 		conf.Timeout = 15 * time.Second
@@ -108,21 +109,25 @@ func (conf *Config) validate() error {
 	if conf.Language == "" {
 		conf.Language = "en"
 	}
+	if conf.BaseURL == "" {
+		conf.BaseURL = fmt.Sprintf("https://%s.wikipedia.org/w/api.php", conf.Language)
+	}
 	return nil
 }
 
 // newWikipedia creates a new wikipedia search tool.
 func newWikipedia(_ context.Context, conf *Config) (*wikipedia, error) {
-	c := wikipediaclient.NewClient(
-		wikipediaclient.WithLanguage(conf.Language),
-		wikipediaclient.WithUserAgent(conf.UserAgent),
-		wikipediaclient.WithTopK(conf.TopK),
-		wikipediaclient.WithHTTPClient(
+	c := internal.NewClient(
+		internal.WithBaseURL(conf.BaseURL),
+		internal.WithUserAgent(conf.UserAgent),
+		internal.WithTopK(conf.TopK),
+		internal.WithLanguage(conf.Language),
+		internal.WithHTTPClient(
 			&http.Client{
 				Timeout: conf.Timeout,
 				CheckRedirect: func(req *http.Request, via []*http.Request) error {
 					if len(via) >= conf.MaxRedirect {
-						return wikipediaclient.ErrTooManyRedirects
+						return internal.ErrTooManyRedirects
 					}
 					return nil
 				}}),
@@ -140,7 +145,7 @@ func (w *wikipedia) Search(ctx context.Context, query SearchRequest) (*SearchRes
 		return nil, err
 	}
 	if len(sr) == 0 {
-		return nil, wikipediaclient.ErrPageNotFound
+		return nil, internal.ErrPageNotFound
 	}
 	res := make([]*Result, 0, len(sr))
 	for _, search := range sr {
@@ -166,7 +171,7 @@ func (w *wikipedia) Search(ctx context.Context, query SearchRequest) (*SearchRes
 
 type wikipedia struct {
 	conf   *Config
-	client *wikipediaclient.WikipediaClient
+	client *internal.WikipediaClient
 }
 
 // Result is the page search result.
