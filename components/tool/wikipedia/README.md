@@ -61,32 +61,37 @@ The tool can be configured using the `Config` struct:
 
 ```go
 type Config struct {
-    // baseUrl is the base url of the wikipedia api.
+    // BaseURL is the base url of the wikipedia api.
     // format: https://<language>.wikipedia.org/w/api.php
-    // default: "https://en.wikipedia.org/w/api.php"
-    baseUrl string
-
+    // The URL language depends on the settings you have set for the Language field
+    // Optional. Default: "https://en.wikipedia.org/w/api.php".
+    BaseURL string
+    
     // UserAgent is the user agent to use for the http client.
+    // Optional but HIGHLY RECOMMENDED to override the default with your project's info.
     // It is recommended to follow Wikipedia's robot specification:
-    // https://en.wikipedia.org/robots.txt
-    // default: "eino (https://github.com/cloudwego/eino)"
+    // https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy
+    // Optional. Default: "eino (https://github.com/cloudwego/eino)"
     UserAgent string `json:"user_agent"`
     // DocMaxChars is the maximum number of characters as extract for returning in the page content.
     // If the content is longer than this, it will be truncated.
-    // default: 2000
+    // Optional. Default: 15s.
     DocMaxChars int `json:"doc_max_chars"`
     // Timeout is the maximum time to wait for the http client to return a response.
-    // default: 15s
+    // Optional. Default: 15s.
     Timeout time.Duration `json:"timeout"`
     // TopK is the number of search results to return.
-    // default: 3
+    // Optional. Default: 3.
     TopK int `json:"top_k"`
     // MaxRedirect is the maximum number of redirects to follow.
-    // default: 3
+    // Optional. Default: 3.
     MaxRedirect int `json:"max_redirect"`
     // Language is the language to use for the wikipedia search.
-    // default: "en"
+    // Optional. Default: "en".
     Language string `json:"language"`
+    
+    ToolName string `json:"tool_name"` // Optional. Default: "wikipedia".
+    ToolDesc string `json:"tool_desc"` // Optional. Default: "wikipedia search tool".
 }
 ```
 

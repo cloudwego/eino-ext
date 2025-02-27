@@ -19,10 +19,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/components/tool/wikipedia"
 	"log"
 	"time"
+
+	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino-ext/components/tool/wikipedia"
 )
 
 func main() {
@@ -33,7 +34,7 @@ func main() {
 		UserAgent:   "eino",
 		DocMaxChars: 2000,
 		Timeout:     15 * time.Second,
-		TopK:        4,
+		TopK:        3,
 		MaxRedirect: 3,
 		Language:    "en",
 	}
@@ -57,7 +58,7 @@ func main() {
 	}
 
 	var searchResponse wikipedia.SearchResponse
-	if err := sonic.Unmarshal([]byte(resp), &searchResponse); err != nil {
+	if err = sonic.Unmarshal([]byte(resp), &searchResponse); err != nil {
 		log.Fatal("Failed to unmarshal search response:", err)
 	}
 

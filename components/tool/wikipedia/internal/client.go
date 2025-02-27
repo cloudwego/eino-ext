@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package wikipediaclient
+package internal
 
 import (
 	"context"
@@ -25,14 +25,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-)
-
-const (
-	_defaultBaseURL   = "https://%s.wikipedia.org/w/api.php"
-	_defaultUserAgent = "eino (https://github.com/cloudwego/eino)"
-	_defaultLanguage  = "en"
-	_defaultTimeout   = 15 * time.Second
-	_maxRedirects     = 3
 )
 
 // WikipediaClient is a client for the Wikipedia API.
@@ -51,32 +43,15 @@ type WikipediaClient struct {
 
 // NewClient creates a new Wikipedia client.
 func NewClient(opts ...ClientOption) *WikipediaClient {
-	c := &WikipediaClient{
-		httpClient: &http.Client{
-			Timeout: _defaultTimeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				if len(via) >= _maxRedirects {
-					return ErrTooManyRedirects
-				}
-				return nil
-			},
-		},
-		language:  _defaultLanguage,
-		userAgent: _defaultUserAgent,
-	}
-
+	c := &WikipediaClient{}
 	for _, opt := range opts {
 		opt(c)
 	}
-
-	if c.baseURL == "" {
-		c.baseURL = fmt.Sprintf(_defaultBaseURL, c.language)
-	}
-
 	return c
 }
 
 // Search searches the Wikipedia for the query and returns the search results.
+// API documentation: https://www.mediawiki.org/wiki/API:Search
 func (c *WikipediaClient) Search(ctx context.Context, query string) ([]SearchResult, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, ErrInvalidParameters
