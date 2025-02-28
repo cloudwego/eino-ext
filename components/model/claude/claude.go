@@ -65,7 +65,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				config.AccessKey,
 				config.SecretAccessKey,
-				"", // SessionToken is not required in this context as we are using long-term credentials
+				config.SessionToken,
 			))),
 		)
 	}
@@ -96,6 +96,11 @@ type Config struct {
 	// Required for Bedrock
 	SecretAccessKey string
 
+	// SessionToken is your Bedrock API Session Token
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Optional for Bedrock
+	SessionToken string
+
 	// Region is your Bedrock API region
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 	// Required for Bedrock
@@ -106,7 +111,7 @@ type Config struct {
 	// Optional. Example: "https://custom-claude-api.example.com"
 	BaseURL *string
 
-	// APIKey is your Bedrock API key
+	// APIKey is your Anthropic API key
 	// Obtain from: https://console.anthropic.com/account/keys
 	// Required
 	APIKey string
