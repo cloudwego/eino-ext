@@ -1,0 +1,154 @@
+# Milvus Indexer
+
+English | [简体中文](README_zh.md)
+
+An Milvus 2.x indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer` interface. This enables seamless integration
+with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
+
+## Quick Start
+
+### Installation
+
+```bash
+go get github.com/eino-project/eino/indexer/milvus@latest
+```
+
+### Create the Milvus Indexer
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
+	"github.com/cloudwego/eino/schema"
+	"github.com/milvus-io/milvus-sdk-go/v2/client"
+	
+	"github.com/cloudwego/eino-ext/components/retriever/milvus"
+)
+
+func main() {
+	// Get the environment variables
+	addr := os.Getenv("MILVUS_ADDR")
+	username := os.Getenv("MILVUS_USERNAME")
+	password := os.Getenv("MILVUS_PASSWORD")
+	arkApiKey := os.Getenv("ARK_API_KEY")
+	arkModel := os.Getenv("ARK_MODEL")
+	
+	// Create a client
+	ctx := context.Background()
+	cli, err := client.NewClient(ctx, client.Config{
+		Address:  addr,
+		Username: username,
+		Password: password,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create client: %v", err)
+		return
+	}
+	defer cli.Close()
+	
+	// Create an embedding model
+	emb, err := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: arkApiKey,
+		Model:  arkModel,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create embedding: %v", err)
+		return
+	}
+	
+	// Create an indexer
+	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+		Client:    cli,
+		Embedding: emb,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create indexer: %v", err)
+		return
+	}
+	log.Printf("Indexer created success")
+	
+	// Store documents
+	docs := []*schema.Document{
+		{
+			ID:      "milvus-1",
+			Content: "milvus is an open-source vector database",
+			MetaData: map[string]any{
+				"h1": "milvus",
+				"h2": "open-source",
+				"h3": "vector database",
+			},
+		},
+		{
+			ID:      "milvus-2",
+			Content: "milvus is a distributed vector database",
+		},
+	}
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		log.Fatalf("Failed to store: %v", err)
+		return
+	}
+	log.Printf("Store success, ids: %v", ids)
+}
+```
+
+## Configuration
+
+```go
+type IndexerConfig struct {
+    // Client is the milvus client to be called
+    // Required
+    Client client.Client
+
+    // Default Collection config
+    // Collection is the collection name in milvus database
+    // Optional, and the default value is "eino_collection"
+    Collection string
+    // PartitionNum is the collection partition number
+    // Optional, and the default value is 1(disable)
+    // If the partition number is larger than 1, it means 启use partition and the partition key is collection id
+    PartitionNum int64
+    // Description is the description for collection
+    // Optional, and the default value is "the collection for eino"
+    Description string
+    // Dim is the vector dimension
+    // Optional, and the default value is 10,240 * 8
+    // because the dim it has to be a multiple of 8
+    Dim int64
+    // SharedNum is the milvus required param to create collection
+    // Optional, and the default value is 1
+    SharedNum int32
+    // ConsistencyLevel is the milvus collection consistency tactics
+    // Optional, and the default level is ClBounded(bounded consistency level with default tolerance of 5 seconds)
+    ConsistencyLevel ConsistencyLevel
+    // EnableDynamicSchema is means the collection is enabled to dynamic schema
+    // Optional, and the default value is false
+    // Enable to dynamic schema it could affect milvus performance
+    EnableDynamicSchema bool
+
+    // Index config to the vector column
+    // MetricType the metric type for vector
+    // Optional and default type is HAMMING
+    // It offers two options: HAMMING and JACCARD
+    MetricType MetricType
+
+    // Embedding vectorization method for values needs to be embedded from schema.Document's content.
+    // Required
+    Embedding embedding.Embedder
+}
+```
+
+## Collection Schema
+
+| Field    | Type           | DataBase Type | Index Type                 | Description             | Remark             |
+|----------|----------------|---------------|----------------------------|-------------------------|--------------------|
+| id       | string         | varchar       |                            | Document ID             | Max Length: 255    |
+| content  | string         | varchar       |                            | Document content        | Max Length: 1024   |
+| vector   | []byte         | binary array  | HAMMING(default) / JACCARD | Document content vector | Default Dim: 81920 |
+| metadata | map[string]any | json          |                            | Document meta data      |                    |
+
