@@ -68,9 +68,6 @@ func (tt *mockRunnableCallback) OnFinish(ctx context.Context, graphInfo *compose
 	}
 	c.gi = &GraphInfo{
 		GraphInfo: graphInfo,
-		Option: GraphOption{
-			GenState: c.genState,
-		},
 	}
 }
 
