@@ -66,8 +66,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 				config.AccessKey,
 				config.SecretAccessKey,
 				"", // SessionToken is not required in this context as we are using long-term credentials
-			)),
-			awsConfig.WithHTTPClient(nil)),
+			))),
 		)
 	}
 	return &ChatModel{
