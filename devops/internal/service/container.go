@@ -179,8 +179,8 @@ func (s *containerServiceImpl) CreateCanvas(graphID string) (canvasInfo devmodel
 	}
 	graphSchema.Name = c.GraphName
 	canvasInfo = devmodel.CanvasInfo{
-		Version:     devmodel.Version,
-		GraphSchema: graphSchema,
+		Version:   devmodel.Version,
+		MainGraph: graphSchema,
 	}
 	c.CanvasInfo = &canvasInfo
 
