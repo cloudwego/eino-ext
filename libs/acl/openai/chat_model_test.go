@@ -17,10 +17,12 @@
 package openai
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 
-	goopenai "github.com/sashabaranov/go-openai"
+	"github.com/bytedance/mockey"
+	"github.com/openai/openai-go"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino/schema"
@@ -46,18 +48,18 @@ func TestToXXXUtils(t *testing.T) {
 		mc, err := toOpenAIMultiContent(multiContents)
 		assert.NoError(t, err)
 		assert.Len(t, mc, 2)
-		assert.Equal(t, mc[0], goopenai.ChatMessagePart{
-			Type: goopenai.ChatMessagePartTypeText,
-			Text: "image_desc",
-		})
+		assert.Equal(t, openai.ChatCompletionContentPartTextParam{
+			Type: openai.F(openai.ChatCompletionContentPartTextTypeText),
+			Text: openai.F("image_desc"),
+		}, mc[0])
 
-		assert.Equal(t, mc[1], goopenai.ChatMessagePart{
-			Type: goopenai.ChatMessagePartTypeImageURL,
-			ImageURL: &goopenai.ChatMessageImageURL{
-				URL:    "https://{RL_ADDRESS}",
-				Detail: goopenai.ImageURLDetailAuto,
-			},
-		})
+		assert.Equal(t, openai.ChatCompletionContentPartImageParam{
+			Type: openai.F(openai.ChatCompletionContentPartImageTypeImageURL),
+			ImageURL: openai.F(openai.ChatCompletionContentPartImageImageURLParam{
+				URL:    openai.F("https://{RL_ADDRESS}"),
+				Detail: openai.F(openai.ChatCompletionContentPartImageImageURLDetailAuto),
+			}),
+		}, mc[1])
 
 		mc, err = toOpenAIMultiContent(nil)
 		assert.Nil(t, err)
@@ -80,8 +82,8 @@ func TestToOpenAIToolCalls(t *testing.T) {
 		toolCalls := toOpenAIToolCalls([]schema.ToolCall{fakeToolCall1})
 
 		assert.Len(t, toolCalls, 1)
-		assert.Equal(t, fakeToolCall1.ID, toolCalls[0].ID)
-		assert.Equal(t, fakeToolCall1.Function.Name, toolCalls[0].Function.Name)
+		assert.Equal(t, fakeToolCall1.ID, toolCalls[0].ID.Value)
+		assert.Equal(t, fakeToolCall1.Function.Name, toolCalls[0].Function.Value.Name.Value)
 	})
 }
 
@@ -96,5 +98,58 @@ func randStr() string {
 
 func TestPanicErr(t *testing.T) {
 	err := newPanicErr("info", []byte("stack"))
+	assert.NotNil(t, err)
 	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
+}
+
+func TestChatCompletion(t *testing.T) {
+
+	ctx := context.Background()
+
+	cli, err := NewClient(ctx, &Config{
+		ByAzure:    true,
+		BaseURL:    "https://xxxx.com/api",
+		APIKey:     "{your-api-key}",
+		APIVersion: "2024-06-01",
+		Model:      "gpt-4o-2024-05-13",
+	})
+	assert.NoError(t, err)
+
+	defer mockey.Mock(mockey.GetMethod(cli.cli.Chat.Completions, "New")).Return(
+		&openai.ChatCompletion{
+			Choices: []openai.ChatCompletionChoice{
+				{
+					FinishReason: "stop",
+					Message: openai.ChatCompletionMessage{
+						Content: "hello world",
+						Role:    openai.ChatCompletionMessageRoleAssistant,
+						ToolCalls: []openai.ChatCompletionMessageToolCall{
+							{
+								ID: "tool call id",
+								Function: openai.ChatCompletionMessageToolCallFunction{
+									Arguments: "arguments",
+									Name:      "name",
+								},
+								Type: openai.ChatCompletionMessageToolCallTypeFunction,
+							},
+						},
+					},
+				},
+			},
+			Usage: openai.CompletionUsage{},
+		}, nil).Build().Patch().UnPatch()
+
+	result, err := cli.Generate(ctx, []*schema.Message{schema.UserMessage("hello world")})
+	assert.NoError(t, err)
+	assert.Equal(t, "hello world", result.Content)
+	assert.Equal(t, []schema.ToolCall{
+		{
+			ID:   "tool call id",
+			Type: "function",
+			Function: schema.FunctionCall{
+				Name:      "name",
+				Arguments: "arguments",
+			},
+		},
+	}, result.ToolCalls)
 }

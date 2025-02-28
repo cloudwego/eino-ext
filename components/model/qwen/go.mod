@@ -1,6 +1,10 @@
 module github.com/cloudwego/eino-ext/components/model/qwen
 
-go 1.18
+go 1.21
+
+toolchain go1.23.4
+
+replace github.com/cloudwego/eino-ext/libs/acl/openai => ../../../libs/acl/openai
 
 require (
 	github.com/bytedance/mockey v1.2.13
