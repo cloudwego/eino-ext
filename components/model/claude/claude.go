@@ -83,19 +83,9 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 
 // Config contains the configuration options for the Claude model
 type Config struct {
-	// BaseURL is the custom API endpoint URL
-	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
-	// Optional. Example: "https://custom-claude-api.example.com"
-	BaseURL *string
-
 	// ByBedrock indicates whether to use Bedrock Service
 	// Required for Bedrock
 	ByBedrock bool
-
-	// APIKey is your Bedrock API key
-	// Obtain from: https://console.anthropic.com/account/keys
-	// Required
-	APIKey string
 
 	// AccessKey is your Bedrock API Access key
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
@@ -111,6 +101,16 @@ type Config struct {
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 	// Required for Bedrock
 	Region string
+
+	// BaseURL is the custom API endpoint URL
+	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
+	// Optional. Example: "https://custom-claude-api.example.com"
+	BaseURL *string
+
+	// APIKey is your Bedrock API key
+	// Obtain from: https://console.anthropic.com/account/keys
+	// Required
+	APIKey string
 
 	// Model specifies which Claude model to use
 	// Required
