@@ -104,7 +104,7 @@ type ChatModel struct {
 	toolChoice *schema.ToolChoice
 }
 
-func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
+func NewChatModel(_ context.Context, config *ChatModelConfig, opts ...deepseek.Option) (*ChatModel, error) {
 	if len(config.APIKey) == 0 {
 		return nil, fmt.Errorf("API key is required")
 	}
@@ -112,7 +112,6 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 		return nil, fmt.Errorf("model is required")
 	}
 
-	var opts []deepseek.Option
 	if config.Timeout > 0 {
 		opts = append(opts, deepseek.WithTimeout(config.Timeout))
 	}
