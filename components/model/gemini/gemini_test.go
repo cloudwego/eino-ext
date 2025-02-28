@@ -134,7 +134,7 @@ func TestGemini(t *testing.T) {
 				},
 			},
 		}
-		model.(*chatModel).responseSchema = responseSchema
+		model.responseSchema = responseSchema
 
 		// Mock Gemini API 响应
 		defer mockey.Mock((*genai.ChatSession).SendMessage).Return(&genai.GenerateContentResponse{
@@ -251,4 +251,9 @@ func TestGemini(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "I see a beautiful sunset image", resp.Content)
 	})
+}
+
+func TestPanicErr(t *testing.T) {
+	err := newPanicErr("info", []byte("stack"))
+	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
 }

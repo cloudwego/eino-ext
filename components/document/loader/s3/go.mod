@@ -8,7 +8,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.42
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.2
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.4
+	github.com/cloudwego/eino v0.3.10
 	github.com/stretchr/testify v1.9.0
 )
 

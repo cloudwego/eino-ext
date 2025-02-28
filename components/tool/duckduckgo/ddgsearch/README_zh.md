@@ -56,7 +56,7 @@ func main() {
     }
     client, err := ddgsearch.New(cfg)
     if err != nil {
-        log.Fatal(err)
+        log.Fatalf("New of ddgsearch failed, err=%v", err)
     }
 
     // 配置搜索参数
@@ -71,7 +71,7 @@ func main() {
     // 执行搜索
     response, err := client.Search(context.Background(), params)
     if err != nil {
-        log.Fatal(err)
+        log.Fatalf("Search of ddgsearch failed, err=%v", err)
     }
 
     // 打印结果

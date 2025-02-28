@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino/schema"
@@ -38,7 +39,7 @@ func main() {
 		Model:   "gpt-4o-2024-05-13",
 	})
 	if err != nil {
-		panic(fmt.Errorf("NewChatModel failed, err=%v", err))
+		log.Fatalf("NewChatModel of openai failed, err=%v", err)
 	}
 
 	streamMsgs, err := chatModel.Stream(ctx, []*schema.Message{
@@ -49,7 +50,7 @@ func main() {
 	})
 
 	if err != nil {
-		panic(fmt.Errorf("generate failed, err=%v", err))
+		log.Fatalf("Stream of openai failed, err=%v", err)
 	}
 
 	defer streamMsgs.Close()
@@ -61,7 +62,7 @@ func main() {
 			break
 		}
 		if err != nil {
-			panic(fmt.Errorf("\nstream.Recv failed, err=%v", err))
+			log.Fatalf("Recv of streamMsgs failed, err=%v", err)
 		}
 		fmt.Print(msg.Content)
 	}

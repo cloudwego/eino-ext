@@ -26,7 +26,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino/utils/safe"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/google/generative-ai-go/genai"
 	"google.golang.org/api/iterator"
@@ -48,8 +47,8 @@ import (
 //	    Client: client,
 //	    Model: "gemini-pro",
 //	})
-func NewChatModel(_ context.Context, cfg *Config) (model.ChatModel, error) {
-	return &chatModel{
+func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
+	return &ChatModel{
 		cli: cfg.Client,
 
 		model:               cfg.Model,
@@ -106,7 +105,7 @@ type Config struct {
 	SafetySettings []*genai.SafetySetting
 }
 
-type chatModel struct {
+type ChatModel struct {
 	cli *genai.Client
 
 	model               string
@@ -117,16 +116,21 @@ type chatModel struct {
 	responseSchema      *openapi3.Schema
 	tools               []*genai.Tool
 	origTools           []*schema.ToolInfo
+	toolChoice          *schema.ToolChoice
 	enableCodeExecution bool
 	safetySettings      []*genai.SafetySetting
 }
 
-func (c *chatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
+func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
 	session, conf, err := c.initGenerativeModelSession(opts...)
 	if err != nil {
 		return nil, err
 	}
-	ctx = callbacks.OnStart(ctx, conf)
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages: input,
+		Tools:    model.GetCommonOptions(&model.Options{Tools: c.origTools}, opts...).Tools,
+		Config:   conf,
+	})
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -158,12 +162,16 @@ func (c *chatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 	return message, nil
 }
 
-func (c *chatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
+func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
 	session, conf, err := c.initGenerativeModelSession(opts...)
 	if err != nil {
 		return nil, err
 	}
-	ctx = callbacks.OnStart(ctx, conf)
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages: input,
+		Tools:    model.GetCommonOptions(&model.Options{Tools: c.origTools}, opts...).Tools,
+		Config:   conf,
+	})
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -193,7 +201,7 @@ func (c *chatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 			panicErr := recover()
 
 			if panicErr != nil {
-				_ = sw.Send(nil, safe.NewPanicErr(panicErr, debug.Stack()))
+				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
 			}
 			sw.Close()
 		}()
@@ -224,37 +232,39 @@ func (c *chatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 	}), nil
 }
 
-func (c *chatModel) BindTools(tools []*schema.ToolInfo) error {
-	gTools := make([]*genai.Tool, len(tools))
-	for i, tool := range tools {
-		funcDecl := &genai.FunctionDeclaration{
-			Name:        tool.Name,
-			Description: tool.Desc,
-		}
-
-		openSchema, err := tool.ToOpenAPIV3()
-		if err != nil {
-			return fmt.Errorf("get open schema fail: %w", err)
-		}
-		funcDecl.Parameters, err = c.convOpenSchema(openSchema)
-		if err != nil {
-			return fmt.Errorf("convert open schema fail: %w", err)
-		}
-
-		gTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
-		}
+func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	gTools, err := c.toGeminiTools(tools)
+	if err != nil {
+		return err
 	}
+
 	c.tools = gTools
 	c.origTools = tools
+	tc := schema.ToolChoiceAllowed
+	c.toolChoice = &tc
 	return nil
 }
 
-func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.ChatSession, *model.Config, error) {
+func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	gTools, err := c.toGeminiTools(tools)
+	if err != nil {
+		return err
+	}
+
+	c.tools = gTools
+	c.origTools = tools
+	tc := schema.ToolChoiceForced
+	c.toolChoice = &tc
+	return nil
+}
+
+func (c *ChatModel) initGenerativeModelSession(opts ...model.Option) (*genai.ChatSession, *model.Config, error) {
 	commonOptions := model.GetCommonOptions(&model.Options{
 		Temperature: c.temperature,
 		MaxTokens:   c.maxTokens,
 		TopP:        c.topP,
+		Tools:       nil,
+		ToolChoice:  c.toolChoice,
 	}, opts...)
 	geminiOptions := model.GetImplSpecificOptions(&options{
 		TopK:           c.topK,
@@ -272,8 +282,17 @@ func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Cha
 	}
 	m.SafetySettings = c.safetySettings
 
-	m.Tools = make([]*genai.Tool, len(c.tools))
-	copy(m.Tools, c.tools)
+	tools := c.tools
+	if commonOptions.Tools != nil {
+		var err error
+		tools, err = c.toGeminiTools(commonOptions.Tools)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	m.Tools = make([]*genai.Tool, len(tools))
+	copy(m.Tools, tools)
 	if c.enableCodeExecution {
 		m.Tools = append(m.Tools, &genai.Tool{
 			CodeExecution: &genai.CodeExecution{},
@@ -292,6 +311,29 @@ func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Cha
 		conf.Temperature = *commonOptions.Temperature
 		m.SetTemperature(*commonOptions.Temperature)
 	}
+	if commonOptions.ToolChoice != nil {
+		switch *commonOptions.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode: genai.FunctionCallingNone,
+			}}
+		case schema.ToolChoiceAllowed:
+			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode: genai.FunctionCallingAuto,
+			}}
+		case schema.ToolChoiceForced:
+			// The predicted function call will be any one of the provided "functionDeclarations".
+			if len(m.Tools) == 0 {
+				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
+			} else {
+				m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+					Mode: genai.FunctionCallingAny,
+				}}
+			}
+		default:
+			return nil, nil, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
+		}
+	}
 	if geminiOptions.TopK != nil {
 		m.SetTopK(*geminiOptions.TopK)
 	}
@@ -306,7 +348,32 @@ func (c *chatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Cha
 	return m.StartChat(), conf, nil
 }
 
-func (c *chatModel) convOpenSchema(schema *openapi3.Schema) (*genai.Schema, error) {
+func (c *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, error) {
+	gTools := make([]*genai.Tool, len(tools))
+	for i, tool := range tools {
+		funcDecl := &genai.FunctionDeclaration{
+			Name:        tool.Name,
+			Description: tool.Desc,
+		}
+
+		openSchema, err := tool.ToOpenAPIV3()
+		if err != nil {
+			return nil, fmt.Errorf("get open schema fail: %w", err)
+		}
+		funcDecl.Parameters, err = c.convOpenSchema(openSchema)
+		if err != nil {
+			return nil, fmt.Errorf("convert open schema fail: %w", err)
+		}
+
+		gTools[i] = &genai.Tool{
+			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
+		}
+	}
+
+	return gTools, nil
+}
+
+func (c *ChatModel) convOpenSchema(schema *openapi3.Schema) (*genai.Schema, error) {
 	if schema == nil {
 		return nil, nil
 	}
@@ -374,7 +441,7 @@ func (c *chatModel) convOpenSchema(schema *openapi3.Schema) (*genai.Schema, erro
 	return result, nil
 }
 
-func (c *chatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
+func (c *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
 	result := make([]*genai.Content, len(messages))
 	for i, message := range messages {
 		content, err := c.convSchemaMessage(message)
@@ -386,7 +453,7 @@ func (c *chatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Con
 	return result, nil
 }
 
-func (c *chatModel) convSchemaMessage(message *schema.Message) (*genai.Content, error) {
+func (c *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 	if message == nil {
 		return nil, nil
 	}
@@ -428,7 +495,7 @@ func (c *chatModel) convSchemaMessage(message *schema.Message) (*genai.Content, 
 	return content, nil
 }
 
-func (c *chatModel) convMedia(contents []schema.ChatMessagePart) []genai.Part {
+func (c *ChatModel) convMedia(contents []schema.ChatMessagePart) []genai.Part {
 	result := make([]genai.Part, 0, len(contents))
 	for _, content := range contents {
 		switch content.Type {
@@ -467,7 +534,7 @@ func (c *chatModel) convMedia(contents []schema.ChatMessagePart) []genai.Part {
 	return result
 }
 
-func (c *chatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) {
+func (c *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) {
 	if len(resp.Candidates) == 0 {
 		return nil, fmt.Errorf("gemini result is empty")
 	}
@@ -490,7 +557,7 @@ func (c *chatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.M
 	return message, nil
 }
 
-func (c *chatModel) convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
+func (c *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 	result := &schema.Message{}
 	result.ResponseMeta = &schema.ResponseMeta{
 		FinishReason: candidate.FinishReason.String(),
@@ -555,7 +622,7 @@ func convFC(tp *genai.FunctionCall) (*schema.ToolCall, error) {
 	}, nil
 }
 
-func (c *chatModel) convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {
+func (c *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {
 	callbackOutput := &model.CallbackOutput{
 		Message: message,
 		Config:  conf,
@@ -580,4 +647,20 @@ func toGeminiRole(role schema.RoleType) string {
 		return roleModel
 	}
 	return roleUser
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }

@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
-	github.com/cloudwego/eino v0.3.4
+	github.com/cloudwego/eino v0.3.10
 )
 
 require (

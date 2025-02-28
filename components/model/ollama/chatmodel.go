@@ -31,7 +31,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino/utils/safe"
 )
 
 var CallbackMetricsExtraKey = "ollama_metrics"
@@ -40,6 +39,11 @@ var CallbackMetricsExtraKey = "ollama_metrics"
 type ChatModelConfig struct {
 	BaseURL string        `json:"base_url"`
 	Timeout time.Duration `json:"timeout"` // request timeout for http client
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	Model     string         `json:"model"`
 	Format    string         `json:"format"` // "json" or ""
@@ -65,8 +69,12 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		return nil, errors.New("config must not be nil")
 	}
 
-	httpClient := http.Client{
-		Timeout: config.Timeout,
+	var httpClient *http.Client
+
+	if config.HTTPClient != nil {
+		httpClient = config.HTTPClient
+	} else {
+		httpClient = &http.Client{Timeout: config.Timeout}
 	}
 
 	baseURL, err := url.Parse(config.BaseURL)
@@ -74,7 +82,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		return nil, fmt.Errorf("invalid base URL: %w", err)
 	}
 
-	cli := api.NewClient(baseURL, &httpClient)
+	cli := api.NewClient(baseURL, httpClient)
 
 	return &ChatModel{
 		cli:    cli,
@@ -91,27 +99,26 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	}()
 
 	var req *api.ChatRequest
-	var reqConf *model.Config
-	req, reqConf, err = cm.genRequest(ctx, false, input, opts...)
+	var cbInput *model.CallbackInput
+	req, cbInput, err = cm.genRequest(ctx, false, input, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error generating request: %w", err)
 	}
 
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    append([]*schema.ToolInfo{}, cm.tools...),
-		Config:   reqConf,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
-	cbOutput := &model.CallbackOutput{
-		Message: outMsg,
-		Config:  reqConf,
-		Extra:   map[string]any{},
-	}
+	var cbOutput *model.CallbackOutput
 
 	err = cm.cli.Chat(ctx, req, func(resp api.ChatResponse) error {
 		outMsg = toEinoMessage(resp)
-		cbOutput.Extra[CallbackMetricsExtraKey] = resp.Metrics
+		cbOutput = &model.CallbackOutput{
+			Message: outMsg,
+			Config:  cbInput.Config,
+			Extra: map[string]any{
+				CallbackMetricsExtraKey: resp.Metrics,
+			},
+		}
+
 		return nil
 	})
 
@@ -132,17 +139,13 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	}()
 
 	var req *api.ChatRequest
-	var reqConf *model.Config
-	req, reqConf, err = cm.genRequest(ctx, true, input, opts...)
+	var cbInput *model.CallbackInput
+	req, cbInput, err = cm.genRequest(ctx, true, input, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error generating request: %w", err)
 	}
 
-	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: append([]*schema.Message{}, input...),
-		Tools:    append([]*schema.ToolInfo{}, cm.tools...),
-		Config:   reqConf,
-	})
+	ctx = callbacks.OnStart(ctx, cbInput)
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func(ctx context.Context, conf *model.Config) {
@@ -150,7 +153,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			panicErr := recover()
 
 			if panicErr != nil {
-				_ = sw.Send(nil, safe.NewPanicErr(panicErr, debug.Stack()))
+				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
 			}
 
 			sw.Close()
@@ -178,7 +181,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		if reqErr != nil {
 			sw.Send(nil, reqErr)
 		}
-	}(ctx, reqConf)
+	}(ctx, cbInput.Config)
 
 	ctx, s := callbacks.OnEndWithStreamOutput(ctx, sr)
 
@@ -207,9 +210,25 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.Message, opts ...model.Option) (req *api.ChatRequest, modelConfig *model.Config, err error) {
-	commonOptions := model.GetCommonOptions(&model.Options{}, opts...)
-	specificOptions := model.GetImplSpecificOptions(&options{}, opts...)
+func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.Message, opts ...model.Option) (
+	req *api.ChatRequest, cbInput *model.CallbackInput, err error) {
+
+	var (
+		o  = &options{}
+		mo = &model.Options{
+			Model: &cm.config.Model,
+			Tools: cm.tools,
+		}
+	)
+	if cm.config.Options != nil {
+		mo.Temperature = &cm.config.Options.Temperature
+		mo.TopP = &cm.config.Options.TopP
+		mo.Stop = cm.config.Options.Stop
+		o.Seed = &cm.config.Options.Seed
+	}
+
+	commonOptions := model.GetCommonOptions(mo, opts...)
+	specificOptions := model.GetImplSpecificOptions(o, opts...)
 
 	ollamaOptions := &api.Options{}
 	conf := cm.config.Options
@@ -230,11 +249,6 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		ollamaOptions.Seed = *specificOptions.Seed
 	}
 
-	modelName := cm.config.Model
-	if commonOptions.Model != nil {
-		modelName = *commonOptions.Model
-	}
-
 	reqOptions := make(map[string]any, 5)
 	optBytes, err := json.Marshal(ollamaOptions)
 	if err != nil {
@@ -250,13 +264,13 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		return nil, nil, fmt.Errorf("error convert messages: %w", err)
 	}
 
-	tools, err := toOllamaTools(cm.tools)
+	tools, err := toOllamaTools(mo.Tools)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error convert tools: %w", err)
 	}
 
 	req = &api.ChatRequest{
-		Model:    modelName,
+		Model:    *commonOptions.Model,
 		Messages: msgs,
 		Stream:   ptrOf(stream),
 		Format:   cm.config.Format,
@@ -270,14 +284,18 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		req.KeepAlive = &api.Duration{Duration: *cm.config.KeepAlive}
 	}
 
-	modelConfig = &model.Config{
-		Model:       req.Model,
-		Temperature: ollamaOptions.Temperature,
-		TopP:        ollamaOptions.TopP,
-		Stop:        ollamaOptions.Stop,
+	cbInput = &model.CallbackInput{
+		Messages: in,
+		Tools:    commonOptions.Tools,
+		Config: &model.Config{
+			Model:       req.Model,
+			Temperature: ollamaOptions.Temperature,
+			TopP:        ollamaOptions.TopP,
+			Stop:        ollamaOptions.Stop,
+		},
 	}
 
-	return req, modelConfig, nil
+	return req, cbInput, nil
 }
 
 func toOllamaMessages(messages []*schema.Message) ([]api.Message, error) {
@@ -407,4 +425,20 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		ollamaTools = append(ollamaTools, ollamaTool)
 	}
 	return ollamaTools, nil
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }

@@ -3,7 +3,7 @@ module github.com/cloudwego/eino-ext/components/document/transformer/splitter/ht
 go 1.18
 
 require (
-	github.com/cloudwego/eino v0.3.4
+	github.com/cloudwego/eino v0.3.10
 	golang.org/x/net v0.33.0
 )
 

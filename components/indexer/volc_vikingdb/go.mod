@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.4
+	github.com/cloudwego/eino v0.3.10
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/volcengine/volc-sdk-golang v1.0.182
 )

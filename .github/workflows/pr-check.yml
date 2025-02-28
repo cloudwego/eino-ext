@@ -7,6 +7,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Check License Header
         uses: apache/skywalking-eyes/header@v0.4.0
@@ -15,6 +17,43 @@ jobs:
 
       - name: Check Spell
         uses: crate-ci/typos@master
+        with:
+          config: .github/workflows/typos.toml
+
+      - name: Check README.md and examples
+        run: |-
+          # Fetch the main branch
+          git fetch origin main
+          
+          # Find only newly added directories containing go.mod compared to main branch
+          ADDED_DIRS=$(git diff --diff-filter=A --name-only origin/main...HEAD | grep "go.mod" | xargs -L1 dirname || true)
+          echo "Newly added directories (compared to main): $ADDED_DIRS"
+
+          # Check if README.md exists in each new directory
+          for dir in $ADDED_DIRS; do
+            if [ ! -f "$dir/README.md" ]; then
+              echo "Error: README.md not found in newly added module directory: $dir"
+              echo "Please add a [README.md] file to the directory."
+              echo "📢 You can refer to the following example: https://github.com/cloudwego/eino-ext/blob/main/components/tool/duckduckgo/README.md"
+              exit 1
+            fi
+          done
+          
+          if [ -n "$ADDED_DIRS" ]; then
+            echo "All newly added go.mod directories have README.md files ✓"
+          else
+            echo "No new go.mod directories were added in this PR ✓"
+          fi
+
+          # Check if examples exist in each new directory
+          for dir in $ADDED_DIRS; do
+            if [ ! -d "$dir/examples" ]; then
+              echo "Error: examples not found in $dir"
+              echo "📢 examples directory is required for new components, please add some examples for your component usage."
+              exit 1
+            fi
+          done
+          echo "All newly added go.mod directories have examples ✓"
 
 #  golangci-lint:
 #    runs-on: ubuntu-latest

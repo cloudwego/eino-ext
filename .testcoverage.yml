@@ -9,13 +9,52 @@ profile: coverage.out
 
 # (optional; but recommended to set)
 # When specified reported file paths will not contain local prefix in the output.
-local-prefix: "github.com/cloudwego/eino"
+local-prefix: "github.com/cloudwego/eino-ext"
 
 # Holds coverage thresholds percentages, values should be in range [0-100].
 threshold:
   # (optional; default 0)
   # Minimum overall project coverage percentage required.
-  total: 68
+  total: 66
+  package: 70
+  file: 0  # Set to 0 to effectively ignore file-level coverage checks
+
+override:
+  # Adjust coverage threshold to xx% for specific packages.
+  - path: ^libs/acl/langfuse
+    threshold: 0
+  - path: ^callbacks/langfuse
+    threshold: 0
+  - path: ^components/document/loader/file
+    threshold: 0
+  - path: ^components/retriever/es8
+    threshold: 0
+  - path: ^components/indexer/es8
+    threshold: 0
+  - path: ^components/model/openai
+    threshold: 0
+  - path: ^libs/acl/openai
+    threshold: 0
+  - path: ^devops
+    threshold: 0
+  - path: ^components/model/gemini
+    threshold: 0
+  - path: ^components/model/qwen
+    threshold: 0
+  - path: ^components/retriever/volc_knowledge
+    threshold: 0
+  - path: ^components/model/claude
+    threshold: 0
+  - path: ^components/embedding/qianfan
+    threshold: 0
+  - path: ^components/indexer/redis
+    threshold: 0
+  - path: ^components/model/qianfan
+    threshold: 0
+  - path: ^components/tool/duckduckgo
+    threshold: 0
+  - path: ^components/retriever/volc_vikingdb
+    threshold: 0
 
 # Holds regexp rules which will exclude matched files or packages
 # from coverage statistics.

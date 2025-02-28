@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.12.7
-	github.com/cloudwego/eino v0.3.5
+	github.com/cloudwego/eino v0.3.10
 	github.com/cloudwego/eino-ext/libs/acl/langfuse v0.0.0-20250113033825-eb19b2b6b386
 	github.com/golang/mock v1.6.0
 	github.com/stretchr/testify v1.10.0

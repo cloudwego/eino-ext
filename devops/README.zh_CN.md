@@ -3,8 +3,7 @@
 [English](README.md) | 中文
 
 ## 详细文档
-
-// TODO：链接用户手册等文档
+EinoExt/Devops 项目为 [Eino](https://github.com/cloudwego/eino) 提供可视化调试能力, 请参阅 [Eino Dev 插件调试使用文档.](https://www.cloudwego.io/zh/docs/eino/core_modules/devops/visual_debug_plugin_guide/)
 
 ## 安全
 

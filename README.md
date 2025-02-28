@@ -25,7 +25,7 @@ For more details about component types, please refer to the [Eino component docu
 For more details about component implementations, please refer to the [Eino ecosystem documentation.](https://www.cloudwego.io/zh/docs/eino/ecosystem_integration/)
 
 - **callback handlers**: official callback handlers implementing Eino's CallbackHandler interface, such as [Langfuse tracing](https://langfuse.com/docs/tracing) callback.
-- **DevOps tools**: IDE plugin for Eino that enables visualized debugging, UI based graph editing and more. For more details, please refer to the [Eino DevOps tooling documentation.](https://www.cloudwego.io/zh/docs/eino/core_modules/application_development_toolchain/)
+- **DevOps tools**: IDE plugin for Eino that enables visualized debugging, UI based graph editing and more. For more details, please refer to the  [Eino Dev tooling documentation.](https://www.cloudwego.io/zh/docs/eino/core_modules/devops/)
 
 ## Security
 

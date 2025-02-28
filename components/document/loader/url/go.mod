@@ -3,7 +3,7 @@ module github.com/cloudwego/eino-ext/components/document/loader/url
 go 1.18
 
 require (
-	github.com/cloudwego/eino v0.3.4
+	github.com/cloudwego/eino v0.3.10
 	github.com/cloudwego/eino-ext/components/document/parser/html v0.0.0-20241224063832-9fbcc0e56c28
 	github.com/stretchr/testify v1.9.0
 )

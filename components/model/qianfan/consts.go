@@ -22,6 +22,12 @@ const (
 	defaultParallelToolCalls = true
 )
 
+const (
+	toolChoiceNone     = "none"     // 不希望模型调用任何function，只生成面向用户的文本消息
+	toolChoiceAuto     = "auto"     // 模型会根据输入内容自动决定是否调用函数以及调用哪些function
+	toolChoiceRequired = "required" // 希望模型总是调用一个或多个function
+)
+
 func of[T any](v T) *T {
 	return &v
 }

@@ -72,7 +72,7 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 		lenFunc:    lenFunc,
 		chunkSize:  config.ChunkSize,
 		overlap:    config.OverlapSize,
-		separators: config.Separators,
+		separators: seps,
 		keepType:   config.KeepType,
 	}, nil
 }
