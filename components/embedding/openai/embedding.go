@@ -28,14 +28,20 @@ import (
 
 type EmbeddingConfig struct {
 	// Timeout specifies the maximum duration to wait for API responses
+	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default: no timeout
 	Timeout time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	// APIKey is your authentication key
 	// Use OpenAI API key or Azure API key depending on the service
 	// Required
 	APIKey string `json:"api_key"`
-	
+
 	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
 	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
 
@@ -81,12 +87,20 @@ type Embedder struct {
 func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error) {
 	var nConf *openai.EmbeddingConfig
 	if config != nil {
+		var httpClient *http.Client
+
+		if config.HTTPClient != nil {
+			httpClient = config.HTTPClient
+		} else {
+			httpClient = &http.Client{Timeout: config.Timeout}
+		}
+
 		nConf = &openai.EmbeddingConfig{
 			ByAzure:        config.ByAzure,
 			BaseURL:        config.BaseURL,
 			APIVersion:     config.APIVersion,
 			APIKey:         config.APIKey,
-			HTTPClient:     &http.Client{Timeout: config.Timeout},
+			HTTPClient:     httpClient,
 			Model:          config.Model,
 			EncodingFormat: config.EncodingFormat,
 			Dimensions:     config.Dimensions,

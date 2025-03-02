@@ -289,3 +289,8 @@ func TestBindTools(t *testing.T) {
 
 	})
 }
+
+func TestPanicErr(t *testing.T) {
+	err := newPanicErr("info", []byte("stack"))
+	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
+}

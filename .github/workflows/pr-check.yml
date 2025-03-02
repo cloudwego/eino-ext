@@ -17,6 +17,8 @@ jobs:
 
       - name: Check Spell
         uses: crate-ci/typos@master
+        with:
+          config: .github/workflows/typos.toml
 
       - name: Check README.md and examples
         run: |-

@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"runtime/debug"
 	"time"
 
@@ -32,7 +33,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino/utils/safe"
 )
 
 var (
@@ -49,8 +49,14 @@ var (
 
 type ChatModelConfig struct {
 	// Timeout specifies the maximum duration to wait for API responses
+	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default: 10 minutes
 	Timeout *time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	// RetryTimes specifies the number of retry attempts for failed API calls
 	// Optional. Default: 2
@@ -129,19 +135,21 @@ func buildClient(config *ChatModelConfig) *arkruntime.Client {
 		config.RetryTimes = &defaultRetryTimes
 	}
 
-	if len(config.APIKey) > 0 {
-		return arkruntime.NewClientWithApiKey(config.APIKey,
-			arkruntime.WithRetryTimes(*config.RetryTimes),
-			arkruntime.WithBaseUrl(config.BaseURL),
-			arkruntime.WithRegion(config.Region),
-			arkruntime.WithTimeout(*config.Timeout))
-	}
-
-	return arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey,
+	opts := []arkruntime.ConfigOption{
 		arkruntime.WithRetryTimes(*config.RetryTimes),
 		arkruntime.WithBaseUrl(config.BaseURL),
 		arkruntime.WithRegion(config.Region),
-		arkruntime.WithTimeout(*config.Timeout))
+		arkruntime.WithTimeout(*config.Timeout),
+	}
+	if config.HTTPClient != nil {
+		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
+	}
+
+	if len(config.APIKey) > 0 {
+		return arkruntime.NewClientWithApiKey(config.APIKey, opts...)
+	}
+
+	return arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
 }
 
 func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
@@ -285,7 +293,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		defer func() {
 			panicErr := recover()
 			if panicErr != nil {
-				_ = sw.Send(nil, safe.NewPanicErr(panicErr, debug.Stack()))
+				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
 			}
 
 			sw.Close()
@@ -649,4 +657,20 @@ func closeArkStreamReader(r *autils.ChatCompletionStreamReader) error {
 
 func ptrOf[T any](v T) *T {
 	return &v
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }
