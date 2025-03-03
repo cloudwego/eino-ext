@@ -45,9 +45,9 @@ type ChatModelConfig struct {
 	// Optional. Default &http.Client{Timeout: Timeout}
 	HTTPClient *http.Client `json:"http_client"`
 
-	Model     string         `json:"model"`
-	Format    string         `json:"format"` // "json" or ""
-	KeepAlive *time.Duration `json:"keep_alive"`
+	Model     string          `json:"model"`
+	Format    json.RawMessage `json:"format"`
+	KeepAlive *time.Duration  `json:"keep_alive"`
 
 	Options *api.Options `json:"options"`
 }
@@ -322,7 +322,7 @@ func toOllamaMessage(einoMsg *schema.Message) (api.Message, error) {
 		toolCalls = append(toolCalls, api.ToolCall{
 			Function: api.ToolCallFunction{
 				Name:      toolCall.Function.Name,
-				Arguments: api.ToolCallFunctionArguments(args),
+				Arguments: args,
 			},
 		})
 	}
