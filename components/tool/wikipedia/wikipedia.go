@@ -59,8 +59,8 @@ type Config struct {
 	// Optional. Default: "en".
 	Language string `json:"language"`
 
-	ToolName string `json:"tool_name"` // Optional. Default: "wikipedia".
-	ToolDesc string `json:"tool_desc"` // Optional. Default: "wikipedia search tool".
+	ToolName string `json:"tool_name"` // Optional. Default: "wikipedia_search".
+	ToolDesc string `json:"tool_desc"` // Optional. Default: "this tool provides quick and efficient access to information from the Wikipedia"
 }
 
 // NewTool creates a new wikipedia search tool.
@@ -86,10 +86,10 @@ func (conf *Config) validate() error {
 		return fmt.Errorf("config is nil")
 	}
 	if conf.ToolName == "" {
-		conf.ToolName = "wikipedia"
+		conf.ToolName = "wikipedia_search"
 	}
 	if conf.ToolDesc == "" {
-		conf.ToolDesc = "wikipedia search tool"
+		conf.ToolDesc = "this tool provides quick and efficient access to information from the Wikipedia"
 	}
 	if conf.UserAgent == "" {
 		conf.UserAgent = "eino (https://github.com/cloudwego/eino)"

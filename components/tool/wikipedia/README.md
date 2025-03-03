@@ -89,9 +89,9 @@ type Config struct {
     // Language is the language to use for the wikipedia search.
     // Optional. Default: "en".
     Language string `json:"language"`
-    
-    ToolName string `json:"tool_name"` // Optional. Default: "wikipedia".
-    ToolDesc string `json:"tool_desc"` // Optional. Default: "wikipedia search tool".
+
+	ToolName string `json:"tool_name"` // Optional. Default: "wikipedia_search".
+    ToolDesc string `json:"tool_desc"` // Optional. Default: "this tool provides quick and efficient access to information from the Wikipedia"
 }
 ```
 

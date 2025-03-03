@@ -94,12 +94,9 @@ type Config struct {
     // Language 是用于 Wikipedia 搜索的语言。
     // 可选。默认值: "en"。
     Language string `json:"language"`
-    
-    // ToolName 工具名称。可选。默认值: "wikipedia"。
-    ToolName string `json:"tool_name"`
-    
-    // ToolDesc 工具描述。可选。默认值: "wikipedia search tool"。
-    ToolDesc string `json:"tool_desc"`
+	
+    ToolName string `json:"tool_name"` // 可选。默认值: "wikipedia_search"。
+    ToolDesc string `json:"tool_desc"` // 可选。默认值: "this tool provides quick and efficient access to information from the Wikipedia"。
 }
 
 ```
