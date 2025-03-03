@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
-	"github.com/sashabaranov/go-openai"
+	"github.com/openai/openai-go"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,7 +29,7 @@ func TestEmbedStrings(t *testing.T) {
 
 	ctx := context.Background()
 
-	embedClient, err := NewEmbeddingClient(ctx, &EmbeddingConfig{
+	embedClient, err := NewClient(ctx, &Config{
 		ByAzure:    true,
 		BaseURL:    "https://xxxx.com/api",
 		APIKey:     "{your-api-key}",
@@ -39,20 +39,19 @@ func TestEmbedStrings(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	defer mockey.Mock(mockey.GetMethod(embedClient.cli, "CreateEmbeddings")).Return(
-		openai.EmbeddingResponse{
+	defer mockey.Mock(mockey.GetMethod(embedClient.cli.Embeddings, "New")).Return(
+		&openai.CreateEmbeddingResponse{
 			Object: "xx",
 			Data: []openai.Embedding{
 				{
 					Index:     0,
-					Embedding: []float32{1, 2, 3},
+					Embedding: []float64{1, 2, 3},
 				},
 			},
-			Model: openai.AdaEmbeddingV2,
-			Usage: openai.Usage{
-				PromptTokens:     100,
-				CompletionTokens: 300,
-				TotalTokens:      400,
+			Model: openai.EmbeddingModelTextEmbeddingAda002,
+			Usage: openai.CreateEmbeddingResponseUsage{
+				PromptTokens: 100,
+				TotalTokens:  400,
 			},
 		}, nil).Build().Patch().UnPatch()
 
