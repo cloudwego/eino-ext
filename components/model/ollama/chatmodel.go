@@ -381,24 +381,26 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 			return nil, err
 		}
 
-		for name, param := range openTool.Properties {
-			enums := make([]string, 0, len(param.Value.Enum))
-			for _, e := range param.Value.Enum {
-				str, ok := e.(string)
-				if !ok {
-					return nil, fmt.Errorf("toOllamaTools: enum must be string, but got %v", e)
+		if openTool != nil {
+			for name, param := range openTool.Properties {
+				enums := make([]string, 0, len(param.Value.Enum))
+				for _, e := range param.Value.Enum {
+					str, ok := e.(string)
+					if !ok {
+						return nil, fmt.Errorf("toOllamaTools: enum must be string, but got %v", e)
+					}
+					enums = append(enums, str)
 				}
-				enums = append(enums, str)
-			}
 
-			properties[name] = struct {
-				Type        string   `json:"type"`
-				Description string   `json:"description"`
-				Enum        []string `json:"enum,omitempty"`
-			}{
-				Type:        param.Value.Type,
-				Description: param.Value.Description,
-				Enum:        enums,
+				properties[name] = struct {
+					Type        string   `json:"type"`
+					Description string   `json:"description"`
+					Enum        []string `json:"enum,omitempty"`
+				}{
+					Type:        param.Value.Type,
+					Description: param.Value.Description,
+					Enum:        enums,
+				}
 			}
 		}
 
