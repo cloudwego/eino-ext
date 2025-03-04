@@ -37,7 +37,7 @@ type Config struct {
 	Name string
 }
 
-func NewPromptTemplate(ctx context.Context, conf *Config) (prompt.ChatTemplate, error) {
+func NewPromptTemplate(_ context.Context, conf *Config) (prompt.ChatTemplate, error) {
 	return &chatTemplate{
 		cli:  conf.Cli,
 		name: conf.Name,
@@ -49,7 +49,7 @@ type chatTemplate struct {
 	name string
 }
 
-func (c *chatTemplate) Format(ctx context.Context, vs map[string]any, opts ...prompt.Option) ([]*schema.Message, error) {
+func (c *chatTemplate) Format(ctx context.Context, vs map[string]any, _ ...prompt.Option) ([]*schema.Message, error) {
 	arg := make(map[string]string, len(vs))
 	for k, v := range vs {
 		arg[k] = fmt.Sprint(v)
@@ -102,123 +102,59 @@ func convMessage(message mcp.PromptMessage) (*schema.Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	// the type of message content is map[string]any, but not TextContent, ImageContent or ResourceContent
-	//switch m := message.Content.(type) {
-	//case mcp.TextContent:
-	//	ret.Content = m.Text
-	//case mcp.ImageContent:
-	//	ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-	//		Type: schema.ChatMessagePartTypeImageURL,
-	//		ImageURL: &schema.ChatMessageImageURL{
-	//			URL:      m.Data,
-	//			MIMEType: m.MIMEType,
-	//		},
-	//	})
-	//case mcp.EmbeddedResource:
-	//	if strings.HasPrefix(m.Resource.MIMEType, "audio") {
-	//		ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-	//			Type: schema.ChatMessagePartTypeAudioURL,
-	//			AudioURL: &schema.ChatMessageAudioURL{
-	//				URL:      m.Resource.URI,
-	//				MIMEType: m.Resource.MIMEType,
-	//			},
-	//		})
-	//	} else if strings.HasPrefix(m.Resource.MIMEType, "image") {
-	//		ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-	//			Type: schema.ChatMessagePartTypeImageURL,
-	//			ImageURL: &schema.ChatMessageImageURL{
-	//				URL:      m.Resource.URI,
-	//				MIMEType: m.Resource.MIMEType,
-	//			},
-	//		})
-	//	} else if strings.HasPrefix(m.Resource.MIMEType, "video") {
-	//		ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-	//			Type: schema.ChatMessagePartTypeVideoURL,
-	//			VideoURL: &schema.ChatMessageVideoURL{
-	//				URL:      m.Resource.URI,
-	//				MIMEType: m.Resource.MIMEType,
-	//			},
-	//		})
-	//	} else if strings.HasPrefix(m.Resource.MIMEType, "text") {
-	//		ret.Content = m.Resource.URI
-	//	} else {
-	//		return nil, fmt.Errorf("support mcp resource mime type %v", m.Resource.MIMEType)
-	//	}
-	//default:
-	//	return nil, fmt.Errorf("unknown mcp prompt content type: %T", message.Content)
-	//}
-	content := message.Content.(map[string]interface{})
-	if t, ok := content["type"].(string); ok {
-		if t == "text" {
-			if text, okk := content["text"].(string); okk {
-				ret.Content = text
-			} else {
-				return nil, fmt.Errorf("mcp prompt content type is text, but doesn't contain text, content: %v", content)
-			}
-		} else if t == "image" {
-			var okk bool
-			var data string
-			var mimeType string
-			if data, okk = content["data"].(string); !okk {
-				return nil, fmt.Errorf("mcp prompt content type is image, but doesn't contain data, content: %v", content)
-			}
-			if mimeType, okk = content["mimeType"].(string); !okk {
-				return nil, fmt.Errorf("mcp prompt content type is image, but doesn't contain mimeType, content: %v", content)
-			}
+	switch m := message.Content.(type) {
+	case mcp.TextContent:
+		ret.Content = m.Text
+	case mcp.ImageContent:
+		ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
+			Type: schema.ChatMessagePartTypeImageURL,
+			ImageURL: &schema.ChatMessageImageURL{
+				URL:      m.Data,
+				MIMEType: m.MIMEType,
+			},
+		})
+	case mcp.EmbeddedResource:
+		var mimeType, uri string
+		switch resource := m.Resource.(type) {
+		case mcp.BlobResourceContents:
+			uri = resource.URI
+			mimeType = resource.MIMEType
+		case mcp.TextResourceContents:
+			uri = resource.URI
+			mimeType = resource.MIMEType
+		}
+		if strings.HasPrefix(mimeType, "audio") {
 			ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-				Type: schema.ChatMessagePartTypeImageURL,
-				ImageURL: &schema.ChatMessageImageURL{
-					URL:      data,
+				Type: schema.ChatMessagePartTypeAudioURL,
+				AudioURL: &schema.ChatMessageAudioURL{
+					URL:      uri,
 					MIMEType: mimeType,
 				},
 			})
-		} else if t == "resource" {
-			if resource, okk := content["resource"].(map[string]any); okk {
-				var uri string
-				var mimeType string
-				if uri, okk = resource["uri"].(string); !okk {
-					return nil, fmt.Errorf("mcp prompt content type is resource, but doesn't contain uri, content: %v", content)
-				}
-				if mimeType, okk = resource["mimeType"].(string); !okk {
-					return nil, fmt.Errorf("mcp prompt content type is resource, but doesn't contain mimeType, content: %v", content)
-				}
-				if strings.HasPrefix(mimeType, "audio") {
-					ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-						Type: schema.ChatMessagePartTypeAudioURL,
-						AudioURL: &schema.ChatMessageAudioURL{
-							URL:      uri,
-							MIMEType: mimeType,
-						},
-					})
-				} else if strings.HasPrefix(mimeType, "image") {
-					ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-						Type: schema.ChatMessagePartTypeImageURL,
-						ImageURL: &schema.ChatMessageImageURL{
-							URL:      uri,
-							MIMEType: mimeType,
-						},
-					})
-				} else if strings.HasPrefix(mimeType, "video") {
-					ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
-						Type: schema.ChatMessagePartTypeVideoURL,
-						VideoURL: &schema.ChatMessageVideoURL{
-							URL:      uri,
-							MIMEType: mimeType,
-						},
-					})
-				} else if strings.HasPrefix(mimeType, "text") {
-					ret.Content = uri
-				} else {
-					return nil, fmt.Errorf("support mcp resource mime type %v", mimeType)
-				}
-			} else {
-				return nil, fmt.Errorf("mcp prompt content type is resource, but doesn't contain resource, content: %v", content)
-			}
+		} else if strings.HasPrefix(mimeType, "image") {
+			ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
+				Type: schema.ChatMessagePartTypeImageURL,
+				ImageURL: &schema.ChatMessageImageURL{
+					URL:      uri,
+					MIMEType: mimeType,
+				},
+			})
+		} else if strings.HasPrefix(mimeType, "video") {
+			ret.MultiContent = append(ret.MultiContent, schema.ChatMessagePart{
+				Type: schema.ChatMessagePartTypeVideoURL,
+				VideoURL: &schema.ChatMessageVideoURL{
+					URL:      uri,
+					MIMEType: mimeType,
+				},
+			})
+		} else if strings.HasPrefix(mimeType, "text") {
+			ret.Content = uri
 		} else {
-			return nil, fmt.Errorf("unknown mcp content type %s", t)
+			return nil, fmt.Errorf("support mcp resource mime type %v", mimeType)
 		}
-	} else {
-		return nil, fmt.Errorf("mcp content type is missing, content: %v", content)
+	default:
+		return nil, fmt.Errorf("unknown mcp prompt content type: %T", message.Content)
 	}
+
 	return ret, nil
 }

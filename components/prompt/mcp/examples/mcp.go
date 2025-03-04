@@ -82,7 +82,12 @@ func startMCPServer() {
 		return &mcp.GetPromptResult{
 			Messages: []mcp.PromptMessage{
 				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(request.Params.Arguments["persona"])),
-				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewImageContent("https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg", "")),
+				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewImageContent("https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg", "image/jpeg")),
+				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewEmbeddedResource(mcp.TextResourceContents{
+					URI:      "https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg",
+					MIMEType: "image/jpeg",
+					Text:     "resource",
+				})),
 			},
 		}, nil
 	})
