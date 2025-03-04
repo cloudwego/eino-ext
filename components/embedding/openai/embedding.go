@@ -81,11 +81,11 @@ type EmbeddingConfig struct {
 var _ embedding.Embedder = (*Embedder)(nil)
 
 type Embedder struct {
-	cli *openai.EmbeddingClient
+	cli *openai.Client
 }
 
 func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error) {
-	var nConf *openai.EmbeddingConfig
+	var nConf *openai.Config
 	if config != nil {
 		var httpClient *http.Client
 
@@ -95,7 +95,7 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 			httpClient = &http.Client{Timeout: config.Timeout}
 		}
 
-		nConf = &openai.EmbeddingConfig{
+		nConf = &openai.Config{
 			ByAzure:        config.ByAzure,
 			BaseURL:        config.BaseURL,
 			APIVersion:     config.APIVersion,
@@ -107,7 +107,7 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 			User:           config.User,
 		}
 	}
-	cli, err := openai.NewEmbeddingClient(ctx, nConf)
+	cli, err := openai.NewClient(ctx, nConf)
 	if err != nil {
 		return nil, err
 	}
