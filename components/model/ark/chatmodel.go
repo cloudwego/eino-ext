@@ -386,7 +386,7 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	}
 
 	if tools != nil {
-		req.Tools = make([]*model.Tool, 0, len(cm.tools))
+		req.Tools = make([]*model.Tool, 0, len(tools))
 
 		for _, tool := range cm.tools {
 			arkTool := &model.Tool{
