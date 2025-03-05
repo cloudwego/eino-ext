@@ -104,7 +104,7 @@ func (m *mockMCPClient) ListTools(ctx context.Context, request mcp.ListToolsRequ
 
 func (m *mockMCPClient) CallTool(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{
-		Content: []any{
+		Content: []mcp.Content{
 			mcp.TextContent{
 				Type: "text",
 				Text: "hello",

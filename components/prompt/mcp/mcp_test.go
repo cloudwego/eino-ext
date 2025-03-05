@@ -29,56 +29,60 @@ func TestConvMessage(t *testing.T) {
 	input := []mcp.PromptMessage{
 		{
 			Role: mcp.RoleUser,
-			Content: map[string]any{
-				"type": "text",
-				"text": "hello world",
+			Content: mcp.TextContent{
+				Type: "text",
+				Text: "hello world",
 			},
 		},
 		{
 			Role: mcp.RoleUser,
-			Content: map[string]any{
-				"type":     "image",
-				"data":     "test data",
-				"mimeType": "image/jpeg",
+			Content: mcp.ImageContent{
+				Type:     "image",
+				Data:     "test data",
+				MIMEType: "image/jpeg",
 			},
 		},
 		{
 			Role: mcp.RoleUser,
-			Content: map[string]any{
-				"type": "resource",
-				"resource": map[string]any{
-					"uri":      "test uri",
-					"mimeType": "text/plain",
+			Content: mcp.EmbeddedResource{
+				Type: "resource",
+				Resource: mcp.TextResourceContents{
+					URI:      "test uri",
+					MIMEType: "text/plain",
+					Text:     "test text",
 				},
 			},
 		},
 		{
 			Role: mcp.RoleUser,
-			Content: map[string]any{
-				"type": "resource",
-				"resource": map[string]any{
-					"uri":      "test uri",
-					"mimeType": "image/jpeg",
+			Content: mcp.EmbeddedResource{
+				Type: "resource",
+				Resource: mcp.TextResourceContents{
+					URI:      "test uri",
+					MIMEType: "image/jpeg",
+					Text:     "test text",
 				},
 			},
 		},
 		{
 			Role: mcp.RoleUser,
-			Content: map[string]any{
-				"type": "resource",
-				"resource": map[string]any{
-					"uri":      "test uri",
-					"mimeType": "audio/mpeg",
+			Content: mcp.EmbeddedResource{
+				Type: "resource",
+				Resource: mcp.TextResourceContents{
+					URI:      "test uri",
+					MIMEType: "audio/mpeg",
+					Text:     "test text",
 				},
 			},
 		},
 		{
 			Role: mcp.RoleUser,
-			Content: map[string]any{
-				"type": "resource",
-				"resource": map[string]any{
-					"uri":      "test uri",
-					"mimeType": "video/mpeg",
+			Content: mcp.EmbeddedResource{
+				Type: "resource",
+				Resource: mcp.TextResourceContents{
+					URI:      "test uri",
+					MIMEType: "video/mpeg",
+					Text:     "test text",
 				},
 			},
 		},
@@ -199,9 +203,9 @@ func (m *mockMCPClient) GetPrompt(ctx context.Context, request mcp.GetPromptRequ
 		Messages: []mcp.PromptMessage{
 			{
 				Role: mcp.RoleUser,
-				Content: map[string]any{
-					"type": "text",
-					"text": "hello world",
+				Content: mcp.TextContent{
+					Type: "text",
+					Text: "hello world",
 				},
 			},
 		},

@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/sonic v1.12.2
 	github.com/cloudwego/eino v0.3.10
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/mark3labs/mcp-go v0.8.4
+	github.com/mark3labs/mcp-go v0.10.3
 	github.com/stretchr/testify v1.9.0
 )
 
