@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
+	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
 type IndexerConfig struct {
@@ -23,17 +24,16 @@ type IndexerConfig struct {
 	// Collection is the collection name in milvus database
 	// Optional, and the default value is "eino_collection"
 	Collection string
-	// PartitionNum is the collection partition number
-	// Optional, and the default value is 1(disable)
-	// If the partition number is larger than 1, it means 启use partition and the partition key is collection id
-	PartitionNum int64
 	// Description is the description for collection
 	// Optional, and the default value is "the collection for eino"
 	Description string
-	// Dim is the vector dimension
-	// Optional, and the default value is 10,240 * 8
-	// because the dim it has to be a multiple of 8
-	Dim int64
+	// PartitionNum is the collection partition number
+	// Optional, and the default value is 1(disable)
+	// If the partition number is larger than 1, it means use partition and must have a partition key in Fields
+	PartitionNum int64
+	// Fields is the collection fields
+	// Optional, and the default value is the default fields
+	Fields []*entity.Field
 	// SharedNum is the milvus required param to create collection
 	// Optional, and the default value is 1
 	SharedNum int32
@@ -45,10 +45,13 @@ type IndexerConfig struct {
 	// Enable to dynamic schema it could affect milvus performance
 	EnableDynamicSchema bool
 
+	// DocumentConverter is the function to convert the schema.Document to the row data
+	// Optional, and the default value is defaultDocumentConverter
+	DocumentConverter func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error)
+
 	// Index config to the vector column
 	// MetricType the metric type for vector
 	// Optional and default type is HAMMING
-	// It offers two options: HAMMING and JACCARD
 	MetricType MetricType
 
 	// Embedding vectorization method for values needs to be embedded from schema.Document's content.
@@ -80,12 +83,9 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	}
 	if !ok {
 		// create the collection
-		isPartition := false
-		if conf.PartitionNum > 1 {
-			isPartition = false
-		}
-		if errToCreate := conf.Client.CreateCollection(ctx,
-			getDefaultSchema(conf.Collection, conf.Description, isPartition, conf.Dim),
+		if errToCreate := conf.Client.CreateCollection(
+			ctx,
+			conf.getSchema(conf.Collection, conf.Description, conf.Fields),
 			conf.SharedNum,
 			client.WithConsistencyLevel(
 				conf.ConsistencyLevel.getConsistencyLevel(),
@@ -103,13 +103,13 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 		return nil, fmt.Errorf("[NewIndexer] failed to describe collection: %w", err)
 	}
 	// check collection schema
-	if !checkCollectionSchema(collection.Schema) {
+	if !conf.checkCollectionSchema(collection.Schema, conf.Fields) {
 		return nil, fmt.Errorf("[NewIndexer] collection schema not match")
 	}
 	// check the collection load state
 	if !collection.Loaded {
 		// load collection
-		if err := loadCollection(ctx, conf); err != nil {
+		if err := conf.loadCollection(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -145,47 +145,20 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	}
 
 	// load documents content
-	em := make([]defaultSchema, 0, len(docs))
-	texts := make([]string, 0, len(docs))
-	rows := make([]interface{}, 0, len(docs))
-	for _, doc := range docs {
-		metadata, err := sonic.Marshal(doc.MetaData)
-		if err != nil {
-			return nil, fmt.Errorf("[Indexer.Store] failed to marshal metadata: %w", err)
-		}
-		em = append(em, defaultSchema{
-			ID:       doc.ID,
-			Content:  doc.Content,
-			Vector:   nil,
-			Metadata: metadata,
-		})
-		texts = append(texts, doc.Content)
-	}
-
-	// embedding
-	vector, err := co.Embedding.EmbedStrings(i.makeEmbeddingCtx(ctx, emb), texts)
+	rows, err := i.config.DocumentConverter(ctx, docs, emb)
 	if err != nil {
-		return nil, err
-	}
-	if len(vector) != len(docs) {
-		return nil, fmt.Errorf("embedding result length not match")
-	}
-
-	// build embedding documents for storing
-	for idx, vec := range vector {
-		em[idx].Vector = vector2Bytes(vec)
-		rows = append(rows, &em[idx])
+		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
 	}
 
 	// store documents into milvus
 	results, err := i.config.Client.InsertRows(ctx, i.config.Collection, "", rows)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[Indexer.Store] failed to insert rows: %w", err)
 	}
 
 	// flush collection to make sure the data is visible
 	if err := i.config.Client.Flush(ctx, i.config.Collection, false); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("[Indexer.Store] failed to flush collection: %w", err)
 	}
 
 	// callback info on end
@@ -193,7 +166,7 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	for idx := 0; idx < results.Len(); idx++ {
 		ids[idx], err = results.GetAsString(idx)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("[Indexer.Store] failed to get id: %w", err)
 		}
 	}
 
@@ -203,6 +176,130 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	return ids, nil
 }
 
+// getDefaultSchema returns the default schema
+func (i *IndexerConfig) getSchema(collection, description string, fields []*entity.Field) *entity.Schema {
+	s := entity.NewSchema().
+		WithName(collection).
+		WithDescription(description)
+	for _, field := range fields {
+		s.WithField(field)
+	}
+	return s
+}
+
+func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error) {
+	return func(ctx context.Context, docs []*schema.Document, emb embedding.Embedder) ([]interface{}, error) {
+		em := make([]defaultSchema, 0, len(docs))
+		texts := make([]string, 0, len(docs))
+		rows := make([]interface{}, 0, len(docs))
+		for _, doc := range docs {
+			metadata, err := sonic.Marshal(doc.MetaData)
+			if err != nil {
+				return nil, fmt.Errorf("[Indexer.Store] failed to marshal metadata: %w", err)
+			}
+			em = append(em, defaultSchema{
+				ID:       doc.ID,
+				Content:  doc.Content,
+				Vector:   nil,
+				Metadata: metadata,
+			})
+			texts = append(texts, doc.Content)
+		}
+
+		// embedding
+		vector, err := emb.EmbedStrings(MakeEmbeddingCtx(ctx, emb), texts)
+		if err != nil {
+			return nil, err
+		}
+		if len(vector) != len(docs) {
+			return nil, fmt.Errorf("embedding result length not match")
+		}
+
+		// build embedding documents for storing
+		for idx, vec := range vector {
+			em[idx].Vector = vector2Bytes(vec)
+			rows = append(rows, &em[idx])
+		}
+		return rows, nil
+	}
+}
+
+// createdDefaultIndex creates the default index
+func (i *IndexerConfig) createdDefaultIndex(ctx context.Context, async bool) error {
+	index, err := entity.NewIndexAUTOINDEX(i.MetricType.getMetricType())
+	if err != nil {
+		return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
+	}
+	if err := i.Client.CreateIndex(ctx, i.Collection, defaultIndexField, index, async); err != nil {
+		return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
+	}
+	return nil
+}
+
+// checkCollectionSchema checks the collection schema
+func (i *IndexerConfig) checkCollectionSchema(schema *entity.Schema, field []*entity.Field) bool {
+	var count int
+	if len(schema.Fields) != len(field) {
+		return false
+	}
+	for _, f := range schema.Fields {
+		for _, e := range field {
+			if f.Name == e.Name && f.DataType == e.DataType {
+				count++
+			}
+		}
+	}
+	if count != len(field) {
+		return false
+	}
+	return true
+}
+
+// getCollectionDim gets the collection dimension
+func (i *IndexerConfig) loadCollection(ctx context.Context) error {
+	loadState, err := i.Client.GetLoadState(ctx, i.Collection, nil)
+	if err != nil {
+		return fmt.Errorf("[NewIndexer] failed to get load state: %w", err)
+	}
+	switch loadState {
+	case entity.LoadStateNotExist:
+		return fmt.Errorf("[NewIndexer] collection not exist")
+	case entity.LoadStateNotLoad:
+		index, err := i.Client.DescribeIndex(ctx, i.Collection, "vector")
+		if errors.Is(err, client.ErrClientNotReady) {
+			return fmt.Errorf("[NewIndexer] milvus client not ready: %w", err)
+		}
+		if len(index) == 0 {
+			if err := i.createdDefaultIndex(ctx, false); err != nil {
+				return err
+			}
+		}
+		if err := i.Client.LoadCollection(ctx, i.Collection, true); err != nil {
+			return err
+		}
+		return nil
+	case entity.LoadStateLoading:
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				loadingProgress, err := i.Client.GetLoadingProgress(ctx, i.Collection, nil)
+				if err != nil {
+					return err
+				}
+				if loadingProgress == 100 {
+					return nil
+				}
+			}
+		}
+	default:
+		return nil
+	}
+}
+
 // check the indexer config
 func (i *IndexerConfig) check() error {
 	if i.Client == nil {
@@ -210,12 +307,6 @@ func (i *IndexerConfig) check() error {
 	}
 	if i.Embedding == nil {
 		return fmt.Errorf("[NewIndexer] embedding not provided")
-	}
-	if i.Dim <= 0 {
-		i.Dim = defaultDim
-	}
-	if i.Dim%8 != 0 {
-		return fmt.Errorf("[NewIndexer] invalid dim")
 	}
 	if i.Collection == "" {
 		i.Collection = defaultCollection
@@ -235,20 +326,11 @@ func (i *IndexerConfig) check() error {
 	if i.PartitionNum <= 1 {
 		i.PartitionNum = 0
 	}
+	if i.Fields == nil {
+		i.Fields = getDefaultFields()
+	}
+	if i.DocumentConverter == nil {
+		i.DocumentConverter = i.getDefaultDocumentConvert()
+	}
 	return nil
-}
-
-// makeEmbeddingCtx makes the embedding context.
-func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
-	runInfo := &callbacks.RunInfo{
-		Component: components.ComponentOfEmbedding,
-	}
-
-	if embType, ok := components.GetType(emb); ok {
-		runInfo.Type = embType
-	}
-
-	runInfo.Name = runInfo.Type + string(runInfo.Component)
-
-	return callbacks.ReuseHandlers(ctx, runInfo)
 }

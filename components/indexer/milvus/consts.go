@@ -14,6 +14,8 @@ const (
 
 	defaultDim = 81920
 
+	defaultIndexField = "vector"
+
 	defaultConsistencyLevel = ConsistencyLevelBounded
 	defaultMetricType       = HAMMING
 )

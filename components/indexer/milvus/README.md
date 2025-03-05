@@ -2,7 +2,8 @@
 
 English | [简体中文](README_zh.md)
 
-An Milvus 2.x indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer` interface. This enables seamless integration
+An Milvus 2.x indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer`
+interface. This enables seamless integration
 with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
 ## Quick Start
@@ -101,49 +102,51 @@ func main() {
 
 ```go
 type IndexerConfig struct {
-    // Client is the milvus client to be called
-    // Required
-    Client client.Client
+// Client is the milvus client to be called
+// Required
+Client client.Client
 
-    // Default Collection config
-    // Collection is the collection name in milvus database
-    // Optional, and the default value is "eino_collection"
-    Collection string
-    // PartitionNum is the collection partition number
-    // Optional, and the default value is 1(disable)
-    // If the partition number is larger than 1, it means 启use partition and the partition key is collection id
-    PartitionNum int64
-    // Description is the description for collection
-    // Optional, and the default value is "the collection for eino"
-    Description string
-    // Dim is the vector dimension
-    // Optional, and the default value is 10,240 * 8
-    // because the dim it has to be a multiple of 8
-    Dim int64
-    // SharedNum is the milvus required param to create collection
-    // Optional, and the default value is 1
-    SharedNum int32
-    // ConsistencyLevel is the milvus collection consistency tactics
-    // Optional, and the default level is ClBounded(bounded consistency level with default tolerance of 5 seconds)
-    ConsistencyLevel ConsistencyLevel
-    // EnableDynamicSchema is means the collection is enabled to dynamic schema
-    // Optional, and the default value is false
-    // Enable to dynamic schema it could affect milvus performance
-    EnableDynamicSchema bool
+// Default Collection config
+// Collection is the collection name in milvus database
+// Optional, and the default value is "eino_collection"
+Collection string
+// Description is the description for collection
+// Optional, and the default value is "the collection for eino"
+Description string
+// PartitionNum is the collection partition number
+// Optional, and the default value is 1(disable)
+// If the partition number is larger than 1, it means use partition and must have a partition key in Fields
+PartitionNum int64
+// Fields is the collection fields
+// Optional, and the default value is the default fields
+Fields       []*entity.Field
+// SharedNum is the milvus required param to create collection
+// Optional, and the default value is 1
+SharedNum int32
+// ConsistencyLevel is the milvus collection consistency tactics
+// Optional, and the default level is ClBounded(bounded consistency level with default tolerance of 5 seconds)
+ConsistencyLevel ConsistencyLevel
+// EnableDynamicSchema is means the collection is enabled to dynamic schema
+// Optional, and the default value is false
+// Enable to dynamic schema it could affect milvus performance
+EnableDynamicSchema bool
 
-    // Index config to the vector column
-    // MetricType the metric type for vector
-    // Optional and default type is HAMMING
-    // It offers two options: HAMMING and JACCARD
-    MetricType MetricType
+// DocumentConverter is the function to convert the schema.Document to the row data
+// Optional, and the default value is defaultDocumentConverter
+DocumentConverter func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error)
 
-    // Embedding vectorization method for values needs to be embedded from schema.Document's content.
-    // Required
-    Embedding embedding.Embedder
+// Index config to the vector column
+// MetricType the metric type for vector
+// Optional and default type is HAMMING
+MetricType MetricType
+
+// Embedding vectorization method for values needs to be embedded from schema.Document's content.
+// Required
+Embedding embedding.Embedder
 }
 ```
 
-## Collection Schema
+## Default Collection Schema
 
 | Field    | Type           | DataBase Type | Index Type                 | Description             | Remark             |
 |----------|----------------|---------------|----------------------------|-------------------------|--------------------|

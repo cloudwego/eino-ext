@@ -2,7 +2,8 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
-基于 Milvus 2.x 的向量存储实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Indexer` 接口的存储方案。该组件可无缝集成 Eino 的向量存储和检索系统，增强语义搜索能力。
+基于 Milvus 2.x 的向量存储实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Indexer` 接口的存储方案。该组件可无缝集成
+Eino 的向量存储和检索系统，增强语义搜索能力。
 
 ## 快速开始
 
@@ -100,49 +101,51 @@ func main() {
 
 ```go
 type IndexerConfig struct {
-    // Client 需要调用的 Milvus 客户端
-    // 必填
-    Client client.Client
-
-    // 集合默认配置
-    // Collection 指定 Milvus 中的集合名称
-    // 可选，默认值 "eino_collection"
-    Collection string
-    // PartitionNum 集合分区数量
-    // 可选，默认值 1（禁用分区）
-    // 当分区数大于 1 时，表示启用分区且分区键为 collection id
-    PartitionNum int64
-    // Description 集合描述信息
-    // 可选，默认值 "the collection for eino"
-    Description string
-    // Dim 向量维度
-    // 可选，默认值 10,240 * 8
-    // 注意：维度必须是 8 的倍数
-    Dim int64
-    // SharedNum Milvus 创建集合的必要参数
-    // 可选，默认值 1
-    SharedNum int32
-    // ConsistencyLevel 集合一致性级别
-    // 可选，默认级别 ClBounded（有限一致性，默认 5 秒容忍时间）
-    ConsistencyLevel ConsistencyLevel
-    // EnableDynamicSchema 是否启用动态模式
-    // 可选，默认值 false
-    // 启用动态模式可能影响 Milvus 性能
-    EnableDynamicSchema bool
-
-    // 向量列索引配置
-    // MetricType 向量相似度计算方式
-    // 可选，默认 HAMMING
-    // 可选值：HAMMING 和 JACCARD
-    MetricType MetricType
-
-    // Embedding 用于将文档内容转换为向量的嵌入模型
-    // 必填
-    Embedding embedding.Embedder
+	// Client 是要调用的 milvus 客户端
+	// 必需
+	Client client.Client
+	
+	// 默认集合配置
+	// Collection 是 milvus 数据库中的集合名称
+	// 可选，默认值为 "eino_collection"
+	Collection string
+	// Description 是集合的描述
+	// 可选，默认值为 "the collection for eino"
+	Description string
+	// PartitionNum 是集合分区数量
+	// 可选，默认值为 1（禁用）
+	// 如果分区数量大于 1，表示使用分区，并且必须在 Fields 中有一个分区键
+	PartitionNum int64
+	// Fields 是集合字段
+	// 可选，默认值为默认字段
+	Fields       []*entity.Field
+	// SharedNum 是创建集合所需的 milvus 参数
+	// 可选，默认值为 1
+	SharedNum int32
+	// ConsistencyLevel 是 milvus 集合一致性策略
+	// 可选，默认级别为 ClBounded（有界一致性级别，默认容忍度为 5 秒）
+	ConsistencyLevel ConsistencyLevel
+	// EnableDynamicSchema 表示集合是否启用动态模式
+	// 可选，默认值为 false
+	// 启用动态模式可能会影响 milvus 性能
+	EnableDynamicSchema bool
+	
+	// DocumentConverter 是将 schema.Document 转换为行数据的函数
+	// 可选，默认值为 defaultDocumentConverter
+	DocumentConverter func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error)
+	
+	// 向量列的索引配置
+	// MetricType 是向量的度量类型
+	// 可选，默认类型为 HAMMING
+	MetricType MetricType
+	
+	// Embedding 是从 schema.Document 的内容中嵌入值所需的向量化方法
+	// 必需
+	Embedding embedding.Embedder
 }
 ```
 
-## 数据模型
+## 默认数据模型
 
 | 字段       | 数据类型           | 字段类型         | 索引类型                       | 描述     | 备注          |
 |----------|----------------|--------------|----------------------------|--------|-------------|

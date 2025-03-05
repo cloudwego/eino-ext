@@ -2,7 +2,8 @@
 
 English | [简体中文](README_zh.md)
 
-An Milvus 2.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration
+An Milvus 2.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever`
+interface. This enables seamless integration
 with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
 ## Quick Start
@@ -118,9 +119,9 @@ type RetrieverConfig struct {
 	// OutputFields is the fields to be returned
 	// Optional, and the default value is empty
 	OutputFields []string
-	// DocumentConverter is the function to convert the search result to schema.Document
+	// DocumentConverter is the function to convert the search result to s.Document
 	// Optional, and the default value is defaultDocumentConverter
-	DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error)
+	DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*s.Document, error)
 	// MetricType is the metric type for vector
 	// Optional, and the default value is "HAMMING"
 	MetricType entity.MetricType
@@ -134,7 +135,7 @@ type RetrieverConfig struct {
 	// Optional, and the default value is entity.IndexAUTOINDEXSearchParam, and the level is 1
 	Sp entity.SearchParam
 
-	// Embedding is the embedding vectorization method for values needs to be embedded from schema.Document's content.
+	// Embedding is the embedding vectorization method for values needs to be embedded from s.Document's content.
 	// Required
 	Embedding embedding.Embedder
 }

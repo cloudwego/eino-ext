@@ -2,7 +2,8 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
-基于 Milvus 2.x 的向量搜索实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Retriever` 接口的存储方案。该组件可无缝集成 Eino 的向量存储和检索系统，增强语义搜索能力。
+基于 Milvus 2.x 的向量搜索实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Retriever` 接口的存储方案。该组件可无缝集成
+Eino 的向量存储和检索系统，增强语义搜索能力。
 
 ## 快速开始
 
@@ -117,9 +118,9 @@ type RetrieverConfig struct {
     // OutputFields 是要返回的字段
     // 可选，默认值为空
     OutputFields []string
-    // DocumentConverter 是将搜索结果转换为 schema.Document 的函数
+    // DocumentConverter 是将搜索结果转换为 s.Document 的函数
     // 可选，默认值为 defaultDocumentConverter
-    DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error)
+    DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*s.Document, error)
     // MetricType 是向量的度量类型
     // 可选，默认值为 "HAMMING"
     MetricType entity.MetricType
@@ -133,7 +134,7 @@ type RetrieverConfig struct {
     // 可选，默认值为 entity.IndexAUTOINDEXSearchParam，级别为 1
     Sp entity.SearchParam
 
-    // Embedding 是从 schema.Document 的内容中嵌入需要嵌入的值的方法
+    // Embedding 是从 s.Document 的内容中嵌入需要嵌入的值的方法
     // 必需的
     Embedding embedding.Embedder
 }
