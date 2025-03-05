@@ -186,6 +186,29 @@ type langfuseState struct {
 	observationID string
 }
 
+func parseCallbackInput(in *model.CallbackInput) *model.CallbackInput {
+	if in == nil {
+		return &model.CallbackInput{Config: &model.Config{}}
+	}
+	if in.Config == nil {
+		in.Config = &model.Config{}
+	}
+	return in
+}
+
+func parseCallbackOutput(out *model.CallbackOutput) *model.CallbackOutput {
+	if out == nil {
+		return &model.CallbackOutput{Config: &model.Config{}, TokenUsage: &model.TokenUsage{}}
+	}
+	if out.Config == nil {
+		out.Config = &model.Config{}
+	}
+	if out.TokenUsage == nil {
+		out.TokenUsage = &model.TokenUsage{}
+	}
+	return out
+}
+
 func (l *langfuseHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	if info == nil {
 		return ctx
@@ -197,6 +220,8 @@ func (l *langfuseHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	}
 	if info.Component == components.ComponentOfChatModel {
 		mcbi := model.ConvCallbackInput(input)
+		mcbi = parseCallbackInput(mcbi)
+
 		generationID, err := l.cli.CreateGeneration(&langfuse.GenerationEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
@@ -260,6 +285,8 @@ func (l *langfuseHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 
 	if info.Component == components.ComponentOfChatModel {
 		mcbo := model.ConvCallbackOutput(output)
+		mcbo = parseCallbackOutput(mcbo)
+
 		body := &langfuse.GenerationEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
