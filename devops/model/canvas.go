@@ -26,12 +26,16 @@ import (
 )
 
 const (
-	Version = "1.0.0"
+	Version = "1.1.0"
 )
 
 type CanvasInfo struct {
-	Version      string `json:"version"`
-	*GraphSchema `json:",inline"`
+	ID        string       `json:"id"`
+	Version   string       `json:"version"`
+	MainGraph *GraphSchema `json:"main_graph"`
+	// Deprecated: use MainGraph instead.
+	GraphSchema *GraphSchema   `json:",inline"`
+	NodeCounter map[string]int `json:"nodeCounter"`
 }
 
 type NodeType string
@@ -51,10 +55,13 @@ const (
 )
 
 type GraphSchema struct {
-	Name      string               `json:"name"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	// Version returns the version of ComponentSchema
+	Version   string               `json:"version"`
 	Component components.Component `json:"component"`
-	Nodes     []*Node              `json:"nodes,omitempty"`
-	Edges     []*Edge              `json:"edges,omitempty"`
+	Nodes     []*Node              `json:"nodes"`
+	Edges     []*Edge              `json:"edges"`
 	Branches  []*Branch            `json:"branches"`
 
 	// graph config option
@@ -62,6 +69,9 @@ type GraphSchema struct {
 	GenLocalState   *GenLocalState  `json:"gen_local_state,omitempty"`
 	InputType       *JsonSchema     `json:"input_type"`
 	OutputType      *JsonSchema     `json:"output_type"`
+
+	// Deprecated: use NodeCounter defined in CanvasInfo instead.
+	NodeCounter map[string]int `json:"nodeCounter"`
 }
 
 type GenLocalState struct {
@@ -70,6 +80,7 @@ type GenLocalState struct {
 }
 
 type Node struct {
+	ID   string   `json:"id"`
 	Key  string   `json:"key"`
 	Name string   `json:"name"`
 	Type NodeType `json:"type"`
@@ -83,6 +94,18 @@ type Node struct {
 	AllowOperate bool `json:"allow_operate"` //  used to indicate whether the node can be operated on
 
 	Extra map[string]any `json:"extra,omitempty"` // used to store extra information
+
+	// For UI
+	LayoutData *LayoutData `json:"layoutData"`
+}
+
+type LayoutData struct {
+	Position *Position `json:"position"`
+}
+
+type Position struct {
+	X int `json:"x"`
+	Y int `json:"y"`
 }
 
 type NodeOption struct {
@@ -93,19 +116,27 @@ type NodeOption struct {
 }
 
 type Edge struct {
-	ID            string `json:"id,omitempty"`
-	Name          string `json:"name,omitempty"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+
 	SourceNodeKey string `json:"source_node_key,omitempty"`
 	TargetNodeKey string `json:"target_node_key,omitempty"`
+
+	SourceWorkFlowNodeID string `json:"sourceWorkflowNodeId,omitempty"`
+	TargetWorkFlowNodeID string `json:"targetWorkflowNodeId,omitempty"`
 
 	Extra map[string]any `json:"extra,omitempty"` // used to store extra information
 }
 
 type Branch struct {
-	ID             string     `json:"id"`
-	Condition      *Condition `json:"condition"`
-	SourceNodeKey  string     `json:"source_node_key"`
-	TargetNodeKeys []string   `json:"target_node_keys"`
+	ID        string     `json:"id"`
+	Condition *Condition `json:"condition"`
+
+	SourceNodeKey  string   `json:"source_node_key"`
+	TargetNodeKeys []string `json:"target_node_keys"`
+
+	SourceWorkFlowNodeID  string   `json:"sourceWorkflowNodeId,omitempty"`
+	TargetWorkFlowNodeIDs []string `json:"targetWorkflowNodeIds,omitempty"`
 
 	Extra map[string]any `json:"extra,omitempty"` // used to store extra information
 }
@@ -179,25 +210,45 @@ const (
 )
 
 type ComponentSchema struct {
-	// Name returns the displayed name of the component
+	// Name returns the displayed name of the component.
 	Name string `json:"name"`
+	// Version returns the version of ComponentSchema.
+	Version string `json:"version"`
 	// Component returns type of component (Lambda ChatModel....)
 	Component components.Component `json:"component"`
 	// ComponentSource returns the source of the component, such as official and custom.
 	ComponentSource ComponentSource `json:"component_source"`
-	// Identifier returns the identifier of the component implementation, such as eino-ext/model/ark
-	Identifier string      `json:"identifier,omitempty"`
-	InputType  *JsonSchema `json:"input_type,omitempty"`
-	OutputType *JsonSchema `json:"output_type,omitempty"`
-	Method     string      `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
+	// Identifier returns the identifier of the component implementation, such as eino-ext/model/ark.
+	// Identifier will be instead of TypeID in the future.
+	Identifier string `json:"identifier,omitempty"`
+	// TypeID returns the id of component type, ensuring immutability.
+	TypeID             string                    `json:"type_id"`
+	InputType          *JsonSchema               `json:"input_type,omitempty"`
+	OutputType         *JsonSchema               `json:"output_type,omitempty"`
+	ComponentInterface *ComponentInterfaceSchema `json:"component_interface,omitempty"`
 
-	Slots []Slot `json:"slots,omitempty"`
+	Slots []*Slot `json:"slots,omitempty"`
 
-	Config          *ConfigSchema        `json:"config,omitempty"`
+	// Config returns the configuration for initializing the component.
+	Config *ConfigSchema `json:"config,omitempty"`
+	// ExtraProperty returns extra properties for the component without defined abstract interface.
 	ExtraProperty   *ExtraPropertySchema `json:"extra_property,omitempty"`
 	IsIOTypeMutable bool                 `json:"is_io_type_mutable"`
 
-	Version string `json:"version"`
+	CustomGenCodeExtraDesc   *CustomGenerateCodeExtraDesc   `json:"custom_gen_code_extra_desc,omitempty"`
+	OfficialGenCodeExtraDesc *OfficialGenerateCodeExtraDesc `json:"official_gen_code_extra_desc,omitempty"`
+	ModuleVersionInfo        *ModuleVersion                 `json:"module_version_info"`
+
+	// Method returns the component construction method defined internally in DevOps and is not an externally exposed field.
+	Method string `json:"method,omitempty"`
+}
+
+type ModuleVersion struct {
+	Module           string `json:"module"`
+	ModuleReleaseTag string `json:"module_release_tag"`
+	EinoReleaseTag   string `json:"eino_release_tag"`
+	CommitHash       string `json:"commit_hash"`
+	CommitDate       string `json:"commit_date"`
 }
 
 type ConfigSchema struct {
@@ -212,13 +263,93 @@ type ExtraPropertySchema struct {
 }
 
 type Slot struct {
-	Component string `json:"component"`
+	Component components.Component `json:"component"`
 
 	// The path of the configuration field.
 	// for example: if there is no nesting, it means Field, if there is a nested structure, it means Field.NestField.
-	FieldLocPath   string            `json:"field_loc_path"`
-	Multiple       bool              `json:"multiple"`
-	Required       bool              `json:"required"`
-	ComponentItems []ComponentSchema `json:"component_items"`
-	GoDefinition   *GoDefinition     `json:"go_definition,omitempty"`
+	FieldLocPath   string             `json:"field_loc_path"`
+	Multiple       bool               `json:"multiple"`
+	Required       bool               `json:"required"`
+	ComponentItems []*ComponentSchema `json:"component_items"`
+	GoDefinition   *GoDefinition      `json:"go_definition,omitempty"`
+}
+
+type ComponentInterfaceSchema struct {
+	Schema             *JsonSchema `json:"schema"`
+	InterfaceInfoInput string      `json:"interface_info_input"`
+}
+
+type CustomGenerateCodeExtraDesc struct {
+	ConstructorDesc *CustomConstructorDesc `json:"constructor_desc"`
+}
+
+type CustomConstructorDesc struct {
+	// ConstructorSign returns the constructor signature.
+	ConstructorSign *FunctionSignature `json:"constructor_sign"`
+	// ImplInterfaces returns the list of abstract interfaces implemented by the component, which may include multiple interfaces, such as Tool.
+	ImplInterfaces []*InterfaceDesc `json:"impl_interfaces"`
+	// VarDesc returns the description of variables required for component initialization.
+	VarDesc *VariableDesc `json:"var_desc"`
+
+	StreamLambda *StreamLambda `json:"stream_lambda"`
+}
+
+type OfficialGenerateCodeExtraDesc struct {
+	ConstructorDesc *OfficialConstructorDesc `json:"constructor_desc"`
+}
+
+type OfficialConstructorDesc struct {
+	// ConstructorSign returns the constructor signature.
+	ConstructorSign *FunctionSignature `json:"constructor_sign"`
+	// VarDesc returns the description of variables required for component initialization.
+	VarDesc *VariableDesc `json:"var_desc"`
+
+	InitComponentFunc *CallFunc `json:"init_component_func"`
+	InitLambdaFunc    *CallFunc `json:"init_lambda_func"`
+}
+
+type VariableDesc struct {
+	ConfigDesc *ConfigVarDesc `json:"config_desc"`
+}
+
+type ConfigVarDesc struct {
+	// Config returns the description of the configuration for initializing the component, which is mutually exclusive with CompositeConfig.
+	Config *Parameter `json:"config"`
+	// CompositeConfig returns the description of the configuration for initializing the component, which is mutually exclusive with Config.
+	CompositeConfig []*Parameter `json:"composite_config"`
+}
+
+type InterfaceDesc struct {
+	// InterfaceName Returns the interface name.
+	// The top-level interface name is presented in the same enumeration as the ComponentInterfaceSchema.
+	InterfaceName string `json:"interface_name"`
+	// Methods return methods of the interface.
+	Methods []*FunctionSignature `json:"methods"`
+	// CompositeInterfaces return the list of combined interfaces.
+	CompositeInterfaces []*InterfaceDesc `json:"composite_interfaces"`
+}
+
+type StreamLambda struct {
+	Lib *Library `json:"lib"`
+}
+
+type FunctionSignature struct {
+	FuncName string       `json:"func_name"`
+	Params   []*Parameter `json:"params"`
+	Rets     []*Parameter `json:"rets"`
+}
+
+type Parameter struct {
+	ParamName  string   `json:"param_name"`
+	TypeName   string   `json:"type_name"`
+	IsPtr      bool     `json:"is_ptr"`
+	IsEllipsis bool     `json:"is_ellipsis"`
+	Lib        *Library `json:"lib"`
+}
+
+type CallFunc struct {
+	FuncName string       `json:"func_name"`
+	Args     []*Parameter `json:"args"`
+	Rets     []*Parameter `json:"rets"`
+	Lib      *Library     `json:"lib"`
 }
