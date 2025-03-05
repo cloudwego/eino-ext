@@ -51,6 +51,9 @@ const (
 )
 
 type GraphSchema struct {
+	// ID returns the unique id of the graph.
+	ID string `json:"id"`
+	// Name returns the name of the graph.
 	Name      string               `json:"name"`
 	Component components.Component `json:"component"`
 	Nodes     []*Node              `json:"nodes,omitempty"`

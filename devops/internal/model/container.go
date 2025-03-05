@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/google/uuid"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"golang.org/x/exp/slices"
 
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
@@ -38,19 +38,26 @@ import (
 type GraphContainer struct {
 	// GraphID graph id.
 	GraphID string
-	// GraphName graph name.
-	GraphName string
+	// Name graph display name.
+	Name string
 	// GraphInfo graph info, from graph compile callback.
 	GraphInfo *GraphInfo
-	// Canvas graph canvas.
+	// CanvasInfo graph canvas.
 	CanvasInfo *devmodel.CanvasInfo
-	// NodesGraph NodeKey vs Graph, NodeKey is the node where debugging starts.
-	NodesGraph map[string]*Graph
+
+	// NodeGraphs NodeKey vs Graph, NodeKey is the node where debugging starts.
+	NodeGraphs map[string]*Graph
 }
 
 type GraphInfo struct {
 	*compose.GraphInfo
-	Option GraphOption
+	// SubGraphNodes NodeKey vs Subgraph Node Info.
+	SubGraphNodes map[string]*SubGraphNode
+}
+
+type SubGraphNode struct {
+	ID            string
+	SubGraphNodes map[string]*SubGraphNode
 }
 
 type GraphOption struct {
@@ -69,9 +76,6 @@ func initGraphInfo(gi *GraphInfo) *GraphInfo {
 			Name:           gi.Name,
 			GenStateFn:     gi.GenStateFn,
 		},
-		Option: GraphOption{
-			GenState: gi.GenStateFn,
-		},
 	}
 }
 
@@ -80,8 +84,8 @@ func BuildDevGraph(gi *GraphInfo, fromNode string) (g *Graph, err error) {
 		return nil, fmt.Errorf("can not start from end node")
 	}
 
-	if gi.Option.GenState != nil {
-		g = &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(gi.Option.GenState))}
+	if gi.GraphInfo.GenStateFn != nil {
+		g = &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(gi.GraphInfo.GenStateFn))}
 	} else {
 		g = &Graph{Graph: compose.NewGraph[any, any]()}
 	}
@@ -158,8 +162,10 @@ func BuildDevGraph(gi *GraphInfo, fromNode string) (g *Graph, err error) {
 	return g, nil
 }
 
-func (gi GraphInfo) BuildGraphSchema() (graph *devmodel.GraphSchema, err error) {
+func (gi GraphInfo) BuildGraphSchema(graphID string) (graph *devmodel.GraphSchema, err error) {
 	graph = &devmodel.GraphSchema{
+		ID:    graphID,
+		Name:  gi.Name,
 		Nodes: make([]*devmodel.Node, 0, len(gi.Nodes)+2),
 		Edges: make([]*devmodel.Edge, 0, len(gi.Nodes)+2),
 	}
@@ -257,7 +263,6 @@ func (gi GraphInfo) buildGraphNodes() (nodes []*devmodel.Node, err error) {
 	}
 
 	return nodes, err
-
 }
 
 func (gi GraphInfo) buildGraphEdges() (edges []*devmodel.Edge, nodes []*devmodel.Node, err error) {
@@ -272,13 +277,8 @@ func (gi GraphInfo) buildGraphEdges() (edges []*devmodel.Edge, nodes []*devmodel
 		if len(targetNodeKeys) == 1 {
 			// only one target node
 			targetNodeKey := targetNodeKeys[0]
-			edgeID, err := uuid.NewRandom()
-			if err != nil {
-				return nil, nil, err
-			}
-
 			edges = append(edges, &devmodel.Edge{
-				ID:            edgeID.String(),
+				ID:            gonanoid.Must(),
 				Name:          canvasEdgeName(sourceNodeKey, targetNodeKey),
 				SourceNodeKey: sourceNodeKey,
 				TargetNodeKey: targetNodeKey,
@@ -295,24 +295,16 @@ func (gi GraphInfo) buildGraphEdges() (edges []*devmodel.Edge, nodes []*devmodel
 		}
 		parallelID++
 		nodes = append(nodes, parallelNode)
-		edgeID, err := uuid.NewRandom()
-		if err != nil {
-			return nil, nil, err
-		}
 		edges = append(edges, &devmodel.Edge{
-			ID:            edgeID.String(),
+			ID:            gonanoid.Must(),
 			Name:          canvasEdgeName(sourceNodeKey, parallelNode.Key),
 			SourceNodeKey: sourceNodeKey,
 			TargetNodeKey: parallelNode.Key,
 		})
 
 		for _, targetNodeKey := range targetNodeKeys {
-			edgeID, err := uuid.NewRandom()
-			if err != nil {
-				return nil, nil, err
-			}
 			edges = append(edges, &devmodel.Edge{
-				ID:            edgeID.String(),
+				ID:            gonanoid.Must(),
 				Name:          canvasEdgeName(parallelNode.Key, targetNodeKey),
 				SourceNodeKey: parallelNode.Key,
 				TargetNodeKey: targetNodeKey,
@@ -322,6 +314,7 @@ func (gi GraphInfo) buildGraphEdges() (edges []*devmodel.Edge, nodes []*devmodel
 
 	return edges, nodes, err
 }
+
 func (gi GraphInfo) buildGraphBranches() (edges []*devmodel.Edge, nodes []*devmodel.Node, err error) {
 	nodes = make([]*devmodel.Node, 0)
 	edges = make([]*devmodel.Edge, 0)
@@ -336,12 +329,8 @@ func (gi GraphInfo) buildGraphBranches() (edges []*devmodel.Edge, nodes []*devmo
 			}
 			branchID++
 			nodes = append(nodes, branchNode)
-			edgeID, err := uuid.NewRandom()
-			if err != nil {
-				return nil, nil, err
-			}
 			edges = append(edges, &devmodel.Edge{
-				ID:            edgeID.String(),
+				ID:            gonanoid.Must(),
 				Name:          canvasEdgeName(sourceNodeKey, branchNode.Key),
 				SourceNodeKey: sourceNodeKey,
 				TargetNodeKey: branchNode.Key,
@@ -349,12 +338,8 @@ func (gi GraphInfo) buildGraphBranches() (edges []*devmodel.Edge, nodes []*devmo
 
 			branchEndNodes := branch.GetEndNode()
 			for branchNodeTargetKey := range branchEndNodes {
-				edgeID, err := uuid.NewRandom()
-				if err != nil {
-					return nil, nil, err
-				}
 				edges = append(edges, &devmodel.Edge{
-					ID:            edgeID.String(),
+					ID:            gonanoid.Must(),
 					Name:          canvasEdgeName(branchNode.Key, branchNodeTargetKey),
 					SourceNodeKey: branchNode.Key,
 					TargetNodeKey: branchNodeTargetKey,
@@ -365,19 +350,24 @@ func (gi GraphInfo) buildGraphBranches() (edges []*devmodel.Edge, nodes []*devmo
 
 	return edges, nodes, err
 }
+
 func (gi GraphInfo) buildSubGraphSchema() (subGraphSchema map[string]*devmodel.GraphSchema, err error) {
 	subGraphSchema = make(map[string]*devmodel.GraphSchema, len(gi.Nodes))
-	for key, graphNodeInfo := range gi.Nodes {
-		if graphNodeInfo.GraphInfo != nil {
-			subG := GraphInfo{
-				GraphInfo: graphNodeInfo.GraphInfo,
-			}
-			graphSchema, err := subG.BuildGraphSchema()
-			if err != nil {
-				return nil, err
-			}
-			subGraphSchema[key] = graphSchema
+	for nk, sgi := range gi.Nodes {
+		if sgi.GraphInfo == nil {
+			continue
 		}
+
+		subG := GraphInfo{
+			GraphInfo:     sgi.GraphInfo,
+			SubGraphNodes: gi.SubGraphNodes[nk].SubGraphNodes,
+		}
+		graphSchema, err := subG.BuildGraphSchema(gi.SubGraphNodes[nk].ID)
+		if err != nil {
+			return nil, err
+		}
+
+		subGraphSchema[nk] = graphSchema
 	}
 
 	return subGraphSchema, err

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/google/uuid"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
@@ -31,7 +31,7 @@ var _ ContainerService = &containerServiceImpl{}
 
 //go:generate mockgen -source=container.go -destination=../mock/container_mock.go -package=mock ContainerService
 type ContainerService interface {
-	AddGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error)
+	AddGraphInfo(graphName string, graphInfo *compose.GraphInfo) (graphID string, err error)
 	ListGraphs() (graphNameToID map[string]string)
 	CreateDevGraph(graphID, fromNode string) (devGraph *model.Graph, err error)
 	GetDevGraph(graphID, fromNode string) (devGraph *model.Graph, exist bool)
@@ -57,8 +57,8 @@ func newContainerService() ContainerService {
 	}
 }
 
-func (s *containerServiceImpl) AddGraphInfo(graphName string, graphInfo *compose.GraphInfo, graphOpt model.GraphOption) (graphID string, err error) {
-	if graphInfo == nil {
+func (s *containerServiceImpl) AddGraphInfo(rootGN string, rootGI *compose.GraphInfo) (graphID string, err error) {
+	if rootGI == nil {
 		return "", fmt.Errorf("graph info is nil")
 	}
 
@@ -69,59 +69,80 @@ func (s *containerServiceImpl) AddGraphInfo(graphName string, graphInfo *compose
 		return "", fmt.Errorf("too many graph, max=%d", maxGraphNum)
 	}
 
-	newName := graphName
-	cnt := s.graphNameCounter[graphName]
+	newName := rootGN
+	cnt := s.graphNameCounter[rootGN]
 	if cnt > 0 {
 		newName = fmt.Sprintf("%s_%d", newName, cnt)
 	}
-
-	genID, err := uuid.NewRandom()
-	if err != nil {
-		return "", err
-	}
-	gid := genID.String()
 
 	if s.container == nil {
 		s.container = make(map[string]*model.GraphContainer, 10)
 	}
 
-	s.container[gid] = &model.GraphContainer{
-		GraphID:   gid,
-		GraphName: newName,
-		GraphInfo: &model.GraphInfo{
-			GraphInfo: graphInfo,
-			Option:    graphOpt,
-		},
+	var add func(pgid, pgn string, pgi *compose.GraphInfo, subGraphNodes map[string]*model.SubGraphNode) (string, error)
+	add = func(pgid, pgn string, pgi *compose.GraphInfo, subGraphNodes map[string]*model.SubGraphNode) (string, error) {
+		gid := gonanoid.Must()
+		if err != nil {
+			return "", err
+		}
+
+		for nk, ni := range pgi.Nodes {
+			if ni.GraphInfo == nil {
+				continue
+			}
+
+			_subGraphNodes := make(map[string]*model.SubGraphNode, 10)
+			sgn := fmt.Sprintf("%s/%s", pgn, nk)
+
+			sgid, err := add(gid, sgn, ni.GraphInfo, _subGraphNodes)
+			if err != nil {
+				return "", err
+			}
+
+			subGraphNodes[nk] = &model.SubGraphNode{
+				ID:            sgid,
+				SubGraphNodes: _subGraphNodes,
+			}
+		}
+
+		cp := make(map[string]*model.SubGraphNode, len(subGraphNodes))
+		for k, v := range subGraphNodes {
+			cp[k] = v
+		}
+
+		s.container[gid] = &model.GraphContainer{
+			Name: pgn,
+			GraphInfo: &model.GraphInfo{
+				GraphInfo:     pgi,
+				SubGraphNodes: cp,
+			},
+		}
+
+		return gid, nil
+	}
+
+	subGraphNodes := make(map[string]*model.SubGraphNode, 10)
+	rootGraphID, err := add("", newName, rootGI, subGraphNodes)
+	if err != nil {
+		return "", err
 	}
 
 	s.totalGraphNum++
-	s.graphNameCounter[graphName]++
+	s.graphNameCounter[rootGN]++
 
-	return gid, nil
+	return rootGraphID, nil
 }
 
-//func (s *containerServiceImpl) GetDevGraph(graphID string) (graphInfo model.GraphInfo, exist bool) {
-//	s.mu.RLock()
-//	defer s.mu.RUnlock()
-//
-//	c := s.container[graphID]
-//	if c == nil || c.GraphInfo == nil {
-//		return graphInfo, false
-//	}
-//
-//	return *c.GraphInfo, true
-//}
-
-func (s *containerServiceImpl) ListGraphs() (graphNameToID map[string]string) {
+func (s *containerServiceImpl) ListGraphs() (gnToID map[string]string) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	graphNameToID = make(map[string]string, len(s.container))
+	gnToID = make(map[string]string, len(s.container))
 	for _, c := range s.container {
-		graphNameToID[c.GraphName] = c.GraphID
+		gnToID[c.Name] = c.GraphID
 	}
 
-	return graphNameToID
+	return gnToID
 }
 
 func (s *containerServiceImpl) CreateDevGraph(graphID, fromNode string) (devGraph *model.Graph, err error) {
@@ -138,10 +159,10 @@ func (s *containerServiceImpl) CreateDevGraph(graphID, fromNode string) (devGrap
 	}
 
 	s.mu.Lock()
-	if c.NodesGraph == nil {
-		c.NodesGraph = make(map[string]*model.Graph, 10)
+	if c.NodeGraphs == nil {
+		c.NodeGraphs = make(map[string]*model.Graph, 10)
 	}
-	c.NodesGraph[fromNode] = graph
+	c.NodeGraphs[fromNode] = graph
 	s.mu.Unlock()
 
 	return graph, nil
@@ -156,7 +177,7 @@ func (s *containerServiceImpl) GetDevGraph(graphID, fromNode string) (devGraph *
 		return devGraph, false
 	}
 
-	g := c.NodesGraph[fromNode]
+	g := c.NodeGraphs[fromNode]
 	if g == nil {
 		return devGraph, false
 	}
@@ -172,12 +193,11 @@ func (s *containerServiceImpl) CreateCanvas(graphID string) (canvasInfo devmodel
 		return canvasInfo, fmt.Errorf("must add graph first")
 	}
 
-	graphInfo := c.GraphInfo
-	graphSchema, err := graphInfo.BuildGraphSchema()
+	graphSchema, err := c.GraphInfo.BuildGraphSchema(graphID)
 	if err != nil {
 		return canvasInfo, fmt.Errorf("build canvas failed, err=%w", err)
 	}
-	graphSchema.Name = c.GraphName
+
 	canvasInfo = devmodel.CanvasInfo{
 		Version:     devmodel.Version,
 		GraphSchema: graphSchema,

@@ -30,6 +30,7 @@ require (
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/matoous/go-nanoid/v2 v2.1.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect

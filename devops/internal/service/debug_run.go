@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/google/uuid"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
@@ -64,11 +64,7 @@ func (d *debugServiceImpl) CreateDebugThread(ctx context.Context, graphID string
 		d.debugGraphs[graphID] = dg
 	}
 
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return "", fmt.Errorf("generate thread id failed, err=%w", err)
-	}
-	threadID = id.String()
+	threadID = gonanoid.Must()
 
 	dg.DT = append(dg.DT, &model.DebugThread{ID: threadID})
 
@@ -90,11 +86,7 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 		return "", nil, nil, fmt.Errorf("thread=%s not exist", rm.ThreadID)
 	}
 
-	id, err := uuid.NewRandom()
-	if err != nil {
-		return "", nil, nil, err
-	}
-	debugID = id.String()
+	debugID = gonanoid.Must()
 
 	devGraph, ok := ContainerSVC.GetDevGraph(rm.GraphID, rm.FromNode)
 	if !ok {

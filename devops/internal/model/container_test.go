@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/stretchr/testify/assert"
 
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
@@ -73,9 +74,6 @@ type testCallback struct {
 func (tt *testCallback) OnFinish(ctx context.Context, graphInfo *compose.GraphInfo) {
 	tt.gi = &GraphInfo{
 		GraphInfo: graphInfo,
-		Option: GraphOption{
-			GenState: graphInfo.GenStateFn,
-		},
 	}
 }
 
@@ -1448,7 +1446,7 @@ func (c *canvasCallBack) OnFinish(ctx context.Context, info *compose.GraphInfo) 
 	g := GraphInfo{
 		GraphInfo: info,
 	}
-	graphSchema, err := g.BuildGraphSchema()
+	graphSchema, err := g.BuildGraphSchema("1")
 	assert.NoError(t, err)
 	assert.Equal(t, 15, len(graphSchema.Nodes))
 	for _, edge := range graphSchema.Edges {
@@ -1671,7 +1669,34 @@ func (c *canvasCallBackInferStartNode) OnFinish(ctx context.Context, info *compo
 	g := GraphInfo{
 		GraphInfo: info,
 	}
-	graphSchema, err := g.BuildGraphSchema()
+
+	subGraphNodes := make(map[string]*SubGraphNode)
+	var add func(pgi *compose.GraphInfo, subGraphNodes map[string]*SubGraphNode) (string, error)
+	add = func(pgi *compose.GraphInfo, subGraphNodes map[string]*SubGraphNode) (string, error) {
+		gid := gonanoid.Must()
+		for nk, ni := range pgi.Nodes {
+			if ni.GraphInfo == nil {
+				continue
+			}
+			_subGraphNodes := make(map[string]*SubGraphNode, 10)
+			sgid, err := add(ni.GraphInfo, _subGraphNodes)
+			if err != nil {
+				return "", err
+			}
+			subGraphNodes[nk] = &SubGraphNode{
+				ID:            sgid,
+				SubGraphNodes: _subGraphNodes,
+			}
+		}
+		return gid, nil
+	}
+
+	gid, err := add(info, subGraphNodes)
+	assert.NoError(t, err)
+	assert.NotEmpty(t, gid)
+	g.SubGraphNodes = subGraphNodes
+
+	graphSchema, err := g.BuildGraphSchema(gid)
 	assert.NoError(t, err)
 	for _, edge := range graphSchema.Edges {
 		names := strings.Split(edge.Name, "_to_")
