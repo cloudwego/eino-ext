@@ -63,7 +63,7 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 		embedding:    config.Embedding,
 		bufferSize:   config.BufferSize,
 		minChunkSize: config.MinChunkSize,
-		separators:   config.Separators,
+		separators:   seps,
 		lenFunc:      lenFunc,
 		percentile:   percentile,
 	}, nil

@@ -291,7 +291,7 @@ func TestGooGleSearchTool(t *testing.T) {
 
 		assert.JSONEq(t, expectedSchema, string(body))
 
-		gsr := &googleSearchRequest{
+		gsr := &SearchRequest{
 			Query: mockSearchQuery,
 			Lang:  "zh-CN",
 		}

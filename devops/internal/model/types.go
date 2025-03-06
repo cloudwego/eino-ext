@@ -166,6 +166,10 @@ func unmarshalMapInput(b []byte, rt reflect.Type) (val reflect.Value, err error)
 
 	mapIns := reflect.MakeMap(rt)
 	for key, raw := range rawMsg {
+		if key == "" {
+			continue
+		}
+
 		fieldVal, err := UnmarshalJson(raw, rt.Elem())
 		if err != nil {
 			return val, err
