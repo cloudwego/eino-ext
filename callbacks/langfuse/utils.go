@@ -28,7 +28,6 @@ func convModelCallbackInput(in []callbacks.CallbackInput) []*model.CallbackInput
 	ret := make([]*model.CallbackInput, len(in))
 	for i, c := range in {
 		ret[i] = model.ConvCallbackInput(c)
-		ret[i] = parseCallbackInput(ret[i])
 	}
 	return ret
 }
@@ -63,7 +62,6 @@ func convModelCallbackOutput(out []callbacks.CallbackOutput) []*model.CallbackOu
 	ret := make([]*model.CallbackOutput, len(out))
 	for i, c := range out {
 		ret[i] = model.ConvCallbackOutput(c)
-		ret[i] = parseCallbackOutput(ret[i])
 	}
 	return ret
 }
