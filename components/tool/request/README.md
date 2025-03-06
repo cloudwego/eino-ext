@@ -353,6 +353,5 @@ Here is documentation on the API:
 ```
 
 ## For More Details
-
 - [Eino Documentation](https://github.com/cloudwego/eino)
 - [InvokableTool Interface Reference](https://pkg.go.dev/github.com/cloudwego/eino/components/tool)
