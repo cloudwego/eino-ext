@@ -150,7 +150,7 @@ func convMessage(message mcp.PromptMessage) (*schema.Message, error) {
 		} else if strings.HasPrefix(mimeType, "text") {
 			ret.Content = uri
 		} else {
-			return nil, fmt.Errorf("support mcp resource mime type %v", mimeType)
+			return nil, fmt.Errorf("unsupported mcp resource mime type %v", mimeType)
 		}
 	default:
 		return nil, fmt.Errorf("unknown mcp prompt content type: %T", message.Content)
