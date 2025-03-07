@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"time"
 
 	"github.com/bytedance/sonic"
-	post "github.com/cloudwego/eino-ext/components/tool/request/post"
+	post "github.com/cloudwego/eino-ext/components/tool/httprequest/post"
 )
 
 func main() {
@@ -16,8 +15,6 @@ func main() {
 			"User-Agent":   "MyCustomAgent",
 			"Content-Type": "application/json; charset=UTF-8",
 		},
-		ResponseContentType: "json",
-		Timeout:             10 * time.Second,
 	}
 
 	ctx := context.Background()

@@ -4,10 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/bytedance/sonic"
-	req "github.com/cloudwego/eino-ext/components/tool/request/get"
+	req "github.com/cloudwego/eino-ext/components/tool/httprequest/get"
 )
 
 func main() {
@@ -16,8 +17,10 @@ func main() {
 		Headers: map[string]string{
 			"User-Agent": "MyCustomAgent",
 		},
-		ResponseContentType: "json",
-		Timeout:             10 * time.Second,
+		HttpClient: &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &http.Transport{},
+		},
 	}
 
 	ctx := context.Background()

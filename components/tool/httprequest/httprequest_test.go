@@ -1,4 +1,4 @@
-package request
+package httprequest
 
 import (
 	"context"
@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	get "github.com/cloudwego/eino-ext/components/tool/request/get"
-	post "github.com/cloudwego/eino-ext/components/tool/request/post"
+	get "github.com/cloudwego/eino-ext/components/tool/httprequest/get"
+	post "github.com/cloudwego/eino-ext/components/tool/httprequest/post"
 )
 
 func TestGetNewTool(t *testing.T) {

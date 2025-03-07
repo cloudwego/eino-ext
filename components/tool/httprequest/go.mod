@@ -1,4 +1,4 @@
-module github.com/cloudwego/eino-ext/components/tool/request
+module github.com/cloudwego/eino-ext/components/tool/httprequest
 
 go 1.23.4
 

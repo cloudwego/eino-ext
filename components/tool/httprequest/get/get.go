@@ -39,15 +39,7 @@ func (r *GetRequestTool) Get(ctx context.Context, req *GetRequest) (string, erro
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	var content interface{}
-	if r.config.ResponseContentType == "json" {
-		if err := sonic.Unmarshal(body, &content); err != nil {
-			return "", fmt.Errorf("failed to deserialize JSON response: %w", err)
-		}
-	} else {
-		content = string(body)
-	}
-
+	content := string(body)
 	response := GetResponse{Content: content}
 	jsonResp, err := sonic.Marshal(response)
 	if err != nil {

@@ -12,11 +12,22 @@ import (
 )
 
 type Config struct {
-	ToolName            string            `json:"tool_name"`
-	ToolDesc            string            `json:"tool_desc"`
-	Headers             map[string]string `json:"headers"`
-	Timeout             time.Duration     `json:"timeout"`
-	ResponseContentType string            `json:"response_content_type"`
+	// Inspired by the "Requests" tool from the LangChain project, specifically the RequestsGetTool.
+	// For more details, visit: https://python.langchain.com/docs/integrations/tools/requests/
+	// Optional. Default: "request_get".
+	ToolName string `json:"tool_name"`
+	// Optional. Default: "A portal to the internet. Use this tool when you need to fetch specific content from a website.
+	// Input should be a URL (e.g., https://www.google.com). The output will be the text response from the GET request."
+	ToolDesc string `json:"tool_desc"`
+
+	// Headers is a map of HTTP header names to their corresponding values.
+	// These headers will be included in every request made by the tool.
+	Headers map[string]string `json:"headers"`
+
+	// HttpClient is the HTTP client used to perform the requests.
+	// If not provided, a default client with a 30-second timeout and a standard transport
+	// will be initialized and used.
+	HttpClient *http.Client
 }
 
 func (c *Config) validate() error {
@@ -31,13 +42,11 @@ func (c *Config) validate() error {
 	if c.Headers == nil {
 		c.Headers = make(map[string]string)
 	}
-	if c.Timeout == 0 {
-		c.Timeout = 30 * time.Second
-	}
-	if c.ResponseContentType == "" {
-		c.ResponseContentType = "text"
-	} else if c.ResponseContentType != "text" && c.ResponseContentType != "json" {
-		return errors.New("invalid response_content_type, it must be 'text' or 'json'")
+	if c.HttpClient == nil {
+		c.HttpClient = &http.Client{
+			Timeout:   30 * time.Second,
+			Transport: &http.Transport{},
+		}
 	}
 	return nil
 }
@@ -69,13 +78,8 @@ func newRequestTool(config *Config) (*GetRequestTool, error) {
 		return nil, err
 	}
 
-	client := &http.Client{
-		Timeout:   config.Timeout,
-		Transport: &http.Transport{},
-	}
-
 	return &GetRequestTool{
 		config: config,
-		client: client,
+		client: config.HttpClient,
 	}, nil
 }
