@@ -550,10 +550,9 @@ func toMessageToolCalls(toolCalls []*model.ToolCall) []schema.ToolCall {
 
 	ret := make([]schema.ToolCall, len(toolCalls))
 	for i := range toolCalls {
-		idx := i
 		toolCall := toolCalls[i]
 		ret[i] = schema.ToolCall{
-			Index: &idx,
+			Index: toolCall.Index,
 			ID:    toolCall.ID,
 			Type:  string(toolCall.Type),
 			Function: schema.FunctionCall{
@@ -616,6 +615,7 @@ func toArkToolCalls(toolCalls []schema.ToolCall) []*model.ToolCall {
 				Arguments: toolCall.Function.Arguments,
 				Name:      toolCall.Function.Name,
 			},
+			Index: toolCall.Index,
 		}
 	}
 
