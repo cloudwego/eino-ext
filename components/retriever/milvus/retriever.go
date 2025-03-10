@@ -228,6 +228,14 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	return documents, nil
 }
 
+func (r *Retriever) GetType() string {
+	return typ
+}
+
+func (r *Retriever) IsCallbacksEnabled() bool {
+	return true
+}
+
 // check the retriever config and set the default value
 func (r *RetrieverConfig) check() error {
 	if r.Client == nil {

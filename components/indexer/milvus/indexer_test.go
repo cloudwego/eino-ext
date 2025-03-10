@@ -24,7 +24,7 @@ func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts .
 	return result, nil
 }
 
-func Test_NewIndexer(t *testing.T) {
+func TestNewIndexer(t *testing.T) {
 	PatchConvey("test NewIndexer", t, func() {
 		ctx := context.Background()
 		Mock(client.NewClient).Return(&client.GrpcClient{}, nil).Build()
@@ -217,7 +217,7 @@ func TestIndexer_Store(t *testing.T) {
 				Client:     mockClient,
 				Collection: defaultCollection,
 				Embedding:  mockEmb,
-				DocumentConverter: func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error) {
+				DocumentConverter: func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error) {
 					return nil, fmt.Errorf("document converter error")
 				},
 			})

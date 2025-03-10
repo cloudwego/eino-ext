@@ -1,6 +1,7 @@
 package milvus
 
 const (
+	typ                           = "Milvus"
 	defaultCollection             = "eino_collection"
 	defaultDescription            = "the collection for eino"
 	defaultCollectionID           = "id"

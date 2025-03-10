@@ -3,6 +3,7 @@ package milvus
 import "github.com/milvus-io/milvus-sdk-go/v2/entity"
 
 const (
+	typ                   = "Milvus"
 	defaultCollection     = "eino_collection"
 	defaultVectorField    = "vector"
 	defaultTopK           = 5

@@ -132,7 +132,7 @@ type IndexerConfig struct {
 	
 	// DocumentConverter 是将 schema.Document 转换为行数据的函数
 	// 可选，默认值为 defaultDocumentConverter
-	DocumentConverter func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error)
+	DocumentConverter func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error)
 	
 	// 向量列的索引配置
 	// MetricType 是向量的度量类型

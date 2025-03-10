@@ -24,7 +24,7 @@ func vector2Bytes(vector []float64) []byte {
 }
 
 // MakeEmbeddingCtx makes the embedding context.
-func MakeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
+func makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
 	runInfo := &callbacks.RunInfo{
 		Component: components.ComponentOfEmbedding,
 	}

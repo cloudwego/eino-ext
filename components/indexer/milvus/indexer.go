@@ -47,7 +47,7 @@ type IndexerConfig struct {
 
 	// DocumentConverter is the function to convert the schema.Document to the row data
 	// Optional, and the default value is defaultDocumentConverter
-	DocumentConverter func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error)
+	DocumentConverter func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error)
 
 	// Index config to the vector column
 	// MetricType the metric type for vector
@@ -145,7 +145,19 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	}
 
 	// load documents content
-	rows, err := i.config.DocumentConverter(ctx, docs, emb)
+	texts := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		texts = append(texts, doc.Content)
+	}
+
+	// embedding
+	vectors, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), texts)
+	if err != nil {
+		return nil, err
+	}
+
+	// load documents content
+	rows, err := i.config.DocumentConverter(ctx, docs, vectors)
 	if err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
 	}
@@ -176,6 +188,14 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	return ids, nil
 }
 
+func (i *Indexer) GetType() string {
+	return typ
+}
+
+func (i *Indexer) IsCallbacksEnabled() bool {
+	return true
+}
+
 // getDefaultSchema returns the default schema
 func (i *IndexerConfig) getSchema(collection, description string, fields []*entity.Field) *entity.Schema {
 	s := entity.NewSchema().
@@ -187,11 +207,16 @@ func (i *IndexerConfig) getSchema(collection, description string, fields []*enti
 	return s
 }
 
-func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, docs []*schema.Document, embedding embedding.Embedder) ([]interface{}, error) {
-	return func(ctx context.Context, docs []*schema.Document, emb embedding.Embedder) ([]interface{}, error) {
+func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error) {
+	return func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error) {
 		em := make([]defaultSchema, 0, len(docs))
 		texts := make([]string, 0, len(docs))
 		rows := make([]interface{}, 0, len(docs))
+
+		if len(vectors) != len(docs) {
+			return nil, fmt.Errorf("embedding result length not match")
+		}
+
 		for _, doc := range docs {
 			metadata, err := sonic.Marshal(doc.MetaData)
 			if err != nil {
@@ -206,17 +231,8 @@ func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, do
 			texts = append(texts, doc.Content)
 		}
 
-		// embedding
-		vector, err := emb.EmbedStrings(MakeEmbeddingCtx(ctx, emb), texts)
-		if err != nil {
-			return nil, err
-		}
-		if len(vector) != len(docs) {
-			return nil, fmt.Errorf("embedding result length not match")
-		}
-
 		// build embedding documents for storing
-		for idx, vec := range vector {
+		for idx, vec := range vectors {
 			em[idx].Vector = vector2Bytes(vec)
 			rows = append(rows, &em[idx])
 		}
