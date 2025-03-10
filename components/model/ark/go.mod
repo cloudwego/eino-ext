@@ -3,7 +3,7 @@ module github.com/cloudwego/eino-ext/components/model/ark
 go 1.18
 
 require (
-	github.com/bytedance/mockey v1.2.10
+	github.com/bytedance/mockey v1.2.14
 	github.com/cloudwego/eino v0.3.10
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/smartystreets/goconvey v1.8.1
