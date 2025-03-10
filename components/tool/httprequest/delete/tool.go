@@ -23,10 +23,12 @@ type Config struct {
 	// response of the DELETE request.
 	ToolDesc string `json:"tool_desc"`
 
+	// Optional.
 	// Headers is a map of HTTP header names to their corresponding values.
 	// These headers will be included in every request made by the tool.
 	Headers map[string]string `json:"headers"`
 
+	// Optional.
 	// HttpClient is the HTTP client used to perform the requests.
 	// If not provided, a default client with a 30-second timeout and a standard transport
 	// will be initialized and used.

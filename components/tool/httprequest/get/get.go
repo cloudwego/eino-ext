@@ -19,7 +19,7 @@ type GetResponse struct {
 
 func (r *GetRequestTool) Get(ctx context.Context, req *GetRequest) (string, error) {
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", req.URL, nil)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, req.URL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

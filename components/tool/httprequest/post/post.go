@@ -21,7 +21,7 @@ type PostResponse struct {
 
 func (r *PostRequestTool) Post(ctx context.Context, req *PostRequest) (string, error) {
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", req.URL, strings.NewReader(req.Body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, req.URL, strings.NewReader(req.Body))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

@@ -21,7 +21,7 @@ type PutResponse struct {
 
 func (r *PutRequestTool) Put(ctx context.Context, req *PutRequest) (string, error) {
 
-	httpReq, err := http.NewRequestWithContext(ctx, "PUT", req.URL, strings.NewReader(req.Body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, req.URL, strings.NewReader(req.Body))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
