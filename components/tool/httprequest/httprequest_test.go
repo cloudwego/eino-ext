@@ -18,24 +18,49 @@ package httprequest
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	get "github.com/cloudwego/eino-ext/components/tool/httprequest/get"
-	post "github.com/cloudwego/eino-ext/components/tool/httprequest/post"
 )
 
-func TestGetNewTool(t *testing.T) {
+func TestNewToolKit_Success(t *testing.T) {
 	ctx := context.Background()
-	tool, err := get.NewTool(ctx, &get.Config{})
+	conf := &Config{
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+		},
+		HttpClient: &http.Client{},
+	}
+
+	tools, err := NewToolKit(ctx, conf)
 	assert.NoError(t, err)
-	assert.NotNil(t, tool)
+	assert.Len(t, tools, 4)
+
+	var toolNames []string
+	for _, tool := range tools {
+		currentTool, _ := tool.Info(ctx)
+		toolNames = append(toolNames, currentTool.Name)
+	}
+	assert.Contains(t, toolNames, "request_get")
+	assert.Contains(t, toolNames, "requests_post")
+	assert.Contains(t, toolNames, "requests_put")
+	assert.Contains(t, toolNames, "requests_delete")
 }
 
-func TestPostNewTool(t *testing.T) {
+func TestNewToolKit_NilConfig(t *testing.T) {
 	ctx := context.Background()
-	tool, err := post.NewTool(ctx, &post.Config{})
+	tools, err := NewToolKit(ctx, nil)
 	assert.NoError(t, err)
-	assert.NotNil(t, tool)
+	assert.Len(t, tools, 4)
+
+	var toolNames []string
+	for _, tool := range tools {
+		currentTool, _ := tool.Info(ctx)
+		toolNames = append(toolNames, currentTool.Name)
+	}
+	assert.Contains(t, toolNames, "request_get")
+	assert.Contains(t, toolNames, "requests_post")
+	assert.Contains(t, toolNames, "requests_put")
+	assert.Contains(t, toolNames, "requests_delete")
 }

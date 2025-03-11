@@ -43,36 +43,41 @@ type Config struct {
 }
 
 func NewToolKit(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
-	getConf := &get.Config{
-		Headers:    conf.Headers,
-		HttpClient: conf.HttpClient,
+	getConf := &get.Config{}
+	if conf != nil {
+		getConf.Headers = conf.Headers
+		getConf.HttpClient = conf.HttpClient
 	}
+
 	getTool, err := get.NewTool(ctx, getConf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool GET: %w", err)
 	}
 
-	postConf := &post.Config{
-		Headers:    conf.Headers,
-		HttpClient: conf.HttpClient,
+	postConf := &post.Config{}
+	if conf != nil {
+		postConf.Headers = conf.Headers
+		postConf.HttpClient = conf.HttpClient
 	}
 	postTool, err := post.NewTool(ctx, postConf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool POST: %w", err)
 	}
 
-	putConf := &put.Config{
-		Headers:    conf.Headers,
-		HttpClient: conf.HttpClient,
+	putConf := &put.Config{}
+	if conf != nil {
+		putConf.Headers = conf.Headers
+		putConf.HttpClient = conf.HttpClient
 	}
 	putTool, err := put.NewTool(ctx, putConf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool PUT: %w", err)
 	}
 
-	deleteConf := &delete.Config{
-		Headers:    conf.Headers,
-		HttpClient: conf.HttpClient,
+	deleteConf := &delete.Config{}
+	if conf != nil {
+		deleteConf.Headers = conf.Headers
+		deleteConf.HttpClient = conf.HttpClient
 	}
 	deleteTool, err := delete.NewTool(ctx, deleteConf)
 	if err != nil {
