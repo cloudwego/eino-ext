@@ -62,6 +62,7 @@ func registerRoutes(r *mux.Router) {
 	rootR := r.PathPrefix(root).Subrouter()
 	rootR.Path("/ping").HandlerFunc(Ping).Methods(http.MethodGet)
 	rootR.Path("/stream_log").HandlerFunc(StreamLog).Methods(http.MethodGet)
+	rootR.Path("/version").HandlerFunc(Version).Methods(http.MethodGet)
 
 	// debug routes
 	debugR := rootR.PathPrefix(debugBiz).Subrouter()
