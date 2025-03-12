@@ -105,9 +105,6 @@ type ChatModel struct {
 }
 
 func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
-	if len(config.APIKey) == 0 {
-		return nil, fmt.Errorf("API key is required")
-	}
 	if len(config.Model) == 0 {
 		return nil, fmt.Errorf("model is required")
 	}
