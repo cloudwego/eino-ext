@@ -194,13 +194,20 @@ type ComponentSchema struct {
 	OutputType *JsonSchema `json:"output_type,omitempty"`
 	Method     string      `json:"method,omitempty"` // component initialization generates the corresponding function name (official components support cloning creation, custom components only support referencing existing components)
 
-	Slots []Slot `json:"slots,omitempty"`
+	Slots         []*Slot          `json:"slots,omitempty"`
+	SlotExtraDesc []*SlotExtraDesc `json:"slot_extra_desc,omitempty"`
+	// SlotCounter return the historical count of the slot.
+	SlotCounter int `json:"slot_counter,omitempty"`
 
 	Config          *ConfigSchema        `json:"config,omitempty"`
 	ExtraProperty   *ExtraPropertySchema `json:"extra_property,omitempty"`
 	IsIOTypeMutable bool                 `json:"is_io_type_mutable"`
 
 	Version string `json:"version"`
+}
+
+type SlotExtraDesc struct {
+	Index int `json:"index"`
 }
 
 type ConfigSchema struct {
@@ -214,14 +221,21 @@ type ExtraPropertySchema struct {
 	ExtraPropertyInput string      `json:"extra_property_input"`
 }
 
+type ComponentSlotItemExtra struct {
+	Index int `json:"index"`
+}
+
 type Slot struct {
 	Component string `json:"component"`
 
 	// The path of the configuration field.
 	// for example: if there is no nesting, it means Field, if there is a nested structure, it means Field.NestField.
-	FieldLocPath   string            `json:"field_loc_path"`
-	Multiple       bool              `json:"multiple"`
-	Required       bool              `json:"required"`
-	ComponentItems []ComponentSchema `json:"component_items"`
-	GoDefinition   *GoDefinition     `json:"go_definition,omitempty"`
+	FieldLocPath           string                    `json:"field_loc_path"`
+	Multiple               bool                      `json:"multiple"`
+	Required               bool                      `json:"required"`
+	ComponentItems         []*ComponentSchema        `json:"component_items"`
+	ComponentSlotItemExtra []*ComponentSlotItemExtra `json:"component_slot_item_extra"`
+	// ItemCounter return the historical count of the item.
+	ItemCounter  int           `json:"itemCounter,omitempty"`
+	GoDefinition *GoDefinition `json:"go_definition,omitempty"`
 }
