@@ -172,6 +172,10 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		return nil, err
 	}
 
+	if len(vectors) != len(docs) {
+		return nil, fmt.Errorf("[Indexer.Store] embedding result length not match need: %d, got: %d", len(docs), len(vectors))
+	}
+
 	// load documents content
 	rows, err := i.config.DocumentConverter(ctx, docs, vectors)
 	if err != nil {
@@ -229,14 +233,10 @@ func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, do
 		texts := make([]string, 0, len(docs))
 		rows := make([]interface{}, 0, len(docs))
 
-		if len(vectors) != len(docs) {
-			return nil, fmt.Errorf("embedding result length not match")
-		}
-
 		for _, doc := range docs {
 			metadata, err := sonic.Marshal(doc.MetaData)
 			if err != nil {
-				return nil, fmt.Errorf("[Indexer.Store] failed to marshal metadata: %w", err)
+				return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 			}
 			em = append(em, defaultSchema{
 				ID:       doc.ID,
