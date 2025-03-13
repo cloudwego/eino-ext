@@ -443,6 +443,14 @@ func (c *ChatModel) getConfig() *model.Config {
 	return result
 }
 
+func (c *ChatModel) GetType() string {
+	return "Claude"
+}
+
+func (c *ChatModel) IsCallbacksEnabled() bool {
+	return true
+}
+
 func convSchemaMessage(message *schema.Message) (*anthropic.MessageParam, error) {
 	result := &anthropic.MessageParam{}
 	if message.Role == schema.Assistant {
