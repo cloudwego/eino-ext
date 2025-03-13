@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/cloudwego/eino-ext/components/tool/duckduckgo"
 	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/ddgsearch"
@@ -34,7 +35,7 @@ func main() {
 		MaxResults: 3, // Limit to return 3 results
 		Region:     ddgsearch.RegionCN,
 		DDGConfig: &ddgsearch.Config{
-			Timeout:    10,
+			Timeout:    10 * time.Second,
 			Cache:      true,
 			MaxRetries: 5,
 		},
