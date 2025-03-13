@@ -21,7 +21,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/embedding/ark"
+	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
 
@@ -33,8 +34,6 @@ func main() {
 	addr := os.Getenv("MILVUS_ADDR")
 	username := os.Getenv("MILVUS_USERNAME")
 	password := os.Getenv("MILVUS_PASSWORD")
-	arkApiKey := os.Getenv("ARK_API_KEY")
-	arkModel := os.Getenv("ARK_MODEL")
 
 	// Create a client
 	ctx := context.Background()
@@ -49,20 +48,10 @@ func main() {
 	}
 	defer cli.Close()
 
-	// Create an embedding model
-	emb, err := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
-		APIKey: arkApiKey,
-		Model:  arkModel,
-	})
-	if err != nil {
-		log.Fatalf("Failed to create embedding: %v", err)
-		return
-	}
-
 	// Create an indexer
 	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
 		Client:    cli,
-		Embedding: emb,
+		Embedding: &mockEmbedding{},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create indexer: %v", err)
@@ -92,4 +81,28 @@ func main() {
 		return
 	}
 	log.Printf("Store success, ids: %v", ids)
+}
+
+type vector struct {
+	Data []struct {
+		Embedding []float64 `json:"embedding"`
+	} `json:"data"`
+}
+
+type mockEmbedding struct{}
+
+func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
+	bytes, err := os.ReadFile("./examples/embeddings.json")
+	if err != nil {
+		return nil, err
+	}
+	var v vector
+	if err := sonic.Unmarshal(bytes, &v); err != nil {
+		return nil, err
+	}
+	res := make([][]float64, 0, len(v.Data))
+	for _, data := range v.Data {
+		res = append(res, data.Embedding)
+	}
+	return res, nil
 }
