@@ -452,14 +452,15 @@ func convSchemaMessage(message *schema.Message) (*anthropic.MessageParam, error)
 	}
 
 	var messageParams []anthropic.ContentBlockParamUnion
+	for i := range message.ToolCalls {
+		messageParams = append(messageParams, anthropic.NewToolUseBlockParam(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, json.RawMessage(message.ToolCalls[i].Function.Arguments)))
+	}
+
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
-		}
-		for i := range message.ToolCalls {
-			messageParams = append(messageParams, anthropic.NewToolUseBlockParam(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, json.RawMessage(message.ToolCalls[i].Function.Arguments)))
 		}
 		result.Content = anthropic.F(messageParams)
 		return result, nil
