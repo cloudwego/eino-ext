@@ -122,7 +122,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		ScoreThreshold: r.config.DistanceThreshold,
 		Embedding:      r.config.Embedding,
 	}, opts...)
-	io := retriever.GetImplSpecificOptions(&ImplOptions{}, opts...)
+	io := retriever.GetImplSpecificOptions(&implOptions{}, opts...)
 
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
