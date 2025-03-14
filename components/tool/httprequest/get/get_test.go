@@ -24,7 +24,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bytedance/sonic"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -71,9 +70,7 @@ func TestGet_Success(t *testing.T) {
 	result, err := tool.Get(context.Background(), req)
 	assert.NoError(t, err)
 
-	expectedResp := GetResponse{Content: mockResponse}
-	expectedJSON, _ := sonic.Marshal(expectedResp)
-	assert.Equal(t, string(expectedJSON), result)
+	assert.Equal(t, mockResponse, result)
 }
 
 func TestGet_InvalidURL(t *testing.T) {

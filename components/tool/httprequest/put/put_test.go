@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -75,9 +74,7 @@ func TestPut_Success(t *testing.T) {
 	result, err := tool.Put(context.Background(), req)
 	assert.NoError(t, err)
 
-	expectedResp := PutResponse{Content: mockResponse}
-	expectedJSON, _ := sonic.Marshal(expectedResp)
-	assert.Equal(t, string(expectedJSON), result)
+	assert.Equal(t, mockResponse, result)
 }
 
 func TestPut_InvalidURL(t *testing.T) {
