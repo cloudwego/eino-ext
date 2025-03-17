@@ -22,17 +22,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	sonic "github.com/bytedance/sonic"
 )
 
 type PutRequest struct {
 	URL  string `json:"url" jsonschema_description:"The URL to make the PUT request"`
 	Body string `json:"body" jsonschema_description:"The body to send in the PUT request"`
-}
-
-type PutResponse struct {
-	Content interface{} `json:"content" jsonschema_description:"The response of the PUT request"`
 }
 
 func (r *PutRequestTool) Put(ctx context.Context, req *PutRequest) (string, error) {
@@ -57,12 +51,5 @@ func (r *PutRequestTool) Put(ctx context.Context, req *PutRequest) (string, erro
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	content := string(body)
-	response := PutResponse{Content: content}
-	jsonResp, err := sonic.Marshal(response)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize response: %w", err)
-	}
-
-	return string(jsonResp), nil
+	return string(body), nil
 }

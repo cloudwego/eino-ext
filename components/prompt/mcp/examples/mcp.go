@@ -99,7 +99,7 @@ func startMCPServer() {
 			}
 		}()
 
-		err := server.NewSSEServer(svr, "http://localhost:12345").Start("localhost:12345")
+		err := server.NewSSEServer(svr, server.WithBaseURL("http://localhost:12345")).Start("localhost:12345")
 
 		if err != nil {
 			log.Fatal(err)

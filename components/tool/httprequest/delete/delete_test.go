@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -72,9 +71,7 @@ func TestDelete_Success(t *testing.T) {
 	result, err := tool.Delete(context.Background(), req)
 	assert.NoError(t, err)
 
-	expectedResp := DeleteResponse{Content: mockResponse}
-	expectedJSON, _ := sonic.Marshal(expectedResp)
-	assert.Equal(t, string(expectedJSON), result)
+	assert.Equal(t, mockResponse, result)
 }
 
 func TestDelete_InvalidURL(t *testing.T) {

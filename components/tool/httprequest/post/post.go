@@ -22,17 +22,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
-
-	sonic "github.com/bytedance/sonic"
 )
 
 type PostRequest struct {
 	URL  string `json:"url" jsonschema_description:"The URL to make the POST request"`
 	Body string `json:"body" jsonschema_description:"The body to send in the POST request"`
-}
-
-type PostResponse struct {
-	Content interface{} `json:"content" jsonschema_description:"The response of the POST request"`
 }
 
 func (r *PostRequestTool) Post(ctx context.Context, req *PostRequest) (string, error) {
@@ -57,12 +51,5 @@ func (r *PostRequestTool) Post(ctx context.Context, req *PostRequest) (string, e
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	content := string(body)
-	response := PostResponse{Content: content}
-	jsonResp, err := sonic.Marshal(response)
-	if err != nil {
-		return "", fmt.Errorf("failed to serialize response: %w", err)
-	}
-
-	return string(jsonResp), nil
+	return string(body), nil
 }
