@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ollama/ollama/api"
+	"github.com/ollama/ollama/envconfig"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -78,7 +79,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 	}
 
 	if len(config.BaseURL) == 0 {
-		config.BaseURL = "http://localhost:11434"
+		config.BaseURL = envconfig.Host().String()
 	}
 	baseURL, err := url.Parse(config.BaseURL)
 	if err != nil {
