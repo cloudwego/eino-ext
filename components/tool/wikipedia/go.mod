@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	github.com/bytedance/sonic v1.12.9
-	github.com/cloudwego/eino v0.3.14
+	github.com/cloudwego/eino v0.3.16
 	github.com/stretchr/testify v1.10.0
 )
 

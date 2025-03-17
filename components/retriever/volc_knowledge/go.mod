@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.12.2
-	github.com/cloudwego/eino v0.3.10
+	github.com/cloudwego/eino v0.3.16
 	github.com/stretchr/testify v1.9.0
 	github.com/volcengine/volc-sdk-golang v1.0.193
 )
@@ -45,9 +45,9 @@ require (
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/net v0.12.0 // indirect
+	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.11.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

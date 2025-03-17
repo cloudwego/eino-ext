@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.12.2
-	github.com/cloudwego/eino v0.3.10
+	github.com/cloudwego/eino v0.3.16
 	github.com/smartystreets/goconvey v1.8.1
 )
 

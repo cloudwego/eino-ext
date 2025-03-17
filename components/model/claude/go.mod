@@ -6,8 +6,10 @@ toolchain go1.22.2
 
 require (
 	github.com/anthropics/anthropic-sdk-go v0.2.0-alpha.8
+	github.com/aws/aws-sdk-go-v2/config v1.29.1
+	github.com/aws/aws-sdk-go-v2/credentials v1.17.54
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.10
+	github.com/cloudwego/eino v0.3.16
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0
 )
@@ -15,8 +17,6 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2 v1.33.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.3 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.29.1 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.17.54 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.24 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.3.28 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.6.28 // indirect
