@@ -29,12 +29,12 @@ func main() {
 	ctx := context.Background()
 
 	// init apmplus callback, for trace metrics and log
-	fmt.Println("INFO: use apmplus as callback, watch at: https://console.volcengine.com/apmplus-server/region:apmplus-server+cn-beijing/console/overview/server?")
+	fmt.Println("INFO: use apmplus as callback, watch at: https://console.volcengine.com/apmplus-server")
 
 	cbh, shutdown, err := apmplus.NewApmplusHandler(&apmplus.Config{
 		Host:        "apmplus-cn-beijing.volces.com:4317",
-		AppKey:      "xxx",
-		ServiceName: "eino-chat",
+		AppKey:      "appkey-xxx",
+		ServiceName: "eino-app",
 		Release:     "release/v0.0.1",
 	})
 	if shutdown != nil {

@@ -30,6 +30,11 @@ func Ping(res http.ResponseWriter, _ *http.Request) {
 	newHTTPResp("pong").doResp(res)
 }
 
+// Version return devops current version
+func Version(res http.ResponseWriter, _ *http.Request) {
+	newHTTPResp(types.Version).doResp(res)
+}
+
 // ListGraphs get all graphs.
 func ListGraphs(res http.ResponseWriter, _ *http.Request) {
 	graphNameToID := service.ContainerSVC.ListGraphs()

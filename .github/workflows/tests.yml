@@ -75,7 +75,7 @@ jobs:
 
       - name: Calculate coverage
         id: calculate-coverage
-        uses: vladopajic/go-test-coverage@v2
+        uses: vladopajic/go-test-coverage@v2.12.1
         with:
           profile: ${{env.COVERAGE_PROFILES}}
           config: ./.testcoverage.yml

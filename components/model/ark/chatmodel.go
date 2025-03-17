@@ -198,9 +198,9 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	reqConf := &fmodel.Config{
 		Model:       req.Model,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
+		MaxTokens:   dereferenceOrZero(req.MaxTokens),
+		Temperature: dereferenceOrZero(req.Temperature),
+		TopP:        dereferenceOrZero(req.TopP),
 		Stop:        req.Stop,
 	}
 
@@ -260,14 +260,14 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		return nil, err
 	}
 
-	req.Stream = true
+	req.Stream = ptrOf(true)
 	req.StreamOptions = &model.StreamOptions{IncludeUsage: true}
 
 	reqConf := &fmodel.Config{
 		Model:       req.Model,
-		MaxTokens:   req.MaxTokens,
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
+		MaxTokens:   dereferenceOrZero(req.MaxTokens),
+		Temperature: dereferenceOrZero(req.Temperature),
+		TopP:        dereferenceOrZero(req.TopP),
 		Stop:        req.Stop,
 	}
 
@@ -352,16 +352,16 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	return outStream, nil
 }
 
-func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (req *model.ChatCompletionRequest, err error) {
-	req = &model.ChatCompletionRequest{
-		MaxTokens:        dereferenceOrZero(options.MaxTokens),
-		Temperature:      dereferenceOrZero(options.Temperature),
-		TopP:             dereferenceOrZero(options.TopP),
+func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (req *model.CreateChatCompletionRequest, err error) {
+	req = &model.CreateChatCompletionRequest{
+		MaxTokens:        options.MaxTokens,
+		Temperature:      options.Temperature,
+		TopP:             options.TopP,
 		Model:            dereferenceOrZero(options.Model),
 		Stop:             options.Stop,
-		FrequencyPenalty: dereferenceOrZero(cm.config.FrequencyPenalty),
+		FrequencyPenalty: cm.config.FrequencyPenalty,
 		LogitBias:        cm.config.LogitBias,
-		PresencePenalty:  dereferenceOrZero(cm.config.PresencePenalty),
+		PresencePenalty:  cm.config.PresencePenalty,
 	}
 
 	for _, msg := range in {
@@ -386,7 +386,7 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	}
 
 	if tools != nil {
-		req.Tools = make([]*model.Tool, 0, len(cm.tools))
+		req.Tools = make([]*model.Tool, 0, len(tools))
 
 		for _, tool := range cm.tools {
 			arkTool := &model.Tool{
@@ -550,10 +550,9 @@ func toMessageToolCalls(toolCalls []*model.ToolCall) []schema.ToolCall {
 
 	ret := make([]schema.ToolCall, len(toolCalls))
 	for i := range toolCalls {
-		idx := i
 		toolCall := toolCalls[i]
 		ret[i] = schema.ToolCall{
-			Index: &idx,
+			Index: toolCall.Index,
 			ID:    toolCall.ID,
 			Type:  string(toolCall.Type),
 			Function: schema.FunctionCall{
@@ -616,6 +615,7 @@ func toArkToolCalls(toolCalls []schema.ToolCall) []*model.ToolCall {
 				Arguments: toolCall.Function.Arguments,
 				Name:      toolCall.Function.Name,
 			},
+			Index: toolCall.Index,
 		}
 	}
 

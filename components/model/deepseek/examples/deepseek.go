@@ -36,7 +36,7 @@ func main() {
 		log.Fatal("DEEPSEEK_API_KEY environment variable is not set")
 	}
 
-	// 创建 Claude 模型
+	// 创建 deepseek 模型
 	cm, err := deepseek.NewChatModel(ctx, &deepseek.ChatModelConfig{
 		APIKey:    apiKey,
 		Model:     "deepseek-reasoner",

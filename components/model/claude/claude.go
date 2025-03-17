@@ -24,7 +24,11 @@ import (
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -47,26 +51,61 @@ import (
 //	    Model:  "claude-3-opus-20240229",
 //	    MaxTokens: 2000,
 //	})
-func NewChatModel(ctx context.Context, conf *Config) (*ChatModel, error) {
+func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 	var cli *anthropic.Client
-	if conf.BaseURL != nil {
-		cli = anthropic.NewClient(option.WithBaseURL(*conf.BaseURL), option.WithAPIKey(conf.APIKey))
+	if !config.ByBedrock {
+		if config.BaseURL != nil {
+			cli = anthropic.NewClient(option.WithBaseURL(*config.BaseURL), option.WithAPIKey(config.APIKey))
+		} else {
+			cli = anthropic.NewClient(option.WithAPIKey(config.APIKey))
+		}
 	} else {
-		cli = anthropic.NewClient(option.WithAPIKey(conf.APIKey))
+		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx,
+			awsConfig.WithRegion(config.Region),
+			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				config.AccessKey,
+				config.SecretAccessKey,
+				config.SessionToken,
+			))),
+		)
 	}
 	return &ChatModel{
 		cli:           cli,
-		maxTokens:     conf.MaxTokens,
-		model:         conf.Model,
-		stopSequences: conf.StopSequences,
-		temperature:   conf.Temperature,
-		topK:          conf.TopK,
-		topP:          conf.TopP,
+		maxTokens:     config.MaxTokens,
+		model:         config.Model,
+		stopSequences: config.StopSequences,
+		temperature:   config.Temperature,
+		topK:          config.TopK,
+		topP:          config.TopP,
 	}, nil
 }
 
 // Config contains the configuration options for the Claude model
 type Config struct {
+	// ByBedrock indicates whether to use Bedrock Service
+	// Required for Bedrock
+	ByBedrock bool
+
+	// AccessKey is your Bedrock API Access key
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	AccessKey string
+
+	// SecretAccessKey is your Bedrock API Secret Access key
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	SecretAccessKey string
+
+	// SessionToken is your Bedrock API Session Token
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Optional for Bedrock
+	SessionToken string
+
+	// Region is your Bedrock API region
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Required for Bedrock
+	Region string
+
 	// BaseURL is the custom API endpoint URL
 	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
 	// Optional. Example: "https://custom-claude-api.example.com"
@@ -404,6 +443,14 @@ func (c *ChatModel) getConfig() *model.Config {
 	return result
 }
 
+func (c *ChatModel) GetType() string {
+	return "Claude"
+}
+
+func (c *ChatModel) IsCallbacksEnabled() bool {
+	return true
+}
+
 func convSchemaMessage(message *schema.Message) (*anthropic.MessageParam, error) {
 	result := &anthropic.MessageParam{}
 	if message.Role == schema.Assistant {
@@ -413,14 +460,15 @@ func convSchemaMessage(message *schema.Message) (*anthropic.MessageParam, error)
 	}
 
 	var messageParams []anthropic.ContentBlockParamUnion
+	for i := range message.ToolCalls {
+		messageParams = append(messageParams, anthropic.NewToolUseBlockParam(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, json.RawMessage(message.ToolCalls[i].Function.Arguments)))
+	}
+
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
-		}
-		for i := range message.ToolCalls {
-			messageParams = append(messageParams, anthropic.NewToolUseBlockParam(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, json.RawMessage(message.ToolCalls[i].Function.Arguments)))
 		}
 		result.Content = anthropic.F(messageParams)
 		return result, nil

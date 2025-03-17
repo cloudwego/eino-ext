@@ -79,9 +79,7 @@ func CreateDebugThread(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	var (
-		graphID = getPathParam(req, "graph_id")
-	)
+	var graphID = getPathParam(req, "graph_id")
 
 	threadID, err := service.DebugSVC.CreateDebugThread(req.Context(), graphID)
 	if err != nil {
