@@ -25,7 +25,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matoous/go-nanoid"
+	gonanoid "github.com/matoous/go-nanoid"
 	"github.com/stretchr/testify/assert"
 
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
@@ -556,7 +556,7 @@ func Test_GraphInfo_BuildDevGraph(t *testing.T) {
 		}))
 		assert.NoError(t, err)
 
-		ph := func(ctx context.Context, in []string, state map[string]any) ([]string, error) {
+		ph := func(ctx context.Context, in []string, state any) ([]string, error) {
 			t.Log("enter pre handler")
 			return in, nil
 		}
