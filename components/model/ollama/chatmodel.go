@@ -38,7 +38,7 @@ var CallbackMetricsExtraKey = "ollama_metrics"
 
 // ChatModelConfig stores configuration options specific to Ollama
 type ChatModelConfig struct {
-	BaseURL string        `json:"base_url"` // optional, default is http://localhost:11434
+	BaseURL string        `json:"base_url"` // optional, host can be configured via the OLLAMA_HOST environment variable otherwise default is http://localhost:11434
 	Timeout time.Duration `json:"timeout"`  // request timeout for http client
 
 	// HTTPClient specifies the client to send HTTP requests.
