@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/cloudwego/eino v0.3.10
-	github.com/mark3labs/mcp-go v0.10.3
+	github.com/mark3labs/mcp-go v0.13.0
 	github.com/stretchr/testify v1.9.0
 )
 
