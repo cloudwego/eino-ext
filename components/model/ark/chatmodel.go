@@ -157,6 +157,7 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 		config = &ChatModelConfig{}
 	}
 	client := buildClient(config)
+
 	return &ChatModel{
 		config: config,
 		client: client,
@@ -169,6 +170,65 @@ type ChatModel struct {
 
 	tools    []tool
 	rawTools []*schema.ToolInfo
+}
+
+type CacheInfo struct {
+	// ContextID specifies the id of prefix that can be used with WithPrefixCache option
+	ContextID string
+	// Usage specifies the token usage of prefix
+	Usage schema.TokenUsage
+}
+
+// CreatePrefixCache creates a prefix context on the server side that will be automatically included
+// in subsequent model calls without needing to resend these messages each time.
+// This improves efficiency by reducing token usage and request size.
+//
+// Parameters:
+//   - ctx: The context for the request
+//   - prefix: Initial messages to be cached as prefix context
+//   - ttl: Time-to-live in seconds for the cached prefix, default: 86400
+//
+// Returns:
+//   - info: Information about the created prefix cache, including the context ID and token usage
+//   - err: Any error encountered during the operation
+//
+// ref: https://www.volcengine.com/docs/82379/1396490#_1-%E5%88%9B%E5%BB%BA%E5%89%8D%E7%BC%80%E7%BC%93%E5%AD%98
+func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
+	req := model.CreateContextRequest{
+		Model:    cm.config.Model,
+		Mode:     model.ContextModeCommonPrefix,
+		Messages: make([]*model.ChatCompletionMessage, 0, len(prefix)),
+		TTL:      nil,
+	}
+	for _, msg := range prefix {
+		content, err := toArkContent(msg.Content, msg.MultiContent)
+		if err != nil {
+			return nil, fmt.Errorf("create prefix fail, convert message fail: %w", err)
+		}
+
+		req.Messages = append(req.Messages, &model.ChatCompletionMessage{
+			Content:    content,
+			Role:       string(msg.Role),
+			ToolCallID: msg.ToolCallID,
+			ToolCalls:  toArkToolCalls(msg.ToolCalls),
+		})
+	}
+	if ttl > 0 {
+		req.TTL = &ttl
+	}
+
+	resp, err := cm.client.CreateContext(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("create prefix fail: %w", err)
+	}
+	return &CacheInfo{
+		ContextID: resp.ID,
+		Usage: schema.TokenUsage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		},
+	}, nil
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
@@ -215,8 +275,12 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		Config:   reqConf,
 	})
 
-	resp, err := cm.client.CreateChatCompletion(ctx, *req,
-		arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	var resp model.ChatCompletionResponse
+	if arkOpts.contextID != nil {
+		resp, err = cm.client.CreateContextChatCompletion(ctx, *convCompletionRequest(req, *arkOpts.contextID), arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	} else {
+		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -282,8 +346,12 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		Config:   reqConf,
 	})
 
-	stream, err := cm.client.CreateChatCompletionStream(ctx, *req,
-		arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	var stream *autils.ChatCompletionStreamReader
+	if arkOpts.contextID != nil {
+		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *convCompletionRequest(req, *arkOpts.contextID), arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	} else {
+		stream, err = cm.client.CreateChatCompletionStream(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -672,5 +740,27 @@ func newPanicErr(info any, stack []byte) error {
 	return &panicErr{
 		info:  info,
 		stack: stack,
+	}
+}
+
+func convCompletionRequest(req *model.CreateChatCompletionRequest, contextID string) *model.ContextChatCompletionRequest {
+	return &model.ContextChatCompletionRequest{
+		ContextID:        contextID,
+		Model:            req.Model,
+		Messages:         req.Messages,
+		MaxTokens:        dereferenceOrZero(req.MaxTokens),
+		Temperature:      dereferenceOrZero(req.Temperature),
+		TopP:             dereferenceOrZero(req.TopP),
+		Stream:           dereferenceOrZero(req.Stream),
+		Stop:             req.Stop,
+		FrequencyPenalty: dereferenceOrZero(req.FrequencyPenalty),
+		LogitBias:        req.LogitBias,
+		LogProbs:         dereferenceOrZero(req.LogProbs),
+		TopLogProbs:      dereferenceOrZero(req.TopLogProbs),
+		User:             dereferenceOrZero(req.User),
+		FunctionCall:     req.FunctionCall,
+		Tools:            req.Tools,
+		ToolChoice:       req.ToolChoice,
+		StreamOptions:    req.StreamOptions,
 	}
 }
