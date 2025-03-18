@@ -120,7 +120,7 @@ type Config struct {
 	Public bool
 }
 
-func NewLangfuseHandler(cfg *Config) (handler callbacks.Handler, flusher func()) {
+func NewLangfuseHandler(cfg *Config) (handler *CallbackHandler, flusher func()) {
 	var langfuseOpts []langfuse.Option
 	if cfg.Threads > 0 {
 		langfuseOpts = append(langfuseOpts, langfuse.WithThreads(cfg.Threads))
@@ -157,7 +157,7 @@ func NewLangfuseHandler(cfg *Config) (handler callbacks.Handler, flusher func())
 		langfuseOpts...,
 	)
 
-	return &langfuseHandler{
+	return &CallbackHandler{
 		cli: cli,
 
 		name:      cfg.Name,
@@ -169,7 +169,7 @@ func NewLangfuseHandler(cfg *Config) (handler callbacks.Handler, flusher func())
 	}, cli.Flush
 }
 
-type langfuseHandler struct {
+type CallbackHandler struct {
 	cli langfuse.Langfuse
 
 	name      string
@@ -186,18 +186,19 @@ type langfuseState struct {
 	observationID string
 }
 
-func (l *langfuseHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
+func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	if info == nil {
 		return ctx
 	}
 
-	ctx, state := l.getOrInitState(ctx, getName(info))
+	ctx, state := c.getOrInitState(ctx, getName(info))
 	if state == nil {
 		return ctx
 	}
 	if info.Component == components.ComponentOfChatModel {
 		mcbi := model.ConvCallbackInput(input)
-		generationID, err := l.cli.CreateGeneration(&langfuse.GenerationEventBody{
+
+		body := &langfuse.GenerationEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
 					Name:     getName(info),
@@ -207,10 +208,13 @@ func (l *langfuseHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 				ParentObservationID: state.observationID,
 				StartTime:           time.Now(),
 			},
-			InMessages:      mcbi.Messages,
-			Model:           mcbi.Config.Model,
-			ModelParameters: mcbi.Config,
-		})
+			InMessages: mcbi.Messages,
+		}
+		if mcbi.Config != nil {
+			body.Model = mcbi.Config.Model
+			body.ModelParameters = mcbi.Config
+		}
+		generationID, err := c.cli.CreateGeneration(body)
 		if err != nil {
 			log.Printf("create generation error: %v, runinfo: %+v", err, info)
 			return ctx
@@ -226,7 +230,7 @@ func (l *langfuseHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 		log.Printf("marshal input error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
-	spanID, err := l.cli.CreateSpan(&langfuse.SpanEventBody{
+	spanID, err := c.cli.CreateSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
 				Name: getName(info),
@@ -247,7 +251,7 @@ func (l *langfuseHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	})
 }
 
-func (l *langfuseHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
+func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
 	if info == nil {
 		return ctx
 	}
@@ -260,6 +264,7 @@ func (l *langfuseHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 
 	if info.Component == components.ComponentOfChatModel {
 		mcbo := model.ConvCallbackOutput(output)
+
 		body := &langfuse.GenerationEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
@@ -278,7 +283,7 @@ func (l *langfuseHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 			}
 		}
 
-		err := l.cli.EndGeneration(body)
+		err := c.cli.EndGeneration(body)
 		if err != nil {
 			log.Printf("end generation error: %v, runinfo: %+v", err, info)
 		}
@@ -290,7 +295,7 @@ func (l *langfuseHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 		log.Printf("marshal output error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
-	err = l.cli.EndSpan(&langfuse.SpanEventBody{
+	err = c.cli.EndSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
 				ID: state.observationID,
@@ -305,7 +310,7 @@ func (l *langfuseHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 	return ctx
 }
 
-func (l *langfuseHandler) OnError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
+func (c *CallbackHandler) OnError(ctx context.Context, info *callbacks.RunInfo, err error) context.Context {
 	if info == nil {
 		return ctx
 	}
@@ -329,14 +334,14 @@ func (l *langfuseHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 			CompletionStartTime: time.Now(),
 		}
 
-		reportErr := l.cli.EndGeneration(body)
+		reportErr := c.cli.EndGeneration(body)
 		if reportErr != nil {
 			log.Printf("end generation fail: %v, runinfo: %+v, execute error: %v", reportErr, info, err)
 		}
 		return ctx
 	}
 
-	reportErr := l.cli.EndSpan(&langfuse.SpanEventBody{
+	reportErr := c.cli.EndSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
 				ID: state.observationID,
@@ -352,18 +357,18 @@ func (l *langfuseHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 	return ctx
 }
 
-func (l *langfuseHandler) OnStartWithStreamInput(ctx context.Context, info *callbacks.RunInfo, input *schema.StreamReader[callbacks.CallbackInput]) context.Context {
+func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *callbacks.RunInfo, input *schema.StreamReader[callbacks.CallbackInput]) context.Context {
 	if info == nil {
 		return ctx
 	}
 
-	ctx, state := l.getOrInitState(ctx, getName(info))
+	ctx, state := c.getOrInitState(ctx, getName(info))
 	if state == nil {
 		return ctx
 	}
 
 	if info.Component == components.ComponentOfChatModel {
-		generationID, err := l.cli.CreateGeneration(&langfuse.GenerationEventBody{
+		generationID, err := c.cli.CreateGeneration(&langfuse.GenerationEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
 					Name: getName(info),
@@ -404,17 +409,18 @@ func (l *langfuseHandler) OnStartWithStreamInput(ctx context.Context, info *call
 				log.Printf("extract stream model input error: %v, runinfo: %+v", err_, info)
 				return
 			}
-			err = l.cli.EndGeneration(&langfuse.GenerationEventBody{
+			body := &langfuse.GenerationEventBody{
 				BaseObservationEventBody: langfuse.BaseObservationEventBody{
 					BaseEventBody: langfuse.BaseEventBody{
 						ID:       generationID,
 						MetaData: extra,
 					},
 				},
-				InMessages:      inMessage,
-				Model:           modelConf.Model,
-				ModelParameters: modelConf,
-			})
+				InMessages: inMessage,
+			}
+			body.Model = modelConf.Model
+			body.ModelParameters = modelConf
+			err = c.cli.EndGeneration(body)
 			if err != nil {
 				log.Printf("update stream generation fail: %v, runinfo: %+v", err, info)
 			}
@@ -426,7 +432,7 @@ func (l *langfuseHandler) OnStartWithStreamInput(ctx context.Context, info *call
 		})
 	}
 
-	spanID, err := l.cli.CreateSpan(&langfuse.SpanEventBody{
+	spanID, err := c.cli.CreateSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
 				Name: getName(info),
@@ -467,7 +473,7 @@ func (l *langfuseHandler) OnStartWithStreamInput(ctx context.Context, info *call
 			log.Printf("marshal input error: %v, runinfo: %+v", err_, info)
 			return
 		}
-		err = l.cli.EndSpan(&langfuse.SpanEventBody{
+		err = c.cli.EndSpan(&langfuse.SpanEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
 					ID: spanID,
@@ -486,7 +492,7 @@ func (l *langfuseHandler) OnStartWithStreamInput(ctx context.Context, info *call
 	})
 }
 
-func (l *langfuseHandler) OnEndWithStreamOutput(ctx context.Context, info *callbacks.RunInfo, output *schema.StreamReader[callbacks.CallbackOutput]) context.Context {
+func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callbacks.RunInfo, output *schema.StreamReader[callbacks.CallbackOutput]) context.Context {
 	if info == nil {
 		return ctx
 	}
@@ -539,7 +545,7 @@ func (l *langfuseHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 				}
 			}
 
-			err = l.cli.EndGeneration(body)
+			err = c.cli.EndGeneration(body)
 			if err != nil {
 				log.Printf("end stream generation error: %v, runinfo: %+v", err, info)
 			}
@@ -571,7 +577,7 @@ func (l *langfuseHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 		if err != nil {
 			log.Printf("marshal stream output error: %v, runinfo: %+v", err, info)
 		}
-		err = l.cli.EndSpan(&langfuse.SpanEventBody{
+		err = c.cli.EndSpan(&langfuse.SpanEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
 					ID: state.observationID,
@@ -588,35 +594,37 @@ func (l *langfuseHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	return ctx
 }
 
-func (l *langfuseHandler) getOrInitState(ctx context.Context, curName string) (context.Context, *langfuseState) {
+func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (context.Context, *langfuseState) {
 	state := ctx.Value(langfuseStateKey{})
-	if state == nil {
-		name := l.name
-		if len(name) == 0 {
-			name = curName
-		}
-		traceID, err := l.cli.CreateTrace(&langfuse.TraceEventBody{
-			BaseEventBody: langfuse.BaseEventBody{
-				Name: name,
-			},
-			TimeStamp: time.Now(),
-			UserID:    l.userID,
-			SessionID: l.sessionID,
-			Release:   l.release,
-			Tags:      l.tags,
-			Public:    l.public,
-		})
-		if err != nil {
-			log.Printf("create trace error: %v", err)
-			return ctx, nil
-		}
-		s := &langfuseState{
-			traceID: traceID,
-		}
-		ctx = context.WithValue(ctx, langfuseStateKey{}, s)
-		return ctx, s
+	if state != nil {
+		return ctx, state.(*langfuseState)
 	}
-	return ctx, state.(*langfuseState)
+
+	traceOpts := ctx.Value(langfuseTraceOptionKey{})
+	if traceOpts != nil {
+		nState, err := initState(ctx, c.cli, traceOpts.(*traceOptions))
+		if err != nil {
+			log.Printf("init state fail: %v", err)
+		}
+		return context.WithValue(ctx, langfuseStateKey{}, nState), nState
+	}
+
+	name := c.name
+	if len(name) == 0 {
+		name = curName
+	}
+	nState, err := initState(ctx, c.cli, &traceOptions{
+		Name:      c.name,
+		UserID:    c.userID,
+		SessionID: c.sessionID,
+		Release:   c.release,
+		Tags:      c.tags,
+		Public:    c.public,
+	})
+	if err != nil {
+		log.Printf("init state fail: %v", err)
+	}
+	return context.WithValue(ctx, langfuseStateKey{}, nState), nState
 }
 
 func getName(info *callbacks.RunInfo) string {
