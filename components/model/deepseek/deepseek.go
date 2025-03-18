@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -114,7 +115,12 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 		opts = append(opts, deepseek.WithTimeout(config.Timeout))
 	}
 	if len(config.BaseURL) > 0 {
-		opts = append(opts, deepseek.WithBaseURL(config.BaseURL))
+		baseURL := config.BaseURL
+		// sdk won't add '/' automatically
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL = baseURL + "/"
+		}
+		opts = append(opts, deepseek.WithBaseURL(baseURL))
 	}
 
 	cli, err := deepseek.NewClientWithOptions(config.APIKey, opts...)
