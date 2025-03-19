@@ -458,39 +458,37 @@ func convSchemaMessage(message *schema.Message) (*anthropic.MessageParam, error)
 	} else {
 		result.Role = anthropic.F(anthropic.MessageParamRoleUser)
 	}
-
 	var messageParams []anthropic.ContentBlockParamUnion
-	for i := range message.ToolCalls {
-		messageParams = append(messageParams, anthropic.NewToolUseBlockParam(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, json.RawMessage(message.ToolCalls[i].Function.Arguments)))
-	}
-
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
 		}
-		result.Content = anthropic.F(messageParams)
-		return result, nil
-	}
-
-	for i := range message.MultiContent {
-		switch message.MultiContent[i].Type {
-		case schema.ChatMessagePartTypeText:
-			messageParams = append(messageParams, anthropic.NewTextBlock(message.MultiContent[i].Text))
-		case schema.ChatMessagePartTypeImageURL:
-			if message.MultiContent[i].ImageURL == nil {
-				continue
+	} else {
+		for i := range message.MultiContent {
+			switch message.MultiContent[i].Type {
+			case schema.ChatMessagePartTypeText:
+				messageParams = append(messageParams, anthropic.NewTextBlock(message.MultiContent[i].Text))
+			case schema.ChatMessagePartTypeImageURL:
+				if message.MultiContent[i].ImageURL == nil {
+					continue
+				}
+				mediaType, data, err := convImageBase64(message.MultiContent[i].ImageURL.URL)
+				if err != nil {
+					return nil, fmt.Errorf("extract base64 image fail: %w", err)
+				}
+				messageParams = append(messageParams, anthropic.NewImageBlockBase64(mediaType, data))
+			default:
+				return nil, fmt.Errorf("anthropic message type not supported: %s", message.MultiContent[i].Type)
 			}
-			mediaType, data, err := convImageBase64(message.MultiContent[i].ImageURL.URL)
-			if err != nil {
-				return nil, fmt.Errorf("extract base64 image fail: %w", err)
-			}
-			messageParams = append(messageParams, anthropic.NewImageBlockBase64(mediaType, data))
-		default:
-			return nil, fmt.Errorf("anthropic message type not supported: %s", message.MultiContent[i].Type)
 		}
 	}
+
+	for i := range message.ToolCalls {
+		messageParams = append(messageParams, anthropic.NewToolUseBlockParam(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, json.RawMessage(message.ToolCalls[i].Function.Arguments)))
+	}
+
 	result.Content = anthropic.F(messageParams)
 
 	return result, nil
