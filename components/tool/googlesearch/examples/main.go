@@ -46,13 +46,13 @@ func main() {
 	}
 
 	// prepare params
-	request := map[string]any{
-		"query": "Golang concurrent programming",
-		"num":   3,
-		"lang":  "en",
+	req := googlesearch.SearchRequest{
+		Query: "Golang concurrent programming",
+		Num:   3,
+		Lang:  "en",
 	}
 
-	args, err := json.Marshal(request)
+	args, err := json.Marshal(req)
 	if err != nil {
 		panic(err)
 	}
