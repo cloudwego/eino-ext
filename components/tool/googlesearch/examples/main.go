@@ -33,7 +33,7 @@ func main() {
 	googleSearchEngineID := os.Getenv("GOOGLE_SEARCH_ENGINE_ID")
 
 	if googleAPIKey == "" || googleSearchEngineID == "" {
-		panic("[GOOGLE_API_KEY] and [GOOGLE_SEARCH_ENGINE_ID] must set")
+		log.Fatal("[GOOGLE_API_KEY] and [GOOGLE_SEARCH_ENGINE_ID] must set")
 	}
 
 	// create tool
@@ -44,7 +44,7 @@ func main() {
 		Num:            5,
 	})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// prepare params
@@ -56,18 +56,18 @@ func main() {
 
 	args, err := json.Marshal(req)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// do search
 	resp, err := searchTool.InvokableRun(ctx, string(args))
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	var searchResp googlesearch.SearchResult
 	if err := json.Unmarshal([]byte(resp), &searchResp); err != nil {
-		log.Fatalf("Unmarshal of search response failed, err=%v", err)
+		log.Fatal(err)
 	}
 
 	// Print results
