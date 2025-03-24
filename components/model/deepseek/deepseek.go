@@ -50,6 +50,10 @@ type ChatModelConfig struct {
 	// Optional. Default: https://api.deepseek.com/
 	BaseURL string `json:"base_url"`
 
+	// Path sets the path for the API request. Defaults to "chat/completions", if not set.
+	// Example usages would be "/c/chat/" or any http after the baseURL extension
+	Path string `json:"path"`
+
 	// The following fields correspond to DeepSeek's chat API parameters
 	// Ref: https://api-docs.deepseek.com/api/create-chat-completion
 
@@ -118,6 +122,9 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	}
 	if len(config.BaseURL) > 0 {
 		opts = append(opts, deepseek.WithBaseURL(config.BaseURL))
+	}
+	if len(config.Path) > 0 {
+		opts = append(opts, deepseek.WithPath(config.Path))
 	}
 
 	cli, err := deepseek.NewClientWithOptions(config.APIKey, opts...)
