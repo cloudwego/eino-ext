@@ -111,7 +111,7 @@ func startMCPServer() {
 			result = x * y
 		case "divide":
 			if y == 0 {
-				return mcp.NewToolResultError("Cannot divide by zero"), nil
+				return mcp.NewToolResultText("Cannot divide by zero"), nil
 			}
 			result = x / y
 		}

@@ -25,14 +25,9 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
-	"github.com/cloudwego/eino-ext/components/model/openai"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
-	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino/schema"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -47,32 +42,11 @@ func main() {
 
 	mcpPrompt := getMCPPrompt(ctx)
 
-	cm := getChatModel(ctx)
-
-	runner, err := compose.NewChain[map[string]any, *schema.Message]().
-		AppendChatTemplate(mcpPrompt).
-		AppendChatModel(cm).
-		Compile(ctx)
+	result, err := mcpPrompt.Format(ctx, map[string]interface{}{"persona": "Describe the content of the image"})
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	result, err := runner.Invoke(ctx, map[string]interface{}{"persona": "Describe the content of the image"})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(result.Content)
-}
-
-func getChatModel(ctx context.Context) model.ChatModel {
-	cm, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey: os.Getenv("OPENAI_API_KEY"),
-		Model:  "gpt-4o",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	return cm
+	fmt.Println(result)
 }
 
 func getMCPPrompt(ctx context.Context) prompt.ChatTemplate {
@@ -113,7 +87,12 @@ func startMCPServer() {
 		return &mcp.GetPromptResult{
 			Messages: []mcp.PromptMessage{
 				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewTextContent(request.Params.Arguments["persona"])),
-				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewImageContent("https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg", "")),
+				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewImageContent("https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg", "image/jpeg")),
+				mcp.NewPromptMessage(mcp.RoleUser, mcp.NewEmbeddedResource(mcp.TextResourceContents{
+					URI:      "https://upload.wikimedia.org/wikipedia/commons/3/3a/Cat03.jpg",
+					MIMEType: "image/jpeg",
+					Text:     "resource",
+				})),
 			},
 		}, nil
 	})
@@ -125,13 +104,14 @@ func startMCPServer() {
 			}
 		}()
 
-		err := server.NewSSEServer(svr, "http://localhost:12345").Start("localhost:12345")
+		err := server.NewSSEServer(svr, server.WithBaseURL("http://localhost:12345")).Start("localhost:12345")
 
 		if err != nil {
 			log.Fatal(err)
 		}
 	}()
 }
+
 
 ```
 
@@ -141,13 +121,13 @@ The prompt can be configured using the `mcp.Config` struct:
 
 ```go
 type Config struct {
-// Cli is the MCP (Model Control Protocol) client, ref: https://github.com/mark3labs/mcp-go
-// Notice: should Initialize with server before use
-// Required
-Cli client.MCPClient
-// Name specifies the prompt name to use from MCP service
-// Required
-Name string
+    // Cli is the MCP (Model Control Protocol) client, ref: https://github.com/mark3labs/mcp-go
+    // Notice: should Initialize with server before use
+    // Required
+    Cli client.MCPClient
+    // Name specifies the prompt name to use from MCP service
+    // Required
+    Name string
 }
 ```
 
