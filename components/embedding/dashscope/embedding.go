@@ -21,8 +21,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/components/embedding"
+
+	"github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
 const (
@@ -54,7 +55,7 @@ type EmbeddingConfig struct {
 	Dimensions *int `json:"dimensions,omitempty"`
 }
 type Embedder struct {
-	cli *openai.EmbeddingClient
+	cli *openai.Client
 }
 
 func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error) {
@@ -68,7 +69,7 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 		httpClient = &http.Client{Timeout: config.Timeout}
 	}
 
-	ecfg := &openai.EmbeddingConfig{
+	ecfg := &openai.Config{
 		BaseURL:        baseUrl,
 		APIKey:         config.APIKey,
 		HTTPClient:     httpClient,
@@ -82,7 +83,7 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 		ecfg.Dimensions = &dim
 	}
 
-	cli, err := openai.NewEmbeddingClient(ctx, ecfg)
+	cli, err := openai.NewClient(ctx, ecfg)
 	if err != nil {
 		return nil, err
 	}

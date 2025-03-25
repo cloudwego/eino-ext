@@ -32,9 +32,8 @@ func main() {
 	accessKey := os.Getenv("OPENAI_API_KEY")
 	ctx := context.Background()
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  accessKey,
-		ByAzure: false,
-		Model:   "gpt-4o",
+		APIKey: accessKey,
+		Model:  "gpt-4o",
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel of openai failed, err=%v", err)

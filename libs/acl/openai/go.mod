@@ -1,17 +1,21 @@
 module github.com/cloudwego/eino-ext/libs/acl/openai
 
-go 1.18
+go 1.21
+
+toolchain go1.23.4
 
 require (
 	github.com/bytedance/mockey v1.2.13
+	github.com/bytedance/sonic v1.12.2
 	github.com/cloudwego/eino v0.3.16
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/sashabaranov/go-openai v1.32.5
-	github.com/stretchr/testify v1.9.0
+	github.com/openai/openai-go v0.1.0-beta.2
+	github.com/stretchr/testify v1.10.0
 )
 
 require (
-	github.com/bytedance/sonic v1.12.2 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.17.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/bytedance/sonic/loader v0.2.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
@@ -39,12 +43,17 @@ require (
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/smarty/assertions v1.15.0 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
+	github.com/tidwall/gjson v1.14.4 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.1 // indirect
+	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	golang.org/x/arch v0.11.0 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/net v0.34.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

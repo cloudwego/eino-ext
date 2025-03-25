@@ -18,17 +18,20 @@ package openai
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"runtime/debug"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/sashabaranov/go-openai"
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/azure"
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/packages/param"
+	"github.com/openai/openai-go/shared"
 )
 
 type ChatCompletionResponseFormatType string
@@ -83,12 +86,18 @@ type Config struct {
 	// Required for Azure
 	APIVersion string `json:"api_version"`
 
-	// The following fields correspond to OpenAI's chat completion API parameters
-	// Ref: https://platform.openai.com/docs/api-reference/chat/create
+	// The following fields correspond to OpenAI's common parameters
 
 	// Model specifies the ID of the model to use
 	// Required
 	Model string `json:"model"`
+
+	// User unique identifier representing end-user
+	// Optional. Helps OpenAI monitor and detect abuse
+	User *string `json:"user,omitempty"`
+
+	// The following fields correspond to OpenAI's chat completion API parameters
+	// Ref: https://platform.openai.com/docs/api-reference/chat/create
 
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
@@ -132,15 +141,22 @@ type Config struct {
 	// Optional. Map token IDs to bias values from -100 to 100
 	LogitBias map[string]int `json:"logit_bias,omitempty"`
 
-	// User unique identifier representing end-user
-	// Optional. Helps OpenAI monitor and detect abuse
-	User *string `json:"user,omitempty"`
+	// The following fields correspond to OpenAI's embedding API parameters
+	//Ref: https://platform.openai.com/docs/api-reference/embeddings/create
+
+	// EncodingFormat specifies the format of the embeddings output
+	// Optional. Default: EmbeddingEncodingFormatFloat
+	EncodingFormat *EmbeddingEncodingFormat `json:"encoding_format,omitempty"`
+
+	// Dimensions specifies the number of dimensions the resulting output embeddings should have
+	// Optional. Only supported in text-embedding-3 and later models
+	Dimensions *int `json:"dimensions,omitempty"`
 }
 
 var _ model.ChatModel = (*Client)(nil)
 
 type Client struct {
-	cli    *openai.Client
+	cli    openai.Client
 	config *Config
 
 	tools      []tool
@@ -148,76 +164,59 @@ type Client struct {
 	toolChoice *schema.ToolChoice
 }
 
-func NewClient(ctx context.Context, config *Config) (*Client, error) {
+func NewClient(_ context.Context, config *Config) (*Client, error) {
 	if config == nil {
 		return nil, fmt.Errorf("OpenAI client config cannot be nil")
 	}
 
-	var clientConf openai.ClientConfig
+	var opts []option.RequestOption
 
 	if config.ByAzure {
-		clientConf = openai.DefaultAzureConfig(config.APIKey, config.BaseURL)
-		if config.APIVersion != "" {
-			clientConf.APIVersion = config.APIVersion
-		}
+		opts = append(opts, azure.WithAPIKey(config.APIKey), azure.WithEndpoint(config.BaseURL, config.APIVersion))
 	} else {
-		clientConf = openai.DefaultConfig(config.APIKey)
+		opts = append(opts, option.WithAPIKey(config.APIKey))
 		if len(config.BaseURL) > 0 {
-			clientConf.BaseURL = config.BaseURL
+			opts = append(opts, option.WithBaseURL(config.BaseURL))
 		}
 	}
 
-	clientConf.HTTPClient = config.HTTPClient
-	if clientConf.HTTPClient == nil {
-		clientConf.HTTPClient = http.DefaultClient
+	if config.HTTPClient != nil {
+		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
 	}
 
 	return &Client{
-		cli:    openai.NewClientWithConfig(clientConf),
+		cli:    openai.NewClient(opts...),
 		config: config,
 	}, nil
 }
 
-func toOpenAIRole(role schema.RoleType) string {
-	switch role {
-	case schema.User:
-		return openai.ChatMessageRoleUser
-	case schema.Assistant:
-		return openai.ChatMessageRoleAssistant
-	case schema.System:
-		return openai.ChatMessageRoleSystem
-	case schema.Tool:
-		return openai.ChatMessageRoleTool
-	default:
-		return string(role)
-	}
-}
-
-func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatMessagePart, error) {
+func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatCompletionContentPartUnionParam, error) {
 	if len(mc) == 0 {
 		return nil, nil
 	}
 
-	ret := make([]openai.ChatMessagePart, 0, len(mc))
+	ret := make([]openai.ChatCompletionContentPartUnionParam, 0, len(mc))
 
 	for _, part := range mc {
 		switch part.Type {
 		case schema.ChatMessagePartTypeText:
-			ret = append(ret, openai.ChatMessagePart{
-				Type: openai.ChatMessagePartTypeText,
-				Text: part.Text,
-			})
+			ret = append(ret, openai.TextContentPart(part.Text))
 		case schema.ChatMessagePartTypeImageURL:
 			if part.ImageURL == nil {
 				return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
 			}
-			ret = append(ret, openai.ChatMessagePart{
-				Type: openai.ChatMessagePartTypeImageURL,
-				ImageURL: &openai.ChatMessageImageURL{
-					URL:    part.ImageURL.URL,
-					Detail: openai.ImageURLDetail(part.ImageURL.Detail),
-				},
-			})
+			ret = append(ret, openai.ImageContentPart(openai.ChatCompletionContentPartImageImageURLParam{
+				URL:    part.ImageURL.URL,
+				Detail: string(part.ImageURL.Detail),
+			}))
+		case schema.ChatMessagePartTypeAudioURL:
+			if part.AudioURL == nil {
+				return nil, fmt.Errorf("AudioURL field must not be nil when Type is ChatMessagePartTypeAudioURL")
+			}
+			ret = append(ret, openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
+				Data:   part.AudioURL.URL,
+				Format: part.AudioURL.MIMEType,
+			}))
 		default:
 			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
 		}
@@ -226,22 +225,42 @@ func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatMessagePart
 	return ret, nil
 }
 
-func toMessageRole(role string) schema.RoleType {
+func chunkToMessageRole(role string) schema.RoleType {
 	switch role {
-	case openai.ChatMessageRoleUser:
-		return schema.User
-	case openai.ChatMessageRoleAssistant:
-		return schema.Assistant
-	case openai.ChatMessageRoleSystem:
+	case "developer", "system":
 		return schema.System
-	case openai.ChatMessageRoleTool:
+	case "user":
+		return schema.User
+	case "assistant":
+		return schema.Assistant
+	case "tool":
 		return schema.Tool
 	default:
 		return schema.RoleType(role)
 	}
 }
 
-func toMessageToolCalls(toolCalls []openai.ToolCall) []schema.ToolCall {
+func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ChatCompletionMessageToolCallParam {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+
+	ret := make([]openai.ChatCompletionMessageToolCallParam, len(toolCalls))
+	for i := range toolCalls {
+		toolCall := toolCalls[i]
+		ret[i] = openai.ChatCompletionMessageToolCallParam{
+			ID: toolCall.ID,
+			Function: openai.ChatCompletionMessageToolCallFunctionParam{
+				Name:      toolCall.Function.Name,
+				Arguments: toolCall.Function.Arguments,
+			},
+		}
+	}
+
+	return ret
+}
+
+func toMessageToolCalls(toolCalls []openai.ChatCompletionMessageToolCall) []schema.ToolCall {
 	if len(toolCalls) == 0 {
 		return nil
 	}
@@ -250,9 +269,8 @@ func toMessageToolCalls(toolCalls []openai.ToolCall) []schema.ToolCall {
 	for i := range toolCalls {
 		toolCall := toolCalls[i]
 		ret[i] = schema.ToolCall{
-			Index: toolCall.Index,
-			ID:    toolCall.ID,
-			Type:  string(toolCall.Type),
+			ID:   toolCall.ID,
+			Type: string(toolCall.Type.Default()),
 			Function: schema.FunctionCall{
 				Name:      toolCall.Function.Name,
 				Arguments: toolCall.Function.Arguments,
@@ -263,19 +281,20 @@ func toMessageToolCalls(toolCalls []openai.ToolCall) []schema.ToolCall {
 	return ret
 }
 
-func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
+func chunkToMessageToolCalls(toolCalls []openai.ChatCompletionChunkChoiceDeltaToolCall) []schema.ToolCall {
 	if len(toolCalls) == 0 {
 		return nil
 	}
 
-	ret := make([]openai.ToolCall, len(toolCalls))
+	ret := make([]schema.ToolCall, len(toolCalls))
 	for i := range toolCalls {
 		toolCall := toolCalls[i]
-		ret[i] = openai.ToolCall{
-			Index: toolCall.Index,
+		idx := int(toolCall.Index)
+		ret[i] = schema.ToolCall{
+			Index: &idx,
 			ID:    toolCall.ID,
-			Type:  openai.ToolTypeFunction,
-			Function: openai.FunctionCall{
+			Type:  toolCall.Type,
+			Function: schema.FunctionCall{
 				Name:      toolCall.Function.Name,
 				Arguments: toolCall.Function.Arguments,
 			},
@@ -285,8 +304,7 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 	return ret
 }
 
-func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionRequest, *model.CallbackInput, error) {
-
+func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionNewParams, *model.CallbackInput, error) {
 	options := model.GetCommonOptions(&model.Options{
 		Temperature: cm.config.Temperature,
 		MaxTokens:   cm.config.MaxTokens,
@@ -297,28 +315,50 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
-	req := &openai.ChatCompletionRequest{
-		Model:            *options.Model,
-		MaxTokens:        dereferenceOrZero(options.MaxTokens),
-		Temperature:      dereferenceOrZero(options.Temperature),
-		TopP:             dereferenceOrZero(options.TopP),
-		Stop:             cm.config.Stop,
-		PresencePenalty:  dereferenceOrZero(cm.config.PresencePenalty),
-		Seed:             cm.config.Seed,
-		FrequencyPenalty: dereferenceOrZero(cm.config.FrequencyPenalty),
-		LogitBias:        cm.config.LogitBias,
-		User:             dereferenceOrZero(cm.config.User),
+	req := &openai.ChatCompletionNewParams{
+		Model: *options.Model,
+	}
+	if options.MaxTokens != nil {
+		req.MaxTokens = param.NewOpt(int64(*options.MaxTokens))
+	}
+	if options.Temperature != nil {
+		req.Temperature = param.NewOpt(float64(*options.Temperature))
+	}
+	if options.TopP != nil {
+		req.TopP = param.NewOpt(float64(*options.TopP))
+	}
+	if len(options.Stop) > 0 {
+		req.Stop = openai.ChatCompletionNewParamsStopUnion{OfChatCompletionNewsStopArray: cm.config.Stop}
+	}
+	if cm.config.PresencePenalty != nil {
+		req.PresencePenalty = param.NewOpt(float64(*cm.config.PresencePenalty))
+	}
+	if cm.config.Seed != nil {
+		req.Seed = param.NewOpt(int64(*cm.config.Seed))
+	}
+	if cm.config.FrequencyPenalty != nil {
+		req.FrequencyPenalty = param.NewOpt(float64(*cm.config.FrequencyPenalty))
+	}
+	if cm.config.LogitBias != nil && len(cm.config.LogitBias) > 0 {
+		logitBias := make(map[string]int64, len(cm.config.LogitBias))
+		for k, v := range cm.config.LogitBias {
+			logitBias[k] = int64(v)
+		}
+		req.LogitBias = logitBias
+	}
+	if cm.config.User != nil {
+		req.User = param.NewOpt(*cm.config.User)
 	}
 
 	cbInput := &model.CallbackInput{
 		Messages: in,
 		Tools:    cm.rawTools,
 		Config: &model.Config{
-			Model:       req.Model,
-			MaxTokens:   req.MaxTokens,
-			Temperature: req.Temperature,
-			TopP:        req.TopP,
-			Stop:        req.Stop,
+			Model:       dereferenceOrZero(options.Model),
+			MaxTokens:   dereferenceOrZero(options.MaxTokens),
+			Temperature: dereferenceOrZero(options.Temperature),
+			TopP:        dereferenceOrZero(options.TopP),
+			Stop:        options.Stop,
 		},
 	}
 
@@ -332,19 +372,30 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 	}
 
 	if len(tools) > 0 {
-		req.Tools = make([]openai.Tool, len(tools))
+		reqTools := make([]openai.ChatCompletionToolParam, len(cm.tools))
 		for i := range tools {
 			t := tools[i]
 
-			req.Tools[i] = openai.Tool{
-				Type: openai.ToolTypeFunction,
-				Function: &openai.FunctionDefinition{
+			p := make(map[string]any)
+			intermediate, err := sonic.Marshal(t.Function.Parameters)
+			if err != nil {
+				return nil, nil, fmt.Errorf("convert function parameter fail, tool name: %s, error: %w", t.Function.Name, err)
+			}
+			err = sonic.Unmarshal(intermediate, &p)
+			if err != nil {
+				return nil, nil, fmt.Errorf("convert function parameter fail, tool name: %s, error: %w", t.Function.Name, err)
+			}
+
+			reqTools[i] = openai.ChatCompletionToolParam{
+				Type: "function",
+				Function: shared.FunctionDefinitionParam{
 					Name:        t.Function.Name,
-					Description: t.Function.Description,
-					Parameters:  t.Function.Parameters,
+					Description: param.NewOpt(t.Function.Description),
+					Parameters:  p,
 				},
 			}
 		}
+		req.Tools = reqTools
 	}
 
 	if options.ToolChoice != nil {
@@ -363,19 +414,21 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 
 		switch *options.ToolChoice {
 		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
+			req.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: param.NewOpt(toolChoiceNone)}
 		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
+			req.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: param.NewOpt(toolChoiceAuto)}
 		case schema.ToolChoiceForced:
 			if len(req.Tools) == 0 {
 				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
 			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
+				req.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{OfAuto: param.NewOpt(toolChoiceRequired)}
 			} else {
-				req.ToolChoice = openai.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: openai.ToolFunction{
-						Name: req.Tools[0].Function.Name,
+				req.ToolChoice = openai.ChatCompletionToolChoiceOptionUnionParam{
+					OfChatCompletionNamedToolChoice: &openai.ChatCompletionNamedToolChoiceParam{
+						Function: openai.ChatCompletionNamedToolChoiceFunctionParam{
+							Name: req.Tools[0].Function.Name,
+						},
+						Type: "function",
 					},
 				}
 			}
@@ -384,37 +437,101 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 		}
 	}
 
-	msgs := make([]openai.ChatCompletionMessage, 0, len(in))
+	msgs := make([]openai.ChatCompletionMessageParamUnion, 0, len(in))
 	for _, inMsg := range in {
+		if len(inMsg.Content) > 0 && len(inMsg.MultiContent) > 0 {
+			return nil, nil, fmt.Errorf("can't use both Content and MultiContent properties simultaneously")
+		}
+
 		mc, e := toOpenAIMultiContent(inMsg.MultiContent)
 		if e != nil {
 			return nil, nil, e
 		}
-		msg := openai.ChatCompletionMessage{
-			Role:         toOpenAIRole(inMsg.Role),
-			Content:      inMsg.Content,
-			MultiContent: mc,
-			Name:         inMsg.Name,
-			ToolCalls:    toOpenAIToolCalls(inMsg.ToolCalls),
-			ToolCallID:   inMsg.ToolCallID,
+
+		switch inMsg.Role {
+		case schema.User:
+			if len(mc) > 0 {
+				msgs = append(msgs, openai.UserMessage(mc))
+			} else {
+				msgs = append(msgs, openai.UserMessage(inMsg.Content))
+			}
+		case schema.Tool:
+			if len(mc) > 0 {
+				var ins []openai.ChatCompletionContentPartTextParam
+				for _, m := range mc {
+					if m.OfText != nil {
+						ins = append(ins, *m.OfText)
+					} else {
+						return nil, nil, fmt.Errorf("tool message only support text")
+					}
+				}
+				msgs = append(msgs, openai.ToolMessage(ins, inMsg.ToolCallID))
+			} else {
+				msgs = append(msgs, openai.ToolMessage(inMsg.Content, inMsg.ToolCallID))
+			}
+		case schema.System:
+			if len(mc) > 0 {
+				var ins []openai.ChatCompletionContentPartTextParam
+				for _, m := range mc {
+					if m.OfText != nil {
+						ins = append(ins, *m.OfText)
+					} else {
+						return nil, nil, fmt.Errorf("system message only support text")
+					}
+				}
+				msgs = append(msgs, openai.SystemMessage(ins))
+			} else {
+				msgs = append(msgs, openai.SystemMessage(inMsg.Content))
+			}
+		case schema.Assistant:
+			var msg openai.ChatCompletionAssistantMessageParam
+			if len(mc) > 0 {
+				var ins []openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion
+				for _, m := range mc {
+					if m.OfText != nil {
+						ins = append(ins, openai.ChatCompletionAssistantMessageParamContentArrayOfContentPartUnion{
+							OfText: m.OfText,
+						})
+					} else {
+						return nil, nil, fmt.Errorf("assistant message only support text")
+					}
+				}
+				msg.Content.OfArrayOfContentParts = ins
+			} else {
+				msg.Content.OfString = param.NewOpt(inMsg.Content)
+			}
+			msg.ToolCalls = toOpenAIToolCalls(inMsg.ToolCalls)
+			msgs = append(msgs, openai.ChatCompletionMessageParamUnion{OfAssistant: &msg})
+		default:
+			return nil, nil, fmt.Errorf("unknown role %s", inMsg.Role)
 		}
-
-		msgs = append(msgs, msg)
 	}
-
 	req.Messages = msgs
 
 	if cm.config.ResponseFormat != nil {
-		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatType(cm.config.ResponseFormat.Type),
-		}
-		if cm.config.ResponseFormat.JSONSchema != nil {
-			req.ResponseFormat.JSONSchema = &openai.ChatCompletionResponseFormatJSONSchema{
-				Name:        cm.config.ResponseFormat.JSONSchema.Name,
-				Description: cm.config.ResponseFormat.JSONSchema.Description,
-				Schema:      cm.config.ResponseFormat.JSONSchema.Schema,
-				Strict:      cm.config.ResponseFormat.JSONSchema.Strict,
+		switch cm.config.ResponseFormat.Type {
+		case ChatCompletionResponseFormatTypeText:
+			req.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+				OfText: &shared.ResponseFormatTextParam{Type: "text"},
 			}
+		case ChatCompletionResponseFormatTypeJSONObject:
+			req.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+				OfJSONObject: &shared.ResponseFormatJSONObjectParam{Type: "json_object"},
+			}
+		case ChatCompletionResponseFormatTypeJSONSchema:
+			req.ResponseFormat = openai.ChatCompletionNewParamsResponseFormatUnion{
+				OfJSONSchema: &shared.ResponseFormatJSONSchemaParam{
+					Type: "json_schema",
+					JSONSchema: shared.ResponseFormatJSONSchemaJSONSchemaParam{
+						Name:        cm.config.ResponseFormat.JSONSchema.Name,
+						Strict:      param.NewOpt(cm.config.ResponseFormat.JSONSchema.Strict),
+						Description: param.NewOpt(cm.config.ResponseFormat.JSONSchema.Description),
+						Schema:      cm.config.ResponseFormat.JSONSchema.Schema,
+					},
+				},
+			}
+		default:
+			return nil, nil, fmt.Errorf("unknown response format type: %s", cm.config.ResponseFormat.Type)
 		}
 	}
 
@@ -437,7 +554,7 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	resp, err := cm.cli.CreateChatCompletion(ctx, *req)
+	resp, err := cm.cli.Chat.Completions.New(ctx, *req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -453,13 +570,11 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 
 		msg := choice.Message
 		outMsg = &schema.Message{
-			Role:       toMessageRole(msg.Role),
-			Content:    msg.Content,
-			Name:       msg.Name,
-			ToolCallID: msg.ToolCallID,
-			ToolCalls:  toMessageToolCalls(msg.ToolCalls),
+			Role:      schema.RoleType(msg.Role.Default()),
+			Content:   msg.Content,
+			ToolCalls: toMessageToolCalls(msg.ToolCalls),
 			ResponseMeta: &schema.ResponseMeta{
-				FinishReason: string(choice.FinishReason),
+				FinishReason: choice.FinishReason,
 				Usage:        toEinoTokenUsage(&resp.Usage),
 			},
 		}
@@ -472,9 +587,9 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 	}
 
 	usage := &model.TokenUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
+		PromptTokens:     int(resp.Usage.PromptTokens),
+		CompletionTokens: int(resp.Usage.CompletionTokens),
+		TotalTokens:      int(resp.Usage.TotalTokens),
 	}
 
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
@@ -500,15 +615,11 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 		return nil, err
 	}
 
-	req.Stream = true
-	req.StreamOptions = &openai.StreamOptions{IncludeUsage: true}
+	req.StreamOptions = openai.ChatCompletionStreamOptionsParam{IncludeUsage: param.NewOpt(true)}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	stream, err := cm.cli.CreateChatCompletionStream(ctx, *req)
-	if err != nil {
-		return nil, err
-	}
+	stream := cm.cli.Chat.Completions.NewStreaming(ctx, *req)
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func() {
@@ -525,23 +636,8 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 
 		var lastEmptyMsg *schema.Message
 
-		for {
-			chunk, chunkErr := stream.Recv()
-			if errors.Is(chunkErr, io.EOF) {
-				if lastEmptyMsg != nil {
-					sw.Send(&model.CallbackOutput{
-						Message:    lastEmptyMsg,
-						Config:     cbInput.Config,
-						TokenUsage: toModelCallbackUsage(lastEmptyMsg.ResponseMeta),
-					}, nil)
-				}
-				return
-			}
-
-			if chunkErr != nil {
-				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk from OpenAI: %w", chunkErr))
-				return
-			}
+		for stream.Next() {
+			chunk := stream.Current()
 
 			// stream usage return in last chunk without message content, then
 			// last message received from callback output stream: Message == nil and TokenUsage != nil
@@ -581,6 +677,9 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 				return
 			}
 		}
+		if streamErr := stream.Err(); streamErr != nil {
+			_ = sw.Send(nil, streamErr)
+		}
 
 	}()
 
@@ -603,7 +702,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
-func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool) {
+func resolveStreamResponse(resp openai.ChatCompletionChunk) (msg *schema.Message, found bool) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
 		if choice.Index != 0 {
@@ -612,22 +711,22 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 
 		found = true
 		msg = &schema.Message{
-			Role:      toMessageRole(choice.Delta.Role),
+			Role:      chunkToMessageRole(choice.Delta.Role),
 			Content:   choice.Delta.Content,
-			ToolCalls: toMessageToolCalls(choice.Delta.ToolCalls),
+			ToolCalls: chunkToMessageToolCalls(choice.Delta.ToolCalls),
 			ResponseMeta: &schema.ResponseMeta{
-				FinishReason: string(choice.FinishReason),
-				Usage:        toEinoTokenUsage(resp.Usage),
+				FinishReason: choice.FinishReason,
+				Usage:        toEinoTokenUsage(&resp.Usage),
 			},
 		}
 
 		break
 	}
 
-	if resp.Usage != nil && !found {
+	if !found {
 		msg = &schema.Message{
 			ResponseMeta: &schema.ResponseMeta{
-				Usage: toEinoTokenUsage(resp.Usage),
+				Usage: toEinoTokenUsage(&resp.Usage),
 			},
 		}
 		found = true
@@ -661,14 +760,14 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 	return tools, nil
 }
 
-func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
+func toEinoTokenUsage(usage *openai.CompletionUsage) *schema.TokenUsage {
 	if usage == nil {
 		return nil
 	}
 	return &schema.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		TotalTokens:      usage.TotalTokens,
+		PromptTokens:     int(usage.PromptTokens),
+		CompletionTokens: int(usage.CompletionTokens),
+		TotalTokens:      int(usage.TotalTokens),
 	}
 }
 
