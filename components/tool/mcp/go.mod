@@ -3,7 +3,7 @@ module github.com/cloudwego/eino-ext/components/tool/mcp
 go 1.23
 
 require (
-	github.com/bytedance/sonic v1.12.2
+	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.3.10
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/mark3labs/mcp-go v0.15.0

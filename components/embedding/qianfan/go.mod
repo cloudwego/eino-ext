@@ -4,15 +4,14 @@ go 1.18
 
 require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
-	github.com/cloudwego/eino v0.3.16
+	github.com/cloudwego/eino v0.3.17
 )
 
 require (
 	github.com/baidubce/bce-sdk-go v0.9.164 // indirect
-	github.com/bytedance/sonic v1.12.2 // indirect
-	github.com/bytedance/sonic/loader v0.2.0 // indirect
-	github.com/cloudwego/base64x v0.1.4 // indirect
-	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/bytedance/sonic v1.13.2 // indirect
+	github.com/bytedance/sonic/loader v0.2.4 // indirect
+	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/getkin/kin-openapi v0.118.0 // indirect

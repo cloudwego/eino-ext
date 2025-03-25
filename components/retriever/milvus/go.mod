@@ -4,16 +4,15 @@ go 1.23.4
 
 require (
 	github.com/bytedance/mockey v1.2.12
-	github.com/bytedance/sonic v1.12.2
-	github.com/cloudwego/eino v0.3.16
+	github.com/bytedance/sonic v1.13.2
+	github.com/cloudwego/eino v0.3.17
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
 	github.com/smartystreets/goconvey v1.8.1
 )
 
 require (
-	github.com/bytedance/sonic/loader v0.2.0 // indirect
-	github.com/cloudwego/base64x v0.1.4 // indirect
-	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/bytedance/sonic/loader v0.2.4 // indirect
+	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/cockroachdb/errors v1.9.1 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect

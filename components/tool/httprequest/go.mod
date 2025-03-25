@@ -3,8 +3,8 @@ module github.com/cloudwego/eino-ext/components/tool/httprequest
 go 1.23.4
 
 require (
-	github.com/bytedance/sonic v1.12.10
-	github.com/cloudwego/eino v0.3.16
+	github.com/bytedance/sonic v1.13.20
+	github.com/cloudwego/eino v0.3.17
 	github.com/stretchr/testify v1.9.0
 )
 

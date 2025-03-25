@@ -3,16 +3,15 @@ module github.com/cloudwego/eino-ext/components/document/parser/pdf
 go 1.18
 
 require (
-	github.com/cloudwego/eino v0.3.16
+	github.com/cloudwego/eino v0.3.17
 	github.com/dslipak/pdf v0.0.2
 	github.com/stretchr/testify v1.9.0
 )
 
 require (
-	github.com/bytedance/sonic v1.12.2 // indirect
-	github.com/bytedance/sonic/loader v0.2.0 // indirect
-	github.com/cloudwego/base64x v0.1.4 // indirect
-	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/bytedance/sonic v1.13.2 // indirect
+	github.com/bytedance/sonic/loader v0.2.4 // indirect
+	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/getkin/kin-openapi v0.118.0 // indirect
