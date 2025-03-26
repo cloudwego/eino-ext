@@ -655,6 +655,7 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 
 	var result interface{}
 	var structTypeName string
+	var ptrNum int
 	ast.Inspect(node, func(n ast.Node) bool {
 		vs, ok := n.(*ast.ValueSpec)
 		if !ok {
@@ -663,7 +664,7 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 
 		// Try to extract struct type name from value spec
 		if len(vs.Values) > 0 {
-			structTypeName = extractStructTypeName(vs.Values[0])
+			structTypeName, ptrNum = extractStructTypeName(vs.Values[0])
 		}
 
 		for _, value := range vs.Values {
@@ -706,10 +707,21 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 	})
 
 	val := reflect.New(inputType)
+	//if schema.Type == "interface" && structTypeName != "" {
+	//	implType, ok := GetRegisteredType(structTypeName)
+	//	if ok {
+	//		val = reflect.New(implType.Type)
+	//	}
+	//}
 	if schema.Type == "interface" && structTypeName != "" {
 		implType, ok := GetRegisteredType(structTypeName)
 		if ok {
-			val = reflect.New(implType.Type)
+			// Create a type with the correct pointer depth
+			valType := implType.Type
+			for i := 0; i < ptrNum; i++ {
+				valType = reflect.PointerTo(valType)
+			}
+			val = reflect.New(valType)
 		}
 	}
 
@@ -720,38 +732,81 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 	return val.Elem(), nil
 }
 
-// extractStructTypeName extracts struct type name from an expression
-func extractStructTypeName(expr ast.Expr) string {
+// //extractStructTypeName extracts struct type name from an expression
+//func extractStructTypeName(expr ast.Expr) string {
+//	switch v := expr.(type) {
+//	case *ast.CompositeLit:
+//		// Handle direct struct initialization: schema.Message{...}
+//		switch t := v.Type.(type) {
+//		case *ast.SelectorExpr:
+//			if x, ok := t.X.(*ast.Ident); ok {
+//				return x.Name + "." + t.Sel.Name
+//			}
+//		case *ast.Ident:
+//			return t.Name
+//		}
+//	case *ast.UnaryExpr:
+//		// Handle pointer expressions: &schema.Message{...}
+//		if cl, ok := v.X.(*ast.CompositeLit); ok {
+//			switch t := cl.Type.(type) {
+//			case *ast.SelectorExpr:
+//				if x, ok := t.X.(*ast.Ident); ok {
+//					return x.Name + "." + t.Sel.Name
+//				}
+//			case *ast.Ident:
+//				return t.Name
+//			}
+//		}
+//	case *ast.CallExpr:
+//		// Handle ToPtr(schema.Message{...}) calls
+//		if len(v.Args) > 0 {
+//			return extractStructTypeName(v.Args[0])
+//		}
+//	}
+//	return ""
+//}
+
+// extractStructTypeName extracts struct type name and pointer depth from an expression
+// Returns the struct type name and number of pointer levels
+func extractStructTypeName(expr ast.Expr) (string, int) {
 	switch v := expr.(type) {
 	case *ast.CompositeLit:
 		// Handle direct struct initialization: schema.Message{...}
 		switch t := v.Type.(type) {
 		case *ast.SelectorExpr:
 			if x, ok := t.X.(*ast.Ident); ok {
-				return x.Name + "." + t.Sel.Name
+				return x.Name + "." + t.Sel.Name, 0
 			}
 		case *ast.Ident:
-			return t.Name
+			return t.Name, 0
 		}
 	case *ast.UnaryExpr:
 		// Handle pointer expressions: &schema.Message{...}
-		if cl, ok := v.X.(*ast.CompositeLit); ok {
-			switch t := cl.Type.(type) {
-			case *ast.SelectorExpr:
-				if x, ok := t.X.(*ast.Ident); ok {
-					return x.Name + "." + t.Sel.Name
-				}
-			case *ast.Ident:
-				return t.Name
-			}
+		if v.Op == token.AND {
+			typeName, ptrCount := extractStructTypeName(v.X)
+			return typeName, ptrCount + 1
 		}
 	case *ast.CallExpr:
-		// Handle ToPtr(schema.Message{...}) calls
-		if len(v.Args) > 0 {
-			return extractStructTypeName(v.Args[0])
+		// Check if this is a ToPtr call
+		if fun, ok := v.Fun.(*ast.Ident); ok && fun.Name == "ToPtr" && len(v.Args) > 0 {
+			// Handle ToPtr(schema.Message{...}) calls
+			typeName, ptrCount := extractStructTypeName(v.Args[0])
+			return typeName, ptrCount + 1
+		} else if _, ok := v.Fun.(*ast.SelectorExpr); ok {
+			// Handle other function calls that might return a struct
+			return "", 0
+		} else {
+			// Handle nested ToPtr calls: ToPtr(ToPtr(...))
+			typeName, ptrCount := extractStructTypeName(v.Fun)
+			if typeName != "" && len(v.Args) > 0 {
+				innerTypeName, innerPtrCount := extractStructTypeName(v.Args[0])
+				if innerTypeName != "" {
+					return innerTypeName, ptrCount + innerPtrCount
+				}
+			}
 		}
 	}
-	return ""
+	return "", 0
 }
 
 func parseCallExpr(call *ast.CallExpr) interface{} {
@@ -818,7 +873,8 @@ func parseExpr(expr ast.Expr, schema *devmodel.JsonSchema) interface{} {
 			if schema.AdditionalProperties != nil {
 				return parseMapLit(v, schema)
 			}
-			return parseCompositeLit(v, schema, "")
+			structName, _ := extractStructTypeName(v)
+			return parseCompositeLit(v, schema, structName)
 		case devmodel.JsonTypeOfArray:
 			return parseArrayLit(v, schema)
 		default:
