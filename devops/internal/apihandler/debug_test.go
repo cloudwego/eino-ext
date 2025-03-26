@@ -158,7 +158,7 @@ func (d *debugTestSuite) Test_DebugRun() {
 
 		stateCh := make(chan *model.NodeDebugState, 100)
 		errCh := make(chan error, 1)
-		d.mockDebugSVC.EXPECT().DebugRun(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
+		d.mockDebugSVC.EXPECT().DebugRun(gomock.Any(), gomock.Any(), gomock.Any()).
 			Return("mock_debug_id", stateCh, errCh, nil).Times(1)
 
 		stateCh <- &model.NodeDebugState{

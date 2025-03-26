@@ -32,10 +32,9 @@ type CreateDebugThreadResponse struct {
 }
 
 type DebugRunRequest struct {
-	FromNode    string      `json:"from_node"`
-	Input       string      `json:"input"` // mock input data after json marshal
-	LogID       string      `json:"log_id"`
-	InputFormat InputFormat `json:"input_format"`
+	FromNode string `json:"from_node"`
+	Input    string `json:"input"` // mock input data after json marshal
+	LogID    string `json:"log_id"`
 }
 
 type DebugRunEventType string
@@ -115,10 +114,3 @@ func (d DebugRunEventMsg) JsonBytes() []byte {
 type ListInputTypesResponse struct {
 	Types []*devmodel.JsonSchema `json:"types,omitempty"`
 }
-
-type InputFormat int
-
-const (
-	InputFormatOfCode InputFormat = 0
-	InputFormatOfJson InputFormat = 1
-)

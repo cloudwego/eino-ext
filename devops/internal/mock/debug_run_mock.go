@@ -27,7 +27,6 @@ import (
 	context "context"
 	reflect "reflect"
 
-	types "github.com/cloudwego/eino-ext/devops/internal/apihandler/types"
 	model "github.com/cloudwego/eino-ext/devops/internal/model"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -71,9 +70,9 @@ func (mr *MockDebugServiceMockRecorder) CreateDebugThread(ctx, graphID any) *gom
 }
 
 // DebugRun mocks base method.
-func (m_2 *MockDebugService) DebugRun(ctx context.Context, m *model.DebugRunMeta, userInput string, inputFormat types.InputFormat) (string, chan *model.NodeDebugState, chan error, error) {
+func (m_2 *MockDebugService) DebugRun(ctx context.Context, m *model.DebugRunMeta, userInput string) (string, chan *model.NodeDebugState, chan error, error) {
 	m_2.ctrl.T.Helper()
-	ret := m_2.ctrl.Call(m_2, "DebugRun", ctx, m, userInput, inputFormat)
+	ret := m_2.ctrl.Call(m_2, "DebugRun", ctx, m, userInput)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(chan *model.NodeDebugState)
 	ret2, _ := ret[2].(chan error)
@@ -82,7 +81,7 @@ func (m_2 *MockDebugService) DebugRun(ctx context.Context, m *model.DebugRunMeta
 }
 
 // DebugRun indicates an expected call of DebugRun.
-func (mr *MockDebugServiceMockRecorder) DebugRun(ctx, m, userInput, inputFormat any) *gomock.Call {
+func (mr *MockDebugServiceMockRecorder) DebugRun(ctx, m, userInput any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DebugRun", reflect.TypeOf((*MockDebugService)(nil).DebugRun), ctx, m, userInput, inputFormat)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DebugRun", reflect.TypeOf((*MockDebugService)(nil).DebugRun), ctx, m, userInput)
 }

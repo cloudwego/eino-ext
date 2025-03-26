@@ -1843,10 +1843,10 @@ func Test_debugServiceImpl_run(t *testing.T) {
 		data := parseReflectTypeToJsonSchema(reflectType)
 
 		code := `
-		var input = custom{
+		var input = model.custom{
 			Data: "date",
 			State: true,
-			Histories: []*message{
+			Histories: []*model.message{
 				{
 					Content: "content",
 					Ext: map[string]string{
@@ -1859,7 +1859,7 @@ func Test_debugServiceImpl_run(t *testing.T) {
 			MapInfo: map[string]string{
 				"a": "b",
 			},
-			MPointer: message{
+			MPointer: model.message{
 				Content: "content",
 				Ext: map[string]string{
 					"a": "b",
@@ -1882,16 +1882,30 @@ func Test_debugServiceImpl_run(t *testing.T) {
 		assert.True(t, jsonData == "{\n    \"data\": \"date\",\n    \"state\": true,\n    \"histories\": [\n        {\n            \"content\": \"content\",\n            \"ext\": {\n                \"a\": \"b\"\n            },\n            \"state\": \"state inner\"\n        }\n    ],\n    \"code\": 1,\n    \"map_info\": {\n        \"a\": \"b\"\n    },\n    \"m_pointer\": {\n        \"content\": \"content\",\n        \"ext\": {\n            \"a\": \"b\"\n        },\n        \"state\": \"state inner\"\n    },\n    \"m_pointer_map\": {\n        \"a1\": \"b1\",\n        \"a2\": \"b2\"\n    }\n}")
 	})
 
-	t.Run("custom multi pointer struct", func(t *testing.T) {
-		multiPointer := &custom{}
-		reflectType := reflect.TypeOf(&multiPointer)
+	t.Run("custom interface struct", func(t *testing.T) {
+		var input any
+		input = custom{}
+		reflectType := reflect.TypeOf(input)
+		RegisterType(reflectType)
+
+		var messageInfo any
+		messageInfo = message{}
+		mReflectType := reflect.TypeOf(messageInfo)
+		RegisterType(mReflectType)
+
 		data := parseReflectTypeToJsonSchema(reflectType)
 
 		code := `
-		var input = custom{
-			Data: "date",
+		var input = model.custom{
+			Data: model.message{
+                Content: "content",
+				Ext: map[string]string{
+					"a": "b",
+				},
+				State: "state inner",
+            },
 			State: true,
-			Histories: []*message{
+			Histories: []*model.message{
 				{
 					Content: "content",
 					Ext: map[string]string{
@@ -1904,7 +1918,52 @@ func Test_debugServiceImpl_run(t *testing.T) {
 			MapInfo: map[string]string{
 				"a": "b",
 			},
-			MPointer: message{
+			MPointer: model.message{
+				Content: "content",
+				Ext: map[string]string{
+					"a": "b",
+				},
+				State: "state inner",
+			},
+			MPointerMap: map[string]string{
+				"a1": "b1",
+				"a2": "b2",
+			},
+		}
+		`
+
+		val, err := ConvertCodeToValue(code, data, reflectType)
+		assert.Nil(t, err)
+		assert.Equal(t, val.Type().String(), "model.custom")
+
+		jsonData, err := valueToJSON(val)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "{\n    \"data\": {\n        \"content\": \"content\",\n        \"ext\": {\n            \"a\": \"b\"\n        },\n        \"state\": \"state inner\"\n    },\n    \"state\": true,\n    \"histories\": [\n        {\n            \"content\": \"content\",\n            \"ext\": {\n                \"a\": \"b\"\n            },\n            \"state\": \"state inner\"\n        }\n    ],\n    \"code\": 1,\n    \"map_info\": {\n        \"a\": \"b\"\n    },\n    \"m_pointer\": {\n        \"content\": \"content\",\n        \"ext\": {\n            \"a\": \"b\"\n        },\n        \"state\": \"state inner\"\n    },\n    \"m_pointer_map\": {\n        \"a1\": \"b1\",\n        \"a2\": \"b2\"\n    }\n}")
+	})
+
+	t.Run("custom multi pointer struct", func(t *testing.T) {
+		multiPointer := &custom{}
+		reflectType := reflect.TypeOf(&multiPointer)
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = model.custom{
+			Data: "date",
+			State: true,
+			Histories: []*model.message{
+				{
+					Content: "content",
+					Ext: map[string]string{
+						"a": "b",
+					},
+					State: "state inner",
+				},
+			},
+			Code: 1,
+			MapInfo: map[string]string{
+				"a": "b",
+			},
+			MPointer: model.message{
 				Content: "content",
 				Ext: map[string]string{
 					"a": "b",
@@ -1932,11 +1991,11 @@ func Test_debugServiceImpl_run(t *testing.T) {
 		data := parseReflectTypeToJsonSchema(reflectType)
 
 		code := `
-		var input = []*custom{
+		var input = []*model.custom{
 			{
 				Data:  "date",
 				State: true,
-				Histories: []*message{
+				Histories: []*model.message{
 					{
 						Content: "content",
 						Ext: map[string]string{
@@ -1963,6 +2022,61 @@ func Test_debugServiceImpl_run(t *testing.T) {
 	t.Run("struct", func(t *testing.T) {
 
 		reflectType := reflect.TypeOf(schema.Message{})
+		data := parseReflectTypeToJsonSchema(reflectType)
+
+		code := `
+		var input = schema.Message{
+			Content: "hello from code",
+			Role:    "user",
+			Name:    "input",
+			MultiContent: []schema.ChatMessagePart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "hello from multi content 1",
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: "www.xxx.com",
+						URI: "URL_ADDRESS.b.c.1",
+					},
+				},
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "hello from multi content 2",
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: "www.xxx.com",
+						URI: "URL_ADDRESS.b.c.2",
+					},
+				},
+			},
+			Extra: map[string]interface{}{
+				"a": "b",
+			},
+			ToolCalls: []schema.ToolCall{
+				{
+					ID:   "ID",
+					Type: "Type",
+					Function: schema.FunctionCall{
+						Name:      "Name",
+						Arguments: "Arguments",
+					},
+				},
+			},
+			ToolCallID: "ToolCallID",
+		}
+		`
+
+		val, err := ConvertCodeToValue(code, data, reflectType)
+		assert.Nil(t, err)
+		assert.Equal(t, val.Type().String(), "schema.Message")
+
+		jsonData, err := valueToJSON(val)
+		assert.Nil(t, err)
+		assert.True(t, jsonData == "{\n    \"role\": \"user\",\n    \"content\": \"hello from code\",\n    \"multi_content\": [\n        {\n            \"type\": \"schema.ChatMessagePartTypeText\",\n            \"text\": \"hello from multi content 1\",\n            \"image_url\": {\n                \"url\": \"www.xxx.com\",\n                \"uri\": \"URL_ADDRESS.b.c.1\"\n            }\n        },\n        {\n            \"type\": \"schema.ChatMessagePartTypeText\",\n            \"text\": \"hello from multi content 2\",\n            \"image_url\": {\n                \"url\": \"www.xxx.com\",\n                \"uri\": \"URL_ADDRESS.b.c.2\"\n            }\n        }\n    ],\n    \"name\": \"input\",\n    \"tool_calls\": [\n        {\n            \"id\": \"ID\",\n            \"type\": \"Type\",\n            \"function\": {\n                \"name\": \"Name\",\n                \"arguments\": \"Arguments\"\n            }\n        }\n    ],\n    \"tool_call_id\": \"ToolCallID\",\n    \"extra\": {\n        \"a\": \"b\"\n    }\n}")
+	})
+
+	t.Run("interface struct", func(t *testing.T) {
+		var input any
+		input = schema.Message{}
+		reflectType := reflect.TypeOf(input)
 		data := parseReflectTypeToJsonSchema(reflectType)
 
 		code := `

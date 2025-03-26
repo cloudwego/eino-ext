@@ -775,13 +775,6 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 }`
 		_, err = UnmarshalJson([]byte(userInput), tc.gi.InputType)
 		assert.Error(t, err)
-		//resp, err := r.Invoke(ctx, input)
-		//assert.Equal(t, resp, map[string]string{
-		//	"A":     "hello world",
-		//	"B":     "hello world",
-		//	"sub_A": "hello world",
-		//	"sub_B": "hello world",
-		//})
 	})
 
 	t.Run("graph=any, start nodes=(struct1, struct2, subgraph(graph=any, start nodes=(struct1, struct2), withInputKey), withInputKey)", func(t *testing.T) {

@@ -136,7 +136,7 @@ func StreamDebugRun(res http.ResponseWriter, req *http.Request) {
 		FromNode: rs.FromNode,
 	}
 
-	debugID, stateCh, errCh, err := service.DebugSVC.DebugRun(ctx, m, rs.Input, rs.InputFormat)
+	debugID, stateCh, errCh, err := service.DebugSVC.DebugRun(ctx, m, rs.Input)
 	if err != nil {
 		log.Errorf(err.Error())
 		return

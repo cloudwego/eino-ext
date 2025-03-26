@@ -557,87 +557,8 @@ type FieldInfo struct {
 	Schema  *devmodel.JsonSchema
 }
 
-//func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType reflect.Type) (reflect.Value, error) {
-//	fullCode := `package main
-//
-//	func ToPtr[T any](v T) *T {
-//		return &v
-//	}
-//	` + code
-//
-//	//node, err := parser.ParseFile(token.NewFileSet(), "", "package main\n"+code, parser.ParseComments)
-//	node, err := parser.ParseFile(token.NewFileSet(), "", fullCode, parser.ParseComments)
-//	if err != nil {
-//		return reflect.Value{}, err
-//	}
-//
-//	var result interface{}
-//	ast.Inspect(node, func(n ast.Node) bool {
-//		vs, ok := n.(*ast.ValueSpec)
-//		if !ok {
-//			return true
-//		}
-//
-//		for _, value := range vs.Values {
-//			var cl *ast.CompositeLit
-//			switch v := value.(type) {
-//			case *ast.UnaryExpr:
-//				cl, ok = v.X.(*ast.CompositeLit)
-//				if !ok {
-//					continue
-//				}
-//				result = parseCompositeLit(cl, schema, "")
-//			case *ast.CompositeLit:
-//				if schema.Type == devmodel.JsonTypeOfArray {
-//					result = parseArrayLit(v, schema)
-//				} else if schema.Type == devmodel.JsonTypeOfObject && schema.AdditionalProperties != nil {
-//					result = parseMapLit(v, schema)
-//				} else {
-//					result = parseCompositeLit(v, schema, "schema.Message")
-//				}
-//			case *ast.BasicLit:
-//				result = parseBasicLit(v)
-//			case *ast.Ident:
-//				switch v.Name {
-//				case "true":
-//					result = true
-//				case "false":
-//					result = false
-//				case "nil":
-//					result = nil
-//				default:
-//					result = v.Name
-//				}
-//			case *ast.CallExpr:
-//				result = parseCallExpr(v)
-//			default:
-//				continue
-//			}
-//		}
-//		return false
-//	})
-//
-//	val := reflect.New(inputType)
-//	if schema.Type == "interface" {
-//		implType, ok := GetRegisteredType("schema.Message")
-//		if ok {
-//			val = reflect.New(implType.Type)
-//		}
-//	}
-//
-//	if err := convertToValue(result, val.Elem()); err != nil {
-//		return reflect.Value{}, err
-//	}
-//
-//	return val.Elem(), nil
-//}
-
 func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType reflect.Type) (reflect.Value, error) {
 	fullCode := `package main
-	
-	func ToPtr[T any](v T) *T {
-		return &v
-	}
 	` + code
 
 	node, err := parser.ParseFile(token.NewFileSet(), "", fullCode, parser.ParseComments)
@@ -647,6 +568,7 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 
 	var result interface{}
 	var structTypeName string
+	var ptrNum int
 	ast.Inspect(node, func(n ast.Node) bool {
 		vs, ok := n.(*ast.ValueSpec)
 		if !ok {
@@ -655,7 +577,7 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 
 		// Try to extract struct type name from value spec
 		if len(vs.Values) > 0 {
-			structTypeName = extractStructTypeName(vs.Values[0])
+			structTypeName, ptrNum = extractStructTypeName(vs.Values[0])
 		}
 
 		for _, value := range vs.Values {
@@ -701,7 +623,12 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 	if schema.Type == "interface" && structTypeName != "" {
 		implType, ok := GetRegisteredType(structTypeName)
 		if ok {
-			val = reflect.New(implType.Type)
+			// create a type with the correct pointer depth.
+			valType := implType.Type
+			for i := 0; i < ptrNum; i++ {
+				valType = reflect.PointerTo(valType)
+			}
+			val = reflect.New(valType)
 		}
 	}
 
@@ -712,38 +639,46 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 	return val.Elem(), nil
 }
 
-// extractStructTypeName extracts struct type name from an expression
-func extractStructTypeName(expr ast.Expr) string {
+// extractStructTypeName extracts struct type name and pointer depth from an expression
+func extractStructTypeName(expr ast.Expr) (string, int) {
 	switch v := expr.(type) {
 	case *ast.CompositeLit:
 		// Handle direct struct initialization: schema.Message{...}
 		switch t := v.Type.(type) {
 		case *ast.SelectorExpr:
 			if x, ok := t.X.(*ast.Ident); ok {
-				return x.Name + "." + t.Sel.Name
+				return x.Name + "." + t.Sel.Name, 0
 			}
 		case *ast.Ident:
-			return t.Name
+			return t.Name, 0
 		}
 	case *ast.UnaryExpr:
 		// Handle pointer expressions: &schema.Message{...}
-		if cl, ok := v.X.(*ast.CompositeLit); ok {
-			switch t := cl.Type.(type) {
-			case *ast.SelectorExpr:
-				if x, ok := t.X.(*ast.Ident); ok {
-					return x.Name + "." + t.Sel.Name
-				}
-			case *ast.Ident:
-				return t.Name
-			}
+		if v.Op == token.AND {
+			typeName, ptrCount := extractStructTypeName(v.X)
+			return typeName, ptrCount + 1
 		}
 	case *ast.CallExpr:
-		// Handle ToPtr(schema.Message{...}) calls
-		if len(v.Args) > 0 {
-			return extractStructTypeName(v.Args[0])
+		// Check if this is a ToPtr call
+		if fun, ok := v.Fun.(*ast.Ident); ok && fun.Name == "ToPtr" && len(v.Args) > 0 {
+			// Handle ToPtr(schema.Message{...}) calls
+			typeName, ptrCount := extractStructTypeName(v.Args[0])
+			return typeName, ptrCount + 1
+		} else if _, ok := v.Fun.(*ast.SelectorExpr); ok {
+			// Handle other function calls that might return a struct
+			return "", 0
+		} else {
+			// Handle nested ToPtr calls: ToPtr(ToPtr(...))
+			typeName, ptrCount := extractStructTypeName(v.Fun)
+			if typeName != "" && len(v.Args) > 0 {
+				innerTypeName, innerPtrCount := extractStructTypeName(v.Args[0])
+				if innerTypeName != "" {
+					return innerTypeName, ptrCount + innerPtrCount
+				}
+			}
 		}
 	}
-	return ""
+	return "", 0
 }
 
 func parseCallExpr(call *ast.CallExpr) interface{} {
@@ -778,8 +713,6 @@ func parseCompositeLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema, identi
 			continue
 		}
 
-		// todo key不设置为json key
-		// jsonKey := fieldInfo.JSONKey
 		jsonKey := fieldInfo.Schema.Description
 		fieldSchema := fieldInfo.Schema
 		value := parseExpr(kv.Value, fieldSchema)
@@ -791,7 +724,6 @@ func parseCompositeLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema, identi
 func parseExpr(expr ast.Expr, schema *devmodel.JsonSchema) interface{} {
 	switch v := expr.(type) {
 	case *ast.Ident:
-		// 处理标识符
 		switch v.Name {
 		case "true":
 			return true
@@ -810,14 +742,17 @@ func parseExpr(expr ast.Expr, schema *devmodel.JsonSchema) interface{} {
 			if schema.AdditionalProperties != nil {
 				return parseMapLit(v, schema)
 			}
-			return parseCompositeLit(v, schema, "")
+			structName, _ := extractStructTypeName(v)
+			return parseCompositeLit(v, schema, structName)
 		case devmodel.JsonTypeOfArray:
 			return parseArrayLit(v, schema)
+		case devmodel.JsonTypeOfInterface:
+			structName, _ := extractStructTypeName(v)
+			return parseCompositeLit(v, schema, structName)
 		default:
 			return nil
 		}
 	case *ast.SelectorExpr:
-		//todo useless, to delete
 		return parseSelectorExpr(v)
 	case *ast.UnaryExpr:
 		if v.Op == token.AND {
@@ -974,11 +909,9 @@ func convertToValue(src interface{}, dst reflect.Value) error {
 			dst.SetMapIndex(reflect.ValueOf(k), newVal)
 		}
 	case reflect.Ptr:
-		// 创建一个新的指针
 		if dst.IsNil() {
 			dst.Set(reflect.New(dst.Type().Elem()))
 		}
-		// 递归处理指针指向的值
 		return convertToValue(src, dst.Elem())
 
 	case reflect.Slice, reflect.Array:
@@ -1033,26 +966,82 @@ func convertToValue(src interface{}, dst reflect.Value) error {
 		}
 		dst.SetBool(b)
 	case reflect.Interface:
-		if src == nil {
-			dst.Set(reflect.Zero(dst.Type()))
-			return nil
+		switch srcVal := src.(type) {
+		case map[string]interface{}:
+			// This could be a struct wrapped in an interface
+			// Attempt to determine the actual type
+			structName, _ := "", 0
+			var implType *RegisteredType
+
+			// Check if we have a registered type for this struct
+			if len(srcVal) > 0 {
+				for fieldName := range srcVal {
+					for _, regType := range registeredTypes {
+						// Look for field name in the registered type's schema
+						if regType.Schema != nil && regType.Schema.Properties != nil {
+							for _, propSchema := range regType.Schema.Properties {
+								if propSchema.Description == fieldName {
+									implType = &regType
+									structName = regType.Identifier
+									break
+								}
+							}
+							if implType != nil {
+								break
+							}
+						}
+					}
+					if implType != nil {
+						break
+					}
+				}
+			}
+
+			if implType != nil && structName != "" {
+				// Create new instance of the inferred type
+				newValue := reflect.New(implType.Type).Elem()
+				if err := convertToValue(srcVal, newValue); err != nil {
+					return err
+				}
+
+				if newValue.Type().AssignableTo(dst.Type()) {
+					dst.Set(newValue)
+				} else {
+					return fmt.Errorf("inferred type %s not assignable to interface %v", structName, dst.Type())
+				}
+			} else {
+				// Just pass through as a map if we can't determine the type
+				mapValue := reflect.MakeMap(reflect.TypeOf(map[string]interface{}{}))
+				for k, v := range srcVal {
+					mapValue.SetMapIndex(reflect.ValueOf(k), reflect.ValueOf(v))
+				}
+
+				if mapValue.Type().AssignableTo(dst.Type()) {
+					dst.Set(mapValue)
+				} else {
+					return fmt.Errorf("map type not assignable to interface %v", dst.Type())
+				}
+			}
+
+		default:
+			// For primitive types or other values
+			srcValue := reflect.ValueOf(src)
+
+			// If source value can be directly assigned to target interface
+			if srcValue.Type().AssignableTo(dst.Type()) {
+				dst.Set(srcValue)
+				return nil
+			}
+
+			// If source value can be converted to target interface type
+			if srcValue.Type().ConvertibleTo(dst.Type()) {
+				dst.Set(srcValue.Convert(dst.Type()))
+				return nil
+			}
+
+			return fmt.Errorf("cannot convert %T to interface type %v", src, dst.Type())
 		}
 
-		srcValue := reflect.ValueOf(src)
-
-		// 如果源值可以直接赋值给目标接口
-		if srcValue.Type().AssignableTo(dst.Type()) {
-			dst.Set(srcValue)
-			return nil
-		}
-
-		// 如果源值可以转换为目标接口类型
-		if srcValue.Type().ConvertibleTo(dst.Type()) {
-			dst.Set(srcValue.Convert(dst.Type()))
-			return nil
-		}
-
-		return fmt.Errorf("cannot convert %T to interface type %v", src, dst.Type())
 	default:
 		return fmt.Errorf("unhandled case, src is %T, interface type %v", src, dst.Type())
 	}
