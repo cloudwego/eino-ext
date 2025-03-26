@@ -43,6 +43,8 @@ type IndexerConfig struct {
 
 	Collection string `json:"collection"`
 
+	// WithMultiModal 如果数据集在平台向量化，需要配置此字段为true，无需再配置EmbeddingConfig
+	WithMultiModal  bool            `json:"with_multi_modal"`
 	EmbeddingConfig EmbeddingConfig `json:"embedding_config"`
 
 	AddBatchSize int `json:"add_batch_size"`
@@ -74,10 +76,12 @@ type Indexer struct {
 }
 
 func NewIndexer(ctx context.Context, config *IndexerConfig) (*Indexer, error) {
-	if config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding != nil {
-		return nil, fmt.Errorf("[VikingDBIndexer] no need to provide Embedding when UseBuiltin embedding is true")
-	} else if !config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding == nil {
-		return nil, fmt.Errorf("[VikingDBIndexer] need provide Embedding when UseBuiltin embedding is false")
+	if !config.WithMultiModal {
+		if config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding != nil {
+			return nil, fmt.Errorf("[VikingDBIndexer] no need to provide Embedding when UseBuiltin embedding is true")
+		} else if !config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding == nil {
+			return nil, fmt.Errorf("[VikingDBIndexer] need provide Embedding when UseBuiltin embedding is false")
+		}
 	}
 
 	if config.AddBatchSize == 0 {
@@ -158,14 +162,15 @@ func (i *Indexer) convertDocuments(ctx context.Context, docs []*schema.Document,
 		return doc.Content
 	})
 
-	if useBuiltinEmbedding {
-		dense, sparse, err = i.builtinEmbedding(ctx, queries, options)
-	} else {
-		dense, err = i.customEmbedding(ctx, queries, options)
-	}
-
-	if err != nil {
-		return nil, err
+	if !i.config.WithMultiModal {
+		if useBuiltinEmbedding {
+			dense, sparse, err = i.builtinEmbedding(ctx, queries, options)
+		} else {
+			dense, err = i.customEmbedding(ctx, queries, options)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	data = make([]vikingdb.Data, len(docs))
@@ -187,9 +192,11 @@ func (i *Indexer) convertDocuments(ctx context.Context, docs []*schema.Document,
 
 		d.Fields[defaultFieldID] = doc.ID
 		d.Fields[defaultFieldContent] = doc.Content
-		d.Fields[defaultFieldVector] = dense[idx]
-		if len(sparse) != 0 {
-			d.Fields[defaultFieldSparseVector] = sparse[idx]
+		if !i.config.WithMultiModal {
+			d.Fields[defaultFieldVector] = dense[idx]
+			if len(sparse) != 0 {
+				d.Fields[defaultFieldSparseVector] = sparse[idx]
+			}
 		}
 
 		data[idx] = d

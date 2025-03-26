@@ -47,6 +47,9 @@ type RetrieverConfig struct {
 	Collection string `json:"collection"`
 	Index      string `json:"index"`
 
+	// WithMultiModal 如果数据集在平台向量化，需要配置此字段为true，无需再配置EmbeddingConfig
+	WithMultiModal bool `json:"with_multi_modal"`
+
 	EmbeddingConfig EmbeddingConfig `json:"embedding_config"`
 
 	// Partition 子索引划分字段, 索引中未配置时至空即可
@@ -86,10 +89,12 @@ type Retriever struct {
 }
 
 func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, error) {
-	if config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding != nil {
-		return nil, fmt.Errorf("[VikingDBRetriever] no need to provide Embedding when UseBuiltin embedding is true")
-	} else if !config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding == nil {
-		return nil, fmt.Errorf("[VikingDBRetriever] need provide Embedding when UseBuiltin embedding is false")
+	if !config.WithMultiModal {
+		if config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding != nil {
+			return nil, fmt.Errorf("[VikingDBRetriever] no need to provide Embedding when UseBuiltin embedding is true")
+		} else if !config.EmbeddingConfig.UseBuiltin && config.EmbeddingConfig.Embedding == nil {
+			return nil, fmt.Errorf("[VikingDBRetriever] need provide Embedding when UseBuiltin embedding is false")
+		}
 	}
 
 	service := vikingdb.NewVikingDBService(config.Host, config.Region, config.AK, config.SK, config.Scheme)
@@ -150,11 +155,6 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		DSLInfo:        r.config.FilterDSL,
 	}, opts...)
 
-	var (
-		dense  []float64
-		sparse map[string]interface{}
-	)
-
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
 		TopK:           dereferenceOrZero(options.TopK),
@@ -162,19 +162,32 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		ScoreThreshold: options.ScoreThreshold,
 	})
 
-	if r.config.EmbeddingConfig.UseBuiltin && options.Embedding == nil {
-		dense, sparse, err = r.builtinEmbedding(ctx, query, options)
+	var result []*vikingdb.Data
+
+	if r.config.WithMultiModal {
+		result, err = r.index.SearchWithMultiModal(r.makeSearchOption(nil, options).SetText(query))
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		dense, err = r.customEmbedding(ctx, query, options)
-	}
+		var (
+			dense  []float64
+			sparse map[string]interface{}
+		)
+		if r.config.EmbeddingConfig.UseBuiltin && options.Embedding == nil {
+			dense, sparse, err = r.builtinEmbedding(ctx, query, options)
+		} else {
+			dense, err = r.customEmbedding(ctx, query, options)
+		}
 
-	if err != nil {
-		return nil, err
-	}
+		if err != nil {
+			return nil, err
+		}
 
-	result, err := r.index.SearchByVector(dense, r.makeSearchOption(sparse, options))
-	if err != nil {
-		return nil, err
+		result, err = r.index.SearchByVector(dense, r.makeSearchOption(sparse, options))
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	docs = make([]*schema.Document, 0, len(result))
