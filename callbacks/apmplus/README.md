@@ -42,7 +42,7 @@ func main() {
 	}
 
 	// Set apmplus as a global callback
-	callbacks.InitCallbackHandlers([]callbacks.Handler{cbh})
+	callbacks.AppendGlobalHandlers(cbh)
 	
 	g := NewGraph[string,string]()
 	/*
