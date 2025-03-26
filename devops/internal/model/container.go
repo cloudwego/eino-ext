@@ -557,6 +557,81 @@ type FieldInfo struct {
 	Schema  *devmodel.JsonSchema
 }
 
+//func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType reflect.Type) (reflect.Value, error) {
+//	fullCode := `package main
+//
+//	func ToPtr[T any](v T) *T {
+//		return &v
+//	}
+//	` + code
+//
+//	//node, err := parser.ParseFile(token.NewFileSet(), "", "package main\n"+code, parser.ParseComments)
+//	node, err := parser.ParseFile(token.NewFileSet(), "", fullCode, parser.ParseComments)
+//	if err != nil {
+//		return reflect.Value{}, err
+//	}
+//
+//	var result interface{}
+//	ast.Inspect(node, func(n ast.Node) bool {
+//		vs, ok := n.(*ast.ValueSpec)
+//		if !ok {
+//			return true
+//		}
+//
+//		for _, value := range vs.Values {
+//			var cl *ast.CompositeLit
+//			switch v := value.(type) {
+//			case *ast.UnaryExpr:
+//				cl, ok = v.X.(*ast.CompositeLit)
+//				if !ok {
+//					continue
+//				}
+//				result = parseCompositeLit(cl, schema, "")
+//			case *ast.CompositeLit:
+//				if schema.Type == devmodel.JsonTypeOfArray {
+//					result = parseArrayLit(v, schema)
+//				} else if schema.Type == devmodel.JsonTypeOfObject && schema.AdditionalProperties != nil {
+//					result = parseMapLit(v, schema)
+//				} else {
+//					result = parseCompositeLit(v, schema, "schema.Message")
+//				}
+//			case *ast.BasicLit:
+//				result = parseBasicLit(v)
+//			case *ast.Ident:
+//				switch v.Name {
+//				case "true":
+//					result = true
+//				case "false":
+//					result = false
+//				case "nil":
+//					result = nil
+//				default:
+//					result = v.Name
+//				}
+//			case *ast.CallExpr:
+//				result = parseCallExpr(v)
+//			default:
+//				continue
+//			}
+//		}
+//		return false
+//	})
+//
+//	val := reflect.New(inputType)
+//	if schema.Type == "interface" {
+//		implType, ok := GetRegisteredType("schema.Message")
+//		if ok {
+//			val = reflect.New(implType.Type)
+//		}
+//	}
+//
+//	if err := convertToValue(result, val.Elem()); err != nil {
+//		return reflect.Value{}, err
+//	}
+//
+//	return val.Elem(), nil
+//}
+
 func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType reflect.Type) (reflect.Value, error) {
 	fullCode := `package main
 	
@@ -565,17 +640,22 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 	}
 	` + code
 
-	//node, err := parser.ParseFile(token.NewFileSet(), "", "package main\n"+code, parser.ParseComments)
 	node, err := parser.ParseFile(token.NewFileSet(), "", fullCode, parser.ParseComments)
 	if err != nil {
 		return reflect.Value{}, err
 	}
 
 	var result interface{}
+	var structTypeName string
 	ast.Inspect(node, func(n ast.Node) bool {
 		vs, ok := n.(*ast.ValueSpec)
 		if !ok {
 			return true
+		}
+
+		// Try to extract struct type name from value spec
+		if len(vs.Values) > 0 {
+			structTypeName = extractStructTypeName(vs.Values[0])
 		}
 
 		for _, value := range vs.Values {
@@ -586,14 +666,14 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 				if !ok {
 					continue
 				}
-				result = parseCompositeLit(cl, schema)
+				result = parseCompositeLit(cl, schema, structTypeName)
 			case *ast.CompositeLit:
 				if schema.Type == devmodel.JsonTypeOfArray {
 					result = parseArrayLit(v, schema)
 				} else if schema.Type == devmodel.JsonTypeOfObject && schema.AdditionalProperties != nil {
 					result = parseMapLit(v, schema)
 				} else {
-					result = parseCompositeLit(v, schema)
+					result = parseCompositeLit(v, schema, structTypeName)
 				}
 			case *ast.BasicLit:
 				result = parseBasicLit(v)
@@ -618,12 +698,52 @@ func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType refl
 	})
 
 	val := reflect.New(inputType)
+	if schema.Type == "interface" && structTypeName != "" {
+		implType, ok := GetRegisteredType(structTypeName)
+		if ok {
+			val = reflect.New(implType.Type)
+		}
+	}
 
 	if err := convertToValue(result, val.Elem()); err != nil {
 		return reflect.Value{}, err
 	}
 
 	return val.Elem(), nil
+}
+
+// extractStructTypeName extracts struct type name from an expression
+func extractStructTypeName(expr ast.Expr) string {
+	switch v := expr.(type) {
+	case *ast.CompositeLit:
+		// Handle direct struct initialization: schema.Message{...}
+		switch t := v.Type.(type) {
+		case *ast.SelectorExpr:
+			if x, ok := t.X.(*ast.Ident); ok {
+				return x.Name + "." + t.Sel.Name
+			}
+		case *ast.Ident:
+			return t.Name
+		}
+	case *ast.UnaryExpr:
+		// Handle pointer expressions: &schema.Message{...}
+		if cl, ok := v.X.(*ast.CompositeLit); ok {
+			switch t := cl.Type.(type) {
+			case *ast.SelectorExpr:
+				if x, ok := t.X.(*ast.Ident); ok {
+					return x.Name + "." + t.Sel.Name
+				}
+			case *ast.Ident:
+				return t.Name
+			}
+		}
+	case *ast.CallExpr:
+		// Handle ToPtr(schema.Message{...}) calls
+		if len(v.Args) > 0 {
+			return extractStructTypeName(v.Args[0])
+		}
+	}
+	return ""
 }
 
 func parseCallExpr(call *ast.CallExpr) interface{} {
@@ -638,9 +758,9 @@ func parseCallExpr(call *ast.CallExpr) interface{} {
 	return nil
 }
 
-func parseCompositeLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) map[string]interface{} {
+func parseCompositeLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema, identifier string) map[string]interface{} {
 	data := make(map[string]interface{})
-	fieldTagMap := buildFieldTagMap(schema)
+	fieldTagMap := buildFieldTagMap(schema, identifier)
 
 	for _, elt := range cl.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
@@ -690,7 +810,7 @@ func parseExpr(expr ast.Expr, schema *devmodel.JsonSchema) interface{} {
 			if schema.AdditionalProperties != nil {
 				return parseMapLit(v, schema)
 			}
-			return parseCompositeLit(v, schema)
+			return parseCompositeLit(v, schema, "")
 		case devmodel.JsonTypeOfArray:
 			return parseArrayLit(v, schema)
 		default:
@@ -743,7 +863,7 @@ func parseMapLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) map[string]i
 			} else if valueSchema.Type == devmodel.JsonTypeOfArray {
 				value = parseArrayLit(v, valueSchema)
 			} else {
-				value = parseCompositeLit(v, valueSchema)
+				value = parseCompositeLit(v, valueSchema, "")
 			}
 		default:
 			value = parseExpr(kv.Value, valueSchema)
@@ -753,7 +873,15 @@ func parseMapLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) map[string]i
 	return m
 }
 
-func buildFieldTagMap(schema *devmodel.JsonSchema) map[string]*FieldInfo {
+func buildFieldTagMap(schema *devmodel.JsonSchema, identifier string) map[string]*FieldInfo {
+	if schema.Type == "interface" {
+		implType, ok := GetRegisteredType(identifier)
+		if !ok {
+			return nil
+		}
+		return buildFieldTagMap(implType.Schema, identifier)
+	}
+
 	fieldTagMap := make(map[string]*FieldInfo)
 	for jsonKey, propSchema := range schema.Properties {
 		if propSchema.Description == "" {

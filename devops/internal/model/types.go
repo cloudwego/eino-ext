@@ -89,6 +89,15 @@ var registeredTypes = []RegisteredType{
 	//{Identifier: "*bool", Type: generic.TypeOf[*bool]()},
 }
 
+func GetRegisteredType(identifier string) (*RegisteredType, bool) {
+	for _, rt := range registeredTypes {
+		if rt.Identifier == identifier {
+			return &rt, true
+		}
+	}
+	return nil, false
+}
+
 func RegisterType(rt reflect.Type) {
 	if _, ok := registeredTypeMap[rt.String()]; ok {
 		return
