@@ -41,9 +41,22 @@ func interfaceTof64Slice(raw interface{}) ([]float64, error) {
 
 	resp := make([]float64, len(rawSlice))
 	for i := range rawSlice {
-		f64, ok := rawSlice[i].(float64)
-		if !ok {
-			return nil, fmt.Errorf("item[%d] not float64, item=%v, raw slice=%v", i, rawSlice[i], raw)
+		var (
+			f64 float64
+			err error
+		)
+
+		switch v := rawSlice[i].(type) {
+		case float64:
+			f64 = v
+		case json.Number:
+			f64, err = v.Float64()
+		default:
+			return nil, fmt.Errorf("item[%d] unexpected type, item=%v, raw slice=%v", i, rawSlice[i], raw)
+		}
+
+		if err != nil {
+			return nil, err
 		}
 
 		resp[i] = f64

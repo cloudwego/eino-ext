@@ -637,6 +637,10 @@ func (c *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Conf
 	return callbackOutput
 }
 
+func (c *ChatModel) IsCallbacksEnabled() bool {
+	return true
+}
+
 const (
 	roleModel = "model"
 	roleUser  = "user"
@@ -647,6 +651,12 @@ func toGeminiRole(role schema.RoleType) string {
 		return roleModel
 	}
 	return roleUser
+}
+
+const typ = "Gemini"
+
+func (c *ChatModel) GetType() string {
+	return typ
 }
 
 type panicErr struct {

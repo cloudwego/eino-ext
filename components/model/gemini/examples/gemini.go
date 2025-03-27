@@ -49,7 +49,7 @@ func main() {
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-pro",
+		Model:  "gemini-1.5-flash",
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel of gemini failed, err=%v", err)

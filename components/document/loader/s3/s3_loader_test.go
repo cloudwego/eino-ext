@@ -22,12 +22,12 @@ import (
 	"io"
 	"testing"
 
-	"github.com/cloudwego/eino/components/document"
-	"github.com/cloudwego/eino/schema"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/document"
+	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 )
 

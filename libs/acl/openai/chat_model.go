@@ -24,12 +24,11 @@ import (
 	"net/http"
 	"runtime/debug"
 
-	"github.com/sashabaranov/go-openai"
-
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/sashabaranov/go-openai"
 )
 
 type ChatCompletionResponseFormatType string
@@ -333,7 +332,7 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 	}
 
 	if len(tools) > 0 {
-		req.Tools = make([]openai.Tool, len(cm.tools))
+		req.Tools = make([]openai.Tool, len(tools))
 		for i := range tools {
 			t := tools[i]
 

@@ -33,8 +33,8 @@ func main() {
 
 	cbh, shutdown, err := apmplus.NewApmplusHandler(&apmplus.Config{
 		Host:        "apmplus-cn-beijing.volces.com:4317",
-		AppKey:      "xxx",
-		ServiceName: "eino-chat",
+		AppKey:      "appkey-xxx",
+		ServiceName: "eino-app",
 		Release:     "release/v0.0.1",
 	})
 	if shutdown != nil {
@@ -45,5 +45,5 @@ func main() {
 	}
 
 	// Set apmplus as a global callback
-	callbacks.InitCallbackHandlers([]callbacks.Handler{cbh})
+	callbacks.AppendGlobalHandlers(cbh)
 }

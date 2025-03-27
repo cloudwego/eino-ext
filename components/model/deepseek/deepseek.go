@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -109,9 +110,6 @@ type ChatModel struct {
 }
 
 func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
-	if len(config.APIKey) == 0 {
-		return nil, fmt.Errorf("API key is required")
-	}
 	if len(config.Model) == 0 {
 		return nil, fmt.Errorf("model is required")
 	}
@@ -121,7 +119,12 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 		opts = append(opts, deepseek.WithTimeout(config.Timeout))
 	}
 	if len(config.BaseURL) > 0 {
-		opts = append(opts, deepseek.WithBaseURL(config.BaseURL))
+		baseURL := config.BaseURL
+		// sdk won't add '/' automatically
+		if !strings.HasSuffix(baseURL, "/") {
+			baseURL = baseURL + "/"
+		}
+		opts = append(opts, deepseek.WithBaseURL(baseURL))
 	}
 	if len(config.Path) > 0 {
 		opts = append(opts, deepseek.WithPath(config.Path))

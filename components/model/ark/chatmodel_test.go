@@ -243,6 +243,7 @@ func Test_Stream(t *testing.T) {
 					}
 
 					times++
+					index := times
 					return model.ChatCompletionStreamResponse{
 						Usage: &model.Usage{
 							CompletionTokens: 1,
@@ -262,6 +263,7 @@ func Test_Stream(t *testing.T) {
 												Arguments: "ccc",
 												Name:      "qqq",
 											},
+											Index: &index,
 										},
 									},
 								},
@@ -292,7 +294,7 @@ func Test_Stream(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(msg.Role, convey.ShouldEqual, schema.Assistant)
 			convey.So(msg.Content, convey.ShouldEqual, "test_content_001\ntest_content_002\n")
-			convey.So(len(msg.ToolCalls), convey.ShouldEqual, 1)
+			convey.So(len(msg.ToolCalls), convey.ShouldEqual, 2)
 		})
 
 	})

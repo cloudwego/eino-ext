@@ -22,6 +22,7 @@ import (
 
 type arkOptions struct {
 	customHeaders map[string]string
+	contextID     *string
 }
 
 // WithCustomHeader sets custom headers for a single request
@@ -29,5 +30,17 @@ type arkOptions struct {
 func WithCustomHeader(m map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.customHeaders = m
+	})
+}
+
+// WithPrefixCache creates an option to specify a context ID for the request.
+// The context ID is typically obtained from a previous call to CreatePrefix.
+//
+// When this option is provided, the model will use the cached prefix context
+// associated with this ID, allowing you to avoid resending the same context
+// messages in each request, which improves efficiency and reduces token usage.
+func WithPrefixCache(contextID string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.contextID = &contextID
 	})
 }

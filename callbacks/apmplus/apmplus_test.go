@@ -37,7 +37,7 @@ func TestApmplusCallback(t *testing.T) {
 		ServiceName: "MyService",
 		Release:     "release",
 	})
-	callbacks.InitCallbackHandlers([]callbacks.Handler{cbh})
+	callbacks.AppendGlobalHandlers(cbh)
 	ctx := context.Background()
 
 	g := compose.NewGraph[string, string]()

@@ -111,7 +111,7 @@ func startMCPServer() {
 			result = x * y
 		case "divide":
 			if y == 0 {
-				return mcp.NewToolResultError("Cannot divide by zero"), nil
+				return mcp.NewToolResultText("Cannot divide by zero"), nil
 			}
 			result = x / y
 		}
@@ -126,7 +126,7 @@ func startMCPServer() {
 			}
 		}()
 
-		err := server.NewSSEServer(svr, "http://localhost:12345").Start("localhost:12345")
+		err := server.NewSSEServer(svr, server.WithBaseURL("http://localhost:12345")).Start("localhost:12345")
 
 		if err != nil {
 			log.Fatal(err)

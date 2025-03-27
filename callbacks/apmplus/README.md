@@ -21,21 +21,28 @@ go get github.com/cloudwego/eino-ext/callbacks/apmplus
 package main
 
 import (
+	"context"
+	"log"
+
 	"github.com/cloudwego/eino-ext/callbacks/apmplus"
 	"github.com/cloudwego/eino/callbacks"
 )
 
 func main() {
+	ctx := context.Background()
     // Create apmplus handler
-	cbh, showdown := apmplus.NewApmplusHandler(&apmplus.Config{
+	cbh, showdown, err := apmplus.NewApmplusHandler(&apmplus.Config{
 		Host: "apmplus-cn-beijing.volces.com:4317",
 		AppKey:      "appkey-xxx",
-		ServiceName: "app",
+		ServiceName: "eino-app",
 		Release:     "release/v0.0.1",
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Set apmplus as a global callback
-	callbacks.InitCallbackHandlers([]callbacks.Handler{cbh})
+	callbacks.AppendGlobalHandlers(cbh)
 	
 	g := NewGraph[string,string]()
 	/*
@@ -43,7 +50,7 @@ func main() {
 	 */
 	
 	// Exit after all trace and metrics reporting is complete
-	showdown()
+	showdown(ctx)
 }
 ```
 

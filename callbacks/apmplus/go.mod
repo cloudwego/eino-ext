@@ -4,8 +4,8 @@ go 1.22.0
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/bytedance/sonic v1.12.6
-	github.com/cloudwego/eino v0.3.10
+	github.com/bytedance/sonic v1.13.2
+	github.com/cloudwego/eino v0.3.17
 	github.com/cloudwego/eino-ext/libs/acl/opentelemetry v0.0.0-20250225080340-5935633151d3
 	github.com/smartystreets/goconvey v1.8.1
 	go.opentelemetry.io/contrib/instrumentation/runtime v0.59.0
@@ -15,10 +15,9 @@ require (
 )
 
 require (
-	github.com/bytedance/sonic/loader v0.2.1 // indirect
+	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
-	github.com/cloudwego/base64x v0.1.4 // indirect
-	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/getkin/kin-openapi v0.118.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
