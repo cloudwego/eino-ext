@@ -38,6 +38,8 @@ func init() {
 		}
 		return reasoningContentType(sb.String()), nil
 	})
+
+	_ = compose.RegisterSerializableType[reasoningContentType]("_eino_ext_deepseek_reasoning_content_type")
 }
 
 func SetReasoningContent(message *schema.Message, content string) {

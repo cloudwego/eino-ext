@@ -36,6 +36,7 @@ func init() {
 
 		return chunks[len(chunks)-1], nil
 	})
+	_ = compose.RegisterSerializableType[arkRequestID]("_eino_ext_ark_request_id")
 }
 
 func GetArkRequestID(msg *schema.Message) string {
