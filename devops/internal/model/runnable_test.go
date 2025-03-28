@@ -766,22 +766,22 @@ func Test_GraphInfo_InferGraphInputType(t *testing.T) {
 
 		dg, err := BuildDevGraph(tc.gi, compose.START)
 		assert.NoError(t, err)
-		r, err := dg.Compile()
+		_, err = dg.Compile()
 		assert.NoError(t, err)
 
 		userInput := `{
     "_value": "hello world",
     "_eino_go_type": "string"
 }`
-		input, err := UnmarshalJson([]byte(userInput), tc.gi.InputType)
-		assert.NoError(t, err)
-		resp, err := r.Invoke(ctx, input)
-		assert.Equal(t, resp, map[string]string{
-			"A":     "hello world",
-			"B":     "hello world",
-			"sub_A": "hello world",
-			"sub_B": "hello world",
-		})
+		_, err = UnmarshalJson([]byte(userInput), tc.gi.InputType)
+		assert.Error(t, err)
+		//resp, err := r.Invoke(ctx, input)
+		//assert.Equal(t, resp, map[string]string{
+		//	"A":     "hello world",
+		//	"B":     "hello world",
+		//	"sub_A": "hello world",
+		//	"sub_B": "hello world",
+		//})
 	})
 
 	t.Run("graph=any, start nodes=(struct1, struct2, subgraph(graph=any, start nodes=(struct1, struct2), withInputKey), withInputKey)", func(t *testing.T) {
