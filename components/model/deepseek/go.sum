@@ -16,8 +16,8 @@ github.com/cloudwego/base64x v0.1.5/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJ
 github.com/cloudwego/eino v0.3.17 h1:cRQUCLU6897cautWe1u3les1H3OILasUIhnHzxr2QcE=
 github.com/cloudwego/eino v0.3.17/go.mod h1:+kmJimGEcKuSI6OKhet7kBedkm1WUZS3H1QRazxgWUo=
 github.com/cloudwego/iasm v0.2.0/go.mod h1:8rXZaNYT2n95jn+zTI1sDr+IgcD2GVs0nlbbQPiEFhY=
-github.com/cohesion-org/deepseek-go v1.2.3 h1:2MuEOvNHqmEYuZG8FNn0Hf3hFw3r7ETG/kLuC7I4hDk=
-github.com/cohesion-org/deepseek-go v1.2.3/go.mod h1:Mi/tP7IzBoXxDC606CFbJC5Ofk2HCikCayBXweo1RDg=
+github.com/cohesion-org/deepseek-go v1.2.4 h1:Dk0aGrBvtIsf9xrhv0ScNLL2hVmnNoaP17009o3mFSo=
+github.com/cohesion-org/deepseek-go v1.2.4/go.mod h1:Mi/tP7IzBoXxDC606CFbJC5Ofk2HCikCayBXweo1RDg=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
