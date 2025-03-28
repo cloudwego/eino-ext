@@ -59,10 +59,6 @@ type SubGraphNode struct {
 	SubGraphNodes map[string]*SubGraphNode
 }
 
-type GraphOption struct {
-	GenState func(ctx context.Context) any
-}
-
 func initGraphInfo(gi *GraphInfo) *GraphInfo {
 	newCompileOptions := make([]compose.GraphCompileOption, len(gi.GraphInfo.CompileOptions))
 	copy(newCompileOptions, gi.GraphInfo.CompileOptions)
@@ -85,11 +81,7 @@ func BuildDevGraph(gi *GraphInfo, fromNode string) (g *Graph, err error) {
 		return nil, fmt.Errorf("can not start from end node")
 	}
 
-	if gi.GraphInfo.GenStateFn != nil {
-		g = &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(gi.GraphInfo.GenStateFn))}
-	} else {
-		g = &Graph{Graph: compose.NewGraph[any, any]()}
-	}
+	g = &Graph{Graph: compose.NewGraph[any, any](gi.NewGraphOptions...)}
 
 	var (
 		newGI    = initGraphInfo(gi)
