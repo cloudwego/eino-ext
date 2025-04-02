@@ -28,7 +28,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/sashabaranov/go-openai"
+	"github.com/meguminnnnnnnnn/go-openai"
 )
 
 type ChatCompletionResponseFormatType string
@@ -300,7 +300,7 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 	req := &openai.ChatCompletionRequest{
 		Model:            *options.Model,
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
-		Temperature:      dereferenceOrZero(options.Temperature),
+		Temperature:      options.Temperature,
 		TopP:             dereferenceOrZero(options.TopP),
 		Stop:             cm.config.Stop,
 		PresencePenalty:  dereferenceOrZero(cm.config.PresencePenalty),
@@ -316,7 +316,7 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 		Config: &model.Config{
 			Model:       req.Model,
 			MaxTokens:   req.MaxTokens,
-			Temperature: req.Temperature,
+			Temperature: dereferenceOrZero(req.Temperature),
 			TopP:        req.TopP,
 			Stop:        req.Stop,
 		},

@@ -20,7 +20,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/sashabaranov/go-openai"
+	"github.com/meguminnnnnnnnn/go-openai"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/embedding"
@@ -45,7 +45,7 @@ type EmbeddingConfig struct {
 
 	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
 	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
-	
+
 	// ByAzure indicates whether to use Azure OpenAI Service
 	// Required for Azure
 	ByAzure bool `json:"by_azure"`

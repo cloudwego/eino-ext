@@ -20,7 +20,7 @@ import (
 	"math/rand"
 	"testing"
 
-	goopenai "github.com/sashabaranov/go-openai"
+	goopenai "github.com/meguminnnnnnnnn/go-openai"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino/schema"

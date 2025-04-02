@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/cloudwego/eino v0.3.17
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/sashabaranov/go-openai v1.32.5
+	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250402133730-072e60586255 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
 	github.com/stretchr/testify v1.9.0
 )
 

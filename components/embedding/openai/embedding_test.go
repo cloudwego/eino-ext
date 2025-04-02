@@ -23,7 +23,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
-	"github.com/sashabaranov/go-openai"
+	"github.com/meguminnnnnnnnn/go-openai"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/embedding"

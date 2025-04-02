@@ -26,7 +26,7 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/getkin/kin-openapi/openapi3gen"
-	"github.com/sashabaranov/go-openai"
+	"github.com/meguminnnnnnnnn/go-openai"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -46,6 +46,7 @@ func TestOpenAIGenerate(t *testing.T) {
 	}
 	expectedSeed := 4
 	mockToolCallIdx := 5
+	var temperature float32 = 0.1
 	expectedRequestBody := openai.ChatCompletionRequest{
 		Model: "gpt-4",
 		Messages: []openai.ChatCompletionMessage{
@@ -76,7 +77,7 @@ func TestOpenAIGenerate(t *testing.T) {
 			},
 		},
 		MaxTokens:       1,
-		Temperature:     0.1,
+		Temperature:     &temperature,
 		TopP:            0.2,
 		Stream:          false,
 		Stop:            []string{"stop"},
@@ -167,7 +168,7 @@ func TestOpenAIGenerate(t *testing.T) {
 		Timeout:         0,
 		Model:           "gpt-4",
 		MaxTokens:       &expectedRequestBody.MaxTokens,
-		Temperature:     &expectedRequestBody.Temperature,
+		Temperature:     expectedRequestBody.Temperature,
 		TopP:            &expectedRequestBody.TopP,
 		Stop:            expectedRequestBody.Stop,
 		PresencePenalty: &expectedRequestBody.PresencePenalty,
