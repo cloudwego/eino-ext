@@ -41,6 +41,7 @@ func main() {
 		APIKey:    apiKey,
 		Model:     "deepseek-reasoner",
 		MaxTokens: 2000,
+		BaseURL:   "https://api.deepseek.com/beta",
 	})
 	if err != nil {
 		log.Fatal(err)
