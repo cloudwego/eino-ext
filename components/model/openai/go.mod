@@ -4,10 +4,10 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.17
+	github.com/cloudwego/eino v0.3.19
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250402133911-825a308fd46a
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/sashabaranov/go-openai v1.32.5
+	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250402133730-072e60586255
 )
 
 require (
@@ -25,7 +25,6 @@ require (
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250402133730-072e60586255 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
