@@ -52,7 +52,7 @@ func TestCozeLoopCallback(t *testing.T) {
 		panic(err)
 	}
 	//defer client.Close(ctx) // avoid data trace in UT check of CI
-	cbh := NewLoopHandler(client)
+	cbh := NewLoopHandler(client, WithEnableTracing(true))
 	callbacks.AppendGlobalHandlers(cbh)
 
 	g := compose.NewGraph[string, string]()
@@ -122,7 +122,27 @@ func TestCozeLoopCallback(t *testing.T) {
 
 	mockey.PatchConvey("test generation", t, func() {
 		ctx1 := cbh.OnStart(ctx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackInput{
-			Messages: []*schema.Message{{Role: schema.System, Content: "system message"}, {Role: schema.User, Content: "user message"}},
+			Messages: []*schema.Message{
+				{Role: schema.System, Content: "system message"},
+				{
+					Role:    schema.User,
+					Content: "user message",
+					MultiContent: []schema.ChatMessagePart{
+						{
+							Type: schema.ChatMessagePartTypeImageURL,
+							Text: "",
+							ImageURL: &schema.ChatMessageImageURL{
+								URL: "https://xxx",
+							},
+						},
+					},
+					ToolCalls: []schema.ToolCall{
+						{
+							ID: "123445",
+						},
+					},
+				},
+			},
 			Config: &model.Config{
 				Model: "model", MaxTokens: 1, Temperature: 2, TopP: 3, Stop: []string{"stop"},
 			},
