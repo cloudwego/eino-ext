@@ -7,7 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/cloudwego/eino v0.3.19
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250331101427-906b8d194a99
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250408083554-4ace62ca0f5b
 	github.com/smartystreets/goconvey v1.8.1
 )
 
@@ -27,6 +27,7 @@ require (
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
+	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250408071642-761325becfd6 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
@@ -35,7 +36,6 @@ require (
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
-	github.com/sashabaranov/go-openai v1.38.1 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/smarty/assertions v1.16.0 // indirect
