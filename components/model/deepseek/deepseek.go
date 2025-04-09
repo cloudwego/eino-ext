@@ -303,6 +303,9 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	cm.tools, err = toTools(tools)
 	if err != nil {
@@ -317,6 +320,9 @@ func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 }
 
 func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	cm.tools, err = toTools(tools)
 	if err != nil {
