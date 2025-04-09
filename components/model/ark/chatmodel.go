@@ -575,6 +575,9 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 	var err error
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	cm.tools, err = toTools(tools)
 	if err != nil {
 		return err
