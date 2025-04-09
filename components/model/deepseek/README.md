@@ -11,7 +11,6 @@ A DeepSeek model implementation for [Eino](https://github.com/cloudwego/eino) th
 - Support for streaming responses
 - Custom response parsing support
 - Flexible model configuration
-- Notice!!! Temporarily does not support tool call
 
 ## Installation
 
