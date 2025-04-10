@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
-	github.com/cloudwego/eino v0.3.17
+	github.com/cloudwego/eino v0.3.20
 )
 
 require (
@@ -47,9 +47,9 @@ require (
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
+	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
-	golang.org/x/sys v0.15.0 // indirect
+	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
