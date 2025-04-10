@@ -25,6 +25,7 @@ import (
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/schema"
 	"github.com/cohesion-org/deepseek-go"
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -38,7 +39,17 @@ func TestChatModelGenerate(t *testing.T) {
 						Role:             "assistant",
 						Content:          "hello world",
 						ReasoningContent: "reasoning content",
-						ToolCalls:        nil,
+						ToolCalls: []deepseek.ToolCall{
+							{
+								Index: 1,
+								ID:    "id",
+								Type:  "type",
+								Function: deepseek.ToolCallFunction{
+									Name:      "name",
+									Arguments: "arguments",
+								},
+							},
+						},
 					},
 					Logprobs: nil,
 				},
@@ -58,11 +69,25 @@ func TestChatModelGenerate(t *testing.T) {
 		Model:   "deepseek-chat",
 	})
 	assert.Nil(t, err)
+	err = cm.BindForcedTools([]*schema.ToolInfo{{Name: "deepseek-tool", ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{Type: openapi3.TypeObject, Properties: map[string]*openapi3.SchemaRef{"field1": {Value: &openapi3.Schema{Type: openapi3.TypeString}}}})}})
+	assert.Nil(t, err)
 	result, err := cm.Generate(ctx, []*schema.Message{schema.SystemMessage("system"), schema.UserMessage("hello"), schema.AssistantMessage("assistant", nil), schema.UserMessage("hello")})
 	assert.Nil(t, err)
+	index := 1
 	expected := &schema.Message{
 		Role:    schema.Assistant,
 		Content: "hello world",
+		ToolCalls: []schema.ToolCall{
+			{
+				Index: &index,
+				ID:    "id",
+				Type:  "type",
+				Function: schema.FunctionCall{
+					Name:      "name",
+					Arguments: "arguments",
+				},
+			},
+		},
 		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
 			PromptTokens:     1,
 			CompletionTokens: 2,
@@ -93,6 +118,17 @@ func TestChatModelStream(t *testing.T) {
 					Delta: deepseek.StreamDelta{
 						Role:    "assistant",
 						Content: " World",
+						ToolCalls: []deepseek.ToolCall{
+							{
+								Index: 1,
+								ID:    "id",
+								Type:  "type",
+								Function: deepseek.ToolCallFunction{
+									Name:      "name",
+									Arguments: "arguments",
+								},
+							},
+						},
 					},
 				},
 			},
@@ -115,10 +151,13 @@ func TestChatModelStream(t *testing.T) {
 
 	ctx := context.Background()
 	cm, err := NewChatModel(ctx, &ChatModelConfig{
-		APIKey:  "my-api-key",
-		Timeout: time.Second,
-		Model:   "deepseek-chat",
+		APIKey:             "my-api-key",
+		Timeout:            time.Second,
+		Model:              "deepseek-chat",
+		ResponseFormatType: ResponseFormatTypeJSONObject,
 	})
+	assert.Nil(t, err)
+	err = cm.BindTools([]*schema.ToolInfo{{Name: "deepseek-tool", ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{Type: openapi3.TypeObject, Properties: map[string]*openapi3.SchemaRef{"field1": {Value: &openapi3.Schema{Type: openapi3.TypeString}}}})}})
 	assert.Nil(t, err)
 	result, err := cm.Stream(ctx, []*schema.Message{schema.UserMessage("hello")})
 	assert.Nil(t, err)
@@ -135,9 +174,21 @@ func TestChatModelStream(t *testing.T) {
 
 	msg, err := schema.ConcatMessages(msgs)
 	assert.Nil(t, err)
+	index := 1
 	assert.Equal(t, &schema.Message{
 		Role:    schema.Assistant,
 		Content: "Hello World",
+		ToolCalls: []schema.ToolCall{
+			{
+				Index: &index,
+				ID:    "id",
+				Type:  "type",
+				Function: schema.FunctionCall{
+					Name:      "name",
+					Arguments: "arguments",
+				},
+			},
+		},
 		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{
 			PromptTokens:     1,
 			CompletionTokens: 2,

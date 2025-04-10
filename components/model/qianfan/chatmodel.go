@@ -18,6 +18,7 @@ package qianfan
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"runtime/debug"
 
@@ -207,6 +208,9 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 }
 
 func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	c.tools, err = toQianfanTools(tools)
 	if err != nil {
@@ -219,6 +223,9 @@ func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 }
 
 func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	c.tools, err = toQianfanTools(tools)
 	if err != nil {

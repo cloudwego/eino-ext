@@ -7,7 +7,7 @@ toolchain go1.23.4
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/cloudwego/eino v0.3.18
-	github.com/cohesion-org/deepseek-go v1.2.4
+	github.com/cohesion-org/deepseek-go v1.2.8
 	github.com/stretchr/testify v1.10.0
 )
 

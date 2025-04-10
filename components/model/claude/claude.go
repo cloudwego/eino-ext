@@ -19,6 +19,7 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -274,6 +275,9 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 }
 
 func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	result, err := toAnthropicToolParam(tools)
 	if err != nil {
 		return err
@@ -287,6 +291,9 @@ func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 }
 
 func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	result, err := toAnthropicToolParam(tools)
 	if err != nil {
 		return err

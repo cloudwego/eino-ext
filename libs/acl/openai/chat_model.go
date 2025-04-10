@@ -709,6 +709,9 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 }
 
 func (cm *Client) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	cm.tools, err = toTools(tools)
 	if err != nil {
@@ -723,6 +726,9 @@ func (cm *Client) BindTools(tools []*schema.ToolInfo) error {
 }
 
 func (cm *Client) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	cm.tools, err = toTools(tools)
 	if err != nil {
