@@ -13,11 +13,9 @@ github.com/bytedance/sonic/loader v0.2.4/go.mod h1:N8A3vUdtUebEY2/VQC0MyhYeKUFos
 github.com/certifi/gocertifi v0.0.0-20190105021004-abcd57078448/go.mod h1:GJKEexRPVJrBSOjoqN5VNOIKJ5Q3RViH6eu3puDRwx4=
 github.com/cloudwego/base64x v0.1.5 h1:XPciSp1xaq2VCSt6lF0phncD4koWyULpl5bUxbfCyP4=
 github.com/cloudwego/base64x v0.1.5/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJgA0rcu/8w=
-github.com/cloudwego/eino v0.3.18 h1:qz2Khkzp7hyz3mAvhnPElsVHRSRiorSetoSN0p1zoM4=
-github.com/cloudwego/eino v0.3.18/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
+github.com/cloudwego/eino v0.3.20 h1:SiQH1SgRlu0aTTtUPjmbkZlC3VjCg8L6B9lDIEcNJmo=
+github.com/cloudwego/eino v0.3.20/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
 github.com/cloudwego/iasm v0.2.0/go.mod h1:8rXZaNYT2n95jn+zTI1sDr+IgcD2GVs0nlbbQPiEFhY=
-github.com/cohesion-org/deepseek-go v1.2.4 h1:Dk0aGrBvtIsf9xrhv0ScNLL2hVmnNoaP17009o3mFSo=
-github.com/cohesion-org/deepseek-go v1.2.4/go.mod h1:Mi/tP7IzBoXxDC606CFbJC5Ofk2HCikCayBXweo1RDg=
 github.com/cohesion-org/deepseek-go v1.2.8 h1:4sbbHP1sYBjTf7CR9km7PMQWDouzO5IiyFBTO+4VC6Q=
 github.com/cohesion-org/deepseek-go v1.2.8/go.mod h1:nPPJT25HSnmxaQJCC4ZFAdbhKjoXN0GbZ4dSsHYxhG0=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

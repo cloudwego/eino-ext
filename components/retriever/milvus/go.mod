@@ -5,7 +5,7 @@ go 1.23.4
 require (
 	github.com/bytedance/mockey v1.2.12
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.3.17
+	github.com/cloudwego/eino v0.3.20
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.2
 	github.com/smartystreets/goconvey v1.8.1
 )
@@ -51,7 +51,7 @@ require (
 	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
-	golang.org/x/arch v0.0.0-20210923205945-b76863e36670 // indirect
+	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/net v0.23.0 // indirect

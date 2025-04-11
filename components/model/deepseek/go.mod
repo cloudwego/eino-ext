@@ -6,8 +6,9 @@ toolchain go1.23.4
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.3.18
+	github.com/cloudwego/eino v0.3.20
 	github.com/cohesion-org/deepseek-go v1.2.8
+	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.10.0
 )
 
@@ -17,7 +18,6 @@ require (
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/getkin/kin-openapi v0.118.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/swag v0.19.5 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
