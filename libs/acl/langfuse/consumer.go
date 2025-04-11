@@ -162,8 +162,8 @@ func (i *ingestionConsumer) next() []*event {
 		if ev.Body.Generation != nil {
 			var err error
 			if len(ev.Body.Generation.InMessages) > 0 {
-				i.convMedias(ev.Body.Generation.InMessages, ev.Body.getTraceID(), ev.Body.getObservationID(), fieldTypeInput)
-				ev.Body.Generation.Input, err = marshalMessages(ev.Body.Generation.InMessages)
+				_, nMessages := i.convMedias(ev.Body.Generation.InMessages, ev.Body.getTraceID(), ev.Body.getObservationID(), fieldTypeInput)
+				ev.Body.Generation.Input, err = marshalMessages(nMessages)
 				if err != nil {
 					i.eventQueue.done()
 					log.Printf("ingest consumer error, marshal model input fail: %v", err)
@@ -171,8 +171,8 @@ func (i *ingestionConsumer) next() []*event {
 				}
 			}
 			if ev.Body.Generation.OutMessage != nil {
-				i.convMedias([]*schema.Message{ev.Body.Generation.OutMessage}, ev.Body.getTraceID(), ev.Body.getObservationID(), fieldTypeOutput)
-				ev.Body.Generation.Output, err = marshalMessage(ev.Body.Generation.OutMessage)
+				_, nMessages := i.convMedias([]*schema.Message{ev.Body.Generation.OutMessage}, ev.Body.getTraceID(), ev.Body.getObservationID(), fieldTypeOutput)
+				ev.Body.Generation.Output, err = marshalMessage(nMessages[0])
 				if err != nil {
 					i.eventQueue.done()
 					log.Printf("ingest consumer error, marshal model output fail: %v", err)
@@ -315,47 +315,72 @@ func (i *ingestionConsumer) langfuseBackOffRequest(fn func() error) error {
 	}, backoff.WithMaxRetries(backoff.NewExponentialBackOff(backoff.WithMultiplier(2), backoff.WithInitialInterval(time.Second)), i.maxRetry))
 }
 
-func (i *ingestionConsumer) convMedias(messages []*schema.Message, traceID, observationID string, field fieldType) []*media {
+func (i *ingestionConsumer) convMedias(messages []*schema.Message, traceID, observationID string, field fieldType) ([]*media, []*schema.Message) {
 	var medias []*media
+	nMessages := make([]*schema.Message, 0, len(messages))
 	for _, message := range messages {
-		for j := range message.MultiContent {
-			if message.MultiContent[j].Type == schema.ChatMessagePartTypeImageURL &&
-				message.MultiContent[j].ImageURL != nil {
-				m, err := i.tryProcessMediaFromBase64(message.MultiContent[j].ImageURL.URL, traceID, observationID, field)
+		nMessage := *message
+		nMessages = append(nMessages, &nMessage)
+		mc := make([]schema.ChatMessagePart, len(nMessage.MultiContent))
+		copy(mc, nMessage.MultiContent)
+		nMessage.MultiContent = mc
+		for j := range nMessage.MultiContent {
+			if nMessage.MultiContent[j].Type == schema.ChatMessagePartTypeImageURL &&
+				nMessage.MultiContent[j].ImageURL != nil {
+				m, err := i.tryProcessMediaFromBase64(nMessage.MultiContent[j].ImageURL.URL, traceID, observationID, field)
 				if err != nil {
 					log.Printf("failed to process media from image: %v", err)
 					continue
 				}
 				if m != nil {
-					message.MultiContent[j].ImageURL.URL = fmt.Sprintf(mediaString, m.contentType, m.mediaID, m.source)
+					nMessage.MultiContent[j].ImageURL = &schema.ChatMessageImageURL{
+						URL:      fmt.Sprintf(mediaString, m.contentType, m.mediaID, m.source),
+						URI:      nMessage.MultiContent[j].ImageURL.URI,
+						Detail:   nMessage.MultiContent[j].ImageURL.Detail,
+						MIMEType: nMessage.MultiContent[j].ImageURL.MIMEType,
+						Extra:    nMessage.MultiContent[j].ImageURL.Extra,
+					}
+
 					medias = append(medias, m)
 				}
-			} else if message.MultiContent[j].Type == schema.ChatMessagePartTypeAudioURL &&
-				message.MultiContent[j].AudioURL != nil {
-				m, err := i.tryProcessMediaFromBase64(message.MultiContent[j].AudioURL.URL, traceID, observationID, field)
+			} else if nMessage.MultiContent[j].Type == schema.ChatMessagePartTypeAudioURL &&
+				nMessage.MultiContent[j].AudioURL != nil {
+				m, err := i.tryProcessMediaFromBase64(nMessage.MultiContent[j].AudioURL.URL, traceID, observationID, field)
 				if err != nil {
 					log.Printf("failed to process media from audio: %v", err)
 					continue
 				}
 				if m != nil {
-					message.MultiContent[j].AudioURL.URL = fmt.Sprintf(mediaString, m.contentType, m.mediaID, m.source)
+					nMessage.MultiContent[j].AudioURL = &schema.ChatMessageAudioURL{
+						URL:      fmt.Sprintf(mediaString, m.contentType, m.mediaID, m.source),
+						URI:      nMessage.MultiContent[j].AudioURL.URI,
+						MIMEType: nMessage.MultiContent[j].AudioURL.MIMEType,
+						Extra:    nMessage.MultiContent[j].AudioURL.Extra,
+					}
 					medias = append(medias, m)
 				}
-			} else if message.MultiContent[j].Type == schema.ChatMessagePartTypeVideoURL &&
-				message.MultiContent[j].VideoURL != nil {
-				m, err := i.tryProcessMediaFromBase64(message.MultiContent[j].VideoURL.URL, traceID, observationID, field)
+			} else if nMessage.MultiContent[j].Type == schema.ChatMessagePartTypeVideoURL &&
+				nMessage.MultiContent[j].VideoURL != nil {
+				m, err := i.tryProcessMediaFromBase64(nMessage.MultiContent[j].VideoURL.URL, traceID, observationID, field)
 				if err != nil {
 					log.Printf("failed to process media from video: %v", err)
 					continue
 				}
+
 				if m != nil {
-					message.MultiContent[j].VideoURL.URL = fmt.Sprintf(mediaString, m.contentType, m.mediaID, m.source)
+					nMessage.MultiContent[j].VideoURL = &schema.ChatMessageVideoURL{
+						URL:      fmt.Sprintf(mediaString, m.contentType, m.mediaID, m.source),
+						URI:      nMessage.MultiContent[j].VideoURL.URI,
+						MIMEType: nMessage.MultiContent[j].VideoURL.MIMEType,
+						Extra:    nMessage.MultiContent[j].VideoURL.Extra,
+					}
+
 					medias = append(medias, m)
 				}
 			}
 		}
 	}
-	return medias
+	return medias, nMessages
 }
 
 func (i *ingestionConsumer) tryProcessMediaFromBase64(data string, traceID, observationID string, field fieldType) (*media, error) {
