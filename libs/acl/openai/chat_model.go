@@ -218,6 +218,27 @@ func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatMessagePart
 					Detail: openai.ImageURLDetail(part.ImageURL.Detail),
 				},
 			})
+		case schema.ChatMessagePartTypeAudioURL:
+			if part.AudioURL == nil {
+				return nil, fmt.Errorf("AudioURL field must not be nil when Type is ChatMessagePartTypeAudioURL")
+			}
+			ret = append(ret, openai.ChatMessagePart{
+				Type: openai.ChatMessagePartTypeInputAudio,
+				InputAudio: &openai.ChatMessageInputAudio{
+					Data:   part.AudioURL.URL,
+					Format: part.AudioURL.MIMEType,
+				},
+			})
+		case schema.ChatMessagePartTypeVideoURL:
+			if part.VideoURL == nil {
+				return nil, fmt.Errorf("VideoURL field must not be nil when Type is ChatMessagePartTypeVideoURL")
+			}
+			ret = append(ret, openai.ChatMessagePart{
+				Type: openai.ChatMessagePartTypeVideoURL,
+				VideoURL: &openai.ChatMessageVideoURL{
+					URL: part.VideoURL.URL,
+				},
+			})
 		default:
 			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
 		}
@@ -688,6 +709,9 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 }
 
 func (cm *Client) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	cm.tools, err = toTools(tools)
 	if err != nil {
@@ -702,6 +726,9 @@ func (cm *Client) BindTools(tools []*schema.ToolInfo) error {
 }
 
 func (cm *Client) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	var err error
 	cm.tools, err = toTools(tools)
 	if err != nil {

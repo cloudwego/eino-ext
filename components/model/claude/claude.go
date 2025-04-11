@@ -19,7 +19,9 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"runtime/debug"
 	"strings"
 
@@ -54,20 +56,31 @@ import (
 func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 	var cli *anthropic.Client
 	if !config.ByBedrock {
+		var opts []option.RequestOption
 		if config.BaseURL != nil {
-			cli = anthropic.NewClient(option.WithBaseURL(*config.BaseURL), option.WithAPIKey(config.APIKey))
+			opts = append(opts, option.WithBaseURL(*config.BaseURL), option.WithAPIKey(config.APIKey))
 		} else {
-			cli = anthropic.NewClient(option.WithAPIKey(config.APIKey))
+			opts = append(opts, option.WithAPIKey(config.APIKey))
 		}
+		if config.HTTPClient != nil {
+			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		}
+		cli = anthropic.NewClient(opts...)
 	} else {
-		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx,
+		var opts []func(*awsConfig.LoadOptions) error
+		opts = append(
+			opts,
 			awsConfig.WithRegion(config.Region),
 			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				config.AccessKey,
 				config.SecretAccessKey,
 				config.SessionToken,
-			))),
+			)),
 		)
+		if config.HTTPClient != nil {
+			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
+		}
+		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
 	}
 	return &ChatModel{
 		cli:           cli,
@@ -143,6 +156,9 @@ type Config struct {
 	// The model will stop generating when it encounters any of these sequences
 	// Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
 	StopSequences []string
+
+	// HTTPClient specifies the client to send HTTP requests.
+	HTTPClient *http.Client `json:"http_client"`
 }
 
 type ChatModel struct {
@@ -259,6 +275,9 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 }
 
 func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	result, err := toAnthropicToolParam(tools)
 	if err != nil {
 		return err
@@ -272,6 +291,9 @@ func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 }
 
 func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	result, err := toAnthropicToolParam(tools)
 	if err != nil {
 		return err

@@ -37,15 +37,28 @@ func TestToXXXUtils(t *testing.T) {
 			{
 				Type: schema.ChatMessagePartTypeImageURL,
 				ImageURL: &schema.ChatMessageImageURL{
-					URL:    "https://{RL_ADDRESS}",
+					URL:    "test_url",
 					Detail: schema.ImageURLDetailAuto,
+				},
+			},
+			{
+				Type: schema.ChatMessagePartTypeAudioURL,
+				AudioURL: &schema.ChatMessageAudioURL{
+					URL:      "test_url",
+					MIMEType: "mp3",
+				},
+			},
+			{
+				Type: schema.ChatMessagePartTypeVideoURL,
+				VideoURL: &schema.ChatMessageVideoURL{
+					URL: "test_url",
 				},
 			},
 		}
 
 		mc, err := toOpenAIMultiContent(multiContents)
 		assert.NoError(t, err)
-		assert.Len(t, mc, 2)
+		assert.Len(t, mc, 4)
 		assert.Equal(t, mc[0], goopenai.ChatMessagePart{
 			Type: goopenai.ChatMessagePartTypeText,
 			Text: "image_desc",
@@ -54,8 +67,22 @@ func TestToXXXUtils(t *testing.T) {
 		assert.Equal(t, mc[1], goopenai.ChatMessagePart{
 			Type: goopenai.ChatMessagePartTypeImageURL,
 			ImageURL: &goopenai.ChatMessageImageURL{
-				URL:    "https://{RL_ADDRESS}",
+				URL:    "test_url",
 				Detail: goopenai.ImageURLDetailAuto,
+			},
+		})
+
+		assert.Equal(t, mc[2], goopenai.ChatMessagePart{
+			Type: goopenai.ChatMessagePartTypeInputAudio,
+			InputAudio: &goopenai.ChatMessageInputAudio{
+				Data:   "test_url",
+				Format: "mp3",
+			},
+		})
+		assert.Equal(t, mc[3], goopenai.ChatMessagePart{
+			Type: goopenai.ChatMessagePartTypeVideoURL,
+			VideoURL: &goopenai.ChatMessageVideoURL{
+				URL: "test_url",
 			},
 		})
 
