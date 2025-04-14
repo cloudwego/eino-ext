@@ -155,7 +155,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 		tags.set(tracespec.Stream, false)
 
 		if tv, ok := getTraceVariablesValue(ctx); ok {
-			tags.set(tracespec.LatencyFirstResp, time.Since(tv.StartTime).Milliseconds())
+			tags.set(tracespec.LatencyFirstResp, time.Since(tv.StartTime).Microseconds())
 		}
 
 	case components.ComponentOfPrompt:
@@ -305,7 +305,7 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 			onceSet = true
 
 			if tv, ok := getTraceVariablesValue(ctx); ok {
-				tags.set(tracespec.LatencyFirstResp, time.Since(tv.StartTime).Milliseconds())
+				tags.set(tracespec.LatencyFirstResp, time.Since(tv.StartTime).Microseconds())
 			}
 		}
 	}
