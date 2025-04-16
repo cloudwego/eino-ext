@@ -86,20 +86,36 @@ func TestValidate(t *testing.T) {
 		// Missing thought
 		missingThought := `{"thought_number": 1, "total_thoughts": 3, "next_thought_needed": true}`
 		td, err := server.validate(missingThought)
-		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err, convey.ShouldBeNil)
 		convey.So(td, convey.ShouldNotBeNil)
+		convey.So(td.Thought, convey.ShouldEqual, "The Parameter's thought should not empty")
+		convey.So(td.ThoughtNumber, convey.ShouldEqual, 1)
+		convey.So(td.TotalThoughts, convey.ShouldEqual, 3)
+		convey.So(td.IsRevision, convey.ShouldBeTrue)
+		convey.So(td.RevisesThought, convey.ShouldEqual, 1)
+		convey.So(td.NextThoughtNeeded, convey.ShouldBeTrue)
 		
 		// Invalid thought number
 		invalidThoughtNumber := `{"thought": "Test", "thought_number": 0, "total_thoughts": 3, "next_thought_needed": true}`
 		td, err = server.validate(invalidThoughtNumber)
-		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err, convey.ShouldBeNil)
 		convey.So(td, convey.ShouldNotBeNil)
+		convey.So(td.Thought, convey.ShouldEqual, "Thought number must be greater than 0")
+		convey.So(td.ThoughtNumber, convey.ShouldEqual, 0)
+		convey.So(td.TotalThoughts, convey.ShouldEqual, 3)
+		convey.So(td.IsRevision, convey.ShouldBeTrue)
+		convey.So(td.RevisesThought, convey.ShouldEqual, 0)
 		
 		// Invalid total thoughts
 		invalidTotalThoughts := `{"thought": "Test", "thought_number": 1, "total_thoughts": 0, "next_thought_needed": true}`
 		td, err = server.validate(invalidTotalThoughts)
-		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err, convey.ShouldBeNil)
 		convey.So(td, convey.ShouldNotBeNil)
+		convey.So(td.Thought, convey.ShouldEqual, "Thought number cannot exceed total thoughts")
+		convey.So(td.ThoughtNumber, convey.ShouldEqual, 1)
+		convey.So(td.TotalThoughts, convey.ShouldEqual, 0)
+		convey.So(td.IsRevision, convey.ShouldBeTrue)
+		convey.So(td.RevisesThought, convey.ShouldEqual, 1)
 	})
 }
 

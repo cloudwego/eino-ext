@@ -2,7 +2,7 @@
 
 **Sequential Thinking Tool** is a tool for dynamic and reflective problem-solving through a structured thinking process.
 Inspired by [@modelcontextprotocol
-/@sequentialthinking](https://github.com/modelcontextprotocol/servers/tree/HEAD/src/sequentialthinking), it guides LLM
+/sequentialthinking](https://github.com/modelcontextprotocol/servers/tree/HEAD/src/sequentialthinking), it guides LLM
 through a series of questions to help them think through problems step-by-step.
 
 ## Features

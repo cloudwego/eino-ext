@@ -12,6 +12,7 @@ import (
 )
 
 // Tool name and description constants
+// Inspired by @modelcontextprotocol/sequentialthinking, it guides LLM through a series of questions to help them think through problems step-by-step.
 const (
 	toolName = "sequentialthinking"
 	toolDesc = `A detailed tool for dynamic and reflective problem-solving through thoughts.
@@ -123,8 +124,25 @@ func (t *thinkingServer) validate(input string) (td *thoughtData, err error) {
 	if err = sonic.Unmarshal([]byte(input), &td); err != nil {
 		return
 	}
-	if td.Thought == "" || td.ThoughtNumber < 1 || td.TotalThoughts < 1 {
-		err = errors.New("invalid thought input")
+	if td.ThoughtNumber < 1 {
+		td.Thought = "Thought number must be greater than 0"
+		td.IsRevision = true
+		td.RevisesThought = td.ThoughtNumber
+	}
+	if td.TotalThoughts < 1 {
+		td.Thought = "Total thoughts must be greater than 0"
+		td.IsRevision = true
+		td.RevisesThought = td.ThoughtNumber
+	}
+	if td.ThoughtNumber > td.TotalThoughts {
+		td.Thought = "Thought number cannot exceed total thoughts"
+		td.IsRevision = true
+		td.RevisesThought = td.ThoughtNumber
+	}
+	if td.Thought == "" {
+		td.Thought = "The Parameter's thought should not empty"
+		td.IsRevision = true
+		td.RevisesThought = td.ThoughtNumber
 	}
 	return
 }

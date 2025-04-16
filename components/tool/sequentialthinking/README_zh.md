@@ -2,7 +2,7 @@
 
 **Sequential Thinking Tool**
 是一个用于支持动态和反思性问题解决的工具，通过结构化的思考流程帮助用户逐步分析并解决问题。灵感来自于[@modelcontextprotocol
-/@sequentialthinking](https://github.com/modelcontextprotocol/servers/tree/HEAD/src/sequentialthinking)
+/sequentialthinking](https://github.com/modelcontextprotocol/servers/tree/HEAD/src/sequentialthinking)
 ,它通过一系列问题引导大语言模型逐步思考问题。
 
 ## 功能特性
