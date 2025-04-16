@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.20
+	github.com/cloudwego/eino v0.3.23
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250408071642-761325becfd6 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
 	github.com/stretchr/testify v1.9.0

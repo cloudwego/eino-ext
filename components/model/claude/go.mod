@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.29.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.54
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.20
+	github.com/cloudwego/eino v0.3.23
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0
 )
