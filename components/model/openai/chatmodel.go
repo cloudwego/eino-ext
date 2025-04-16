@@ -27,6 +27,8 @@ import (
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+
 type ChatModelConfig struct {
 	// APIKey is your authentication key
 	// Use OpenAI API key or Azure API key depending on the service
@@ -166,6 +168,10 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	return cm.cli.Stream(ctx, in, opts...)
+}
+
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return cm.cli.WithTools(tools)
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {

@@ -6,8 +6,8 @@ toolchain go1.24.1
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.20
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250409091823-253e634f1159
+	github.com/cloudwego/eino v0.3.23
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250416093724-5f53a5d6cc28
 	github.com/smartystreets/goconvey v1.8.1
 )
 

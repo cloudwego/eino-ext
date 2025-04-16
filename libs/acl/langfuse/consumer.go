@@ -403,7 +403,6 @@ func (i *ingestionConsumer) tryProcessMediaFromBase64(data string, traceID, obse
 	}
 	m.mediaID = mediaID
 	if len(uploadURL) <= 0 {
-		log.Printf("process media[%s]: no upload URL", mediaID)
 		return m, nil
 	}
 	i.mediaWG.Add(1)

@@ -36,6 +36,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+
 // NewChatModel creates a new Claude chat model instance
 //
 // Parameters:
@@ -175,19 +177,19 @@ type ChatModel struct {
 	toolChoice    *schema.ToolChoice
 }
 
-func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
-	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
+func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
+	ctx = callbacks.OnStart(ctx, cm.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
 
-	param, err := c.genMessageNewParams(input, opts...)
+	param, err := cm.genMessageNewParams(input, opts...)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.cli.Messages.New(ctx, param)
+	resp, err := cm.cli.Messages.New(ctx, param)
 	if err != nil {
 		return nil, fmt.Errorf("create new message fail: %w", err)
 	}
@@ -195,23 +197,23 @@ func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 	if err != nil {
 		return nil, fmt.Errorf("convert response to schema message fail: %w", err)
 	}
-	callbacks.OnEnd(ctx, c.getCallbackOutput(message))
+	callbacks.OnEnd(ctx, cm.getCallbackOutput(message))
 	return message, nil
 }
 
-func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
-	ctx = callbacks.OnStart(ctx, c.getCallbackInput(input, opts...))
+func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
+	ctx = callbacks.OnStart(ctx, cm.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
 
-	param, err := c.genMessageNewParams(input, opts...)
+	param, err := cm.genMessageNewParams(input, opts...)
 	if err != nil {
 		return nil, err
 	}
-	stream := c.cli.Messages.NewStreaming(ctx, param)
+	stream := cm.cli.Messages.NewStreaming(ctx, param)
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func() {
@@ -247,7 +249,7 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 				}
 				waitList = []*schema.Message{}
 			}
-			closed := sw.Send(c.getCallbackOutput(message), nil)
+			closed := sw.Send(cm.getCallbackOutput(message), nil)
 			if closed {
 				return
 			}
@@ -258,7 +260,7 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 				_ = sw.Send(nil, fmt.Errorf("concat empty message fail: %w", err_))
 				return
 			} else {
-				closed := sw.Send(c.getCallbackOutput(message), nil)
+				closed := sw.Send(cm.getCallbackOutput(message), nil)
 				if closed {
 					return
 				}
@@ -274,7 +276,24 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 	}), nil
 }
 
-func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	aTools, err := toAnthropicToolParam(tools)
+	if err != nil {
+		return nil, fmt.Errorf("to anthropic tool param fail: %w", err)
+	}
+
+	tc := schema.ToolChoiceAllowed
+	ncm := *cm
+	ncm.tools = aTools
+	ncm.toolChoice = &tc
+	ncm.origTools = tools
+	return &ncm, nil
+}
+
+func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 	if len(tools) == 0 {
 		return errors.New("no tools to bind")
 	}
@@ -283,14 +302,14 @@ func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 		return err
 	}
 
-	c.tools = result
-	c.origTools = tools
+	cm.tools = result
+	cm.origTools = tools
 	tc := schema.ToolChoiceAllowed
-	c.toolChoice = &tc
+	cm.toolChoice = &tc
 	return nil
 }
 
-func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	if len(tools) == 0 {
 		return errors.New("no tools to bind")
 	}
@@ -299,10 +318,10 @@ func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 		return err
 	}
 
-	c.tools = result
-	c.origTools = tools
+	cm.tools = result
+	cm.origTools = tools
 	tc := schema.ToolChoiceForced
-	c.toolChoice = &tc
+	cm.toolChoice = &tc
 	return nil
 }
 
@@ -327,21 +346,21 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolParam, erro
 	return result, nil
 }
 
-func (c *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
+func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
 	}
 
 	commonOptions := model.GetCommonOptions(&model.Options{
-		Model:       &c.model,
-		Temperature: c.temperature,
-		MaxTokens:   &c.maxTokens,
-		TopP:        c.topP,
-		Stop:        c.stopSequences,
+		Model:       &cm.model,
+		Temperature: cm.temperature,
+		MaxTokens:   &cm.maxTokens,
+		TopP:        cm.topP,
+		Stop:        cm.stopSequences,
 		Tools:       nil,
-		ToolChoice:  c.toolChoice,
+		ToolChoice:  cm.toolChoice,
 	}, opts...)
-	claudeOptions := model.GetImplSpecificOptions(&options{TopK: c.topK}, opts...)
+	claudeOptions := model.GetImplSpecificOptions(&options{TopK: cm.topK}, opts...)
 
 	param := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
@@ -363,7 +382,7 @@ func (c *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.O
 		param.TopK = anthropic.F(int64(*claudeOptions.TopK))
 	}
 
-	tools := c.tools
+	tools := cm.tools
 	if commonOptions.Tools != nil {
 		var err error
 		if tools, err = toAnthropicToolParam(commonOptions.Tools); err != nil {
@@ -424,21 +443,21 @@ func (c *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.O
 	return param, nil
 }
 
-func (c *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
+func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
 	result := &model.CallbackInput{
 		Messages: input,
 		Tools: model.GetCommonOptions(&model.Options{
-			Tools: c.origTools,
+			Tools: cm.origTools,
 		}, opts...).Tools,
-		Config: c.getConfig(),
+		Config: cm.getConfig(),
 	}
 	return result
 }
 
-func (c *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
+func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
 	result := &model.CallbackOutput{
 		Message: output,
-		Config:  c.getConfig(),
+		Config:  cm.getConfig(),
 	}
 	if output.ResponseMeta != nil && output.ResponseMeta.Usage != nil {
 		result.TokenUsage = &model.TokenUsage{
@@ -450,26 +469,26 @@ func (c *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOut
 	return result
 }
 
-func (c *ChatModel) getConfig() *model.Config {
+func (cm *ChatModel) getConfig() *model.Config {
 	result := &model.Config{
-		Model:     c.model,
-		MaxTokens: c.maxTokens,
-		Stop:      c.stopSequences,
+		Model:     cm.model,
+		MaxTokens: cm.maxTokens,
+		Stop:      cm.stopSequences,
 	}
-	if c.temperature != nil {
-		result.Temperature = *c.temperature
+	if cm.temperature != nil {
+		result.Temperature = *cm.temperature
 	}
-	if c.topP != nil {
-		result.TopP = *c.topP
+	if cm.topP != nil {
+		result.TopP = *cm.topP
 	}
 	return result
 }
 
-func (c *ChatModel) GetType() string {
+func (cm *ChatModel) GetType() string {
 	return "Claude"
 }
 
-func (c *ChatModel) IsCallbacksEnabled() bool {
+func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
