@@ -135,6 +135,12 @@ type Config struct {
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
+
+	// LogProbs specifies whether to return log probabilities of the output tokens.
+	LogProbs bool `json:"log_probs"`
+
+	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+	TopLogProbs int `json:"top_log_probs"`
 }
 
 type Client struct {
@@ -327,6 +333,8 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		FrequencyPenalty: dereferenceOrZero(c.config.FrequencyPenalty),
 		LogitBias:        c.config.LogitBias,
 		User:             dereferenceOrZero(c.config.User),
+		LogProbs:         c.config.LogProbs,
+		TopLogProbs:      c.config.TopLogProbs,
 	}
 
 	cbInput := &model.CallbackInput{
@@ -480,6 +488,7 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: string(choice.FinishReason),
 				Usage:        toEinoTokenUsage(&resp.Usage),
+				LogProbs:     toLogProbs(choice.LogProbs),
 			},
 		}
 
@@ -622,6 +631,72 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
+func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
+	if probs == nil {
+		return nil
+	}
+	ret := &schema.LogProbs{}
+	for _, content := range probs.Content {
+		schemaContent := schema.LogProb{
+			Token:       content.Token,
+			LogProb:     content.Logprob,
+			Bytes:       content.Bytes,
+			TopLogProbs: toStreamTopLogProb(content.TopLogprobs),
+		}
+		ret.Content = append(ret.Content, schemaContent)
+	}
+	return ret
+}
+
+func toLogProbs(probs *openai.LogProbs) *schema.LogProbs {
+	if probs == nil {
+		return nil
+	}
+	ret := &schema.LogProbs{}
+	for _, content := range probs.Content {
+		schemaContent := schema.LogProb{
+			Token:       content.Token,
+			LogProb:     content.LogProb,
+			Bytes:       byteSlice2int64(content.Bytes),
+			TopLogProbs: toTopLogProb(content.TopLogProbs),
+		}
+		ret.Content = append(ret.Content, schemaContent)
+	}
+	return ret
+}
+
+func toStreamTopLogProb(probs []openai.ChatCompletionTokenLogprobTopLogprob) []schema.TopLogProb {
+	ret := make([]schema.TopLogProb, 0, len(probs))
+	for _, prob := range probs {
+		ret = append(ret, schema.TopLogProb{
+			Token:   prob.Token,
+			LogProb: prob.Logprob,
+			Bytes:   prob.Bytes,
+		})
+	}
+	return ret
+}
+
+func toTopLogProb(probs []openai.TopLogProbs) []schema.TopLogProb {
+	ret := make([]schema.TopLogProb, 0, len(probs))
+	for _, prob := range probs {
+		ret = append(ret, schema.TopLogProb{
+			Token:   prob.Token,
+			LogProb: prob.LogProb,
+			Bytes:   byteSlice2int64(prob.Bytes),
+		})
+	}
+	return ret
+}
+
+func byteSlice2int64(in []byte) []int64 {
+	ret := make([]int64, 0, len(in))
+	for _, v := range in {
+		ret = append(ret, int64(v))
+	}
+	return ret
+}
+
 func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
@@ -637,6 +712,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: string(choice.FinishReason),
 				Usage:        toEinoTokenUsage(resp.Usage),
+				LogProbs:     toStreamProbs(choice.Logprobs),
 			},
 		}
 
