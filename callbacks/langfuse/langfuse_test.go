@@ -85,7 +85,7 @@ func TestLangfuseCallback(t *testing.T) {
 	}
 
 	mockey.PatchConvey("test span", t, func() {
-		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).Times(1)
+		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).Times(2)
 		createSpanTimes := 0
 		mockLangfuse.EXPECT().CreateSpan(gomock.Any()).DoAndReturn(func(body *langfuse.SpanEventBody) (string, error) {
 			defer func() {
@@ -156,7 +156,7 @@ func TestLangfuseCallback(t *testing.T) {
 	})
 
 	mockey.PatchConvey("test span stream", t, func() {
-		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).AnyTimes()
+		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).Times(1)
 		mockLangfuse.EXPECT().CreateSpan(gomock.Any()).DoAndReturn(func(body *langfuse.SpanEventBody) (string, error) {
 			return "", nil
 		}).AnyTimes()
@@ -221,7 +221,7 @@ func TestLangfuseCallback(t *testing.T) {
 	})
 
 	mockey.PatchConvey("test generation stream", t, func() {
-		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).AnyTimes()
+		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).Times(1)
 		mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) (string, error) {
 			return "generation id", nil
 		}).AnyTimes()
@@ -262,5 +262,18 @@ func TestLangfuseCallback(t *testing.T) {
 		outsw.Close()
 		ctx2 := cbh.OnStartWithStreamInput(ctx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, insr)
 		cbh.OnEndWithStreamOutput(ctx2, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, outsr)
+	})
+	mockey.PatchConvey("test init trace", t, func() {
+		ctx = SetTrace(context.Background(),
+			WithMetadata(map[string]string{"key": "value"}),
+			WithName("name"),
+			WithRelease("release"),
+			WithID("traceid"),
+			WithUserID("userid"),
+			WithSessionID("sessionid"),
+			WithTags("tags"),
+			WithPublic(true),
+		)
+		assert.Equal(t, "traceid", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).ID)
 	})
 }

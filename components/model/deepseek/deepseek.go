@@ -32,6 +32,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+
 type ResponseFormatType string
 
 const (
@@ -300,6 +302,23 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 	)
 
 	return outStream, nil
+}
+
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	deepseekTools, err := toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("convert to deepseek tools fail: %w", err)
+	}
+
+	tc := schema.ToolChoiceAllowed
+	ncm := *cm
+	ncm.tools = deepseekTools
+	ncm.rawTools = tools
+	ncm.toolChoice = &tc
+	return &ncm, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {

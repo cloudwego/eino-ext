@@ -35,6 +35,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
+
 var (
 	// all default values are from github.com/volcengine/volcengine-go-sdk/service/arkruntime/config.go
 	defaultBaseURL    = "https://ark.cn-beijing.volces.com/api/v3"
@@ -571,6 +573,21 @@ func (cm *ChatModel) GetType() string {
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
+}
+
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	artTools, err := toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("convert to ark tools fail: %w", err)
+	}
+
+	ncm := *cm
+	ncm.tools = artTools
+	ncm.rawTools = tools
+	return &ncm, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
