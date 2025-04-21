@@ -649,6 +649,27 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 			ret.ReasoningContent = reasoning
 		}
 	}
+	if ret.Role == roleTool && m.ToolCallID != "" {
+		ret.ToolCallID = m.ToolCallID
+	}
+	if ret.Role == roleAssistant && len(m.ToolCalls) > 0 {
+		ret.ToolCalls = make([]deepseek.ToolCall, len(m.ToolCalls))
+		for i, call := range m.ToolCalls {
+			var index int
+			if call.Index != nil {
+				index = *call.Index
+			}
+			ret.ToolCalls[i] = deepseek.ToolCall{
+				Index: index,
+				ID:    call.ID,
+				Type:  call.Type,
+				Function: deepseek.ToolCallFunction{
+					Name:      call.Function.Name,
+					Arguments: call.Function.Arguments,
+				},
+			}
+		}
+	}
 	return ret, nil
 }
 
