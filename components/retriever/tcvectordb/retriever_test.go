@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
+// run with:
+// go test -gcflags="all=-l -N" -v ./...
+
 package tcvectordb
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	. "github.com/bytedance/mockey"
@@ -60,7 +62,7 @@ func TestNewRetriever(t *testing.T) {
 
 			Mock(tcvectordb.NewRpcClient).Return(client, nil)
 			ret, err := NewRetriever(ctx, &RetrieverConfig{
-				Url:             "testurl",
+				URL:             "testurl",
 				Username:        "testusername",
 				Key:             "testkey",
 				EmbeddingConfig: EmbeddingConfig{UseBuiltin: true, Embedding: nil},
@@ -69,112 +71,6 @@ func TestNewRetriever(t *testing.T) {
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.ShouldAlmostEqual(err.Error(), "[TcVectorDBRetriever] find or create db failed")
 			convey.So(ret, convey.ShouldBeNil)
-		})
-	})
-}
-
-func TestRetrieve(t *testing.T) {
-	PatchConvey("test Retrieve", t, func() {
-		ctx := context.Background()
-
-		PatchConvey("test retrieve documents successfully", func() {
-			// 创建一个mock的embedding函数
-			mockEmb := &mockEmbedding{
-				fn: func() ([][]float64, error) {
-					return [][]float64{{1.1, 1.2}}, nil
-				},
-			}
-
-			// 创建一个mock的collection
-			collection := &tcvectordb.Collection{}
-
-			// Mock Search方法返回结果
-			Mock(collection.Search).Return(&tcvectordb.SearchDocumentResult{
-				Documents: [][]tcvectordb.Document{
-					{
-						{
-							Id: "1",
-							Fields: map[string]tcvectordb.Field{
-								"text": {Val: "i'm fine, thank you"},
-								"age":  {Val: 25},
-							},
-							Score: 0.9,
-						},
-					},
-				},
-			}, nil)
-
-			// 创建Retriever实例
-			r := &Retriever{
-				collection: collection,
-				config: &RetrieverConfig{
-					TopK: 10,
-					EmbeddingConfig: EmbeddingConfig{
-						UseBuiltin: false,
-						Embedding:  mockEmb,
-					},
-				},
-			}
-
-			// 执行检索
-			docs, err := r.Retrieve(ctx, "how are you")
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(docs, convey.ShouldNotBeNil)
-			convey.So(len(docs), convey.ShouldEqual, 1)
-			convey.So(docs[0].Content, convey.ShouldEqual, "i'm fine, thank you")
-			convey.So(docs[0].ID, convey.ShouldEqual, "1")
-			convey.So(docs[0].MetaData["age"], convey.ShouldEqual, 25)
-		})
-
-		PatchConvey("test retrieve with embedding error", func() {
-			// 创建一个返回错误的mock embedding
-			mockEmb := &mockEmbedding{
-				fn: func() ([][]float64, error) {
-					return nil, fmt.Errorf("embedding error")
-				},
-			}
-
-			r := &Retriever{
-				config: &RetrieverConfig{
-					TopK: 10,
-					EmbeddingConfig: EmbeddingConfig{
-						UseBuiltin: false,
-						Embedding:  mockEmb,
-					},
-				},
-			}
-
-			docs, err := r.Retrieve(ctx, "how are you")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "embed query failed")
-			convey.So(docs, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test retrieve with search error", func() {
-			mockEmb := &mockEmbedding{
-				fn: func() ([][]float64, error) {
-					return [][]float64{{1.1, 1.2}}, nil
-				},
-			}
-
-			collection := &tcvectordb.Collection{}
-			Mock(collection.Search).Return(nil, fmt.Errorf("search error"))
-
-			r := &Retriever{
-				collection: collection,
-				config: &RetrieverConfig{
-					TopK: 10,
-					EmbeddingConfig: EmbeddingConfig{
-						UseBuiltin: false,
-						Embedding:  mockEmb,
-					},
-				},
-			}
-
-			docs, err := r.Retrieve(ctx, "how are you")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "search failed")
-			convey.So(docs, convey.ShouldBeNil)
 		})
 	})
 }

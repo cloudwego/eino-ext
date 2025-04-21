@@ -19,8 +19,9 @@ package tcvectordb
 import (
 	"context"
 	"fmt"
-	"github.com/cloudwego/eino/components/embedding"
 	"time"
+
+	"github.com/cloudwego/eino/components/embedding"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/retriever"
@@ -31,62 +32,75 @@ import (
 type RetrieverConfig struct {
 
 	// Basic Configs
-	Url        string        `json:"url"`
-	Username   string        `json:"username"`
-	Key        string        `json:"key"`
-	Database   string        `json:"database"`
-	Collection string        `json:"collection"`
-	Timeout    time.Duration `json:"timeout"`
+	URL        string        `json:"url"`        // Required The url of tencent vector db server
+	Username   string        `json:"username"`   // Required username
+	Key        string        `json:"key"`        // Required secret key
+	Database   string        `json:"database"`   // Required The database you are going to connect
+	Collection string        `json:"collection"` // Required The collection you are going to use
+	Timeout    time.Duration `json:"timeout"`    // Optional Default 5 seconds
 
 	// Retrieve configs
-	TopK           int      `json:"top_k"`
-	ScoreThreshold *float64 `json:"score_threshold"`
-	Index          string   `json:"index"`
+	// Required TopK is the top k for the retriever, which means the top number of documents to retrieve.
+	TopK int `json:"top_k"`
 
-	// Filter DSL, used for filtering retrieved results
+	// Required ScoreThreshold is the score threshold for the retriever, eg 0.5 means the score of the document must be greater than 0.5.
+	ScoreThreshold *float64 `json:"score_threshold"`
+
+	// Optional Index is the index for the retriever, index in different retriever may be different.
+	Index string `json:"index"`
+
+	// Optional Filter DSL, used for filtering retrieved results
 	// see: https://cloud.tencent.com/document/product/1709/102655
 	FilterDSL *tcvectordb.Filter `json:"filter_dsl"`
 
 	CollectionConfig CollectionConfig `json:"collection_config"`
 
-	// Embedding 配置
+	// Embedding configs
 	EmbeddingConfig EmbeddingConfig `json:"embedding_config"`
 }
 
+// CollectionConfig Configs for collections in Tencent vector db
 type CollectionConfig struct {
+
+	// Required ShardNum is the number of shards of collection
+	// range: [1,100]
 	ShardNum uint32 `json:"shard_num"`
 
+	// Required ReplicaNum is the number of replicas of the collection
+	// range: [2,9]
 	ReplicaNum uint32 `json:"replica_num"`
 
+	// Required Index options see: https://cloud.tencent.com/document/product/1709/111856
+	Indexes tcvectordb.Indexes `json:"indexes"`
+
+	// Optional Description is the description of the collection
 	// length: [1,256]
 	Description string `json:"description"`
 
-	Indexes tcvectordb.Indexes `json:"indexes"`
-
-	// Optional params
+	// Optional Params: holds the parameters for creating a new collection
 	Params *tcvectordb.CreateCollectionParams `json:"params,omitempty"`
 }
 
 type EmbeddingConfig struct {
-	// UseBuiltin config
+	// Required UseBuiltin determines whether to use the builtin embedding function of tc vector db or not
 	// see: https://cloud.tencent.com/document/product/1709/102641#eb1fb0d9-15fa-4315-8386-7fe78bf82652
 	UseBuiltin bool `json:"use_builtin"`
 
-	// ModelName
-	ModelName string `json:"model_name"`
-
-	// UseSparse
-	UseSparse bool `json:"use_sparse"`
-
-	// Embedding when UseBuiltin is false
+	// Required if UseBuiltin is false
 	// If Embedding from here is provided, it will take precedence over built-in vectorization methods
 	Embedding embedding.Embedder
 }
 
 type Retriever struct {
-	client     *tcvectordb.RpcClient
+
+	// RPC client of tc vector db
+	client *tcvectordb.RpcClient
+
+	// collection of vector db
 	collection *tcvectordb.Collection
-	config     *RetrieverConfig
+
+	// config configs
+	config *RetrieverConfig
 }
 
 func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, error) {
@@ -96,7 +110,7 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 		return nil, fmt.Errorf("[TcVectorDBRetriever] need provide Embedding when UseBuiltin embedding is false")
 	}
 
-	client, err := tcvectordb.NewRpcClient(config.Url, config.Username, config.Key, &tcvectordb.ClientOption{
+	client, err := tcvectordb.NewRpcClient(config.URL, config.Username, config.Key, &tcvectordb.ClientOption{
 		ReadConsistency: tcvectordb.EventualConsistency,
 		Timeout:         config.Timeout,
 	})
@@ -161,13 +175,18 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 
 func (r *Retriever) doRetrieve(ctx context.Context, query string, opts *retriever.Options) ([]*schema.Document, error) {
 	var queryVector []float32
-	if r.config.EmbeddingConfig.UseBuiltin {
-		// use builtin embedding of tc vector db
-	} else {
+	if !r.config.EmbeddingConfig.UseBuiltin {
+		// In case not using the builtin embedding function of Tencent Vector DB
 		vectors, err := opts.Embedding.EmbedStrings(ctx, []string{query})
 		if err != nil {
-			return nil, fmt.Errorf("[TcVectorDBRetriever] embed query failed: %w", err)
+			return nil, fmt.Errorf("[TcVectorDBRetriever] embed query failed: %v", err)
 		}
+
+		// 确保vectors[0]不为空
+		if len(vectors) == 0 || len(vectors[0]) == 0 {
+			return nil, fmt.Errorf("[TcVectorDBRetriever] embed query returned empty vectors")
+		}
+
 		// to float32
 		queryVector = make([]float32, len(vectors[0]))
 		for i, v := range vectors[0] {
@@ -184,6 +203,10 @@ func (r *Retriever) doRetrieve(ctx context.Context, query string, opts *retrieve
 	searchResults, err := r.collection.Search(ctx, [][]float32{queryVector}, searchParams)
 	if err != nil {
 		return nil, fmt.Errorf("[TcVectorDBRetriever] search failed: %w", err)
+	}
+
+	if searchResults == nil || searchResults.Documents == nil {
+		return nil, fmt.Errorf("[TcVectorDBRetriever] search returned nil result")
 	}
 
 	var docs []*schema.Document
