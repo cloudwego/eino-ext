@@ -19,8 +19,7 @@ github.com/chromedp/sysutil v1.1.0 h1:PUFNv5EcprjqXZD9nJb9b/c9ibAbxiYo4exNWZyipw
 github.com/chromedp/sysutil v1.1.0/go.mod h1:WiThHUdltqCNKGc4gaU50XgYjwjYIhKWoHGPTUfWTJ8=
 github.com/cloudwego/base64x v0.1.5 h1:XPciSp1xaq2VCSt6lF0phncD4koWyULpl5bUxbfCyP4=
 github.com/cloudwego/base64x v0.1.5/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJgA0rcu/8w=
-github.com/cloudwego/eino v0.3.18 h1:qz2Khkzp7hyz3mAvhnPElsVHRSRiorSetoSN0p1zoM4=
-github.com/cloudwego/eino v0.3.18/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
+github.com/cloudwego/eino v0.3.23 h1:fPjskHM85I4PPa+GZPoh76bMCbdRKWVKd52gdvcGHt8=
 github.com/cloudwego/eino v0.3.23/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
 github.com/cloudwego/eino-ext/components/tool/duckduckgo v0.0.0-20250403035559-e5332ba7144a h1:lqTor2FV9Zzd20zj1WmGMMYnDhxr/pg3lv8cjoYnp/k=
 github.com/cloudwego/eino-ext/components/tool/duckduckgo v0.0.0-20250403035559-e5332ba7144a/go.mod h1:bVkTArwnbJ6RXCLK4NHaTjOBDNk3T9iEMLbjvtkiDV8=
