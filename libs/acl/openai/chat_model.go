@@ -782,7 +782,7 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 	}
 }
 
-func (c *Client) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+func (c *Client) WithToolsForClient(tools []*schema.ToolInfo) (*Client, error) {
 	if len(tools) == 0 {
 		return nil, errors.New("no tools to bind")
 	}
@@ -797,6 +797,10 @@ func (c *Client) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel
 	nc.rawTools = tools
 	nc.toolChoice = &tc
 	return &nc, nil
+}
+
+func (c *Client) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return c.WithToolsForClient(tools)
 }
 
 func (c *Client) BindTools(tools []*schema.ToolInfo) error {
@@ -831,6 +835,10 @@ func (c *Client) BindForcedTools(tools []*schema.ToolInfo) error {
 	c.rawTools = tools
 
 	return nil
+}
+
+func (c *Client) IsCallbacksEnabled() bool {
+	return true
 }
 
 type panicErr struct {

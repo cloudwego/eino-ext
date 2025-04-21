@@ -128,10 +128,10 @@ func TestPanicErr(t *testing.T) {
 
 func TestWithTools(t *testing.T) {
 	cm := &Client{config: &Config{Model: "test model"}}
-	ncm, err := cm.WithTools([]*schema.ToolInfo{{Name: "test tool name"}})
+	ncm, err := cm.WithToolsForClient([]*schema.ToolInfo{{Name: "test tool name"}})
 	assert.Nil(t, err)
-	assert.Equal(t, "test model", ncm.(*Client).config.Model)
-	assert.Equal(t, "test tool name", ncm.(*Client).rawTools[0].Name)
+	assert.Equal(t, "test model", ncm.config.Model)
+	assert.Equal(t, "test tool name", ncm.rawTools[0].Name)
 }
 
 func TestLogProbs(t *testing.T) {
