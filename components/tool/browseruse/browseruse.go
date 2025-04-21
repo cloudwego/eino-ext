@@ -74,7 +74,7 @@ type Config struct {
 	ProxyServer        string   `json:"proxy_server"`
 
 	DDGSearchTool    *ddgsearch.DDGS
-	ExtractChatModel model.ChatModel
+	ExtractChatModel model.BaseChatModel
 
 	Logf func(string, ...any)
 }
@@ -126,7 +126,7 @@ type Tool struct {
 	currentTabID    int
 	tabs            []TabInfo
 	searchTool      *ddgsearch.DDGS
-	cm              model.ChatModel
+	cm              model.BaseChatModel
 	tpl             prompt.ChatTemplate
 }
 
