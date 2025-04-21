@@ -33,6 +33,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var CallbackMetricsExtraKey = "ollama_metrics"
 
 // ChatModelConfig stores configuration options specific to Ollama
@@ -197,7 +198,19 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	return outStream, nil
 }
 
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	ncm := *cm
+	ncm.tools = tools
+	return &ncm, nil
+}
+
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
 	cm.tools = tools
 	return nil
 }

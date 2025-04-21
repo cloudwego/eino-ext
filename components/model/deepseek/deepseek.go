@@ -29,13 +29,22 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/cohesion-org/deepseek-go"
+	"github.com/getkin/kin-openapi/openapi3"
 )
+
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 
 type ResponseFormatType string
 
 const (
 	ResponseFormatTypeText       = "text"
 	ResponseFormatTypeJSONObject = "json_object"
+)
+
+const (
+	toolChoiceNone     = "none"     // none means the model will not call any tool and instead generates a message.
+	toolChoiceAuto     = "auto"     // auto means the model can pick between generating a message or calling one or more tools.
+	toolChoiceRequired = "required" // required means the model must call one or more tools.
 )
 
 type ChatModelConfig struct {
@@ -96,9 +105,15 @@ type ChatModelConfig struct {
 	// Range: [-2.0, 2.0]. Positive values decrease likelihood of repetition
 	// Optional. Default: 0
 	FrequencyPenalty float32 `json:"frequency_penalty,omitempty"`
+
+	// LogProbs specifies whether to return log probabilities of the output tokens.
+	LogProbs bool `json:"log_probs"`
+
+	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+	TopLogProbs int `json:"top_log_probs"`
 }
 
-var _ model.ChatModel = (*ChatModel)(nil)
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 
 type ChatModel struct {
 	cli  *deepseek.Client
@@ -137,6 +152,43 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	return &ChatModel{cli: cli, conf: config}, nil
 }
 
+func toLogProbs(probs *deepseek.Logprobs) *schema.LogProbs {
+	if probs == nil {
+		return nil
+	}
+	ret := &schema.LogProbs{}
+	for _, content := range probs.Content {
+		schemaContent := schema.LogProb{
+			Token:       content.Token,
+			LogProb:     content.Logprob,
+			Bytes:       intSlice2int64(content.Bytes),
+			TopLogProbs: toTopLogProb(content.TopLogprobs),
+		}
+		ret.Content = append(ret.Content, schemaContent)
+	}
+	return ret
+}
+
+func toTopLogProb(probs []deepseek.TopLogprobToken) []schema.TopLogProb {
+	ret := make([]schema.TopLogProb, 0, len(probs))
+	for _, prob := range probs {
+		ret = append(ret, schema.TopLogProb{
+			Token:   prob.Token,
+			LogProb: prob.Logprob,
+			Bytes:   intSlice2int64(prob.Bytes),
+		})
+	}
+	return ret
+}
+
+func intSlice2int64(in []int) []int64 {
+	ret := make([]int64, 0, len(in))
+	for _, v := range in {
+		ret = append(ret, int64(v))
+	}
+	return ret
+}
+
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
 	defer func() {
 		if err != nil {
@@ -163,12 +215,13 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		}
 
 		outMsg = &schema.Message{
-			Role:    toMessageRole(choice.Message.Role),
-			Content: choice.Message.Content,
-			// TODO: tool call
+			Role:      toMessageRole(choice.Message.Role),
+			Content:   choice.Message.Content,
+			ToolCalls: toMessageToolCalls(choice.Message.ToolCalls),
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: choice.FinishReason,
 				Usage:        toEinoTokenUsage(&resp.Usage),
+				LogProbs:     toLogProbs(choice.Logprobs),
 			},
 		}
 		if len(choice.Message.ReasoningContent) > 0 {
@@ -295,14 +348,123 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 	return outStream, nil
 }
 
-const toolErrorStr = "DeepSeek temporarily does not support tool call. If you have any requirements, please feel free to provide feedback to us at https://github.com/cloudwego/eino-ext/issues"
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	deepseekTools, err := toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("convert to deepseek tools fail: %w", err)
+	}
 
-func (cm *ChatModel) BindTools(_ []*schema.ToolInfo) error {
-	return fmt.Errorf(toolErrorStr)
+	tc := schema.ToolChoiceAllowed
+	ncm := *cm
+	ncm.tools = deepseekTools
+	ncm.rawTools = tools
+	ncm.toolChoice = &tc
+	return &ncm, nil
 }
 
-func (cm *ChatModel) BindForcedTools(_ []*schema.ToolInfo) error {
-	return fmt.Errorf(toolErrorStr)
+func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
+	var err error
+	cm.tools, err = toTools(tools)
+	if err != nil {
+		return err
+	}
+
+	tc := schema.ToolChoiceAllowed
+	cm.toolChoice = &tc
+	cm.rawTools = tools
+
+	return nil
+}
+
+func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
+	var err error
+	cm.tools, err = toTools(tools)
+	if err != nil {
+		return err
+	}
+
+	tc := schema.ToolChoiceForced
+	cm.toolChoice = &tc
+	cm.rawTools = tools
+
+	return nil
+}
+
+func toTools(tis []*schema.ToolInfo) ([]deepseek.Tool, error) {
+	tools := make([]deepseek.Tool, len(tis))
+	for i := range tis {
+		ti := tis[i]
+		if ti == nil {
+			return nil, fmt.Errorf("tool info cannot be nil in BindTools")
+		}
+
+		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
+		}
+
+		tools[i] = deepseek.Tool{
+			Type: "function",
+			Function: deepseek.Function{
+				Name:        ti.Name,
+				Description: ti.Desc,
+				Parameters:  toToolParam(paramsJSONSchema),
+			},
+		}
+	}
+
+	return tools, nil
+}
+
+func toToolParam(s *openapi3.Schema) *deepseek.FunctionParameters {
+	if s == nil {
+		return nil
+	}
+	ret := &deepseek.FunctionParameters{
+		Type:       s.Type,
+		Properties: map[string]interface{}{},
+		Required:   nil,
+	}
+	if len(s.Required) > 0 {
+		required := make([]string, len(s.Required))
+		copy(required, s.Required)
+		ret.Required = required
+	}
+	for k, v := range s.Properties {
+		ret.Properties[k] = v
+	}
+	return ret
+}
+
+func toMessageToolCalls(toolCalls []deepseek.ToolCall) []schema.ToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+
+	ret := make([]schema.ToolCall, len(toolCalls))
+	for i := range toolCalls {
+		toolCall := toolCalls[i]
+		ret[i] = schema.ToolCall{
+			Index: &toolCall.Index,
+			ID:    toolCall.ID,
+			Type:  toolCall.Type,
+			Function: schema.FunctionCall{
+				Name:      toolCall.Function.Name,
+				Arguments: toolCall.Function.Arguments,
+			},
+		}
+	}
+
+	return ret
 }
 
 const typ = "DeepSeek"
@@ -359,6 +521,8 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		Stop:             cm.conf.Stop,
 		PresencePenalty:  cm.conf.PresencePenalty,
 		FrequencyPenalty: cm.conf.FrequencyPenalty,
+		LogProbs:         cm.conf.LogProbs,
+		TopLogProbs:      cm.conf.TopLogProbs,
 	}
 
 	cbInput := &model.CallbackInput{
@@ -373,12 +537,57 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		},
 	}
 
+	tools := cm.tools
 	if options.Tools != nil {
-		return nil, nil, fmt.Errorf(toolErrorStr)
+		var err error
+		if tools, err = toTools(options.Tools); err != nil {
+			return nil, nil, err
+		}
+		cbInput.Tools = options.Tools
+	}
+
+	if len(tools) > 0 {
+		req.Tools = make([]deepseek.Tool, len(tools))
+		for i := range tools {
+			req.Tools[i] = tools[i]
+		}
 	}
 
 	if options.ToolChoice != nil {
-		return nil, nil, fmt.Errorf(toolErrorStr)
+		/*
+			tool_choice is string or object
+			Controls which (if any) tool is called by the model.
+			"none" means the model will not call any tool and instead generates a message.
+			"auto" means the model can pick between generating a message or calling one or more tools.
+			"required" means the model must call one or more tools.
+
+			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
+
+			"none" is the default when no tools are present.
+			"auto" is the default if tools are present.
+		*/
+
+		switch *options.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			req.ToolChoice = toolChoiceNone
+		case schema.ToolChoiceAllowed:
+			req.ToolChoice = toolChoiceAuto
+		case schema.ToolChoiceForced:
+			if len(req.Tools) == 0 {
+				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
+			} else if len(req.Tools) > 1 {
+				req.ToolChoice = toolChoiceRequired
+			} else {
+				req.ToolChoice = deepseek.ToolChoice{
+					Type: req.Tools[0].Type,
+					Function: deepseek.ToolChoiceFunction{
+						Name: req.Tools[0].Function.Name,
+					},
+				}
+			}
+		default:
+			return nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
+		}
 	}
 
 	msgs := make([]deepseek.ChatCompletionMessage, 0, len(in))
@@ -440,6 +649,27 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 			ret.ReasoningContent = reasoning
 		}
 	}
+	if ret.Role == roleTool && m.ToolCallID != "" {
+		ret.ToolCallID = m.ToolCallID
+	}
+	if ret.Role == roleAssistant && len(m.ToolCalls) > 0 {
+		ret.ToolCalls = make([]deepseek.ToolCall, len(m.ToolCalls))
+		for i, call := range m.ToolCalls {
+			var index int
+			if call.Index != nil {
+				index = *call.Index
+			}
+			ret.ToolCalls[i] = deepseek.ToolCall{
+				Index: index,
+				ID:    call.ID,
+				Type:  call.Type,
+				Function: deepseek.ToolCallFunction{
+					Name:      call.Function.Name,
+					Arguments: call.Function.Arguments,
+				},
+			}
+		}
+	}
 	return ret, nil
 }
 
@@ -491,12 +721,13 @@ func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *sc
 
 		found = true
 		msg = &schema.Message{
-			Role:    toMessageRole(choice.Delta.Role),
-			Content: choice.Delta.Content,
-			// todo: handle tool call
+			Role:      toMessageRole(choice.Delta.Role),
+			Content:   choice.Delta.Content,
+			ToolCalls: toMessageToolCalls(choice.Delta.ToolCalls),
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: choice.FinishReason,
 				Usage:        streamToEinoTokenUsage(resp.Usage),
+				LogProbs:     toLogProbs(&choice.Logprobs),
 			},
 		}
 		if len(choice.Delta.ReasoningContent) > 0 {
