@@ -21,34 +21,8 @@ import (
 	"testing"
 	
 	"github.com/bytedance/mockey"
-	"github.com/bytedance/sonic"
 	"github.com/smartystreets/goconvey/convey"
 )
-
-// Helper functions for tests to create valid thoughtData JSON
-func createThoughtJSON(thought string, thoughtNumber, totalThoughts int, nextThoughtNeeded bool) string {
-	td := thoughtData{
-		Thought:           thought,
-		ThoughtNumber:     thoughtNumber,
-		TotalThoughts:     totalThoughts,
-		NextThoughtNeeded: nextThoughtNeeded,
-	}
-	data, _ := sonic.MarshalString(td)
-	return data
-}
-
-func createBranchThoughtJSON(thought string, thoughtNumber, totalThoughts, branchFrom int, branchID string, nextThoughtNeeded bool) string {
-	td := thoughtData{
-		Thought:           thought,
-		ThoughtNumber:     thoughtNumber,
-		TotalThoughts:     totalThoughts,
-		BranchFromThought: branchFrom,
-		BranchID:          branchID,
-		NextThoughtNeeded: nextThoughtNeeded,
-	}
-	data, _ := sonic.MarshalString(td)
-	return data
-}
 
 func TestNewThinkingServer(t *testing.T) {
 	convey.Convey("Test NewThinkingServer", t, func() {
@@ -65,9 +39,13 @@ func TestValidate(t *testing.T) {
 	server := newThinkingServer()
 	
 	convey.Convey("Test validate with valid input", t, func() {
-		validJSON := createThoughtJSON("This is a test thought", 1, 3, true)
-		td, err := server.validate(validJSON)
-		convey.So(err, convey.ShouldBeNil)
+		input := &ThoughtRequest{
+			Thought:           "This is a test thought",
+			ThoughtNumber:     1,
+			TotalThoughts:     3,
+			NextThoughtNeeded: true,
+		}
+		td := server.validate(input)
 		convey.So(td, convey.ShouldNotBeNil)
 		convey.So(td.Thought, convey.ShouldEqual, "This is a test thought")
 		convey.So(td.ThoughtNumber, convey.ShouldEqual, 1)
@@ -75,18 +53,14 @@ func TestValidate(t *testing.T) {
 		convey.So(td.NextThoughtNeeded, convey.ShouldBeTrue)
 	})
 	
-	convey.Convey("Test validate with invalid JSON", t, func() {
-		invalidJSON := "{"
-		td, err := server.validate(invalidJSON)
-		convey.So(err, convey.ShouldNotBeNil)
-		convey.So(td, convey.ShouldBeNil)
-	})
-	
 	convey.Convey("Test validate with missing required fields", t, func() {
 		// Missing thought
-		missingThought := `{"thought_number": 1, "total_thoughts": 3, "next_thought_needed": true}`
-		td, err := server.validate(missingThought)
-		convey.So(err, convey.ShouldBeNil)
+		input := &ThoughtRequest{
+			ThoughtNumber:     1,
+			TotalThoughts:     3,
+			NextThoughtNeeded: true,
+		}
+		td := server.validate(input)
 		convey.So(td, convey.ShouldNotBeNil)
 		convey.So(td.Thought, convey.ShouldEqual, "The Parameter's thought should not empty")
 		convey.So(td.ThoughtNumber, convey.ShouldEqual, 1)
@@ -96,9 +70,13 @@ func TestValidate(t *testing.T) {
 		convey.So(td.NextThoughtNeeded, convey.ShouldBeTrue)
 		
 		// Invalid thought number
-		invalidThoughtNumber := `{"thought": "Test", "thought_number": 0, "total_thoughts": 3, "next_thought_needed": true}`
-		td, err = server.validate(invalidThoughtNumber)
-		convey.So(err, convey.ShouldBeNil)
+		input = &ThoughtRequest{
+			Thought:           "This is a test thought",
+			ThoughtNumber:     0,
+			TotalThoughts:     3,
+			NextThoughtNeeded: true,
+		}
+		td = server.validate(input)
 		convey.So(td, convey.ShouldNotBeNil)
 		convey.So(td.Thought, convey.ShouldEqual, "Thought number must be greater than 0")
 		convey.So(td.ThoughtNumber, convey.ShouldEqual, 0)
@@ -107,9 +85,13 @@ func TestValidate(t *testing.T) {
 		convey.So(td.RevisesThought, convey.ShouldEqual, 0)
 		
 		// Invalid total thoughts
-		invalidTotalThoughts := `{"thought": "Test", "thought_number": 1, "total_thoughts": 0, "next_thought_needed": true}`
-		td, err = server.validate(invalidTotalThoughts)
-		convey.So(err, convey.ShouldBeNil)
+		input = &ThoughtRequest{
+			Thought:           "This is a test thought",
+			ThoughtNumber:     1,
+			TotalThoughts:     0,
+			NextThoughtNeeded: true,
+		}
+		td = server.validate(input)
 		convey.So(td, convey.ShouldNotBeNil)
 		convey.So(td.Thought, convey.ShouldEqual, "Thought number cannot exceed total thoughts")
 		convey.So(td.ThoughtNumber, convey.ShouldEqual, 1)
@@ -123,7 +105,7 @@ func TestFormatThought(t *testing.T) {
 	server := newThinkingServer()
 	
 	convey.Convey("Test formatThought with regular thought", t, func() {
-		td := &thoughtData{
+		td := &ThoughtRequest{
 			Thought:           "This is a regular thought",
 			ThoughtNumber:     1,
 			TotalThoughts:     3,
@@ -135,7 +117,7 @@ func TestFormatThought(t *testing.T) {
 	})
 	
 	convey.Convey("Test formatThought with revision thought", t, func() {
-		td := &thoughtData{
+		td := &ThoughtRequest{
 			Thought:           "This is a revision thought",
 			ThoughtNumber:     2,
 			TotalThoughts:     3,
@@ -150,7 +132,7 @@ func TestFormatThought(t *testing.T) {
 	})
 	
 	convey.Convey("Test formatThought with branch thought", t, func() {
-		td := &thoughtData{
+		td := &ThoughtRequest{
 			Thought:           "This is a branch thought",
 			ThoughtNumber:     2,
 			TotalThoughts:     4,
@@ -172,8 +154,13 @@ func TestProcessThought(t *testing.T) {
 		server := newThinkingServer()
 		
 		mockey.PatchConvey("Test process valid thought", func() {
-			jsonString := createThoughtJSON("First thought", 1, 3, true)
-			result, err := server.processThought(ctx, &thoughtData{Thought: jsonString})
+			input := &ThoughtRequest{
+				Thought:           "First thought",
+				ThoughtNumber:     1,
+				TotalThoughts:     3,
+				NextThoughtNeeded: true,
+			}
+			result, err := server.processThought(ctx, input)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(result, convey.ShouldNotBeNil)
 			convey.So(result.Content, convey.ShouldContainSubstring, "First thought")
@@ -183,17 +170,15 @@ func TestProcessThought(t *testing.T) {
 			convey.So(result.ThoughtHistoryLength, convey.ShouldEqual, 1)
 		})
 		
-		mockey.PatchConvey("Test process invalid thought", func() {
-			invalidJSON := "{"
-			result, err := server.processThought(ctx, &thoughtData{Thought: invalidJSON})
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(result, convey.ShouldBeNil)
-		})
-		
 		mockey.PatchConvey("Test thought with thought number > total thoughts", func() {
 			// Create a thought where the thought number is greater than total thoughts
-			jsonString := createThoughtJSON("Exceeding thought", 5, 3, true)
-			result, err := server.processThought(ctx, &thoughtData{Thought: jsonString})
+			input := &ThoughtRequest{
+				Thought:           "Exceeding thought",
+				ThoughtNumber:     5,
+				TotalThoughts:     3,
+				NextThoughtNeeded: true,
+			}
+			result, err := server.processThought(ctx, input)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(result, convey.ShouldNotBeNil)
 			convey.So(result.ThoughtNumber, convey.ShouldEqual, 5)
@@ -202,13 +187,25 @@ func TestProcessThought(t *testing.T) {
 		
 		mockey.PatchConvey("Test branching thought", func() {
 			// First add a regular thought
-			jsonString1 := createThoughtJSON("First thought", 1, 3, true)
-			_, err := server.processThought(ctx, &thoughtData{Thought: jsonString1})
+			input := &ThoughtRequest{
+				Thought:           "First thought",
+				ThoughtNumber:     1,
+				TotalThoughts:     3,
+				NextThoughtNeeded: true,
+			}
+			_, err := server.processThought(ctx, input)
 			convey.So(err, convey.ShouldBeNil)
 			
 			// Then add a branch thought
-			jsonString2 := createBranchThoughtJSON("Branch thought", 2, 4, 1, "test-branch", true)
-			result, err := server.processThought(ctx, &thoughtData{Thought: jsonString2})
+			input2 := &ThoughtRequest{
+				Thought:           "Branch thought",
+				ThoughtNumber:     2,
+				TotalThoughts:     4,
+				BranchFromThought: 1,
+				BranchID:          "test-branch",
+				NextThoughtNeeded: true,
+			}
+			result, err := server.processThought(ctx, input2)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(result, convey.ShouldNotBeNil)
 			convey.So(result.ThoughtHistoryLength, convey.ShouldEqual, 2)
@@ -248,7 +245,7 @@ func TestHelperFunctions(t *testing.T) {
 	})
 	
 	convey.Convey("Test getKeys function", t, func() {
-		m := map[string][]*thoughtData{
+		m := map[string][]*ThoughtRequest{
 			"key1": {},
 			"key2": {},
 		}

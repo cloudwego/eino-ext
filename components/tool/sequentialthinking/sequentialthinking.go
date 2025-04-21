@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package sequentialthinking
 
 import (
@@ -6,7 +22,6 @@ import (
 	"fmt"
 	"strings"
 	
-	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 )
@@ -72,9 +87,9 @@ You should:
 `
 )
 
-// thoughtData represents a single step in the sequential thinking process.
+// ThoughtRequest represents a single step in the sequential thinking process.
 // It captures the thought content and metadata about the thinking process.
-type thoughtData struct {
+type ThoughtRequest struct {
 	Thought           string `json:"thought" jsonschema:"required,description=Your current thinking step"`
 	ThoughtNumber     int    `json:"thought_number" jsonschema:"required,description=Current thought number"`
 	TotalThoughts     int    `json:"total_thoughts" jsonschema:"required,description=Estimated total thoughts needed"`
@@ -86,9 +101,9 @@ type thoughtData struct {
 	NextThoughtNeeded bool   `json:"next_thought_needed" jsonschema:"required,description=Whether another thought step is needed"`
 }
 
-// thoughtResult represents the formatted output of processing a thought.
+// ThoughtResult represents the formatted output of processing a thought.
 // It contains the content to display and metadata about the thinking state.
-type thoughtResult struct {
+type ThoughtResult struct {
 	Content              string   `json:"content" jsonschema:"required,description=Your current thinking step"`
 	ThoughtNumber        int      `json:"thought_number" jsonschema:"required,description=Current thought number"`
 	TotalThoughts        int      `json:"total_thoughts" jsonschema:"required,description=Estimated total thoughts needed"`
@@ -100,58 +115,54 @@ type thoughtResult struct {
 // thinkingServer maintains the state of the sequential thinking process.
 // It stores the history of thoughts and manages branches.
 type thinkingServer struct {
-	thoughtHistory []*thoughtData
-	branches       map[string][]*thoughtData
+	thoughtHistory []*ThoughtRequest
+	branches       map[string][]*ThoughtRequest
 }
 
 // newThinkingServer creates a new instance of thinkingServer with initialized fields.
 // Returns: A pointer to the newly created thinkingServer
 func newThinkingServer() *thinkingServer {
 	return &thinkingServer{
-		thoughtHistory: make([]*thoughtData, 0),
-		branches:       make(map[string][]*thoughtData),
+		thoughtHistory: make([]*ThoughtRequest, 0),
+		branches:       make(map[string][]*ThoughtRequest),
 	}
 }
 
-// validate checks if the provided JSON input can be unmarshaled into a thoughtData struct
-// and performs basic validation on the fields.
+// validate checks the ThoughtRequest for validity and consistency.
 // Parameters:
-//   - input: The JSON string to validate
+//   - input: The thought request to validate
 // Returns:
-//   - td: The unmarshalled thoughtData, or nil if an error occurred
+//   - td: The unmarshalled ThoughtRequest, or nil if an error occurred
 //   - err: An error if validation fails, or nil if validation succeeds
-func (t *thinkingServer) validate(input string) (td *thoughtData, err error) {
-	if err = sonic.Unmarshal([]byte(input), &td); err != nil {
-		return
+func (t *thinkingServer) validate(req *ThoughtRequest) *ThoughtRequest {
+	if req.ThoughtNumber < 1 {
+		req.Thought = "Thought number must be greater than 0"
+		req.IsRevision = true
+		req.RevisesThought = req.ThoughtNumber
 	}
-	if td.ThoughtNumber < 1 {
-		td.Thought = "Thought number must be greater than 0"
-		td.IsRevision = true
-		td.RevisesThought = td.ThoughtNumber
+	if req.TotalThoughts < 1 {
+		req.Thought = "Total thoughts must be greater than 0"
+		req.IsRevision = true
+		req.RevisesThought = req.ThoughtNumber
 	}
-	if td.TotalThoughts < 1 {
-		td.Thought = "Total thoughts must be greater than 0"
-		td.IsRevision = true
-		td.RevisesThought = td.ThoughtNumber
+	if req.ThoughtNumber > req.TotalThoughts {
+		req.Thought = "Thought number cannot exceed total thoughts"
+		req.IsRevision = true
+		req.RevisesThought = req.ThoughtNumber
 	}
-	if td.ThoughtNumber > td.TotalThoughts {
-		td.Thought = "Thought number cannot exceed total thoughts"
-		td.IsRevision = true
-		td.RevisesThought = td.ThoughtNumber
+	if req.Thought == "" {
+		req.Thought = "The Parameter's thought should not empty"
+		req.IsRevision = true
+		req.RevisesThought = req.ThoughtNumber
 	}
-	if td.Thought == "" {
-		td.Thought = "The Parameter's thought should not empty"
-		td.IsRevision = true
-		td.RevisesThought = td.ThoughtNumber
-	}
-	return
+	return req
 }
 
 // formatThought creates a formatted string representation of a thought.
 // Parameters:
-//   - td: The thoughtData to format
+//   - td: The ThoughtRequest to format
 // Returns: A string with the formatted thought, including decorative borders and metadata
-func (t *thinkingServer) formatThought(td *thoughtData) string {
+func (t *thinkingServer) formatThought(td *ThoughtRequest) string {
 	var prefix, content string
 	if td.IsRevision {
 		prefix = "🔄 Revision"
@@ -179,15 +190,12 @@ func (t *thinkingServer) formatThought(td *thoughtData) string {
 // and returns a formatted result.
 // Parameters:
 //   - ctx: The context for the operation
-//   - td: The thoughtData to process
+//   - td: The ThoughtRequest to process
 // Returns:
 //   - result: The processed thought result
 //   - err: An error if processing fails
-func (t *thinkingServer) processThought(_ context.Context, td *thoughtData) (*thoughtResult, error) {
-	validated, err := t.validate(td.Thought)
-	if err != nil {
-		return nil, err
-	}
+func (t *thinkingServer) processThought(_ context.Context, td *ThoughtRequest) (*ThoughtResult, error) {
+	validated := t.validate(td)
 	if validated.ThoughtNumber > validated.TotalThoughts {
 		validated.TotalThoughts = validated.ThoughtNumber
 	}
@@ -200,7 +208,7 @@ func (t *thinkingServer) processThought(_ context.Context, td *thoughtData) (*th
 	
 	thought := t.formatThought(validated)
 	
-	return &thoughtResult{
+	return &ThoughtResult{
 		Content:              thought,
 		ThoughtNumber:        validated.ThoughtNumber,
 		TotalThoughts:        validated.TotalThoughts,
