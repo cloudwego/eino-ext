@@ -193,7 +193,9 @@ func TestChatModelStream(t *testing.T) {
 			PromptTokens:     1,
 			CompletionTokens: 2,
 			TotalTokens:      3,
-		}},
+		},
+			LogProbs: &schema.LogProbs{},
+		},
 	}, msg)
 }
 
@@ -218,4 +220,42 @@ func (m *mockStream) Close() error {
 func TestPanicErr(t *testing.T) {
 	err := newPanicErr("info", []byte("stack"))
 	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
+}
+
+func TestWithTools(t *testing.T) {
+	cm := &ChatModel{conf: &ChatModelConfig{Model: "test model"}}
+	ncm, err := cm.WithTools([]*schema.ToolInfo{{Name: "test tool name"}})
+	assert.Nil(t, err)
+	assert.Equal(t, "test model", ncm.(*ChatModel).conf.Model)
+	assert.Equal(t, "test tool name", ncm.(*ChatModel).rawTools[0].Name)
+}
+
+func TestLogProbs(t *testing.T) {
+	assert.Equal(t, &schema.LogProbs{Content: []schema.LogProb{
+		{
+			Token:   "1",
+			LogProb: 1,
+			Bytes:   []int64{'a'},
+			TopLogProbs: []schema.TopLogProb{
+				{
+					Token:   "2",
+					LogProb: 2,
+					Bytes:   []int64{'b'},
+				},
+			},
+		},
+	}}, toLogProbs(&deepseek.Logprobs{Content: []deepseek.ContentToken{
+		{
+			Token:   "1",
+			Logprob: 1,
+			Bytes:   []int{'a'},
+			TopLogprobs: []deepseek.TopLogprobToken{
+				{
+					Token:   "2",
+					Logprob: 2,
+					Bytes:   []int{'b'},
+				},
+			},
+		},
+	}}))
 }

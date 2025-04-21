@@ -135,9 +135,13 @@ type Config struct {
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
-}
 
-var _ model.ChatModel = (*Client)(nil)
+	// LogProbs specifies whether to return log probabilities of the output tokens.
+	LogProbs bool `json:"log_probs"`
+
+	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+	TopLogProbs int `json:"top_log_probs"`
+}
 
 type Client struct {
 	cli    *openai.Client
@@ -306,16 +310,16 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 	return ret
 }
 
-func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionRequest, *model.CallbackInput, error) {
+func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionRequest, *model.CallbackInput, error) {
 
 	options := model.GetCommonOptions(&model.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
+		Temperature: c.config.Temperature,
+		MaxTokens:   c.config.MaxTokens,
+		Model:       &c.config.Model,
+		TopP:        c.config.TopP,
+		Stop:        c.config.Stop,
 		Tools:       nil,
-		ToolChoice:  cm.toolChoice,
+		ToolChoice:  c.toolChoice,
 	}, opts...)
 
 	req := &openai.ChatCompletionRequest{
@@ -323,17 +327,19 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
 		Temperature:      options.Temperature,
 		TopP:             dereferenceOrZero(options.TopP),
-		Stop:             cm.config.Stop,
-		PresencePenalty:  dereferenceOrZero(cm.config.PresencePenalty),
-		Seed:             cm.config.Seed,
-		FrequencyPenalty: dereferenceOrZero(cm.config.FrequencyPenalty),
-		LogitBias:        cm.config.LogitBias,
-		User:             dereferenceOrZero(cm.config.User),
+		Stop:             c.config.Stop,
+		PresencePenalty:  dereferenceOrZero(c.config.PresencePenalty),
+		Seed:             c.config.Seed,
+		FrequencyPenalty: dereferenceOrZero(c.config.FrequencyPenalty),
+		LogitBias:        c.config.LogitBias,
+		User:             dereferenceOrZero(c.config.User),
+		LogProbs:         c.config.LogProbs,
+		TopLogProbs:      c.config.TopLogProbs,
 	}
 
 	cbInput := &model.CallbackInput{
 		Messages: in,
-		Tools:    cm.rawTools,
+		Tools:    c.rawTools,
 		Config: &model.Config{
 			Model:       req.Model,
 			MaxTokens:   req.MaxTokens,
@@ -343,7 +349,7 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 		},
 	}
 
-	tools := cm.tools
+	tools := c.tools
 	if options.Tools != nil {
 		var err error
 		if tools, err = toTools(options.Tools); err != nil {
@@ -425,16 +431,16 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 
 	req.Messages = msgs
 
-	if cm.config.ResponseFormat != nil {
+	if c.config.ResponseFormat != nil {
 		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatType(cm.config.ResponseFormat.Type),
+			Type: openai.ChatCompletionResponseFormatType(c.config.ResponseFormat.Type),
 		}
-		if cm.config.ResponseFormat.JSONSchema != nil {
+		if c.config.ResponseFormat.JSONSchema != nil {
 			req.ResponseFormat.JSONSchema = &openai.ChatCompletionResponseFormatJSONSchema{
-				Name:        cm.config.ResponseFormat.JSONSchema.Name,
-				Description: cm.config.ResponseFormat.JSONSchema.Description,
-				Schema:      cm.config.ResponseFormat.JSONSchema.Schema,
-				Strict:      cm.config.ResponseFormat.JSONSchema.Strict,
+				Name:        c.config.ResponseFormat.JSONSchema.Name,
+				Description: c.config.ResponseFormat.JSONSchema.Description,
+				Schema:      c.config.ResponseFormat.JSONSchema.Schema,
+				Strict:      c.config.ResponseFormat.JSONSchema.Strict,
 			}
 		}
 	}
@@ -442,7 +448,7 @@ func (cm *Client) genRequest(in []*schema.Message, opts ...model.Option) (*opena
 	return req, cbInput, nil
 }
 
-func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
+func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
 	defer func() {
@@ -451,14 +457,14 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 		}
 	}()
 
-	req, cbInput, err := cm.genRequest(in, opts...)
+	req, cbInput, err := c.genRequest(in, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	resp, err := cm.cli.CreateChatCompletion(ctx, *req)
+	resp, err := c.cli.CreateChatCompletion(ctx, *req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -482,6 +488,7 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: string(choice.FinishReason),
 				Usage:        toEinoTokenUsage(&resp.Usage),
+				LogProbs:     toLogProbs(choice.LogProbs),
 			},
 		}
 
@@ -507,7 +514,7 @@ func (cm *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mo
 	return outMsg, nil
 }
 
-func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
+func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 
 	defer func() {
@@ -516,7 +523,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 		}
 	}()
 
-	req, cbInput, err := cm.genRequest(in, opts...)
+	req, cbInput, err := c.genRequest(in, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -526,7 +533,7 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	stream, err := cm.cli.CreateChatCompletionStream(ctx, *req)
+	stream, err := c.cli.CreateChatCompletionStream(ctx, *req)
 	if err != nil {
 		return nil, err
 	}
@@ -624,6 +631,72 @@ func (cm *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
+func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
+	if probs == nil {
+		return nil
+	}
+	ret := &schema.LogProbs{}
+	for _, content := range probs.Content {
+		schemaContent := schema.LogProb{
+			Token:       content.Token,
+			LogProb:     content.Logprob,
+			Bytes:       content.Bytes,
+			TopLogProbs: toStreamTopLogProb(content.TopLogprobs),
+		}
+		ret.Content = append(ret.Content, schemaContent)
+	}
+	return ret
+}
+
+func toLogProbs(probs *openai.LogProbs) *schema.LogProbs {
+	if probs == nil {
+		return nil
+	}
+	ret := &schema.LogProbs{}
+	for _, content := range probs.Content {
+		schemaContent := schema.LogProb{
+			Token:       content.Token,
+			LogProb:     content.LogProb,
+			Bytes:       byteSlice2int64(content.Bytes),
+			TopLogProbs: toTopLogProb(content.TopLogProbs),
+		}
+		ret.Content = append(ret.Content, schemaContent)
+	}
+	return ret
+}
+
+func toStreamTopLogProb(probs []openai.ChatCompletionTokenLogprobTopLogprob) []schema.TopLogProb {
+	ret := make([]schema.TopLogProb, 0, len(probs))
+	for _, prob := range probs {
+		ret = append(ret, schema.TopLogProb{
+			Token:   prob.Token,
+			LogProb: prob.Logprob,
+			Bytes:   prob.Bytes,
+		})
+	}
+	return ret
+}
+
+func toTopLogProb(probs []openai.TopLogProbs) []schema.TopLogProb {
+	ret := make([]schema.TopLogProb, 0, len(probs))
+	for _, prob := range probs {
+		ret = append(ret, schema.TopLogProb{
+			Token:   prob.Token,
+			LogProb: prob.LogProb,
+			Bytes:   byteSlice2int64(prob.Bytes),
+		})
+	}
+	return ret
+}
+
+func byteSlice2int64(in []byte) []int64 {
+	ret := make([]int64, 0, len(in))
+	for _, v := range in {
+		ret = append(ret, int64(v))
+	}
+	return ret
+}
+
 func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
@@ -639,6 +712,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: string(choice.FinishReason),
 				Usage:        toEinoTokenUsage(resp.Usage),
+				LogProbs:     toStreamProbs(choice.Logprobs),
 			},
 		}
 
@@ -708,36 +782,53 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 	}
 }
 
-func (cm *Client) BindTools(tools []*schema.ToolInfo) error {
+func (c *Client) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	openaiTools, err := toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("convert to tools fail: %w", err)
+	}
+
+	tc := schema.ToolChoiceAllowed
+	nc := *c
+	nc.tools = openaiTools
+	nc.rawTools = tools
+	nc.toolChoice = &tc
+	return &nc, nil
+}
+
+func (c *Client) BindTools(tools []*schema.ToolInfo) error {
 	if len(tools) == 0 {
 		return errors.New("no tools to bind")
 	}
 	var err error
-	cm.tools, err = toTools(tools)
+	c.tools, err = toTools(tools)
 	if err != nil {
 		return err
 	}
 
 	tc := schema.ToolChoiceAllowed
-	cm.toolChoice = &tc
-	cm.rawTools = tools
+	c.toolChoice = &tc
+	c.rawTools = tools
 
 	return nil
 }
 
-func (cm *Client) BindForcedTools(tools []*schema.ToolInfo) error {
+func (c *Client) BindForcedTools(tools []*schema.ToolInfo) error {
 	if len(tools) == 0 {
 		return errors.New("no tools to bind")
 	}
 	var err error
-	cm.tools, err = toTools(tools)
+	c.tools, err = toTools(tools)
 	if err != nil {
 		return err
 	}
 
 	tc := schema.ToolChoiceForced
-	cm.toolChoice = &tc
-	cm.rawTools = tools
+	c.toolChoice = &tc
+	c.rawTools = tools
 
 	return nil
 }

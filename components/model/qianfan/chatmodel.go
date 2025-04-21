@@ -29,6 +29,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+
 // GetQianfanSingletonConfig qianfan config is singleton, you should set ak+sk / bear_token before init chat model
 // Set with code: GetQianfanSingletonConfig().AccessKey = "your_access_key"
 // Set with env: os.Setenv("QIANFAN_ACCESS_KEY", "your_iam_ak") or with env file
@@ -92,7 +94,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 	return &ChatModel{cc, nil, nil, nil, config}, nil
 }
 
-func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (
+func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
 	defer func() {
@@ -101,14 +103,14 @@ func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 		}
 	}()
 
-	req, cbInput, err := c.genRequest(input, false, opts...)
+	req, cbInput, err := cm.genRequest(input, false, opts...)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	r, err := c.cc.Do(ctx, req)
+	r, err := cm.cc.Do(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("[qianfan][Generate] ChatCompletionV2 error, %w", err)
 	}
@@ -127,7 +129,7 @@ func (c *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts 
 	return outMsg, nil
 }
 
-func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
+func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	outStream *schema.StreamReader[*schema.Message], err error) {
 
 	defer func() {
@@ -136,14 +138,14 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 		}
 	}()
 
-	req, cbInput, err := c.genRequest(input, true, opts...)
+	req, cbInput, err := cm.genRequest(input, true, opts...)
 	if err != nil {
 		return nil, err
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	r, err := c.cc.Stream(ctx, req)
+	r, err := cm.cc.Stream(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("[qianfan][Stream] ChatCompletionV2 error, %w", err)
 	}
@@ -207,51 +209,68 @@ func (c *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ..
 	return outStream, nil
 }
 
-func (c *ChatModel) BindTools(tools []*schema.ToolInfo) error {
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
 	if len(tools) == 0 {
-		return errors.New("no tools to bind")
+		return nil, errors.New("no tools to bind")
 	}
-	var err error
-	c.tools, err = toQianfanTools(tools)
+	qianfanTools, err := toQianfanTools(tools)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("convert to qianfan tools fail: %w", err)
 	}
-	c.rawTools = tools
+
 	tc := schema.ToolChoiceAllowed
-	c.toolChoice = &tc
-	return nil
+	ncm := *cm
+	ncm.tools = qianfanTools
+	ncm.rawTools = tools
+	ncm.toolChoice = &tc
+	return &ncm, nil
 }
 
-func (c *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 	if len(tools) == 0 {
 		return errors.New("no tools to bind")
 	}
 	var err error
-	c.tools, err = toQianfanTools(tools)
+	cm.tools, err = toQianfanTools(tools)
 	if err != nil {
 		return err
 	}
-	c.rawTools = tools
-	tc := schema.ToolChoiceForced
-	c.toolChoice = &tc
+	cm.rawTools = tools
+	tc := schema.ToolChoiceAllowed
+	cm.toolChoice = &tc
 	return nil
 }
 
-func (c *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...model.Option) (
+func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
+	}
+	var err error
+	cm.tools, err = toQianfanTools(tools)
+	if err != nil {
+		return err
+	}
+	cm.rawTools = tools
+	tc := schema.ToolChoiceForced
+	cm.toolChoice = &tc
+	return nil
+}
+
+func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...model.Option) (
 	*qianfan.ChatCompletionV2Request, *model.CallbackInput, error) {
 
 	options := model.GetCommonOptions(&model.Options{
-		Temperature: c.config.Temperature,
-		MaxTokens:   c.config.MaxCompletionTokens,
-		Model:       &c.config.Model,
-		TopP:        c.config.TopP,
-		Stop:        c.config.Stop,
-		ToolChoice:  c.toolChoice,
+		Temperature: cm.config.Temperature,
+		MaxTokens:   cm.config.MaxCompletionTokens,
+		Model:       &cm.config.Model,
+		TopP:        cm.config.TopP,
+		Stop:        cm.config.Stop,
+		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
 	cbInput := &model.CallbackInput{
 		Messages: input,
-		Tools:    c.rawTools,
+		Tools:    cm.rawTools,
 		Config: &model.Config{
 			Model:       dereferenceOrZero(options.Model),
 			MaxTokens:   dereferenceOrZero(options.MaxTokens),
@@ -261,7 +280,7 @@ func (c *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...m
 		},
 	}
 
-	tools := c.tools
+	tools := cm.tools
 	if options.Tools != nil {
 		var err error
 		if tools, err = toQianfanTools(options.Tools); err != nil {
@@ -277,16 +296,16 @@ func (c *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...m
 		StreamOptions:       nil,
 		Temperature:         float64(dereferenceOrZero(options.Temperature)),
 		TopP:                float64(dereferenceOrZero(options.TopP)),
-		PenaltyScore:        dereferenceOrZero(c.config.PenaltyScore),
+		PenaltyScore:        dereferenceOrZero(cm.config.PenaltyScore),
 		MaxCompletionTokens: dereferenceOrZero(options.MaxTokens),
-		Seed:                dereferenceOrZero(c.config.Seed),
+		Seed:                dereferenceOrZero(cm.config.Seed),
 		Stop:                options.Stop,
-		User:                dereferenceOrZero(c.config.User),
-		FrequencyPenalty:    dereferenceOrZero(c.config.FrequencyPenalty),
-		PresencePenalty:     dereferenceOrZero(c.config.PresencePenalty),
+		User:                dereferenceOrZero(cm.config.User),
+		FrequencyPenalty:    dereferenceOrZero(cm.config.FrequencyPenalty),
+		PresencePenalty:     dereferenceOrZero(cm.config.PresencePenalty),
 		Tools:               tools,
-		ParallelToolCalls:   dereferenceOrZero(c.config.ParallelToolCalls),
-		ResponseFormat:      c.config.ResponseFormat,
+		ParallelToolCalls:   dereferenceOrZero(cm.config.ParallelToolCalls),
+		ResponseFormat:      cm.config.ResponseFormat,
 	}
 
 	if isStream {
@@ -497,11 +516,11 @@ func toQianfanTools(tools []*schema.ToolInfo) ([]qianfan.Tool, error) {
 	return r, nil
 }
 
-func (c *ChatModel) GetType() string {
+func (cm *ChatModel) GetType() string {
 	return getType()
 }
 
-func (c *ChatModel) IsCallbacksEnabled() bool {
+func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 

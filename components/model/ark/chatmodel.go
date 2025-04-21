@@ -35,6 +35,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
+
 var (
 	// all default values are from github.com/volcengine/volcengine-go-sdk/service/arkruntime/config.go
 	defaultBaseURL    = "https://ark.cn-beijing.volces.com/api/v3"
@@ -119,6 +121,12 @@ type ChatModelConfig struct {
 
 	// CustomHeader the http header passed to model when requesting model
 	CustomHeader map[string]string `json:"custom_header"`
+
+	// LogProbs specifies whether to return log probabilities of the output tokens.
+	LogProbs bool `json:"log_probs"`
+
+	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+	TopLogProbs int `json:"top_log_probs"`
 }
 
 func buildClient(config *ChatModelConfig) *arkruntime.Client {
@@ -432,6 +440,13 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 		PresencePenalty:  cm.config.PresencePenalty,
 	}
 
+	if cm.config.LogProbs {
+		req.LogProbs = &cm.config.LogProbs
+	}
+	if cm.config.TopLogProbs > 0 {
+		req.TopLogProbs = &cm.config.TopLogProbs
+	}
+
 	for _, msg := range in {
 		content, e := toArkContent(msg.Content, msg.MultiContent)
 		if e != nil {
@@ -473,6 +488,43 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	return req, nil
 }
 
+func toLogProbs(probs *model.LogProbs) *schema.LogProbs {
+	if probs == nil {
+		return nil
+	}
+	ret := &schema.LogProbs{}
+	for _, content := range probs.Content {
+		schemaContent := schema.LogProb{
+			Token:       content.Token,
+			LogProb:     content.LogProb,
+			Bytes:       runeSlice2int64(content.Bytes),
+			TopLogProbs: toTopLogProb(content.TopLogProbs),
+		}
+		ret.Content = append(ret.Content, schemaContent)
+	}
+	return ret
+}
+
+func toTopLogProb(probs []*model.TopLogProbs) []schema.TopLogProb {
+	ret := make([]schema.TopLogProb, 0, len(probs))
+	for _, prob := range probs {
+		ret = append(ret, schema.TopLogProb{
+			Token:   prob.Token,
+			LogProb: prob.LogProb,
+			Bytes:   runeSlice2int64(prob.Bytes),
+		})
+	}
+	return ret
+}
+
+func runeSlice2int64(in []rune) []int64 {
+	ret := make([]int64, 0, len(in))
+	for _, v := range in {
+		ret = append(ret, int64(v))
+	}
+	return ret
+}
+
 func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg *schema.Message, err error) {
 	if len(resp.Choices) == 0 {
 		return nil, ErrEmptyResponse
@@ -503,6 +555,7 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(choice.FinishReason),
 			Usage:        toEinoTokenUsage(&resp.Usage),
+			LogProbs:     toLogProbs(choice.LogProbs),
 		},
 		Extra: map[string]any{
 			keyOfRequestID: arkRequestID(resp.ID),
@@ -536,6 +589,7 @@ func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema
 				ResponseMeta: &schema.ResponseMeta{
 					FinishReason: string(choice.FinishReason),
 					Usage:        toEinoTokenUsage(resp.Usage),
+					LogProbs:     toLogProbs(choice.LogProbs),
 				},
 				Extra: map[string]any{
 					keyOfRequestID: arkRequestID(resp.ID),
@@ -571,6 +625,21 @@ func (cm *ChatModel) GetType() string {
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
+}
+
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	artTools, err := toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("convert to ark tools fail: %w", err)
+	}
+
+	ncm := *cm
+	ncm.tools = artTools
+	ncm.rawTools = tools
+	return &ncm, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {

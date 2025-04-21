@@ -294,3 +294,11 @@ func TestPanicErr(t *testing.T) {
 	err := newPanicErr("info", []byte("stack"))
 	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
 }
+
+func TestWithTools(t *testing.T) {
+	cm := &ChatModel{config: &ChatModelConfig{Model: "test model"}}
+	ncm, err := cm.WithTools([]*schema.ToolInfo{{Name: "test tool name"}})
+	assert.Nil(t, err)
+	assert.Equal(t, "test model", ncm.(*ChatModel).config.Model)
+	assert.Equal(t, "test tool name", ncm.(*ChatModel).tools[0].Name)
+}

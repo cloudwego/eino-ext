@@ -125,3 +125,41 @@ func TestPanicErr(t *testing.T) {
 	err := newPanicErr("info", []byte("stack"))
 	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
 }
+
+func TestWithTools(t *testing.T) {
+	cm := &Client{config: &Config{Model: "test model"}}
+	ncm, err := cm.WithTools([]*schema.ToolInfo{{Name: "test tool name"}})
+	assert.Nil(t, err)
+	assert.Equal(t, "test model", ncm.(*Client).config.Model)
+	assert.Equal(t, "test tool name", ncm.(*Client).rawTools[0].Name)
+}
+
+func TestLogProbs(t *testing.T) {
+	assert.Equal(t, &schema.LogProbs{Content: []schema.LogProb{
+		{
+			Token:   "1",
+			LogProb: 1,
+			Bytes:   []int64{'a'},
+			TopLogProbs: []schema.TopLogProb{
+				{
+					Token:   "2",
+					LogProb: 2,
+					Bytes:   []int64{'b'},
+				},
+			},
+		},
+	}}, toLogProbs(&goopenai.LogProbs{Content: []goopenai.LogProb{
+		{
+			Token:   "1",
+			LogProb: 1,
+			Bytes:   []byte{'a'},
+			TopLogProbs: []goopenai.TopLogProbs{
+				{
+					Token:   "2",
+					LogProb: 2,
+					Bytes:   []byte{'b'},
+				},
+			},
+		},
+	}}))
+}

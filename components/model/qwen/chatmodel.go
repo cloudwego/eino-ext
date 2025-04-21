@@ -27,6 +27,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+
 // ChatModelConfig parameters detail see:
 // https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api?spm=a2c4g.11186623.help-menu-2400256.d_3_3_0.c3b24823WzuCqJ&scm=20140722.H_2712576._.OR_help-T_cn-DAS-zh-V_1
 // https://help.aliyun.com/zh/model-studio/developer-reference/compatibility-of-openai-with-dashscope?spm=a2c4g.11186623.0.i49
@@ -181,6 +183,10 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 		return msg, nil
 	})
 	return sr, nil
+}
+
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return cm.cli.WithTools(tools)
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
