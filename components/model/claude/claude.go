@@ -73,12 +73,17 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		opts = append(
 			opts,
 			awsConfig.WithRegion(config.Region),
-			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+		)
+		if config.SecretAccessKey != "" && config.AccessKey != "" {
+			opts = append(opts, awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				config.AccessKey,
 				config.SecretAccessKey,
 				config.SessionToken,
-			)),
-		)
+			)))
+		} else if config.Profile != "" {
+			opts = append(opts, awsConfig.WithSharedConfigProfile(config.Profile))
+		}
+
 		if config.HTTPClient != nil {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
@@ -115,6 +120,11 @@ type Config struct {
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 	// Optional for Bedrock
 	SessionToken string
+
+	// Profile is your Bedrock API AWS profile
+	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
+	// Optional for Bedrock
+	Profile string
 
 	// Region is your Bedrock API region
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
