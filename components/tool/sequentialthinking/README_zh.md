@@ -31,11 +31,13 @@ go get github.com/cloudwego/eino-ext/components/tool/sequentialthinking@latest
 ## 快速开始
 
 ```go
-package examples
+package main
 
 import (
 	"context"
 	"fmt"
+	
+	"github.com/bytedance/sonic"
 	
 	"github.com/cloudwego/eino-ext/components/tool/sequentialthinking"
 )
@@ -49,9 +51,18 @@ func main() {
 		panic(err)
 	}
 	
+	args := &sequentialthinking.ThoughtRequest{
+		Thought:           "This is a test thought",
+		ThoughtNumber:     1,
+		TotalThoughts:     3,
+		NextThoughtNeeded: true,
+	}
+	
+	argsStr, _ := sonic.Marshal(args)
+	
 	// Use the tool
 	// (This is just a placeholder; actual usage will depend on the tool's functionality)
-	result, err := tool.InvokableRun(ctx, "example input")
+	result, err := tool.InvokableRun(ctx, string(argsStr))
 	if err != nil {
 		panic(err)
 	}
