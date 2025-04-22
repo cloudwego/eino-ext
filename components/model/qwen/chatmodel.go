@@ -186,7 +186,11 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 }
 
 func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	return cm.cli.WithTools(tools)
+	cli, err := cm.cli.WithToolsForClient(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &ChatModel{cli: cli}, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
@@ -204,5 +208,5 @@ func (cm *ChatModel) GetType() string {
 }
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
-	return true
+	return cm.cli.IsCallbacksEnabled()
 }
