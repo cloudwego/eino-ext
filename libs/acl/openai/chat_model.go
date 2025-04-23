@@ -451,18 +451,17 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
+	req, cbInput, err := c.genRequest(in, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
+	}
+	
+	ctx = callbacks.OnStart(ctx, cbInput)
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
-	req, cbInput, err := c.genRequest(in, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
-	}
-
-	ctx = callbacks.OnStart(ctx, cbInput)
 
 	resp, err := c.cli.CreateChatCompletion(ctx, *req)
 	if err != nil {
@@ -782,7 +781,7 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 	}
 }
 
-func (c *Client) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+func (c *Client) WithToolsForClient(tools []*schema.ToolInfo) (*Client, error) {
 	if len(tools) == 0 {
 		return nil, errors.New("no tools to bind")
 	}
@@ -797,6 +796,10 @@ func (c *Client) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel
 	nc.rawTools = tools
 	nc.toolChoice = &tc
 	return &nc, nil
+}
+
+func (c *Client) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return c.WithToolsForClient(tools)
 }
 
 func (c *Client) BindTools(tools []*schema.ToolInfo) error {
@@ -831,6 +834,10 @@ func (c *Client) BindForcedTools(tools []*schema.ToolInfo) error {
 	c.rawTools = tools
 
 	return nil
+}
+
+func (c *Client) IsCallbacksEnabled() bool {
+	return true
 }
 
 type panicErr struct {

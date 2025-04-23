@@ -2,7 +2,7 @@ module github.com/cloudwego/eino-ext/components/document/transformer/reranker/sc
 
 go 1.18
 
-require github.com/cloudwego/eino v0.3.20
+require github.com/cloudwego/eino v0.3.27
 
 require (
 	github.com/bytedance/sonic v1.13.2 // indirect

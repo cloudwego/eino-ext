@@ -140,12 +140,6 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 }
 
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
-	defer func() {
-		if err != nil {
-			ctx = callbacks.OnError(ctx, err)
-		}
-	}()
-
 	options := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &r.config.Index,
 		SubIndex:       &r.config.Partition,
@@ -155,12 +149,18 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		DSLInfo:        r.config.FilterDSL,
 	}, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
 		TopK:           dereferenceOrZero(options.TopK),
 		Filter:         tryMarshalJsonString(options.DSLInfo),
 		ScoreThreshold: options.ScoreThreshold,
 	})
+	defer func() {
+		if err != nil {
+			ctx = callbacks.OnError(ctx, err)
+		}
+	}()
 
 	var result []*vikingdb.Data
 

@@ -23,6 +23,7 @@ import (
 	"runtime/debug"
 
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
+	"github.com/cloudwego/eino/components"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -97,11 +98,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	req, cbInput, err := cm.genRequest(input, false, opts...)
 	if err != nil {
@@ -109,6 +106,11 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	r, err := cm.cc.Do(ctx, req)
 	if err != nil {
@@ -132,11 +134,7 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (
 	outStream *schema.StreamReader[*schema.Message], err error) {
 
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	req, cbInput, err := cm.genRequest(input, true, opts...)
 	if err != nil {
@@ -144,6 +142,11 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	r, err := cm.cc.Stream(ctx, req)
 	if err != nil {

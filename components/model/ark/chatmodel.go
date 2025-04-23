@@ -26,6 +26,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/cloudwego/eino/components"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
@@ -242,11 +243,7 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Mes
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
 	outMsg *schema.Message, err error) {
 
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	options := fmodel.GetCommonOptions(&fmodel.Options{
 		Temperature: cm.config.Temperature,
@@ -283,6 +280,12 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		Config:   reqConf,
 	})
 
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+
 	var resp model.ChatCompletionResponse
 	if arkOpts.contextID != nil {
 		resp, err = cm.client.CreateContextChatCompletion(ctx, *convCompletionRequest(req, *arkOpts.contextID), arkruntime.WithCustomHeaders(arkOpts.customHeaders))
@@ -310,11 +313,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
 	outStream *schema.StreamReader[*schema.Message], err error) {
 
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	options := fmodel.GetCommonOptions(&fmodel.Options{
 		Temperature: cm.config.Temperature,
@@ -353,6 +352,11 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		Tools:    tools,
 		Config:   reqConf,
 	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	var stream *autils.ChatCompletionStreamReader
 	if arkOpts.contextID != nil {
