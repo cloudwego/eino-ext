@@ -4,7 +4,7 @@ go 1.22.5
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.3.20
+	github.com/cloudwego/eino v0.3.27
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.1093
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/hunyuan v1.0.1093
 )

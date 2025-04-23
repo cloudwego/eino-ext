@@ -5,7 +5,7 @@ go 1.21
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.3.20
+	github.com/cloudwego/eino v0.3.27
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/api v0.204.0
 )

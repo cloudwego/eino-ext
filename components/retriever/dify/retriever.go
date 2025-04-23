@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
 )
@@ -76,13 +77,6 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 
 // Retrieve 根据查询文本检索相关文档
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
-	// 设置回调和错误处理
-	defer func() {
-		if err != nil {
-			ctx = callbacks.OnError(ctx, err)
-		}
-	}()
-
 	// 合并检索选项
 	baseOptions := &retriever.Options{}
 	if r.config.RetrievalModel != nil {
@@ -91,12 +85,19 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 	options := retriever.GetCommonOptions(baseOptions, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	// 开始检索回调
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
 		TopK:           dereferenceOrZero(options.TopK),
 		ScoreThreshold: options.ScoreThreshold,
 	})
+	// 设置回调和错误处理
+	defer func() {
+		if err != nil {
+			ctx = callbacks.OnError(ctx, err)
+		}
+	}()
 
 	// 发送检索请求
 	result, err := r.doPost(ctx, query, options)

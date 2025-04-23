@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
@@ -151,10 +153,12 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	return cm.cli.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	outStream, err = cm.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
@@ -186,7 +190,11 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 }
 
 func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
-	return cm.cli.WithTools(tools)
+	cli, err := cm.cli.WithToolsForClient(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &ChatModel{cli: cli}, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
@@ -204,5 +212,5 @@ func (cm *ChatModel) GetType() string {
 }
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
-	return true
+	return cm.cli.IsCallbacksEnabled()
 }

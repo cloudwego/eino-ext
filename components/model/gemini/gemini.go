@@ -24,6 +24,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -124,6 +125,9 @@ type ChatModel struct {
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
+
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+
 	session, conf, err := cm.initGenerativeModelSession(opts...)
 	if err != nil {
 		return nil, err
@@ -165,6 +169,9 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
+
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+	
 	session, conf, err := cm.initGenerativeModelSession(opts...)
 	if err != nil {
 		return nil, err

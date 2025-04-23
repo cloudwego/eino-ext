@@ -119,17 +119,18 @@ func NewIndexer(ctx context.Context, config *IndexerConfig) (*Indexer, error) {
 }
 
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
-	defer func() {
-		if err != nil {
-			ctx = callbacks.OnError(ctx, err)
-		}
-	}()
 
 	options := indexer.GetCommonOptions(&indexer.Options{
 		Embedding: i.config.EmbeddingConfig.Embedding,
 	}, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{Docs: docs})
+	defer func() {
+		if err != nil {
+			ctx = callbacks.OnError(ctx, err)
+		}
+	}()
 
 	ids = make([]string, 0, len(docs))
 	for _, sub := range chunk(docs, i.config.AddBatchSize) {

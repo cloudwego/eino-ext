@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/cohesion-org/deepseek-go"
@@ -190,15 +191,20 @@ func intSlice2int64(in []int) []int64 {
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
+
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+
+	req, cbInput, err := cm.generateRequest(ctx, in, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate request: %w", err)
+	}
+
+	ctx = callbacks.OnStart(ctx, cbInput)
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
-	req, cbInput, err := cm.generateRequest(ctx, in, opts...)
-
-	ctx = callbacks.OnStart(ctx, cbInput)
 
 	resp, err := cm.cli.CreateChatCompletion(ctx, req)
 	if err != nil {
@@ -245,14 +251,20 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
+
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+
+	req, cbInput, err := cm.generateStreamRequest(ctx, in, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate stream request: %w", err)
+	}
+
+	ctx = callbacks.OnStart(ctx, cbInput)
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	req, cbInput, err := cm.generateStreamRequest(ctx, in, opts...)
-
-	ctx = callbacks.OnStart(ctx, cbInput)
 
 	stream, err := cm.cli.CreateChatCompletionStream(ctx, req)
 	if err != nil {

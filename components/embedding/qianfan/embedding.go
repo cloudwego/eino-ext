@@ -21,6 +21,7 @@ import (
 
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 )
 
@@ -74,6 +75,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 
 	conf := &embedding.Config{Model: *options.Model}
 
+	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
 	ctx = callbacks.OnStart(ctx, &embedding.CallbackInput{
 		Texts:  texts,
 		Config: conf,

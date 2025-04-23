@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cloudwego/eino/components"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
@@ -119,23 +120,22 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) (
 	embeddings [][]float64, err error) {
-
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
 	req := e.genRequest(texts, opts...)
 	conf := &embedding.Config{
 		Model:          req.Model,
 		EncodingFormat: string(req.EncodingFormat),
 	}
 
+	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
 	ctx = callbacks.OnStart(ctx, &embedding.CallbackInput{
 		Texts:  texts,
 		Config: conf,
 	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	resp, err := e.client.CreateEmbeddings(ctx, &req)
 	if err != nil {

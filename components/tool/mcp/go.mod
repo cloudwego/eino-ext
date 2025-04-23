@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.3.20
+	github.com/cloudwego/eino v0.3.27
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/mark3labs/mcp-go v0.15.0
 	github.com/stretchr/testify v1.9.0
