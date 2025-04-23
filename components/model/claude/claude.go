@@ -108,12 +108,12 @@ type Config struct {
 
 	// AccessKey is your Bedrock API Access key
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
-	// Required for Bedrock
+	// Optional for Bedrock
 	AccessKey string
 
 	// SecretAccessKey is your Bedrock API Secret Access key
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
-	// Required for Bedrock
+	// Optional for Bedrock
 	SecretAccessKey string
 
 	// SessionToken is your Bedrock API Session Token
@@ -129,7 +129,7 @@ type Config struct {
 
 	// Region is your Bedrock API region
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
-	// Required for Bedrock
+	// Optional for Bedrock
 	Region string
 
 	// BaseURL is the custom API endpoint URL
