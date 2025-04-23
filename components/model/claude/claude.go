@@ -71,10 +71,9 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		cli = anthropic.NewClient(opts...)
 	} else {
 		var opts []func(*awsConfig.LoadOptions) error
-		opts = append(
-			opts,
-			awsConfig.WithRegion(config.Region),
-		)
+		if config.Region != "" {
+			opts = append(opts, awsConfig.WithRegion(config.Region))
+		}
 		if config.SecretAccessKey != "" && config.AccessKey != "" {
 			opts = append(opts, awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				config.AccessKey,
