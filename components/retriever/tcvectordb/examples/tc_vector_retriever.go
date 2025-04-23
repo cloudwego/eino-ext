@@ -51,20 +51,20 @@ func main() {
 	indexName := "example_index"
 
 	/*
-	 * 下面示例假设已经创建了一个名为 eino_examples 的数据集 (collection)，并配置了相应的索引
-	 * 数据集字段配置为:
-	 * 字段名称			字段类型		向量维度
-	 * id				string
-	 * vector			vector		3072
-	 * content			string
-	 * metadata			json
+	 * The following example assumes that a collection named eino_examples has been created with the appropriate index
+	 * The collection fields are configured as:
+	 * Field Name        Field Type      Vector Dimension
+	 * id                string
+	 * vector            vector          3072
+	 * content           string
+	 * metadata          json
 	 *
-	 * 使用时注意:
-	 * 1. 向量维度需要与 Embedder 输出的向量维度一致
-	 * 2. 需要确保collection已创建并正确配置
+	 * Note:
+	 * 1. The vector dimension must match the output dimension of the Embedder
+	 * 2. Ensure the collection is created and properly configured
 	 */
 
-	// 创建embedder
+	// Create embedder
 	embedder, err := oaiembedding.NewEmbedder(ctx, &oaiembedding.EmbeddingConfig{
 		APIKey:     openaiAPIKey,
 		BaseURL:    openaiBaseURL,
@@ -72,11 +72,11 @@ func main() {
 		Dimensions: &[]int{EmbeddingModelDimension}[0],
 	})
 	if err != nil {
-		fmt.Printf("创建embedder失败: %v\n", err)
+		fmt.Printf("Failed to create embedder: %v\n", err)
 		return
 	}
 
-	// 创建tcvectordb检索配置
+	// Create tcvectordb retriever config
 	cfg := &tcvectordb.RetrieverConfig{
 		URL:            "http://127.0.0.1:8080", // URL provided by Tencent Cloud
 		Username:       userID,                  // Username provided by Tencent Cloud
@@ -93,67 +93,67 @@ func main() {
 		},
 	}
 
-	// 创建retriever实例
+	// Create retriever instance
 	tcRetriever, err := tcvectordb.NewRetriever(ctx, cfg)
 	if err != nil {
-		fmt.Printf("创建TcVectorDB检索器失败: %v\n", err)
+		fmt.Printf("Failed to create TcVectorDB retriever: %v\n", err)
 		return
 	}
 
-	fmt.Println("===== 直接调用检索器 =====")
+	fmt.Println("===== Direct Retriever Call =====")
 
-	query := "腾讯云向量数据库的特点"
+	query := "Features of Tencent Cloud Vector Database"
 	docs, err := tcRetriever.Retrieve(ctx, query)
 	if err != nil {
-		fmt.Printf("检索失败: %v\n", err)
+		fmt.Printf("Retrieval failed: %v\n", err)
 		return
 	}
 
-	fmt.Printf("检索成功，查询=%v，文档数=%v\n", query, len(docs))
+	fmt.Printf("Retrieval successful, query=%v, document count=%v\n", query, len(docs))
 	for i, doc := range docs {
-		fmt.Printf("文档 %d: 内容=%s, 得分=%f\n", i+1, doc.Content, doc.Score)
+		fmt.Printf("Document %d: Content=%s, Score=%f\n", i+1, doc.Content, doc.Score())
 	}
 
-	fmt.Println("===== 在Chain中使用检索器 =====")
+	fmt.Println("===== Using Retriever in a Chain =====")
 
-	// 创建callback handler
+	// Create callback handler
 	handlerHelper := &callbacksHelper.RetrieverCallbackHandler{
 		OnStart: func(ctx context.Context, info *callbacks.RunInfo, input *retriever.CallbackInput) context.Context {
-			fmt.Printf("开始检索，查询内容: %s\n", input.Query)
+			fmt.Printf("Starting retrieval, query content: %s\n", input.Query)
 			return ctx
 		},
 		OnEnd: func(ctx context.Context, info *callbacks.RunInfo, output *retriever.CallbackOutput) context.Context {
-			fmt.Printf("检索完成，结果数量: %v\n", len(output.Docs))
+			fmt.Printf("Retrieval completed, result count: %v\n", len(output.Docs))
 			return ctx
 		},
-		// OnError 可选
+		// OnError is optional
 	}
 
-	// 使用callback handler
+	// Use callback handler
 	handler := callbacksHelper.NewHandlerHelper().
 		Retriever(handlerHelper).
 		Handler()
 
-	// 创建chain
+	// Create chain
 	chain := compose.NewChain[string, []*schema.Document]()
 	chain.AppendRetriever(tcRetriever)
 
-	// 运行chain
+	// Run chain
 	run, err := chain.Compile(ctx)
 	if err != nil {
-		fmt.Printf("chain编译失败: %v\n", err)
+		fmt.Printf("Chain compilation failed: %v\n", err)
 		return
 	}
 
 	outDocs, err := run.Invoke(ctx, query, compose.WithCallbacks(handler))
 	if err != nil {
-		fmt.Printf("chain执行失败: %v\n", err)
+		fmt.Printf("Chain execution failed: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Chain检索成功，查询=%v，文档数=%v\n", query, len(outDocs))
+	fmt.Printf("Chain retrieval successful, query=%v, document count=%v\n", query, len(outDocs))
 	for i, doc := range outDocs {
-		fmt.Printf("文档 %d: 内容=%s, 得分=%f\n", i+1, doc.Content, doc.Score)
+		fmt.Printf("Document %d: Content=%s, Score=%f\n", i+1, doc.Content, doc.Score())
 	}
 
 }
