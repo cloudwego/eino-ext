@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
@@ -119,6 +121,7 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) (
 	embeddings [][]float64, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
 	return e.cli.EmbedStrings(ctx, texts, opts...)
 }
 

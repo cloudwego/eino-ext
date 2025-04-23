@@ -24,6 +24,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
@@ -138,22 +139,22 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 
 // Store stores the documents into the indexer.
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
 	// get common options
 	co := indexer.GetCommonOptions(&indexer.Options{
 		SubIndexes: nil,
 		Embedding:  i.config.Embedding,
 	}, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	// callback info on start
 	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{
 		Docs: docs,
 	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	emb := co.Embedding
 	if emb == nil {

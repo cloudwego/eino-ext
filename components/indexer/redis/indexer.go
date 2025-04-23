@@ -96,17 +96,17 @@ func NewIndexer(ctx context.Context, config *IndexerConfig) (*Indexer, error) {
 }
 
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
+	options := indexer.GetCommonOptions(&indexer.Options{
+		Embedding: i.config.Embedding,
+	}, opts...)
+
+	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
+	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{Docs: docs})
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
-	options := indexer.GetCommonOptions(&indexer.Options{
-		Embedding: i.config.Embedding,
-	}, opts...)
-
-	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{Docs: docs})
 
 	if err = i.pipelineHSet(ctx, docs, options); err != nil {
 		return nil, err

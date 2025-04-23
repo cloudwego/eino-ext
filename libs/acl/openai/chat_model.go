@@ -451,18 +451,17 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
+	req, cbInput, err := c.genRequest(in, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
+	}
+	
+	ctx = callbacks.OnStart(ctx, cbInput)
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
-	req, cbInput, err := c.genRequest(in, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
-	}
-
-	ctx = callbacks.OnStart(ctx, cbInput)
 
 	resp, err := c.cli.CreateChatCompletion(ctx, *req)
 	if err != nil {

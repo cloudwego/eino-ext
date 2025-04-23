@@ -26,6 +26,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/cloudwego/eino/components"
 	"github.com/ollama/ollama/api"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -93,11 +94,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 	}, nil
 }
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
-	defer func() {
-		if err != nil {
-			_ = callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	var req *api.ChatRequest
 	var cbInput *model.CallbackInput
@@ -107,6 +104,11 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
+	defer func() {
+		if err != nil {
+			_ = callbacks.OnError(ctx, err)
+		}
+	}()
 
 	var cbOutput *model.CallbackOutput
 
@@ -133,11 +135,7 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-	defer func() {
-		if err != nil {
-			_ = callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	var req *api.ChatRequest
 	var cbInput *model.CallbackInput
@@ -147,6 +145,11 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
+	defer func() {
+		if err != nil {
+			_ = callbacks.OnError(ctx, err)
+		}
+	}()
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func(ctx context.Context, conf *model.Config) {

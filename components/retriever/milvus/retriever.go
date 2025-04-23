@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
@@ -146,12 +147,6 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 }
 
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
 	// get common options
 	co := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &r.config.VectorField,
@@ -162,6 +157,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	// get impl specific options
 	io := retriever.GetImplSpecificOptions(&ImplOptions{}, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	// callback info on start
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
@@ -172,6 +168,11 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 			"metric_type": r.config.MetricType,
 		},
 	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	// get the embedding vector
 	emb := co.Embedding

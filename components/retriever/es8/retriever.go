@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cloudwego/eino/components"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
@@ -88,12 +89,6 @@ func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) 
 }
 
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
 	options := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &r.config.Index,
 		TopK:           &r.config.TopK,
@@ -101,11 +96,17 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		Embedding:      r.config.Embedding,
 	}, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
 		TopK:           *options.TopK,
 		ScoreThreshold: options.ScoreThreshold,
 	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	req, err := r.config.SearchMode.BuildRequest(ctx, r.config, query, opts...)
 	if err != nil {

@@ -4,7 +4,7 @@ go 1.23.4
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.23
+	github.com/cloudwego/eino v0.3.27
 	github.com/ollama/ollama v0.5.12
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.9.0

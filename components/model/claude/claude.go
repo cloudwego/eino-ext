@@ -30,6 +30,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/cloudwego/eino/components"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -178,6 +179,7 @@ type ChatModel struct {
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	ctx = callbacks.OnStart(ctx, cm.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {
@@ -202,6 +204,7 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	ctx = callbacks.OnStart(ctx, cm.getCallbackInput(input, opts...))
 	defer func() {
 		if err != nil {

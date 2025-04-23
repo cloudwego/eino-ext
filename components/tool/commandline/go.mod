@@ -6,7 +6,7 @@ toolchain go1.23.4
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.3.18
+	github.com/cloudwego/eino v0.3.27
 	github.com/docker/docker v28.0.4+incompatible
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/google/uuid v1.6.0
