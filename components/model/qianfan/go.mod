@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.23
+	github.com/cloudwego/eino v0.3.27
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.9.0
 )

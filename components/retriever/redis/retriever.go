@@ -110,12 +110,6 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 }
 
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
 	co := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &r.config.Index,
 		TopK:           &r.config.TopK,
@@ -124,12 +118,18 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}, opts...)
 	io := retriever.GetImplSpecificOptions(&implOptions{}, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
 		Query:          query,
 		TopK:           *co.TopK,
 		Filter:         io.FilterQuery,
 		ScoreThreshold: co.ScoreThreshold,
 	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	emb := co.Embedding
 	if emb == nil {
