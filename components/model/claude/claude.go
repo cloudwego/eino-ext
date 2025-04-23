@@ -122,6 +122,7 @@ type Config struct {
 	SessionToken string
 
 	// Profile is your Bedrock API AWS profile
+	// This parameter is ignored if AccessKey and SecretAccessKey are provided
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 	// Optional for Bedrock
 	Profile string
