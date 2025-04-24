@@ -128,6 +128,13 @@ type ChatModelConfig struct {
 
 	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
 	TopLogProbs int `json:"top_log_probs"`
+
+	// ResponseFormat specifies the format that the model must output.
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+}
+
+type ResponseFormat struct {
+	Type model.ResponseFormatType `json:"type"`
 }
 
 func buildClient(config *ChatModelConfig) *arkruntime.Client {
@@ -442,6 +449,12 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 		FrequencyPenalty: cm.config.FrequencyPenalty,
 		LogitBias:        cm.config.LogitBias,
 		PresencePenalty:  cm.config.PresencePenalty,
+	}
+
+	if cm.config.ResponseFormat != nil {
+		req.ResponseFormat = &model.ResponseFormat{
+			Type: cm.config.ResponseFormat.Type,
+		}
 	}
 
 	if cm.config.LogProbs {
