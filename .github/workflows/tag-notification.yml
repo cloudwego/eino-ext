@@ -1,0 +1,75 @@
+name: Tag Notification
+
+on:
+  push:
+    tags:
+      - '*/v*'  # Match tags like module/v1.0.0
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag info and send notification
+        run: |
+          # Get the tag name and module name
+          TAG_NAME="${{ github.ref_name }}"
+          MODULE_NAME=$(echo $TAG_NAME | cut -d'/' -f1)
+          VERSION=$(echo $TAG_NAME | cut -d'/' -f2)
+          
+          # Get release info if available
+          RELEASE_INFO=$(curl -s \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/$TAG_NAME" \
+            | jq -r '.body // ""')
+          
+          # Prepare the message
+          if [ ! -z "$RELEASE_INFO" ]; then
+            CONTENT="### New Tag Created: \`$TAG_NAME\`\n\nModule: \`$MODULE_NAME\`\nVersion: \`$VERSION\`\n\n### Release Notes:\n$RELEASE_INFO"
+          else
+            CONTENT="### New Tag Created: \`$TAG_NAME\`\n\nModule: \`$MODULE_NAME\`\nVersion: \`$VERSION\`"
+          fi
+          
+          # Create webhook payload
+          jq -n --arg content "$CONTENT" \
+                --arg repo_url "https://github.com/${{ github.repository }}/releases/tag/$TAG_NAME" \
+                '{
+                  "msg_type": "interactive",
+                  "card": {
+                    "elements": [
+                      {
+                        "tag": "markdown",
+                        "content": $content
+                      },
+                      {
+                        "tag": "action",
+                        "actions": [
+                          {
+                            "tag": "button",
+                            "text": {
+                              "tag": "plain_text",
+                              "content": "🔗 View Release"
+                            },
+                            "url": $repo_url,
+                            "type": "default"
+                          }
+                        ]
+                      }
+                    ],
+                    "header": {
+                      "title": {
+                        "tag": "plain_text",
+                        "content": "New Tag Created"
+                      }
+                    }
+                  }
+                }' > webhook_payload.json
+          
+          # Send webhook
+          curl -X POST \
+               -H "Content-Type: application/json" \
+               -d @webhook_payload.json \
+               "${{ secrets.FEISHU_WEBHOOK_URL }}" 
