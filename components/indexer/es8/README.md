@@ -101,8 +101,8 @@ The indexer can be configured using the `IndexerConfig` struct:
 ```go
 type IndexerConfig struct {
     Client *elasticsearch.Client // Required: Elasticsearch client instance
-    Index  string               // Required: Index name to store documents
-    BatchSize int               // Optional: Max texts size for embedding (default: 5)
+    Index  string                // Required: Index name to store documents
+    BatchSize int                // Optional: Max texts size for embedding (default: 5)
     
     // Required: Function to map Document fields to Elasticsearch fields
     DocumentToFields func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error)

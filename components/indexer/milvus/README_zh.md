@@ -153,4 +153,3 @@ type IndexerConfig struct {
 | content  | string         | varchar      |                            | 文章内容   | 最大长度: 1024  |
 | vector   | []byte         | binary array | HAMMING(default) / JACCARD | 文章内容向量 | 默认维度: 81920 |
 | metadata | map[string]any | json         |                            | 文章元数据  |             |
-
