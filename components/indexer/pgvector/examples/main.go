@@ -33,8 +33,8 @@ func main() {
 	timeout := 30 * time.Second
 	// create ark embedder
 	embedder, err := ark.NewEmbedder(context.Background(), &ark.EmbeddingConfig{
-		APIKey:  "your_api_key",
-		Model:   "your_model (e.g. doubao-embedding-text-240715)",
+		APIKey:  "9c6dc3ab-b979-48a5-8cc5-9075ba573b55",
+		Model:   "doubao-embedding-text-240715",
 		Timeout: &timeout,
 	})
 	if err != nil {
