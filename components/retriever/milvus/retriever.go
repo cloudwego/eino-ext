@@ -51,6 +51,8 @@ type RetrieverConfig struct {
 	// DocumentConverter is the function to convert the search result to schema.Document
 	// Optional, and the default value is defaultDocumentConverter
 	DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error)
+	// VectorConverter is the function to convert the vectors to entity.Vector
+	VectorConverter func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error)
 	// MetricType is the metric type for vector
 	// Optional, and the default value is "HAMMING"
 	MetricType entity.MetricType
@@ -137,6 +139,7 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 			VectorField:       config.VectorField,
 			OutputFields:      config.OutputFields,
 			DocumentConverter: config.DocumentConverter,
+			VectorConverter:   config.VectorConverter,
 			MetricType:        config.MetricType,
 			TopK:              config.TopK,
 			ScoreThreshold:    config.ScoreThreshold,
@@ -189,10 +192,11 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if len(vectors) != 1 {
 		return nil, fmt.Errorf("[milvus retriever] invalid return length of vector, got=%d, expected=1", len(vectors))
 	}
-	// convert the vector to binary vector
-	vec := make([]entity.Vector, 0, len(vectors))
-	for _, vector := range vectors {
-		vec = append(vec, entity.BinaryVector(vector2Bytes(vector)))
+
+	// convert the embedding result to entity.Vector
+	vec, err := r.config.VectorConverter(ctx, vectors)
+	if err != nil {
+		return nil, fmt.Errorf("[milvus retriever] failed to convert vector: %w", err)
 	}
 
 	// search the collection
@@ -278,6 +282,9 @@ func (r *RetrieverConfig) check() error {
 	}
 	if r.DocumentConverter == nil {
 		r.DocumentConverter = defaultDocumentConverter()
+	}
+	if r.VectorConverter == nil {
+		r.VectorConverter = defaultVectorConverter()
 	}
 	if r.TopK == 0 {
 		r.TopK = defaultTopK

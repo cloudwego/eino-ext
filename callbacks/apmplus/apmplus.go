@@ -65,8 +65,8 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 		opentelemetry.WithServiceName(cfg.ServiceName),
 		opentelemetry.WithExportEndpoint(cfg.Host),
 		opentelemetry.WithInsecure(),
-		opentelemetry.WithHeaders(map[string]string{"X-ByteAPM-AppKey": cfg.AppKey}),
-		opentelemetry.WithResourceAttribute(attribute.String("apmplus.business_type", "llm")),
+		opentelemetry.WithHeaders(map[string]string{"x-byteapm-appkey": cfg.AppKey}),
+		opentelemetry.WithResourceAttribute(attribute.String("apmplus.business_type", "gen_ai")),
 	)
 	if p == nil || err != nil {
 		return nil, nil, errors.New("init opentelemetry provider failed")
@@ -83,17 +83,18 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 
 	meter := p.MeterProvider.Meter(scopeName)
 
-	tokenUsage, err := meter.Int64Counter(
-		"llm.token.usage",
+	tokenUsage, err := meter.Int64Histogram(
+		"gen_ai.client.token.usage",
 		metric.WithDescription("Number of tokens used in prompt and completions"),
 		metric.WithUnit("token"),
+		metric.WithExplicitBucketBoundaries(1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576, 4194304, 16777216, 67108864),
 	)
 	if err != nil {
 		return nil, p.Shutdown, err
 	}
 
 	chatCount, err := meter.Int64Counter(
-		"llm.chat.count",
+		"gen_ai.chat.count",
 		metric.WithDescription("Number of chat"),
 		metric.WithUnit("time"),
 	)
@@ -102,7 +103,7 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 	}
 
 	chatChoiceCounter, err := meter.Int64Counter(
-		"llm.chat_completions.choices",
+		"gen_ai.client.generation.choices",
 		metric.WithDescription("Number of choices returned by chat completions call"),
 		metric.WithUnit("choice"),
 	)
@@ -111,16 +112,17 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 	}
 
 	chatDurationHistogram, err := meter.Float64Histogram(
-		"llm.chat_completions.duration",
+		"gen_ai.client.operation.duration",
 		metric.WithDescription("Duration of chat completion operation"),
-		metric.WithUnit("ms"),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92),
 	)
 	if err != nil {
 		return nil, p.Shutdown, err
 	}
 
 	chatExceptionCounter, err := meter.Int64Counter(
-		"llm.chat_completions.exceptions",
+		"gen_ai.chat_completions.exceptions",
 		metric.WithDescription("Number of exceptions occurred during chat completions"),
 		metric.WithUnit("time"),
 	)
@@ -129,27 +131,30 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 	}
 
 	streamingTimeToFirstToken, err := meter.Float64Histogram(
-		"llm.chat_completions.streaming_time_to_first_token",
+		"gen_ai.chat_completions.streaming_time_to_first_token",
 		metric.WithDescription("Time to first token in streaming chat completions"),
-		metric.WithUnit("ms"),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.001, 0.005, 0.01, 0.02, 0.04, 0.06, 0.08, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0),
 	)
 	if err != nil {
 		return nil, p.Shutdown, err
 	}
 
 	streamingTimeToGenerate, err := meter.Float64Histogram(
-		"llm.chat_completions.streaming_time_to_generate",
+		"gen_ai.chat_completions.streaming_time_to_generate",
 		metric.WithDescription("Time between first token and completion in streaming chat completions"),
-		metric.WithUnit("ms"),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.01, 0.02, 0.04, 0.08, 0.16, 0.32, 0.64, 1.28, 2.56, 5.12, 10.24, 20.48, 40.96, 81.92),
 	)
 	if err != nil {
 		return nil, p.Shutdown, err
 	}
 
 	streamingTimePerOutputToken, err := meter.Float64Histogram(
-		"llm.chat_completions.streaming_time_per_output_token",
+		"gen_ai.chat_completions.streaming_time_per_output_token",
 		metric.WithDescription("Time per output token in streaming chat completions"),
-		metric.WithUnit("ms"),
+		metric.WithUnit("s"),
+		metric.WithExplicitBucketBoundaries(0.01, 0.025, 0.05, 0.075, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.75, 1.0, 2.5),
 	)
 	if err != nil {
 		return nil, p.Shutdown, err
@@ -180,7 +185,7 @@ type apmplusHandler struct {
 	tracer       trace.Tracer
 	meter        metric.Meter
 
-	tokenUsage                  metric.Int64Counter
+	tokenUsage                  metric.Int64Histogram
 	chatCount                   metric.Int64Counter
 	chatChoiceCounter           metric.Int64Counter
 	chatDurationHistogram       metric.Float64Histogram
@@ -228,26 +233,26 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 		for i, in := range inMessage {
 			if in != nil && len(in.Content) > 0 {
 				contentReady = true
-				span.SetAttributes(attribute.String(fmt.Sprintf("llm.prompts.%d.role", i), string(in.Role)))
-				span.SetAttributes(attribute.String(fmt.Sprintf("llm.prompts.%d.content", i), in.Content))
+				span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.prompt.%d.role", i), string(in.Role)))
+				span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.prompt.%d.content", i), in.Content))
 			}
 		}
 
 		if config != nil {
-			span.SetAttributes(attribute.String("llm.request.model", config.Model))
+			span.SetAttributes(attribute.String("gen_ai.request.model", config.Model))
 			requestModel = config.Model
-			span.SetAttributes(attribute.Int("llm.request.max_token", config.MaxTokens))
-			span.SetAttributes(attribute.Float64("llm.request.temperature", float64(config.Temperature)))
-			span.SetAttributes(attribute.Float64("llm.request.top_p", float64(config.TopP)))
-			span.SetAttributes(attribute.StringSlice("llm.request.stop", config.Stop))
+			span.SetAttributes(attribute.Int("gen_ai.request.max_tokens", config.MaxTokens))
+			span.SetAttributes(attribute.Float64("gen_ai.request.temperature", float64(config.Temperature)))
+			span.SetAttributes(attribute.Float64("gen_ai.request.top_p", float64(config.TopP)))
+			span.SetAttributes(attribute.StringSlice("gen_ai.request.stop", config.Stop))
 		}
 	}
 
 	if !contentReady {
 		in, err := sonic.MarshalString(input)
 		if err == nil {
-			span.SetAttributes(attribute.String("llm.prompts.0.role", string(schema.User)))
-			span.SetAttributes(attribute.String("llm.prompts.0.content", in))
+			span.SetAttributes(attribute.String("gen_ai.prompt.0.role", string(schema.User)))
+			span.SetAttributes(attribute.String("gen_ai.prompt.0.content", in))
 		}
 	}
 
@@ -257,7 +262,7 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 
 	if info.Component == components.ComponentOfChatModel {
 		a.chatCount.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("llm.request.model", requestModel),
+			attribute.String("gen_ai_response_model", requestModel),
 		))
 	}
 
@@ -294,7 +299,7 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 	case components.ComponentOfEmbedding:
 		if ecbo := embedding.ConvCallbackOutput(output); ecbo != nil {
 			if ecbo.Config != nil {
-				span.SetAttributes(attribute.String("llm.response.model", ecbo.Config.Model))
+				span.SetAttributes(attribute.String("gen_ai.response.model", ecbo.Config.Model))
 			}
 		}
 	case components.ComponentOfChatModel:
@@ -308,10 +313,10 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 			for i, out := range outMessages {
 				if out != nil && len(out.Content) > 0 {
 					contentReady = true
-					span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.role", i), string(out.Role)))
-					span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.content", i), out.Content))
+					span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.completion.%d.role", i), string(out.Role)))
+					span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.completion.%d.content", i), out.Content))
 					if out.ResponseMeta != nil {
-						span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.finish_reason", i), out.ResponseMeta.FinishReason))
+						span.SetAttributes(attribute.String("gen_ai.response.finish_reason", out.ResponseMeta.FinishReason))
 						responseFinishReason = out.ResponseMeta.FinishReason
 					}
 				}
@@ -320,34 +325,34 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 				outMessage, err := sonic.MarshalString(outMessages)
 				if err == nil {
 					contentReady = true
-					span.SetAttributes(attribute.String("llm.completions.0.content", outMessage))
+					span.SetAttributes(attribute.String("gen_ai.completion.0.content", outMessage))
 				}
 			}
 
 			if config != nil {
-				span.SetAttributes(attribute.String("llm.response.model", config.Model))
+				span.SetAttributes(attribute.String("gen_ai.response.model", config.Model))
 				responseModel = config.Model
 			}
 
 			if usage != nil {
-				span.SetAttributes(attribute.Int("llm.usage.total_tokens", usage.TotalTokens))
-				span.SetAttributes(attribute.Int("llm.usage.prompt_tokens", usage.PromptTokens))
-				span.SetAttributes(attribute.Int("llm.usage.completion_tokens", usage.CompletionTokens))
+				span.SetAttributes(attribute.Int("gen_ai.usage.total_tokens", usage.TotalTokens))
+				span.SetAttributes(attribute.Int("gen_ai.usage.prompt_tokens", usage.PromptTokens))
+				span.SetAttributes(attribute.Int("gen_ai.usage.completion_tokens", usage.CompletionTokens))
 			}
 
 			if info.Component == components.ComponentOfChatModel {
 				if len(responseFinishReason) > 0 {
 					a.chatChoiceCounter.Add(ctx, 1, metric.WithAttributes(
-						attribute.String("llm.response.model", responseModel),
-						attribute.String("llm.response.finish_reason", responseFinishReason),
+						attribute.String("gen_ai_response_model", responseModel),
+						attribute.String("gen_ai_response_finish_reason", responseFinishReason),
 						attribute.Bool("stream", false),
 					))
 				}
 				if usage != nil {
 					a.AddTokenUsage(ctx, usage, responseModel, false)
 				}
-				a.chatDurationHistogram.Record(ctx, float64(endTime.Sub(startTime).Milliseconds()), metric.WithAttributes(
-					attribute.String("llm.response.model", responseModel),
+				a.chatDurationHistogram.Record(ctx, float64(endTime.Sub(startTime).Seconds()), metric.WithAttributes(
+					attribute.String("gen_ai_response_model", responseModel),
 					attribute.Bool("stream", false),
 				))
 			}
@@ -359,10 +364,10 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 		if err != nil {
 			log.Printf("marshal output error: %v, runinfo: %+v", err, info)
 		} else {
-			span.SetAttributes(attribute.String("llm.completions.0.content", out))
+			span.SetAttributes(attribute.String("gen_ai.completion.0.content", out))
 		}
 	}
-	span.SetAttributes(attribute.Bool("llm.is_streaming", false))
+	span.SetAttributes(attribute.Bool("gen_ai.is_streaming", false))
 
 	return ctx
 }
@@ -391,7 +396,7 @@ func (a *apmplusHandler) OnError(ctx context.Context, info *callbacks.RunInfo, e
 
 	if requestInfo != nil && len(requestInfo.model) > 0 {
 		a.chatExceptionCounter.Add(ctx, 1, metric.WithAttributes(
-			attribute.String("llm.request.model", requestInfo.model),
+			attribute.String("gen_ai_response_model", requestInfo.model),
 		))
 	}
 
@@ -447,23 +452,23 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 			for i, in := range inMessage {
 				if in != nil && len(in.Content) > 0 {
 					contentReady = true
-					span.SetAttributes(attribute.String(fmt.Sprintf("llm.prompts.%d.role", i), string(in.Role)))
-					span.SetAttributes(attribute.String(fmt.Sprintf("llm.prompts.%d.content", i), in.Content))
+					span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.prompt.%d.role", i), string(in.Role)))
+					span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.prompt.%d.content", i), in.Content))
 				}
 			}
 
 			if config != nil {
-				span.SetAttributes(attribute.String("llm.request.model", config.Model))
+				span.SetAttributes(attribute.String("gen_ai.request.model", config.Model))
 				requestInfo.model = config.Model
 				if info.Component == components.ComponentOfChatModel {
 					a.chatCount.Add(ctx, 1, metric.WithAttributes(
-						attribute.String("llm.request.model", requestInfo.model),
+						attribute.String("gen_ai_response_model", requestInfo.model),
 					))
 				}
-				span.SetAttributes(attribute.Int("llm.request.max_token", config.MaxTokens))
-				span.SetAttributes(attribute.Float64("llm.request.temperature", float64(config.Temperature)))
-				span.SetAttributes(attribute.Float64("llm.request.top_p", float64(config.TopP)))
-				span.SetAttributes(attribute.StringSlice("llm.request.stop", config.Stop))
+				span.SetAttributes(attribute.Int("gen_ai.request.max_tokens", config.MaxTokens))
+				span.SetAttributes(attribute.Float64("gen_ai.request.temperature", float64(config.Temperature)))
+				span.SetAttributes(attribute.Float64("gen_ai.request.top_p", float64(config.TopP)))
+				span.SetAttributes(attribute.StringSlice("gen_ai.request.stop", config.Stop))
 			}
 		}
 		if !contentReady {
@@ -471,8 +476,8 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 			if err != nil {
 				log.Printf("marshal input error: %v, runinfo: %+v", err, info)
 			} else {
-				span.SetAttributes(attribute.String("llm.prompts.0.role", string(schema.User)))
-				span.SetAttributes(attribute.String("llm.prompts.0.content", in))
+				span.SetAttributes(attribute.String("gen_ai.prompt.0.role", string(schema.User)))
+				span.SetAttributes(attribute.String("gen_ai.prompt.0.content", in))
 			}
 		}
 	}()
@@ -531,10 +536,10 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 			for i, out := range outMessages {
 				if out != nil && len(out.Content) > 0 {
 					contentReady = true
-					span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.role", i), string(out.Role)))
-					span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.content", i), out.Content))
+					span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.completion.%d.role", i), string(out.Role)))
+					span.SetAttributes(attribute.String(fmt.Sprintf("gen_ai.completion.%d.content", i), out.Content))
 					if out.ResponseMeta != nil {
-						span.SetAttributes(attribute.String(fmt.Sprintf("llm.completions.%d.finish_reason", i), out.ResponseMeta.FinishReason))
+						span.SetAttributes(attribute.String("gen_ai.response.finish_reason", out.ResponseMeta.FinishReason))
 						responseFinishReason = out.ResponseMeta.FinishReason
 					}
 				}
@@ -543,20 +548,20 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 				outMessage, err := sonic.MarshalString(outMessages)
 				if err == nil {
 					contentReady = true
-					span.SetAttributes(attribute.String("llm.completions.0.role", string(schema.Assistant)))
-					span.SetAttributes(attribute.String("llm.completions.0.content", outMessage))
+					span.SetAttributes(attribute.String("gen_ai.completion.0.role", string(schema.Assistant)))
+					span.SetAttributes(attribute.String("gen_ai.completion.0.content", outMessage))
 				}
 			}
 
 			if config != nil {
-				span.SetAttributes(attribute.String("llm.response.model", config.Model))
+				span.SetAttributes(attribute.String("gen_ai.response.model", config.Model))
 				responseModel = config.Model
 			}
 
 			if usage != nil {
-				span.SetAttributes(attribute.Int("llm.usage.total_tokens", usage.TotalTokens))
-				span.SetAttributes(attribute.Int("llm.usage.prompt_tokens", usage.PromptTokens))
-				span.SetAttributes(attribute.Int("llm.usage.completion_tokens", usage.CompletionTokens))
+				span.SetAttributes(attribute.Int("gen_ai.usage.total_tokens", usage.TotalTokens))
+				span.SetAttributes(attribute.Int("gen_ai.usage.prompt_tokens", usage.PromptTokens))
+				span.SetAttributes(attribute.Int("gen_ai.usage.completion_tokens", usage.CompletionTokens))
 			}
 		}
 		if !contentReady {
@@ -564,37 +569,42 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 			if err != nil {
 				log.Printf("marshal stream output error: %v, runinfo: %+v", err, info)
 			} else {
-				span.SetAttributes(attribute.String("llm.completions.0.content", out))
+				span.SetAttributes(attribute.String("gen_ai.completion.0.content", out))
 			}
 		}
-		span.SetAttributes(attribute.Bool("llm.is_streaming", true))
+		span.SetAttributes(attribute.Bool("gen_ai.is_streaming", true))
 
 		if info.Component == components.ComponentOfChatModel {
 			if len(responseFinishReason) > 0 {
 				a.chatChoiceCounter.Add(ctx, 1, metric.WithAttributes(
-					attribute.String("llm.response.model", responseModel),
-					attribute.String("llm.response.finish_reason", responseFinishReason),
+					attribute.String("gen_ai_response_model", responseModel),
+					attribute.String("gen_ai_response_finish_reason", responseFinishReason),
 					attribute.Bool("stream", true),
 				))
 			}
 			if usage != nil {
 				a.AddTokenUsage(ctx, usage, responseModel, true)
-				a.streamingTimePerOutputToken.Record(ctx, float64(endTime.Sub(timeOfFirstToken).Milliseconds())/float64(usage.CompletionTokens), metric.WithAttributes(
-					attribute.String("llm.response.model", responseModel),
+				tpot := endTime.Sub(timeOfFirstToken).Seconds() / float64(usage.CompletionTokens)
+				a.streamingTimePerOutputToken.Record(ctx, tpot, metric.WithAttributes(
+					attribute.String("gen_ai_response_model", responseModel),
 					attribute.Bool("stream", true),
 				))
+				span.SetAttributes(attribute.Float64("gen_ai.chat_completions.streaming_time_per_output_token", tpot))
 			}
-			a.chatDurationHistogram.Record(ctx, float64(endTime.Sub(startTime).Milliseconds()), metric.WithAttributes(
-				attribute.String("llm.response.model", responseModel),
+			a.chatDurationHistogram.Record(ctx, endTime.Sub(startTime).Seconds(), metric.WithAttributes(
+				attribute.String("gen_ai_response_model", responseModel),
 				attribute.Bool("stream", true),
 			))
 
-			a.streamingTimeToFirstToken.Record(ctx, float64(timeOfFirstToken.Sub(startTime).Milliseconds()), metric.WithAttributes(
-				attribute.String("llm.response.model", responseModel),
+			ttft := timeOfFirstToken.Sub(startTime).Seconds()
+			a.streamingTimeToFirstToken.Record(ctx, ttft, metric.WithAttributes(
+				attribute.String("gen_ai_response_model", responseModel),
 				attribute.Bool("stream", true),
 			))
-			a.streamingTimeToGenerate.Record(ctx, float64(endTime.Sub(timeOfFirstToken).Milliseconds()), metric.WithAttributes(
-				attribute.String("llm.response.model", responseModel),
+			span.SetAttributes(attribute.Float64("gen_ai.chat_completions.streaming_time_to_first_token", ttft))
+
+			a.streamingTimeToGenerate.Record(ctx, endTime.Sub(timeOfFirstToken).Seconds(), metric.WithAttributes(
+				attribute.String("gen_ai_response_model", responseModel),
 				attribute.Bool("stream", true),
 			))
 		}
@@ -606,19 +616,19 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 
 func (a *apmplusHandler) AddTokenUsage(ctx context.Context, usage *model.TokenUsage, responseModel string, isStream bool) {
 	if usage != nil {
-		a.tokenUsage.Add(ctx, int64(usage.TotalTokens), metric.WithAttributes(
-			attribute.String("llm.request.model", responseModel),
-			attribute.String("llm.usage.token_type", "total"),
+		a.tokenUsage.Record(ctx, int64(usage.TotalTokens), metric.WithAttributes(
+			attribute.String("gen_ai_response_model", responseModel),
+			attribute.String("gen_ai_token_type", "total"),
 			attribute.Bool("stream", isStream),
 		))
-		a.tokenUsage.Add(ctx, int64(usage.CompletionTokens), metric.WithAttributes(
-			attribute.String("llm.request.model", responseModel),
-			attribute.String("llm.usage.token_type", "completion"),
+		a.tokenUsage.Record(ctx, int64(usage.CompletionTokens), metric.WithAttributes(
+			attribute.String("gen_ai_response_model", responseModel),
+			attribute.String("gen_ai_token_type", "output"),
 			attribute.Bool("stream", isStream),
 		))
-		a.tokenUsage.Add(ctx, int64(usage.PromptTokens), metric.WithAttributes(
-			attribute.String("llm.request.model", responseModel),
-			attribute.String("llm.usage.token_type", "prompt"),
+		a.tokenUsage.Record(ctx, int64(usage.PromptTokens), metric.WithAttributes(
+			attribute.String("gen_ai_response_model", responseModel),
+			attribute.String("gen_ai_token_type", "input"),
 			attribute.Bool("stream", isStream),
 		))
 	}

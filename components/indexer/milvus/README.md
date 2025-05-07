@@ -154,4 +154,3 @@ type IndexerConfig struct {
 | content  | string         | varchar       |                            | Document content        | Max Length: 1024   |
 | vector   | []byte         | binary array  | HAMMING(default) / JACCARD | Document content vector | Default Dim: 81920 |
 | metadata | map[string]any | json          |                            | Document meta data      |                    |
-

@@ -161,20 +161,32 @@ jobs:
             changed_files=$(git diff --name-only HEAD^ HEAD)
           fi
           
-          # Initialize message
+          # Initialize messages
           echo "### Need to create a new tag" > tag_message.txt
           echo "The following modules have changes and may need version updates:" >> tag_message.txt
           
+          echo "### Documentation Updates" > readme_message.txt
+          echo "The following README files have been modified:" >> readme_message.txt
+          
           need_tag=false
+          has_readme_changes=false
 
           # Check each module
           for module in $modules; do
             module_name=${module#./}
+            
+            # Check for module changes
             if echo "$changed_files" | grep -q "^$module_name/"; then
               latest_tag=$(git tag -l "${module_name}/v*" | sort -V | tail -n 1)
               if [ ! -z "$latest_tag" ]; then
                 need_tag=true
                 echo -e "- \`${module_name}\` (Current: ${latest_tag})\n" >> tag_message.txt
+              fi
+              
+              # Check for README changes
+              if echo "$changed_files" | grep -q "^$module_name/README\(_zh\)\?\.md$"; then
+                has_readme_changes=true
+                echo -e "- \`${module_name}\` README has been updated\n" >> readme_message.txt
               fi
             fi
           done
@@ -182,16 +194,16 @@ jobs:
           # Different message for PR and merge
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             echo -e "\n⚠️ Please create and push new version tags for these modules after merging this PR." >> tag_message.txt
+            echo -e "\n⚠️ Please update the official documentation after merging this PR." >> readme_message.txt
           else
             echo -e "\n⚠️ Changes have been merged to main branch. \nPlease create new version tags for these modules." >> tag_message.txt
+            echo -e "\n⚠️ Changes have been merged to main branch. \nPlease update the official documentation." >> readme_message.txt
           fi
           
-          # Save message and prepare webhook payload
+          # Save message and prepare webhook payloads
+          repo_url="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
+          
           if [ "$need_tag" = true ]; then
-              # Get the correct URL based on event type
-              repo_url="https://github.com/${{ github.repository }}/commit/${{ github.sha }}"
-
-              # Read the message and create webhook payload for Feishu bot
               message="$(cat tag_message.txt)"
               jq -n --arg title "Need to create a new tag" \
                     --arg content "$message" \
@@ -226,11 +238,49 @@ jobs:
                           }
                         }
                       }
-                    }' > webhook_payload.json
-            echo "needs_tag=true" >> $GITHUB_OUTPUT
-          else
-            echo "needs_tag=false" >> $GITHUB_OUTPUT
+                    }' > tag_webhook_payload.json
           fi
+          
+          if [ "$has_readme_changes" = true ]; then
+              message="$(cat readme_message.txt)"
+              jq -n --arg title "Documentation Updates" \
+                    --arg content "$message" \
+                    --arg repo_url "$repo_url" \
+                    '{
+                      "msg_type": "interactive",
+                      "card": {
+                        "elements": [
+                          {
+                            "tag": "markdown",
+                            "content": $content
+                          },
+                          {
+                            "tag": "action",
+                            "actions": [
+                              {
+                                "tag": "button",
+                                "text": {
+                                  "tag": "plain_text",
+                                  "content": "🔗 View Changes on GitHub"
+                                },
+                                "url": $repo_url,
+                                "type": "default"
+                              }
+                            ]
+                          }
+                        ],
+                        "header": {
+                          "title": {
+                            "tag": "plain_text",
+                            "content": "Documentation Updates Required"
+                          }
+                        }
+                      }
+                    }' > readme_webhook_payload.json
+          fi
+
+          echo "needs_tag=$need_tag" >> $GITHUB_OUTPUT
+          echo "has_readme_changes=$has_readme_changes" >> $GITHUB_OUTPUT
 
       - name: Find existing comment
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
@@ -250,10 +300,18 @@ jobs:
           body-file: tag_message.txt
           edit-mode: replace
 
-      - name: Send webhook notification
+      - name: Send tag webhook notification
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push'
         run: |
           curl -X POST \
                -H "Content-Type: application/json" \
-               -d @webhook_payload.json \
+               -d @tag_webhook_payload.json \
+               "${{ secrets.FEISHU_WEBHOOK_URL }}"
+
+      - name: Send readme webhook notification
+        if: steps.check-mods.outputs.has_readme_changes == 'true' && github.event_name == 'push'
+        run: |
+          curl -X POST \
+               -H "Content-Type: application/json" \
+               -d @readme_webhook_payload.json \
                "${{ secrets.FEISHU_WEBHOOK_URL }}"

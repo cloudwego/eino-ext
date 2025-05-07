@@ -76,8 +76,8 @@ github.com/mattn/go-colorable v0.1.2 h1:/bC9yWikZXAL9uJdulbSfyVNIR3n3trXl+v8+1sx
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
 github.com/mattn/go-isatty v0.0.8 h1:HLtExJ+uU2HOZ+wI0Tt5DtUDrx8yhUqDcp7fYERX4CE=
 github.com/mattn/go-isatty v0.0.8/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250402131905-e1ff67830216 h1:UbfmIMBbm0++v1K5Gr7x5q3EY4yPcg5J1ydPpIUbGgI=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250402131905-e1ff67830216/go.mod h1:kyz7fcXqXtccmRAIARn1Q+cKLNXJHC3AoqqJGeCqNI0=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250408071642-761325becfd6 h1:nmdXxiUX48DZ2ELC/jSYzyGUVgxVEF2QJRGhLJ933zA=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250408071642-761325becfd6/go.mod h1:kyz7fcXqXtccmRAIARn1Q+cKLNXJHC3AoqqJGeCqNI0=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b/go.mod h1:01TrycV0kFyexm33Z7vhZRXopbI8J3TDReVlkTgMUxE=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=

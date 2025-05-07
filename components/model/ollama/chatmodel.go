@@ -391,6 +391,7 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 			Description string   `json:"description"`
 			Enum        []string `json:"enum,omitempty"`
 		})
+		var required []string
 
 		openTool, err := einoTool.ParamsOneOf.ToOpenAPIV3()
 		if err != nil {
@@ -398,6 +399,8 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		}
 
 		if openTool != nil {
+			required = openTool.Required
+
 			for name, param := range openTool.Properties {
 				enums := make([]string, 0, len(param.Value.Enum))
 				for _, e := range param.Value.Enum {
@@ -435,7 +438,7 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 					} `json:"properties"`
 				}{
 					Type:       "object",
-					Required:   openTool.Required,
+					Required:   required,
 					Properties: properties,
 				},
 			},
