@@ -9,7 +9,10 @@ Eino 的向量存储和检索系统，增强语义搜索能力。
 
 ### 安装
 
+它需要 milvus-sdk-go 客户端版本 2.4.x
+
 ```bash
+go get github.com/milvus-io/milvus-sdk-go/v2@2.4.2
 go get github.com/eino-project/eino/indexer/milvus@latest
 ```
 
