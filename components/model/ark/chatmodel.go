@@ -26,14 +26,13 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
+	fmodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
-
-	"github.com/cloudwego/eino/callbacks"
-	fmodel "github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
 )
 
 var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
@@ -488,7 +487,7 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	if tools != nil {
 		req.Tools = make([]*model.Tool, 0, len(tools))
 
-		for _, tool := range cm.tools {
+		for _, tool := range tools {
 			arkTool := &model.Tool{
 				Type: model.ToolTypeFunction,
 				Function: &model.FunctionDefinition{
