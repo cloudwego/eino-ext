@@ -20,7 +20,7 @@ type XlsxParser struct {
 
 // Config 用于配置xlsxParser
 type Config struct {
-	SheetName string // 指定要处理的工作表名称，为空则处理所有工作表
+	SheetName string // 指定要处理的工作表名称，为空则处理第一张表
 	HasHeader bool   // 是否包含表头
 }
 
