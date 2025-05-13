@@ -105,7 +105,7 @@ func (s sortedDocuments) Len() int {
 	return len(s.docs)
 }
 func (s sortedDocuments) Less(i, j int) bool {
-	return s.scoreGetter(s.docs[i]) < s.scoreGetter(s.docs[j])
+	return s.scoreGetter(s.docs[i]) > s.scoreGetter(s.docs[j])
 }
 func (s sortedDocuments) Swap(i, j int) {
 	s.docs[i], s.docs[j] = s.docs[j], s.docs[i]
