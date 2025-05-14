@@ -11,7 +11,8 @@ with Eino's vector storage and retrieval system for enhanced semantic search cap
 ### Installation
 
 ```bash
-go get github.com/eino-project/eino/retriever/milvus@latest
+go get github.com/milvus-io/milvus-sdk-go/v2@2.4.2
+go get github.com/cloudwego/eino-ext/retriever/milvus@latest
 ```
 
 ### Create the Milvus Retriever
