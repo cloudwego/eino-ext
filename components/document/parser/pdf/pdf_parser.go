@@ -19,8 +19,8 @@ package pdf
 import (
 	"bytes"
 	"context"
-	"io"
 	"fmt"
+	"io"
 
 	"github.com/cloudwego/eino/components/document/parser"
 	"github.com/cloudwego/eino/schema"
