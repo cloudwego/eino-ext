@@ -22,58 +22,77 @@ import (
 	"io"
 	"strings"
 
-	"github.com/cloudwego/eino/schema"
-
 	"github.com/cloudwego/eino/components/document/parser"
-
+	"github.com/cloudwego/eino/schema"
 	"github.com/xuri/excelize/v2"
 )
 
-// XlsxParser 自定义解析器，用于解析excel文件内容
+const (
+	PrefixXlsx = "_xlsx"
+	PrefixRow  = "_row"
+	PrefixExt  = "_ext"
+)
+
+// XlsxParser Custom parser for parsing Xlsx file content
+// Can be used to work with Xlsx files with headers or without headers
+// You can also select a specific table from the xlsx file in multiple sheet tables
 type XlsxParser struct {
 	Config *Config
 }
 
-// Config 用于配置xlsxParser
+// Config Used to configure xlsxParser
+// HasHeader is set to false by default, which means that the first row is not used as the table header
+// SheetName is set to Sheet1 by default, which means that the first table is processed
 type Config struct {
-	SheetName string // 指定要处理的工作表名称，为空则处理第一张表
-	HasHeader bool   // 是否包含表头
+	SheetName string
+	HasHeader bool
 }
 
-// NewXlsxParser 创建一个新的xlsxParser
+// NewXlsxParser Create a new xlsxParser
 func NewXlsxParser(ctx context.Context, config *Config) (xlp parser.Parser, err error) {
-	// 默认配置HasHeader为true，表示第一行为表头，默认配置SheetName为文件的第一张表
+	// Default configuration
 	if config == nil {
-		config = &Config{
-			HasHeader: true,
-			SheetName: "Sheet1",
-		}
+		config = &Config{}
 	}
 	xlp = &XlsxParser{Config: config}
 	return xlp, nil
 }
 
-// Parse 实现自定义解析器接口
+// buildRowMetaData builds row metadata from row data and headers
+func (xlp *XlsxParser) buildRowMetaData(row []string, headers []string) map[string]any {
+	metaData := make(map[string]any)
+	if xlp.Config.HasHeader {
+		for j, header := range headers {
+			if j < len(row) {
+				metaData[header] = row[j]
+			}
+		}
+	}
+	return metaData
+}
+
+// Parse parses the XLSX content from io.Reader.
 func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...parser.Option) ([]*schema.Document, error) {
+	option := parser.GetCommonOptions(&parser.Options{}, opts...)
 	xlFile, err := excelize.OpenReader(reader)
 	if err != nil {
 		return nil, err
 	}
 	defer xlFile.Close()
 
-	// 获取所有工作表
+	// Get all worksheets
 	sheets := xlFile.GetSheetList()
 	if len(sheets) == 0 {
 		return nil, nil
 	}
 
-	// 确定要处理的工作表，默认只处理第一个工作表
+	// Default
 	sheetName := sheets[0]
 	if xlp.Config.SheetName != "" {
 		sheetName = xlp.Config.SheetName
 	}
 
-	// 获取所有行，表头+数据行
+	// Get all rows, header + data rows
 	rows, err := xlFile.GetRows(sheetName)
 	if err != nil {
 		return nil, err
@@ -84,44 +103,43 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 
 	var ret []*schema.Document
 
-	// 处理表头
+	// Process the header
 	startIdx := 0
 	var headers []string
 	if xlp.Config.HasHeader && len(rows) > 0 {
 		headers = rows[0]
 		startIdx = 1
 	}
-	// 处理数据行
+
+	// Process rows of data
 	for i := startIdx; i < len(rows); i++ {
 		row := rows[i]
 		if len(row) == 0 {
 			continue
 		}
-
-		// 将行数据转换为字符串
+		// Convert row data to strings
 		contentParts := make([]string, len(row))
 		for j, cell := range row {
 			contentParts[j] = strings.TrimSpace(cell)
 		}
 		content := strings.Join(contentParts, "\t")
 
-		// 创建新的Document
-		nDoc := &schema.Document{
-			ID:       fmt.Sprintf("%d", i),
-			Content:  fmt.Sprintf("%s", content),
-			MetaData: map[string]any{},
+		meta := make(map[string]any)
+
+		// Build the row's Meta
+		rowMeta := xlp.buildRowMetaData(row, headers)
+		meta[PrefixRow] = rowMeta
+
+		// Get the Common ExtraMeta
+		if option.ExtraMeta != nil {
+			meta[PrefixExt] = option.ExtraMeta
 		}
 
-		// 如果有表头，将数据添加到元数据中
-		if xlp.Config.HasHeader {
-			if nDoc.MetaData == nil {
-				nDoc.MetaData = make(map[string]any)
-			}
-			for j, header := range headers {
-				if j < len(row) {
-					nDoc.MetaData[header] = row[j]
-				}
-			}
+		// Create New Document
+		nDoc := &schema.Document{
+			ID:       fmt.Sprintf("%s%s%d", PrefixXlsx, PrefixRow, i),
+			Content:  content,
+			MetaData: meta,
 		}
 
 		ret = append(ret, nDoc)

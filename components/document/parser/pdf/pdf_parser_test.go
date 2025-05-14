@@ -18,6 +18,7 @@ package pdf
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -40,6 +41,7 @@ func TestLoader_Load(t *testing.T) {
 		assert.Equal(t, 2, len(docs))
 		assert.True(t, len(docs[0].Content) > 0)
 		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData)
+		fmt.Printf("res:Id: %v, Content: %v, Meta: %v", docs[0].ID, docs[0].Content, docs[0].MetaData)
 		assert.True(t, len(docs[0].Content) > 0)
 		assert.Equal(t, map[string]any{"test": "test"}, docs[1].MetaData)
 	})

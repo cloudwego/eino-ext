@@ -26,7 +26,7 @@ import (
 )
 
 func TestXlsxParser_Parse(t *testing.T) {
-	t.Run("TestXlsxParser_Parse", func(t *testing.T) {
+	t.Run("TestXlsxParser_Default", func(t *testing.T) {
 		ctx := context.Background()
 
 		f, err := os.Open("./testdata/location.xlsx")
@@ -39,6 +39,46 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{"县（区）": "新密市", "市": "郑州市", "省": "河南省"}, docs[0].MetaData)
+		assert.Equal(t, map[string]any{}, docs[0].MetaData[PrefixRow])
+		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[PrefixExt])
+	})
+
+	t.Run("TestXlsxParser_WithAnotherSheet", func(t *testing.T) {
+		ctx := context.Background()
+
+		f, err := os.Open("./testdata/location.xlsx")
+		assert.NoError(t, err)
+
+		p, err := NewXlsxParser(ctx, &Config{
+			SheetName: "Sheet2",
+		})
+		assert.NoError(t, err)
+
+		docs, err := p.Parse(ctx, f, parser.WithExtraMeta(map[string]any{"test": "test"}))
+		assert.NoError(t, err)
+		assert.True(t, len(docs) > 0)
+		assert.True(t, len(docs[0].Content) > 0)
+		assert.Equal(t, map[string]any{}, docs[0].MetaData[PrefixRow])
+		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[PrefixExt])
+	})
+
+	t.Run("TestXlsxParser_WithHeader", func(t *testing.T) {
+		ctx := context.Background()
+
+		f, err := os.Open("./testdata/location.xlsx")
+		assert.NoError(t, err)
+
+		p, err := NewXlsxParser(ctx, &Config{
+			SheetName: "Sheet3",
+			HasHeader: true,
+		})
+		assert.NoError(t, err)
+
+		docs, err := p.Parse(ctx, f, parser.WithExtraMeta(map[string]any{"test": "test"}))
+		assert.NoError(t, err)
+		assert.True(t, len(docs) > 0)
+		assert.True(t, len(docs[0].Content) > 0)
+		assert.Equal(t, map[string]any{"县（区）": "新密市", "市": "郑州市", "省": "河南省"}, docs[0].MetaData[PrefixRow])
+		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[PrefixExt])
 	})
 }

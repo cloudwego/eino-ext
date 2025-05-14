@@ -44,6 +44,7 @@ func NewPDFParser(ctx context.Context, config *Config) (*PDFParser, error) {
 	if config == nil {
 		config = &Config{}
 	}
+	fmt.Println("0.0.0.0.", config)
 	return &PDFParser{ToPages: config.ToPages}, nil
 }
 
