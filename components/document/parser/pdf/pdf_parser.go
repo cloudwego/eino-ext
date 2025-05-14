@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"fmt"
 
 	"github.com/cloudwego/eino/components/document/parser"
 	"github.com/cloudwego/eino/schema"
