@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-// Package ark implements chat model for ark runtime.
-package ark
+package arkbot
 
 import (
 	"context"
@@ -46,10 +45,10 @@ var (
 )
 
 var (
-	ErrEmptyResponse = errors.New("empty response received from model")
+	ErrEmptyResponse = errors.New("empty response received from ark-bot")
 )
 
-type ChatModelConfig struct {
+type Config struct {
 	// Timeout specifies the maximum duration to wait for API responses
 	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default: 10 minutes
@@ -136,7 +135,7 @@ type ResponseFormat struct {
 	Type model.ResponseFormatType `json:"type"`
 }
 
-func buildClient(config *ChatModelConfig) *arkruntime.Client {
+func buildClient(config *Config) *arkruntime.Client {
 	if len(config.BaseURL) == 0 {
 		config.BaseURL = defaultBaseURL
 	}
@@ -167,9 +166,9 @@ func buildClient(config *ChatModelConfig) *arkruntime.Client {
 	return arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
 }
 
-func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
+func NewChatModel(_ context.Context, config *Config) (*ChatModel, error) {
 	if config == nil {
-		config = &ChatModelConfig{}
+		config = &Config{}
 	}
 	client := buildClient(config)
 
@@ -180,7 +179,7 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 }
 
 type ChatModel struct {
-	config *ChatModelConfig
+	config *Config
 	client *arkruntime.Client
 
 	tools    []tool
@@ -269,9 +268,9 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	reqConf := &fmodel.Config{
 		Model:       req.Model,
-		MaxTokens:   dereferenceOrZero(req.MaxTokens),
-		Temperature: dereferenceOrZero(req.Temperature),
-		TopP:        dereferenceOrZero(req.TopP),
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
 		Stop:        req.Stop,
 	}
 
@@ -292,12 +291,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		}
 	}()
 
-	var resp model.ChatCompletionResponse
-	if arkOpts.contextID != nil {
-		resp, err = cm.client.CreateContextChatCompletion(ctx, *convCompletionRequest(req, *arkOpts.contextID), arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	} else {
-		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	}
+	resp, err := cm.client.CreateBotChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -337,14 +331,14 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		return nil, err
 	}
 
-	req.Stream = ptrOf(true)
+	req.Stream = true
 	req.StreamOptions = &model.StreamOptions{IncludeUsage: true}
 
 	reqConf := &fmodel.Config{
 		Model:       req.Model,
-		MaxTokens:   dereferenceOrZero(req.MaxTokens),
-		Temperature: dereferenceOrZero(req.Temperature),
-		TopP:        dereferenceOrZero(req.TopP),
+		MaxTokens:   req.MaxTokens,
+		Temperature: req.Temperature,
+		TopP:        req.TopP,
 		Stop:        req.Stop,
 	}
 
@@ -364,12 +358,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		}
 	}()
 
-	var stream *autils.ChatCompletionStreamReader
-	if arkOpts.contextID != nil {
-		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *convCompletionRequest(req, *arkOpts.contextID), arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	} else {
-		stream, err = cm.client.CreateChatCompletionStream(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	}
+	stream, err := cm.client.CreateBotChatCompletionStream(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
 	if err != nil {
 		return nil, err
 	}
@@ -438,16 +427,17 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	return outStream, nil
 }
 
-func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (req *model.CreateChatCompletionRequest, err error) {
-	req = &model.CreateChatCompletionRequest{
-		MaxTokens:        options.MaxTokens,
-		Temperature:      options.Temperature,
-		TopP:             options.TopP,
+func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (req *model.BotChatCompletionRequest, err error) {
+	req = &model.BotChatCompletionRequest{
+		MaxTokens:        dereferenceOrZero(options.MaxTokens),
+		Temperature:      dereferenceOrZero(options.Temperature),
+		TopP:             dereferenceOrZero(options.TopP),
 		Model:            dereferenceOrZero(options.Model),
 		Stop:             options.Stop,
-		FrequencyPenalty: cm.config.FrequencyPenalty,
+		FrequencyPenalty: dereferenceOrZero(cm.config.FrequencyPenalty),
 		LogitBias:        cm.config.LogitBias,
-		PresencePenalty:  cm.config.PresencePenalty,
+		PresencePenalty:  dereferenceOrZero(cm.config.PresencePenalty),
+		Metadata:         map[string]interface{}{},
 	}
 
 	if cm.config.ResponseFormat != nil {
@@ -457,10 +447,10 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	}
 
 	if cm.config.LogProbs {
-		req.LogProbs = &cm.config.LogProbs
+		req.LogProbs = cm.config.LogProbs
 	}
 	if cm.config.TopLogProbs > 0 {
-		req.TopLogProbs = &cm.config.TopLogProbs
+		req.TopLogProbs = cm.config.TopLogProbs
 	}
 
 	for _, msg := range in {
@@ -541,7 +531,7 @@ func runeSlice2int64(in []rune) []int64 {
 	return ret
 }
 
-func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg *schema.Message, err error) {
+func (cm *ChatModel) resolveChatResponse(resp model.BotChatCompletionResponse) (msg *schema.Message, err error) {
 	if len(resp.Choices) == 0 {
 		return nil, ErrEmptyResponse
 	}
@@ -570,28 +560,30 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 		ToolCalls:  toMessageToolCalls(choice.Message.ToolCalls),
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(choice.FinishReason),
-			Usage:        toEinoTokenUsage(&resp.Usage),
 			LogProbs:     toLogProbs(choice.LogProbs),
 		},
-		Extra: map[string]any{
-			keyOfRequestID: arkRequestID(resp.ID),
-		},
+		Extra: map[string]any{},
 	}
+	setArkRequestID(msg, resp.ID)
 
 	if content != nil && content.StringValue != nil {
 		msg.Content = *content.StringValue
 	}
 
 	if choice.Message.ReasoningContent != nil {
-		msg.Extra[keyOfReasoningContent] = *choice.Message.ReasoningContent
+		setReasoningContent(msg, *choice.Message.ReasoningContent)
 	}
+	if resp.BotUsage != nil {
+		msg.ResponseMeta.Usage = toEinoTokenUsage(resp.BotUsage.ModelUsage)
+		setBotUsage(msg, resp.BotUsage)
+	}
+	setBotChatResultReference(msg, resp.References)
 
 	return msg, nil
 }
 
-func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema.Message, msgFound bool, err error) {
+func resolveStreamResponse(resp model.BotChatCompletionStreamResponse) (msg *schema.Message, msgFound bool, err error) {
 	if len(resp.Choices) > 0 {
-
 		for _, choice := range resp.Choices {
 			if choice.Index != 0 {
 				continue
@@ -604,32 +596,35 @@ func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema
 				Content:   choice.Delta.Content,
 				ResponseMeta: &schema.ResponseMeta{
 					FinishReason: string(choice.FinishReason),
-					Usage:        toEinoTokenUsage(resp.Usage),
 					LogProbs:     toLogProbs(choice.LogProbs),
 				},
-				Extra: map[string]any{
-					keyOfRequestID: arkRequestID(resp.ID),
-				},
+				Extra: map[string]any{},
 			}
+			setArkRequestID(msg, resp.ID)
 
 			if choice.Delta.ReasoningContent != nil {
-				msg.Extra[keyOfReasoningContent] = *choice.Delta.ReasoningContent
+				setReasoningContent(msg, *choice.Delta.ReasoningContent)
 			}
 
 			break
 		}
 	}
 
-	if !msgFound && resp.Usage != nil {
+	if resp.BotUsage != nil {
 		msgFound = true
-		msg = &schema.Message{
-			ResponseMeta: &schema.ResponseMeta{
-				Usage: toEinoTokenUsage(resp.Usage),
-			},
-			Extra: map[string]any{
-				keyOfRequestID: arkRequestID(resp.ID),
-			},
+		if msg == nil {
+			msg = &schema.Message{}
 		}
+		msg.ResponseMeta = &schema.ResponseMeta{Usage: toEinoTokenUsage(resp.BotUsage.ModelUsage)}
+		setArkRequestID(msg, resp.ID)
+		setBotUsage(msg, resp.BotUsage)
+	}
+	if len(resp.References) > 0 {
+		msgFound = true
+		if msg == nil {
+			msg = &schema.Message{}
+		}
+		setBotChatResultReference(msg, resp.References)
 	}
 
 	return msg, msgFound, nil
@@ -658,30 +653,24 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 	return &ncm, nil
 }
 
-func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
-	var err error
-	if len(tools) == 0 {
-		return errors.New("no tools to bind")
-	}
-	cm.tools, err = toTools(tools)
-	if err != nil {
-		return err
-	}
-
-	cm.rawTools = tools
-
-	return nil
-}
-
-func toEinoTokenUsage(usage *model.Usage) *schema.TokenUsage {
-	if usage == nil {
+func toEinoTokenUsage(usage []*model.BotModelUsage) *schema.TokenUsage {
+	if len(usage) == 0 {
 		return nil
 	}
-	return &schema.TokenUsage{
-		CompletionTokens: usage.CompletionTokens,
-		PromptTokens:     usage.PromptTokens,
-		TotalTokens:      usage.TotalTokens,
+	ret := &schema.TokenUsage{
+		PromptTokens:     0,
+		CompletionTokens: 0,
+		TotalTokens:      0,
 	}
+	for _, u := range usage {
+		if u == nil {
+			continue
+		}
+		ret.TotalTokens += u.TotalTokens
+		ret.CompletionTokens += u.CompletionTokens
+		ret.PromptTokens += u.PromptTokens
+	}
+	return ret
 }
 
 func toModelCallbackUsage(respMeta *schema.ResponseMeta) *fmodel.TokenUsage {
@@ -803,7 +792,7 @@ func toTools(tls []*schema.ToolInfo) ([]tool, error) {
 	return tools, nil
 }
 
-func closeArkStreamReader(r *autils.ChatCompletionStreamReader) error {
+func closeArkStreamReader(r *autils.BotChatCompletionStreamReader) error {
 	if r == nil || r.Response == nil || r.Response.Body == nil {
 		return nil
 	}
