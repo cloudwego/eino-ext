@@ -26,9 +26,15 @@ const (
 	ConsistencyLevelBounded    ConsistencyLevel = 3
 	ConsistencyLevelEventually ConsistencyLevel = 4
 	ConsistencyLevelCustomized ConsistencyLevel = 5
-
-	HAMMING = MetricType(entity.HAMMING)
-	JACCARD = MetricType(entity.JACCARD)
+	
+	L2             = MetricType(entity.L2)
+	IP             = MetricType(entity.IP)
+	CONSINE        = MetricType(entity.COSINE)
+	HAMMING        = MetricType(entity.HAMMING)
+	JACCARD        = MetricType(entity.JACCARD)
+	TANIMOTO       = MetricType(entity.TANIMOTO)
+	SUBSTRUCTURE   = MetricType(entity.SUBSTRUCTURE)
+	SUPERSTRUCTURE = MetricType(entity.SUPERSTRUCTURE)
 )
 
 // defaultSchema is the default schema for milvus by eino
