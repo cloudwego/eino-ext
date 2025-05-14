@@ -29,8 +29,8 @@ import (
 
 const (
 	PrefixXlsx = "_xlsx"
-	PrefixRow  = "_row"
-	PrefixExt  = "_ext"
+	MetaDataRow  = "_row"
+	MetaDataExt  = "_ext"
 )
 
 // XlsxParser Custom parser for parsing Xlsx file content
@@ -128,16 +128,16 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 
 		// Build the row's Meta
 		rowMeta := xlp.buildRowMetaData(row, headers)
-		meta[PrefixRow] = rowMeta
+		meta[MetaDataRow] = rowMeta
 
 		// Get the Common ExtraMeta
 		if option.ExtraMeta != nil {
-			meta[PrefixExt] = option.ExtraMeta
+			meta[MetaDataExt] = option.ExtraMeta
 		}
 
 		// Create New Document
 		nDoc := &schema.Document{
-			ID:       fmt.Sprintf("%s%s%d", PrefixXlsx, PrefixRow, i),
+			ID:       fmt.Sprintf("%s%s%d", PrefixXlsx, MetaDataRow, i),
 			Content:  content,
 			MetaData: meta,
 		}
