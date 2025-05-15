@@ -20,7 +20,7 @@ jobs:
         with:
           config: .github/workflows/typos.toml
 
-      - name: Check README_zh.md and examples
+      - name: Check README.zh_CN.md and examples
         run: |-
           # Fetch the main branch
           git fetch origin main

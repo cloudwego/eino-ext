@@ -28,9 +28,9 @@ import (
 )
 
 const (
-	PrefixXlsx = "_xlsx"
-	MetaDataRow  = "_row"
-	MetaDataExt  = "_ext"
+	PrefixXlsx  = "_xlsx"
+	MetaDataRow = "_row"
+	MetaDataExt = "_ext"
 )
 
 // XlsxParser Custom parser for parsing Xlsx file content
@@ -41,11 +41,11 @@ type XlsxParser struct {
 }
 
 // Config Used to configure xlsxParser
-// HasHeader is set to false by default, which means that the first row is not used as the table header
+// HasHeader is set to true by default, which means that the first row is used as the table header
 // SheetName is set to Sheet1 by default, which means that the first table is processed
 type Config struct {
 	SheetName string
-	HasHeader bool
+	HasHeader *bool
 }
 
 // NewXlsxParser Create a new xlsxParser
@@ -54,6 +54,11 @@ func NewXlsxParser(ctx context.Context, config *Config) (xlp parser.Parser, err 
 	if config == nil {
 		config = &Config{}
 	}
+
+	if config.HasHeader == nil {
+		defaultValue := true
+		config.HasHeader = &defaultValue
+	}
 	xlp = &XlsxParser{Config: config}
 	return xlp, nil
 }
@@ -61,7 +66,7 @@ func NewXlsxParser(ctx context.Context, config *Config) (xlp parser.Parser, err 
 // buildRowMetaData builds row metadata from row data and headers
 func (xlp *XlsxParser) buildRowMetaData(row []string, headers []string) map[string]any {
 	metaData := make(map[string]any)
-	if xlp.Config.HasHeader {
+	if *xlp.Config.HasHeader {
 		for j, header := range headers {
 			if j < len(row) {
 				metaData[header] = row[j]
@@ -106,7 +111,7 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 	// Process the header
 	startIdx := 0
 	var headers []string
-	if xlp.Config.HasHeader && len(rows) > 0 {
+	if *xlp.Config.HasHeader && len(rows) > 0 {
 		headers = rows[0]
 		startIdx = 1
 	}

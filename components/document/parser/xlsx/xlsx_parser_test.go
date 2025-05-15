@@ -18,6 +18,7 @@ package xlsx
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -33,14 +34,16 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 
 		p, err := NewXlsxParser(ctx, nil)
+
 		assert.NoError(t, err)
 
 		docs, err := p.Parse(ctx, f, parser.WithExtraMeta(map[string]any{"test": "test"}))
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{}, docs[0].MetaData[MetaDataRow])
+		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[MetaDataRow])
 		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
+		fmt.Println("ID: ", docs[0].ID, "Content: ", docs[0].Content, "MetaData: ", docs[0].MetaData)
 	})
 
 	t.Run("TestXlsxParser_WithAnotherSheet", func(t *testing.T) {
@@ -58,19 +61,21 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{}, docs[0].MetaData[MetaDataRow])
+		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[MetaDataRow])
 		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
+		fmt.Println("ID: ", docs[3].ID, "Content: ", docs[3].Content, "MetaData: ", docs[3].MetaData)
 	})
 
-	t.Run("TestXlsxParser_WithHeader", func(t *testing.T) {
+	t.Run("TestXlsxParser_WithOutHeader", func(t *testing.T) {
 		ctx := context.Background()
 
 		f, err := os.Open("./testdata/location.xlsx")
 		assert.NoError(t, err)
 
+		defaultValue := false
 		p, err := NewXlsxParser(ctx, &Config{
 			SheetName: "Sheet3",
-			HasHeader: true,
+			HasHeader: &defaultValue,
 		})
 		assert.NoError(t, err)
 
@@ -78,7 +83,8 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{"县（区）": "新密市", "市": "郑州市", "省": "河南省"}, docs[0].MetaData[MetaDataRow])
+		assert.Equal(t, map[string]any{}, docs[0].MetaData[MetaDataRow])
 		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
+		fmt.Println("ID: ", docs[0].ID, "Content: ", docs[0].Content, "MetaData: ", docs[0].MetaData)
 	})
 }

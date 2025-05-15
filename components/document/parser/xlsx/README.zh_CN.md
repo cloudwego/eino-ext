@@ -14,13 +14,13 @@ XLSX 解析器是Eino的一个文档解析组件的一种，它实现了 `Parser
 
 ## 使用示例
 - 参考当前目录下xlsx_parser_test.go，测试xlsx文件在当前目录./testdata/下
-  - TestXlsxParser_Default: 默认配置，使用第一张工作表，第一行不作表头
-  - TestXlsxParser_WithAnotherSheet: 使用第二张工作表，第一行不做表头
-  - TestXlsxParser_WithHeader: 使用第三张工作表，第一行作为表头
+  - TestXlsxParser_Default: 默认配置，使用第一张工作表，第一行作为表头
+  - TestXlsxParser_WithAnotherSheet: 使用第二张工作表，第一行作为表头
+  - TestXlsxParser_WithOutHeader: 使用第三张工作表，第一行不作为表头
 
 ## 元数据说明
 
-解析后的文档元数据包含以下字段，用户可直接从doc里面的MetaData中获取：
+解析后的文档元数据包含以下字段，用户可直接遍历docs，从doc里面的MetaData中获取：
 
 - `_row`: 包含行数据的映射，如果设置了 `HasHeader`，则使用表头作为键
 - `_ext`: 通过解析选项注入的额外元数据
@@ -35,6 +35,8 @@ XLSX 解析器是Eino的一个文档解析组件的一种，它实现了 `Parser
         "test": "test"
     }
     }
+
+其中`_row` 仅在在第一行作为表头的情况下才会有值；当然，你也可以直接遍历docs，从doc.Content直接获取到文档行内容。
 
 ## License
 
