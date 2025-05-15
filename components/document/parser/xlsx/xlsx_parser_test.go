@@ -18,7 +18,6 @@ package xlsx
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"testing"
 
@@ -43,7 +42,6 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.True(t, len(docs[0].Content) > 0)
 		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[MetaDataRow])
 		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
-		fmt.Println("ID: ", docs[0].ID, "Content: ", docs[0].Content, "MetaData: ", docs[0].MetaData)
 	})
 
 	t.Run("TestXlsxParser_WithAnotherSheet", func(t *testing.T) {
@@ -63,7 +61,6 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.True(t, len(docs[0].Content) > 0)
 		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[MetaDataRow])
 		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
-		fmt.Println("ID: ", docs[3].ID, "Content: ", docs[3].Content, "MetaData: ", docs[3].MetaData)
 	})
 
 	t.Run("TestXlsxParser_WithOutHeader", func(t *testing.T) {
@@ -85,6 +82,5 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.True(t, len(docs[0].Content) > 0)
 		assert.Equal(t, map[string]any{}, docs[0].MetaData[MetaDataRow])
 		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
-		fmt.Println("ID: ", docs[0].ID, "Content: ", docs[0].Content, "MetaData: ", docs[0].MetaData)
 	})
 }
