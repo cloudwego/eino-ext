@@ -56,7 +56,15 @@ func (m *mockMCPClient) ListResources(ctx context.Context, request mcp.ListResou
 	panic("implement me")
 }
 
+func (m *mockMCPClient) ListResourcesByPage(ctx context.Context, request mcp.ListResourcesRequest) (*mcp.ListResourcesResult, error) {
+	panic("implement me")
+}
+
 func (m *mockMCPClient) ListResourceTemplates(ctx context.Context, request mcp.ListResourceTemplatesRequest) (*mcp.ListResourceTemplatesResult, error) {
+	panic("implement me")
+}
+
+func (m *mockMCPClient) ListResourceTemplatesByPage(ctx context.Context, request mcp.ListResourceTemplatesRequest) (*mcp.ListResourceTemplatesResult, error) {
 	panic("implement me")
 }
 
@@ -73,6 +81,10 @@ func (m *mockMCPClient) Unsubscribe(ctx context.Context, request mcp.Unsubscribe
 }
 
 func (m *mockMCPClient) ListPrompts(ctx context.Context, request mcp.ListPromptsRequest) (*mcp.ListPromptsResult, error) {
+	panic("implement me")
+}
+
+func (m *mockMCPClient) ListPromptsByPage(ctx context.Context, request mcp.ListPromptsRequest) (*mcp.ListPromptsResult, error) {
 	panic("implement me")
 }
 
@@ -100,6 +112,10 @@ func (m *mockMCPClient) ListTools(ctx context.Context, request mcp.ListToolsRequ
 			},
 		},
 	}, nil
+}
+
+func (m *mockMCPClient) ListToolsByPage(ctx context.Context, request mcp.ListToolsRequest) (*mcp.ListToolsResult, error) {
+	panic("implement me")
 }
 
 func (m *mockMCPClient) CallTool(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
