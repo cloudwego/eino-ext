@@ -19,7 +19,7 @@ package main
 import (
 	"context"
 
-	ccb "github.com/cloudwego/eino-ext/callbacks/cozeloop"
+	ccb "github.com/JqRrt/eino-ext/callbacks/cozeloop" // todo: 测试后改为github.com/cloudwego/eino-ext
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/coze-dev/cozeloop-go"
 )

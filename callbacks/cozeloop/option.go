@@ -25,11 +25,12 @@ import (
 type EinoVersionFn func() string
 
 type options struct {
-	enableTracing bool
-	parser        CallbackDataParser
-	logger        cozeloop.Logger
-	einoVersionFn EinoVersionFn
-	concatFuncs   map[reflect.Type]any
+	enableTracing    bool
+	parser           CallbackDataParser
+	logger           cozeloop.Logger
+	einoVersionFn    EinoVersionFn
+	concatFuncs      map[reflect.Type]any
+	enableAggrOutput bool
 }
 
 type Option func(o *options)
@@ -65,5 +66,11 @@ func WithConcatFunction[T any](fn func([]T) (T, error)) Option {
 		}
 
 		o.concatFuncs[reflect.TypeOf((*T)(nil)).Elem()] = fn
+	}
+}
+
+func WithAggrMessageOutput(enable bool) Option {
+	return func(o *options) {
+		o.enableAggrOutput = enable
 	}
 }
