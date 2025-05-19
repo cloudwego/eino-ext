@@ -178,7 +178,15 @@ func (m *mockMCPClient) ListResources(ctx context.Context, request mcp.ListResou
 	panic("implement me")
 }
 
+func (m *mockMCPClient) ListResourcesByPage(ctx context.Context, request mcp.ListResourcesRequest) (*mcp.ListResourcesResult, error) {
+	panic("implement me")
+}
+
 func (m *mockMCPClient) ListResourceTemplates(ctx context.Context, request mcp.ListResourceTemplatesRequest) (*mcp.ListResourceTemplatesResult, error) {
+	panic("implement me")
+}
+
+func (m *mockMCPClient) ListResourceTemplatesByPage(ctx context.Context, request mcp.ListResourceTemplatesRequest) (*mcp.ListResourceTemplatesResult, error) {
 	panic("implement me")
 }
 
@@ -198,6 +206,10 @@ func (m *mockMCPClient) ListPrompts(ctx context.Context, request mcp.ListPrompts
 	panic("implement me")
 }
 
+func (m *mockMCPClient) ListPromptsByPage(ctx context.Context, request mcp.ListPromptsRequest) (*mcp.ListPromptsResult, error) {
+	panic("implement me")
+}
+
 func (m *mockMCPClient) GetPrompt(ctx context.Context, request mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Messages: []mcp.PromptMessage{
@@ -213,6 +225,10 @@ func (m *mockMCPClient) GetPrompt(ctx context.Context, request mcp.GetPromptRequ
 }
 
 func (m *mockMCPClient) ListTools(ctx context.Context, request mcp.ListToolsRequest) (*mcp.ListToolsResult, error) {
+	panic("implement me")
+}
+
+func (m *mockMCPClient) ListToolsByPage(ctx context.Context, request mcp.ListToolsRequest) (*mcp.ListToolsResult, error) {
 	panic("implement me")
 }
 
