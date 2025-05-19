@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh_CN.md)
 
-The XLSX Parser is a document parsing component for [Eino](https://github.com/cloudwego/eino) that implements the `Parser` interface for parsing Excel (XLSX) files. This component supports flexible table parsing configurations, capable of handling Excel files with or without headers, and supports multiple worksheet selection.
+The XLSX parser is a document parsing component of [Eino](https://github.com/cloudwego/eino), which implements the 'Parser' interface for parsing Excel (XLSX) files. This component supports flexible table parsing configurations, can process Excel files with or without table headers, supports the selection of multiple worksheets, and can customize the document ID prefix.
 
 ## Features
 

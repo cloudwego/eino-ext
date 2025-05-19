@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	PrefixXlsx  = "_xlsx"
 	MetaDataRow = "_row"
 	MetaDataExt = "_ext"
 )
@@ -36,16 +35,19 @@ const (
 // XlsxParser Custom parser for parsing Xlsx file content
 // Can be used to work with Xlsx files with headers or without headers
 // You can also select a specific table from the xlsx file in multiple sheet tables
+// You can also customize the prefix of the document ID
 type XlsxParser struct {
 	Config *Config
 }
 
 // Config Used to configure xlsxParser
-// HasHeader is set to true by default, which means that the first row is used as the table header
+// NoHeader is set to false by default, which means that the first row is used as the table header
 // SheetName is set to Sheet1 by default, which means that the first table is processed
+// IDPrefix is set to customize the prefix of document ID, default 1,2,3, ...
 type Config struct {
 	SheetName string
-	HasHeader *bool
+	NoHeader  bool
+	IDPrefix  string
 }
 
 // NewXlsxParser Create a new xlsxParser
@@ -54,19 +56,23 @@ func NewXlsxParser(ctx context.Context, config *Config) (xlp parser.Parser, err 
 	if config == nil {
 		config = &Config{}
 	}
-
-	if config.HasHeader == nil {
-		defaultValue := true
-		config.HasHeader = &defaultValue
-	}
+	// NoHeader is false by default, which means HasHeader is true by default
 	xlp = &XlsxParser{Config: config}
 	return xlp, nil
+}
+
+// generateID generates document ID based on configuration
+func (xlp *XlsxParser) generateID(i int) string {
+	if xlp.Config.IDPrefix == "" {
+		return fmt.Sprintf("%d", i)
+	}
+	return fmt.Sprintf("%s%d", xlp.Config.IDPrefix, i)
 }
 
 // buildRowMetaData builds row metadata from row data and headers
 func (xlp *XlsxParser) buildRowMetaData(row []string, headers []string) map[string]any {
 	metaData := make(map[string]any)
-	if *xlp.Config.HasHeader {
+	if !xlp.Config.NoHeader {
 		for j, header := range headers {
 			if j < len(row) {
 				metaData[header] = row[j]
@@ -111,7 +117,7 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 	// Process the header
 	startIdx := 0
 	var headers []string
-	if *xlp.Config.HasHeader && len(rows) > 0 {
+	if !xlp.Config.NoHeader && len(rows) > 0 {
 		headers = rows[0]
 		startIdx = 1
 	}
@@ -142,7 +148,7 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 
 		// Create New Document
 		nDoc := &schema.Document{
-			ID:       fmt.Sprintf("%s%s%d", PrefixXlsx, MetaDataRow, i),
+			ID:       xlp.generateID(i),
 			Content:  content,
 			MetaData: meta,
 		}

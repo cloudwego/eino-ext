@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.md)
 
-XLSX 解析器是Eino的一个文档解析组件的一种，它实现了 `Parser` 接口，用于解析 Excel (XLSX) 文件。该组件支持灵活的表格解析配置，可以处理有表头或无表头的 Excel 文件，并支持多工作表的选择。
+XLSX 解析器是[Eino](https://github.com/cloudwego/eino)的一个文档解析组件的一种，它实现了 `Parser` 接口，用于解析 Excel (XLSX) 文件。该组件支持灵活的表格解析配置，可以处理有表头或无表头的 Excel 文件，并支持多工作表的选择，同时可以自定义文档ID前缀。
 
 ## 功能特性
 
