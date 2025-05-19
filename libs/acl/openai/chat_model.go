@@ -327,7 +327,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
 		Temperature:      options.Temperature,
 		TopP:             dereferenceOrZero(options.TopP),
-		Stop:             c.config.Stop,
+		Stop:             options.Stop,
 		PresencePenalty:  dereferenceOrZero(c.config.PresencePenalty),
 		Seed:             c.config.Seed,
 		FrequencyPenalty: dereferenceOrZero(c.config.FrequencyPenalty),
@@ -455,7 +455,7 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
 	}
-	
+
 	ctx = callbacks.OnStart(ctx, cbInput)
 	defer func() {
 		if err != nil {
