@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-package xlsx
+package main
 
 import (
 	"context"
+	"github.com/cloudwego/eino-ext/components/document/parser/xlsx"
 	"os"
 	"testing"
 
@@ -32,7 +33,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 		f, err := os.Open("./testdata/location.xlsx")
 		assert.NoError(t, err)
 
-		p, err := NewXlsxParser(ctx, nil)
+		p, err := xlsx.NewXlsxParser(ctx, nil)
 
 		assert.NoError(t, err)
 
@@ -40,8 +41,8 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[MetaDataRow])
-		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
+		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[xlsx.MetaDataRow])
+		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[xlsx.MetaDataExt])
 	})
 
 	t.Run("TestXlsxParser_WithAnotherSheet", func(t *testing.T) {
@@ -50,7 +51,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 		f, err := os.Open("./testdata/location.xlsx")
 		assert.NoError(t, err)
 
-		p, err := NewXlsxParser(ctx, &Config{
+		p, err := xlsx.NewXlsxParser(ctx, &xlsx.Config{
 			SheetName: "Sheet2",
 		})
 		assert.NoError(t, err)
@@ -59,8 +60,8 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[MetaDataRow])
-		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
+		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[xlsx.MetaDataRow])
+		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[xlsx.MetaDataExt])
 	})
 
 	t.Run("TestXlsxParser_WithIDPrefix", func(t *testing.T) {
@@ -69,7 +70,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 		f, err := os.Open("./testdata/location.xlsx")
 		assert.NoError(t, err)
 
-		p, err := NewXlsxParser(ctx, &Config{
+		p, err := xlsx.NewXlsxParser(ctx, &xlsx.Config{
 			SheetName: "Sheet2",
 			IDPrefix:  "_xlsx_row_",
 		})
@@ -79,8 +80,8 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[MetaDataRow])
-		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
+		assert.Equal(t, map[string]any{"年龄": "21", "性别": "男", "姓名": "张三"}, docs[0].MetaData[xlsx.MetaDataRow])
+		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[xlsx.MetaDataExt])
 	})
 
 	t.Run("TestXlsxParser_WithNoHeader", func(t *testing.T) {
@@ -89,7 +90,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 		f, err := os.Open("./testdata/location.xlsx")
 		assert.NoError(t, err)
 
-		p, err := NewXlsxParser(ctx, &Config{
+		p, err := xlsx.NewXlsxParser(ctx, &xlsx.Config{
 			SheetName: "Sheet3",
 			NoHeader:  true,
 		})
@@ -99,7 +100,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, len(docs) > 0)
 		assert.True(t, len(docs[0].Content) > 0)
-		assert.Equal(t, map[string]any{}, docs[0].MetaData[MetaDataRow])
-		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[MetaDataExt])
+		assert.Equal(t, map[string]any{}, docs[0].MetaData[xlsx.MetaDataRow])
+		assert.Equal(t, map[string]any{"test": "test"}, docs[0].MetaData[xlsx.MetaDataExt])
 	})
 }
