@@ -48,7 +48,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 	t.Run("TestXlsxParser_WithAnotherSheet", func(t *testing.T) {
 		ctx := context.Background()
 
-		f, err := os.Open("./testdata/location.xlsx")
+		f, err := os.Open("../testdata/location.xlsx")
 		assert.NoError(t, err)
 
 		p, err := xlsx.NewXlsxParser(ctx, &xlsx.Config{
@@ -67,7 +67,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 	t.Run("TestXlsxParser_WithIDPrefix", func(t *testing.T) {
 		ctx := context.Background()
 
-		f, err := os.Open("./testdata/location.xlsx")
+		f, err := os.Open("../testdata/location.xlsx")
 		assert.NoError(t, err)
 
 		p, err := xlsx.NewXlsxParser(ctx, &xlsx.Config{
@@ -87,7 +87,7 @@ func TestXlsxParser_Parse(t *testing.T) {
 	t.Run("TestXlsxParser_WithNoHeader", func(t *testing.T) {
 		ctx := context.Background()
 
-		f, err := os.Open("./testdata/location.xlsx")
+		f, err := os.Open("../testdata/location.xlsx")
 		assert.NoError(t, err)
 
 		p, err := xlsx.NewXlsxParser(ctx, &xlsx.Config{
