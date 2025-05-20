@@ -35,10 +35,7 @@ func main() {
 
 	log.Printf("===== call XLSX Parser directly =====")
 	// Initialize the parser
-	parser, err := xlsx.NewXlsxParser(ctx, &xlsx.Config{
-		// Configure parameters
-		SheetName: "Sheet1",
-	})
+	parser, err := xlsx.NewXlsxParser(ctx, nil)
 	if err != nil {
 		log.Fatalf("xlsx.NewXLSXParser failed, err=%v", err)
 	}
