@@ -530,7 +530,7 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
 		Temperature:      dereferenceOrZero(options.Temperature),
 		TopP:             dereferenceOrZero(options.TopP),
-		Stop:             cm.conf.Stop,
+		Stop:             options.Stop,
 		PresencePenalty:  cm.conf.PresencePenalty,
 		FrequencyPenalty: cm.conf.FrequencyPenalty,
 		LogProbs:         cm.conf.LogProbs,
