@@ -41,13 +41,13 @@ type XlsxParser struct {
 }
 
 // Config Used to configure xlsxParser
-// NoHeader is set to false by default, which means that the first row is used as the table header
-// SheetName is set to Sheet1 by default, which means that the first table is processed
-// IDPrefix is set to customize the prefix of document ID, default 1,2,3, ...
 type Config struct {
+	// SheetName is set to Sheet1 by default, which means that the first table is processed
 	SheetName string
-	NoHeader  bool
-	IDPrefix  string
+	// NoHeader is set to false by default, which means that the first row is used as the table header
+	NoHeader bool
+	// IDPrefix is set to customize the prefix of document ID, default 1,2,3, ...
+	IDPrefix string
 }
 
 // NewXlsxParser Create a new xlsxParser
