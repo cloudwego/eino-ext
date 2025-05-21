@@ -8,7 +8,7 @@ require (
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.9.0
-	github.com/volcengine/volcengine-go-sdk v1.1.4
+	github.com/volcengine/volcengine-go-sdk v1.1.8
 )
 
 require (

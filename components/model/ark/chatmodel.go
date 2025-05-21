@@ -130,6 +130,10 @@ type ChatModelConfig struct {
 
 	// ResponseFormat specifies the format that the model must output.
 	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+
+	// Thinking controls whether the model is set to activate the deep thinking mode.
+	// It is set to be enabled by default.
+	Thinking *model.Thinking `json:"thinking,omitempty"`
 }
 
 type ResponseFormat struct {
@@ -448,6 +452,7 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 		FrequencyPenalty: cm.config.FrequencyPenalty,
 		LogitBias:        cm.config.LogitBias,
 		PresencePenalty:  cm.config.PresencePenalty,
+		Thinking:         cm.config.Thinking,
 	}
 
 	if cm.config.ResponseFormat != nil {
