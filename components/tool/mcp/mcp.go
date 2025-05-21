@@ -35,6 +35,10 @@ type Config struct {
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched
 	ToolNameList []string
+	// ToolCallResultHandler is a function that processes the result after a tool call completes
+	// It can be used for custom processing of tool call results
+	// If nil, no additional processing will be performed
+	ToolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
@@ -73,6 +77,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 				Desc:        t.Description,
 				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(inputSchema),
 			},
+			toolCallResultHandler: conf.ToolCallResultHandler,
 		})
 	}
 
@@ -80,8 +85,9 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 }
 
 type toolHelper struct {
-	cli  client.MCPClient
-	info *schema.ToolInfo
+	cli                   client.MCPClient
+	info                  *schema.ToolInfo
+	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
 
 func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
@@ -109,6 +115,13 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to call mcp tool: %w", err)
+	}
+
+	if m.toolCallResultHandler != nil {
+		result, err = m.toolCallResultHandler(ctx, m.info.Name, result)
+		if err != nil {
+			return "", fmt.Errorf("failed to execute mcp tool call result handler: %w", err)
+		}
 	}
 
 	marshaledResult, err := sonic.MarshalString(result)
