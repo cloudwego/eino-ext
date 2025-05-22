@@ -22,8 +22,12 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/async"  // todo: 测试后改为github.com/cloudwego/eino-ext
+	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/consts" // todo: 测试后改为github.com/cloudwego/eino-ext
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 )
 
@@ -114,4 +118,57 @@ func toJson(v any, bStream bool) string {
 		return fmt.Sprintf("%s", err.Error())
 	}
 	return b
+}
+
+func getGraphNodeLevelFromCtx(ctx context.Context) int64 {
+	level, ok := ctx.Value(consts.CozeLoopGraphNodeLevel).(int64)
+	if ok {
+		return level
+	}
+
+	return 0
+}
+
+func injectGraphNodeLevelToCtx(ctx context.Context, level int64) context.Context {
+	return context.WithValue(ctx, consts.CozeLoopGraphNodeLevel, level)
+}
+
+func injectAggrMessageOutputHookToCtx(ctx context.Context) context.Context {
+	_, ok := ctx.Value(consts.CozeLoopAggrMessageOutput).(*AggrMessageOutput)
+	if !ok {
+		ctx = context.WithValue(ctx, consts.CozeLoopAggrMessageOutput, &AggrMessageOutput{
+			Messages: make([]*tracespec.ModelMessage, 0),
+		})
+	}
+
+	return ctx
+}
+
+func getAggrMessageOutputHookFromCtx(ctx context.Context) (*AggrMessageOutput, bool) {
+	temp, ok := ctx.Value(consts.CozeLoopAggrMessageOutput).(*AggrMessageOutput)
+	return temp, ok
+}
+
+func injectToolIDNameMapToCtx(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
+	if info.Component == compose.ComponentOfToolsNode {
+		message, ok := input.(*schema.Message)
+		if ok {
+			toolIDNameMap := make(map[string]string)
+			for _, toolCall := range message.ToolCalls {
+				toolIDNameMap[toolCall.ID] = toolCall.Function.Name
+			}
+			ctx = context.WithValue(ctx, consts.CozeLoopToolIDNameMap, toolIDNameMap)
+		}
+	}
+
+	return ctx
+}
+
+func getToolIDNameMapFromCtx(ctx context.Context) map[string]string {
+	temp, ok := ctx.Value(consts.CozeLoopToolIDNameMap).(map[string]string)
+	if ok {
+		return temp
+	}
+
+	return nil
 }
