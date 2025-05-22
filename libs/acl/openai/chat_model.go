@@ -321,6 +321,9 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		Tools:       nil,
 		ToolChoice:  c.toolChoice,
 	}, opts...)
+	openaiOpts := model.GetImplSpecificOptions(&OpenAIImplSpecificOptions{
+		ReasoningEffort: nil,
+	}, opts...)
 
 	req := &openai.ChatCompletionRequest{
 		Model:            *options.Model,
@@ -335,6 +338,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		User:             dereferenceOrZero(c.config.User),
 		LogProbs:         c.config.LogProbs,
 		TopLogProbs:      c.config.TopLogProbs,
+		ReasoningEffort:  string(dereferenceOrZero(openaiOpts.ReasoningEffort)),
 	}
 
 	cbInput := &model.CallbackInput{
