@@ -97,3 +97,9 @@ func TestCacher(t *testing.T) {
 		mockRdb.AssertExpectations(t)
 	})
 }
+
+func TestWithPrefix(t *testing.T) {
+	assert.Equal(t, "eino:", NewCacher(nil).prefix)
+	assert.Equal(t, "custom:", NewCacher(nil, WithPrefix("custom:")).prefix)
+	assert.Equal(t, "custom:", NewCacher(nil, WithPrefix("custom")).prefix)
+}
