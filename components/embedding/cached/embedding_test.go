@@ -159,3 +159,23 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		me.AssertExpectations(t)
 	})
 }
+
+func TestGenerateKey(t *testing.T) {
+	t.Run("Generate uniqueness", func(t *testing.T) {
+		for _, tt := range []struct {
+			callback func() string
+		}{
+			{func() string { return generateKey("foo") }},
+			{func() string { return generateKey("foo", embedding.WithModel("bar")) }},
+		} {
+			assert.Equal(t, tt.callback(), tt.callback())
+		}
+	})
+
+	t.Run("Generate different keys", func(t *testing.T) {
+		assert.NotEqual(t, generateKey("foo"), generateKey("bar"))
+		assert.NotEqual(t, generateKey("foo"), generateKey("foo", embedding.WithModel("bar")))
+		assert.NotEqual(t, generateKey("foo", embedding.WithModel("bar")),
+			generateKey("foo", embedding.WithModel("baz")))
+	})
+}
