@@ -1,20 +1,20 @@
 package redis
 
-import "encoding/json"
+import "github.com/bytedance/sonic"
+
+var defaultCodec codec = &sonicCodec{}
 
 type codec interface {
 	Marshal(v any) ([]byte, error)
 	Unmarshal(data []byte, v any) error
 }
 
-type jsonCodec struct{}
+type sonicCodec struct{}
 
-var defaultCodec codec = &jsonCodec{}
-
-func (j *jsonCodec) Marshal(v any) ([]byte, error) {
-	return json.Marshal(v)
+func (j *sonicCodec) Marshal(v any) ([]byte, error) {
+	return sonic.Marshal(v)
 }
 
-func (j *jsonCodec) Unmarshal(data []byte, v any) error {
-	return json.Unmarshal(data, v)
+func (j *sonicCodec) Unmarshal(data []byte, v any) error {
+	return sonic.Unmarshal(data, v)
 }

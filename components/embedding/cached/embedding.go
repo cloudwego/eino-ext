@@ -11,9 +11,9 @@ import (
 )
 
 type Embedder struct {
-	embedder embedding.Embedder
-	cacher   Cacher
-	expire   time.Duration
+	embedder   embedding.Embedder
+	cacher     Cacher
+	expiration time.Duration
 }
 
 type Option interface {
@@ -32,9 +32,9 @@ func WithCacher(cacher Cacher) Option {
 	})
 }
 
-func WithExpire(expire time.Duration) Option {
+func WithExpiration(expiration time.Duration) Option {
 	return optionFunc(func(e *Embedder) {
-		e.expire = expire
+		e.expiration = expiration
 	})
 }
 
@@ -42,9 +42,9 @@ var _ embedding.Embedder = (*Embedder)(nil)
 
 func NewEmbedder(embedder embedding.Embedder, opts ...Option) *Embedder {
 	e := &Embedder{
-		embedder: embedder,
-		cacher:   &noCacher{},
-		expire:   time.Hour * 2,
+		embedder:   embedder,
+		cacher:     &noCacher{},
+		expiration: time.Hour * 2,
 	}
 	for _, opt := range opts {
 		opt.apply(e)
@@ -89,7 +89,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	// Cache the embeddings
 	for i, idx := range notCached {
 		key := generateKey(texts[idx], opts...)
-		if err := e.cacher.Set(ctx, key, embeddings[i], e.expire); err != nil {
+		if err := e.cacher.Set(ctx, key, embeddings[i], e.expiration); err != nil {
 			_ = err
 			// skip caching if there's an error
 		}
