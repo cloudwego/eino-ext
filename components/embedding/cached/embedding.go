@@ -11,9 +11,9 @@ import (
 )
 
 type Embedder struct {
-	embedder   embedding.Embedder
-	cacher     Cacher
-	expiration time.Duration
+	embedder embedding.Embedder
+	cacher   Cacher
+	expire   time.Duration
 }
 
 type Option interface {
@@ -32,9 +32,9 @@ func WithCacher(cacher Cacher) Option {
 	})
 }
 
-func WithExpiration(expiration time.Duration) Option {
+func WithExpire(expire time.Duration) Option {
 	return optionFunc(func(e *Embedder) {
-		e.expiration = expiration
+		e.expire = expire
 	})
 }
 
@@ -42,9 +42,9 @@ var _ embedding.Embedder = (*Embedder)(nil)
 
 func NewEmbedder(embedder embedding.Embedder, opts ...Option) *Embedder {
 	e := &Embedder{
-		embedder:   embedder,
-		cacher:     &noCacher{},
-		expiration: time.Hour * 2,
+		embedder: embedder,
+		cacher:   &noCacher{},
+		expire:   time.Hour * 2,
 	}
 	for _, opt := range opts {
 		opt.apply(e)
@@ -53,16 +53,10 @@ func NewEmbedder(embedder embedding.Embedder, opts ...Option) *Embedder {
 }
 
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
-	// // if texts is of length 1, use simpleEmbedString
-	// if len(texts) == 1 {
-	// 	return e.simpleEmbedStrings(ctx, texts[0], opts...)
-	// }
-
-	// otherwise, use the cached embedder
 	var (
-		embeddingsWithKey = make(map[int][]float64)
-		notCached         []int
-		uncachedTexts     []string
+		embeddingsByKey = make(map[int][]float64)
+		uncached        []int
+		uncachedTexts   []string
 	)
 
 	// Get cached embeddings and find uncached texts
@@ -73,33 +67,35 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 			if !errors.Is(err, ErrNotFound) {
 				return nil, err
 			}
-			notCached = append(notCached, idx)
+			uncached = append(uncached, idx)
 			uncachedTexts = append(uncachedTexts, text)
 		} else {
-			embeddingsWithKey[idx] = emb
+			embeddingsByKey[idx] = emb
 		}
 	}
 
 	// Embed the uncached texts
-	embeddings, err := e.embedder.EmbedStrings(ctx, uncachedTexts, opts...)
-	if err != nil {
-		return nil, err
-	}
-
-	// Cache the embeddings
-	for i, idx := range notCached {
-		key := generateKey(texts[idx], opts...)
-		if err := e.cacher.Set(ctx, key, embeddings[i], e.expiration); err != nil {
-			_ = err
-			// skip caching if there's an error
+	if len(uncachedTexts) > 0 {
+		uncachedEmbeddings, err := e.embedder.EmbedStrings(ctx, uncachedTexts, opts...)
+		if err != nil {
+			return nil, err
 		}
-		embeddingsWithKey[idx] = embeddings[i]
+
+		// Cache the uncachedEmbeddings
+		for i, idx := range uncached {
+			key := generateKey(texts[idx], opts...)
+			if err := e.cacher.Set(ctx, key, uncachedEmbeddings[i], e.expire); err != nil {
+				_ = err
+				// skip caching if there's an error
+			}
+			embeddingsByKey[idx] = uncachedEmbeddings[i]
+		}
 	}
 
 	// Convert the map to a slice
 	result := make([][]float64, len(texts))
 	for i := range texts {
-		if emb, ok := embeddingsWithKey[i]; ok {
+		if emb, ok := embeddingsByKey[i]; ok {
 			result[i] = emb
 		} else {
 			result[i] = nil // it seems that such a case should not happen
@@ -108,29 +104,6 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 
 	return result, nil
 }
-
-// func (e *Embedder) simpleEmbedStrings(ctx context.Context, text string, opts ...embedding.Option) ([][]float64, error) {
-// 	key := generateKey(text, opts...)
-// 	emb, err := e.cacher.Get(ctx, key)
-// 	if err != nil {
-// 		if !errors.Is(err, ErrNotFound) {
-// 			return nil, err
-// 		}
-// 	}
-//
-// 	if emb != nil {
-// 		return [][]float64{emb}, nil
-// 	}
-//
-// 	embs, err := e.embedder.EmbedStrings(ctx, []string{text}, opts...)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if len(embs) != 1 {
-// 		return nil, errors.New("embedding length mismatch")
-// 	}
-// 	return embs, nil
-// }
 
 var hash = sha256.New()
 
