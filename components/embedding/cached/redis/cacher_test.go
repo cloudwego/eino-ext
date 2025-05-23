@@ -13,11 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockValue struct {
-	data    []byte
-	expired time.Time
-}
-
 type mockRedisClient struct {
 	redis.UniversalClient
 	mock.Mock
