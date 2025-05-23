@@ -53,14 +53,14 @@ func NewEmbedder(embedder embedding.Embedder, opts ...Option) *Embedder {
 }
 
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
-	// if texts is of length 1, use simpleEmbedString
-	if len(texts) == 1 {
-		return e.simpleEmbedStrings(ctx, texts[0], opts...)
-	}
+	// // if texts is of length 1, use simpleEmbedString
+	// if len(texts) == 1 {
+	// 	return e.simpleEmbedStrings(ctx, texts[0], opts...)
+	// }
 
 	// otherwise, use the cached embedder
 	var (
-		embeddingsWithKey map[int][]float64
+		embeddingsWithKey = make(map[int][]float64)
 		notCached         []int
 		uncachedTexts     []string
 	)
@@ -109,28 +109,28 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	return result, nil
 }
 
-func (e *Embedder) simpleEmbedStrings(ctx context.Context, text string, opts ...embedding.Option) ([][]float64, error) {
-	key := generateKey(text, opts...)
-	emb, err := e.cacher.Get(ctx, key)
-	if err != nil {
-		if !errors.Is(err, ErrNotFound) {
-			return nil, err
-		}
-	}
-
-	if emb != nil {
-		return [][]float64{emb}, nil
-	}
-
-	embs, err := e.embedder.EmbedStrings(ctx, []string{text}, opts...)
-	if err != nil {
-		return nil, err
-	}
-	if len(embs) != 1 {
-		return nil, errors.New("embedding length mismatch")
-	}
-	return embs, nil
-}
+// func (e *Embedder) simpleEmbedStrings(ctx context.Context, text string, opts ...embedding.Option) ([][]float64, error) {
+// 	key := generateKey(text, opts...)
+// 	emb, err := e.cacher.Get(ctx, key)
+// 	if err != nil {
+// 		if !errors.Is(err, ErrNotFound) {
+// 			return nil, err
+// 		}
+// 	}
+//
+// 	if emb != nil {
+// 		return [][]float64{emb}, nil
+// 	}
+//
+// 	embs, err := e.embedder.EmbedStrings(ctx, []string{text}, opts...)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if len(embs) != 1 {
+// 		return nil, errors.New("embedding length mismatch")
+// 	}
+// 	return embs, nil
+// }
 
 var hash = sha256.New()
 
