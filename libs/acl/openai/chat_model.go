@@ -141,6 +141,10 @@ type Config struct {
 
 	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
 	TopLogProbs int `json:"top_log_probs"`
+
+	// ExtraFields is used to store extra fields that are not defined in the struct
+	// It will be used like inline fields
+	ExtraFields map[string]any `json:"-"`
 }
 
 type Client struct {
@@ -335,6 +339,9 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		User:             dereferenceOrZero(c.config.User),
 		LogProbs:         c.config.LogProbs,
 		TopLogProbs:      c.config.TopLogProbs,
+	}
+	if len(c.config.ExtraFields) > 0 {
+		req.SetExtraFields(c.config.ExtraFields)
 	}
 
 	cbInput := &model.CallbackInput{
