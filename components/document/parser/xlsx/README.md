@@ -1,26 +1,28 @@
 # XLSX Parser
 
-The XLSX parser is a document parsing component of [Eino](https://github.com/cloudwego/eino), which implements the 'Parser' interface for parsing Excel (XLSX) files. This component supports flexible table parsing configurations, can process Excel files with or without table headers, supports the selection of multiple worksheets, and can customize the document ID prefix.
+The XLSX parser is [Eino](https://github.com/cloudwego/eino)'s document parsing component that implements the 'Parser' interface for parsing Excel (XLSX) files. The component supports flexible table parsing configurations, handles Excel files with or without headers, supports the selection of a specific worksheet, and customizes the document ID prefix.
 
 ## Features
 
 - Support for Excel files with or without headers
-- Multiple worksheet selection and processing
+- Select one of the multiple sheets to process
+- Custom document id prefixes
 - Automatic conversion of table data to document format
 - Preservation of complete row data as metadata
 - Support for additional metadata injection
 
 ## Example of use
-- Refer to xlsx_parser_test.go in the current directory and test the xlsx file in the current directory ./testdata/
+- Refer to xlsx_parser_test.go in the current directory, where the test data is in ./examples/testdata/
     - TestXlsxParser_Default: The default configuration uses the first worksheet with the first row as the header
     - TestXlsxParser_WithAnotherSheet: Use the second sheet with the first row as the header
     - TestXlsxParser_WithHeader: Use the third sheet with the first row is not used as the header
+    - TestXlsxParser_WithIDPrefix: Use IDPrefix to customize the ID of the output document
 
 ## Metadata Description
 
-The parsed document metadata contains the following fields, which can be obtained from the metadata in doc by directly traversing docs:
+Traversing the doc obtained by docs, doc.Metadata contains the following two types of metadata:
 
-- `_row`: Mapping containing row data, using the table header as the key if `HasHeader` is set
+- `_row`: Structured mappings that contain data
 - `_ext`: Additional metadata injected via parsing options
 - example:
     - {

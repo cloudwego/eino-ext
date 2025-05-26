@@ -49,7 +49,7 @@ func main() {
 	}
 
 	// Load the document
-	filePath := "./testdata/location.xlsx"
+	filePath := "./testdata/test.xlsx"
 	docs, err := loader.Load(ctx, document.Source{
 		URI: filePath,
 	})
