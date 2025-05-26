@@ -474,12 +474,16 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 			return req, e
 		}
 
-		req.Messages = append(req.Messages, &model.ChatCompletionMessage{
+		nMsg := &model.ChatCompletionMessage{
 			Content:    content,
 			Role:       string(msg.Role),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  toArkToolCalls(msg.ToolCalls),
-		})
+		}
+		if len(msg.Name) > 0 {
+			nMsg.Name = &msg.Name
+		}
+		req.Messages = append(req.Messages, nMsg)
 	}
 
 	tools := cm.tools
