@@ -1,4 +1,4 @@
-package cached
+package cache
 
 import (
 	"context"

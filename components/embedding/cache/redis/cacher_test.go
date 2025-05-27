@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudwego/eino-ext/components/embedding/cached"
+	"github.com/cloudwego/eino-ext/components/embedding/cache"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -70,7 +70,7 @@ func TestCacher(t *testing.T) {
 
 		data, err := c.Get(ctx, key)
 		assert.Error(t, err)
-		assert.Equal(t, cached.ErrNotFound, err)
+		assert.Equal(t, cache.ErrNotFound, err)
 		assert.Nil(t, data)
 
 		mockRdb.AssertExpectations(t)

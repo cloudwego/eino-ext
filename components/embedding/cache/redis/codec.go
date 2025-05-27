@@ -11,10 +11,10 @@ type codec interface {
 
 type sonicCodec struct{}
 
-func (j *sonicCodec) Marshal(v any) ([]byte, error) {
+func (*sonicCodec) Marshal(v any) ([]byte, error) {
 	return sonic.Marshal(v)
 }
 
-func (j *sonicCodec) Unmarshal(data []byte, v any) error {
+func (*sonicCodec) Unmarshal(data []byte, v any) error {
 	return sonic.Unmarshal(data, v)
 }

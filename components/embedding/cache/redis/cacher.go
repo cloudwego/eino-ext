@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloudwego/eino-ext/components/embedding/cached"
+	"github.com/cloudwego/eino-ext/components/embedding/cache"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -32,7 +32,7 @@ func WithPrefix(prefix string) Option {
 	})
 }
 
-var _ cached.Cacher = (*Cacher)(nil)
+var _ cache.Cacher = (*Cacher)(nil)
 
 func NewCacher(rdb redis.UniversalClient, opts ...Option) *Cacher {
 	cacher := &Cacher{
@@ -58,7 +58,7 @@ func (c *Cacher) Get(ctx context.Context, key string) ([]float64, error) {
 	data, err := c.rdb.Get(ctx, c.prefix+key).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return nil, cached.ErrNotFound
+			return nil, cache.ErrNotFound
 		}
 		return nil, err
 	}
