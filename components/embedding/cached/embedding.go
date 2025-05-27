@@ -2,18 +2,17 @@ package cached
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/cloudwego/eino/components/embedding"
 )
 
 type Embedder struct {
-	embedder embedding.Embedder
-	cacher   Cacher
-	expire   time.Duration
+	embedder  embedding.Embedder
+	cacher    Cacher
+	generator Generator
+	expire    time.Duration
 }
 
 type Option interface {
@@ -32,6 +31,12 @@ func WithCacher(cacher Cacher) Option {
 	})
 }
 
+func WithGenerator(generator Generator) Option {
+	return optionFunc(func(e *Embedder) {
+		e.generator = generator
+	})
+}
+
 func WithExpire(expire time.Duration) Option {
 	return optionFunc(func(e *Embedder) {
 		e.expire = expire
@@ -42,9 +47,10 @@ var _ embedding.Embedder = (*Embedder)(nil)
 
 func NewEmbedder(embedder embedding.Embedder, opts ...Option) *Embedder {
 	e := &Embedder{
-		embedder: embedder,
-		cacher:   &noCacher{},
-		expire:   time.Hour * 2,
+		embedder:  embedder,
+		cacher:    &noCacher{},
+		generator: defaultGenerator,
+		expire:    time.Hour * 2,
 	}
 	for _, opt := range opts {
 		opt.apply(e)
@@ -61,7 +67,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 
 	// Get cached embeddings and find uncached texts
 	for idx, text := range texts {
-		key := generateKey(text, opts...)
+		key := e.generator.Generate(text, opts...)
 		emb, err := e.cacher.Get(ctx, key)
 		if err != nil {
 			if !errors.Is(err, ErrNotFound) {
@@ -83,10 +89,9 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 
 		// Cache the uncachedEmbeddings
 		for i, idx := range uncached {
-			key := generateKey(texts[idx], opts...)
+			key := e.generator.Generate(texts[idx], opts...)
 			if err := e.cacher.Set(ctx, key, uncachedEmbeddings[i], e.expire); err != nil {
-				_ = err
-				// skip caching if there's an error
+				_ = err // skip caching if there's an error
 			}
 			embeddingsByKey[idx] = uncachedEmbeddings[i]
 		}
@@ -103,17 +108,4 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	}
 
 	return result, nil
-}
-
-var hash = sha256.New()
-
-func generateKey(text string, opts ...embedding.Option) string {
-	options := embedding.GetCommonOptions(nil, opts...)
-	model := ""
-	if options.Model != nil {
-		model = *options.Model
-	}
-
-	plainText := fmt.Sprintf("%s-%x", text, model)
-	return fmt.Sprintf("%x", hash.Sum([]byte(plainText)))
 }

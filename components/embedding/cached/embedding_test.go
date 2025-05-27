@@ -48,12 +48,9 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	embeddings := [][]float64{{1.1, 2.2}, {3.3, 4.4}}
 	expiration := time.Minute
 
-	key0 := generateKey(texts[0])
-	key1 := generateKey(texts[1])
-
 	t.Run("embedder", func(t *testing.T) {
 		me := new(mockEmbedder)
-		e := NewEmbedder(me)
+		e := NewEmbedder(me, WithGenerator(defaultGenerator))
 
 		me.On("EmbedStrings", mock.Anything, texts, mock.Anything).Return(embeddings, nil)
 
@@ -68,7 +65,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		e := NewEmbedder(nil, WithCacher(mc), WithExpire(expiration))
 
 		for i, text := range texts {
-			key := generateKey(text)
+			key := e.generator.Generate(text)
 			mc.On("Get", mock.Anything, key).Return(embeddings[i], nil)
 		}
 
@@ -82,6 +79,9 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
 		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+
+		key0 := e.generator.Generate(texts[0])
+		key1 := e.generator.Generate(texts[1])
 
 		mc.On("Get", mock.Anything, key0).Return(nil, ErrNotFound)
 		mc.On("Get", mock.Anything, key1).Return(embeddings[1], nil)
@@ -101,6 +101,9 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		me := new(mockEmbedder)
 		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
 
+		key0 := e.generator.Generate(texts[0])
+		key1 := e.generator.Generate(texts[1])
+
 		mc.On("Get", mock.Anything, key0).Return(nil, ErrNotFound)
 		mc.On("Get", mock.Anything, key1).Return(nil, ErrNotFound)
 		me.On("EmbedStrings", mock.Anything, texts, mock.Anything).Return(embeddings, nil)
@@ -119,7 +122,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		me := new(mockEmbedder)
 		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
 
-		key := generateKey(texts[0])
+		key := e.generator.Generate(texts[0])
 		mc.On("Get", mock.Anything, key).Return(nil, errors.New("cache error"))
 
 		_, err := e.EmbedStrings(ctx, []string{texts[0]})
@@ -133,7 +136,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		me := new(mockEmbedder)
 		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
 
-		key := generateKey(texts[0])
+		key := e.generator.Generate(texts[0])
 		mc.On("Get", mock.Anything, key).Return(nil, ErrNotFound)
 		me.On("EmbedStrings", mock.Anything, []string{texts[0]}, mock.Anything).Return(nil, errors.New("embed error"))
 
@@ -148,6 +151,8 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		me := new(mockEmbedder)
 		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
 
+		key0 := e.generator.Generate(texts[0])
+
 		mc.On("Get", mock.Anything, key0).Return(nil, ErrNotFound)
 		me.On("EmbedStrings", mock.Anything, []string{texts[0]}, mock.Anything).Return([][]float64{embeddings[0]}, nil)
 		mc.On("Set", mock.Anything, key0, embeddings[0], expiration).Return(errors.New("set error"))
@@ -157,25 +162,5 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		assert.Equal(t, [][]float64{embeddings[0]}, result)
 		mc.AssertExpectations(t)
 		me.AssertExpectations(t)
-	})
-}
-
-func TestGenerateKey(t *testing.T) {
-	t.Run("Generate uniqueness", func(t *testing.T) {
-		for _, tt := range []struct {
-			callback func() string
-		}{
-			{func() string { return generateKey("foo") }},
-			{func() string { return generateKey("foo", embedding.WithModel("bar")) }},
-		} {
-			assert.Equal(t, tt.callback(), tt.callback())
-		}
-	})
-
-	t.Run("Generate different keys", func(t *testing.T) {
-		assert.NotEqual(t, generateKey("foo"), generateKey("bar"))
-		assert.NotEqual(t, generateKey("foo"), generateKey("foo", embedding.WithModel("bar")))
-		assert.NotEqual(t, generateKey("foo", embedding.WithModel("bar")),
-			generateKey("foo", embedding.WithModel("baz")))
 	})
 }
