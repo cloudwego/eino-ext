@@ -107,10 +107,17 @@ type ChatModelConfig struct {
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
+
+	// EnableThinking enables thinking mode
+	// https://help.aliyun.com/zh/model-studio/deep-thinking
+	// Optional. Default: base on the Model
+	EnableThinking *bool `json:"enable_thinking,omitempty"`
 }
 
 type ChatModel struct {
 	cli *openai.Client
+
+	extraOptions *options
 }
 
 func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
@@ -148,17 +155,23 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 
 	return &ChatModel{
 		cli: cli,
+
+		extraOptions: &options{
+			EnableThinking: config.EnableThinking,
+		},
 	}, nil
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+	opts = cm.parseCustomOpetions(opts...)
 	return cm.cli.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+	opts = cm.parseCustomOpetions(opts...)
 	outStream, err = cm.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
@@ -194,7 +207,7 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatM
 	if err != nil {
 		return nil, err
 	}
-	return &ChatModel{cli: cli}, nil
+	return &ChatModel{cli: cli, extraOptions: cm.extraOptions}, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
@@ -203,6 +216,22 @@ func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 
 func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return cm.cli.BindForcedTools(tools)
+}
+
+func (cm *ChatModel) parseCustomOpetions(opts ...model.Option) []model.Option {
+	qwenOpts := model.GetImplSpecificOptions(&options{
+		EnableThinking: cm.extraOptions.EnableThinking,
+	}, opts...)
+
+	// Using extra fields to pass the custom options to the underlying client
+	extraFields := make(map[string]any)
+	if qwenOpts.EnableThinking != nil {
+		extraFields["enable_thinking"] = *qwenOpts.EnableThinking
+	}
+	if len(extraFields) > 0 {
+		opts = append(opts, openai.WithExtraFields(extraFields))
+	}
+	return opts
 }
 
 const typ = "Qwen"
