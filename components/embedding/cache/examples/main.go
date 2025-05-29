@@ -23,10 +23,13 @@ func main() {
 	// }
 	// ...
 
-	embedder := cache.NewEmbedder(originalEmbedder,
+	embedder, err := cache.NewEmbedder(originalEmbedder,
 		cache.WithCacher(cacheredis.NewCacher(rdb)),            // using Redis as the cache
 		cache.WithGenerator(cache.NewHashGenerator(md5.New())), // using md5 for generating unique keys
 	)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	embeddings, err := embedder.EmbedStrings(context.Background(), []string{"hello", "how are you"})
 	if err != nil {
