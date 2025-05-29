@@ -93,13 +93,20 @@ func NewEmbedder(embedder embedding.Embedder, opts ...Option) (*Embedder, error)
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
 	var (
 		embeddingsByKey = make(map[int][]float64)
+		embeddingOpts   = embedding.GetCommonOptions(nil, opts...)
 		uncached        []int
 		uncachedTexts   []string
 	)
 
+	// generate options for the generator
+	var generatorOpt GeneratorOption
+	if embeddingOpts.Model != nil {
+		generatorOpt.Model = *embeddingOpts.Model
+	}
+
 	// Get cached embeddings and find uncached texts
 	for idx, text := range texts {
-		key := e.generator.Generate(text, opts...)
+		key := e.generator.Generate(ctx, text, generatorOpt)
 		emb, ok, err := e.cacher.Get(ctx, key)
 		if err != nil {
 			return nil, err
@@ -121,7 +128,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 
 		// Cache the uncachedEmbeddings
 		for i, idx := range uncached {
-			key := e.generator.Generate(texts[idx], opts...)
+			key := e.generator.Generate(ctx, texts[idx], generatorOpt)
 			if err := e.cacher.Set(ctx, key, uncachedEmbeddings[i], e.expiration); err != nil {
 				_ = err // skip caching if there's an error
 			}

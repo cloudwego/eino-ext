@@ -17,16 +17,19 @@
 package cache
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/sha256"
 	"hash"
 	"testing"
 
-	"github.com/cloudwego/eino/components/embedding"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestGenerator_UniquenessAndDifference(t *testing.T) {
+	ctx := context.Background()
+	opt := GeneratorOption{}
+
 	for _, tt := range []struct {
 		name      string
 		generator Generator
@@ -39,18 +42,18 @@ func TestGenerator_UniquenessAndDifference(t *testing.T) {
 				for _, tt := range []struct {
 					callback func() string
 				}{
-					{func() string { return tt.generator.Generate("foo") }},
-					{func() string { return tt.generator.Generate("foo", embedding.WithModel("bar")) }},
+					{func() string { return tt.generator.Generate(ctx, "foo", opt) }},
+					{func() string { return tt.generator.Generate(ctx, "foo", GeneratorOption{Model: "bar"}) }},
 				} {
 					assert.Equal(t, tt.callback(), tt.callback())
 				}
 			})
 
 			t.Run("Generate different keys", func(t *testing.T) {
-				assert.NotEqual(t, tt.generator.Generate("foo"), tt.generator.Generate("bar"))
-				assert.NotEqual(t, tt.generator.Generate("foo"), tt.generator.Generate("foo", embedding.WithModel("bar")))
-				assert.NotEqual(t, tt.generator.Generate("foo", embedding.WithModel("bar")),
-					tt.generator.Generate("foo", embedding.WithModel("baz")))
+				assert.NotEqual(t, tt.generator.Generate(ctx, "foo", opt), tt.generator.Generate(ctx, "bar", opt))
+				assert.NotEqual(t, tt.generator.Generate(ctx, "foo", opt), tt.generator.Generate(ctx, "foo", GeneratorOption{Model: "bar"}))
+				assert.NotEqual(t, tt.generator.Generate(ctx, "foo", GeneratorOption{Model: "bar"}),
+					tt.generator.Generate(ctx, "foo", GeneratorOption{Model: "baz"}))
 			})
 		})
 	}
@@ -59,17 +62,19 @@ func TestGenerator_UniquenessAndDifference(t *testing.T) {
 func TestGenerator_SimpleGenerator(t *testing.T) {
 	text := "test text"
 	model := "test-model"
+	ctx := context.Background()
+	opt := GeneratorOption{}
 
 	generator := NewSimpleGenerator()
-	assert.Equal(t, generator.Generate(text, embedding.WithModel(model)), text+"-"+model)
-	assert.Equal(t, generator.Generate(text), text+"-")
-	assert.Equal(t, generator.Generate(""), "-")
-	assert.Equal(t, generator.Generate(""), generator.Generate(""))
+	assert.Equal(t, generator.Generate(ctx, text, GeneratorOption{Model: model}), text+"-"+model)
+	assert.Equal(t, generator.Generate(ctx, text, opt), text+"-")
+	assert.Equal(t, generator.Generate(ctx, "", opt), "-")
 }
 
 func TestGenerator_HashGenerator(t *testing.T) {
 	text := "test text"
 	model := "test-model"
+	ctx := context.Background()
 
 	for _, tt := range []struct {
 		name string
@@ -80,7 +85,7 @@ func TestGenerator_HashGenerator(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			generator := NewHashGenerator(tt.hash)
-			assert.NotEmpty(t, generator.Generate(text, embedding.WithModel(model)))
+			assert.NotEmpty(t, generator.Generate(ctx, text, GeneratorOption{Model: model}))
 		})
 	}
 }

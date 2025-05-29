@@ -17,16 +17,20 @@
 package cache
 
 import (
+	"context"
 	"fmt"
 	"hash"
-
-	"github.com/cloudwego/eino/components/embedding"
 )
+
+// GeneratorOption holds options for generating unique keys.
+type GeneratorOption struct {
+	Model string
+}
 
 // Generator is an interface for generating unique keys based on text and optional embedding options.
 // It is used to create cache keys for embedding results.
 type Generator interface {
-	Generate(text string, opts ...embedding.Option) string
+	Generate(ctx context.Context, text string, opt GeneratorOption) string
 }
 
 // SimpleGenerator is a concrete implementation of the Generator interface that generates
@@ -40,14 +44,8 @@ func NewSimpleGenerator() *SimpleGenerator {
 	return &SimpleGenerator{}
 }
 
-func (g *SimpleGenerator) Generate(text string, opts ...embedding.Option) string {
-	options := embedding.GetCommonOptions(nil, opts...)
-	model := ""
-	if options.Model != nil {
-		model = *options.Model
-	}
-
-	return fmt.Sprintf("%s-%s", text, model)
+func (g *SimpleGenerator) Generate(_ context.Context, text string, opt GeneratorOption) string {
+	return fmt.Sprintf("%s-%s", text, opt.Model)
 }
 
 // HashGenerator is a concrete implementation of the [Generator] interface that uses a hash function
@@ -73,7 +71,7 @@ func NewHashGenerator(hasher hash.Hash) *HashGenerator {
 	}
 }
 
-func (g *HashGenerator) Generate(text string, opts ...embedding.Option) string {
-	plainText := g.SimpleGenerator.Generate(text, opts...)
+func (g *HashGenerator) Generate(ctx context.Context, text string, opt GeneratorOption) string {
+	plainText := g.SimpleGenerator.Generate(ctx, text, opt)
 	return fmt.Sprintf("%x", g.hasher.Sum([]byte(plainText)))
 }

@@ -66,6 +66,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	texts := []string{"foo", "bar"}
 	embeddings := [][]float64{{1.1, 2.2}, {3.3, 4.4}}
 	expiration := time.Minute
+	generatorOpt := GeneratorOption{}
 
 	t.Run("embedder not set cacher", func(t *testing.T) {
 		me := new(mockEmbedder)
@@ -94,7 +95,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		require.NoError(t, err)
 
 		for i, text := range texts {
-			key := e.generator.Generate(text)
+			key := e.generator.Generate(ctx, text, generatorOpt)
 			mc.On("Get", mock.Anything, key).Return(embeddings[i], true, nil)
 		}
 
@@ -110,8 +111,8 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
-		key0 := e.generator.Generate(texts[0])
-		key1 := e.generator.Generate(texts[1])
+		key0 := e.generator.Generate(ctx, texts[0], generatorOpt)
+		key1 := e.generator.Generate(ctx, texts[1], generatorOpt)
 
 		mc.On("Get", mock.Anything, key0).Return(nil, false, nil)
 		mc.On("Get", mock.Anything, key1).Return(embeddings[1], true, nil)
@@ -132,8 +133,8 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
-		key0 := e.generator.Generate(texts[0])
-		key1 := e.generator.Generate(texts[1])
+		key0 := e.generator.Generate(ctx, texts[0], generatorOpt)
+		key1 := e.generator.Generate(ctx, texts[1], generatorOpt)
 
 		mc.On("Get", mock.Anything, key0).Return(nil, false, nil)
 		mc.On("Get", mock.Anything, key1).Return(nil, false, nil)
@@ -154,7 +155,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
-		key := e.generator.Generate(texts[0])
+		key := e.generator.Generate(ctx, texts[0], generatorOpt)
 		mc.On("Get", mock.Anything, key).Return(nil, false, errors.New("cache error"))
 
 		_, err = e.EmbedStrings(ctx, []string{texts[0]})
@@ -169,7 +170,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
-		key := e.generator.Generate(texts[0])
+		key := e.generator.Generate(ctx, texts[0], generatorOpt)
 		mc.On("Get", mock.Anything, key).Return(nil, false, nil)
 		me.On("EmbedStrings", mock.Anything, []string{texts[0]}, mock.Anything).Return(nil, errors.New("embed error"))
 
@@ -185,7 +186,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
-		key0 := e.generator.Generate(texts[0])
+		key0 := e.generator.Generate(ctx, texts[0], generatorOpt)
 
 		mc.On("Get", mock.Anything, key0).Return(nil, false, nil)
 		me.On("EmbedStrings", mock.Anything, []string{texts[0]}, mock.Anything).Return([][]float64{embeddings[0]}, nil)
