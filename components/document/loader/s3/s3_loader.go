@@ -37,9 +37,10 @@ import (
 
 // LoaderConfig is the configuration for s3 loader.
 type LoaderConfig struct {
-	Region       *string // the region of the AWS bucket
-	AWSAccessKey *string
-	AWSSecretKey *string
+	Region          *string // the region of the AWS bucket
+	AWSAccessKey    *string
+	AWSSecretKey    *string
+	AWSBaseEndpoint *string
 
 	UseObjectKeyAsID bool // whether to use object key as document ID
 
@@ -63,6 +64,10 @@ func NewS3Loader(ctx context.Context, conf *LoaderConfig) (document.Loader, erro
 	var s3Opts []func(*config.LoadOptions) error
 	if conf.Region != nil {
 		s3Opts = append(s3Opts, config.WithRegion(*conf.Region))
+	}
+
+	if conf.AWSBaseEndpoint != nil {
+		s3Opts = append(s3Opts, config.WithBaseEndpoint(*conf.AWSBaseEndpoint))
 	}
 
 	var (
