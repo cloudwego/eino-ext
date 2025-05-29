@@ -9,6 +9,7 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 type mockEmbedder struct {
@@ -29,16 +30,18 @@ type mockCacher struct {
 	mock.Mock
 }
 
-func (m *mockCacher) Get(ctx context.Context, key string) ([]float64, error) {
+var _ Cacher = (*mockCacher)(nil)
+
+func (m *mockCacher) Get(ctx context.Context, key string) ([]float64, bool, error) {
 	args := m.Called(ctx, key)
 	if args.Get(0) == nil {
-		return nil, args.Error(1)
+		return nil, args.Bool(1), args.Error(2)
 	}
-	return args.Get(0).([]float64), args.Error(1)
+	return args.Get(0).([]float64), args.Bool(1), args.Error(2)
 }
 
-func (m *mockCacher) Set(ctx context.Context, key string, value []float64, expiration time.Duration) error {
-	args := m.Called(ctx, key, value, expiration)
+func (m *mockCacher) Set(ctx context.Context, key string, value []float64, expire time.Duration) error {
+	args := m.Called(ctx, key, value, expire)
 	return args.Error(0)
 }
 
@@ -48,25 +51,23 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	embeddings := [][]float64{{1.1, 2.2}, {3.3, 4.4}}
 	expiration := time.Minute
 
-	t.Run("embedder", func(t *testing.T) {
+	t.Run("embedder not set cacher", func(t *testing.T) {
 		me := new(mockEmbedder)
-		e := NewEmbedder(me, WithGenerator(defaultGenerator))
-
-		me.On("EmbedStrings", mock.Anything, texts, mock.Anything).Return(embeddings, nil)
-
-		result, err := e.EmbedStrings(ctx, texts)
-		assert.NoError(t, err)
-		assert.Equal(t, embeddings, result)
-		me.AssertExpectations(t)
+		e, err := NewEmbedder(me, WithGenerator(defaultGenerator))
+		require.Error(t, err)
+		assert.Equal(t, ErrCacherRequired, err)
+		assert.Nil(t, e)
 	})
 
 	t.Run("all cache hit", func(t *testing.T) {
 		mc := new(mockCacher)
-		e := NewEmbedder(nil, WithCacher(mc), WithExpire(expiration))
+		me := new(mockEmbedder)
+		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		require.NoError(t, err)
 
 		for i, text := range texts {
 			key := e.generator.Generate(text)
-			mc.On("Get", mock.Anything, key).Return(embeddings[i], nil)
+			mc.On("Get", mock.Anything, key).Return(embeddings[i], true, nil)
 		}
 
 		result, err := e.EmbedStrings(ctx, texts)
@@ -78,13 +79,14 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("partial cache hit", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		require.NoError(t, err)
 
 		key0 := e.generator.Generate(texts[0])
 		key1 := e.generator.Generate(texts[1])
 
-		mc.On("Get", mock.Anything, key0).Return(nil, ErrNotFound)
-		mc.On("Get", mock.Anything, key1).Return(embeddings[1], nil)
+		mc.On("Get", mock.Anything, key0).Return(nil, false, nil)
+		mc.On("Get", mock.Anything, key1).Return(embeddings[1], true, nil)
 		me.On("EmbedStrings", mock.Anything, []string{texts[0]}, mock.Anything).Return([][]float64{embeddings[0]}, nil)
 		mc.On("Set", mock.Anything, key0, embeddings[0], expiration).Return(nil)
 
@@ -99,13 +101,14 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("all cache miss", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		require.NoError(t, err)
 
 		key0 := e.generator.Generate(texts[0])
 		key1 := e.generator.Generate(texts[1])
 
-		mc.On("Get", mock.Anything, key0).Return(nil, ErrNotFound)
-		mc.On("Get", mock.Anything, key1).Return(nil, ErrNotFound)
+		mc.On("Get", mock.Anything, key0).Return(nil, false, nil)
+		mc.On("Get", mock.Anything, key1).Return(nil, false, nil)
 		me.On("EmbedStrings", mock.Anything, texts, mock.Anything).Return(embeddings, nil)
 		mc.On("Set", mock.Anything, key0, embeddings[0], expiration).Return(nil)
 		mc.On("Set", mock.Anything, key1, embeddings[1], expiration).Return(nil)
@@ -120,12 +123,13 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("cache get error", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		require.NoError(t, err)
 
 		key := e.generator.Generate(texts[0])
-		mc.On("Get", mock.Anything, key).Return(nil, errors.New("cache error"))
+		mc.On("Get", mock.Anything, key).Return(nil, false, errors.New("cache error"))
 
-		_, err := e.EmbedStrings(ctx, []string{texts[0]})
+		_, err = e.EmbedStrings(ctx, []string{texts[0]})
 		assert.Error(t, err)
 		mc.AssertExpectations(t)
 		me.AssertExpectations(t)
@@ -134,13 +138,14 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("underlying embedder error", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		require.NoError(t, err)
 
 		key := e.generator.Generate(texts[0])
-		mc.On("Get", mock.Anything, key).Return(nil, ErrNotFound)
+		mc.On("Get", mock.Anything, key).Return(nil, false, nil)
 		me.On("EmbedStrings", mock.Anything, []string{texts[0]}, mock.Anything).Return(nil, errors.New("embed error"))
 
-		_, err := e.EmbedStrings(ctx, []string{texts[0]})
+		_, err = e.EmbedStrings(ctx, []string{texts[0]})
 		assert.Error(t, err)
 		mc.AssertExpectations(t)
 		me.AssertExpectations(t)
@@ -149,11 +154,12 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("cache set error, ignore", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		require.NoError(t, err)
 
 		key0 := e.generator.Generate(texts[0])
 
-		mc.On("Get", mock.Anything, key0).Return(nil, ErrNotFound)
+		mc.On("Get", mock.Anything, key0).Return(nil, false, nil)
 		me.On("EmbedStrings", mock.Anything, []string{texts[0]}, mock.Anything).Return([][]float64{embeddings[0]}, nil)
 		mc.On("Set", mock.Anything, key0, embeddings[0], expiration).Return(errors.New("set error"))
 

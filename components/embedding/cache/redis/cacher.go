@@ -54,15 +54,18 @@ func (c *Cacher) Set(ctx context.Context, key string, value []float64, expire ti
 	return c.rdb.Set(ctx, c.prefix+key, data, expire).Err()
 }
 
-func (c *Cacher) Get(ctx context.Context, key string) ([]float64, error) {
+func (c *Cacher) Get(ctx context.Context, key string) ([]float64, bool, error) {
 	data, err := c.rdb.Get(ctx, c.prefix+key).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return nil, cache.ErrNotFound
+			return nil, false, nil
 		}
-		return nil, err
+		return nil, false, err
 	}
 
 	var value []float64
-	return value, c.codec.Unmarshal(data, &value)
+	if err := c.codec.Unmarshal(data, &value); err != nil {
+		return nil, false, err
+	}
+	return value, true, nil
 }

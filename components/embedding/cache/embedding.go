@@ -8,6 +8,8 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 )
 
+var ErrCacherRequired = errors.New("embedding/cache: cacher is required")
+
 type Embedder struct {
 	embedder  embedding.Embedder
 	cacher    Cacher
@@ -45,17 +47,21 @@ func WithExpire(expire time.Duration) Option {
 
 var _ embedding.Embedder = (*Embedder)(nil)
 
-func NewEmbedder(embedder embedding.Embedder, opts ...Option) *Embedder {
+func NewEmbedder(embedder embedding.Embedder, opts ...Option) (*Embedder, error) {
 	e := &Embedder{
 		embedder:  embedder,
-		cacher:    &noCacher{},
 		generator: defaultGenerator,
 		expire:    time.Hour * 2,
 	}
 	for _, opt := range opts {
 		opt.apply(e)
 	}
-	return e
+
+	if e.cacher == nil {
+		return nil, ErrCacherRequired
+	}
+
+	return e, nil
 }
 
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
@@ -68,15 +74,15 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	// Get cached embeddings and find uncached texts
 	for idx, text := range texts {
 		key := e.generator.Generate(text, opts...)
-		emb, err := e.cacher.Get(ctx, key)
+		emb, ok, err := e.cacher.Get(ctx, key)
 		if err != nil {
-			if !errors.Is(err, ErrNotFound) {
-				return nil, err
-			}
+			return nil, err
+		} else if ok {
+			embeddingsByKey[idx] = emb
+		} else {
+			// If the key is not found, we consider it as uncached
 			uncached = append(uncached, idx)
 			uncachedTexts = append(uncachedTexts, text)
-		} else {
-			embeddingsByKey[idx] = emb
 		}
 	}
 

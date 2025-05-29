@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cloudwego/eino-ext/components/embedding/cache"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -16,6 +15,24 @@ import (
 type mockRedisClient struct {
 	redis.UniversalClient
 	mock.Mock
+}
+
+type mockCodec struct {
+	codec
+	mock.Mock
+}
+
+func (m *mockCodec) Marshal(v any) ([]byte, error) {
+	args := m.Called(v)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]byte), args.Error(1)
+}
+
+func (m *mockCodec) Unmarshal(data []byte, v any) error {
+	args := m.Called(data, v)
+	return args.Error(0)
 }
 
 var _ redis.UniversalClient = (*mockRedisClient)(nil)
@@ -55,8 +72,9 @@ func TestCacher(t *testing.T) {
 		err = c.Set(ctx, key, value, expire)
 		assert.NoError(t, err)
 
-		data, err := c.Get(ctx, key)
+		data, ok, err := c.Get(ctx, key)
 		assert.NoError(t, err)
+		assert.True(t, ok)
 		assert.Equal(t, value, data)
 
 		mockRdb.AssertExpectations(t)
@@ -68,9 +86,9 @@ func TestCacher(t *testing.T) {
 
 		mockRdb.On("Get", mock.Anything, mock.Anything).Return("", redis.Nil)
 
-		data, err := c.Get(ctx, key)
-		assert.Error(t, err)
-		assert.Equal(t, cache.ErrNotFound, err)
+		data, ok, err := c.Get(ctx, key)
+		assert.NoError(t, err)
+		assert.False(t, ok)
 		assert.Nil(t, data)
 
 		mockRdb.AssertExpectations(t)
@@ -89,12 +107,39 @@ func TestCacher(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, setErr, err)
 
-		data, err := c.Get(ctx, key)
+		data, ok, err := c.Get(ctx, key)
 		assert.Error(t, err)
+		assert.False(t, ok)
 		assert.Nil(t, data)
 		assert.Equal(t, getErr, err)
 
 		mockRdb.AssertExpectations(t)
+	})
+
+	t.Run("marshal and unmarshal error", func(t *testing.T) {
+		mockRdb := new(mockRedisClient)
+		mc := new(mockCodec)
+		c := NewCacher(mockRdb)
+		c.codec = mc
+
+		mockRdb.On("Get", mock.Anything, mock.Anything).Return(string(valueBytes), nil)
+		mc.On("Marshal", value).Return(nil, errors.New("marshal error"))
+		mc.On("Unmarshal", mock.Anything, mock.Anything).Return(errors.New("unmarshal error"))
+
+		// Simulate marshal error
+		err = c.Set(ctx, key, value, expire)
+		assert.Error(t, err)
+		assert.Equal(t, "marshal error", err.Error())
+
+		// Simulate unmarshal error
+		data, ok, err := c.Get(ctx, key)
+		assert.Error(t, err)
+		assert.False(t, ok)
+		assert.Nil(t, data)
+		assert.Equal(t, "unmarshal error", err.Error())
+
+		mockRdb.AssertExpectations(t)
+		mc.AssertExpectations(t)
 	})
 }
 
