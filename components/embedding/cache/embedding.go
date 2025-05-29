@@ -8,13 +8,16 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 )
 
-var ErrCacherRequired = errors.New("embedding/cache: cacher is required")
+var (
+	ErrCacherRequired    = errors.New("embedding/cache: cacher is required")
+	ErrGeneratorRequired = errors.New("embedding/cache: generator is required")
+)
 
 type Embedder struct {
-	embedder  embedding.Embedder
-	cacher    Cacher
-	generator Generator
-	expire    time.Duration
+	embedder   embedding.Embedder
+	cacher     Cacher
+	generator  Generator
+	expiration time.Duration
 }
 
 type Option interface {
@@ -27,31 +30,34 @@ func (f optionFunc) apply(e *Embedder) {
 	f(e)
 }
 
+// WithCacher returns an [Option] that sets the [Cacher] for the [Embedder].
 func WithCacher(cacher Cacher) Option {
 	return optionFunc(func(e *Embedder) {
 		e.cacher = cacher
 	})
 }
 
+// WithGenerator returns an [Option] that sets the [Generator] for the [Embedder].
 func WithGenerator(generator Generator) Option {
 	return optionFunc(func(e *Embedder) {
 		e.generator = generator
 	})
 }
 
-func WithExpire(expire time.Duration) Option {
+// WithExpiration returns an [Option] that sets the expiration duration for cached embeddings in the [Embedder].
+func WithExpiration(expiration time.Duration) Option {
 	return optionFunc(func(e *Embedder) {
-		e.expire = expire
+		e.expiration = expiration
 	})
 }
 
 var _ embedding.Embedder = (*Embedder)(nil)
 
+// NewEmbedder creates a new [Embedder] instance with cache support.
 func NewEmbedder(embedder embedding.Embedder, opts ...Option) (*Embedder, error) {
 	e := &Embedder{
-		embedder:  embedder,
-		generator: defaultGenerator,
-		expire:    time.Hour * 2,
+		embedder:   embedder,
+		expiration: time.Hour * 2,
 	}
 	for _, opt := range opts {
 		opt.apply(e)
@@ -59,6 +65,10 @@ func NewEmbedder(embedder embedding.Embedder, opts ...Option) (*Embedder, error)
 
 	if e.cacher == nil {
 		return nil, ErrCacherRequired
+	}
+
+	if e.generator == nil {
+		return nil, ErrGeneratorRequired
 	}
 
 	return e, nil
@@ -96,7 +106,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 		// Cache the uncachedEmbeddings
 		for i, idx := range uncached {
 			key := e.generator.Generate(texts[idx], opts...)
-			if err := e.cacher.Set(ctx, key, uncachedEmbeddings[i], e.expire); err != nil {
+			if err := e.cacher.Set(ctx, key, uncachedEmbeddings[i], e.expiration); err != nil {
 				_ = err // skip caching if there's an error
 			}
 			embeddingsByKey[idx] = uncachedEmbeddings[i]

@@ -53,16 +53,28 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 
 	t.Run("embedder not set cacher", func(t *testing.T) {
 		me := new(mockEmbedder)
-		e, err := NewEmbedder(me, WithGenerator(defaultGenerator))
+		e, err := NewEmbedder(me, WithGenerator(NewSimpleGenerator()))
 		require.Error(t, err)
 		assert.Equal(t, ErrCacherRequired, err)
 		assert.Nil(t, e)
+		me.AssertExpectations(t)
+	})
+
+	t.Run("embedder not set generator", func(t *testing.T) {
+		mc := new(mockCacher)
+		me := new(mockEmbedder)
+		e, err := NewEmbedder(me, WithCacher(mc))
+		require.Error(t, err)
+		assert.Equal(t, ErrGeneratorRequired, err)
+		assert.Nil(t, e)
+		mc.AssertExpectations(t)
+		me.AssertExpectations(t)
 	})
 
 	t.Run("all cache hit", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
 		for i, text := range texts {
@@ -79,7 +91,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("partial cache hit", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
 		key0 := e.generator.Generate(texts[0])
@@ -101,7 +113,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("all cache miss", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
 		key0 := e.generator.Generate(texts[0])
@@ -123,7 +135,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("cache get error", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
 		key := e.generator.Generate(texts[0])
@@ -138,7 +150,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("underlying embedder error", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
 		key := e.generator.Generate(texts[0])
@@ -154,7 +166,7 @@ func TestEmbedder_EmbedStrings(t *testing.T) {
 	t.Run("cache set error, ignore", func(t *testing.T) {
 		mc := new(mockCacher)
 		me := new(mockEmbedder)
-		e, err := NewEmbedder(me, WithCacher(mc), WithExpire(expiration))
+		e, err := NewEmbedder(me, WithCacher(mc), WithGenerator(NewSimpleGenerator()), WithExpiration(expiration))
 		require.NoError(t, err)
 
 		key0 := e.generator.Generate(texts[0])
