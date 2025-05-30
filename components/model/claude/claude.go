@@ -254,12 +254,17 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				waitList = append(waitList, message)
 				continue
 			}
+			if len(message.ToolCalls) > 0 {
+				waitList = append(waitList, message)
+				continue
+			}
 			if len(waitList) != 0 {
 				message, err = schema.ConcatMessages(append(waitList, message))
 				if err != nil {
 					_ = sw.Send(nil, fmt.Errorf("concat empty message fail: %w", err))
 					return
 				}
+				fixToolsWithEmptyArgs(message)
 				waitList = []*schema.Message{}
 			}
 			closed := sw.Send(cm.getCallbackOutput(message), nil)
@@ -273,6 +278,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				_ = sw.Send(nil, fmt.Errorf("concat empty message fail: %w", err_))
 				return
 			} else {
+				fixToolsWithEmptyArgs(message)
 				closed := sw.Send(cm.getCallbackOutput(message), nil)
 				if closed {
 					return
@@ -684,6 +690,14 @@ func isMessageEmpty(message *schema.Message) bool {
 		return true
 	}
 	return false
+}
+
+func fixToolsWithEmptyArgs(message *schema.Message) {
+	for tool := range message.ToolCalls {
+		if message.ToolCalls[tool].Function.Arguments == "" {
+			message.ToolCalls[tool].Function.Arguments = "{}"
+		}
+	}
 }
 
 type panicErr struct {
