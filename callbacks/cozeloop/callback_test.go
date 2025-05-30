@@ -55,7 +55,7 @@ func TestCozeLoopCallback(t *testing.T) {
 	cbh := NewLoopHandler(client,
 		WithEnableTracing(true),
 		WithLogger(cozeloop.GetLogger()),
-		WithCallbackDataParser(NewDefaultDataParser()),
+		WithCallbackDataParser(NewDefaultDataParser(false)),
 		WithEinoVersionFn(func() string {
 			return "1.0.0"
 		}))

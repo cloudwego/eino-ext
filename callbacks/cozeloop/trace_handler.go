@@ -20,8 +20,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
-	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
+	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/async"  // todo: 测试后改为github.com/cloudwego/eino-ext
+	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/consts" // todo: 测试后改为github.com/cloudwego/eino-ext
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/schema"
 	"github.com/coze-dev/cozeloop-go"
@@ -31,7 +31,7 @@ import (
 func newTraceCallbackHandler(client cozeloop.Client, o *options) callbacks.Handler {
 	tracer := &einoTracer{
 		client: client,
-		parser: newDefaultDataParserWithConcatFuncs(o.concatFuncs),
+		parser: newDefaultDataParserWithConcatFuncs(o.concatFuncs, o.enableAggrOutput),
 		logger: o.logger,
 	}
 
@@ -65,10 +65,18 @@ type einoTracer struct {
 	logger  cozeloop.Logger
 }
 
+type AggrMessageOutput struct {
+	Messages []*tracespec.ModelMessage `json:"messages"`
+}
+
 func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	if info == nil {
 		return ctx
 	}
+
+	ctx = injectAggrMessageOutputHookToCtx(ctx)
+	ctx = injectGraphNodeLevelToCtx(ctx, getGraphNodeLevelFromCtx(ctx)+1)
+	ctx = injectToolIDNameMapToCtx(ctx, info, input)
 
 	spanName := info.Name
 	if spanName == "" {
@@ -144,6 +152,9 @@ func (l *einoTracer) OnStartWithStreamInput(ctx context.Context, info *callbacks
 		input.Close()
 		return ctx
 	}
+
+	ctx = injectAggrMessageOutputHookToCtx(ctx)
+	ctx = injectGraphNodeLevelToCtx(ctx, getGraphNodeLevelFromCtx(ctx)+1)
 
 	spanName := info.Name
 	if spanName == "" {
