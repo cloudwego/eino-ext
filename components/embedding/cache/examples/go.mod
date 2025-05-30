@@ -1,10 +1,10 @@
-module github.com/cloudwego/eino-ext/components/embedding/cache/examples/embedding
+module github.com/cloudwego/eino-ext/components/embedding/cache/examples
 
 go 1.23.0
 
 replace (
-	github.com/cloudwego/eino-ext/components/embedding/cache => ../../
-	github.com/cloudwego/eino-ext/components/embedding/cache/redis => ../../redis/
+	github.com/cloudwego/eino-ext/components/embedding/cache => ../
+	github.com/cloudwego/eino-ext/components/embedding/cache/redis => ../redis/
 )
 
 require (
