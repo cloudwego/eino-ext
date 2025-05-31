@@ -1,4 +1,4 @@
-module github.com/cloudwego/eino-ext/libs/acl/openai
+module github.com/srcrs/eino-ext/libs/acl/openai
 
 go 1.18
 
