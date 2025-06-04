@@ -384,8 +384,8 @@ func (d defaultDataParser) tryConcatChunks(chunks []any) (any, error) {
 	return chunks, nil
 }
 
-func (d defaultDataParser) getConcatFunc(tpe reflect.Type) func(reflect.Value) (reflect.Value, error) {
-	if fn, ok := d.concatFuncs[tpe]; ok {
+func (d defaultDataParser) getConcatFunc(typ reflect.Type) func(reflect.Value) (reflect.Value, error) {
+	if fn, ok := d.concatFuncs[typ]; ok {
 		return func(a reflect.Value) (reflect.Value, error) {
 			rvs := reflect.ValueOf(fn).Call([]reflect.Value{a})
 			var err error
