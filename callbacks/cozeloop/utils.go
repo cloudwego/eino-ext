@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/async"  // todo: 测试后改为github.com/cloudwego/eino-ext
 	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/consts" // todo: 测试后改为github.com/cloudwego/eino-ext
@@ -138,6 +139,7 @@ func injectAggrMessageOutputHookToCtx(ctx context.Context) context.Context {
 	if !ok {
 		ctx = context.WithValue(ctx, consts.CozeLoopAggrMessageOutput, &AggrMessageOutput{
 			Messages: make([]*tracespec.ModelMessage, 0),
+			mutex:    sync.Mutex{},
 		})
 	}
 

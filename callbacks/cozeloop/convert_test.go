@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/consts"
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
@@ -281,6 +282,42 @@ func Test_convertDocument(t *testing.T) {
 			convey.So(result, convey.ShouldNotBeNil)
 			convey.So(result.ID, convey.ShouldEqual, testDoc.ID)
 			convey.So(result.Content, convey.ShouldEqual, testDoc.Content)
+		})
+	})
+}
+
+func Test_addToolName(t *testing.T) {
+	mockey.PatchConvey("测试 addToolName 函数", t, func() {
+		mockey.PatchConvey("输入的 message 为 nil", func() {
+			result := addToolName(context.Background(), nil)
+			convey.So(result, convey.ShouldBeNil)
+		})
+
+		mockey.PatchConvey("输入的 message 不为 nil, ctx中没有tool信息", func() {
+			result := addToolName(context.Background(), &tracespec.ModelMessage{})
+			convey.So(result.Name, convey.ShouldEqual, "")
+		})
+
+		mockey.PatchConvey("输入的 message 不为 nil, ctx中有tool信息", func() {
+			ctx := context.Background()
+			ctx = context.WithValue(ctx, consts.CozeLoopToolIDNameMap, map[string]string{"1234567890": "testTool"})
+			result := addToolName(ctx, &tracespec.ModelMessage{
+				ToolCallID: "1234567890",
+			})
+			convey.So(result.Name, convey.ShouldEqual, "testTool")
+		})
+	})
+}
+
+func Test_iterSliceWithCtx(t *testing.T) {
+	mockey.PatchConvey("测试 iterSliceWithCtx 函数", t, func() {
+		mockey.PatchConvey("输入的 message 不为 nil, ctx中没有tool信息", func() {
+			result := iterSliceWithCtx(context.Background(), []*tracespec.ModelMessage{
+				{
+					ToolCallID: "1234567890",
+				},
+			}, addToolName)
+			convey.So(len(result), convey.ShouldEqual, 1)
 		})
 	})
 }

@@ -18,6 +18,7 @@ package cozeloop
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/async"  // todo: 测试后改为github.com/cloudwego/eino-ext
@@ -67,6 +68,19 @@ type einoTracer struct {
 
 type AggrMessageOutput struct {
 	Messages []*tracespec.ModelMessage `json:"messages"`
+	mutex    sync.Mutex
+}
+
+func (a *AggrMessageOutput) addMessages(messages ...*tracespec.ModelMessage) {
+	if messages == nil || len(messages) == 0 {
+		return
+	}
+	if a.Messages == nil {
+		a.Messages = make([]*tracespec.ModelMessage, 0)
+	}
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	a.Messages = append(a.Messages, messages...)
 }
 
 func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {

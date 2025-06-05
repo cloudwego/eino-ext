@@ -38,6 +38,9 @@ func convertModelInput(input *model.CallbackInput) *tracespec.ModelInput {
 }
 
 func convertModelOutput(output *model.CallbackOutput) *tracespec.ModelOutput {
+	if output == nil {
+		return nil
+	}
 	return &tracespec.ModelOutput{
 		Choices: []*tracespec.ModelChoice{
 			{Index: 0, Message: convertModelMessage(output.Message)},

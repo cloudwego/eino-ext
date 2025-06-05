@@ -150,7 +150,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			finalOutput := convertModelOutput(cbOutput)
 			if level == 2 {
 				if len(finalOutput.Choices) > 0 {
-					collectOutput.Messages = append(collectOutput.Messages, finalOutput.Choices[0].Message)
+					collectOutput.addMessages(finalOutput.Choices[0].Message)
 				}
 			}
 			tags.set(tracespec.Output, finalOutput)
@@ -173,7 +173,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 		if cbOutput != nil {
 			finalOutput := convertPromptOutput(cbOutput)
 			if level == 2 {
-				collectOutput.Messages = append(collectOutput.Messages, finalOutput.Prompts...)
+				collectOutput.addMessages(finalOutput.Prompts...)
 			}
 			tags.set(tracespec.Output, finalOutput)
 		}
@@ -210,14 +210,14 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 	case compose.ComponentOfLambda:
 		messages, ok := output.([]*schema.Message)
 		if ok && level == 2 {
-			collectOutput.Messages = append(collectOutput.Messages, iterSlice(messages, convertModelMessage)...)
+			collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
 		}
 		tags.set(tracespec.Output, parseAny(ctx, output, false))
 
 	case compose.ComponentOfToolsNode:
 		messages, ok := output.([]*schema.Message)
 		if ok && level == 2 {
-			collectOutput.Messages = append(collectOutput.Messages, iterSliceWithCtx(ctx, iterSlice(messages, convertModelMessage), addToolName)...)
+			collectOutput.addMessages(iterSliceWithCtx(ctx, iterSlice(messages, convertModelMessage), addToolName)...)
 		}
 		tags.set(tracespec.Output, parseAny(ctx, output, false))
 	default:
@@ -226,7 +226,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 		} else {
 			messages, ok := output.([]*schema.Message)
 			if ok && level == 2 {
-				collectOutput.Messages = append(collectOutput.Messages, iterSlice(messages, convertModelMessage)...)
+				collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
 			}
 			tags.set(tracespec.Output, parseAny(ctx, output, false))
 		}
@@ -348,7 +348,7 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 		finalOutput := parseAny(ctx, chunks, true)
 		tags.set(tracespec.Output, finalOutput)
 		if level == 2 {
-			collectOutput.Messages = append(collectOutput.Messages, &tracespec.ModelMessage{
+			collectOutput.addMessages(&tracespec.ModelMessage{
 				Role:    string(schema.Assistant),
 				Content: parseAny(ctx, chunks, true),
 			})
@@ -356,7 +356,7 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 	} else {
 		tags.set(tracespec.Output, convertModelOutput(&model.CallbackOutput{Message: msg}))
 		if level == 2 {
-			collectOutput.Messages = append(collectOutput.Messages, convertModelMessage(msg))
+			collectOutput.addMessages(convertModelMessage(msg))
 		}
 	}
 

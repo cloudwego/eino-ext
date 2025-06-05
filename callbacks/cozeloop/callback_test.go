@@ -53,6 +53,7 @@ func TestCozeLoopCallback(t *testing.T) {
 	}
 	//defer client.Close(ctx) // avoid data trace in UT check of CI
 	cbh := NewLoopHandler(client,
+		WithAggrMessageOutput(true),
 		WithEnableTracing(true),
 		WithLogger(cozeloop.GetLogger()),
 		WithCallbackDataParser(NewDefaultDataParser(false)),

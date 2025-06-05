@@ -103,6 +103,12 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 				Content: "Hello, how can I assist you today?",
 			},
 		}
+		var outputs callbacks.CallbackOutput = []*schema.Message{
+			{
+				Role:    schema.Assistant,
+				Content: "Hello, how can I assist you today?",
+			},
+		}
 
 		mockey.PatchConvey("当 info 为 nil 时", func() {
 			// 调用 ParseOutput 方法
@@ -129,6 +135,27 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 			mockGetTraceVariablesValue.UnPatch()
 		})
 
+		mockey.PatchConvey("当 info.Component 为 ComponentOfChatModel 时，且为2级节点", func() {
+			info := &callbacks.RunInfo{
+				Component: components.ComponentOfChatModel,
+			}
+			mockGetTraceVariablesValue := mockey.Mock(getTraceVariablesValue).Return(&async.TraceVariablesValue{
+				StartTime: time.Now().Add(-time.Second),
+			}, true).Build()
+
+			ctx = injectGraphNodeLevelToCtx(ctx, 2)
+			ctx = injectAggrMessageOutputHookToCtx(ctx)
+			result := d.ParseOutput(ctx, info, output)
+
+			convey.So(result, convey.ShouldNotBeNil)
+			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+
+			collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+			convey.So(len(collectOutput.Messages), convey.ShouldEqual, 1)
+
+			mockGetTraceVariablesValue.UnPatch()
+		})
+
 		mockey.PatchConvey("当 info.Component 为 ComponentOfPrompt 时", func() {
 			info := &callbacks.RunInfo{
 				Component: components.ComponentOfPrompt,
@@ -142,6 +169,27 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 
 			mockConvPromptOutput.UnPatch()
 			mockConvertPromptOutput.UnPatch()
+		})
+
+		mockey.PatchConvey("当 info.Component 为 ComponentOfPrompt 时，且为2级节点", func() {
+			info := &callbacks.RunInfo{
+				Component: components.ComponentOfPrompt,
+			}
+			mockConvPromptOutput := mockey.Mock(prompt.ConvCallbackOutput).Return(&prompt.CallbackOutput{
+				Result: []*schema.Message{
+					{Role: schema.System, Content: "system message"},
+					{Role: schema.User, Content: "user message"},
+				},
+			}).Build()
+
+			ctx = injectGraphNodeLevelToCtx(ctx, 2)
+			ctx = injectAggrMessageOutputHookToCtx(ctx)
+			result := d.ParseOutput(ctx, info, output)
+			convey.So(result, convey.ShouldNotBeNil)
+
+			collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+			convey.So(len(collectOutput.Messages), convey.ShouldEqual, 2)
+			mockConvPromptOutput.UnPatch()
 		})
 
 		mockey.PatchConvey("当 info.Component 为 ComponentOfEmbedding 时", func() {
@@ -204,6 +252,43 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 			mockParseAny.UnPatch()
 		})
 
+		mockey.PatchConvey("当 info.Component 为 compose.ComponentOfLambda 时，且为2级节点", func() {
+			info := &callbacks.RunInfo{
+				Component: compose.ComponentOfLambda,
+			}
+			mockParseAny := mockey.Mock(parseAny).Return("test_output").Build()
+
+			ctx = injectGraphNodeLevelToCtx(ctx, 2)
+			ctx = injectAggrMessageOutputHookToCtx(ctx)
+			result := d.ParseOutput(ctx, info, outputs)
+
+			convey.So(result, convey.ShouldNotBeNil)
+			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+
+			collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+			convey.So(len(collectOutput.Messages), convey.ShouldEqual, 1)
+
+			mockParseAny.UnPatch()
+		})
+		mockey.PatchConvey("当 info.Component 为 compose.ComponentOfToolsNode 时，且为2级节点", func() {
+			info := &callbacks.RunInfo{
+				Component: compose.ComponentOfToolsNode,
+			}
+			mockParseAny := mockey.Mock(parseAny).Return("test_output").Build()
+
+			ctx = injectGraphNodeLevelToCtx(ctx, 2)
+			ctx = injectAggrMessageOutputHookToCtx(ctx)
+			result := d.ParseOutput(ctx, info, outputs)
+
+			convey.So(result, convey.ShouldNotBeNil)
+			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+
+			collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+			convey.So(len(collectOutput.Messages), convey.ShouldEqual, 1)
+
+			mockParseAny.UnPatch()
+		})
+
 		mockey.PatchConvey("当 info.Component 为其他值时", func() {
 			info := &callbacks.RunInfo{
 				Component: "unknown_component",
@@ -214,6 +299,47 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 
 			convey.So(result, convey.ShouldNotBeNil)
 			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+
+			mockParseAny.UnPatch()
+		})
+
+		mockey.PatchConvey("当 info.Component 为其他值时，且为2级节点", func() {
+			info := &callbacks.RunInfo{
+				Component: "unknown_component",
+			}
+			mockParseAny := mockey.Mock(parseAny).Return("test_output").Build()
+
+			ctx = injectGraphNodeLevelToCtx(ctx, 2)
+			ctx = injectAggrMessageOutputHookToCtx(ctx)
+			result := d.ParseOutput(ctx, info, outputs)
+			convey.So(result, convey.ShouldNotBeNil)
+			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+
+			collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+			convey.So(len(collectOutput.Messages), convey.ShouldEqual, 1)
+
+			mockParseAny.UnPatch()
+		})
+
+		mockey.PatchConvey("当 info.Component 为其他值时，且为1级节点", func() {
+			info := &callbacks.RunInfo{
+				Component: "unknown_component",
+			}
+			mockParseAny := mockey.Mock(parseAny).Return("test_output").Build()
+
+			ctx = injectGraphNodeLevelToCtx(ctx, 1)
+			ctx = injectAggrMessageOutputHookToCtx(ctx)
+			ds := defaultDataParser{
+				concatFuncs: make(map[reflect.Type]any),
+			}
+			ds.enableAggrMessageOutput = true
+
+			result := ds.ParseOutput(ctx, info, outputs)
+			convey.So(result, convey.ShouldNotBeNil)
+			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+
+			collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+			convey.So(len(collectOutput.Messages), convey.ShouldEqual, 0)
 
 			mockParseAny.UnPatch()
 		})
