@@ -34,3 +34,14 @@ go-mod-update/%:
 		else \
 		  	echo "😐skip: $(DIR) does not need package $(PACKAGE)"; \
 		fi
+
+.PHONY: go-mod-list
+# Usage:
+# make go-mod-list         # List all dependencies in all subprojects
+# make go-mod-list/app/dir # List dependencies in a specific subproject
+go-mod-list: $(ALL_GO_MOD_DIRS:%=go-mod-list/%)
+go-mod-list/%: DIR=$*
+go-mod-list/%:
+	@echo "$(GO) list -m all in $(DIR)" \
+		&& cd $(DIR) \
+		&& $(GO) list -m all
