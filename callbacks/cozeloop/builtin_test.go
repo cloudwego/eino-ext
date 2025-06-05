@@ -25,8 +25,8 @@ import (
 )
 
 func Test_readVersionByGoMod(t *testing.T) {
-	mockey.PatchConvey("测试 addToolName 函数", t, func() {
-		mockey.PatchConvey("输入的 message 为 nil", func() {
+	mockey.PatchConvey("测试 readVersionByGoMod 函数", t, func() {
+		mockey.PatchConvey("normal", func() {
 			mock := mockey.Mock(debug.ReadBuildInfo).Return(&debug.BuildInfo{
 				GoVersion: "1.18",
 				Path:      "github.com/cloudwego/eino",
@@ -41,6 +41,43 @@ func Test_readVersionByGoMod(t *testing.T) {
 
 			res := readBuildVersion()
 			convey.So(res, convey.ShouldEqual, "v0.1.0")
+		})
+
+		mockey.PatchConvey("normal, version from Deps.Replace.Version", func() {
+			mock := mockey.Mock(debug.ReadBuildInfo).Return(&debug.BuildInfo{
+				GoVersion: "1.18",
+				Path:      "github.com/cloudwego/eino",
+				Deps: []*debug.Module{
+					{
+						Path:    "github.com/cloudwego/eino",
+						Version: "v0.1.0",
+						Replace: &debug.Module{
+							Version: "v0.2.0",
+						},
+					},
+				},
+			}, true).Build()
+			defer mock.UnPatch()
+
+			res := readBuildVersion()
+			convey.So(res, convey.ShouldEqual, "v0.2.0")
+		})
+
+		mockey.PatchConvey("ReadBuildInfo empty", func() {
+			mock := mockey.Mock(debug.ReadBuildInfo).Return(&debug.BuildInfo{
+				GoVersion: "1.18",
+				Path:      "github.com/cloudwego/eino",
+				Deps: []*debug.Module{
+					{
+						Path:    "github.com/cloudwego/eino",
+						Version: "v0.1.0",
+					},
+				},
+			}, false).Build()
+			defer mock.UnPatch()
+
+			res := readBuildVersion()
+			convey.So(res, convey.ShouldEqual, "unknown_build_info")
 		})
 	})
 }
