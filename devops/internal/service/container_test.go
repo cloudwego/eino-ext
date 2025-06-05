@@ -243,11 +243,11 @@ func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 		assert.Nil(t, err)
 		c, err := s.CreateCanvas(id)
 		assert.Nil(t, err)
-		assert.Equal(t, "graph", c.Name)
+		assert.Equal(t, "graph", c.MainGraph.Name)
 
 		c, ok := s.GetCanvas(id)
 		assert.True(t, ok)
-		assert.Equal(t, "graph", c.Name)
+		assert.Equal(t, "graph", c.MainGraph.Name)
 	})
 }
 
