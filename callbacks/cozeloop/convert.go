@@ -17,6 +17,8 @@
 package cozeloop
 
 import (
+	"context"
+
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
@@ -36,6 +38,9 @@ func convertModelInput(input *model.CallbackInput) *tracespec.ModelInput {
 }
 
 func convertModelOutput(output *model.CallbackOutput) *tracespec.ModelOutput {
+	if output == nil {
+		return nil
+	}
 	return &tracespec.ModelOutput{
 		Choices: []*tracespec.ModelChoice{
 			{Index: 0, Message: convertModelMessage(output.Message)},
@@ -87,6 +92,24 @@ func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
 	}
 
 	return msg
+}
+
+func addToolName(ctx context.Context, message *tracespec.ModelMessage) *tracespec.ModelMessage {
+	if message == nil {
+		return message
+	}
+
+	toolIDNameMap := getToolIDNameMapFromCtx(ctx)
+	if toolIDNameMap == nil {
+		return message
+	}
+	toolName, ok := toolIDNameMap[message.ToolCallID]
+	if !ok {
+		return message
+	}
+
+	message.Name = toolName
+	return message
 }
 
 func convertTool(tool *schema.ToolInfo) *tracespec.ModelTool {
@@ -224,6 +247,15 @@ func iterSlice[A, B any](sa []A, fb func(a A) B) []B {
 	r := make([]B, len(sa))
 	for i := range sa {
 		r[i] = fb(sa[i])
+	}
+
+	return r
+}
+
+func iterSliceWithCtx[A, B any](ctx context.Context, sa []A, fb func(ctx context.Context, a A) B) []B {
+	r := make([]B, len(sa))
+	for i := range sa {
+		r[i] = fb(ctx, sa[i])
 	}
 
 	return r

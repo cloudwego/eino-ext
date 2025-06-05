@@ -19,3 +19,9 @@ package consts
 const (
 	EinoImportPath = "github.com/cloudwego/eino"
 )
+
+const (
+	CozeLoopAggrMessageOutput = "cozeloop_aggr_message_output"
+	CozeLoopGraphNodeLevel    = "cozeloop_graph_node_level"
+	CozeLoopToolIDNameMap     = "cozeloop_tool_id_name_map"
+)

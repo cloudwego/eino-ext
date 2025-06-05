@@ -18,6 +18,7 @@ package cozeloop
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -53,9 +54,10 @@ func TestCozeLoopCallback(t *testing.T) {
 	}
 	//defer client.Close(ctx) // avoid data trace in UT check of CI
 	cbh := NewLoopHandler(client,
+		WithAggrMessageOutput(true),
 		WithEnableTracing(true),
 		WithLogger(cozeloop.GetLogger()),
-		WithCallbackDataParser(NewDefaultDataParser()),
+		WithCallbackDataParser(NewDefaultDataParser(false)),
 		WithEinoVersionFn(func() string {
 			return "1.0.0"
 		}))
@@ -166,6 +168,7 @@ func TestCozeLoopCallback(t *testing.T) {
 				TotalTokens:      3,
 			},
 		})
+		cbh.OnError(ctx1, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, errors.New("test error"))
 	})
 
 	mockey.PatchConvey("test generation stream", t, func() {
