@@ -18,6 +18,7 @@ package cozeloop
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -167,6 +168,7 @@ func TestCozeLoopCallback(t *testing.T) {
 				TotalTokens:      3,
 			},
 		})
+		cbh.OnError(ctx1, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, errors.New("test error"))
 	})
 
 	mockey.PatchConvey("test generation stream", t, func() {
