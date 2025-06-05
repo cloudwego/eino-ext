@@ -96,7 +96,7 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 	arg := make(map[string]any)
-	err := sonic.Unmarshal([]byte(argumentsInJSON), &arg)
+	err := sonic.Config{UseNumber: true}.Froze().Unmarshal([]byte(argumentsInJSON), &arg)
 	if err != nil {
 		return "", fmt.Errorf("failed to unmarshal mcp tool input to map[string]any, input: %s, error: %w", argumentsInJSON, err)
 	}
