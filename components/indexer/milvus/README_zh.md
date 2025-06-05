@@ -156,3 +156,32 @@ type IndexerConfig struct {
 | content  | string         | varchar      |                            | 文章内容   | 最大长度: 1024  |
 | vector   | []byte         | binary array | HAMMING(default) / JACCARD | 文章内容向量 | 默认维度: 81920 |
 | metadata | map[string]any | json         |                            | 文章元数据  |             |
+
+## 如何确定 dim 参数
+
+转换关系为 `dim = embedding model output * 4 * 8`
+
+首先，我们在将 `[]float64` 转换为 `DefaultDocumentConvert` 中的 `[]byte`，这导致向量维度的四倍扩展
+
+```go
+// vector2Bytes converts vector to bytes
+func vector2Bytes(vector []float64) []byte {
+float32Arr := make([]float32, len(vector))
+for i, v := range vector {
+float32Arr[i] = float32(v)
+}
+
+bytes := make([]byte, len(float32Arr)*4)
+
+for i, v := range float32Arr {
+binary.LittleEndian.PutUint32(bytes[i*4:], math.Float32bits(v))
+}
+
+return bytes
+}
+```
+
+其次，我们可以参考 [Milvus 官方文档](https://milvus.io/api-reference/go/v2.4.x/Collection/Vectors.md)
+在这里，我们的向量又经过了一次8倍的扩展
+
+因此，我们可以得到以 milvus 向量列的 dim 与嵌入模型的输出纬度之间的转换关系, dim = embedding model output * 4 * 8
