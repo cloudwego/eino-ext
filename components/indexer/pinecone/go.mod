@@ -3,9 +3,12 @@ module github.com/cloudwego/eino-ext/components/indexer/pinecone
 go 1.24.3
 
 require (
+	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.3.38
+	github.com/cloudwego/eino v0.3.40
 	github.com/pinecone-io/go-pinecone/v3 v3.1.0
+	github.com/smartystreets/goconvey v1.8.1
+	google.golang.org/protobuf v1.34.1
 )
 
 require (
@@ -19,9 +22,11 @@ require (
 	github.com/go-openapi/swag v0.19.5 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
+	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/invopop/yaml v0.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
@@ -36,6 +41,7 @@ require (
 	github.com/samber/lo v1.50.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
+	github.com/smarty/assertions v1.15.0 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
@@ -47,7 +53,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20240528184218-531527333157 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240528184218-531527333157 // indirect
 	google.golang.org/grpc v1.65.0 // indirect
-	google.golang.org/protobuf v1.34.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

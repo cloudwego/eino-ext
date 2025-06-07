@@ -82,7 +82,6 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("[NewIndexer] failed to list indexes: %w", err)
 	}
-
 	exists := false
 	for _, index := range indexes {
 		if index.Name == conf.IndexName {
@@ -92,7 +91,6 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	}
 
 	if !exists {
-		fmt.Println(conf.IndexName, conf.Region, conf.Cloud)
 		if _, err := conf.Client.CreateServerlessIndex(ctx, &pinecone.CreateServerlessIndexRequest{
 			Name:               conf.IndexName,
 			Cloud:              conf.Cloud,
@@ -133,11 +131,6 @@ func validateIndexSchema(index *pinecone.Index, conf *IndexerConfig) error {
 	// Check metric
 	if index.Metric != conf.Metric {
 		return fmt.Errorf("index metric mismatch: expected %s, got %s", conf.Metric, index.Metric)
-	}
-
-	// Check vector type
-	if index.VectorType != conf.VectorType {
-		return fmt.Errorf("index vector type mismatch: expected %s, got %s", conf.VectorType, index.VectorType)
 	}
 
 	// Check deletion protection
