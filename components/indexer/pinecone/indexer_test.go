@@ -3,11 +3,14 @@ package pinecone
 import (
 	"context"
 	"fmt"
+	"github.com/cloudwego/eino/schema"
+	"google.golang.org/grpc"
+	"testing"
+
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
 	pc "github.com/pinecone-io/go-pinecone/v3/pinecone"
 	"github.com/smartystreets/goconvey/convey"
-	"testing"
 )
 
 type mockEmbedding struct{}
@@ -185,11 +188,133 @@ func TestNewIndexer(t *testing.T) {
 	})
 }
 
-func TestIndexer(t *testing.T) {
+func TestIndexerStore(t *testing.T) {
 	PatchConvey("test Indexer.Store", t, func() {
-		//ctx := context.Background()
-		//Mock(pinecone.NewClient).Return(&pinecone.Client{}, nil).Build()
-		//mockClient, _ := pinecone.NewClient(pinecone.NewClientParams{})
+		ctx := context.Background()
+		Mock(pc.NewClient).Return(&pc.Client{}, nil).Build()
 
+		mockClient, _ := pc.NewClient(pc.NewClientParams{})
+		mockDim := int32(4)
+		mockName := "test-store"
+		mockIndex := &pc.Index{
+			Name:               mockName,
+			Metric:             defaultMetric,
+			VectorType:         defaultVectorType,
+			DeletionProtection: defaultDeletionProtection,
+			Dimension:          &mockDim,
+			Tags: &pc.IndexTags{
+				"mockTag": "mockValue",
+			},
+		}
+		mockEmb := &mockEmbedding{}
+		mockDocs := []*schema.Document{
+			{
+				ID:       "doc1",
+				Content:  "This is a test document",
+				MetaData: map[string]interface{}{"key": "value"},
+			},
+			{
+				ID:       "doc2",
+				Content:  "This is another test document",
+				MetaData: map[string]interface{}{"key2": "value2"},
+			},
+		}
+
+		Mock(GetMethod(mockClient, "ListIndexes")).To(func(ctx context.Context) ([]*pc.Index, error) {
+			list := make([]*pc.Index, 0)
+			list = append(list, &pc.Index{
+				Name:               defaultIndexName,
+				Metric:             defaultMetric,
+				VectorType:         defaultVectorType,
+				DeletionProtection: defaultDeletionProtection,
+				Dimension:          &mockDim,
+			})
+			return list, nil
+		}).Build()
+		Mock(GetMethod(mockClient, "CreateServerlessIndex")).To(func(ctx context.Context, in *pc.CreateServerlessIndexRequest) (*pc.Index, error) {
+			return mockIndex, nil
+		}).Build()
+
+		Mock(GetMethod(mockClient, "DescribeIndex")).To(func(ctx context.Context, idxName string) (*pc.Index, error) {
+			if idxName == mockName {
+				return mockIndex, nil
+			} else {
+				return nil, fmt.Errorf("mockDescribeIndex not found index: %s", idxName)
+			}
+		}).Build()
+
+		PatchConvey("test store index embedding is nil", func() {
+			indexer, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    mockClient,
+				IndexName: mockName,
+				Embedding: mockEmb,
+				Dimension: mockDim,
+			})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(indexer, convey.ShouldNotBeNil)
+
+			indexer.config.Embedding = nil
+
+			ids, err := indexer.Store(ctx, mockDocs)
+
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[Store] embedding not provided"))
+			convey.So(ids, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test store with insert error", func() {
+			indexer, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    mockClient,
+				Embedding: mockEmb,
+				IndexName: mockName,
+				Dimension: mockDim,
+			})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(indexer, convey.ShouldNotBeNil)
+
+			mockIndexConn := &pc.IndexConnection{Namespace: indexer.config.Namespace}
+
+			Mock(GetMethod(mockClient, "Index")).To(func(in pc.NewIndexConnParams, dialOpts ...grpc.DialOption) (*pc.IndexConnection, error) {
+				return mockIndexConn, nil
+			}).Build()
+
+			Mock(GetMethod(mockIndexConn, "UpsertVectors")).To(func(ctx context.Context, in []*pc.Vector) (uint32, error) {
+				return 0, fmt.Errorf("mock upsert error")
+			}).Build()
+
+			ids, err := indexer.Store(ctx, mockDocs)
+
+			convey.So(err, convey.ShouldBeError, fmt.Errorf("[Store] failed to insert document: [Parallel] failed to insert documents: batch 0 failed: mock upsert error"))
+			convey.So(ids, convey.ShouldBeEmpty)
+		})
+
+		PatchConvey("test store index success", func() {
+			indexer, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    mockClient,
+				Embedding: mockEmb,
+				IndexName: mockName,
+				Dimension: mockDim,
+			})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(indexer, convey.ShouldNotBeNil)
+
+			mockIndexConn := &pc.IndexConnection{Namespace: indexer.config.Namespace}
+
+			Mock(GetMethod(mockClient, "Index")).To(func(in pc.NewIndexConnParams, dialOpts ...grpc.DialOption) (*pc.IndexConnection, error) {
+				return mockIndexConn, nil
+			}).Build()
+
+			Mock(GetMethod(mockIndexConn, "UpsertVectors")).To(func(ctx context.Context, in []*pc.Vector) (uint32, error) {
+				return uint32(len(in)), nil
+			}).Build()
+
+			ids, err := indexer.Store(ctx, mockDocs)
+
+			expectedIds := make([]string, 0, len(mockDocs))
+			for _, doc := range mockDocs {
+				expectedIds = append(expectedIds, doc.ID)
+			}
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ids, convey.ShouldResemble, expectedIds)
+		})
 	})
 }
