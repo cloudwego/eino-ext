@@ -18,6 +18,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/bytedance/sonic"
@@ -95,11 +96,6 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
-	arg := make(map[string]any)
-	err := sonic.Unmarshal([]byte(argumentsInJSON), &arg)
-	if err != nil {
-		return "", fmt.Errorf("failed to unmarshal mcp tool input to map[string]any, input: %s, error: %w", argumentsInJSON, err)
-	}
 	result, err := m.cli.CallTool(ctx, mcp.CallToolRequest{
 		Request: mcp.Request{
 			Method: "tools/call",
@@ -110,7 +106,7 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 			Meta      *mcp.Meta `json:"_meta,omitempty"`
 		}{
 			Name:      m.info.Name,
-			Arguments: arg,
+			Arguments: json.RawMessage(argumentsInJSON),
 		},
 	})
 	if err != nil {
