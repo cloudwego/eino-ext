@@ -58,6 +58,9 @@ type IndexerConfig struct {
 	// Namespace is the namespace within the Pinecone index where data will be stored.
 	// Optional. If not specified, the default namespace is used.
 	Namespace string
+	// Field is the field to store content text.
+	// Optional. If not specified, the default field is used.
+	Field string
 	// Tags are metadata tags to be associated with the index.
 	// Optional.
 	Tags *pinecone.IndexTags
@@ -328,7 +331,14 @@ func (ic *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, d
 			}
 
 			// convert document metadata to pinecone metadata
-			metadata, err := structpb.NewStruct(doc.MetaData)
+			meta := make(map[string]any)
+			if doc.MetaData != nil {
+				for k, v := range doc.MetaData {
+					meta[k] = v
+				}
+			}
+			meta[ic.Field] = doc.Content
+			metadata, err := structpb.NewStruct(meta)
 			if err != nil {
 				return nil, fmt.Errorf("[getDefaultDocumentConvert] failed to convert metadata: %w", err)
 			}
@@ -383,6 +393,12 @@ func (ic *IndexerConfig) check() error {
 	}
 	if ic.BatchSize <= 0 {
 		ic.BatchSize = defaultBatchSize
+	}
+	if ic.Namespace == "" {
+		ic.Namespace = defaultNamespace
+	}
+	if ic.Field == "" {
+		ic.Field = defaultField
 	}
 	if ic.DocumentConverter == nil {
 		ic.DocumentConverter = ic.getDefaultDocumentConvert()

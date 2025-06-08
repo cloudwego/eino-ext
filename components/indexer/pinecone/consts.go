@@ -26,6 +26,8 @@ const (
 	defaultVectorType         = "dense"
 	defaultDimension          = int32(1536)
 	defaultMetric             = pinecone.Cosine
+	defaultNamespace          = "eino_space"
+	defaultField              = "__content__"
 	defaultDeletionProtection = pinecone.DeletionProtectionDisabled
 )
 
