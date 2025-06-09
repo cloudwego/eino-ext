@@ -65,6 +65,9 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 		return nil
 	}
 
+	level := getGraphNodeLevelFromCtx(ctx)
+	collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+
 	tags := make(spanTags)
 
 	switch info.Component {
@@ -127,6 +130,10 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 		tags.set(tracespec.Input, parseAny(ctx, input, false))
 
 	default:
+		messages, ok := input.([]*schema.Message)
+		if ok && level == 1 {
+			collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
+		}
 		tags.set(tracespec.Input, parseAny(ctx, input, false))
 	}
 

@@ -86,6 +86,24 @@ func Test_defaultDataParser_ParseInput(t *testing.T) {
 			result := d.ParseInput(ctx, info, input)
 			convey.So(result, convey.ShouldBeNil)
 		})
+
+		mockey.PatchConvey("测试 input 为 nil 的场景，且为1级节点", func() {
+			ctx := context.Background()
+			info := &callbacks.RunInfo{
+				Component: compose.ComponentOfGraph,
+			}
+			var input callbacks.CallbackInput = []*schema.Message{
+				{Role: schema.System, Content: "system message"},
+				{Role: schema.User, Content: "user message"},
+			}
+			ctx = injectGraphNodeLevelToCtx(ctx, 1)
+			ctx = injectAggrMessageOutputHookToCtx(ctx)
+			d := defaultDataParser{}
+			result := d.ParseInput(ctx, info, input)
+			convey.So(result, convey.ShouldNotBeNil)
+			collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+			convey.So(len(collectOutput.Messages), convey.ShouldEqual, 2)
+		})
 	})
 }
 
