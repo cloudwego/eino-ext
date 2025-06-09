@@ -22,11 +22,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/srcrs/eino-ext/libs/acl/openai"
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
