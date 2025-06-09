@@ -30,6 +30,7 @@ import (
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+var _ model.ChatModel = (*ChatModel)(nil)
 
 type ChatModelConfig struct {
 	// APIKey is your authentication key
@@ -115,9 +116,11 @@ type ChatModelConfig struct {
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
-}
 
-var _ model.ChatModel = (*ChatModel)(nil)
+	// ExtraFields will override any existing fields with the same key.
+	// Optional. Useful for experimental features not yet officially supported.
+	ExtraFields map[string]any `json:"extra_fields,omitempty"`
+}
 
 type ChatModel struct {
 	cli *openai.Client
@@ -151,6 +154,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			FrequencyPenalty: config.FrequencyPenalty,
 			LogitBias:        config.LogitBias,
 			User:             config.User,
+			ExtraFields:      config.ExtraFields,
 		}
 	}
 	cli, err := openai.NewClient(ctx, nConf)
