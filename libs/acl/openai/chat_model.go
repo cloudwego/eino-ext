@@ -502,6 +502,9 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 				LogProbs:     toLogProbs(choice.LogProbs),
 			},
 		}
+		if len(msg.ReasoningContent) > 0 {
+			setReasoningContent(outMsg, msg.ReasoningContent)
+		}
 
 		break
 	}
@@ -593,6 +596,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			// skip empty message
 			// when openai return parallel tool calls, first frame can be empty
 			// skip empty frame in stream, then stream first frame could know whether is tool call msg.
+			rc, ok := GetReasoningContent(msg)
 			if lastEmptyMsg != nil {
 				cMsg, cErr := schema.ConcatMessages([]*schema.Message{lastEmptyMsg, msg})
 				if cErr != nil {
@@ -603,7 +607,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 				msg = cMsg
 			}
 
-			if msg.Content == "" && len(msg.ToolCalls) == 0 {
+			if msg.Content == "" && len(msg.ToolCalls) == 0 && !(ok && len(rc) > 0) {
 				lastEmptyMsg = msg
 				continue
 			}
@@ -725,6 +729,10 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 				Usage:        toEinoTokenUsage(resp.Usage),
 				LogProbs:     toStreamProbs(choice.Logprobs),
 			},
+		}
+
+		if len(choice.Delta.ReasoningContent) > 0 {
+			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		}
 
 		break
