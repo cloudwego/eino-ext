@@ -32,7 +32,7 @@ import (
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
-
+ 
 func Test_Generate(t *testing.T) {
 	PatchConvey("test Generate", t, func() {
 		ctx := context.Background()

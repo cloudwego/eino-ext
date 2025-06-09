@@ -582,17 +582,18 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 			Usage:        toEinoTokenUsage(&resp.Usage),
 			LogProbs:     toLogProbs(choice.LogProbs),
 		},
-		Extra: map[string]any{
-			keyOfRequestID: arkRequestID(resp.ID),
-		},
+		Extra: map[string]any{},
 	}
+
+	setModelName(msg, resp.Model)
+	setArkRequestID(msg, resp.ID)
 
 	if content != nil && content.StringValue != nil {
 		msg.Content = *content.StringValue
 	}
 
 	if choice.Message.ReasoningContent != nil {
-		msg.Extra[keyOfReasoningContent] = *choice.Message.ReasoningContent
+		setReasoningContent(msg, *choice.Message.ReasoningContent)
 	}
 
 	return msg, nil
@@ -616,13 +617,11 @@ func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema
 					Usage:        toEinoTokenUsage(resp.Usage),
 					LogProbs:     toLogProbs(choice.LogProbs),
 				},
-				Extra: map[string]any{
-					keyOfRequestID: arkRequestID(resp.ID),
-				},
+				Extra: map[string]any{},
 			}
 
 			if choice.Delta.ReasoningContent != nil {
-				msg.Extra[keyOfReasoningContent] = *choice.Delta.ReasoningContent
+				setReasoningContent(msg, *choice.Delta.ReasoningContent)
 			}
 
 			break
@@ -635,11 +634,11 @@ func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema
 			ResponseMeta: &schema.ResponseMeta{
 				Usage: toEinoTokenUsage(resp.Usage),
 			},
-			Extra: map[string]any{
-				keyOfRequestID: arkRequestID(resp.ID),
-			},
+			Extra: map[string]any{},
 		}
 	}
+	setArkRequestID(msg, resp.ID)
+	setModelName(msg, resp.Model)
 
 	return msg, msgFound, nil
 }
