@@ -1,4 +1,4 @@
-module github.com/JqRrt/eino-ext/callbacks/cozeloop // todo: 测试后改成github.com/cloudwego/eino-ext/callbacks/cozeloop
+module github.com/cloudwego/eino-ext/callbacks/cozeloop
 
 go 1.23.4
 
@@ -8,7 +8,7 @@ require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.3.27
-	github.com/coze-dev/cozeloop-go v0.1.5
+	github.com/coze-dev/cozeloop-go v0.1.7
 	github.com/coze-dev/cozeloop-go/spec v0.1.0
 	github.com/smartystreets/goconvey v1.8.1
 )

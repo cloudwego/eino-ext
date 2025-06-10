@@ -20,8 +20,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/consts"
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"

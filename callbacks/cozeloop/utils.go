@@ -23,9 +23,9 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/async"  // todo: 测试后改为github.com/cloudwego/eino-ext
-	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/consts" // todo: 测试后改为github.com/cloudwego/eino-ext
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
+	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"

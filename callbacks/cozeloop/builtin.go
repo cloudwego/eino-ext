@@ -19,7 +19,7 @@ package cozeloop
 import (
 	"runtime/debug"
 
-	"github.com/JqRrt/eino-ext/callbacks/cozeloop/internal/consts" // todo: 测试后改为github.com/cloudwego/eino-ext
+	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
 )
 
 func readBuildVersion() string {
