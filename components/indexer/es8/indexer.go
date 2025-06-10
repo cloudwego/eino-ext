@@ -46,6 +46,9 @@ type IndexerConfig struct {
 	// 1. VectorFields contains fields except doc Content
 	// 2. VectorFields contains doc Content and vector not provided in doc extra (see Document.Vector method)
 	Embedding embedding.Embedder
+	// Before the actual index, the docs will be preprocessed, and at this time,
+	// some operations such as adding, deleting, and modifying the docs can be performed
+	PreProcessor func(ctx context.Context, docs []*schema.Document) []*schema.Document
 }
 
 type FieldValue struct {
@@ -91,7 +94,9 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
+	if i.config.PreProcessor != nil {
+		docs = i.config.PreProcessor(ctx, docs)
+	}
 	options := indexer.GetCommonOptions(&indexer.Options{
 		Embedding: i.config.Embedding,
 	}, opts...)
