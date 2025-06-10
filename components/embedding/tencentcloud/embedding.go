@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
@@ -63,20 +64,21 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) (
 	embeddings [][]float64, err error,
 ) {
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
 
 	conf := &embedding.Config{
 		Model: defaultModel, // hunyuan embedding does not specify model
 	}
 
+	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
 	ctx = callbacks.OnStart(ctx, &embedding.CallbackInput{
 		Texts:  texts,
 		Config: conf,
 	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	// NOTE: len of req.InputList must less equal than 200, so we need to split texts into batches
 	// reference: https://pkg.go.dev/github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/hunyuan@v1.0.1093/v20230901#GetEmbeddingRequest.InputList

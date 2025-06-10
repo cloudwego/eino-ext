@@ -21,11 +21,16 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
 )
+
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+var _ model.ChatModel = (*ChatModel)(nil)
 
 type ChatModelConfig struct {
 	// APIKey is your authentication key
@@ -111,9 +116,11 @@ type ChatModelConfig struct {
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
-}
 
-var _ model.ChatModel = (*ChatModel)(nil)
+	// ExtraFields will override any existing fields with the same key.
+	// Optional. Useful for experimental features not yet officially supported.
+	ExtraFields map[string]any `json:"extra_fields,omitempty"`
+}
 
 type ChatModel struct {
 	cli *openai.Client
@@ -147,6 +154,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			FrequencyPenalty: config.FrequencyPenalty,
 			LogitBias:        config.LogitBias,
 			User:             config.User,
+			ExtraFields:      config.ExtraFields,
 		}
 	}
 	cli, err := openai.NewClient(ctx, nConf)
@@ -161,11 +169,21 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	return cm.cli.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	return cm.cli.Stream(ctx, in, opts...)
+}
+
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	cli, err := cm.cli.WithToolsForClient(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &ChatModel{cli: cli}, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
@@ -183,5 +201,5 @@ func (cm *ChatModel) GetType() string {
 }
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
-	return true
+	return cm.cli.IsCallbacksEnabled()
 }

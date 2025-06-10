@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/PuerkitoBio/goquery v1.8.1
-	github.com/cloudwego/eino v0.3.20
+	github.com/cloudwego/eino v0.3.27
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/stretchr/testify v1.9.0
 )

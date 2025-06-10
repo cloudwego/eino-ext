@@ -10,8 +10,11 @@ with Eino's vector storage and retrieval system for enhanced semantic search cap
 
 ### Installation
 
+It requires the milvus-sdk-go client of version 2.4.x
+
 ```bash
-go get github.com/eino-project/eino/indexer/milvus@latest
+go get github.com/milvus-io/milvus-sdk-go/v2@2.4.2
+go get github.com/cloudwego/eino-ext/components/indexer/milvus@latest
 ```
 
 ### Create the Milvus Indexer
@@ -28,7 +31,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
 	
-	"github.com/cloudwego/eino-ext/components/retriever/milvus"
+	"github.com/cloudwego/eino-ext/components/indexer/milvus"
 )
 
 func main() {
@@ -155,3 +158,32 @@ type IndexerConfig struct {
 | vector   | []byte         | binary array  | HAMMING(default) / JACCARD | Document content vector | Default Dim: 81920 |
 | metadata | map[string]any | json          |                            | Document meta data      |                    |
 
+## How to determine the dim parameter
+
+The conversion relationship is `dim = embedding model output * 4 * 8`
+
+First, when converting `[]float64` to `[]byte` in `DefaultDocumentConvert`, the vector dimension is expanded fourfold:
+
+```go
+// vector2Bytes converts vector to bytes
+func vector2Bytes(vector []float64) []byte {
+float32Arr := make([]float32, len(vector))
+for i, v := range vector {
+float32Arr[i] = float32(v)
+}
+
+bytes := make([]byte, len(float32Arr)*4)
+
+for i, v := range float32Arr {
+binary.LittleEndian.PutUint32(bytes[i*4:], math.Float32bits(v))
+}
+
+return bytes
+}
+```
+
+Next, referring to [the Milvus official documentation](https://milvus.io/api-reference/go/v2.4.x/Collection/Vectors.md),
+our vector undergoes an additional 8-fold expansion.
+
+Therefore, we can derive the conversion relationship between the `dim` parameter of the Milvus vector column and the
+output dimension of the embedding model: `dim = embedding model output * 4 * 8`

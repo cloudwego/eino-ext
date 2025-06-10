@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/components/document/parser"
 	"github.com/cloudwego/eino/schema"
@@ -68,15 +69,16 @@ func NewFileLoader(ctx context.Context, config *FileLoaderConfig) (*FileLoader, 
 }
 
 func (f *FileLoader) Load(ctx context.Context, src document.Source, opts ...document.LoaderOption) (docs []*schema.Document, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, f.GetType(), components.ComponentOfLoader)
+
+	ctx = callbacks.OnStart(ctx, &document.LoaderCallbackInput{
+		Source: src,
+	})
 	defer func() {
 		if err != nil {
 			_ = callbacks.OnError(ctx, err)
 		}
 	}()
-
-	ctx = callbacks.OnStart(ctx, &document.LoaderCallbackInput{
-		Source: src,
-	})
 
 	file, err := openFile(src.URI)
 	if err != nil {

@@ -44,6 +44,26 @@ func TestTool(t *testing.T) {
 
 type mockMCPClient struct{}
 
+func (m *mockMCPClient) ListResourcesByPage(ctx context.Context, request mcp.ListResourcesRequest) (*mcp.ListResourcesResult, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *mockMCPClient) ListResourceTemplatesByPage(ctx context.Context, request mcp.ListResourceTemplatesRequest) (*mcp.ListResourceTemplatesResult, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *mockMCPClient) ListPromptsByPage(ctx context.Context, request mcp.ListPromptsRequest) (*mcp.ListPromptsResult, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (m *mockMCPClient) ListToolsByPage(ctx context.Context, request mcp.ListToolsRequest) (*mcp.ListToolsResult, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (m *mockMCPClient) Initialize(ctx context.Context, request mcp.InitializeRequest) (*mcp.InitializeResult, error) {
 	panic("implement me")
 }

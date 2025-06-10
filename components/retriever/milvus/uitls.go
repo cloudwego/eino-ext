@@ -89,6 +89,17 @@ func defaultDocumentConverter() func(ctx context.Context, doc client.SearchResul
 	}
 }
 
+// defaultVectorConverter returns the default vector converter
+func defaultVectorConverter() func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
+	return func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
+		vec := make([]entity.Vector, 0, len(vectors))
+		for _, vector := range vectors {
+			vec = append(vec, entity.BinaryVector(vector2Bytes(vector)))
+		}
+		return vec, nil
+	}
+}
+
 // checkCollectionSchema checks if the vector field exists in the schema
 func checkCollectionSchema(field string, s *entity.Schema) error {
 	for _, column := range s.Fields {

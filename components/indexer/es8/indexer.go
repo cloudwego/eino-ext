@@ -84,13 +84,13 @@ func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
 }
 
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
+	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{Docs: docs})
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
-	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{Docs: docs})
 
 	options := indexer.GetCommonOptions(&indexer.Options{
 		Embedding: i.config.Embedding,

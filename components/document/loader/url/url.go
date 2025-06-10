@@ -25,6 +25,7 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/document/parser/html"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/components/document/parser"
 	"github.com/cloudwego/eino/schema"
@@ -82,15 +83,15 @@ type Loader struct {
 }
 
 func (l *Loader) Load(ctx context.Context, src document.Source, opts ...document.LoaderOption) (docs []*schema.Document, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, l.GetType(), components.ComponentOfLoader)
+	ctx = callbacks.OnStart(ctx, &document.LoaderCallbackInput{
+		Source: src,
+	})
 	defer func() {
 		if err != nil {
 			_ = callbacks.OnError(ctx, err)
 		}
 	}()
-
-	ctx = callbacks.OnStart(ctx, &document.LoaderCallbackInput{
-		Source: src,
-	})
 
 	var readerCloser io.ReadCloser
 	readerCloser, err = l.load(ctx, src)

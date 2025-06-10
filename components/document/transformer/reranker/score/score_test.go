@@ -17,11 +17,12 @@
 package score
 
 import (
-	"github.com/cloudwego/eino/schema"
 	"context"
 	"math/rand"
 	"reflect"
 	"testing"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 var scoreKey = "score"
@@ -50,13 +51,13 @@ func TestScoreReranker(t *testing.T) {
 			name:   "5cases",
 			config: &Config{ScoreFieldKey: &scoreKey},
 			input:  []*schema.Document{scoredDocs[0], scoredDocs[1], scoredDocs[2], scoredDocs[3], scoredDocs[4]},
-			wanted: []*schema.Document{scoredDocs[0], scoredDocs[2], scoredDocs[4], scoredDocs[3], scoredDocs[1]},
+			wanted: []*schema.Document{scoredDocs[4], scoredDocs[2], scoredDocs[0], scoredDocs[1], scoredDocs[3]},
 		},
 		{
 			name:   "10cases",
 			config: &Config{ScoreFieldKey: &scoreKey},
 			input:  []*schema.Document{scoredDocs[0], scoredDocs[1], scoredDocs[2], scoredDocs[3], scoredDocs[4], scoredDocs[5], scoredDocs[6], scoredDocs[7], scoredDocs[8], scoredDocs[9]},
-			wanted: []*schema.Document{scoredDocs[0], scoredDocs[2], scoredDocs[4], scoredDocs[6], scoredDocs[8], scoredDocs[9], scoredDocs[7], scoredDocs[5], scoredDocs[3], scoredDocs[1]},
+			wanted: []*schema.Document{scoredDocs[9], scoredDocs[7], scoredDocs[5], scoredDocs[3], scoredDocs[1], scoredDocs[0], scoredDocs[2], scoredDocs[4], scoredDocs[6], scoredDocs[8]},
 		},
 	}
 

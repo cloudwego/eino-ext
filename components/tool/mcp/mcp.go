@@ -18,6 +18,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/bytedance/sonic"
@@ -35,6 +36,10 @@ type Config struct {
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched
 	ToolNameList []string
+	// ToolCallResultHandler is a function that processes the result after a tool call completes
+	// It can be used for custom processing of tool call results
+	// If nil, no additional processing will be performed
+	ToolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
@@ -73,6 +78,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 				Desc:        t.Description,
 				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(inputSchema),
 			},
+			toolCallResultHandler: conf.ToolCallResultHandler,
 		})
 	}
 
@@ -80,8 +86,9 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 }
 
 type toolHelper struct {
-	cli  client.MCPClient
-	info *schema.ToolInfo
+	cli                   client.MCPClient
+	info                  *schema.ToolInfo
+	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
 
 func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
@@ -89,36 +96,36 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
-	arg := make(map[string]any)
-	err := sonic.Unmarshal([]byte(argumentsInJSON), &arg)
-	if err != nil {
-		return "", fmt.Errorf("unmarshal input fail: %w", err)
-	}
 	result, err := m.cli.CallTool(ctx, mcp.CallToolRequest{
 		Request: mcp.Request{
 			Method: "tools/call",
 		},
 		Params: struct {
-			Name      string                 `json:"name"`
-			Arguments map[string]interface{} `json:"arguments,omitempty"`
-			Meta      *struct {
-				ProgressToken mcp.ProgressToken `json:"progressToken,omitempty"`
-			} `json:"_meta,omitempty"`
+			Name      string    `json:"name"`
+			Arguments any       `json:"arguments,omitempty"`
+			Meta      *mcp.Meta `json:"_meta,omitempty"`
 		}{
 			Name:      m.info.Name,
-			Arguments: arg,
+			Arguments: json.RawMessage(argumentsInJSON),
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("call mcp tool fail: %w", err)
+		return "", fmt.Errorf("failed to call mcp tool: %w", err)
+	}
+
+	if m.toolCallResultHandler != nil {
+		result, err = m.toolCallResultHandler(ctx, m.info.Name, result)
+		if err != nil {
+			return "", fmt.Errorf("failed to execute mcp tool call result handler: %w", err)
+		}
 	}
 
 	marshaledResult, err := sonic.MarshalString(result)
 	if err != nil {
-		return "", fmt.Errorf("marshal mcp tool result fail: %w", err)
+		return "", fmt.Errorf("failed to marshal mcp tool result: %w", err)
 	}
 	if result.IsError {
-		return "", fmt.Errorf("call mcp tool fail: %s", marshaledResult)
+		return "", fmt.Errorf("failed to call mcp tool, mcp server return error: %s", marshaledResult)
 	}
 	return marshaledResult, nil
 }

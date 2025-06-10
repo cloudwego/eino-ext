@@ -28,11 +28,11 @@ const (
 	defaultCollectionContentDesc  = "the content of the document"
 	defaultCollectionMetadata     = "metadata"
 	defaultCollectionMetadataDesc = "the metadata of the document"
-
+	
 	defaultDim = 81920
-
+	
 	defaultIndexField = "vector"
-
+	
 	defaultConsistencyLevel = ConsistencyLevelBounded
 	defaultMetricType       = HAMMING
 )

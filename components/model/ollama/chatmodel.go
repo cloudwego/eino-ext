@@ -26,6 +26,7 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/cloudwego/eino/components"
 	"github.com/ollama/ollama/api"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -33,6 +34,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var CallbackMetricsExtraKey = "ollama_metrics"
 
 // ChatModelConfig stores configuration options specific to Ollama
@@ -92,11 +94,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 	}, nil
 }
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
-	defer func() {
-		if err != nil {
-			_ = callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	var req *api.ChatRequest
 	var cbInput *model.CallbackInput
@@ -106,6 +104,11 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
+	defer func() {
+		if err != nil {
+			_ = callbacks.OnError(ctx, err)
+		}
+	}()
 
 	var cbOutput *model.CallbackOutput
 
@@ -132,11 +135,7 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-	defer func() {
-		if err != nil {
-			_ = callbacks.OnError(ctx, err)
-		}
-	}()
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	var req *api.ChatRequest
 	var cbInput *model.CallbackInput
@@ -146,6 +145,11 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	}
 
 	ctx = callbacks.OnStart(ctx, cbInput)
+	defer func() {
+		if err != nil {
+			_ = callbacks.OnError(ctx, err)
+		}
+	}()
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func(ctx context.Context, conf *model.Config) {
@@ -195,6 +199,15 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		})
 
 	return outStream, nil
+}
+
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+	ncm := *cm
+	ncm.tools = tools
+	return &ncm, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
@@ -378,6 +391,7 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 			Description string   `json:"description"`
 			Enum        []string `json:"enum,omitempty"`
 		})
+		var required []string
 
 		openTool, err := einoTool.ParamsOneOf.ToOpenAPIV3()
 		if err != nil {
@@ -385,6 +399,8 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		}
 
 		if openTool != nil {
+			required = openTool.Required
+
 			for name, param := range openTool.Properties {
 				enums := make([]string, 0, len(param.Value.Enum))
 				for _, e := range param.Value.Enum {
@@ -422,7 +438,7 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 					} `json:"properties"`
 				}{
 					Type:       "object",
-					Required:   openTool.Required,
+					Required:   required,
 					Properties: properties,
 				},
 			},

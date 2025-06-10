@@ -4,11 +4,11 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.3.20
+	github.com/cloudwego/eino v0.3.27
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.9.0
-	github.com/volcengine/volcengine-go-sdk v1.0.185
+	github.com/volcengine/volcengine-go-sdk v1.1.8
 )
 
 require (

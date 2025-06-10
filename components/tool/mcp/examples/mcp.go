@@ -45,6 +45,11 @@ func main() {
 		}
 		fmt.Println("Name:", info.Name)
 		fmt.Println("Desc:", info.Desc)
+		result, err := mcpTool.(tool.InvokableTool).InvokableRun(ctx, `{"operation":"add", "x":1, "y":1}`)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Result:", result)
 		fmt.Println()
 	}
 }
@@ -97,9 +102,10 @@ func startMCPServer() {
 			mcp.Description("Second number"),
 		),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		op := request.Params.Arguments["operation"].(string)
-		x := request.Params.Arguments["x"].(float64)
-		y := request.Params.Arguments["y"].(float64)
+		arg := request.Params.Arguments.(map[string]any)
+		op := arg["operation"].(string)
+		x := arg["x"].(float64)
+		y := arg["y"].(float64)
 
 		var result float64
 		switch op {
