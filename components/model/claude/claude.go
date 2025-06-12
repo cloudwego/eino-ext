@@ -99,6 +99,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		model:         config.Model,
 		stopSequences: config.StopSequences,
 		temperature:   config.Temperature,
+		thinking:      config.Thinking,
 		topK:          config.TopK,
 		topP:          config.TopP,
 	}, nil
@@ -174,8 +175,15 @@ type Config struct {
 	// Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
 	StopSequences []string
 
+	Thinking *Thinking
+
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
+}
+
+type Thinking struct {
+	Enable       bool `json:"enable"`
+	BudgetTokens int  `json:"budget_tokens"`
 }
 
 type ChatModel struct {
@@ -187,6 +195,7 @@ type ChatModel struct {
 	temperature   *float32
 	topK          *int32
 	topP          *float32
+	thinking      *Thinking
 	tools         []anthropic.ToolUnionParam
 	origTools     []*schema.ToolInfo
 	toolChoice    *schema.ToolChoice
@@ -396,7 +405,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		Tools:       nil,
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
-	claudeOptions := model.GetImplSpecificOptions(&options{TopK: cm.topK}, opts...)
+	claudeOptions := model.GetImplSpecificOptions(&options{
+		TopK:     cm.topK,
+		Thinking: cm.thinking}, opts...)
 
 	params := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
@@ -416,6 +427,15 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	}
 	if claudeOptions.TopK != nil {
 		params.TopK = param.NewOpt(int64(*claudeOptions.TopK))
+	}
+
+	if claudeOptions.Thinking != nil && claudeOptions.Thinking.Enable {
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+				Type:         "enabled",
+				BudgetTokens: int64(claudeOptions.Thinking.BudgetTokens),
+			},
+		}
 	}
 
 	tools := cm.tools
@@ -615,27 +635,11 @@ func convContentBlockToEinoMsg(
 		dstMsg.ToolCalls = append(dstMsg.ToolCalls,
 			toolEvent(true, block.ID, block.Name, block.Input, streamCtx))
 	case anthropic.ServerToolUseBlock:
-		toolName := string(block.Type)
-		if len(toolName) == 0 {
-			toolName = "server_tool_use"
-		}
-		dstMsg.ToolCalls = append(dstMsg.ToolCalls,
-			toolEvent(false, block.ID, toolName, block.Input, streamCtx))
+		return fmt.Errorf("server_tool_use not supported")
 	case anthropic.WebSearchToolResultBlock:
-		toolName := string(block.Type)
-		if len(toolName) > 0 {
-			toolName = "web_search_tool_result"
-		}
-
-		webSearchResult, err := json.Marshal(block.Content.OfWebSearchResultBlockArray)
-		if err != nil {
-			return err
-		}
-
-		dstMsg.ToolCalls = append(dstMsg.ToolCalls,
-			toolEvent(true, block.ToolUseID, toolName, string(webSearchResult), streamCtx))
+		return fmt.Errorf("web_search tool not supported")
 	case anthropic.ThinkingBlock:
-		setReasoningContent(dstMsg, block.Thinking)
+		setThinking(dstMsg, block.Thinking)
 	case anthropic.RedactedThinkingBlock:
 	default:
 		return fmt.Errorf("unknown anthropic content block type: %T", block)
@@ -693,7 +697,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 		case anthropic.TextDelta:
 			result.Content = delta.Text
 		case anthropic.ThinkingDelta:
-			setReasoningContent(result, delta.Thinking)
+			setThinking(result, delta.Thinking)
 		case anthropic.InputJSONDelta:
 			result.ToolCalls = append(result.ToolCalls,
 				toolEvent(false, "", "", delta.PartialJSON, streamCtx))

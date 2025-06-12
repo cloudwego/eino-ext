@@ -87,12 +87,17 @@ func basicChat(ctx context.Context, cm model.BaseChatModel) {
 		},
 	}
 
-	resp, err := cm.Generate(ctx, messages)
+	resp, err := cm.Generate(ctx, messages, claude.WithThinking(&claude.Thinking{
+		Enable:       true,
+		BudgetTokens: 1024,
+	}))
 	if err != nil {
 		log.Printf("Generate error: %v", err)
 		return
 	}
 
+	thinking, ok := claude.GetThinking(resp)
+	fmt.Printf("Thinking(have: %v): %s\n", ok, thinking)
 	fmt.Printf("Assistant: %s\n", resp.Content)
 	if resp.ResponseMeta != nil && resp.ResponseMeta.Usage != nil {
 		fmt.Printf("Tokens used: %d (prompt) + %d (completion) = %d (total)\n",
@@ -102,7 +107,7 @@ func basicChat(ctx context.Context, cm model.BaseChatModel) {
 	}
 }
 
-func streamingChat(ctx context.Context, cm model.ChatModel) {
+func streamingChat(ctx context.Context, cm model.BaseChatModel) {
 	messages := []*schema.Message{
 		schema.SystemMessage("You are a helpful AI assistant. Be concise in your responses."),
 		{
@@ -111,11 +116,16 @@ func streamingChat(ctx context.Context, cm model.ChatModel) {
 		},
 	}
 
-	stream, err := cm.Stream(ctx, messages)
+	stream, err := cm.Stream(ctx, messages, claude.WithThinking(&claude.Thinking{
+		Enable:       true,
+		BudgetTokens: 1024,
+	}))
 	if err != nil {
 		log.Printf("Stream error: %v", err)
 		return
 	}
+	isFirstThinking := false
+	isFirstContent := false
 
 	fmt.Print("Assistant: ----------\n")
 	for {
@@ -127,7 +137,23 @@ func streamingChat(ctx context.Context, cm model.ChatModel) {
 			log.Printf("Stream receive error: %v", err)
 			return
 		}
-		fmt.Print(resp.Content)
+
+		thinkingContent, ok := claude.GetThinking(resp)
+		if ok {
+			if !isFirstThinking {
+				isFirstThinking = true
+				fmt.Print("\nThinking: ----------\n")
+			}
+			fmt.Print(thinkingContent)
+		}
+
+		if len(resp.Content) > 0 {
+			if !isFirstContent {
+				isFirstContent = true
+				fmt.Print("\nContent: ----------\n")
+			}
+			fmt.Print(resp.Content)
+		}
 	}
 	fmt.Println("\n----------")
 }

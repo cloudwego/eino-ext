@@ -21,14 +21,14 @@ import (
 )
 
 const (
-	keyOfReasoningContent = "reasoning-content"
+	keyOfThinking = "_thinking"
 )
 
-func GetReasoningContent(msg *schema.Message) (string, bool) {
+func GetThinking(msg *schema.Message) (string, bool) {
 	if msg == nil {
 		return "", false
 	}
-	reasoningContent, ok := msg.Extra[keyOfReasoningContent].(string)
+	reasoningContent, ok := msg.Extra[keyOfThinking].(string)
 	if !ok {
 		return "", false
 	}
@@ -36,12 +36,12 @@ func GetReasoningContent(msg *schema.Message) (string, bool) {
 	return reasoningContent, true
 }
 
-func setReasoningContent(msg *schema.Message, reasoningContent string) {
+func setThinking(msg *schema.Message, reasoningContent string) {
 	if msg == nil {
 		return
 	}
 	if msg.Extra == nil {
 		msg.Extra = make(map[string]interface{})
 	}
-	msg.Extra[keyOfReasoningContent] = reasoningContent
+	msg.Extra[keyOfThinking] = reasoningContent
 }

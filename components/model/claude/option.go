@@ -22,10 +22,18 @@ import (
 
 type options struct {
 	TopK *int32
+
+	Thinking *Thinking
 }
 
 func WithTopK(k int32) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.TopK = &k
+	})
+}
+
+func WithThinking(t *Thinking) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.Thinking = t
 	})
 }

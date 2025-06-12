@@ -27,16 +27,16 @@ func TestConcatMessages(t *testing.T) {
 	msgs := []*schema.Message{
 		{
 			Extra: map[string]any{
-				"key_of_string":       "hi!",
-				"key_of_int":          int(10),
-				keyOfReasoningContent: "how ",
+				"key_of_string": "hi!",
+				"key_of_int":    int(10),
+				keyOfThinking:   "how ",
 			},
 		},
 		{
 			Extra: map[string]any{
-				"key_of_string":       "hello!",
-				"key_of_int":          int(50),
-				keyOfReasoningContent: "are you",
+				"key_of_string": "hello!",
+				"key_of_int":    int(50),
+				keyOfThinking:   "are you",
 			},
 		},
 	}
@@ -46,7 +46,7 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, "hi!hello!", msg.Extra["key_of_string"])
 	assert.Equal(t, int(50), msg.Extra["key_of_int"])
 
-	reasoningContent, ok := GetReasoningContent(msg)
+	reasoningContent, ok := GetThinking(msg)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "how are you", reasoningContent)
 }
