@@ -132,7 +132,8 @@ type Config struct {
 }
 
 type ResponseFormat struct {
-	Type model.ResponseFormatType `json:"type"`
+	Type       model.ResponseFormatType                       `json:"type"`
+	JSONSchema *model.ResponseFormatJSONSchemaJSONSchemaParam `json:"json_schema,omitempty"`
 }
 
 func buildClient(config *Config) *arkruntime.Client {
@@ -442,7 +443,8 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 
 	if cm.config.ResponseFormat != nil {
 		req.ResponseFormat = &model.ResponseFormat{
-			Type: cm.config.ResponseFormat.Type,
+			Type:       cm.config.ResponseFormat.Type,
+			JSONSchema: cm.config.ResponseFormat.JSONSchema,
 		}
 	}
 
