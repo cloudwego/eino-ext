@@ -56,7 +56,7 @@ func main() {
 		// Model:     "claude-3-5-sonnet-20240620",
 		BaseURL:   baseURLPtr,
 		Model:     modelName,
-		MaxTokens: 2000,
+		MaxTokens: 3000,
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel of claude failed, err=%v", err)
@@ -223,7 +223,7 @@ func functionCalling(ctx context.Context, cm model.ToolCallingChatModel) {
 		weatherResp, err := cm.Generate(ctx, []*schema.Message{
 			schema.UserMessage("What's the weather like in Paris today? Please use Celsius."),
 			resp,
-			schema.ToolMessage(resp.ToolCalls[0].ID, `{"temperature": 18, "condition": "sunny"}`),
+			schema.ToolMessage(`{"temperature": 18, "condition": "sunny"}`, resp.ToolCalls[0].ID),
 		})
 		if err != nil {
 			log.Printf("Generate error: %v", err)

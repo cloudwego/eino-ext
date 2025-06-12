@@ -577,7 +577,9 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	}
 
 	for i := range message.ToolCalls {
-		messageParams = append(messageParams, anthropic.NewToolUseBlock(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, message.ToolCalls[i].Function.Arguments))
+		messageParams = append(messageParams, anthropic.NewToolUseBlock(message.ToolCalls[i].ID,
+			json.RawMessage(message.ToolCalls[i].Function.Arguments),
+			message.ToolCalls[i].Function.Name))
 	}
 
 	switch message.Role {
