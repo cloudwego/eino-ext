@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,24 +16,23 @@
 
 package claude
 
-import (
-	"github.com/cloudwego/eino/components/model"
-)
-
-type options struct {
-	TopK *int32
-
-	Thinking *Thinking
+func of[T any](v T) *T {
+	return &v
 }
 
-func WithTopK(k int32) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.TopK = &k
-	})
+func from[T any](v *T) T {
+	if v == nil {
+		var t T
+		return t
+	}
+
+	return *v
 }
 
-func WithThinking(t *Thinking) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.Thinking = t
-	})
+func fromOrDefault[T any](v *T, d T) T {
+	if v == nil {
+		return d
+	}
+
+	return *v
 }

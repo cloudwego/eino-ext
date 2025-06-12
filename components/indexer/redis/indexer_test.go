@@ -33,7 +33,7 @@ import (
 func TestPipelineHSet(t *testing.T) {
 	PatchConvey("test pipelineHSet", t, func() {
 		ctx := context.Background()
-		mockClient := &redis.Client{}
+		mockClient := redis.NewClient(&redis.Options{})
 		d1 := &schema.Document{ID: "1", Content: "asd"}
 		d2 := &schema.Document{ID: "2", Content: "qwe", MetaData: map[string]any{
 			"mock_field_1": map[string]any{"extra_field_1": "asd"},

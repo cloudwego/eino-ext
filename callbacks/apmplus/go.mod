@@ -1,6 +1,7 @@
 module github.com/cloudwego/eino-ext/callbacks/apmplus
 
-go 1.22.0
+go 1.23.0
+
 
 require (
 	github.com/bytedance/mockey v1.2.14
@@ -57,9 +58,9 @@ require (
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	golang.org/x/arch v0.12.0 // indirect
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
-	golang.org/x/net v0.34.0 // indirect
-	golang.org/x/sys v0.29.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
 	google.golang.org/grpc v1.69.4 // indirect

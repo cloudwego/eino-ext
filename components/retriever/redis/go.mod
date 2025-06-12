@@ -1,18 +1,19 @@
 module github.com/cloudwego/eino-ext/components/retriever/redis
 
-go 1.18
+go 1.23.0
+
 
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/cloudwego/eino v0.3.27
-	github.com/redis/go-redis/v9 v9.7.0
+	github.com/redis/go-redis/v9 v9.10.0
 	github.com/smartystreets/goconvey v1.8.1
 )
 
 require (
 	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
-	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -40,8 +41,9 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	golang.org/x/arch v0.11.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/sys v0.26.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
