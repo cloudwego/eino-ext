@@ -114,6 +114,7 @@ func Test_Generate(t *testing.T) {
 			Model: "asd",
 		})
 		convey.So(err, convey.ShouldBeNil)
+		convey.So(m.config.BaseURL, convey.ShouldNotBeEmpty)
 
 		cli := m.cli
 		idx := 1
@@ -208,6 +209,7 @@ func Test_Stream(t *testing.T) {
 			Model: "asd",
 		})
 		convey.So(err, convey.ShouldBeNil)
+		convey.So(m.config.BaseURL, convey.ShouldNotBeEmpty)
 
 		cli := m.cli
 		idx := 1
@@ -254,6 +256,7 @@ func TestBindTools(t *testing.T) {
 
 		chatModel, err := NewChatModel(ctx, &ChatModelConfig{Model: "llama3"})
 		assert.NoError(t, err)
+		assert.NotEmpty(t, chatModel.config.BaseURL)
 
 		doNothingParams := map[string]*schema.ParameterInfo{
 			"test": {
