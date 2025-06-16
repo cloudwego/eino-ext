@@ -18,11 +18,13 @@ package ark
 
 import (
 	"github.com/cloudwego/eino/components/model"
+	model2 "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 type arkOptions struct {
 	customHeaders map[string]string
 	contextID     *string
+	thinking      *model2.Thinking
 }
 
 // WithCustomHeader sets custom headers for a single request
@@ -42,5 +44,12 @@ func WithCustomHeader(m map[string]string) model.Option {
 func WithPrefixCache(contextID string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.contextID = &contextID
+	})
+}
+
+// WithThinking sets the thinking process configuration for the ark.
+func WithThinking(thinking *model2.Thinking) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.thinking = thinking
 	})
 }

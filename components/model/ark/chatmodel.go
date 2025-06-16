@@ -265,9 +265,12 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		Tools:       nil,
 	}, opts...)
 
-	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader}, opts...)
+	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
+		customHeaders: cm.config.CustomHeader,
+		thinking:      cm.config.Thinking,
+	}, opts...)
 
-	req, err := cm.genRequest(in, options)
+	req, err := cm.genRequest(in, options, arkOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -335,9 +338,12 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		Tools:       nil,
 	}, opts...)
 
-	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader}, opts...)
+	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
+		customHeaders: cm.config.CustomHeader,
+		thinking:      cm.config.Thinking,
+	}, opts...)
 
-	req, err := cm.genRequest(in, options)
+	req, err := cm.genRequest(in, options, arkOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -443,7 +449,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	return outStream, nil
 }
 
-func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (req *model.CreateChatCompletionRequest, err error) {
+func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *model.CreateChatCompletionRequest, err error) {
 	req = &model.CreateChatCompletionRequest{
 		MaxTokens:        options.MaxTokens,
 		Temperature:      options.Temperature,
@@ -453,7 +459,7 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 		FrequencyPenalty: cm.config.FrequencyPenalty,
 		LogitBias:        cm.config.LogitBias,
 		PresencePenalty:  cm.config.PresencePenalty,
-		Thinking:         cm.config.Thinking,
+		Thinking:         arkOpts.thinking,
 	}
 
 	if cm.config.ResponseFormat != nil {
