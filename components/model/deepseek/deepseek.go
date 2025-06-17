@@ -59,8 +59,7 @@ type ChatModelConfig struct {
 	Timeout time.Duration `json:"timeout"`
 
 	// HTTPClient specifies the client to send HTTP requests.
-	// If HTTPClient is set, Timeout will not be used.
-	// Optional. Default &http.Client{Timeout: Timeout}
+	// Optional. Default http.DefaultClient
 	HTTPClient *http.Client `json:"http_client"`
 
 	// BaseURL is your custom deepseek endpoint url
