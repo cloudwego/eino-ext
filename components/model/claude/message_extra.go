@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	keyOfThinking = "_thinking"
+	keyOfThinking = "_eino_claude_thinking"
 )
 
 func GetThinking(msg *schema.Message) (string, bool) {

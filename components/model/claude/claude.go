@@ -285,12 +285,6 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			}
 		}
 
-		// the loop may terminate due to a stream error.
-		if stream.Err() != nil {
-			_ = sw.Send(nil, stream.Err())
-			return
-		}
-
 		if len(waitList) > 0 {
 			message, err_ := schema.ConcatMessages(waitList)
 			if err_ != nil {
@@ -302,6 +296,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			if closed {
 				return
 			}
+		}
+
+		// the loop may terminate due to a stream error.
+		if stream.Err() != nil {
+			_ = sw.Send(nil, stream.Err())
+			return
 		}
 
 	}()
@@ -609,12 +609,6 @@ func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 
 	streamCtx := &streamContext{}
 	for _, item := range resp.Content {
-		//	case anthropic.TextBlock:
-		//	case anthropic.ToolUseBlock:
-		//	case anthropic.ServerToolUseBlock:
-		//	case anthropic.WebSearchToolResultBlock:
-		//	case anthropic.ThinkingBlock:
-		//	case anthropic.RedactedThinkingBlock:
 		err := convContentBlockToEinoMsg(item.AsAny(), message, streamCtx)
 		if err != nil {
 			return nil, err
@@ -630,6 +624,12 @@ type streamContext struct {
 
 func convContentBlockToEinoMsg(
 	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext) error {
+	//	case anthropic.TextBlock:
+	//	case anthropic.ToolUseBlock:
+	//	case anthropic.ServerToolUseBlock:
+	//	case anthropic.WebSearchToolResultBlock:
+	//	case anthropic.ThinkingBlock:
+	//	case anthropic.RedactedThinkingBlock:
 	switch block := contentBlock.(type) {
 	case anthropic.TextBlock:
 		dstMsg.Content += block.Text
@@ -735,7 +735,8 @@ func convImageBase64(data string) (string, string, error) {
 }
 
 func isMessageEmpty(message *schema.Message) bool {
-	if len(message.Content) == 0 && len(message.ToolCalls) == 0 && len(message.MultiContent) == 0 {
+	_, ok := GetThinking(message)
+	if len(message.Content) == 0 && len(message.ToolCalls) == 0 && len(message.MultiContent) == 0 && !ok {
 		return true
 	}
 	return false
