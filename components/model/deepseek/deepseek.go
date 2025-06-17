@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -56,6 +57,11 @@ type ChatModelConfig struct {
 	// Timeout specifies the maximum duration to wait for API responses
 	// Optional. Default: 5 minutes
 	Timeout time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
 
 	// BaseURL is your custom deepseek endpoint url
 	// Optional. Default: https://api.deepseek.com/
@@ -133,6 +139,9 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	var opts []deepseek.Option
 	if config.Timeout > 0 {
 		opts = append(opts, deepseek.WithTimeout(config.Timeout))
+	}
+	if config.HTTPClient != nil {
+		opts = append(opts, deepseek.WithHTTPClient(config.HTTPClient))
 	}
 	if len(config.BaseURL) > 0 {
 		baseURL := config.BaseURL
