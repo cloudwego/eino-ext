@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,23 +17,31 @@
 package claude
 
 import (
-	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 )
 
-type options struct {
-	TopK *int32
+const (
+	keyOfThinking = "_eino_claude_thinking"
+)
 
-	Thinking *Thinking
+func GetThinking(msg *schema.Message) (string, bool) {
+	if msg == nil {
+		return "", false
+	}
+	reasoningContent, ok := msg.Extra[keyOfThinking].(string)
+	if !ok {
+		return "", false
+	}
+
+	return reasoningContent, true
 }
 
-func WithTopK(k int32) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.TopK = &k
-	})
-}
-
-func WithThinking(t *Thinking) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.Thinking = t
-	})
+func setThinking(msg *schema.Message, reasoningContent string) {
+	if msg == nil {
+		return
+	}
+	if msg.Extra == nil {
+		msg.Extra = make(map[string]interface{})
+	}
+	msg.Extra[keyOfThinking] = reasoningContent
 }
