@@ -56,8 +56,8 @@ func main() {
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
 	chatModel, err := arkbot.NewChatModel(ctx, &arkbot.ChatModelConfig{
-		APIKey: "48666a7c-5f81-4ab4-adad-eab9aed59ac5",
-		Model:  "bot-20250421145921-fv7lj",
+		APIKey: "xxx",
+		Model:  "yyy",
 	})
 
 	if err != nil {
