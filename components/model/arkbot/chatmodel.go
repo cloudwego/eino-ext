@@ -84,7 +84,7 @@ type Config struct {
 	// Required
 	Model string `json:"model"`
 
-	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion and the range of values is [0, 4096]
+	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion.
 	// Optional. Default: 4096
 	MaxTokens *int `json:"max_tokens,omitempty"`
 
