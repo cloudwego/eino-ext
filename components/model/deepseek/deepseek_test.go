@@ -194,7 +194,7 @@ func TestChatModelStream(t *testing.T) {
 			CompletionTokens: 2,
 			TotalTokens:      3,
 		},
-			LogProbs: &schema.LogProbs{},
+			LogProbs: nil,
 		},
 	}, msg)
 }
