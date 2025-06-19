@@ -2,7 +2,6 @@ module github.com/cloudwego/eino-ext/components/embedding/dashscope
 
 go 1.23.0
 
-toolchain go1.24.0
 
 require (
 	github.com/bytedance/mockey v1.2.14
@@ -43,7 +42,8 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	golang.org/x/arch v0.15.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-	golang.org/x/sys v0.31.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

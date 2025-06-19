@@ -18,9 +18,11 @@ package deepseek
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -56,6 +58,10 @@ type ChatModelConfig struct {
 	// Timeout specifies the maximum duration to wait for API responses
 	// Optional. Default: 5 minutes
 	Timeout time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// Optional. Default http.DefaultClient
+	HTTPClient *http.Client `json:"http_client"`
 
 	// BaseURL is your custom deepseek endpoint url
 	// Optional. Default: https://api.deepseek.com/
@@ -133,6 +139,9 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	var opts []deepseek.Option
 	if config.Timeout > 0 {
 		opts = append(opts, deepseek.WithTimeout(config.Timeout))
+	}
+	if config.HTTPClient != nil {
+		opts = append(opts, deepseek.WithHTTPClient(config.HTTPClient))
 	}
 	if len(config.BaseURL) > 0 {
 		baseURL := config.BaseURL
@@ -220,6 +229,10 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 			continue
 		}
 
+		lp, err := extractLogProbs(choice.Logprobs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract log probs: %w", err)
+		}
 		outMsg = &schema.Message{
 			Role:      toMessageRole(choice.Message.Role),
 			Content:   choice.Message.Content,
@@ -227,7 +240,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: choice.FinishReason,
 				Usage:        toEinoTokenUsage(&resp.Usage),
-				LogProbs:     toLogProbs(choice.Logprobs),
+				LogProbs:     lp,
 			},
 		}
 		if len(choice.Message.ReasoningContent) > 0 {
@@ -304,7 +317,10 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 				return
 			}
 
-			msg, found := resolveStreamResponse(chunk)
+			msg, found, err := resolveStreamResponse(chunk)
+			if err != nil {
+				_ = sw.Send(nil, fmt.Errorf("failed to resolve stream response from DeepSeek: %w", err))
+			}
 			if !found {
 				continue
 			}
@@ -724,13 +740,17 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 	}
 }
 
-func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *schema.Message, found bool) {
+func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
 		if choice.Index != 0 {
 			continue
 		}
 
+		lp, err := extractLogProbs(choice.Logprobs)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to extract log probs: %w", err)
+		}
 		found = true
 		msg = &schema.Message{
 			Role:      toMessageRole(choice.Delta.Role),
@@ -739,7 +759,7 @@ func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *sc
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: choice.FinishReason,
 				Usage:        streamToEinoTokenUsage(resp.Usage),
-				LogProbs:     toLogProbs(&choice.Logprobs),
+				LogProbs:     lp,
 			},
 		}
 		if len(choice.Delta.ReasoningContent) > 0 {
@@ -758,7 +778,7 @@ func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *sc
 		found = true
 	}
 
-	return msg, found
+	return msg, found, nil
 }
 
 func streamToEinoTokenUsage(usage *deepseek.StreamUsage) *schema.TokenUsage {
@@ -797,6 +817,27 @@ func toCallbackUsage(usage *schema.TokenUsage) *model.TokenUsage {
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}
+}
+
+func extractLogProbs(in any) (*schema.LogProbs, error) {
+	if in == nil {
+		return nil, nil
+	}
+	m, ok := in.(map[string]any)
+	if !ok {
+		// unreachable
+		return nil, fmt.Errorf("logprobs are expected to map[string]any, actually %T", in)
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	ret := &schema.LogProbs{}
+	err = json.Unmarshal(b, ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
 }
 
 type panicErr struct {

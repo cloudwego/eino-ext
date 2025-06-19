@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
@@ -38,12 +39,17 @@ func TestClaude(t *testing.T) {
 
 	mockey.PatchConvey("basic chat", t, func() {
 		// Mock API response
+		content := anthropic.ContentBlockUnion{
+			Type: "text",
+			Text: "Hello, I'm Claude!",
+		}
+		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.TextBlock{
+			Type: constant.Text(content.Type),
+			Text: content.Text,
+		}).Build().UnPatch()
 		defer mockey.Mock((*anthropic.MessageService).New).Return(&anthropic.Message{
-			Content: []anthropic.ContentBlock{
-				{
-					Type: anthropic.ContentBlockTypeText,
-					Text: "Hello, I'm Claude!",
-				},
+			Content: []anthropic.ContentBlockUnion{
+				content,
 			},
 			Usage: anthropic.Usage{
 				InputTokens:  10,
@@ -85,15 +91,22 @@ func TestClaude(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
+		content := anthropic.ContentBlockUnion{
+			Type:  "tool_use",
+			ID:    "call_1",
+			Name:  "get_weather",
+			Input: []byte(`{"city":"Paris"}`),
+		}
+		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.ToolUseBlock{
+			Type:  constant.ToolUse(content.Type),
+			ID:    content.ID,
+			Name:  content.Name,
+			Input: content.Input,
+		}).Build().UnPatch()
 		// Mock function call response
 		defer mockey.Mock((*anthropic.MessageService).New).Return(&anthropic.Message{
-			Content: []anthropic.ContentBlock{
-				{
-					Type:  anthropic.ContentBlockTypeToolUse,
-					ID:    "call_1",
-					Name:  "get_weather",
-					Input: []byte(`{"city":"Paris"}`),
-				},
+			Content: []anthropic.ContentBlockUnion{
+				content,
 			},
 		}, nil).Build().UnPatch()
 
@@ -112,12 +125,17 @@ func TestClaude(t *testing.T) {
 
 	mockey.PatchConvey("image processing", t, func() {
 		// Mock image response
+		content := anthropic.ContentBlockUnion{
+			Type: "text",
+			Text: "I see a beautiful sunset image",
+		}
+		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.TextBlock{
+			Type: constant.Text(content.Text),
+			Text: content.Text,
+		}).Build().UnPatch()
 		defer mockey.Mock((*anthropic.MessageService).New).Return(&anthropic.Message{
-			Content: []anthropic.ContentBlock{
-				{
-					Type: anthropic.ContentBlockTypeText,
-					Text: "I see a beautiful sunset image",
-				},
+			Content: []anthropic.ContentBlockUnion{
+				content,
 			},
 		}, nil).Build().UnPatch()
 
@@ -149,14 +167,20 @@ func TestConvStreamEvent(t *testing.T) {
 	streamCtx := &streamContext{}
 
 	mockey.PatchConvey("message start event", t, func() {
-		event := anthropic.MessageStreamEvent{}
-		defer mockey.Mock(anthropic.MessageStreamEvent.AsUnion).Return(anthropic.MessageStartEvent{
+		event := anthropic.MessageStreamEventUnion{}
+		content := anthropic.ContentBlockUnion{
+			Type: "text",
+			Text: "Initial message",
+		}
+		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.TextBlock{
+			Type: constant.Text(content.Type),
+			Text: content.Text,
+		}).Build().UnPatch()
+
+		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.MessageStartEvent{
 			Message: anthropic.Message{
-				Content: []anthropic.ContentBlock{
-					{
-						Type: anthropic.ContentBlockTypeText,
-						Text: "Initial message",
-					},
+				Content: []anthropic.ContentBlockUnion{
+					content,
 				},
 				Usage: anthropic.Usage{
 					InputTokens:  5,
@@ -174,12 +198,15 @@ func TestConvStreamEvent(t *testing.T) {
 	})
 
 	mockey.PatchConvey("content block delta event - text", t, func() {
-		event := anthropic.MessageStreamEvent{}
-		delta := anthropic.ContentBlockDeltaEventDelta{}
-		defer mockey.Mock(anthropic.ContentBlockDeltaEventDelta.AsUnion).Return(anthropic.TextDelta{
+		event := anthropic.MessageStreamEventUnion{}
+		delta := anthropic.RawContentBlockDeltaUnion{
 			Text: " world",
+		}
+		defer mockey.Mock(anthropic.RawContentBlockDeltaUnion.AsAny).Return(anthropic.TextDelta{
+			Text: delta.Text,
 		}).Build().UnPatch()
-		defer mockey.Mock(anthropic.MessageStreamEvent.AsUnion).Return(anthropic.ContentBlockDeltaEvent{
+
+		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.ContentBlockDeltaEvent{
 			Delta: delta,
 			Index: 0,
 			Type:  "",
@@ -194,12 +221,12 @@ func TestConvStreamEvent(t *testing.T) {
 		streamCtx.toolIndex = new(int)
 		*streamCtx.toolIndex = 0
 
-		event := anthropic.MessageStreamEvent{}
-		delta := anthropic.ContentBlockDeltaEventDelta{}
-		defer mockey.Mock(anthropic.ContentBlockDeltaEventDelta.AsUnion).Return(anthropic.InputJSONDelta{
+		event := anthropic.MessageStreamEventUnion{}
+		delta := anthropic.RawContentBlockDeltaUnion{}
+		defer mockey.Mock(anthropic.RawContentBlockDeltaUnion.AsAny).Return(anthropic.InputJSONDelta{
 			PartialJSON: `,"temp":25`,
 		}).Build().UnPatch()
-		defer mockey.Mock(anthropic.MessageStreamEvent.AsUnion).Return(anthropic.ContentBlockDeltaEvent{
+		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.ContentBlockDeltaEvent{
 			Delta: delta,
 			Index: 0,
 			Type:  "",
@@ -213,8 +240,8 @@ func TestConvStreamEvent(t *testing.T) {
 	})
 
 	mockey.PatchConvey("message delta event", t, func() {
-		event := anthropic.MessageStreamEvent{}
-		defer mockey.Mock(anthropic.MessageStreamEvent.AsUnion).Return(anthropic.MessageDeltaEvent{
+		event := anthropic.MessageStreamEventUnion{}
+		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.MessageDeltaEvent{
 			Delta: anthropic.MessageDeltaEventDelta{
 				StopReason: "end_turn",
 			},
@@ -230,21 +257,22 @@ func TestConvStreamEvent(t *testing.T) {
 	})
 
 	mockey.PatchConvey("content block start event", t, func() {
-		event := anthropic.MessageStreamEvent{}
-		defer mockey.Mock(anthropic.MessageStreamEvent.AsUnion).Return(anthropic.ContentBlockStartEvent{}).Build().UnPatch()
-		defer mockey.Mock((*anthropic.ContentBlock).UnmarshalJSON).When(func(r *anthropic.ContentBlock, data []byte) bool {
-			r.Type = anthropic.ContentBlockTypeToolUse
-			r.Name = "tool"
-			r.Input = json.RawMessage("")
-			return true
-		}).Return(nil).Build().UnPatch()
+		event := anthropic.MessageStreamEventUnion{}
+		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).
+			Return(anthropic.ContentBlockStartEvent{}).Build().UnPatch()
+		defer mockey.Mock(anthropic.ContentBlockStartEventContentBlockUnion.AsAny).
+			Return(anthropic.ToolUseBlock{
+				Type:  "tool_use",
+				Name:  "tool",
+				Input: json.RawMessage("xxx"),
+			}).Build().UnPatch()
 
 		message, err := convStreamEvent(event, streamCtx)
 		assert.NoError(t, err)
 		assert.Equal(t, len(message.ToolCalls), 1)
 		assert.Equal(t, *message.ToolCalls[0].Index, 1)
 		assert.Equal(t, message.ToolCalls[0].Function.Name, "tool")
-		assert.Equal(t, message.ToolCalls[0].Function.Arguments, "")
+		assert.Equal(t, message.ToolCalls[0].Function.Arguments, "xxx")
 	})
 }
 
