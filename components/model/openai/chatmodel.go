@@ -120,6 +120,10 @@ type ChatModelConfig struct {
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"extra_fields,omitempty"`
+
+	// AzureModelMapperFunc is handling function for replacing model to azure deployment name func
+	// Optional. Set for lookup the model name with azure deployment name
+	AzureModelMapperFunc func(model string) string `json:"azure_model_mapper,omitempty"`
 }
 
 type ChatModel struct {
@@ -155,6 +159,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			LogitBias:        config.LogitBias,
 			User:             config.User,
 			ExtraFields:      config.ExtraFields,
+			AzureModelMapperFunc: config.AzureModelMapperFunc,
 		}
 	}
 	cli, err := openai.NewClient(ctx, nConf)

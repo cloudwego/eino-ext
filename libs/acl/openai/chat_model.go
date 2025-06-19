@@ -145,6 +145,10 @@ type Config struct {
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"-"`
+
+	// AzureModelMapperFunc is handling function for replacing model to azure deployment name func
+	// Optional. Set for lookup the model name with azure deployment name
+	AzureModelMapperFunc func(model string) string `json:"azure_model_mapper,omitempty"`
 }
 
 type Client struct {
@@ -167,6 +171,10 @@ func NewClient(ctx context.Context, config *Config) (*Client, error) {
 		clientConf = openai.DefaultAzureConfig(config.APIKey, config.BaseURL)
 		if config.APIVersion != "" {
 			clientConf.APIVersion = config.APIVersion
+		}
+
+		if config.AzureModelMapperFunc != nil {
+			clientConf.AzureModelMapperFunc = config.AzureModelMapperFunc
 		}
 	} else {
 		clientConf = openai.DefaultConfig(config.APIKey)
