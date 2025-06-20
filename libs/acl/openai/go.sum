@@ -73,6 +73,10 @@ github.com/mattn/go-isatty v0.0.8 h1:HLtExJ+uU2HOZ+wI0Tt5DtUDrx8yhUqDcp7fYERX4CE
 github.com/mattn/go-isatty v0.0.8/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
 github.com/meguminnnnnnnnn/go-openai v0.0.0-20250530094841-88286040d3c1 h1:Llz7dflXPHaZu6ombU1ZLIYZz5tAHcz0f3zVxHW1wvY=
 github.com/meguminnnnnnnnn/go-openai v0.0.0-20250530094841-88286040d3c1/go.mod h1:CqSFsV6AkkL2fixd25WYjRAolns+gQrY1x/Cz9c30v8=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250609095347-3a9c552bd221 h1:IZqCPzV90crb66YhyaFtc4YX3Qd8kiqmp93Z2rOyFic=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250609095347-3a9c552bd221/go.mod h1:CqSFsV6AkkL2fixd25WYjRAolns+gQrY1x/Cz9c30v8=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250620092828-0d508a1dcdde h1:pq2I0uxUR4lfr4OmqvE8QdHj9UML9b1jZu8L3dI2eu8=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250620092828-0d508a1dcdde/go.mod h1:CqSFsV6AkkL2fixd25WYjRAolns+gQrY1x/Cz9c30v8=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b/go.mod h1:01TrycV0kFyexm33Z7vhZRXopbI8J3TDReVlkTgMUxE=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
