@@ -2,13 +2,12 @@ module github.com/cloudwego/eino-ext/components/model/openai
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/cloudwego/eino v0.3.27
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250605072634-0f875e04269d
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250620094016-508ba2571e04
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250523041550-e202cd57070c
+	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250620092828-0d508a1dcdde
 )
 
 require (
