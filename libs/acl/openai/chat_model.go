@@ -145,6 +145,10 @@ type Config struct {
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"-"`
+
+	// ReasoningEffort will override the default reasoning level of "medium"
+	// Optional. Useful for fine tuning response latency vs. accuracy
+	ReasoningEffort ReasoningEffortLevel
 }
 
 type Client struct {
@@ -325,9 +329,9 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		Tools:       nil,
 		ToolChoice:  c.toolChoice,
 	}, opts...)
-
 	openaiOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields: c.config.ExtraFields,
+		ExtraFields:     c.config.ExtraFields,
+		ReasoningEffort: c.config.ReasoningEffort,
 	}, opts...)
 
 	req := &openai.ChatCompletionRequest{
@@ -343,6 +347,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		User:             dereferenceOrZero(c.config.User),
 		LogProbs:         c.config.LogProbs,
 		TopLogProbs:      c.config.TopLogProbs,
+		ReasoningEffort:  string(openaiOptions.ReasoningEffort),
 	}
 
 	if len(openaiOptions.ExtraFields) > 0 {

@@ -18,12 +18,28 @@ package openai
 
 import "github.com/cloudwego/eino/components/model"
 
+// https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort
+type ReasoningEffortLevel string
+
+const (
+	ReasoningEffortLevelLow    ReasoningEffortLevel = "low"
+	ReasoningEffortLevelMedium ReasoningEffortLevel = "medium"
+	ReasoningEffortLevelHigh   ReasoningEffortLevel = "high"
+)
+
 type openaiOptions struct {
-	ExtraFields map[string]any
+	ExtraFields     map[string]any
+	ReasoningEffort ReasoningEffortLevel
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.ExtraFields = extraFields
+	})
+}
+
+func WithReasoningEffort(re ReasoningEffortLevel) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ReasoningEffort = re
 	})
 }
