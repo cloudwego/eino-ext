@@ -62,7 +62,7 @@ func main() {
     // 配置搜索参数
     params := &ddgsearch.SearchParams{
         Query:      "what is golang",
-        Region:     ddgsearch.RegionUSEN,
+        Region:     ddgsearch.RegionUS,
         SafeSearch: ddgsearch.SafeSearchModerate,
         TimeRange:  ddgsearch.TimeRangeMonth,
         MaxResults: 10,
