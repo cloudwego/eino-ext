@@ -26,8 +26,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
 )
@@ -36,20 +35,20 @@ func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:  apiKey,
+		Backend: genai.BackendGeminiAPI,
+	})
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
-	defer func() {
-		err = client.Close()
-		if err != nil {
-			log.Printf("close client error: %v", err)
-		}
-	}()
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-1.5-flash",
+		Model:  "gemini-2.5-flash",
+		ThinkingConfig: &genai.ThinkingConfig{
+			ThinkingBudget: genai.Ptr(int32(0)),
+		},
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
@@ -154,7 +153,7 @@ func functionCalling(ctx context.Context, cm model.ChatModel) {
 }
 
 func imageProcessing(ctx context.Context, client *genai.Client) {
-	file, err := client.UploadFileFromPath(ctx, "examples/test.jpg", &genai.UploadFileOptions{
+	file, err := client.Files.UploadFromPath(ctx, "examples/test.jpg", &genai.UploadFileConfig{
 		DisplayName: "test",
 		MIMEType:    "image/jpeg",
 	})
@@ -163,7 +162,7 @@ func imageProcessing(ctx context.Context, client *genai.Client) {
 		return
 	}
 	defer func() {
-		err = client.DeleteFile(ctx, file.Name)
+		_, err = client.Files.Delete(ctx, file.Name, nil)
 		if err != nil {
 			log.Printf("Delete file error: %v", err)
 		}
@@ -171,7 +170,7 @@ func imageProcessing(ctx context.Context, client *genai.Client) {
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-1.5-flash",
+		Model:  "gemini-2.5-flash",
 	})
 	if err != nil {
 		log.Printf("NewChatModel error: %v", err)
