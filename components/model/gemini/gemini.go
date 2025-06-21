@@ -392,7 +392,9 @@ func (cm *ChatModel) initGenerativeModelChat(ctx context.Context, history []*gen
 }
 
 func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, error) {
-	gTools := make([]*genai.Tool, len(tools))
+	gTool := &genai.Tool{
+		FunctionDeclarations: make([]*genai.FunctionDeclaration, len(tools)),
+	}
 	for i, tool := range tools {
 		funcDecl := &genai.FunctionDeclaration{
 			Name:        tool.Name,
@@ -408,12 +410,10 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, err
 			return nil, fmt.Errorf("convert open schema fail: %w", err)
 		}
 
-		gTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
-		}
+		gTool.FunctionDeclarations[i] = funcDecl
 	}
 
-	return gTools, nil
+	return []*genai.Tool{gTool}, nil
 }
 
 func (cm *ChatModel) convOpenSchema(schema *openapi3.Schema) (*genai.Schema, error) {
