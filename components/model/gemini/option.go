@@ -18,21 +18,21 @@ package gemini
 
 import (
 	"github.com/cloudwego/eino/components/model"
-	"github.com/getkin/kin-openapi/openapi3"
+	"google.golang.org/genai"
 )
 
 type options struct {
-	TopK           *int32
-	ResponseSchema *openapi3.Schema
+	TopK           *float32
+	ResponseSchema *genai.Schema
 }
 
-func WithTopK(k int32) model.Option {
+func WithTopK(k float32) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.TopK = &k
 	})
 }
 
-func WithResponseSchema(s *openapi3.Schema) model.Option {
+func WithResponseSchema(s *genai.Schema) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ResponseSchema = s
 	})
