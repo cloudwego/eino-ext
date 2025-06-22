@@ -47,7 +47,7 @@ func main() {
 		Client: client,
 		Model:  "gemini-2.5-flash",
 		ThinkingConfig: &genai.ThinkingConfig{
-			ThinkingBudget: genai.Ptr(int32(0)),
+			ThinkingBudget:  genai.Ptr(int32(0)),
 		},
 	})
 	if err != nil {
@@ -111,6 +111,23 @@ func streamingChat(ctx context.Context, cm model.ChatModel) {
 func functionCalling(ctx context.Context, cm model.ChatModel) {
 	err := cm.BindTools([]*schema.ToolInfo{
 		{
+			Name: "get_news",
+			Desc: "Get latest news",
+			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(
+				&openapi3.Schema{
+					Type: "object",
+					Properties: map[string]*openapi3.SchemaRef{
+						"category": {
+							Value: &openapi3.Schema{
+								Type:        "string",
+								Description: "The category of the news",
+							},
+						},
+					},
+				},
+			),
+		},
+		{
 			Name: "get_weather",
 			Desc: "Get current weather information for a city",
 			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(
@@ -136,7 +153,7 @@ func functionCalling(ctx context.Context, cm model.ChatModel) {
 	resp, err := cm.Generate(ctx, []*schema.Message{
 		{
 			Role:    schema.User,
-			Content: "What's the weather like in Paris today?",
+			Content: "What function do you have?",
 		},
 	})
 	if err != nil {

@@ -27,7 +27,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/api/iterator"
 	"google.golang.org/genai"
 )
 
@@ -42,7 +41,7 @@ func TestGemini(t *testing.T) {
 	mockey.PatchConvey("common", t, func() {
 		mockChat := &genai.Chat{}
 		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
-		
+
 		defer mockey.Mock((*genai.Chat).SendMessage).Return(&genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{
@@ -69,7 +68,7 @@ func TestGemini(t *testing.T) {
 	mockey.PatchConvey("stream", t, func() {
 		mockChat := &genai.Chat{}
 		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
-		
+
 		respList := []*genai.GenerateContentResponse{
 			{Candidates: []*genai.Candidate{{
 				Content: &genai.Content{
@@ -106,7 +105,7 @@ func TestGemini(t *testing.T) {
 					}
 				}
 				// Signal completion
-				yield(nil, iterator.Done)
+				yield(nil, io.EOF)
 			}
 		}).Build().UnPatch()
 
@@ -115,9 +114,9 @@ func TestGemini(t *testing.T) {
 				Role:    schema.User,
 				Content: "Hi",
 			},
-		}, WithTopK(0), WithResponseSchema(&genai.Schema{
-			Type: genai.TypeString,
-			Enum: []string{"1", "2"},
+		}, WithTopK(0), WithResponseSchema(&openapi3.Schema{
+			Type: openapi3.TypeString,
+			Enum: []any{"1", "2"},
 		}))
 		assert.NoError(t, err)
 		var respContent string
@@ -135,15 +134,19 @@ func TestGemini(t *testing.T) {
 	mockey.PatchConvey("structure", t, func() {
 		mockChat := &genai.Chat{}
 		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
-		
-		responseSchema := &genai.Schema{
-			Type: "object",
-			Properties: map[string]*genai.Schema{
+
+		responseSchema := &openapi3.Schema{
+			Type: openapi3.TypeObject,
+			Properties: map[string]*openapi3.SchemaRef{
 				"name": {
-					Type: "string",
+					Value: &openapi3.Schema{
+						Type: openapi3.TypeString,
+					},
 				},
 				"age": {
-					Type: "integer",
+					Value: &openapi3.Schema{
+						Type: openapi3.TypeInteger,
+					},
 				},
 			},
 		}
@@ -176,7 +179,7 @@ func TestGemini(t *testing.T) {
 	mockey.PatchConvey("function", t, func() {
 		mockChat := &genai.Chat{}
 		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
-		
+
 		err = model.BindTools([]*schema.ToolInfo{
 			{
 				Name: "get_weather",
@@ -235,7 +238,7 @@ func TestGemini(t *testing.T) {
 	mockey.PatchConvey("media", t, func() {
 		mockChat := &genai.Chat{}
 		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
-		
+
 		defer mockey.Mock((*genai.Chat).SendMessage).Return(&genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{

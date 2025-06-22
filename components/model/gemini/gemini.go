@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"runtime/debug"
 
 	"github.com/bytedance/sonic"
@@ -28,7 +29,6 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
-	"google.golang.org/api/iterator"
 	"google.golang.org/genai"
 )
 
@@ -91,17 +91,17 @@ type Config struct {
 	// Optional. Example: topP := float32(0.95)
 	TopP *float32
 
-	//List of strings that tells the model to stop generating text if one of the strings is encountered in the response.
+	// List of strings that tells the model to stop generating text if one of the strings is encountered in the response.
 	// Optional. Example: stop := []string{"\n"}
 	Stop []string
 
 	// TopK controls diversity by limiting the top K tokens to sample from
 	// Optional. Example: topK := int32(40)
-	TopK *float32
+	TopK *int32
 
 	// ResponseSchema defines the structure for JSON responses
 	// Optional. Used when you want structured output in JSON format
-	ResponseSchema *genai.Schema
+	ResponseSchema *openapi3.Schema
 
 	// EnableCodeExecution allows the model to execute code
 	// Warning: Be cautious with code execution in production
@@ -126,8 +126,8 @@ type ChatModel struct {
 	topP                *float32
 	stop                []string
 	temperature         *float32
-	topK                *float32
-	responseSchema      *genai.Schema
+	topK                *int32
+	responseSchema      *openapi3.Schema
 	tools               []*genai.Tool
 	origTools           []*schema.ToolInfo
 	toolChoice          *schema.ToolChoice
@@ -227,7 +227,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			sw.Close()
 		}()
 		for resp, err_ := range resultIter {
-			if errors.Is(err_, iterator.Done) {
+			if errors.Is(err_, io.EOF) {
 				return
 			}
 			if err_ != nil {
@@ -320,7 +320,6 @@ func (cm *ChatModel) initGenerativeModelChat(ctx context.Context, history []*gen
 		Temperature:    commonOptions.Temperature,
 		TopP:           commonOptions.TopP,
 		StopSequences:  commonOptions.Stop,
-		TopK:           geminiOptions.TopK,
 		SafetySettings: cm.safetySettings,
 		ThinkingConfig: cm.thinkingConfig,
 	}
@@ -331,6 +330,17 @@ func (cm *ChatModel) initGenerativeModelChat(ctx context.Context, history []*gen
 	} else {
 		model = cm.model
 		conf.Model = cm.model
+	}
+
+	if geminiOptions.TopK != nil {
+		config.TopK = genai.Ptr(float32(*geminiOptions.TopK))
+	}
+	if geminiOptions.ResponseSchema != nil {
+		responseSchema, err := cm.convOpenSchema(geminiOptions.ResponseSchema)
+		if err != nil {
+			return nil, nil, err
+		}
+		config.ResponseSchema = responseSchema
 	}
 
 	tools := cm.tools
@@ -392,7 +402,9 @@ func (cm *ChatModel) initGenerativeModelChat(ctx context.Context, history []*gen
 }
 
 func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, error) {
-	gTools := make([]*genai.Tool, len(tools))
+	gTool := &genai.Tool{
+		FunctionDeclarations: make([]*genai.FunctionDeclaration, len(tools)),
+	}
 	for i, tool := range tools {
 		funcDecl := &genai.FunctionDeclaration{
 			Name:        tool.Name,
@@ -408,12 +420,10 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, err
 			return nil, fmt.Errorf("convert open schema fail: %w", err)
 		}
 
-		gTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
-		}
+		gTool.FunctionDeclarations[i] = funcDecl
 	}
 
-	return gTools, nil
+	return []*genai.Tool{gTool}, nil
 }
 
 func (cm *ChatModel) convOpenSchema(schema *openapi3.Schema) (*genai.Schema, error) {

@@ -8,7 +8,6 @@ require (
 	github.com/cloudwego/eino v0.3.43
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0
-	google.golang.org/api v0.197.0
 	google.golang.org/genai v1.12.0
 )
 
