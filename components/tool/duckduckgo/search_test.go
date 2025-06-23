@@ -266,4 +266,14 @@ func TestNewTool(t *testing.T) {
 	tool, err := NewTool(ctx, config)
 	assert.NoError(t, err)
 	assert.NotNil(t, tool)
+
+	info, err := tool.Info(ctx)
+	assert.Nil(t, err)
+
+	doc, err := info.ParamsOneOf.ToOpenAPIV3()
+	assert.Nil(t, err)
+	assert.Len(t, doc.Properties, 2)
+	for _, v := range doc.Properties {
+		assert.NotEqual(t, "", v.Value.Description)
+	}
 }
