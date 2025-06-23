@@ -226,7 +226,10 @@ func (cm *ChatModel) parseCustomOpetions(opts ...model.Option) []model.Option {
 	// Using extra fields to pass the custom options to the underlying client
 	extraFields := make(map[string]any)
 	if qwenOpts.EnableThinking != nil {
-		extraFields["enable_thinking"] = *qwenOpts.EnableThinking
+		enableThinkingSwitch := map[string]bool{
+			"enable_thinking": *qwenOpts.EnableThinking,
+		}
+		extraFields["chat_template_kwargs"] = enableThinkingSwitch
 	}
 	if len(extraFields) > 0 {
 		opts = append(opts, openai.WithExtraFields(extraFields))
