@@ -21,6 +21,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestConfig_validate(t *testing.T) {
@@ -207,6 +209,20 @@ func TestNewTool(t *testing.T) {
 			}
 			if (got == nil) != tt.wantErr {
 				t.Errorf("NewTool() got = %v, want not nil", got)
+			}
+
+			if tt.wantErr {
+				return
+			}
+
+			info, err := got.Info(tt.args.ctx)
+			assert.Nil(t, err)
+
+			doc, err := info.ParamsOneOf.ToOpenAPIV3()
+			assert.Nil(t, err)
+			assert.Len(t, doc.Properties, 2)
+			for _, v := range doc.Properties {
+				assert.NotEqual(t, "", v.Value.Description)
 			}
 		})
 	}

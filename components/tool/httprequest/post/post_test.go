@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bytedance/mockey"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -157,10 +158,27 @@ func TestConfig_Validate_WithValues(t *testing.T) {
 	assert.Equal(t, customClient, config.HttpClient)
 }
 
-func TestNewTool_NilConfig(t *testing.T) {
-	_, err := NewTool(context.Background(), nil)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "request tool configuration is required")
+func TestNewTool_Config(t *testing.T) {
+	mockey.PatchConvey("NilConfig", t, func() {
+		_, err := NewTool(context.Background(), nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "request tool configuration is required")
+	})
+
+	mockey.PatchConvey("WithConfig", t, func() {
+		tool, err := NewTool(context.Background(), &Config{})
+		assert.NoError(t, err)
+
+		info, err := tool.Info(context.Background())
+		assert.Nil(t, err)
+
+		doc, err := info.ParamsOneOf.ToOpenAPIV3()
+		assert.Nil(t, err)
+		assert.Len(t, doc.Properties, 2)
+		for _, v := range doc.Properties {
+			assert.NotEqual(t, "", v.Value.Description)
+		}
+	})
 }
 
 func TestPost_WithHeaders(t *testing.T) {
