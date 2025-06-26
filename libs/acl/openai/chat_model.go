@@ -74,6 +74,12 @@ type Config struct {
 	// Required for Azure
 	ByAzure bool `json:"by_azure"`
 
+
+	// AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
+	// This is useful when the model name is different from the deployment name.
+	// Optional for Azure, remove [,:] from the model name by default.
+	AzureModelMapperFunc func(model string) string
+
 	// BaseURL is the Azure OpenAI endpoint URL
 	// Format: https://{YOUR_RESOURCE_NAME}.openai.azure.com. YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
 	// Required for Azure
@@ -171,6 +177,9 @@ func NewClient(ctx context.Context, config *Config) (*Client, error) {
 		clientConf = openai.DefaultAzureConfig(config.APIKey, config.BaseURL)
 		if config.APIVersion != "" {
 			clientConf.APIVersion = config.APIVersion
+		}
+		if config.AzureModelMapperFunc != nil {
+			clientConf.AzureModelMapperFunc = config.AzureModelMapperFunc
 		}
 	} else {
 		clientConf = openai.DefaultConfig(config.APIKey)
