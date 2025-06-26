@@ -101,5 +101,4 @@ type searchResult struct {
 
 ## 更多详情
 
-- [DuckDuckGo 搜索库文档](ddgsearch/README_zh.md)
 - [Eino 文档](https://github.com/cloudwego/eino) 
