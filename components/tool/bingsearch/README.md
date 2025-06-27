@@ -99,5 +99,4 @@ type searchResult struct {
 
 ## For More Details
 
-- [DuckDuckGo Search Library Documentation](ddgsearch/README.md)
 - [Eino Documentation](https://github.com/cloudwego/eino)
