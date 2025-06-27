@@ -19,30 +19,36 @@ package gemini
 import (
 	"context"
 	"io"
+	"iter"
 	"testing"
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/google/generative-ai-go/genai"
 	"github.com/stretchr/testify/assert"
-	"google.golang.org/api/iterator"
+	"google.golang.org/genai"
 )
 
 func TestGemini(t *testing.T) {
 	ctx := context.Background()
-	model, err := NewChatModel(ctx, &Config{})
+	mockClient := &genai.Client{}
+	model, err := NewChatModel(ctx, &Config{
+		Client: mockClient,
+		Model:  "gemini-pro",
+	})
 	assert.Nil(t, err)
 	mockey.PatchConvey("common", t, func() {
-		// Mock Gemini API 响应
-		defer mockey.Mock((*genai.ChatSession).SendMessage).Return(&genai.GenerateContentResponse{
+		mockChat := &genai.Chat{}
+		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
+
+		defer mockey.Mock((*genai.Chat).SendMessage).Return(&genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{
 					Content: &genai.Content{
 						Role: "model",
-						Parts: []genai.Part{
-							genai.Text("Hello, how can I help you?"),
+						Parts: []*genai.Part{
+							{Text: "Hello, how can I help you?"},
 						},
 					},
 				},
@@ -60,40 +66,47 @@ func TestGemini(t *testing.T) {
 		assert.Equal(t, schema.Assistant, resp.Role)
 	})
 	mockey.PatchConvey("stream", t, func() {
-		defer mockey.Mock((*genai.ChatSession).SendMessageStream).Return(&genai.GenerateContentResponseIterator{}).Build().UnPatch()
-		times := 0
-		respList := []*genai.GenerateContentResponse{{},
+		mockChat := &genai.Chat{}
+		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
+
+		respList := []*genai.GenerateContentResponse{
 			{Candidates: []*genai.Candidate{{
 				Content: &genai.Content{
 					Role: "model",
-					Parts: []genai.Part{
-						genai.Text("Hello,"),
+					Parts: []*genai.Part{
+						{Text: "Hello,"},
 					},
 				},
 			}}},
 			{Candidates: []*genai.Candidate{{
 				Content: &genai.Content{
 					Role: "model",
-					Parts: []genai.Part{
-						genai.Text(" how can I "),
+					Parts: []*genai.Part{
+						{Text: " how can I "},
 					},
 				},
 			}}},
 			{Candidates: []*genai.Candidate{{
 				Content: &genai.Content{
 					Role: "model",
-					Parts: []genai.Part{
-						genai.Text("help you?"),
+					Parts: []*genai.Part{
+						{Text: "help you?"},
 					},
 				},
 			}}},
 		}
-		defer mockey.Mock((*genai.GenerateContentResponseIterator).Next).To(func() (*genai.GenerateContentResponse, error) {
-			times += 1
-			if times > len(respList)-1 {
-				return nil, iterator.Done
+
+		// Mock SendMessageStream to return an iterator function
+		defer mockey.Mock((*genai.Chat).SendMessageStream).To(func(ctx context.Context, parts ...genai.Part) iter.Seq2[*genai.GenerateContentResponse, error] {
+			return func(yield func(*genai.GenerateContentResponse, error) bool) {
+				for _, resp := range respList {
+					if !yield(resp, nil) {
+						return
+					}
+				}
+				// Signal completion
+				yield(nil, io.EOF)
 			}
-			return respList[times], nil
 		}).Build().UnPatch()
 
 		streamResp, err := model.Stream(ctx, []*schema.Message{
@@ -119,31 +132,33 @@ func TestGemini(t *testing.T) {
 	})
 
 	mockey.PatchConvey("structure", t, func() {
+		mockChat := &genai.Chat{}
+		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
+
 		responseSchema := &openapi3.Schema{
-			Type: "object",
+			Type: openapi3.TypeObject,
 			Properties: map[string]*openapi3.SchemaRef{
 				"name": {
 					Value: &openapi3.Schema{
-						Type: "string",
+						Type: openapi3.TypeString,
 					},
 				},
 				"age": {
 					Value: &openapi3.Schema{
-						Type: "integer",
+						Type: openapi3.TypeInteger,
 					},
 				},
 			},
 		}
 		model.responseSchema = responseSchema
 
-		// Mock Gemini API 响应
-		defer mockey.Mock((*genai.ChatSession).SendMessage).Return(&genai.GenerateContentResponse{
+		defer mockey.Mock((*genai.Chat).SendMessage).Return(&genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{
 					Content: &genai.Content{
 						Role: "model",
-						Parts: []genai.Part{
-							genai.Text(`{"name":"John","age":25}`),
+						Parts: []*genai.Part{
+							{Text: `{"name":"John","age":25}`},
 						},
 					},
 				},
@@ -162,6 +177,9 @@ func TestGemini(t *testing.T) {
 	})
 
 	mockey.PatchConvey("function", t, func() {
+		mockChat := &genai.Chat{}
+		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
+
 		err = model.BindTools([]*schema.ToolInfo{
 			{
 				Name: "get_weather",
@@ -180,16 +198,18 @@ func TestGemini(t *testing.T) {
 		})
 		assert.NoError(t, err)
 
-		defer mockey.Mock((*genai.ChatSession).SendMessage).Return(&genai.GenerateContentResponse{
+		defer mockey.Mock((*genai.Chat).SendMessage).Return(&genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{
 					Content: &genai.Content{
 						Role: "model",
-						Parts: []genai.Part{
-							genai.FunctionCall{
-								Name: "get_weather",
-								Args: map[string]interface{}{
-									"city": "Beijing",
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "get_weather",
+									Args: map[string]interface{}{
+										"city": "Beijing",
+									},
 								},
 							},
 						},
@@ -216,13 +236,16 @@ func TestGemini(t *testing.T) {
 	})
 
 	mockey.PatchConvey("media", t, func() {
-		defer mockey.Mock((*genai.ChatSession).SendMessage).Return(&genai.GenerateContentResponse{
+		mockChat := &genai.Chat{}
+		defer mockey.Mock((*genai.Chats).Create).Return(mockChat, nil).Build().UnPatch()
+
+		defer mockey.Mock((*genai.Chat).SendMessage).Return(&genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{
 					Content: &genai.Content{
 						Role: "model",
-						Parts: []genai.Part{
-							genai.Text("I see a beautiful sunset image"),
+						Parts: []*genai.Part{
+							{Text: "I see a beautiful sunset image"},
 						},
 					},
 				},
