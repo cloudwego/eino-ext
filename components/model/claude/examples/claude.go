@@ -164,17 +164,17 @@ func functionCalling(ctx context.Context, cm model.ToolCallingChatModel) {
 			Name: "get_weather",
 			Desc: "Get current weather information for a city",
 			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
-				Type: "object",
+				Type: &openapi3.Types{openapi3.TypeObject},
 				Properties: map[string]*openapi3.SchemaRef{
 					"city": {
 						Value: &openapi3.Schema{
-							Type:        "string",
+							Type:        &openapi3.Types{openapi3.TypeString},
 							Description: "The city name",
 						},
 					},
 					"unit": {
 						Value: &openapi3.Schema{
-							Type: "string",
+							Type: &openapi3.Types{openapi3.TypeString},
 							Enum: []interface{}{"celsius", "fahrenheit"},
 						},
 					},

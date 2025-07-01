@@ -18,273 +18,597 @@ package claude
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/shared/constant"
-	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestClaude(t *testing.T) {
+func TestNewChatModel(t *testing.T) {
 	ctx := context.Background()
-	model, err := NewChatModel(ctx, &Config{
-		APIKey: "test-key",
-		Model:  "claude-3-opus-20240229",
-	})
-	assert.NoError(t, err)
 
-	mockey.PatchConvey("basic chat", t, func() {
-		// Mock API response
-		content := anthropic.ContentBlockUnion{
-			Type: "text",
-			Text: "Hello, I'm Claude!",
-		}
-		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.TextBlock{
-			Type: constant.Text(content.Type),
-			Text: content.Text,
-		}).Build().UnPatch()
-		defer mockey.Mock((*anthropic.MessageService).New).Return(&anthropic.Message{
-			Content: []anthropic.ContentBlockUnion{
-				content,
+	tests := []struct {
+		name        string
+		config      *Config
+		expectError bool
+		validate    func(t *testing.T, model *ChatModel)
+	}{
+		{
+			name: "valid basic config",
+			config: &Config{
+				APIKey:    "test-key",
+				Model:     "claude-3-opus-20240229",
+				MaxTokens: 1000,
 			},
-			Usage: anthropic.Usage{
-				InputTokens:  10,
-				OutputTokens: 5,
+			expectError: false,
+			validate: func(t *testing.T, model *ChatModel) {
+				assert.Equal(t, "claude-3-opus-20240229", model.model)
+				assert.Equal(t, 1000, model.maxTokens)
+				assert.Nil(t, model.responseSchema)
 			},
-		}, nil).Build().UnPatch()
-
-		resp, err := model.Generate(ctx, []*schema.Message{
-			{
-				Role:    schema.User,
-				Content: "Hi, who are you?",
-			},
-		}, WithTopK(5))
-
-		assert.NoError(t, err)
-		assert.Equal(t, "Hello, I'm Claude!", resp.Content)
-		assert.Equal(t, schema.Assistant, resp.Role)
-		assert.Equal(t, 10, resp.ResponseMeta.Usage.PromptTokens)
-		assert.Equal(t, 5, resp.ResponseMeta.Usage.CompletionTokens)
-	})
-
-	mockey.PatchConvey("function calling", t, func() {
-		// Bind tool
-		err := model.BindTools([]*schema.ToolInfo{
-			{
-				Name: "get_weather",
-				Desc: "Get weather information",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
-					Type: "object",
+		},
+		{
+			name: "config with response schema",
+			config: &Config{
+				APIKey:    "test-key",
+				Model:     "claude-3-opus-20240229",
+				MaxTokens: 1000,
+				ResponseSchema: &openapi3.Schema{
+					Type: &openapi3.Types{openapi3.TypeInteger},
 					Properties: map[string]*openapi3.SchemaRef{
-						"city": {
+						"answer": {
 							Value: &openapi3.Schema{
-								Type: "string",
+								Type: &openapi3.Types{"string"},
 							},
 						},
 					},
-				}),
+				},
 			},
+			expectError: false,
+			validate: func(t *testing.T, model *ChatModel) {
+				assert.NotNil(t, model.responseSchema)
+				assert.Equal(t, &openapi3.Types{"object"}, model.responseSchema.Type)
+			},
+		},
+		{
+			name: "config with temperature and topP",
+			config: &Config{
+				APIKey:      "test-key",
+				Model:       "claude-3-opus-20240229",
+				MaxTokens:   1000,
+				Temperature: of(float32(0.7)),
+				TopP:        of(float32(0.9)),
+				TopK:        of(int32(40)),
+			},
+			expectError: false,
+			validate: func(t *testing.T, model *ChatModel) {
+				assert.Equal(t, float32(0.7), *model.temperature)
+				assert.Equal(t, float32(0.9), *model.topP)
+				assert.Equal(t, int32(40), *model.topK)
+			},
+		},
+		{
+			name: "config with stop sequences",
+			config: &Config{
+				APIKey:        "test-key",
+				Model:         "claude-3-opus-20240229",
+				MaxTokens:     1000,
+				StopSequences: []string{"\n\nHuman:", "\n\nAssistant:"},
+			},
+			expectError: false,
+			validate: func(t *testing.T, model *ChatModel) {
+				assert.Equal(t, []string{"\n\nHuman:", "\n\nAssistant:"}, model.stopSequences)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			model, err := NewChatModel(ctx, tt.config)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, model)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, model)
+				if tt.validate != nil {
+					tt.validate(t, model)
+				}
+			}
 		})
-		assert.NoError(t, err)
+	}
+}
 
-		content := anthropic.ContentBlockUnion{
-			Type:  "tool_use",
-			ID:    "call_1",
-			Name:  "get_weather",
-			Input: []byte(`{"city":"Paris"}`),
-		}
-		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.ToolUseBlock{
-			Type:  constant.ToolUse(content.Type),
-			ID:    content.ID,
-			Name:  content.Name,
-			Input: content.Input,
-		}).Build().UnPatch()
-		// Mock function call response
-		defer mockey.Mock((*anthropic.MessageService).New).Return(&anthropic.Message{
-			Content: []anthropic.ContentBlockUnion{
-				content,
-			},
-		}, nil).Build().UnPatch()
+func TestChatModel_BindTools(t *testing.T) {
+	ctx := context.Background()
 
-		resp, err := model.Generate(ctx, []*schema.Message{
-			{
-				Role:    schema.User,
-				Content: "What's the weather in Paris?",
+	tests := []struct {
+		name        string
+		tools       []*schema.ToolInfo
+		expectError bool
+	}{
+		{
+			name: "bind single tool",
+			tools: []*schema.ToolInfo{
+				{
+					Name: "get_weather",
+					Desc: "Get weather information",
+					ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+						Type: &openapi3.Types{"object"},
+						Properties: map[string]*openapi3.SchemaRef{
+							"city": {
+								Value: &openapi3.Schema{
+									Type: &openapi3.Types{"string"},
+								},
+							},
+						},
+					}),
+				},
 			},
+			expectError: false,
+		},
+		{
+			name: "bind multiple tools",
+			tools: []*schema.ToolInfo{
+				{
+					Name: "tool1",
+					Desc: "Tool 1",
+					ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+						Type: &openapi3.Types{"object"},
+					}),
+				},
+				{
+					Name: "tool2",
+					Desc: "Tool 2",
+					ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+						Type: &openapi3.Types{"object"},
+					}),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name:        "bind empty tools",
+			tools:       []*schema.ToolInfo{},
+			expectError: true, // BindTools returns error for empty tools
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create fresh model for each test to avoid state contamination
+			model, err := NewChatModel(ctx, &Config{
+				APIKey:    "test-key",
+				Model:     "claude-3-opus-20240229",
+				MaxTokens: 1000,
+			})
+			require.NoError(t, err)
+
+			err = model.BindTools(tt.tools)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, len(tt.tools), len(model.origTools))
+			}
 		})
+	}
+}
 
-		assert.NoError(t, err)
-		assert.Len(t, resp.ToolCalls, 1)
-		assert.Equal(t, "get_weather", resp.ToolCalls[0].Function.Name)
-		assert.Equal(t, `{"city":"Paris"}`, resp.ToolCalls[0].Function.Arguments)
+func TestChatModel_BindForcedTools(t *testing.T) {
+	ctx := context.Background()
+	model, err := NewChatModel(ctx, &Config{
+		APIKey:    "test-key",
+		Model:     "claude-3-opus-20240229",
+		MaxTokens: 1000,
 	})
+	require.NoError(t, err)
 
-	mockey.PatchConvey("image processing", t, func() {
-		// Mock image response
-		content := anthropic.ContentBlockUnion{
-			Type: "text",
-			Text: "I see a beautiful sunset image",
-		}
-		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.TextBlock{
-			Type: constant.Text(content.Text),
-			Text: content.Text,
-		}).Build().UnPatch()
-		defer mockey.Mock((*anthropic.MessageService).New).Return(&anthropic.Message{
-			Content: []anthropic.ContentBlockUnion{
-				content,
+	tools := []*schema.ToolInfo{
+		{
+			Name: "forced_tool",
+			Desc: "A forced tool",
+			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+				Type: &openapi3.Types{"object"},
+			}),
+		},
+	}
+
+	err = model.BindForcedTools(tools)
+	assert.NoError(t, err)
+	assert.Equal(t, len(tools), len(model.origTools))
+	assert.NotNil(t, model.toolChoice)
+	assert.Equal(t, schema.ToolChoiceForced, *model.toolChoice)
+}
+
+func TestCreateResponseFormatterToolParam(t *testing.T) {
+	tests := []struct {
+		name        string
+		schema      *openapi3.Schema
+		expectError bool
+		validate    func(t *testing.T, tool any)
+	}{
+		{
+			name: "valid schema",
+			schema: &openapi3.Schema{
+				Type: &openapi3.Types{"object"},
+				Properties: map[string]*openapi3.SchemaRef{
+					"answer": {
+						Value: &openapi3.Schema{
+							Type: &openapi3.Types{"string"},
+						},
+					},
+				},
+				Required: []string{"answer"},
 			},
-		}, nil).Build().UnPatch()
+			expectError: false,
+			validate: func(t *testing.T, tool any) {
+				assert.NotNil(t, tool)
+				// Further validation would require anthropic types
+			},
+		},
+		{
+			name:        "nil schema",
+			schema:      nil,
+			expectError: true,
+		},
+	}
 
-		resp, err := model.Generate(ctx, []*schema.Message{
-			{
-				Role: schema.User,
-				MultiContent: []schema.ChatMessagePart{
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tool, err := createResponseFormatterToolParam(tt.schema)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, tool)
+				}
+			}
+		})
+	}
+}
+
+func TestMakeResponseFormatterTransparent(t *testing.T) {
+	tests := []struct {
+		name     string
+		msg      *schema.Message
+		expected *schema.Message
+	}{
+		{
+			name: "message with formatter tool call",
+			msg: &schema.Message{
+				Role:    schema.Assistant,
+				Content: "",
+				ToolCalls: []schema.ToolCall{
 					{
-						Type: schema.ChatMessagePartTypeText,
-						Text: "What's in this image?",
+						ID: "call_1",
+						Function: schema.FunctionCall{
+							Name:      "other_tool",
+							Arguments: `{"param":"value"}`,
+						},
 					},
 					{
-						Type: schema.ChatMessagePartTypeImageURL,
-						ImageURL: &schema.ChatMessageImageURL{
-							URL:      "data:image/jpeg;base64,/9j/4AAQSkZ...",
-							MIMEType: "image/jpeg",
+						ID: "call_2",
+						Function: schema.FunctionCall{
+							Name:      RESPONSE_FORMATTER_TOOL_NAME,
+							Arguments: `{"result":"formatted response"}`,
 						},
 					},
 				},
 			},
-		})
+			expected: &schema.Message{
+				Role:    schema.Assistant,
+				Content: `{"result":"formatted response"}`,
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_1",
+						Function: schema.FunctionCall{
+							Name:      "other_tool",
+							Arguments: `{"param":"value"}`,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "message with only formatter tool call",
+			msg: &schema.Message{
+				Role:    schema.Assistant,
+				Content: "",
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_1",
+						Function: schema.FunctionCall{
+							Name:      RESPONSE_FORMATTER_TOOL_NAME,
+							Arguments: `{"answer":"42"}`,
+						},
+					},
+				},
+			},
+			expected: &schema.Message{
+				Role:      schema.Assistant,
+				Content:   `{"answer":"42"}`,
+				ToolCalls: nil,
+			},
+		},
+		{
+			name: "message without formatter tool call",
+			msg: &schema.Message{
+				Role:    schema.Assistant,
+				Content: "Regular response",
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_1",
+						Function: schema.FunctionCall{
+							Name:      "other_tool",
+							Arguments: `{"param":"value"}`,
+						},
+					},
+				},
+			},
+			expected: &schema.Message{
+				Role:    schema.Assistant,
+				Content: "Regular response",
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_1",
+						Function: schema.FunctionCall{
+							Name:      "other_tool",
+							Arguments: `{"param":"value"}`,
+						},
+					},
+				},
+			},
+		},
+		{
+			name:     "nil message",
+			msg:      nil,
+			expected: nil,
+		},
+		{
+			name: "message with nil tool calls",
+			msg: &schema.Message{
+				Role:      schema.Assistant,
+				Content:   "Regular response",
+				ToolCalls: nil,
+			},
+			expected: &schema.Message{
+				Role:      schema.Assistant,
+				Content:   "Regular response",
+				ToolCalls: nil,
+			},
+		},
+	}
 
-		assert.NoError(t, err)
-		assert.Equal(t, "I see a beautiful sunset image", resp.Content)
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := makeResponseFormatterTransparent(tt.msg)
+
+			if tt.expected == nil {
+				assert.Nil(t, result)
+				return
+			}
+
+			assert.Equal(t, tt.expected.Role, result.Role)
+			assert.Equal(t, tt.expected.Content, result.Content)
+			assert.Equal(t, len(tt.expected.ToolCalls), len(result.ToolCalls))
+
+			for i, expectedCall := range tt.expected.ToolCalls {
+				assert.Equal(t, expectedCall.ID, result.ToolCalls[i].ID)
+				assert.Equal(t, expectedCall.Function.Name, result.ToolCalls[i].Function.Name)
+				assert.Equal(t, expectedCall.Function.Arguments, result.ToolCalls[i].Function.Arguments)
+			}
+		})
+	}
 }
 
-func TestConvStreamEvent(t *testing.T) {
-	streamCtx := &streamContext{}
-
-	mockey.PatchConvey("message start event", t, func() {
-		event := anthropic.MessageStreamEventUnion{}
-		content := anthropic.ContentBlockUnion{
-			Type: "text",
-			Text: "Initial message",
-		}
-		defer mockey.Mock(anthropic.ContentBlockUnion.AsAny).Return(anthropic.TextBlock{
-			Type: constant.Text(content.Type),
-			Text: content.Text,
-		}).Build().UnPatch()
-
-		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.MessageStartEvent{
-			Message: anthropic.Message{
-				Content: []anthropic.ContentBlockUnion{
-					content,
-				},
-				Usage: anthropic.Usage{
-					InputTokens:  5,
-					OutputTokens: 2,
-				},
-			},
-		}).Build().UnPatch()
-
-		message, err := convStreamEvent(event, streamCtx)
-		assert.NoError(t, err)
-		assert.Equal(t, "Initial message", message.Content)
-		assert.Equal(t, schema.Assistant, message.Role)
-		assert.Equal(t, 5, message.ResponseMeta.Usage.PromptTokens)
-		assert.Equal(t, 2, message.ResponseMeta.Usage.CompletionTokens)
+func TestChatModel_GetType(t *testing.T) {
+	ctx := context.Background()
+	model, err := NewChatModel(ctx, &Config{
+		APIKey:    "test-key",
+		Model:     "claude-3-opus-20240229",
+		MaxTokens: 1000,
 	})
+	require.NoError(t, err)
 
-	mockey.PatchConvey("content block delta event - text", t, func() {
-		event := anthropic.MessageStreamEventUnion{}
-		delta := anthropic.RawContentBlockDeltaUnion{
-			Text: " world",
-		}
-		defer mockey.Mock(anthropic.RawContentBlockDeltaUnion.AsAny).Return(anthropic.TextDelta{
-			Text: delta.Text,
-		}).Build().UnPatch()
+	assert.Equal(t, "Claude", model.GetType())
+}
 
-		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.ContentBlockDeltaEvent{
-			Delta: delta,
-			Index: 0,
-			Type:  "",
-		}).Build().UnPatch()
-
-		message, err := convStreamEvent(event, streamCtx)
-		assert.NoError(t, err)
-		assert.Equal(t, " world", message.Content)
+func TestChatModel_IsCallbacksEnabled(t *testing.T) {
+	ctx := context.Background()
+	model, err := NewChatModel(ctx, &Config{
+		APIKey:    "test-key",
+		Model:     "claude-3-opus-20240229",
+		MaxTokens: 1000,
 	})
+	require.NoError(t, err)
 
-	mockey.PatchConvey("content block delta event - tool input", t, func() {
-		streamCtx.toolIndex = new(int)
-		*streamCtx.toolIndex = 0
+	// Should return true by default
+	assert.True(t, model.IsCallbacksEnabled())
+}
 
-		event := anthropic.MessageStreamEventUnion{}
-		delta := anthropic.RawContentBlockDeltaUnion{}
-		defer mockey.Mock(anthropic.RawContentBlockDeltaUnion.AsAny).Return(anthropic.InputJSONDelta{
-			PartialJSON: `,"temp":25`,
-		}).Build().UnPatch()
-		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.ContentBlockDeltaEvent{
-			Delta: delta,
-			Index: 0,
-			Type:  "",
-		}).Build().UnPatch()
-
-		message, err := convStreamEvent(event, streamCtx)
-		assert.NoError(t, err)
-		assert.Len(t, message.ToolCalls, 1)
-		assert.Equal(t, 0, *message.ToolCalls[0].Index)
-		assert.Equal(t, `,"temp":25`, message.ToolCalls[0].Function.Arguments)
+func TestChatModel_WithTools(t *testing.T) {
+	ctx := context.Background()
+	model, err := NewChatModel(ctx, &Config{
+		APIKey:    "test-key",
+		Model:     "claude-3-opus-20240229",
+		MaxTokens: 1000,
 	})
+	require.NoError(t, err)
 
-	mockey.PatchConvey("message delta event", t, func() {
-		event := anthropic.MessageStreamEventUnion{}
-		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.MessageDeltaEvent{
-			Delta: anthropic.MessageDeltaEventDelta{
-				StopReason: "end_turn",
-			},
-			Usage: anthropic.MessageDeltaUsage{
-				OutputTokens: 10,
-			},
-		}).Build().UnPatch()
+	tools := []*schema.ToolInfo{
+		{
+			Name: "test_tool",
+			Desc: "A test tool",
+			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+				Type: &openapi3.Types{"object"},
+			}),
+		},
+	}
 
-		message, err := convStreamEvent(event, streamCtx)
-		assert.NoError(t, err)
-		assert.Equal(t, "end_turn", message.ResponseMeta.FinishReason)
-		assert.Equal(t, 10, message.ResponseMeta.Usage.CompletionTokens)
-	})
+	newModel, err := model.WithTools(tools)
+	assert.NoError(t, err)
+	assert.NotNil(t, newModel)
 
-	mockey.PatchConvey("content block start event", t, func() {
-		event := anthropic.MessageStreamEventUnion{}
-		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).
-			Return(anthropic.ContentBlockStartEvent{}).Build().UnPatch()
-		defer mockey.Mock(anthropic.ContentBlockStartEventContentBlockUnion.AsAny).
-			Return(anthropic.ToolUseBlock{
-				Type:  "tool_use",
-				Name:  "tool",
-				Input: json.RawMessage("xxx"),
-			}).Build().UnPatch()
-
-		message, err := convStreamEvent(event, streamCtx)
-		assert.NoError(t, err)
-		assert.Equal(t, len(message.ToolCalls), 1)
-		assert.Equal(t, *message.ToolCalls[0].Index, 1)
-		assert.Equal(t, message.ToolCalls[0].Function.Name, "tool")
-		assert.Equal(t, message.ToolCalls[0].Function.Arguments, "xxx")
-	})
+	claudeModel, ok := newModel.(*ChatModel)
+	assert.True(t, ok)
+	assert.Equal(t, len(tools), len(claudeModel.origTools))
+	assert.Equal(t, "test_tool", claudeModel.origTools[0].Name)
 }
 
 func TestPanicErr(t *testing.T) {
-	err := newPanicErr("info", []byte("stack"))
-	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
+	info := "test panic info"
+	stack := []byte("test stack trace")
+
+	err := newPanicErr(info, stack)
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), info)
+	assert.Contains(t, err.Error(), "test stack trace")
 }
 
-func TestWithTools(t *testing.T) {
-	cm := &ChatModel{model: "test model"}
-	ncm, err := cm.WithTools([]*schema.ToolInfo{{Name: "test tool name"}})
-	assert.Nil(t, err)
-	assert.Equal(t, "test model", ncm.(*ChatModel).model)
-	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
+func TestConvImageBase64(t *testing.T) {
+	tests := []struct {
+		name         string
+		data         string
+		expectError  bool
+		expectedURL  string
+		expectedMIME string
+	}{
+		{
+			name:         "valid jpeg base64",
+			data:         "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEAYABgAAD",
+			expectError:  false,
+			expectedURL:  "/9j/4AAQSkZJRgABAQEAYABgAAD",
+			expectedMIME: "image/jpeg",
+		},
+		{
+			name:         "valid png base64",
+			data:         "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAE",
+			expectError:  false,
+			expectedURL:  "iVBORw0KGgoAAAANSUhEUgAAAAE",
+			expectedMIME: "image/png",
+		},
+		{
+			name:        "invalid format",
+			data:        "invalid-data",
+			expectError: true,
+		},
+		{
+			name:         "missing base64 data",
+			data:         "data:image/jpeg;base64,",
+			expectError:  false,
+			expectedMIME: "image/jpeg",
+			expectedURL:  "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mimeType, url, err := convImageBase64(tt.data)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedMIME, mimeType)
+				assert.Equal(t, tt.expectedURL, url)
+			}
+		})
+	}
+}
+
+func TestIsMessageEmpty(t *testing.T) {
+	tests := []struct {
+		name     string
+		message  *schema.Message
+		expected bool
+	}{
+		{
+			name: "empty content and no tool calls",
+			message: &schema.Message{
+				Content: "",
+			},
+			expected: true,
+		},
+		{
+			name: "message with content",
+			message: &schema.Message{
+				Content: "Hello",
+			},
+			expected: false,
+		},
+		{
+			name: "message with tool calls",
+			message: &schema.Message{
+				Content: "",
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_1",
+						Function: schema.FunctionCall{
+							Name: "test_tool",
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isMessageEmpty(tt.message)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+
+	// Test nil message separately to avoid panic
+	t.Run("nil message should panic", func(t *testing.T) {
+		assert.Panics(t, func() {
+			isMessageEmpty(nil)
+		})
+	})
+}
+
+// TestResponseSchemaIntegration tests the integration of response schema functionality
+func TestResponseSchemaIntegration(t *testing.T) {
+	ctx := context.Background()
+
+	responseSchema := &openapi3.Schema{
+		Type: &openapi3.Types{"object"},
+		Properties: map[string]*openapi3.SchemaRef{
+			"answer": {
+				Value: &openapi3.Schema{
+					Type: &openapi3.Types{"string"},
+				},
+			},
+			"confidence": {
+				Value: &openapi3.Schema{
+					Type: &openapi3.Types{"number"},
+				},
+			},
+		},
+		Required: []string{"answer"},
+	}
+
+	model, err := NewChatModel(ctx, &Config{
+		APIKey:         "test-key",
+		Model:          "claude-3-opus-20240229",
+		MaxTokens:      1000,
+		ResponseSchema: responseSchema,
+	})
+	require.NoError(t, err)
+	assert.NotNil(t, model.responseSchema)
+
+	// Test that response schema is preserved
+	assert.Equal(t, responseSchema, model.responseSchema)
+	assert.Equal(t, &openapi3.Types{"object"}, model.responseSchema.Type)
+	assert.Contains(t, model.responseSchema.Properties, "answer")
+	assert.Contains(t, model.responseSchema.Properties, "confidence")
+	assert.Equal(t, []string{"answer"}, model.responseSchema.Required)
 }

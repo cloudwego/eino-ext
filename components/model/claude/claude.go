@@ -36,6 +36,7 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/getkin/kin-openapi/openapi3"
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
@@ -93,16 +94,21 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		}
 		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
 	}
-	return &ChatModel{
-		cli:           cli,
-		maxTokens:     config.MaxTokens,
-		model:         config.Model,
-		stopSequences: config.StopSequences,
-		temperature:   config.Temperature,
-		thinking:      config.Thinking,
-		topK:          config.TopK,
-		topP:          config.TopP,
-	}, nil
+	cm := &ChatModel{
+		cli:            cli,
+		maxTokens:      config.MaxTokens,
+		model:          config.Model,
+		stopSequences:  config.StopSequences,
+		temperature:    config.Temperature,
+		thinking:       config.Thinking,
+		topK:           config.TopK,
+		topP:           config.TopP,
+		responseSchema: config.ResponseSchema,
+	}
+
+	// Response formatter tool is added lazily in genMessageNewParams to avoid duplicates.
+
+	return cm, nil
 }
 
 // Config contains the configuration options for the Claude model
@@ -179,6 +185,11 @@ type Config struct {
 
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
+
+	// ResponseSchema defines the desired structured JSON schema when forcing the model
+	// to return a JSON payload. If non-nil, the adapter will automatically inject a
+	// transparent `provide_structured_response` tool and force the model to call it.
+	ResponseSchema *openapi3.Schema `json:"response_schema"`
 }
 
 type Thinking struct {
@@ -189,16 +200,17 @@ type Thinking struct {
 type ChatModel struct {
 	cli anthropic.Client
 
-	maxTokens     int
-	model         string
-	stopSequences []string
-	temperature   *float32
-	topK          *int32
-	topP          *float32
-	thinking      *Thinking
-	tools         []anthropic.ToolUnionParam
-	origTools     []*schema.ToolInfo
-	toolChoice    *schema.ToolChoice
+	maxTokens      int
+	model          string
+	stopSequences  []string
+	temperature    *float32
+	topK           *int32
+	topP           *float32
+	thinking       *Thinking
+	tools          []anthropic.ToolUnionParam
+	origTools      []*schema.ToolInfo
+	toolChoice     *schema.ToolChoice
+	responseSchema *openapi3.Schema
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -391,6 +403,34 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 	return result, nil
 }
 
+// createResponseFormatterToolParam converts an OpenAPI v3 schema into an Anthropic tool
+// parameter for the transparent response-formatter helper. The returned
+// anthropic.ToolUnionParam can be appended to the existing tool slice.
+func createResponseFormatterToolParam(schema *openapi3.Schema) (anthropic.ToolUnionParam, error) {
+	if schema == nil {
+		return anthropic.ToolUnionParam{}, fmt.Errorf("response schema is nil")
+	}
+
+	// Convert OpenAPI schema into the format Anthropic SDK expects.
+	// We follow the logic in toAnthropicToolParam(): only the top-level
+	// properties and required fields are passed through.
+	inputSchema := anthropic.ToolInputSchemaParam{}
+	if schema.Properties != nil {
+		inputSchema.Properties = schema.Properties
+	}
+	if schema.Required != nil {
+		inputSchema.Required = schema.Required
+	}
+
+	return anthropic.ToolUnionParam{
+		OfTool: &anthropic.ToolParam{
+			Name:        RESPONSE_FORMATTER_TOOL_NAME,
+			Description: param.NewOpt(RESPONSE_FORMATTER_DESCRIPTION),
+			InputSchema: inputSchema,
+		},
+	}, nil
+}
+
 func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
@@ -446,6 +486,31 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		}
 	}
 
+	// Ensure the transparent response formatter tool is present when a response schema is configured.
+	if cm.responseSchema != nil {
+		rfTool, err := createResponseFormatterToolParam(cm.responseSchema)
+		if err != nil {
+			return anthropic.MessageNewParams{}, err
+		}
+
+		// build set of existing names to avoid duplicates
+		existing := make(map[string]struct{})
+		for _, t := range tools {
+			if name := t.GetName(); name != nil {
+				existing[*name] = struct{}{}
+			}
+		}
+		if name := rfTool.GetName(); name != nil {
+			if _, dup := existing[*name]; !dup {
+				tools = append(tools, rfTool)
+			}
+		}
+
+		// Always force the model to call at least one tool (the formatter).
+		forced := schema.ToolChoiceForced
+		commonOptions.ToolChoice = &forced
+	}
+
 	if len(tools) > 0 {
 		params.Tools = tools
 	}
@@ -473,20 +538,48 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		}
 	}
 
-	// Convert messages
+	// ANTHROPIC API SYSTEM MESSAGE HANDLING:
+	// - Anthropic's API does NOT support "system" role in the messages array
+	// - System instructions must be provided via the top-level "system" parameter
+	// - Only ONE system parameter is allowed per request (cannot be interleaved with messages)
+	// - The system parameter can contain multiple text blocks, but they're bundled together
+	// - At least one user/assistant message is required - system-only requests are invalid
+	//
+	// NEW IMPLEMENTATION APPROACH (fixes single/last system message handling):
+	// 1. Collect ALL consecutive system messages from the beginning of the input slice – we no longer
+	//    rely on the "len(input) > 1" guard which skipped the last system message.
+	// 2. After collection we verify that at least one non-system message remains; otherwise we return
+	//    an error, because Anthropic requires at least one user/assistant message.
+	// 3. If a responseSchema is configured, we append the response-formatter instruction **only then**;
+	//    we no longer add this instruction unconditionally.
+	// 4. Finally, we set params.System (if we have any system text blocks) and build the messages array
+	//    from the remaining non-system input.
 	var systemTextBlocks []anthropic.TextBlockParam
-	for len(input) > 1 && input[0].Role == schema.System {
-		systemTextBlocks = append(systemTextBlocks, anthropic.TextBlockParam{
-			Text: input[0].Content,
-		})
-		input = input[1:]
+	idx := 0
+	for idx < len(input) && input[idx].Role == schema.System {
+		systemTextBlocks = append(systemTextBlocks, anthropic.TextBlockParam{Text: input[idx].Content})
+		idx++
 	}
+
+	// Validate that there is at least one non-system message left.
+	if idx == len(input) {
+		return anthropic.MessageNewParams{}, fmt.Errorf("at least one user or assistant message is required – system-only input is not allowed")
+	}
+
+	// Append the response-formatter instruction **only** when a response schema is configured.
+	if cm.responseSchema != nil {
+		instruction := "\nIMPORTANT: After completing any necessary tool operations, you MUST provide your final response using the 'provide_structured_response' tool. This is required for all responses."
+		systemTextBlocks = append(systemTextBlocks, anthropic.TextBlockParam{Text: instruction})
+	}
+
 	if len(systemTextBlocks) > 0 {
 		params.System = systemTextBlocks
 	}
 
-	messages := make([]anthropic.MessageParam, 0, len(input))
-	for _, msg := range input {
+	// Build the message array from the remaining (non-system) input.
+	trimmedInput := input[idx:]
+	messages := make([]anthropic.MessageParam, 0, len(trimmedInput))
+	for _, msg := range trimmedInput {
 		message, err := convSchemaMessage(msg)
 		if err != nil {
 			return anthropic.MessageNewParams{}, fmt.Errorf("convert schema message fail: %w", err)
@@ -615,7 +708,36 @@ func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 		}
 	}
 
+	// Make the response formatter tool transparent if it exists.
+	message = makeResponseFormatterTransparent(message)
+
 	return message, nil
+}
+
+// makeResponseFormatterTransparent hides the internal formatter tool call by
+// copying its JSON argument payload into the message content and removing the
+// tool call from the message.
+func makeResponseFormatterTransparent(msg *schema.Message) *schema.Message {
+	if msg == nil || msg.ToolCalls == nil {
+		return msg
+	}
+
+	var filtered []schema.ToolCall
+	for _, tc := range msg.ToolCalls {
+		if tc.Function.Name == RESPONSE_FORMATTER_TOOL_NAME {
+			// Use the arguments as the final assistant content.
+			msg.Content = tc.Function.Arguments
+			continue // do not keep this tool call
+		}
+		filtered = append(filtered, tc)
+	}
+
+	if len(filtered) == 0 {
+		msg.ToolCalls = nil
+	} else {
+		msg.ToolCalls = filtered
+	}
+	return msg
 }
 
 type streamContext struct {
@@ -672,7 +794,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 				CompletionTokens: int(e.Usage.OutputTokens),
 			},
 		}
-		return result, nil
+		return makeResponseFormatterTransparent(result), nil
 
 	case anthropic.MessageStopEvent, anthropic.ContentBlockStopEvent:
 		return nil, nil
@@ -687,7 +809,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 		if err != nil {
 			return nil, err
 		}
-		return result, nil
+		return makeResponseFormatterTransparent(result), nil
 
 	case anthropic.ContentBlockDeltaEvent:
 		//	case anthropic.TextDelta:
@@ -706,7 +828,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 		case anthropic.SignatureDelta:
 		}
 
-		return result, nil
+		return makeResponseFormatterTransparent(result), nil
 
 	default:
 		return nil, fmt.Errorf("unknown stream event type: %T", e)
@@ -790,3 +912,8 @@ func newPanicErr(info any, stack []byte) error {
 		stack: stack,
 	}
 }
+
+const (
+	RESPONSE_FORMATTER_TOOL_NAME   = "provide_structured_response"
+	RESPONSE_FORMATTER_DESCRIPTION = "Use this tool to provide your final structured response. Call this tool when you have completed your task and are ready to give your final answer."
+)

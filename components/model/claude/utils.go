@@ -20,6 +20,7 @@ func of[T any](v T) *T {
 	return &v
 }
 
+//nolint:unused
 func from[T any](v *T) T {
 	if v == nil {
 		var t T
@@ -29,6 +30,7 @@ func from[T any](v *T) T {
 	return *v
 }
 
+//nolint:unused
 func fromOrDefault[T any](v *T, d T) T {
 	if v == nil {
 		return d

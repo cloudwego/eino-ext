@@ -26,8 +26,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
 )
@@ -36,16 +35,12 @@ func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: apiKey,
+	})
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
-	defer func() {
-		err = client.Close()
-		if err != nil {
-			log.Printf("close client error: %v", err)
-		}
-	}()
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
@@ -116,11 +111,11 @@ func functionCalling(ctx context.Context, cm model.ChatModel) {
 			Desc: "Get current weather information for a city",
 			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(
 				&openapi3.Schema{
-					Type: "object",
+					Type: &openapi3.Types{openapi3.TypeObject},
 					Properties: map[string]*openapi3.SchemaRef{
 						"city": {
 							Value: &openapi3.Schema{
-								Type:        "string",
+								Type:        &openapi3.Types{openapi3.TypeString},
 								Description: "The city name",
 							},
 						},
@@ -154,7 +149,7 @@ func functionCalling(ctx context.Context, cm model.ChatModel) {
 }
 
 func imageProcessing(ctx context.Context, client *genai.Client) {
-	file, err := client.UploadFileFromPath(ctx, "examples/test.jpg", &genai.UploadFileOptions{
+	file, err := client.Files.UploadFromPath(ctx, "examples/test.jpg", &genai.UploadFileConfig{
 		DisplayName: "test",
 		MIMEType:    "image/jpeg",
 	})
@@ -163,7 +158,7 @@ func imageProcessing(ctx context.Context, client *genai.Client) {
 		return
 	}
 	defer func() {
-		err = client.DeleteFile(ctx, file.Name)
+		_, err = client.Files.Delete(ctx, file.Name, &genai.DeleteFileConfig{})
 		if err != nil {
 			log.Printf("Delete file error: %v", err)
 		}
