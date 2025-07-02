@@ -35,6 +35,8 @@ type Config struct {
 	BufferSize int
 	// MinChunkSize specifies the minimum chunk's size. Chunks with size smaller than MinChunkSize will be concatenated to their adjacent chunks.
 	MinChunkSize int
+	// BatchSize specifies the maximum number of chunks that can be processed in a single embedding request.
+	BatchSize int
 	// Separators are sequentially used to split text. ["\n", ".", "?", "!"] by default.
 	Separators []string
 	// LenFunc is used to calculate string length. Use builtin function len() by default.
@@ -66,6 +68,7 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 		separators:   seps,
 		lenFunc:      lenFunc,
 		percentile:   percentile,
+		batchSize:    config.BatchSize,
 	}, nil
 }
 
@@ -73,6 +76,7 @@ type splitter struct {
 	embedding    embedding.Embedder
 	bufferSize   int
 	minChunkSize int
+	batchSize    int
 	separators   []string
 	lenFunc      func(s string) int
 	percentile   float64
@@ -127,12 +131,34 @@ func (s *splitter) splitText(ctx context.Context, text string, separators []stri
 
 	// embedding
 	var vectors [][]float64
-	v, err := s.embedding.EmbedStrings(ctx, combinedSentences)
-	if err != nil {
-		return nil, err
-	}
-	for i := range v {
-		vectors = append(vectors, v[i])
+	//Execute polling to ensure that the combined Sentences length does not exceed the defined limit for each request.
+	//If it is BatchSize 0, request directly
+	if s.batchSize == 0 {
+		v, err := s.embedding.EmbedStrings(ctx, combinedSentences)
+		if err != nil {
+			return nil, err
+		}
+		for i := range v {
+			vectors = append(vectors, v[i])
+		}
+	} else {
+		total := len(combinedSentences)
+		for start := 0; start < total; start += s.batchSize {
+			end := start + s.batchSize
+			if end > total {
+				end = total
+			}
+
+			batch := combinedSentences[start:end]
+			// batch
+			v, err := s.embedding.EmbedStrings(ctx, batch)
+			if err != nil {
+				return nil, err
+			}
+			for j := range v {
+				vectors = append(vectors, v[j])
+			}
+		}
 	}
 
 	// cosine distances
