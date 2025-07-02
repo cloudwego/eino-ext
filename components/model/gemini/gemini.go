@@ -641,9 +641,6 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 		var texts []string
 		for _, part := range candidate.Content.Parts {
 			if part.Text != "" {
-				if part.Thought {
-					continue
-				}
 				texts = append(texts, part.Text)
 			} else if part.FunctionCall != nil {
 				fc, err := convFC(part.FunctionCall)
