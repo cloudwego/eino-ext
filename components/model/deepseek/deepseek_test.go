@@ -75,8 +75,9 @@ func TestChatModelGenerate(t *testing.T) {
 	assert.Nil(t, err)
 	index := 1
 	expected := &schema.Message{
-		Role:    schema.Assistant,
-		Content: "hello world",
+		Role:             schema.Assistant,
+		Content:          "hello world",
+		ReasoningContent: "reasoning content",
 		ToolCalls: []schema.ToolCall{
 			{
 				Index: &index,

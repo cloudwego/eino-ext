@@ -642,6 +642,7 @@ func convContentBlockToEinoMsg(
 		return fmt.Errorf("web_search tool not supported")
 	case anthropic.ThinkingBlock:
 		setThinking(dstMsg, block.Thinking)
+		dstMsg.ReasoningContent = block.Thinking
 	case anthropic.RedactedThinkingBlock:
 	default:
 		return fmt.Errorf("unknown anthropic content block type: %T", block)
@@ -700,6 +701,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 			result.Content = delta.Text
 		case anthropic.ThinkingDelta:
 			setThinking(result, delta.Thinking)
+			result.ReasoningContent = delta.Thinking
 		case anthropic.InputJSONDelta:
 			result.ToolCalls = append(result.ToolCalls,
 				toolEvent(false, "", "", delta.PartialJSON, streamCtx))

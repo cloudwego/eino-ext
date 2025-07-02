@@ -602,6 +602,7 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 
 	if choice.Message.ReasoningContent != nil {
 		setReasoningContent(msg, *choice.Message.ReasoningContent)
+		msg.ReasoningContent = *choice.Message.ReasoningContent
 	}
 
 	return msg, nil
@@ -630,6 +631,7 @@ func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema
 
 			if choice.Delta.ReasoningContent != nil {
 				setReasoningContent(msg, *choice.Delta.ReasoningContent)
+				msg.ReasoningContent = *choice.Delta.ReasoningContent
 			}
 
 			break

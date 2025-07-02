@@ -245,6 +245,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		}
 		if len(choice.Message.ReasoningContent) > 0 {
 			SetReasoningContent(outMsg, choice.Message.ReasoningContent)
+			outMsg.ReasoningContent = choice.Message.ReasoningContent
 		}
 
 		break
@@ -764,6 +765,7 @@ func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *sc
 		}
 		if len(choice.Delta.ReasoningContent) > 0 {
 			SetReasoningContent(msg, choice.Delta.ReasoningContent)
+			msg.ReasoningContent = choice.Delta.ReasoningContent
 		}
 
 		break
