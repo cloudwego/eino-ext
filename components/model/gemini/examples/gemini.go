@@ -25,9 +25,7 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
 )
@@ -36,12 +34,13 @@ func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: apiKey,
+	})
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
 	defer func() {
-		err = client.Close()
 		if err != nil {
 			log.Printf("close client error: %v", err)
 		}
@@ -49,7 +48,11 @@ func main() {
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-1.5-flash",
+		Model:  "gemini-2.5-flash",
+		ThinkingConfig: &genai.ThinkingConfig{
+			IncludeThoughts: true,
+			ThinkingBudget:  nil,
+		},
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
@@ -80,6 +83,9 @@ func basicChat(ctx context.Context, cm model.ChatModel) {
 		return
 	}
 	fmt.Printf("Assistant: %s\n", resp.Content)
+	if len(resp.ReasoningContent) > 0 {
+		fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
+	}
 }
 
 func streamingChat(ctx context.Context, cm model.ChatModel) {
@@ -94,7 +100,7 @@ func streamingChat(ctx context.Context, cm model.ChatModel) {
 		return
 	}
 
-	fmt.Print("Assistant: ")
+	fmt.Println("Assistant: ")
 	for {
 		resp, err := stream.Recv()
 		if err == io.EOF {
@@ -104,7 +110,14 @@ func streamingChat(ctx context.Context, cm model.ChatModel) {
 			log.Printf("Stream receive error: %v", err)
 			return
 		}
-		fmt.Print(resp.Content)
+
+		fmt.Println("frame: ")
+		if len(resp.Content) > 0 {
+			fmt.Println("content: ", resp.Content)
+		}
+		if len(resp.ReasoningContent) > 0 {
+			fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
+		}
 	}
 	fmt.Println()
 }
@@ -112,21 +125,23 @@ func streamingChat(ctx context.Context, cm model.ChatModel) {
 func functionCalling(ctx context.Context, cm model.ChatModel) {
 	err := cm.BindTools([]*schema.ToolInfo{
 		{
-			Name: "get_weather",
-			Desc: "Get current weather information for a city",
-			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(
-				&openapi3.Schema{
-					Type: "object",
-					Properties: map[string]*openapi3.SchemaRef{
-						"city": {
-							Value: &openapi3.Schema{
-								Type:        "string",
-								Description: "The city name",
-							},
-						},
-					},
-					Required: []string{"city"},
-				}),
+			Name: "book_recommender",
+			Desc: "Recommends books based on user preferences and provides purchase links",
+			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+				"genre": {
+					Type: "string",
+					Desc: "Preferred book genre",
+					Enum: []string{"fiction", "sci-fi", "mystery", "biography", "business"},
+				},
+				"max_pages": {
+					Type: "integer",
+					Desc: "Maximum page length (0 for no limit)",
+				},
+				"min_rating": {
+					Type: "number",
+					Desc: "Minimum user rating (0-5 scale)",
+				},
+			}),
 		},
 	})
 	if err != nil {
@@ -137,7 +152,7 @@ func functionCalling(ctx context.Context, cm model.ChatModel) {
 	resp, err := cm.Generate(ctx, []*schema.Message{
 		{
 			Role:    schema.User,
-			Content: "What's the weather like in Paris today?",
+			Content: "Recommend business books with minimum 4.3 rating and max 350 pages",
 		},
 	})
 	if err != nil {
@@ -146,15 +161,37 @@ func functionCalling(ctx context.Context, cm model.ChatModel) {
 	}
 
 	if len(resp.ToolCalls) > 0 {
-		fmt.Printf("Function called: %s\n", resp.ToolCalls[0].Function.Name)
+		fmt.Printf("Function called: \n")
+		if len(resp.ReasoningContent) > 0 {
+			fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
+		}
+		fmt.Println("Name: ", resp.ToolCalls[0].Function.Name)
 		fmt.Printf("Arguments: %s\n", resp.ToolCalls[0].Function.Arguments)
 	} else {
 		log.Printf("Function called without tool calls: %s\n", resp.Content)
 	}
+
+	resp, err = cm.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "Recommend business books with minimum 4.3 rating and max 350 pages",
+		},
+		resp,
+		{
+			Role:       schema.Tool,
+			ToolCallID: resp.ToolCalls[0].ID,
+			Content:    "{\"book name\":\"Microeconomics for Managers\"}",
+		},
+	})
+	if err != nil {
+		log.Printf("Generate error: %v", err)
+		return
+	}
+	fmt.Printf("Function call final result: %s\n", resp.Content)
 }
 
 func imageProcessing(ctx context.Context, client *genai.Client) {
-	file, err := client.UploadFileFromPath(ctx, "examples/test.jpg", &genai.UploadFileOptions{
+	file, err := client.Files.UploadFromPath(ctx, "examples/test.jpg", &genai.UploadFileConfig{
 		DisplayName: "test",
 		MIMEType:    "image/jpeg",
 	})
@@ -163,7 +200,7 @@ func imageProcessing(ctx context.Context, client *genai.Client) {
 		return
 	}
 	defer func() {
-		err = client.DeleteFile(ctx, file.Name)
+		_, err = client.Files.Delete(ctx, file.Name, &genai.DeleteFileConfig{})
 		if err != nil {
 			log.Printf("Delete file error: %v", err)
 		}
