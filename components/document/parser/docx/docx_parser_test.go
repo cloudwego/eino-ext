@@ -18,22 +18,21 @@ package docx
 
 import (
 	"context"
-	"os"
-	"testing"
-
 	"github.com/cloudwego/eino/components/document/parser"
 	"github.com/stretchr/testify/assert"
+	"os"
+	"testing"
 )
 
 func TestDocxParser_Parse(t *testing.T) {
 	t.Run("DocxParser_Parse", func(t *testing.T) {
 		ctx := context.Background()
 
-		f, err := os.Open("./testdata/test_docx.docx")
+		f, err := os.Open("./examples/testdata/test_docx.docx")
 		assert.NoError(t, err)
 
 		p, err := NewDocxParser(ctx, &Config{
-			ToPages:         true,
+			ToSections:      true,
 			IncludeComments: true,
 			IncludeHeaders:  true,
 			IncludeFooters:  true,
@@ -49,10 +48,10 @@ func TestDocxParser_Parse(t *testing.T) {
 		assert.True(t, len(docs[1].Content) > 0)
 		assert.Equal(t, map[string]any{"test": "test"}, docs[1].MetaData)
 		assert.True(t, len(docs[2].Content) > 0)
-		assert.Equal(t, map[string]any{"test": "test"}, docs[1].MetaData)
+		assert.Equal(t, map[string]any{"test": "test"}, docs[2].MetaData)
 		assert.True(t, len(docs[3].Content) > 0)
-		assert.Equal(t, map[string]any{"test": "test"}, docs[1].MetaData)
+		assert.Equal(t, map[string]any{"test": "test"}, docs[3].MetaData)
 		assert.True(t, len(docs[4].Content) > 0)
-		assert.Equal(t, map[string]any{"test": "test"}, docs[1].MetaData)
+		assert.Equal(t, map[string]any{"test": "test"}, docs[4].MetaData)
 	})
 }

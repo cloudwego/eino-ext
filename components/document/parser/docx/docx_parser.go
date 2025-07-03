@@ -31,25 +31,16 @@ import (
 
 // Config is the configuration for Docx parser.
 type Config struct {
-	ToPages         bool // whether to split content by pages (not applicable for Docx, will be treated as sections)
+	ToSections      bool // whether to split content by sections
 	IncludeComments bool // whether to include comments in the parsed content
 	IncludeHeaders  bool // whether to include headers in the parsed content
 	IncludeFooters  bool // whether to include footers in the parsed content
 	IncludeTables   bool // whether to include table content
 }
 
-// options represents the specific options for Docx parser.
-type options struct {
-	toPages         *bool
-	includeComments *bool
-	includeHeaders  *bool
-	includeFooters  *bool
-	includeTables   *bool
-}
-
 // DocxParser reads from io.Reader and parse Docx document content as plain text.
 type DocxParser struct {
-	ToPages         bool
+	ToSections      bool
 	IncludeComments bool
 	IncludeHeaders  bool
 	IncludeFooters  bool
@@ -59,15 +50,10 @@ type DocxParser struct {
 // NewDocxParser creates a new Docx parser.
 func NewDocxParser(ctx context.Context, config *Config) (*DocxParser, error) {
 	if config == nil {
-		config = &Config{
-			IncludeComments: true,
-			IncludeHeaders:  true,
-			IncludeFooters:  true,
-			IncludeTables:   true,
-		}
+		config = &Config{}
 	}
 	return &DocxParser{
-		ToPages:         config.ToPages,
+		ToSections:      config.ToSections,
 		IncludeComments: config.IncludeComments,
 		IncludeHeaders:  config.IncludeHeaders,
 		IncludeFooters:  config.IncludeFooters,
@@ -79,94 +65,55 @@ func NewDocxParser(ctx context.Context, config *Config) (*DocxParser, error) {
 func (wp *DocxParser) Parse(ctx context.Context, reader io.Reader, opts ...parser.Option) (docs []*schema.Document, err error) {
 	commonOpts := parser.GetCommonOptions(nil, opts...)
 
-	specificOpts := parser.GetImplSpecificOptions(&options{
-		toPages:         &wp.ToPages,
-		includeComments: &wp.IncludeComments,
-		includeHeaders:  &wp.IncludeHeaders,
-		includeFooters:  &wp.IncludeFooters,
-		includeTables:   &wp.IncludeTables,
-	}, opts...)
-
 	// Read all data from reader
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("Docx parser read all from reader failed: %w", err)
 	}
 
-	// Create a temporary file to save the Docx document
-	// because gooxml requires a file path
-	tmpFile, err := os.CreateTemp("", "docx_parser_*.docx")
-	if err != nil {
-		return nil, fmt.Errorf("create temp file failed: %w", err)
-	}
-	defer func(name string) {
-		err := os.Remove(name)
-		if err != nil {
-
-		}
-	}(tmpFile.Name()) // Clean up temp file
-	defer func(tmpFile *os.File) {
-		err := tmpFile.Close()
-		if err != nil {
-
-		}
-	}(tmpFile)
-
-	// Write data to temp file
-	if _, err := tmpFile.Write(data); err != nil {
-		return nil, fmt.Errorf("write to temp file failed: %w", err)
-	}
-
-	// Close the file to ensure all data is written
-	err = tmpFile.Close()
-	if err != nil {
-		return nil, err
-	}
-
-	// Open the Docx document
-	doc, err := document.Open(tmpFile.Name())
+	// Open the Docx document from memory
+	doc, err := document.Read(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("open Docx document failed: %w", err)
 	}
 
-	var toPages = specificOpts.toPages != nil && *specificOpts.toPages
-
 	// Extract content based on configuration
-	sections := wp.extractContent(doc, specificOpts)
-	if toPages {
-		for _, section := range sections {
-			if strings.TrimSpace(section) != "" {
+	sections := wp.extractContent(doc)
+	if wp.ToSections {
+		for key, section := range sections {
+			content := strings.TrimSpace(section)
+			if content != "" {
 				docs = append(docs, &schema.Document{
-					Content:  strings.TrimSpace(section),
+					ID:       key,
+					Content:  content,
 					MetaData: commonOpts.ExtraMeta,
 				})
 			}
 		}
 	} else {
-		var content string
+		var contentBuilder strings.Builder
 		for _, section := range sections {
-			if strings.TrimSpace(section) != "" {
-				content += strings.TrimSpace(section) + "\n"
+			if trimmed := strings.TrimSpace(section); trimmed != "" {
+				contentBuilder.WriteString(trimmed)
+				contentBuilder.WriteString("\n")
 			}
 		}
-		docs = append(docs, &schema.Document{
-			Content:  content,
-			MetaData: commonOpts.ExtraMeta,
-		})
-
+		content := contentBuilder.String()
+		if content != "" {
+			docs = append(docs, &schema.Document{
+				ID:       "FullContent",
+				Content:  content,
+				MetaData: commonOpts.ExtraMeta,
+			})
+		}
 	}
 
 	return docs, nil
 }
 
 // extractContent extracts all content from the Docx document based on configuration.
-func (wp *DocxParser) extractContent(doc *document.Document, opts *options) map[string]string {
+func (wp *DocxParser) extractContent(doc *document.Document) map[string]string {
 	sections := make(map[string]string)
-
-	includeComments := opts.includeComments != nil && *opts.includeComments
-	includeHeaders := opts.includeHeaders != nil && *opts.includeHeaders
-	includeFooters := opts.includeFooters != nil && *opts.includeFooters
-	includeTables := opts.includeTables != nil && *opts.includeTables
 
 	// Extract main document content
 	var mainContentBuf bytes.Buffer
@@ -177,7 +124,7 @@ func (wp *DocxParser) extractContent(doc *document.Document, opts *options) map[
 	sections["main"] = mainContentBuf.String()
 
 	// Extract comments if enabled
-	if includeComments {
+	if wp.IncludeComments {
 		comments := wp.extractComments(doc)
 		if comments != "" {
 			var commentBuf bytes.Buffer
@@ -189,7 +136,7 @@ func (wp *DocxParser) extractContent(doc *document.Document, opts *options) map[
 	}
 
 	// Extract headers if enabled
-	if includeHeaders {
+	if wp.IncludeHeaders {
 		headers := wp.extractHeaders(doc)
 		if headers != "" {
 			var headerBuf bytes.Buffer
@@ -201,7 +148,7 @@ func (wp *DocxParser) extractContent(doc *document.Document, opts *options) map[
 	}
 
 	// Extract table content if enabled
-	if includeTables {
+	if wp.IncludeTables {
 		tables := wp.extractTables(doc)
 		if tables != "" {
 			var tableBuf bytes.Buffer
@@ -213,7 +160,7 @@ func (wp *DocxParser) extractContent(doc *document.Document, opts *options) map[
 	}
 
 	// Extract footers if enabled
-	if includeFooters {
+	if wp.IncludeFooters {
 		footers := wp.extractFooters(doc)
 		if footers != "" {
 			var footerBuf bytes.Buffer
