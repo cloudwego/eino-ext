@@ -25,6 +25,7 @@ const (
 	keyOfRequestID        = "ark-request-id"
 	keyOfReasoningContent = "ark-reasoning-content"
 	keyOfModelName        = "ark-model-name"
+	videoURLFPS           = "ark-model-video-url-fps"
 )
 
 type arkRequestID string
@@ -109,4 +110,22 @@ func setModelName(msg *schema.Message, name string) {
 		msg.Extra = make(map[string]interface{})
 	}
 	msg.Extra[keyOfModelName] = arkModelName(name)
+}
+
+func SetFPS(part *schema.ChatMessageVideoURL, fps float64) {
+	if part == nil {
+		return
+	}
+	part.Extra[videoURLFPS] = fps
+}
+
+func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
+	if part == nil {
+		return nil
+	}
+	fps, ok := part.Extra[videoURLFPS].(float64)
+	if !ok {
+		return nil
+	}
+	return &fps
 }

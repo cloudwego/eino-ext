@@ -764,6 +764,17 @@ func toArkContent(content string, multiContent []schema.ChatMessagePart) (*model
 					Detail: model.ImageURLDetail(part.ImageURL.Detail),
 				},
 			})
+		case schema.ChatMessagePartTypeVideoURL:
+			if part.VideoURL == nil {
+				return nil, fmt.Errorf("VideoURL field must not be nil when Type is ChatMessagePartTypeVideoURL")
+			}
+			parts = append(parts, &model.ChatCompletionMessageContentPart{
+				Type: model.ChatCompletionMessageContentPartTypeVideoURL,
+				VideoURL: &model.ChatMessageVideoURL{
+					URL: part.VideoURL.URL,
+					FPS: GetFPS(part.VideoURL),
+				},
+			})
 		default:
 			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
 		}
