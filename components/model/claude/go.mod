@@ -2,13 +2,12 @@ module github.com/cloudwego/eino-ext/components/model/claude
 
 go 1.23.0
 
-
 require (
 	github.com/anthropics/anthropic-sdk-go v1.4.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.54
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.41
+	github.com/cloudwego/eino v0.3.47
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0
 )

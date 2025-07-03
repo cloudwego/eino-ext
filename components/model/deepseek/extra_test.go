@@ -31,6 +31,20 @@ func TestReasoningContent(t *testing.T) {
 	content, ok := GetReasoningContent(msg)
 	assert.True(t, ok)
 	assert.Equal(t, "reasoning content", content)
+
+	// concat
+	msgs := []*schema.Message{
+		schema.UserMessage(""),
+		schema.UserMessage(""),
+		schema.UserMessage("hello"),
+	}
+	SetReasoningContent(msgs[0], "reasoning ")
+	SetReasoningContent(msgs[1], "content")
+	result, err := schema.ConcatMessages(msgs)
+	assert.NoError(t, err)
+	rc, ok := GetReasoningContent(result)
+	assert.True(t, ok)
+	assert.Equal(t, "reasoning content", rc)
 }
 
 func TestPrefix(t *testing.T) {

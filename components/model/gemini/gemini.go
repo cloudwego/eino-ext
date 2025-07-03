@@ -28,8 +28,7 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/iterator"
+	"google.golang.org/genai"
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
@@ -62,6 +61,7 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		responseSchema:      cfg.ResponseSchema,
 		enableCodeExecution: cfg.EnableCodeExecution,
 		safetySettings:      cfg.SafetySettings,
+		thinkingConfig:      cfg.ThinkingConfig,
 	}, nil
 }
 
@@ -106,6 +106,8 @@ type Config struct {
 	// Controls the model's filtering behavior for potentially harmful content
 	// Optional.
 	SafetySettings []*genai.SafetySetting
+
+	ThinkingConfig *genai.ThinkingConfig
 }
 
 type ChatModel struct {
@@ -117,25 +119,24 @@ type ChatModel struct {
 	temperature         *float32
 	topK                *int32
 	responseSchema      *openapi3.Schema
-	tools               []*genai.Tool
+	tools               []*genai.FunctionDeclaration
 	origTools           []*schema.ToolInfo
 	toolChoice          *schema.ToolChoice
 	enableCodeExecution bool
 	safetySettings      []*genai.SafetySetting
+	thinkingConfig      *genai.ThinkingConfig
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
-	session, conf, err := cm.initGenerativeModelSession(opts...)
-	if err != nil {
-		return nil, err
-	}
+	modelName, nInput, genaiConf, cbConf, err := cm.genInputAndConf(input, opts...)
+
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages: input,
 		Tools:    model.GetCommonOptions(&model.Options{Tools: cm.origTools}, opts...).Tools,
-		Config:   conf,
+		Config:   cbConf,
 	})
 	defer func() {
 		if err != nil {
@@ -146,15 +147,12 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	if len(input) == 0 {
 		return nil, fmt.Errorf("gemini input is empty")
 	}
-	contents, err := cm.convSchemaMessages(input)
+	contents, err := cm.convSchemaMessages(nInput)
 	if err != nil {
 		return nil, err
 	}
-	if len(contents) > 1 {
-		session.History = append(session.History, contents[:len(contents)-1]...)
-	}
 
-	result, err := session.SendMessage(ctx, contents[len(contents)-1].Parts...)
+	result, err := cm.cli.Models.GenerateContent(ctx, modelName, contents, genaiConf)
 	if err != nil {
 		return nil, fmt.Errorf("send message fail: %w", err)
 	}
@@ -164,22 +162,22 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		return nil, fmt.Errorf("convert response fail: %w", err)
 	}
 
-	callbacks.OnEnd(ctx, cm.convCallbackOutput(message, conf))
+	callbacks.OnEnd(ctx, cm.convCallbackOutput(message, cbConf))
 	return message, nil
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (result *schema.StreamReader[*schema.Message], err error) {
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	
-	session, conf, err := cm.initGenerativeModelSession(opts...)
+
+	modelName, nInput, genaiConf, cbConf, err := cm.genInputAndConf(input, opts...)
 	if err != nil {
 		return nil, err
 	}
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages: input,
 		Tools:    model.GetCommonOptions(&model.Options{Tools: cm.origTools}, opts...).Tools,
-		Config:   conf,
+		Config:   cbConf,
 	})
 	defer func() {
 		if err != nil {
@@ -190,35 +188,24 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	if len(input) == 0 {
 		return nil, fmt.Errorf("gemini input is empty")
 	}
-	for i := 0; i < len(input)-1; i++ {
-		content, err := cm.convSchemaMessage(input[i])
-		if err != nil {
-			return nil, fmt.Errorf("convert schema message fail: %w", err)
-		}
-		session.History = append(session.History, content)
-	}
 
-	content, err := cm.convSchemaMessage(input[len(input)-1])
+	contents, err := cm.convSchemaMessages(nInput)
 	if err != nil {
 		return nil, fmt.Errorf("convert schema message fail: %w", err)
 	}
-	resultIter := session.SendMessageStream(ctx, content.Parts...)
+	resultIter := cm.cli.Models.GenerateContentStream(ctx, modelName, contents, genaiConf)
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func() {
 		defer func() {
-			panicErr := recover()
+			pe := recover()
 
-			if panicErr != nil {
-				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
+			if pe != nil {
+				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
 			sw.Close()
 		}()
-		for {
-			resp, err_ := resultIter.Next()
-			if errors.Is(err_, iterator.Done) {
-				return
-			}
+		for resp, err_ := range resultIter {
 			if err_ != nil {
 				sw.Send(nil, err_)
 				return
@@ -228,7 +215,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				sw.Send(nil, err_)
 				return
 			}
-			closed := sw.Send(cm.convCallbackOutput(message, conf), nil)
+			closed := sw.Send(cm.convCallbackOutput(message, cbConf), nil)
 			if closed {
 				return
 			}
@@ -290,7 +277,7 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return nil
 }
 
-func (cm *ChatModel) initGenerativeModelSession(opts ...model.Option) (*genai.ChatSession, *model.Config, error) {
+func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Option) (string, []*schema.Message, *genai.GenerateContentConfig, *model.Config, error) {
 	commonOptions := model.GetCommonOptions(&model.Options{
 		Temperature: cm.temperature,
 		MaxTokens:   cm.maxTokens,
@@ -304,12 +291,10 @@ func (cm *ChatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Ch
 	}, opts...)
 	conf := &model.Config{}
 
-	var m *genai.GenerativeModel
+	m := &genai.GenerateContentConfig{}
 	if commonOptions.Model != nil {
-		m = cm.cli.GenerativeModel(*commonOptions.Model)
 		conf.Model = *commonOptions.Model
 	} else {
-		m = cm.cli.GenerativeModel(cm.model)
 		conf.Model = cm.model
 	}
 	m.SafetySettings = cm.safetySettings
@@ -319,69 +304,88 @@ func (cm *ChatModel) initGenerativeModelSession(opts ...model.Option) (*genai.Ch
 		var err error
 		tools, err = cm.toGeminiTools(commonOptions.Tools)
 		if err != nil {
-			return nil, nil, err
+			return "", nil, nil, nil, err
 		}
 	}
 
-	m.Tools = make([]*genai.Tool, len(tools))
-	copy(m.Tools, tools)
+	if len(tools) > 0 {
+		t := &genai.Tool{
+			FunctionDeclarations: make([]*genai.FunctionDeclaration, len(tools)),
+		}
+		copy(t.FunctionDeclarations, tools)
+		m.Tools = append(m.Tools, t)
+	}
 	if cm.enableCodeExecution {
 		m.Tools = append(m.Tools, &genai.Tool{
-			CodeExecution: &genai.CodeExecution{},
+			CodeExecution: &genai.ToolCodeExecution{},
 		})
 	}
 
 	if commonOptions.MaxTokens != nil {
 		conf.MaxTokens = *commonOptions.MaxTokens
-		m.SetMaxOutputTokens(int32(*commonOptions.MaxTokens))
+		m.MaxOutputTokens = int32(*commonOptions.MaxTokens)
 	}
 	if commonOptions.TopP != nil {
 		conf.TopP = *commonOptions.TopP
-		m.SetTopP(*commonOptions.TopP)
+		m.TopP = commonOptions.TopP
 	}
 	if commonOptions.Temperature != nil {
 		conf.Temperature = *commonOptions.Temperature
-		m.SetTemperature(*commonOptions.Temperature)
+		m.Temperature = commonOptions.Temperature
 	}
 	if commonOptions.ToolChoice != nil {
 		switch *commonOptions.ToolChoice {
 		case schema.ToolChoiceForbidden:
 			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode: genai.FunctionCallingNone,
+				Mode: genai.FunctionCallingConfigModeNone,
 			}}
 		case schema.ToolChoiceAllowed:
 			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode: genai.FunctionCallingAuto,
+				Mode: genai.FunctionCallingConfigModeAuto,
 			}}
 		case schema.ToolChoiceForced:
 			// The predicted function call will be any one of the provided "functionDeclarations".
 			if len(m.Tools) == 0 {
-				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
+				return "", nil, nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
 			} else {
 				m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-					Mode: genai.FunctionCallingAny,
+					Mode: genai.FunctionCallingConfigModeAny,
 				}}
 			}
 		default:
-			return nil, nil, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
+			return "", nil, nil, nil, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
 		}
 	}
 	if geminiOptions.TopK != nil {
-		m.SetTopK(*geminiOptions.TopK)
+		topK := float32(*geminiOptions.TopK)
+		m.TopK = &topK
 	}
 	if geminiOptions.ResponseSchema != nil {
 		m.ResponseMIMEType = "application/json"
 		var err error
-		m.ResponseSchema, err = cm.convOpenSchema(geminiOptions.ResponseSchema)
+		m.ResponseJsonSchema, err = cm.convOpenSchema(geminiOptions.ResponseSchema)
 		if err != nil {
-			return nil, nil, fmt.Errorf("convert response schema fail: %w", err)
+			return "", nil, nil, nil, fmt.Errorf("convert response schema fail: %w", err)
 		}
 	}
-	return m.StartChat(), conf, nil
+
+	nInput := make([]*schema.Message, len(input))
+	copy(nInput, input)
+	if len(input) > 1 && input[0].Role == schema.System {
+		var err error
+		m.SystemInstruction, err = cm.convSchemaMessage(input[0])
+		if err != nil {
+			return "", nil, nil, nil, fmt.Errorf("failed to convert system instruction: %w", err)
+		}
+		nInput = input[1:]
+	}
+
+	m.ThinkingConfig = cm.thinkingConfig
+	return conf.Model, nInput, m, conf, nil
 }
 
-func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, error) {
-	gTools := make([]*genai.Tool, len(tools))
+func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionDeclaration, error) {
+	gTools := make([]*genai.FunctionDeclaration, len(tools))
 	for i, tool := range tools {
 		funcDecl := &genai.FunctionDeclaration{
 			Name:        tool.Name,
@@ -397,9 +401,7 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, err
 			return nil, fmt.Errorf("convert open schema fail: %w", err)
 		}
 
-		gTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
-		}
+		gTools[i] = funcDecl
 	}
 
 	return gTools, nil
@@ -414,7 +416,9 @@ func (cm *ChatModel) convOpenSchema(schema *openapi3.Schema) (*genai.Schema, err
 	result := &genai.Schema{
 		Format:      schema.Format,
 		Description: schema.Description,
-		Nullable:    schema.Nullable,
+	}
+	if schema.Nullable {
+		result.Nullable = &schema.Nullable
 	}
 
 	switch schema.Type {
@@ -501,10 +505,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			if err != nil {
 				return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
 			}
-			content.Parts = append(content.Parts, &genai.FunctionCall{
-				Name: call.Function.Name,
-				Args: args,
-			})
+			content.Parts = append(content.Parts, genai.NewPartFromFunctionCall(call.Function.Name, args))
 		}
 	}
 
@@ -514,52 +515,37 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		if err != nil {
 			return nil, fmt.Errorf("unmarshal schema tool call response to map[string]any fail: %w", err)
 		}
-		content.Parts = append(content.Parts, &genai.FunctionResponse{
-			Name:     message.ToolCallID,
-			Response: response,
-		})
+		content.Parts = append(content.Parts, genai.NewPartFromFunctionResponse(message.ToolCallID, response))
 	} else {
 		if message.Content != "" {
-			content.Parts = append(content.Parts, genai.Text(message.Content))
+			content.Parts = append(content.Parts, genai.NewPartFromText(message.Content))
 		}
 		content.Parts = append(content.Parts, cm.convMedia(message.MultiContent)...)
 	}
 	return content, nil
 }
 
-func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) []genai.Part {
-	result := make([]genai.Part, 0, len(contents))
+func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) []*genai.Part {
+	result := make([]*genai.Part, 0, len(contents))
 	for _, content := range contents {
 		switch content.Type {
 		case schema.ChatMessagePartTypeText:
-			result = append(result, genai.Text(content.Text))
+			result = append(result, genai.NewPartFromText(content.Text))
 		case schema.ChatMessagePartTypeImageURL:
 			if content.ImageURL != nil {
-				result = append(result, genai.FileData{
-					MIMEType: content.ImageURL.MIMEType,
-					URI:      content.ImageURL.URI,
-				})
+				result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.ImageURL.MIMEType))
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			if content.AudioURL != nil {
-				result = append(result, genai.FileData{
-					MIMEType: content.AudioURL.MIMEType,
-					URI:      content.AudioURL.URI,
-				})
+				result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.AudioURL.MIMEType))
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			if content.VideoURL != nil {
-				result = append(result, genai.FileData{
-					MIMEType: content.VideoURL.MIMEType,
-					URI:      content.VideoURL.URI,
-				})
+				result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.VideoURL.MIMEType))
 			}
 		case schema.ChatMessagePartTypeFileURL:
 			if content.FileURL != nil {
-				result = append(result, genai.FileData{
-					MIMEType: content.FileURL.MIMEType,
-					URI:      content.FileURL.URI,
-				})
+				result = append(result, genai.NewPartFromURI(content.FileURL.MIMEType, content.FileURL.URI))
 			}
 		}
 	}
@@ -592,7 +578,7 @@ func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.
 func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 	result := &schema.Message{}
 	result.ResponseMeta = &schema.ResponseMeta{
-		FinishReason: candidate.FinishReason.String(),
+		FinishReason: string(candidate.FinishReason),
 	}
 	if candidate.Content != nil {
 		if candidate.Content.Role == roleModel {
@@ -603,27 +589,23 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 
 		var texts []string
 		for _, part := range candidate.Content.Parts {
-			switch tp := part.(type) {
-			case genai.Text:
-				texts = append(texts, string(tp))
-			case genai.FunctionCall:
-				fc, err := convFC(&tp)
+			if part.Thought {
+				result.ReasoningContent = part.Text
+			} else if len(part.Text) > 0 {
+				texts = append(texts, part.Text)
+			}
+			if part.FunctionCall != nil {
+				fc, err := convFC(part.FunctionCall)
 				if err != nil {
 					return nil, err
 				}
 				result.ToolCalls = append(result.ToolCalls, *fc)
-			case *genai.FunctionCall:
-				fc, err := convFC(tp)
-				if err != nil {
-					return nil, err
-				}
-				result.ToolCalls = append(result.ToolCalls, *fc)
-			case *genai.CodeExecutionResult:
-				texts = append(texts, tp.Output)
-			case *genai.ExecutableCode:
-				texts = append(texts, tp.Code)
-			default:
-				return nil, fmt.Errorf("unsupported part type: %T", part)
+			}
+			if part.CodeExecutionResult != nil {
+				texts = append(texts, part.CodeExecutionResult.Output)
+			}
+			if part.ExecutableCode != nil {
+				texts = append(texts, part.ExecutableCode.Code)
 			}
 		}
 		if len(texts) == 1 {

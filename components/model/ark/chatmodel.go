@@ -602,6 +602,7 @@ func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg
 
 	if choice.Message.ReasoningContent != nil {
 		setReasoningContent(msg, *choice.Message.ReasoningContent)
+		msg.ReasoningContent = *choice.Message.ReasoningContent
 	}
 
 	return msg, nil
@@ -630,6 +631,7 @@ func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema
 
 			if choice.Delta.ReasoningContent != nil {
 				setReasoningContent(msg, *choice.Delta.ReasoningContent)
+				msg.ReasoningContent = *choice.Delta.ReasoningContent
 			}
 
 			break
@@ -760,6 +762,17 @@ func toArkContent(content string, multiContent []schema.ChatMessagePart) (*model
 				ImageURL: &model.ChatMessageImageURL{
 					URL:    part.ImageURL.URL,
 					Detail: model.ImageURLDetail(part.ImageURL.Detail),
+				},
+			})
+		case schema.ChatMessagePartTypeVideoURL:
+			if part.VideoURL == nil {
+				return nil, fmt.Errorf("VideoURL field must not be nil when Type is ChatMessagePartTypeVideoURL")
+			}
+			parts = append(parts, &model.ChatCompletionMessageContentPart{
+				Type: model.ChatCompletionMessageContentPartTypeVideoURL,
+				VideoURL: &model.ChatMessageVideoURL{
+					URL: part.VideoURL.URL,
+					FPS: GetFPS(part.VideoURL),
 				},
 			})
 		default:
