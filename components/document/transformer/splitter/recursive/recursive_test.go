@@ -18,6 +18,7 @@ package recursive
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -66,11 +67,13 @@ func TestRecursiveSplitter(t *testing.T) {
 			args: args{
 				ctx: ctx,
 				config: &Config{
-					ChunkSize:        5,
-					OverlapSize:      2,
-					Separators:       []string{"a", "b", "c"},
-					KeepType:         KeepTypeStart,
-					GenerateUniqueID: true,
+					ChunkSize:   5,
+					OverlapSize: 2,
+					Separators:  []string{"a", "b", "c"},
+					KeepType:    KeepTypeStart,
+					IDGenerator: func(ctx context.Context, originalID string, splitIndex int) string {
+						return fmt.Sprintf("%s_part%d", originalID, splitIndex)
+					},
 				},
 				input: input,
 			},

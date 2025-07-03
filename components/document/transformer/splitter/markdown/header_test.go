@@ -18,6 +18,7 @@ package markdown
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -39,8 +40,10 @@ func TestMarkdownHeaderSplitter(t *testing.T) {
 					"##":  "Header2",
 					"###": "Header3",
 				},
-				TrimHeaders:      true,
-				GenerateUniqueID: true,
+				TrimHeaders: true,
+				IDGenerator: func(ctx context.Context, originalID string, splitIndex int) string {
+					return fmt.Sprintf("%s_part%d", originalID, splitIndex)
+				},
 			},
 			input: []*schema.Document{{
 				ID:       "id",

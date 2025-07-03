@@ -18,9 +18,7 @@ package recursive
 
 import (
 	"context"
-	"crypto/sha1"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/cloudwego/eino/components/document"
@@ -38,6 +36,14 @@ const (
 	KeepTypeEnd
 )
 
+// IDGenerator generates new IDs for split chunks
+type IDGenerator func(ctx context.Context, originalID string, splitIndex int) string
+
+// defaultIDGenerator keeps the original ID
+func defaultIDGenerator(ctx context.Context, originalID string, _ int) string {
+	return originalID
+}
+
 type Config struct {
 	ChunkSize int
 	// OverlapSize is the maximum allowed overlapping length between chunks. Overlapping can mitigate loss of information when context is divided.
@@ -50,8 +56,9 @@ type Config struct {
 	LenFunc func(string) int
 	// KeepType specifies if separator will be kept in split chunks. Discard separator by default.
 	KeepType KeepType
-	// GenerateUniqueID specifies whether to generate unique ID for each split chunk. False by default.
-	GenerateUniqueID bool
+	// IDGenerator is an optional function to generate new IDs for split chunks.
+	// If nil, the original document ID will be used for all splits.
+	IDGenerator IDGenerator
 }
 
 // NewSplitter create a recursive splitter.
@@ -71,24 +78,26 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	if len(seps) == 0 {
 		seps = []string{"\n", ".", "?", "!"}
 	}
-
+	if config.IDGenerator == nil {
+		config.IDGenerator = defaultIDGenerator
+	}
 	return &splitter{
-		lenFunc:          lenFunc,
-		chunkSize:        config.ChunkSize,
-		overlap:          config.OverlapSize,
-		separators:       seps,
-		keepType:         config.KeepType,
-		generateUniqueID: config.GenerateUniqueID,
+		lenFunc:     lenFunc,
+		chunkSize:   config.ChunkSize,
+		overlap:     config.OverlapSize,
+		separators:  seps,
+		keepType:    config.KeepType,
+		idGenerator: config.IDGenerator,
 	}, nil
 }
 
 type splitter struct {
-	lenFunc          func(string) int
-	chunkSize        int
-	overlap          int
-	separators       []string
-	keepType         KeepType
-	generateUniqueID bool
+	lenFunc     func(string) int
+	chunkSize   int
+	overlap     int
+	separators  []string
+	keepType    KeepType
+	idGenerator IDGenerator
 }
 
 func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
@@ -97,7 +106,7 @@ func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts 
 		splits := s.splitText(ctx, doc.Content, s.separators)
 		for i, split := range splits {
 			ret = append(ret, &schema.Document{
-				ID:       s.generateID(doc.ID, i),
+				ID:       s.idGenerator(ctx, doc.ID, i),
 				Content:  split,
 				MetaData: deepCopyMap(doc.MetaData),
 			})
@@ -225,16 +234,6 @@ func (s *splitter) shouldPop(total, splitLen, separatorLen, currentDocLen int) b
 
 func (s *splitter) GetType() string {
 	return "RecursiveSplitter"
-}
-
-func (s *splitter) generateID(baseID string, index int) string {
-	if !s.generateUniqueID {
-		return baseID
-	}
-
-	h := sha1.New()
-	h.Write([]byte(baseID + strconv.Itoa(index)))
-	return fmt.Sprintf("%s_%x", baseID, h.Sum(nil)[:8])
 }
 
 func joinDocs(docs []string, separator string, t KeepType) string {

@@ -18,17 +18,23 @@ package semantic
 
 import (
 	"context"
-	"crypto/sha1"
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 )
+
+// IDGenerator generates new IDs for split chunks
+type IDGenerator func(ctx context.Context, originalID string, splitIndex int) string
+
+// defaultIDGenerator keeps the original ID
+func defaultIDGenerator(ctx context.Context, originalID string, _ int) string {
+	return originalID
+}
 
 type Config struct {
 	// Embedding is used to generate vectors for calculating difference between chunks.
@@ -43,8 +49,9 @@ type Config struct {
 	LenFunc func(s string) int
 	// Percentile specifies the number of splitting. If the difference between two chunks is greater than X percentile, these two chunks will be split.
 	Percentile float64
-	// GenerateUniqueID specifies whether to generate unique ID for each split chunk. False by default.
-	GenerateUniqueID bool
+	// IDGenerator is an optional function to generate new IDs for split chunks.
+	// If nil, the original document ID will be used for all splits.
+	IDGenerator IDGenerator
 }
 
 func NewSplitter(ctx context.Context, config *Config) (document.Transformer, error) {
@@ -63,25 +70,28 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	if percentile == 0 {
 		percentile = 0.9
 	}
+	if config.IDGenerator == nil {
+		config.IDGenerator = defaultIDGenerator
+	}
 	return &splitter{
-		embedding:        config.Embedding,
-		bufferSize:       config.BufferSize,
-		minChunkSize:     config.MinChunkSize,
-		separators:       seps,
-		lenFunc:          lenFunc,
-		percentile:       percentile,
-		generateUniqueID: config.GenerateUniqueID,
+		embedding:    config.Embedding,
+		bufferSize:   config.BufferSize,
+		minChunkSize: config.MinChunkSize,
+		separators:   seps,
+		lenFunc:      lenFunc,
+		percentile:   percentile,
+		idGenerator:  config.IDGenerator,
 	}, nil
 }
 
 type splitter struct {
-	embedding        embedding.Embedder
-	bufferSize       int
-	minChunkSize     int
-	separators       []string
-	lenFunc          func(s string) int
-	percentile       float64
-	generateUniqueID bool
+	embedding    embedding.Embedder
+	bufferSize   int
+	minChunkSize int
+	separators   []string
+	lenFunc      func(s string) int
+	percentile   float64
+	idGenerator  IDGenerator
 }
 
 func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
@@ -93,7 +103,7 @@ func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts 
 		}
 		for i, split := range splits {
 			ret = append(ret, &schema.Document{
-				ID:       s.generateID(doc.ID, i),
+				ID:       s.idGenerator(ctx, doc.ID, i),
 				Content:  split,
 				MetaData: deepCopyMap(doc.MetaData),
 			})
@@ -170,16 +180,6 @@ func (s *splitter) splitText(ctx context.Context, text string, separators []stri
 
 func (s *splitter) GetType() string {
 	return "SemanticSplitter"
-}
-
-func (s *splitter) generateID(baseID string, index int) string {
-	if !s.generateUniqueID {
-		return baseID
-	}
-
-	h := sha1.New()
-	h.Write([]byte(baseID + strconv.Itoa(index)))
-	return fmt.Sprintf("%s_%x", baseID, h.Sum(nil)[:8])
 }
 
 func cosine(vec1, vec2 []float64) float64 {

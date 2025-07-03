@@ -18,6 +18,7 @@ package html
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -75,7 +76,9 @@ func TestHTMLHeaderSplitter(t *testing.T) {
 					"h2": "Header2",
 					"h3": "Header3",
 				},
-				GenerateUniqueID: true,
+				IDGenerator: func(ctx context.Context, originalID string, splitIndex int) string {
+					return fmt.Sprintf("%s_part%d", originalID, splitIndex)
+				},
 			},
 			input: []*schema.Document{{
 				ID:       "id",

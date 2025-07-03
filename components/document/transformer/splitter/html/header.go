@@ -18,7 +18,6 @@ package html
 
 import (
 	"context"
-	"crypto/sha1"
 	"fmt"
 	"strconv"
 	"strings"
@@ -29,14 +28,23 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// IDGenerator generates new IDs for split chunks
+type IDGenerator func(ctx context.Context, originalID string, splitIndex int) string
+
+// defaultIDGenerator keeps the original ID
+func defaultIDGenerator(ctx context.Context, originalID string, _ int) string {
+	return originalID
+}
+
 // HeaderConfig configures how HTML headers are identified and mapped to metadata keys
 type HeaderConfig struct {
 	// Headers specify the headers to be identified and their names in document metadata.
 	// Header must be in the format of starting with 'h' followed by a number.
 	// Example: {"h1": "Title", "h2": "Section"} will track h1 and h2 headers
 	Headers map[string]string
-	// GenerateUniqueID specifies whether to generate unique ID for each split chunk. False by default.
-	GenerateUniqueID bool
+	// IDGenerator is an optional function to generate new IDs for split chunks.
+	// If nil, the original document ID will be used for all splits.
+	IDGenerator IDGenerator
 }
 
 // NewHeaderSplitter creates a transformer that splits HTML content based on header tags.
@@ -65,15 +73,18 @@ type HeaderConfig struct {
 //	     }
 //	   }
 func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Transformer, error) {
+	if config.IDGenerator == nil {
+		config.IDGenerator = defaultIDGenerator
+	}
 	return &headerSplitter{
-		headers:          config.Headers,
-		generateUniqueID: config.GenerateUniqueID,
+		headers:     config.Headers,
+		idGenerator: config.IDGenerator,
 	}, nil
 }
 
 type headerSplitter struct {
-	headers          map[string]string
-	generateUniqueID bool
+	headers     map[string]string
+	idGenerator IDGenerator
 }
 
 func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
@@ -85,7 +96,7 @@ func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document,
 		}
 		for i := range result {
 			nDoc := &schema.Document{
-				ID:       h.generateID(doc.ID, i),
+				ID:       h.idGenerator(ctx, doc.ID, i),
 				Content:  result[i].chunk,
 				MetaData: deepCopyAnyMap(doc.MetaData),
 			}
@@ -200,16 +211,6 @@ func (h *headerSplitter) dfs(node *html.Node, recordedMetaList []metaRecord, rec
 		currentText.Reset()
 	}
 	return nil
-}
-
-func (h *headerSplitter) generateID(baseID string, index int) string {
-	if !h.generateUniqueID {
-		return baseID
-	}
-
-	hash := sha1.New()
-	hash.Write([]byte(baseID + strconv.Itoa(index)))
-	return fmt.Sprintf("%s_%x", baseID, hash.Sum(nil)[:8])
 }
 
 func extractText(node *html.Node) (string, error) {
