@@ -75,6 +75,7 @@ func TestHTMLHeaderSplitter(t *testing.T) {
 					"h2": "Header2",
 					"h3": "Header3",
 				},
+				GenerateUniqueID: true,
 			},
 			input: []*schema.Document{{
 				ID:       "id",

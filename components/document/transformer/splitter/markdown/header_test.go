@@ -39,7 +39,8 @@ func TestMarkdownHeaderSplitter(t *testing.T) {
 					"##":  "Header2",
 					"###": "Header3",
 				},
-				TrimHeaders: true,
+				TrimHeaders:      true,
+				GenerateUniqueID: true,
 			},
 			input: []*schema.Document{{
 				ID:       "id",

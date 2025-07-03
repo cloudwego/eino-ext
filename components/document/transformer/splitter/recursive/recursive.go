@@ -18,7 +18,9 @@ package recursive
 
 import (
 	"context"
+	"crypto/sha1"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/cloudwego/eino/components/document"
@@ -48,6 +50,8 @@ type Config struct {
 	LenFunc func(string) int
 	// KeepType specifies if separator will be kept in split chunks. Discard separator by default.
 	KeepType KeepType
+	// GenerateUniqueID specifies whether to generate unique ID for each split chunk. False by default.
+	GenerateUniqueID bool
 }
 
 // NewSplitter create a recursive splitter.
@@ -69,29 +73,31 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	}
 
 	return &splitter{
-		lenFunc:    lenFunc,
-		chunkSize:  config.ChunkSize,
-		overlap:    config.OverlapSize,
-		separators: seps,
-		keepType:   config.KeepType,
+		lenFunc:          lenFunc,
+		chunkSize:        config.ChunkSize,
+		overlap:          config.OverlapSize,
+		separators:       seps,
+		keepType:         config.KeepType,
+		generateUniqueID: config.GenerateUniqueID,
 	}, nil
 }
 
 type splitter struct {
-	lenFunc    func(string) int
-	chunkSize  int
-	overlap    int
-	separators []string
-	keepType   KeepType
+	lenFunc          func(string) int
+	chunkSize        int
+	overlap          int
+	separators       []string
+	keepType         KeepType
+	generateUniqueID bool
 }
 
 func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
 	ret := make([]*schema.Document, 0, len(docs))
 	for _, doc := range docs {
 		splits := s.splitText(ctx, doc.Content, s.separators)
-		for _, split := range splits {
+		for i, split := range splits {
 			ret = append(ret, &schema.Document{
-				ID:       doc.ID,
+				ID:       s.generateID(doc.ID, i),
 				Content:  split,
 				MetaData: deepCopyMap(doc.MetaData),
 			})
@@ -219,6 +225,16 @@ func (s *splitter) shouldPop(total, splitLen, separatorLen, currentDocLen int) b
 
 func (s *splitter) GetType() string {
 	return "RecursiveSplitter"
+}
+
+func (s *splitter) generateID(baseID string, index int) string {
+	if !s.generateUniqueID {
+		return baseID
+	}
+
+	h := sha1.New()
+	h.Write([]byte(baseID + strconv.Itoa(index)))
+	return fmt.Sprintf("%s_%x", baseID, h.Sum(nil)[:8])
 }
 
 func joinDocs(docs []string, separator string, t KeepType) string {

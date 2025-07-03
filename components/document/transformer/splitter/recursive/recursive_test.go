@@ -66,10 +66,11 @@ func TestRecursiveSplitter(t *testing.T) {
 			args: args{
 				ctx: ctx,
 				config: &Config{
-					ChunkSize:   5,
-					OverlapSize: 2,
-					Separators:  []string{"a", "b", "c"},
-					KeepType:    KeepTypeStart,
+					ChunkSize:        5,
+					OverlapSize:      2,
+					Separators:       []string{"a", "b", "c"},
+					KeepType:         KeepTypeStart,
+					GenerateUniqueID: true,
 				},
 				input: input,
 			},

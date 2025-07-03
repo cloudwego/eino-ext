@@ -18,9 +18,11 @@ package semantic
 
 import (
 	"context"
+	"crypto/sha1"
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/cloudwego/eino/components/document"
@@ -41,6 +43,8 @@ type Config struct {
 	LenFunc func(s string) int
 	// Percentile specifies the number of splitting. If the difference between two chunks is greater than X percentile, these two chunks will be split.
 	Percentile float64
+	// GenerateUniqueID specifies whether to generate unique ID for each split chunk. False by default.
+	GenerateUniqueID bool
 }
 
 func NewSplitter(ctx context.Context, config *Config) (document.Transformer, error) {
@@ -60,22 +64,24 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 		percentile = 0.9
 	}
 	return &splitter{
-		embedding:    config.Embedding,
-		bufferSize:   config.BufferSize,
-		minChunkSize: config.MinChunkSize,
-		separators:   seps,
-		lenFunc:      lenFunc,
-		percentile:   percentile,
+		embedding:        config.Embedding,
+		bufferSize:       config.BufferSize,
+		minChunkSize:     config.MinChunkSize,
+		separators:       seps,
+		lenFunc:          lenFunc,
+		percentile:       percentile,
+		generateUniqueID: config.GenerateUniqueID,
 	}, nil
 }
 
 type splitter struct {
-	embedding    embedding.Embedder
-	bufferSize   int
-	minChunkSize int
-	separators   []string
-	lenFunc      func(s string) int
-	percentile   float64
+	embedding        embedding.Embedder
+	bufferSize       int
+	minChunkSize     int
+	separators       []string
+	lenFunc          func(s string) int
+	percentile       float64
+	generateUniqueID bool
 }
 
 func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
@@ -85,9 +91,9 @@ func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts 
 		if err != nil {
 			return nil, fmt.Errorf("split document[%s] fail: %w", doc.ID, err)
 		}
-		for _, split := range splits {
+		for i, split := range splits {
 			ret = append(ret, &schema.Document{
-				ID:       doc.ID,
+				ID:       s.generateID(doc.ID, i),
 				Content:  split,
 				MetaData: deepCopyMap(doc.MetaData),
 			})
@@ -164,6 +170,16 @@ func (s *splitter) splitText(ctx context.Context, text string, separators []stri
 
 func (s *splitter) GetType() string {
 	return "SemanticSplitter"
+}
+
+func (s *splitter) generateID(baseID string, index int) string {
+	if !s.generateUniqueID {
+		return baseID
+	}
+
+	h := sha1.New()
+	h.Write([]byte(baseID + strconv.Itoa(index)))
+	return fmt.Sprintf("%s_%x", baseID, h.Sum(nil)[:8])
 }
 
 func cosine(vec1, vec2 []float64) float64 {

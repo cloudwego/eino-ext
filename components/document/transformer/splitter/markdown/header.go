@@ -18,7 +18,9 @@ package markdown
 
 import (
 	"context"
+	"crypto/sha1"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/cloudwego/eino/components/document"
@@ -51,6 +53,8 @@ type HeaderConfig struct {
 	Headers map[string]string
 	// TrimHeaders specify if results contain header lines.
 	TrimHeaders bool
+	// GenerateUniqueID specifies whether to generate unique ID for each split chunk. False by default.
+	GenerateUniqueID bool
 }
 
 func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Transformer, error) {
@@ -66,14 +70,16 @@ func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Tran
 	}
 
 	return &headerSplitter{
-		headers:     config.Headers,
-		trimHeaders: config.TrimHeaders,
+		headers:          config.Headers,
+		trimHeaders:      config.TrimHeaders,
+		generateUniqueID: config.GenerateUniqueID,
 	}, nil
 }
 
 type headerSplitter struct {
-	headers     map[string]string
-	trimHeaders bool
+	headers          map[string]string
+	trimHeaders      bool
+	generateUniqueID bool
 }
 
 type splitResult struct {
@@ -87,7 +93,7 @@ func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document,
 		result := h.splitText(ctx, doc.Content)
 		for i := range result {
 			nDoc := &schema.Document{
-				ID:       doc.ID,
+				ID:       h.generateID(doc.ID, i),
 				Content:  result[i].chunk,
 				MetaData: deepCopyAnyMap(doc.MetaData),
 			}
@@ -105,6 +111,16 @@ func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document,
 
 func (h *headerSplitter) GetType() string {
 	return "MarkdownHeaderSplitter"
+}
+
+func (h *headerSplitter) generateID(baseID string, index int) string {
+	if !h.generateUniqueID {
+		return baseID
+	}
+
+	hash := sha1.New()
+	hash.Write([]byte(baseID + strconv.Itoa(index)))
+	return fmt.Sprintf("%s_%x", baseID, hash.Sum(nil)[:8])
 }
 
 const (
