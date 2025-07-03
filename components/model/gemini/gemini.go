@@ -119,7 +119,7 @@ type ChatModel struct {
 	temperature         *float32
 	topK                *int32
 	responseSchema      *openapi3.Schema
-	tools               []*genai.Tool
+	tools               []*genai.FunctionDeclaration
 	origTools           []*schema.ToolInfo
 	toolChoice          *schema.ToolChoice
 	enableCodeExecution bool
@@ -308,8 +308,13 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		}
 	}
 
-	m.Tools = make([]*genai.Tool, len(tools))
-	copy(m.Tools, tools)
+	if len(tools) > 0 {
+		t := &genai.Tool{
+			FunctionDeclarations: make([]*genai.FunctionDeclaration, len(tools)),
+		}
+		copy(t.FunctionDeclarations, tools)
+		m.Tools = append(m.Tools, t)
+	}
 	if cm.enableCodeExecution {
 		m.Tools = append(m.Tools, &genai.Tool{
 			CodeExecution: &genai.ToolCodeExecution{},
@@ -379,8 +384,8 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	return conf.Model, nInput, m, conf, nil
 }
 
-func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, error) {
-	gTools := make([]*genai.Tool, len(tools))
+func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionDeclaration, error) {
+	gTools := make([]*genai.FunctionDeclaration, len(tools))
 	for i, tool := range tools {
 		funcDecl := &genai.FunctionDeclaration{
 			Name:        tool.Name,
@@ -396,9 +401,7 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.Tool, err
 			return nil, fmt.Errorf("convert open schema fail: %w", err)
 		}
 
-		gTools[i] = &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{funcDecl},
-		}
+		gTools[i] = funcDecl
 	}
 
 	return gTools, nil
