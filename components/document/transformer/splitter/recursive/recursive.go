@@ -78,8 +78,9 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	if len(seps) == 0 {
 		seps = []string{"\n", ".", "?", "!"}
 	}
-	if config.IDGenerator == nil {
-		config.IDGenerator = defaultIDGenerator
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = defaultIDGenerator
 	}
 	return &splitter{
 		lenFunc:     lenFunc,
@@ -87,7 +88,7 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 		overlap:     config.OverlapSize,
 		separators:  seps,
 		keepType:    config.KeepType,
-		idGenerator: config.IDGenerator,
+		idGenerator: idGenerator,
 	}, nil
 }
 

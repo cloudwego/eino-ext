@@ -75,13 +75,14 @@ func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Tran
 			}
 		}
 	}
-	if config.IDGenerator == nil {
-		config.IDGenerator = defaultIDGenerator
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = defaultIDGenerator
 	}
 	return &headerSplitter{
 		headers:     config.Headers,
 		trimHeaders: config.TrimHeaders,
-		idGenerator: config.IDGenerator,
+		idGenerator: idGenerator,
 	}, nil
 }
 

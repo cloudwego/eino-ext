@@ -70,8 +70,9 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	if percentile == 0 {
 		percentile = 0.9
 	}
-	if config.IDGenerator == nil {
-		config.IDGenerator = defaultIDGenerator
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = defaultIDGenerator
 	}
 	return &splitter{
 		embedding:    config.Embedding,
@@ -80,7 +81,7 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 		separators:   seps,
 		lenFunc:      lenFunc,
 		percentile:   percentile,
-		idGenerator:  config.IDGenerator,
+		idGenerator:  idGenerator,
 	}, nil
 }
 

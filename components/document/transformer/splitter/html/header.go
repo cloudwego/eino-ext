@@ -73,12 +73,13 @@ type HeaderConfig struct {
 //	     }
 //	   }
 func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Transformer, error) {
-	if config.IDGenerator == nil {
-		config.IDGenerator = defaultIDGenerator
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = defaultIDGenerator
 	}
 	return &headerSplitter{
 		headers:     config.Headers,
-		idGenerator: config.IDGenerator,
+		idGenerator: idGenerator,
 	}, nil
 }
 
