@@ -28,6 +28,14 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// IDGenerator generates new IDs for split chunks
+type IDGenerator func(ctx context.Context, originalID string, splitIndex int) string
+
+// defaultIDGenerator keeps the original ID
+func defaultIDGenerator(ctx context.Context, originalID string, _ int) string {
+	return originalID
+}
+
 type Config struct {
 	// Embedding is used to generate vectors for calculating difference between chunks.
 	Embedding embedding.Embedder
@@ -41,6 +49,9 @@ type Config struct {
 	LenFunc func(s string) int
 	// Percentile specifies the number of splitting. If the difference between two chunks is greater than X percentile, these two chunks will be split.
 	Percentile float64
+	// IDGenerator is an optional function to generate new IDs for split chunks.
+	// If nil, the original document ID will be used for all splits.
+	IDGenerator IDGenerator
 }
 
 func NewSplitter(ctx context.Context, config *Config) (document.Transformer, error) {
@@ -59,6 +70,10 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	if percentile == 0 {
 		percentile = 0.9
 	}
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = defaultIDGenerator
+	}
 	return &splitter{
 		embedding:    config.Embedding,
 		bufferSize:   config.BufferSize,
@@ -66,6 +81,7 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 		separators:   seps,
 		lenFunc:      lenFunc,
 		percentile:   percentile,
+		idGenerator:  idGenerator,
 	}, nil
 }
 
@@ -76,6 +92,7 @@ type splitter struct {
 	separators   []string
 	lenFunc      func(s string) int
 	percentile   float64
+	idGenerator  IDGenerator
 }
 
 func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
@@ -85,9 +102,9 @@ func (s *splitter) Transform(ctx context.Context, docs []*schema.Document, opts 
 		if err != nil {
 			return nil, fmt.Errorf("split document[%s] fail: %w", doc.ID, err)
 		}
-		for _, split := range splits {
+		for i, split := range splits {
 			ret = append(ret, &schema.Document{
-				ID:       doc.ID,
+				ID:       s.idGenerator(ctx, doc.ID, i),
 				Content:  split,
 				MetaData: deepCopyMap(doc.MetaData),
 			})

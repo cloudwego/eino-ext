@@ -28,12 +28,23 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// IDGenerator generates new IDs for split chunks
+type IDGenerator func(ctx context.Context, originalID string, splitIndex int) string
+
+// defaultIDGenerator keeps the original ID
+func defaultIDGenerator(ctx context.Context, originalID string, _ int) string {
+	return originalID
+}
+
 // HeaderConfig configures how HTML headers are identified and mapped to metadata keys
 type HeaderConfig struct {
 	// Headers specify the headers to be identified and their names in document metadata.
 	// Header must be in the format of starting with 'h' followed by a number.
 	// Example: {"h1": "Title", "h2": "Section"} will track h1 and h2 headers
 	Headers map[string]string
+	// IDGenerator is an optional function to generate new IDs for split chunks.
+	// If nil, the original document ID will be used for all splits.
+	IDGenerator IDGenerator
 }
 
 // NewHeaderSplitter creates a transformer that splits HTML content based on header tags.
@@ -62,13 +73,19 @@ type HeaderConfig struct {
 //	     }
 //	   }
 func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Transformer, error) {
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = defaultIDGenerator
+	}
 	return &headerSplitter{
-		headers: config.Headers,
+		headers:     config.Headers,
+		idGenerator: idGenerator,
 	}, nil
 }
 
 type headerSplitter struct {
-	headers map[string]string
+	headers     map[string]string
+	idGenerator IDGenerator
 }
 
 func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document, opts ...document.TransformerOption) ([]*schema.Document, error) {
@@ -80,7 +97,7 @@ func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document,
 		}
 		for i := range result {
 			nDoc := &schema.Document{
-				ID:       doc.ID,
+				ID:       h.idGenerator(ctx, doc.ID, i),
 				Content:  result[i].chunk,
 				MetaData: deepCopyAnyMap(doc.MetaData),
 			}

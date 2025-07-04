@@ -25,6 +25,14 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// IDGenerator generates new IDs for split chunks
+type IDGenerator func(ctx context.Context, originalID string, splitIndex int) string
+
+// defaultIDGenerator keeps the original ID
+func defaultIDGenerator(ctx context.Context, originalID string, _ int) string {
+	return originalID
+}
+
 type HeaderConfig struct {
 	// Headers specify the headers to be identified and their names in document metadata.
 	// Headers can only consist of '#'.
@@ -51,6 +59,9 @@ type HeaderConfig struct {
 	Headers map[string]string
 	// TrimHeaders specify if results contain header lines.
 	TrimHeaders bool
+	// IDGenerator is an optional function to generate new IDs for split chunks.
+	// If nil, the original document ID will be used for all splits.
+	IDGenerator IDGenerator
 }
 
 func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Transformer, error) {
@@ -64,16 +75,21 @@ func NewHeaderSplitter(ctx context.Context, config *HeaderConfig) (document.Tran
 			}
 		}
 	}
-
+	idGenerator := config.IDGenerator
+	if idGenerator == nil {
+		idGenerator = defaultIDGenerator
+	}
 	return &headerSplitter{
 		headers:     config.Headers,
 		trimHeaders: config.TrimHeaders,
+		idGenerator: idGenerator,
 	}, nil
 }
 
 type headerSplitter struct {
 	headers     map[string]string
 	trimHeaders bool
+	idGenerator IDGenerator
 }
 
 type splitResult struct {
@@ -87,7 +103,7 @@ func (h *headerSplitter) Transform(ctx context.Context, docs []*schema.Document,
 		result := h.splitText(ctx, doc.Content)
 		for i := range result {
 			nDoc := &schema.Document{
-				ID:       doc.ID,
+				ID:       h.idGenerator(ctx, doc.ID, i),
 				Content:  result[i].chunk,
 				MetaData: deepCopyAnyMap(doc.MetaData),
 			}
