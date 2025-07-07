@@ -28,12 +28,13 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
-	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/ddgsearch"
+	"github.com/getkin/kin-openapi/openapi3"
+
+	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
 )
 
 const (
@@ -73,7 +74,7 @@ type Config struct {
 	ChromeInstancePath string   `json:"chrome_instance_path"`
 	ProxyServer        string   `json:"proxy_server"`
 
-	DDGSearchTool    *ddgsearch.DDGS
+	DDGSearchTool    duckduckgo.Search
 	ExtractChatModel model.BaseChatModel
 
 	Logf func(string, ...any)
@@ -125,7 +126,7 @@ type Tool struct {
 	elements        []ElementInfo
 	currentTabID    int
 	tabs            []TabInfo
-	searchTool      *ddgsearch.DDGS
+	searchTool      duckduckgo.Search
 	cm              model.BaseChatModel
 	tpl             prompt.ChatTemplate
 }
@@ -493,7 +494,9 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 		if params.Query == nil {
 			return &ToolResult{Error: "query is required for 'web_search' action"}, nil
 		}
-		searchResults, err := b.searchTool.Search(b.ctx, &ddgsearch.SearchParams{Query: *params.Query})
+		searchResults, err := b.searchTool.TextSearch(b.ctx, &duckduckgo.TextSearchRequest{
+			Query: *params.Query,
+		})
 		if err != nil {
 			return &ToolResult{Error: fmt.Sprintf("failed to search: %v", err)}, nil
 		}
