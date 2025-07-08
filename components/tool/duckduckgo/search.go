@@ -141,7 +141,7 @@ type SearchResponse struct {
 func (d *ddgs) Search(ctx context.Context, request *SearchRequest) (*SearchResponse, error) {
 	results, err := d.ddg.Search(ctx, &ddgsearch.SearchParams{
 		Query:      request.Query,
-		Region:     ddgsearch.Region(d.config.Region),
+		Region:     d.config.Region,
 		MaxResults: d.config.MaxResults,
 		Page:       request.Page,
 		SafeSearch: d.config.SafeSearch,
