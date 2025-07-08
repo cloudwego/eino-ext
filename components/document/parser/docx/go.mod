@@ -1,6 +1,6 @@
-module docx
+module github.com/cloudwego/eino-ext/components/document/parser/docx
 
-go 1.24
+go 1.23.0
 
 require (
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
