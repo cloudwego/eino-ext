@@ -30,6 +30,10 @@ import (
 	"strings"
 )
 
+const (
+	SectionTypeKey = "sectionType"
+)
+
 // Config is the configuration for Docx parser.
 type Config struct {
 	ToSections      bool // whether to split content by sections
@@ -87,7 +91,7 @@ func (wp *DocxParser) Parse(ctx context.Context, reader io.Reader, opts ...parse
 			for k, v := range commonOpts.ExtraMeta {
 				metadata[k] = v
 			}
-			metadata["sectionType"] = key
+			metadata[SectionTypeKey] = key
 			if content != "" {
 				docs = append(docs, &schema.Document{
 					ID:       uuid.New().String(),
@@ -109,7 +113,7 @@ func (wp *DocxParser) Parse(ctx context.Context, reader io.Reader, opts ...parse
 		for k, v := range commonOpts.ExtraMeta {
 			metadata[k] = v
 		}
-		metadata["sectionType"] = "fullContent"
+		metadata[SectionTypeKey] = "fullContent"
 		if content != "" {
 			docs = append(docs, &schema.Document{
 				ID:       uuid.New().String(),
@@ -120,6 +124,14 @@ func (wp *DocxParser) Parse(ctx context.Context, reader io.Reader, opts ...parse
 	}
 
 	return docs, nil
+}
+
+func (wp *DocxParser) GetSectionType(doc *schema.Document) (string, bool) {
+	if doc == nil {
+		return "", false
+	}
+	sectionType, ok := doc.MetaData[SectionTypeKey].(string)
+	return sectionType, ok
 }
 
 // extractContent extracts all content from the Docx document based on configuration.
