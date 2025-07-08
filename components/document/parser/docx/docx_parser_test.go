@@ -44,7 +44,7 @@ func TestDocxParser_Parse(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 5, len(docs))
 		for _, doc := range docs {
-			typ, _ := p.GetSectionType(doc)
+			typ, _ := GetSectionType(doc)
 			assert.Equal(t, typ, doc.MetaData[SectionTypeKey])
 		}
 

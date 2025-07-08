@@ -126,7 +126,7 @@ func (wp *DocxParser) Parse(ctx context.Context, reader io.Reader, opts ...parse
 	return docs, nil
 }
 
-func (wp *DocxParser) GetSectionType(doc *schema.Document) (string, bool) {
+func GetSectionType(doc *schema.Document) (string, bool) {
 	if doc == nil {
 		return "", false
 	}
