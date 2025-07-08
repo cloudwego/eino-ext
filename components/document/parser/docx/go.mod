@@ -5,6 +5,7 @@ go 1.24
 require (
 	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
 	github.com/cloudwego/eino v0.3.46
+	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.9.0
 )
 

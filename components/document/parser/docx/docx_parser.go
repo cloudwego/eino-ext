@@ -24,6 +24,7 @@ import (
 	"github.com/carmel/gooxml/document"
 	"github.com/cloudwego/eino/components/document/parser"
 	"github.com/cloudwego/eino/schema"
+	"github.com/google/uuid"
 	"io"
 	"os"
 	"strings"
@@ -40,11 +41,11 @@ type Config struct {
 
 // DocxParser reads from io.Reader and parse Docx document content as plain text.
 type DocxParser struct {
-	ToSections      bool
-	IncludeComments bool
-	IncludeHeaders  bool
-	IncludeFooters  bool
-	IncludeTables   bool
+	toSections      bool
+	includeComments bool
+	includeHeaders  bool
+	includeFooters  bool
+	includeTables   bool
 }
 
 // NewDocxParser creates a new Docx parser.
@@ -53,11 +54,11 @@ func NewDocxParser(ctx context.Context, config *Config) (*DocxParser, error) {
 		config = &Config{}
 	}
 	return &DocxParser{
-		ToSections:      config.ToSections,
-		IncludeComments: config.IncludeComments,
-		IncludeHeaders:  config.IncludeHeaders,
-		IncludeFooters:  config.IncludeFooters,
-		IncludeTables:   config.IncludeTables,
+		toSections:      config.ToSections,
+		includeComments: config.IncludeComments,
+		includeHeaders:  config.IncludeHeaders,
+		includeFooters:  config.IncludeFooters,
+		includeTables:   config.IncludeTables,
 	}, nil
 }
 
@@ -79,14 +80,19 @@ func (wp *DocxParser) Parse(ctx context.Context, reader io.Reader, opts ...parse
 
 	// Extract content based on configuration
 	sections := wp.extractContent(doc)
-	if wp.ToSections {
+	if wp.toSections {
 		for key, section := range sections {
 			content := strings.TrimSpace(section)
+			metadata := make(map[string]interface{})
+			for k, v := range commonOpts.ExtraMeta {
+				metadata[k] = v
+			}
+			metadata["sectionType"] = key
 			if content != "" {
 				docs = append(docs, &schema.Document{
-					ID:       key,
+					ID:       uuid.New().String(),
 					Content:  content,
-					MetaData: commonOpts.ExtraMeta,
+					MetaData: metadata,
 				})
 			}
 		}
@@ -99,11 +105,16 @@ func (wp *DocxParser) Parse(ctx context.Context, reader io.Reader, opts ...parse
 			}
 		}
 		content := contentBuilder.String()
+		metadata := make(map[string]interface{})
+		for k, v := range commonOpts.ExtraMeta {
+			metadata[k] = v
+		}
+		metadata["sectionType"] = "fullContent"
 		if content != "" {
 			docs = append(docs, &schema.Document{
-				ID:       "FullContent",
+				ID:       uuid.New().String(),
 				Content:  content,
-				MetaData: commonOpts.ExtraMeta,
+				MetaData: metadata,
 			})
 		}
 	}
@@ -124,7 +135,7 @@ func (wp *DocxParser) extractContent(doc *document.Document) map[string]string {
 	sections["main"] = mainContentBuf.String()
 
 	// Extract comments if enabled
-	if wp.IncludeComments {
+	if wp.includeComments {
 		comments := wp.extractComments(doc)
 		if comments != "" {
 			var commentBuf bytes.Buffer
@@ -136,7 +147,7 @@ func (wp *DocxParser) extractContent(doc *document.Document) map[string]string {
 	}
 
 	// Extract headers if enabled
-	if wp.IncludeHeaders {
+	if wp.includeHeaders {
 		headers := wp.extractHeaders(doc)
 		if headers != "" {
 			var headerBuf bytes.Buffer
@@ -148,7 +159,7 @@ func (wp *DocxParser) extractContent(doc *document.Document) map[string]string {
 	}
 
 	// Extract table content if enabled
-	if wp.IncludeTables {
+	if wp.includeTables {
 		tables := wp.extractTables(doc)
 		if tables != "" {
 			var tableBuf bytes.Buffer
@@ -160,7 +171,7 @@ func (wp *DocxParser) extractContent(doc *document.Document) map[string]string {
 	}
 
 	// Extract footers if enabled
-	if wp.IncludeFooters {
+	if wp.includeFooters {
 		footers := wp.extractFooters(doc)
 		if footers != "" {
 			var footerBuf bytes.Buffer
@@ -281,28 +292,58 @@ func (wp *DocxParser) extractMainContent(doc *document.Document) string {
 	return buf.String()
 }
 
-// extractTables extracts table content from the Docx document.
+// extractTables extracts table content from the Docx document in Markdown format.
 func (wp *DocxParser) extractTables(doc *document.Document) string {
 	var buf bytes.Buffer
 
 	for tableIdx, table := range doc.Tables() {
-		buf.WriteString(fmt.Sprintf("Table %d:\n", tableIdx+1))
-		for rowIdx, row := range table.Rows() {
-			buf.WriteString(fmt.Sprintf("Row %d: ", rowIdx+1))
-			for cellIdx, cell := range row.Cells() {
-				var text string
+		buf.WriteString(fmt.Sprintf("### Table %d\n\n", tableIdx+1))
+
+		rows := table.Rows()
+		if len(rows) == 0 {
+			continue
+		}
+
+		// Process each row
+		for rowIdx, row := range rows {
+			cells := row.Cells()
+			if len(cells) == 0 {
+				continue
+			}
+
+			// Extract cell content
+			var cellContents []string
+			for _, cell := range cells {
+				var cellText string
 				for _, para := range cell.Paragraphs() {
 					for _, run := range para.Runs() {
-						text += run.Text()
+						cellText += run.Text()
 					}
 				}
-				if len(text) > 0 {
-					buf.WriteString(fmt.Sprintf("Cell %d: %s | ", cellIdx+1, text))
+				// Clean up cell text - remove newlines and trim spaces
+				cellText = strings.ReplaceAll(strings.TrimSpace(cellText), "\n", " ")
+				if cellText == "" {
+					cellText = " " // Empty cell placeholder
 				}
+				cellContents = append(cellContents, cellText)
 			}
-			buf.WriteString("\n")
+
+			// Write table row
+			buf.WriteString("| ")
+			buf.WriteString(strings.Join(cellContents, " | "))
+			buf.WriteString(" |\n")
+
+			// Add separator row after first row (header)
+			if rowIdx == 0 {
+				buf.WriteString("|")
+				for range cellContents {
+					buf.WriteString(" --- |")
+				}
+				buf.WriteString("\n")
+			}
 		}
-		buf.WriteString("\n")
+
+		buf.WriteString("\n") // Add spacing between tables
 	}
 
 	return buf.String()
