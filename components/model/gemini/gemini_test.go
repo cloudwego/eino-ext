@@ -23,10 +23,11 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/genai"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestGemini(t *testing.T) {
@@ -259,4 +260,51 @@ func TestWithTools(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "test model", ncm.(*ChatModel).model)
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
+}
+
+func TestChatModelConvMedia(t *testing.T) {
+	cm := &ChatModel{model: "test model"}
+	contents := []schema.ChatMessagePart{
+		{
+			Type: schema.ChatMessagePartTypeText,
+			Text: "test text",
+		},
+		{
+			Type: schema.ChatMessagePartTypeImageURL,
+			ImageURL: &schema.ChatMessageImageURL{
+				URI:      "test uri",
+				MIMEType: "test mime type",
+			},
+		},
+		{
+			Type: schema.ChatMessagePartTypeFileURL,
+			FileURL: &schema.ChatMessageFileURL{
+				URI:      "test uri",
+				MIMEType: "test mime type",
+			},
+		},
+		{
+			Type: schema.ChatMessagePartTypeAudioURL,
+			AudioURL: &schema.ChatMessageAudioURL{
+				URI:      "test uri",
+				MIMEType: "test mime type",
+			},
+		},
+		{
+			Type: schema.ChatMessagePartTypeVideoURL,
+			VideoURL: &schema.ChatMessageVideoURL{
+				URI:      "test uri",
+				MIMEType: "test mime type",
+			},
+		},
+	}
+
+	parts := cm.convMedia(contents)
+	assert.Equal(t, 5, len(parts))
+	assert.Equal(t, "test text", parts[0].Text)
+
+	for i := 1; i < len(parts); i++ {
+		assert.Equal(t, "test uri", parts[i].FileData.FileURI)
+		assert.Equal(t, "test mime type", parts[i].FileData.MIMEType)
+	}
 }
