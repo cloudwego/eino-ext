@@ -23,12 +23,13 @@ import (
 	"runtime/debug"
 
 	"github.com/bytedance/sonic"
+	"github.com/getkin/kin-openapi/openapi3"
+	"google.golang.org/genai"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
-	"google.golang.org/genai"
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
@@ -537,15 +538,15 @@ func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) []*genai.Part 
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			if content.AudioURL != nil {
-				result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.AudioURL.MIMEType))
+				result = append(result, genai.NewPartFromURI(content.AudioURL.URI, content.AudioURL.MIMEType))
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			if content.VideoURL != nil {
-				result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.VideoURL.MIMEType))
+				result = append(result, genai.NewPartFromURI(content.VideoURL.URI, content.VideoURL.MIMEType))
 			}
 		case schema.ChatMessagePartTypeFileURL:
 			if content.FileURL != nil {
-				result = append(result, genai.NewPartFromURI(content.FileURL.MIMEType, content.FileURL.URI))
+				result = append(result, genai.NewPartFromURI(content.FileURL.URI, content.FileURL.MIMEType))
 			}
 		}
 	}
