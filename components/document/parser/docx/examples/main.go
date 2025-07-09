@@ -18,8 +18,8 @@ package main
 
 import (
 	"context"
-	"docx"
 	"fmt"
+	"github.com/cloudwego/eino-ext/components/document/parser/docx"
 	"log"
 	"os"
 )
