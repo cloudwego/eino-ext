@@ -514,7 +514,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		response := make(map[string]any)
 		err := sonic.UnmarshalString(message.Content, &response)
 		if err != nil {
-			return nil, fmt.Errorf("unmarshal schema tool call response to map[string]any fail: %w", err)
+			response["output"] = message.Content
 		}
 		content.Parts = append(content.Parts, genai.NewPartFromFunctionResponse(message.ToolCallID, response))
 	} else {
