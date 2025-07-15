@@ -19,15 +19,25 @@ package ark
 import (
 	"testing"
 
-	"github.com/cloudwego/eino/components/model"
 	"github.com/stretchr/testify/assert"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+
+	"github.com/cloudwego/eino/components/model"
 )
 
 func TestOptions(t *testing.T) {
-
 	opt := model.GetImplSpecificOptions(&arkOptions{
 		customHeaders: nil,
-	}, WithCustomHeader(map[string]string{"k1": "v1"}))
+	}, WithCustomHeader(map[string]string{"k1": "v1"}),
+		WithCaching(CachingEnabled, 86400),
+		WithSessionCache("123"),
+		WithThinking(&arkModel.Thinking{
+			Type: arkModel.ThinkingTypeEnabled,
+		}))
 
 	assert.Equal(t, map[string]string{"k1": "v1"}, opt.customHeaders)
+	assert.Equal(t, CachingEnabled, *opt.caching)
+	assert.Equal(t, 86400, *opt.cachingTTL)
+	assert.Equal(t, "123", *opt.sessionContextID)
+	assert.Equal(t, arkModel.ThinkingTypeEnabled, opt.thinking.Type)
 }

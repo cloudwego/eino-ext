@@ -22,10 +22,12 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
-	"github.com/cloudwego/eino/schema"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
@@ -40,21 +42,47 @@ func main() {
 		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
-	info, err := chatModel.CreatePrefixCache(ctx, []*schema.Message{
-		schema.UserMessage("my name is megumin"),
-	}, 3600)
+	instructions := []*schema.Message{
+		schema.SystemMessage("Your name is superman"),
+	}
+	thinking := &arkModel.Thinking{
+		Type: arkModel.ThinkingTypeDisabled,
+	}
+
+	persist := true
+	ttl := 86400
+	cacheOpt := &ark.CacheOption{
+		APIType: ark.ResponsesAPI,
+		SessionCacheOption: &ark.SessionCacheOption{
+			PersistCurrentContext: &persist,
+			TTL:                   &ttl,
+		},
+	}
+
+	msg, err := chatModel.Generate(ctx, instructions,
+		ark.WithThinking(thinking),
+		ark.WithCache(cacheOpt))
 	if err != nil {
 		log.Fatalf("CreatePrefix failed, err=%v", err)
 	}
 
-	inMsgs := []*schema.Message{
-		{
-			Role:    schema.User,
-			Content: "what id my name?",
-		},
+	firstContextID, ok := ark.GetSessionContextID(msg)
+	if !ok {
+		log.Fatalf("GetSessionContextID failed, err=%v", err)
 	}
 
-	msg, err := chatModel.Generate(ctx, inMsgs, ark.WithPrefixCache(info.ContextID))
+	cacheOpt.ContextID = &firstContextID
+
+	<-time.After(500 * time.Millisecond)
+
+	msg, err = chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "What's your name?",
+		},
+	},
+		ark.WithThinking(thinking),
+		ark.WithCache(cacheOpt))
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
@@ -64,7 +92,21 @@ func main() {
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
 
-	outStreamReader, err := chatModel.Stream(ctx, inMsgs, ark.WithPrefixCache(info.ContextID))
+	secondContextID, ok := ark.GetSessionContextID(msg)
+	if !ok {
+		log.Fatalf("GetSessionContextID failed, err=%v", err)
+	}
+
+	cacheOpt.ContextID = &secondContextID
+
+	outStreamReader, err := chatModel.Stream(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "What do I ask you last time?",
+		},
+	},
+		ark.WithThinking(thinking),
+		ark.WithCache(cacheOpt))
 	if err != nil {
 		log.Fatalf("Stream failed, err=%v", err)
 	}

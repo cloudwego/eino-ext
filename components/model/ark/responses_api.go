@@ -1,0 +1,681 @@
+/*
+ * Copyright 2025 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package ark
+
+import (
+	"context"
+	"fmt"
+	"runtime/debug"
+	"time"
+
+	"github.com/bytedance/sonic"
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/packages/param"
+	"github.com/openai/openai-go/responses"
+	"github.com/openai/openai-go/shared"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+)
+
+type responsesAPIChatModel struct {
+	client responses.ResponseService
+
+	tools    []responses.ToolUnionParam
+	rawTools []*schema.ToolInfo
+
+	model          string
+	maxTokens      *int
+	temperature    *float32
+	topP           *float32
+	customHeader   map[string]string
+	responseFormat *ResponseFormat
+	thinking       *arkModel.Thinking
+	cache          *Cache
+}
+
+func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
+	opts ...model.Option) (outMsg *schema.Message, err error) {
+
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+
+	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create generate request: %w", err)
+	}
+
+	config := cm.toCallbackConfig(req)
+
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages: input,
+		Tools:    cm.rawTools,
+		Config:   config,
+	})
+
+	resp, err := cm.client.New(ctx, req, reqOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create generate request: %w", err)
+	}
+
+	outMsg, err = cm.toOutputMessage(resp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert output to schema.Message: %w", err)
+	}
+
+	callbacks.OnEnd(ctx, &model.CallbackOutput{
+		Message:    outMsg,
+		Config:     config,
+		TokenUsage: cm.toModelTokenUsage(resp.Usage),
+	})
+
+	return outMsg, nil
+}
+
+func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
+	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
+
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+
+	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stream request: %w", err)
+	}
+
+	config := cm.toCallbackConfig(req)
+
+	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
+		Messages: input,
+		Tools:    cm.rawTools,
+		Config:   config,
+	})
+
+	streamResp := cm.client.NewStreaming(ctx, req, reqOpts...)
+	if streamResp.Err() != nil {
+		return nil, fmt.Errorf("failed to create stream request: %w", streamResp.Err())
+	}
+
+	sr, sw := schema.Pipe[*model.CallbackOutput](1)
+
+	go func() {
+		defer func() {
+			pe := recover()
+			if pe != nil {
+				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
+			}
+			_ = streamResp.Close()
+			sw.Close()
+		}()
+
+		for streamResp.Next() {
+			cur := streamResp.Current()
+			if !cm.handleStreamEvent(cur, config, sw) {
+				break
+			}
+		}
+
+		if streamResp.Err() != nil {
+			_ = sw.Send(nil, fmt.Errorf("failed to read stream: %w", streamResp.Err()))
+		}
+	}()
+
+	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
+		func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
+			return src, nil
+		}))
+
+	outStream = schema.StreamReaderWithConvert(nsr,
+		func(src callbacks.CallbackOutput) (*schema.Message, error) {
+			s := src.(*model.CallbackOutput)
+			if s.Message == nil {
+				return nil, schema.ErrNoValue
+			}
+			return s.Message, nil
+		},
+	)
+
+	return outStream, nil
+}
+
+func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
+	msg *schema.Message) {
+
+	responseID, ok := GetSessionContextID(msg)
+	extra := map[string]any{}
+	if ok {
+		extra[keyOfSessionContextID] = responseID
+	}
+
+	var token *model.TokenUsage
+	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
+		token = &model.TokenUsage{
+			PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
+			CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
+			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
+		}
+	}
+
+	sw.Send(&model.CallbackOutput{
+		Message:    msg,
+		Config:     reqConf,
+		TokenUsage: token,
+		Extra:      extra,
+	}, nil)
+}
+
+func (cm *responsesAPIChatModel) handleStreamEvent(eventUnion responses.ResponseStreamEventUnion, mConf *model.Config,
+	sw *schema.StreamWriter[*model.CallbackOutput]) bool {
+
+	event := eventUnion.AsAny()
+
+	switch asEvent := event.(type) {
+	case responses.ResponseCreatedEvent:
+		cm.sendCallbackOutput(sw, mConf, &schema.Message{
+			Role: schema.Assistant,
+			Extra: map[string]any{
+				keyOfSessionContextID: asEvent.Response.ID,
+			},
+		})
+
+	case responses.ResponseOutputItemDoneEvent:
+		msg := cm.handleOutputItemDoneStreamEvent(asEvent)
+		if msg != nil {
+			cm.sendCallbackOutput(sw, mConf, msg)
+		}
+
+	case responses.ResponseCompletedEvent:
+		msg := cm.handleCompletedStreamEvent(asEvent)
+		cm.sendCallbackOutput(sw, mConf, msg)
+		return false
+
+	case responses.ResponseErrorEvent:
+		sw.Send(nil, fmt.Errorf("received error: %s", asEvent.Message))
+		return false
+
+	case responses.ResponseIncompleteEvent:
+		msg := cm.handleIncompleteStreamEvent(asEvent)
+		cm.sendCallbackOutput(sw, mConf, msg)
+		return false
+
+	case responses.ResponseFailedEvent:
+		msg := cm.handleFailedStreamEvent(asEvent)
+		cm.sendCallbackOutput(sw, mConf, msg)
+		return false
+
+	default:
+		msg := cm.handleDeltaStreamEvent(asEvent)
+		if msg != nil {
+			cm.sendCallbackOutput(sw, mConf, msg)
+		}
+	}
+
+	return true
+}
+
+func (cm *responsesAPIChatModel) handleCompletedStreamEvent(asChunk responses.ResponseCompletedEvent) *schema.Message {
+	return &schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: string(asChunk.Type),
+			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
+		},
+	}
+}
+
+func (cm *responsesAPIChatModel) handleIncompleteStreamEvent(asChunk responses.ResponseIncompleteEvent) *schema.Message {
+	return &schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: asChunk.Response.IncompleteDetails.Reason,
+			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
+		},
+	}
+}
+
+func (cm *responsesAPIChatModel) handleFailedStreamEvent(asChunk responses.ResponseFailedEvent) *schema.Message {
+	return &schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: asChunk.Response.Error.Message,
+			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
+		},
+	}
+}
+
+func (cm *responsesAPIChatModel) handleDeltaStreamEvent(asChunk any) *schema.Message {
+	switch asEvent := asChunk.(type) {
+	case responses.ResponseTextDeltaEvent:
+		return &schema.Message{
+			Role:    schema.Assistant,
+			Content: asEvent.Delta,
+		}
+
+	case responses.ResponseFunctionCallArgumentsDeltaEvent:
+		return &schema.Message{
+			Role:    schema.Assistant,
+			Content: asEvent.Delta,
+		}
+
+	case responses.ResponseReasoningSummaryTextDeltaEvent:
+		return &schema.Message{
+			Role:    schema.Assistant,
+			Content: asEvent.Delta,
+		}
+	}
+
+	return nil
+}
+
+func (cm *responsesAPIChatModel) handleOutputItemDoneStreamEvent(asEvent responses.ResponseOutputItemDoneEvent) *schema.Message {
+	item := asEvent.Item
+
+	switch asItem := item.AsAny().(type) {
+	case responses.ResponseFunctionToolCall:
+		return &schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{
+					ID:   asItem.CallID,
+					Type: string(asItem.Type),
+					Function: schema.FunctionCall{
+						Name:      asItem.Name,
+						Arguments: asItem.Arguments,
+					},
+				},
+			},
+		}
+	}
+
+	return nil
+}
+
+func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.ToolUnionParam, error) {
+	tools := make([]responses.ToolUnionParam, len(tis))
+	for i := range tis {
+		ti := tis[i]
+		if ti == nil {
+			return nil, fmt.Errorf("tool info cannot be nil in WithTools")
+		}
+
+		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
+		}
+
+		b, err := sonic.Marshal(paramsJSONSchema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal paramsJSONSchema fail: %w", err)
+		}
+
+		params := map[string]any{}
+		if err = sonic.Unmarshal(b, &params); err != nil {
+			return nil, fmt.Errorf("unmarshal paramsJSONSchema fail: %w", err)
+		}
+
+		tools[i] = responses.ToolUnionParam{
+			OfFunction: &responses.FunctionToolParam{
+				Name:        ti.Name,
+				Description: newOpenaiStringOpt(&ti.Desc),
+				Parameters:  params,
+			},
+		}
+	}
+
+	return tools, nil
+}
+
+func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opts ...model.Option) (req responses.ResponseNewParams,
+	reqOpts []option.RequestOption, err error) {
+
+	options := model.GetCommonOptions(&model.Options{
+		Temperature: cm.temperature,
+		MaxTokens:   cm.maxTokens,
+		Model:       &cm.model,
+		TopP:        cm.topP,
+		ToolChoice:  ptrOf(schema.ToolChoiceAllowed),
+	}, opts...)
+
+	arkOpts := model.GetImplSpecificOptions(&arkOptions{
+		customHeaders: cm.customHeader,
+		thinking:      cm.thinking,
+	}, opts...)
+
+	if err = cm.checkOptions(options, arkOpts); err != nil {
+		return req, nil, err
+	}
+
+	var text *responses.ResponseTextConfigParam
+	if cm.responseFormat != nil {
+		text = &responses.ResponseTextConfigParam{
+			Format: responses.ResponseFormatTextConfigUnionParam{
+				OfText: ptrOf(shared.NewResponseFormatTextParam()),
+			},
+		}
+		if cm.responseFormat.Type == arkModel.ResponseFormatJsonObject {
+			text.Format = responses.ResponseFormatTextConfigUnionParam{
+				OfJSONObject: ptrOf(shared.NewResponseFormatJSONObjectParam()),
+			}
+		}
+	}
+
+	req = responses.ResponseNewParams{
+		Text:            ptrFromOrZero(text),
+		Model:           ptrFromOrZero(options.Model),
+		MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
+		Temperature:     newOpenaiFloatOpt(options.Temperature),
+		TopP:            newOpenaiFloatOpt(options.TopP),
+	}
+
+	if req, err = cm.injectInput(req, in); err != nil {
+		return req, nil, err
+	}
+
+	if req, err = cm.injectTools(req, options.Tools); err != nil {
+		return req, nil, err
+	}
+
+	if req, reqOpts, err = cm.injectCache(req, arkOpts, reqOpts); err != nil {
+		return req, nil, err
+	}
+
+	for k, v := range arkOpts.customHeaders {
+		reqOpts = append(reqOpts, option.WithHeaderAdd(k, v))
+	}
+
+	if arkOpts.thinking != nil {
+		reqOpts = append(reqOpts, option.WithJSONSet("thinking", arkOpts.thinking))
+	}
+
+	return req, reqOpts, nil
+}
+
+func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOptions) error {
+	if len(mOpts.Stop) > 0 {
+		return fmt.Errorf("'Stop' is not supported by responses API")
+	}
+	return nil
+}
+
+func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, arkOpts *arkOptions,
+	reqOpts []option.RequestOption) (responses.ResponseNewParams, []option.RequestOption, error) {
+
+	var (
+		store     = param.NewOpt(false)
+		caching   = CachingDisabled
+		cacheTTL  *int
+		contextID *string
+	)
+
+	if cm.cache != nil {
+		if cm.cache.SessionCache != nil {
+			if cm.cache.SessionCache.EnableCache {
+				store = param.NewOpt(true)
+				caching = CachingEnabled
+			}
+			if cm.cache.SessionCache.TTL != nil {
+				cacheTTL = cm.cache.SessionCache.TTL
+			}
+		}
+	}
+
+	if arkOpts.cache != nil {
+		contextID = arkOpts.cache.ContextID
+
+		cacheOpt := arkOpts.cache.SessionCacheOption
+		if cacheOpt != nil {
+			if cacheOpt.PersistCurrentContext != nil {
+				if *cacheOpt.PersistCurrentContext {
+					store = param.NewOpt(true)
+					caching = CachingEnabled
+				} else {
+					store = param.NewOpt(false)
+					caching = CachingDisabled
+				}
+			}
+			if cacheOpt.TTL != nil {
+				cacheTTL = cacheOpt.TTL
+			}
+		}
+	}
+
+	req.PreviousResponseID = newOpenaiStringOpt(contextID)
+	req.Store = store
+
+	if cacheTTL != nil {
+		reqOpts = append(reqOpts, option.WithJSONSet("expire_at", time.Now().Unix()+int64(*cacheTTL)))
+	}
+
+	reqOpts = append(reqOpts, option.WithJSONSet("caching", map[string]any{
+		"type": caching,
+	}))
+
+	return req, reqOpts, nil
+}
+
+func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in []*schema.Message) (responses.ResponseNewParams, error) {
+	itemList := make([]responses.ResponseInputItemUnionParam, 0, len(in))
+
+	if len(in) == 0 {
+		return req, nil
+	}
+
+	for _, msg := range in {
+		item := responses.ResponseInputItemUnionParam{}
+
+		content, err := cm.toOpenaiMultiModalContent(msg)
+		if err != nil {
+			return req, err
+		}
+
+		switch msg.Role {
+		case schema.User:
+			item.OfMessage = &responses.EasyInputMessageParam{
+				Role:    responses.EasyInputMessageRoleUser,
+				Content: content,
+			}
+
+		case schema.Assistant:
+			item.OfMessage = &responses.EasyInputMessageParam{
+				Role:    responses.EasyInputMessageRoleAssistant,
+				Content: content,
+			}
+
+		case schema.System:
+			item.OfMessage = &responses.EasyInputMessageParam{
+				Role:    responses.EasyInputMessageRoleDeveloper,
+				Content: content,
+			}
+
+		case schema.Tool:
+			item.OfFunctionCallOutput = &responses.ResponseInputItemFunctionCallOutputParam{
+				CallID: msg.ToolCallID,
+				Output: msg.Content,
+			}
+
+		default:
+			return req, fmt.Errorf("unknown role: %s", msg.Role)
+		}
+
+		itemList = append(itemList, item)
+	}
+
+	req.Input = responses.ResponseNewParamsInputUnion{
+		OfInputItemList: itemList,
+	}
+
+	return req, nil
+}
+
+func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) (responses.EasyInputMessageContentUnionParam, error) {
+	content := responses.EasyInputMessageContentUnionParam{}
+
+	if msg.Content != "" {
+		if len(msg.MultiContent) == 0 {
+			content.OfString = param.NewOpt(msg.Content)
+			return content, nil
+		}
+
+		content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+			OfInputText: &responses.ResponseInputTextParam{
+				Text: msg.Content,
+			},
+		})
+	}
+
+	for _, c := range msg.MultiContent {
+		switch c.Type {
+		case schema.ChatMessagePartTypeText:
+			content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+				OfInputText: &responses.ResponseInputTextParam{
+					Text: c.Text,
+				},
+			})
+
+		case schema.ChatMessagePartTypeImageURL:
+			if c.ImageURL == nil {
+				continue
+			}
+			content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+				OfInputImage: &responses.ResponseInputImageParam{
+					ImageURL: param.NewOpt(c.ImageURL.URL),
+				},
+			})
+
+		case schema.ChatMessagePartTypeFileURL:
+			if c.FileURL == nil {
+				continue
+			}
+			content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+				OfInputFile: &responses.ResponseInputFileParam{
+					FileURL: param.NewOpt(c.FileURL.URL),
+				},
+			})
+
+		default:
+			return content, fmt.Errorf("unsupported content type: %s", c.Type)
+		}
+	}
+
+	return content, nil
+}
+
+func (cm *responsesAPIChatModel) injectTools(req responses.ResponseNewParams, optTools []*schema.ToolInfo) (responses.ResponseNewParams, error) {
+	tools := cm.tools
+
+	if len(optTools) > 0 {
+		var err error
+		if tools, err = cm.toTools(optTools); err != nil {
+			return req, err
+		}
+	}
+
+	req.Tools = tools
+
+	return req, nil
+}
+
+func (cm *responsesAPIChatModel) toCallbackConfig(req responses.ResponseNewParams) *model.Config {
+	return &model.Config{
+		Model:       req.Model,
+		MaxTokens:   int(req.MaxOutputTokens.Value),
+		Temperature: float32(req.Temperature.Value),
+		TopP:        float32(req.TopP.Value),
+	}
+}
+
+func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*schema.Message, error) {
+	msg := &schema.Message{
+		Role: schema.Assistant,
+		Extra: map[string]any{
+			keyOfSessionContextID: resp.ID,
+		},
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: string(resp.Status),
+			Usage:        cm.toEinoTokenUsage(resp.Usage),
+		},
+	}
+
+	if resp.Status == responses.ResponseStatusFailed {
+		msg.ResponseMeta.FinishReason = resp.Error.Message
+		return msg, nil
+	}
+
+	if resp.Status == responses.ResponseStatusIncomplete {
+		msg.ResponseMeta.FinishReason = resp.IncompleteDetails.Reason
+		return msg, nil
+	}
+
+	if len(resp.Output) == 0 {
+		return nil, fmt.Errorf("received empty output from ARK")
+	}
+
+	for _, item := range resp.Output {
+		switch asItem := item.AsAny().(type) {
+		case responses.ResponseOutputMessage:
+			if len(asItem.Content) == 0 {
+				return nil, fmt.Errorf("received empty message content from ARK")
+			}
+			msg.Content = asItem.Content[0].Text
+
+		case responses.ResponseReasoningItem:
+			if len(asItem.Summary) == 0 {
+				continue
+			}
+			msg.ReasoningContent = asItem.Summary[0].Text
+
+		case responses.ResponseFunctionToolCall:
+			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
+				ID:   asItem.CallID,
+				Type: string(asItem.Type),
+				Function: schema.FunctionCall{
+					Name:      asItem.Name,
+					Arguments: asItem.Arguments,
+				},
+			})
+
+		default:
+			continue
+		}
+	}
+
+	return msg, nil
+}
+
+func (cm *responsesAPIChatModel) toEinoTokenUsage(usage responses.ResponseUsage) *schema.TokenUsage {
+	return &schema.TokenUsage{
+		PromptTokens:     int(usage.InputTokens),
+		CompletionTokens: int(usage.OutputTokens),
+		TotalTokens:      int(usage.TotalTokens),
+	}
+}
+
+func (cm *responsesAPIChatModel) toModelTokenUsage(usage responses.ResponseUsage) *model.TokenUsage {
+	return &model.TokenUsage{
+		PromptTokens:     int(usage.InputTokens),
+		CompletionTokens: int(usage.OutputTokens),
+		TotalTokens:      int(usage.TotalTokens),
+	}
+}

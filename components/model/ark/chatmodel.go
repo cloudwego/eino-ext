@@ -21,18 +21,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"runtime/debug"
 	"time"
+
+	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/responses"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
@@ -67,6 +67,7 @@ type ChatModelConfig struct {
 	// BaseURL specifies the base URL for Ark service
 	// Optional. Default: "https://ark.cn-beijing.volces.com/api/v3"
 	BaseURL string `json:"base_url"`
+
 	// Region specifies the region where Ark service is located
 	// Optional. Default: "cn-beijing"
 	Region string `json:"region"`
@@ -74,8 +75,10 @@ type ChatModelConfig struct {
 	// The following three fields are about authentication - either APIKey or AccessKey/SecretKey pair is required
 	// For authentication details, see: https://www.volcengine.com/docs/82379/1298459
 	// APIKey takes precedence if both are provided
-	APIKey    string `json:"api_key"`
+	APIKey string `json:"api_key"`
+
 	AccessKey string `json:"access_key"`
+
 	SecretKey string `json:"secret_key"`
 
 	// The following fields correspond to Ark's chat completion API parameters
@@ -134,62 +137,170 @@ type ChatModelConfig struct {
 	// Thinking controls whether the model is set to activate the deep thinking mode.
 	// It is set to be enabled by default.
 	Thinking *model.Thinking `json:"thinking,omitempty"`
+
+	Cache *Cache `json:"cache"`
 }
+
+type Cache struct {
+	// APIType controls which API the cache uses to make calls.
+	// To learn more about it, see https://www.volcengine.com/docs/82379/1330310.
+	// Note that if the type is ResponsesAPI,
+	// the following configuration will not be available (ARK may support it in the future):
+	// `Region`, `AccessKey`, `SecretKey`, `Stop`, `FrequencyPenalty`, `LogitBias`, `PresencePenalty`,
+	// `LogProbs`, `TopLogProbs`, `ResponseFormat.JSONSchema`.
+	// Required.
+	APIType APIType `json:"api_type"`
+
+	// SessionCache is the configuration of ResponsesAPI session cache.
+	SessionCache *SessionCache `json:"session_cache"`
+}
+
+type SessionCache struct {
+	// EnableCache specifies whether to enable session cache.
+	// If enabled, the model will cache each conversation and reuse it for subsequent requests.
+	EnableCache bool `json:"enable_cache"`
+
+	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
+	// Optional. Default: 3 * 86400 (3 days).
+	TTL *int `json:"ttl"`
+}
+
+type APIType string
+
+const (
+	ContextAPI   APIType = "context_api"
+	ResponsesAPI APIType = "responses_api"
+)
 
 type ResponseFormat struct {
 	Type       model.ResponseFormatType                       `json:"type"`
 	JSONSchema *model.ResponseFormatJSONSchemaJSONSchemaParam `json:"json_schema,omitempty"`
 }
 
-func buildClient(config *ChatModelConfig) *arkruntime.Client {
-	if len(config.BaseURL) == 0 {
-		config.BaseURL = defaultBaseURL
-	}
-	if len(config.Region) == 0 {
-		config.Region = defaultRegion
-	}
-	if config.Timeout == nil {
-		config.Timeout = &defaultTimeout
-	}
-	if config.RetryTimes == nil {
-		config.RetryTimes = &defaultRetryTimes
-	}
+type Caching string
 
-	opts := []arkruntime.ConfigOption{
-		arkruntime.WithRetryTimes(*config.RetryTimes),
-		arkruntime.WithBaseUrl(config.BaseURL),
-		arkruntime.WithRegion(config.Region),
-		arkruntime.WithTimeout(*config.Timeout),
-	}
-	if config.HTTPClient != nil {
-		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
-	}
-
-	if len(config.APIKey) > 0 {
-		return arkruntime.NewClientWithApiKey(config.APIKey, opts...)
-	}
-
-	return arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
-}
+const (
+	CachingEnabled  Caching = "enabled"
+	CachingDisabled Caching = "disabled"
+)
 
 func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
 	if config == nil {
 		config = &ChatModelConfig{}
 	}
-	client := buildClient(config)
+
+	chatModel := buildChatCompletionAPIChatModel(config)
+	respChatModel := buildResponsesAPIChatModel(config)
 
 	return &ChatModel{
-		config: config,
-		client: client,
+		config:        config,
+		chatModel:     chatModel,
+		respChatModel: respChatModel,
 	}, nil
 }
 
-type ChatModel struct {
-	config *ChatModelConfig
-	client *arkruntime.Client
+func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChatModel {
+	baseURL := defaultBaseURL
+	if config.BaseURL != "" {
+		baseURL = config.BaseURL
+	}
+	region := defaultRegion
+	if config.Region != "" {
+		region = config.Region
+	}
+	timeout := defaultTimeout
+	if config.Timeout != nil {
+		timeout = *config.Timeout
+	}
+	retryTimes := defaultRetryTimes
+	if config.RetryTimes != nil {
+		retryTimes = *config.RetryTimes
+	}
 
-	tools    []tool
-	rawTools []*schema.ToolInfo
+	opts := []arkruntime.ConfigOption{
+		arkruntime.WithRetryTimes(retryTimes),
+		arkruntime.WithBaseUrl(baseURL),
+		arkruntime.WithRegion(region),
+		arkruntime.WithTimeout(timeout),
+	}
+	if config.HTTPClient != nil {
+		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
+	}
+
+	var client *arkruntime.Client
+	if len(config.APIKey) > 0 {
+		client = arkruntime.NewClientWithApiKey(config.APIKey, opts...)
+	} else {
+		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
+	}
+
+	cm := &completionAPIChatModel{
+		client:           client,
+		model:            config.Model,
+		maxTokens:        config.MaxTokens,
+		temperature:      config.Temperature,
+		topP:             config.TopP,
+		stop:             config.Stop,
+		frequencyPenalty: config.FrequencyPenalty,
+		logitBias:        config.LogitBias,
+		presencePenalty:  config.PresencePenalty,
+		customHeader:     config.CustomHeader,
+		logProbs:         config.LogProbs,
+		topLogProbs:      config.TopLogProbs,
+		responseFormat:   config.ResponseFormat,
+		thinking:         config.Thinking,
+		cache:            config.Cache,
+	}
+
+	return cm
+}
+
+func buildResponsesAPIChatModel(config *ChatModelConfig) *responsesAPIChatModel {
+	var opts []option.RequestOption
+
+	if config.Timeout != nil {
+		opts = append(opts, option.WithRequestTimeout(*config.Timeout))
+	} else {
+		opts = append(opts, option.WithRequestTimeout(defaultTimeout))
+	}
+	if config.HTTPClient != nil {
+		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+	}
+	if config.BaseURL != "" {
+		opts = append(opts, option.WithBaseURL(config.BaseURL))
+	} else {
+		opts = append(opts, option.WithBaseURL(defaultBaseURL))
+	}
+	if config.RetryTimes != nil {
+		opts = append(opts, option.WithMaxRetries(*config.RetryTimes))
+	} else {
+		opts = append(opts, option.WithMaxRetries(defaultRetryTimes))
+	}
+	if config.APIKey != "" {
+		opts = append(opts, option.WithAPIKey(config.APIKey))
+	}
+
+	client := responses.NewResponseService(opts...)
+
+	cm := &responsesAPIChatModel{
+		client:         client,
+		model:          config.Model,
+		maxTokens:      config.MaxTokens,
+		temperature:    config.Temperature,
+		topP:           config.TopP,
+		customHeader:   config.CustomHeader,
+		responseFormat: config.ResponseFormat,
+		thinking:       config.Thinking,
+		cache:          config.Cache,
+	}
+
+	return cm
+}
+
+type ChatModel struct {
+	config        *ChatModelConfig
+	respChatModel *responsesAPIChatModel
+	chatModel     *completionAPIChatModel
 }
 
 type CacheInfo struct {
@@ -213,15 +324,17 @@ type CacheInfo struct {
 //   - err: Any error encountered during the operation
 //
 // ref: https://www.volcengine.com/docs/82379/1396490#_1-%E5%88%9B%E5%BB%BA%E5%89%8D%E7%BC%80%E7%BC%93%E5%AD%98
+//
+// Note that it is unavailable for doubao models of version 1.6 and above.
 func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
 	req := model.CreateContextRequest{
-		Model:    cm.config.Model,
+		Model:    cm.chatModel.model,
 		Mode:     model.ContextModeCommonPrefix,
 		Messages: make([]*model.ChatCompletionMessage, 0, len(prefix)),
 		TTL:      nil,
 	}
 	for _, msg := range prefix {
-		content, err := toArkContent(msg.Content, msg.MultiContent)
+		content, err := cm.chatModel.toArkContent(msg.Content, msg.MultiContent)
 		if err != nil {
 			return nil, fmt.Errorf("create prefix fail, convert message fail: %w", err)
 		}
@@ -230,17 +343,18 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Mes
 			Content:    content,
 			Role:       string(msg.Role),
 			ToolCallID: msg.ToolCallID,
-			ToolCalls:  toArkToolCalls(msg.ToolCalls),
+			ToolCalls:  cm.chatModel.toArkToolCalls(msg.ToolCalls),
 		})
 	}
 	if ttl > 0 {
 		req.TTL = &ttl
 	}
 
-	resp, err := cm.client.CreateContext(ctx, req)
+	resp, err := cm.chatModel.client.CreateContext(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("create prefix fail: %w", err)
 	}
+
 	return &CacheInfo{
 		ContextID: resp.ID,
 		Usage: schema.TokenUsage{
@@ -256,72 +370,14 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
-	options := fmodel.GetCommonOptions(&fmodel.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-		Tools:       nil,
-	}, opts...)
-
-	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders: cm.config.CustomHeader,
-		thinking:      cm.config.Thinking,
-	}, opts...)
-
-	req, err := cm.genRequest(in, options, arkOpts)
-	if err != nil {
-		return nil, err
-	}
-
-	reqConf := &fmodel.Config{
-		Model:       req.Model,
-		MaxTokens:   dereferenceOrZero(req.MaxTokens),
-		Temperature: dereferenceOrZero(req.Temperature),
-		TopP:        dereferenceOrZero(req.TopP),
-		Stop:        req.Stop,
-	}
-
-	tools := cm.rawTools
-	if options.Tools != nil {
-		tools = options.Tools
-	}
-
-	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages: in,
-		Tools:    tools, // join tool info from call options
-		Config:   reqConf,
-	})
-
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
+	if cm.callByResponsesAPI(opts...) {
+		if err = cm.checkConfigIfResponsesAPI(); err != nil {
+			return nil, err
 		}
-	}()
-
-	var resp model.ChatCompletionResponse
-	if arkOpts.contextID != nil {
-		resp, err = cm.client.CreateContextChatCompletion(ctx, *convCompletionRequest(req, *arkOpts.contextID), arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	} else {
-		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to create chat completion: %w", err)
+		return cm.respChatModel.Generate(ctx, in, opts...)
 	}
 
-	outMsg, err = cm.resolveChatResponse(resp)
-	if err != nil {
-		return nil, err
-	}
-
-	callbacks.OnEnd(ctx, &fmodel.CallbackOutput{
-		Message:    outMsg,
-		Config:     reqConf,
-		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
-	})
-
-	return outMsg, nil
+	return cm.chatModel.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
@@ -329,328 +385,111 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
-	options := fmodel.GetCommonOptions(&fmodel.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-		Tools:       nil,
-	}, opts...)
-
-	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders: cm.config.CustomHeader,
-		thinking:      cm.config.Thinking,
-	}, opts...)
-
-	req, err := cm.genRequest(in, options, arkOpts)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Stream = ptrOf(true)
-	req.StreamOptions = &model.StreamOptions{IncludeUsage: true}
-
-	reqConf := &fmodel.Config{
-		Model:       req.Model,
-		MaxTokens:   dereferenceOrZero(req.MaxTokens),
-		Temperature: dereferenceOrZero(req.Temperature),
-		TopP:        dereferenceOrZero(req.TopP),
-		Stop:        req.Stop,
-	}
-
-	tools := cm.rawTools
-	if options.Tools != nil {
-		tools = options.Tools
-	}
-
-	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages: in,
-		Tools:    tools,
-		Config:   reqConf,
-	})
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
-	var stream *autils.ChatCompletionStreamReader
-	if arkOpts.contextID != nil {
-		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *convCompletionRequest(req, *arkOpts.contextID), arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	} else {
-		stream, err = cm.client.CreateChatCompletionStream(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	sr, sw := schema.Pipe[*fmodel.CallbackOutput](1)
-	go func() {
-		defer func() {
-			panicErr := recover()
-			if panicErr != nil {
-				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
-			}
-
-			sw.Close()
-			_ = closeArkStreamReader(stream) // nolint: byted_returned_err_should_do_check
-
-		}()
-
-		for {
-			resp, err := stream.Recv()
-			if errors.Is(err, io.EOF) {
-				return
-			}
-
-			if err != nil {
-				_ = sw.Send(nil, err)
-				return
-			}
-
-			msg, msgFound, e := resolveStreamResponse(resp)
-			if e != nil {
-				_ = sw.Send(nil, e)
-				return
-			}
-
-			if !msgFound {
-				continue
-			}
-
-			closed := sw.Send(&fmodel.CallbackOutput{
-				Message:    msg,
-				Config:     reqConf,
-				TokenUsage: toModelCallbackUsage(msg.ResponseMeta),
-			}, nil)
-			if closed {
-				return
-			}
-		}
-	}()
-
-	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
-		func(src *fmodel.CallbackOutput) (callbacks.CallbackOutput, error) {
-			return src, nil
-		}))
-
-	outStream = schema.StreamReaderWithConvert(nsr,
-		func(src callbacks.CallbackOutput) (*schema.Message, error) {
-			s := src.(*fmodel.CallbackOutput)
-			if s.Message == nil {
-				return nil, schema.ErrNoValue
-			}
-
-			return s.Message, nil
-		},
-	)
-
-	return outStream, nil
-}
-
-func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *model.CreateChatCompletionRequest, err error) {
-	req = &model.CreateChatCompletionRequest{
-		MaxTokens:        options.MaxTokens,
-		Temperature:      options.Temperature,
-		TopP:             options.TopP,
-		Model:            dereferenceOrZero(options.Model),
-		Stop:             options.Stop,
-		FrequencyPenalty: cm.config.FrequencyPenalty,
-		LogitBias:        cm.config.LogitBias,
-		PresencePenalty:  cm.config.PresencePenalty,
-		Thinking:         arkOpts.thinking,
-	}
-
-	if cm.config.ResponseFormat != nil {
-		req.ResponseFormat = &model.ResponseFormat{
-			Type:       cm.config.ResponseFormat.Type,
-			JSONSchema: cm.config.ResponseFormat.JSONSchema,
-		}
-	}
-
-	if cm.config.LogProbs {
-		req.LogProbs = &cm.config.LogProbs
-	}
-	if cm.config.TopLogProbs > 0 {
-		req.TopLogProbs = &cm.config.TopLogProbs
-	}
-
-	for _, msg := range in {
-		content, e := toArkContent(msg.Content, msg.MultiContent)
-		if e != nil {
-			return req, e
-		}
-
-		nMsg := &model.ChatCompletionMessage{
-			Content:    content,
-			Role:       string(msg.Role),
-			ToolCallID: msg.ToolCallID,
-			ToolCalls:  toArkToolCalls(msg.ToolCalls),
-		}
-		if len(msg.Name) > 0 {
-			nMsg.Name = &msg.Name
-		}
-		req.Messages = append(req.Messages, nMsg)
-	}
-
-	tools := cm.tools
-	if options.Tools != nil {
-		if tools, err = toTools(options.Tools); err != nil {
+	if cm.callByResponsesAPI(opts...) {
+		if err = cm.checkConfigIfResponsesAPI(); err != nil {
 			return nil, err
 		}
+		return cm.respChatModel.Stream(ctx, in, opts...)
 	}
 
-	if tools != nil {
-		req.Tools = make([]*model.Tool, 0, len(tools))
-
-		for _, tool := range tools {
-			arkTool := &model.Tool{
-				Type: model.ToolTypeFunction,
-				Function: &model.FunctionDefinition{
-					Name:        tool.Function.Name,
-					Description: tool.Function.Description,
-					Parameters:  tool.Function.Parameters,
-				},
-			}
-
-			req.Tools = append(req.Tools, arkTool)
-		}
-	}
-
-	return req, nil
+	return cm.chatModel.Stream(ctx, in, opts...)
 }
 
-func toLogProbs(probs *model.LogProbs) *schema.LogProbs {
-	if probs == nil {
-		return nil
+func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) bool {
+	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{}, opts...)
+
+	if arkOpts.cache == nil {
+		return false
 	}
-	ret := &schema.LogProbs{}
-	for _, content := range probs.Content {
-		schemaContent := schema.LogProb{
-			Token:       content.Token,
-			LogProb:     content.LogProb,
-			Bytes:       runeSlice2int64(content.Bytes),
-			TopLogProbs: toTopLogProb(content.TopLogProbs),
-		}
-		ret.Content = append(ret.Content, schemaContent)
+	if arkOpts.cache.APIType == ResponsesAPI {
+		return true
 	}
-	return ret
+
+	return false
 }
 
-func toTopLogProb(probs []*model.TopLogProbs) []schema.TopLogProb {
-	ret := make([]schema.TopLogProb, 0, len(probs))
-	for _, prob := range probs {
-		ret = append(ret, schema.TopLogProb{
-			Token:   prob.Token,
-			LogProb: prob.LogProb,
-			Bytes:   runeSlice2int64(prob.Bytes),
-		})
+func (cm *ChatModel) checkConfigIfResponsesAPI() error {
+	if cm.config.Region != "" {
+		return fmt.Errorf("'Region' is not supported by responses API")
 	}
-	return ret
+	if cm.config.AccessKey != "" {
+		return fmt.Errorf("'AccessKey' is not supported by responses API")
+	}
+	if cm.config.SecretKey != "" {
+		return fmt.Errorf("'SecretKey' is not supported by responses API")
+	}
+	if len(cm.config.Stop) > 0 {
+		return fmt.Errorf("'Stop' is not supported by responses API")
+	}
+	if cm.config.FrequencyPenalty != nil {
+		return fmt.Errorf("'FrequencyPenalty' is not supported by responses API")
+	}
+	if len(cm.config.LogitBias) > 0 {
+		return fmt.Errorf("'LogitBias' is not supported by responses API")
+	}
+	if cm.config.PresencePenalty != nil {
+		return fmt.Errorf("'PresencePenalty' is not supported by responses API")
+	}
+	if cm.config.LogProbs {
+		return fmt.Errorf("'LogProbs' is not supported by responses API")
+	}
+	if cm.config.TopLogProbs > 0 {
+		return fmt.Errorf("'TopLogProbs' is not supported by responses API")
+	}
+	if cm.config.ResponseFormat != nil && cm.config.ResponseFormat.JSONSchema != nil {
+		return fmt.Errorf("'ResponseFormat.JSONSchema' is not supported by responses API")
+	}
+	return nil
 }
 
-func runeSlice2int64(in []rune) []int64 {
-	ret := make([]int64, 0, len(in))
-	for _, v := range in {
-		ret = append(ret, int64(v))
+func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
 	}
-	return ret
+
+	arkTools, err := cm.chatModel.toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to ark tools: %w", err)
+	}
+
+	respTools, err := cm.respChatModel.toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to ark responesAPI tools: %w", err)
+	}
+
+	ncm := *cm.chatModel
+	ncm.rawTools = tools
+	ncm.tools = arkTools
+
+	nrcm := *cm.respChatModel
+	nrcm.rawTools = tools
+	nrcm.tools = respTools
+
+	return &ChatModel{
+		chatModel:     &ncm,
+		respChatModel: &nrcm,
+	}, nil
 }
 
-func (cm *ChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg *schema.Message, err error) {
-	if len(resp.Choices) == 0 {
-		return nil, ErrEmptyResponse
+func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) (err error) {
+	if len(tools) == 0 {
+		return errors.New("no tools to bind")
 	}
 
-	var choice *model.ChatCompletionChoice
-
-	for _, c := range resp.Choices {
-		if c.Index == 0 {
-			choice = c
-			break
-		}
+	cm.chatModel.tools, err = cm.chatModel.toTools(tools)
+	if err != nil {
+		return err
 	}
 
-	if choice == nil {
-		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
+	cm.respChatModel.tools, err = cm.respChatModel.toTools(tools)
+	if err != nil {
+		return err
 	}
 
-	content := choice.Message.Content
-	if content == nil && len(choice.Message.ToolCalls) == 0 {
-		return nil, fmt.Errorf("invalid response format: message has neither content nor tool calls")
-	}
+	cm.chatModel.rawTools = tools
+	cm.respChatModel.rawTools = tools
 
-	msg = &schema.Message{
-		Role:       schema.RoleType(choice.Message.Role),
-		ToolCallID: choice.Message.ToolCallID,
-		ToolCalls:  toMessageToolCalls(choice.Message.ToolCalls),
-		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(choice.FinishReason),
-			Usage:        toEinoTokenUsage(&resp.Usage),
-			LogProbs:     toLogProbs(choice.LogProbs),
-		},
-		Extra: map[string]any{},
-	}
-
-	setModelName(msg, resp.Model)
-	setArkRequestID(msg, resp.ID)
-
-	if content != nil && content.StringValue != nil {
-		msg.Content = *content.StringValue
-	}
-
-	if choice.Message.ReasoningContent != nil {
-		setReasoningContent(msg, *choice.Message.ReasoningContent)
-		msg.ReasoningContent = *choice.Message.ReasoningContent
-	}
-
-	return msg, nil
-}
-
-func resolveStreamResponse(resp model.ChatCompletionStreamResponse) (msg *schema.Message, msgFound bool, err error) {
-	if len(resp.Choices) > 0 {
-
-		for _, choice := range resp.Choices {
-			if choice.Index != 0 {
-				continue
-			}
-
-			msgFound = true
-			msg = &schema.Message{
-				Role:      schema.RoleType(choice.Delta.Role),
-				ToolCalls: toMessageToolCalls(choice.Delta.ToolCalls),
-				Content:   choice.Delta.Content,
-				ResponseMeta: &schema.ResponseMeta{
-					FinishReason: string(choice.FinishReason),
-					Usage:        toEinoTokenUsage(resp.Usage),
-					LogProbs:     toLogProbs(choice.LogProbs),
-				},
-				Extra: map[string]any{},
-			}
-
-			if choice.Delta.ReasoningContent != nil {
-				setReasoningContent(msg, *choice.Delta.ReasoningContent)
-				msg.ReasoningContent = *choice.Delta.ReasoningContent
-			}
-
-			break
-		}
-	}
-
-	if !msgFound && resp.Usage != nil {
-		msgFound = true
-		msg = &schema.Message{
-			ResponseMeta: &schema.ResponseMeta{
-				Usage: toEinoTokenUsage(resp.Usage),
-			},
-			Extra: map[string]any{},
-		}
-	}
-	setArkRequestID(msg, resp.ID)
-	setModelName(msg, resp.Model)
-
-	return msg, msgFound, nil
+	return nil
 }
 
 func (cm *ChatModel) GetType() string {
@@ -659,225 +498,4 @@ func (cm *ChatModel) GetType() string {
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
-}
-
-func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {
-	if len(tools) == 0 {
-		return nil, errors.New("no tools to bind")
-	}
-	artTools, err := toTools(tools)
-	if err != nil {
-		return nil, fmt.Errorf("convert to ark tools fail: %w", err)
-	}
-
-	ncm := *cm
-	ncm.tools = artTools
-	ncm.rawTools = tools
-	return &ncm, nil
-}
-
-func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
-	var err error
-	if len(tools) == 0 {
-		return errors.New("no tools to bind")
-	}
-	cm.tools, err = toTools(tools)
-	if err != nil {
-		return err
-	}
-
-	cm.rawTools = tools
-
-	return nil
-}
-
-func toEinoTokenUsage(usage *model.Usage) *schema.TokenUsage {
-	if usage == nil {
-		return nil
-	}
-	return &schema.TokenUsage{
-		CompletionTokens: usage.CompletionTokens,
-		PromptTokens:     usage.PromptTokens,
-		TotalTokens:      usage.TotalTokens,
-	}
-}
-
-func toModelCallbackUsage(respMeta *schema.ResponseMeta) *fmodel.TokenUsage {
-	if respMeta == nil {
-		return nil
-	}
-	usage := respMeta.Usage
-	if usage == nil {
-		return nil
-	}
-	return &fmodel.TokenUsage{
-		CompletionTokens: usage.CompletionTokens,
-		PromptTokens:     usage.PromptTokens,
-		TotalTokens:      usage.TotalTokens,
-	}
-}
-
-func toMessageToolCalls(toolCalls []*model.ToolCall) []schema.ToolCall {
-	if len(toolCalls) == 0 {
-		return nil
-	}
-
-	ret := make([]schema.ToolCall, len(toolCalls))
-	for i := range toolCalls {
-		toolCall := toolCalls[i]
-		ret[i] = schema.ToolCall{
-			Index: toolCall.Index,
-			ID:    toolCall.ID,
-			Type:  string(toolCall.Type),
-			Function: schema.FunctionCall{
-				Name:      toolCall.Function.Name,
-				Arguments: toolCall.Function.Arguments,
-			},
-		}
-	}
-
-	return ret
-}
-
-func toArkContent(content string, multiContent []schema.ChatMessagePart) (*model.ChatCompletionMessageContent, error) {
-	if len(multiContent) == 0 {
-		return &model.ChatCompletionMessageContent{StringValue: ptrOf(content)}, nil
-	}
-
-	parts := make([]*model.ChatCompletionMessageContentPart, 0, len(multiContent))
-
-	for _, part := range multiContent {
-		switch part.Type {
-		case schema.ChatMessagePartTypeText:
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeText,
-				Text: part.Text,
-			})
-		case schema.ChatMessagePartTypeImageURL:
-			if part.ImageURL == nil {
-				return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
-			}
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeImageURL,
-				ImageURL: &model.ChatMessageImageURL{
-					URL:    part.ImageURL.URL,
-					Detail: model.ImageURLDetail(part.ImageURL.Detail),
-				},
-			})
-		case schema.ChatMessagePartTypeVideoURL:
-			if part.VideoURL == nil {
-				return nil, fmt.Errorf("VideoURL field must not be nil when Type is ChatMessagePartTypeVideoURL")
-			}
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeVideoURL,
-				VideoURL: &model.ChatMessageVideoURL{
-					URL: part.VideoURL.URL,
-					FPS: GetFPS(part.VideoURL),
-				},
-			})
-		default:
-			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
-		}
-	}
-
-	return &model.ChatCompletionMessageContent{
-		ListValue: parts,
-	}, nil
-}
-
-func toArkToolCalls(toolCalls []schema.ToolCall) []*model.ToolCall {
-	if len(toolCalls) == 0 {
-		return nil
-	}
-
-	ret := make([]*model.ToolCall, len(toolCalls))
-	for i := range toolCalls {
-		toolCall := toolCalls[i]
-		ret[i] = &model.ToolCall{
-			ID:   toolCall.ID,
-			Type: model.ToolTypeFunction,
-			Function: model.FunctionCall{
-				Arguments: toolCall.Function.Arguments,
-				Name:      toolCall.Function.Name,
-			},
-			Index: toolCall.Index,
-		}
-	}
-
-	return ret
-}
-
-func toTools(tls []*schema.ToolInfo) ([]tool, error) {
-	tools := make([]tool, len(tls))
-	for i := range tls {
-		ti := tls[i]
-		if ti == nil {
-			return nil, fmt.Errorf("tool info cannot be nil")
-		}
-
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
-		}
-
-		tools[i] = tool{
-			Function: &functionDefinition{
-				Name:        ti.Name,
-				Description: ti.Desc,
-				Parameters:  paramsJSONSchema,
-			},
-		}
-	}
-
-	return tools, nil
-}
-
-func closeArkStreamReader(r *autils.ChatCompletionStreamReader) error {
-	if r == nil || r.Response == nil || r.Response.Body == nil {
-		return nil
-	}
-
-	return r.Close()
-}
-
-func ptrOf[T any](v T) *T {
-	return &v
-}
-
-type panicErr struct {
-	info  any
-	stack []byte
-}
-
-func (p *panicErr) Error() string {
-	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
-}
-
-func newPanicErr(info any, stack []byte) error {
-	return &panicErr{
-		info:  info,
-		stack: stack,
-	}
-}
-
-func convCompletionRequest(req *model.CreateChatCompletionRequest, contextID string) *model.ContextChatCompletionRequest {
-	return &model.ContextChatCompletionRequest{
-		ContextID:        contextID,
-		Model:            req.Model,
-		Messages:         req.Messages,
-		MaxTokens:        dereferenceOrZero(req.MaxTokens),
-		Temperature:      dereferenceOrZero(req.Temperature),
-		TopP:             dereferenceOrZero(req.TopP),
-		Stream:           dereferenceOrZero(req.Stream),
-		Stop:             req.Stop,
-		FrequencyPenalty: dereferenceOrZero(req.FrequencyPenalty),
-		LogitBias:        req.LogitBias,
-		LogProbs:         dereferenceOrZero(req.LogProbs),
-		TopLogProbs:      dereferenceOrZero(req.TopLogProbs),
-		User:             dereferenceOrZero(req.User),
-		FunctionCall:     req.FunctionCall,
-		Tools:            req.Tools,
-		ToolChoice:       req.ToolChoice,
-		StreamOptions:    req.StreamOptions,
-	}
 }
