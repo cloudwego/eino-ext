@@ -2,7 +2,6 @@ module github.com/cloudwego/eino-ext/callbacks/langfuse
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.13.2

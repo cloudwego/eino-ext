@@ -221,7 +221,7 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 	startTime := time.Now()
 	requestModel := ""
 	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(startTime))
-
+	// TODO：判断是否是 rootNode，rootNode 设置 gen_ai.input, gen_ai.output
 	contentReady := false
 
 	//TODO: covert input from other type of component
@@ -253,12 +253,18 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 		if err == nil {
 			span.SetAttributes(attribute.String("gen_ai.prompt.0.role", string(schema.User)))
 			span.SetAttributes(attribute.String("gen_ai.prompt.0.content", in))
+			span.SetAttributes(attribute.String("gen_ai.input", in))
 		}
 	}
 
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
+	session, ok := ctx.Value(apmplusSessionOptionKey{}).(*sessionOptions)
+	if ok && session != nil {
+		span.SetAttributes(attribute.String("gen_ai.session.id", session.SessionID))
+		span.SetAttributes(attribute.String("gen_ai.user.id", session.UserID))
+	}
 
 	if info.Component == components.ComponentOfChatModel {
 		a.chatCount.Add(ctx, 1, metric.WithAttributes(
@@ -419,7 +425,9 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
-
+	if ctx.Value(apmplusStateKey{}) != nil {
+		log.Printf("apmplus state already in context, runinfo: %+v", info)
+	}
 	stopCh := make(streamInputAsyncVal)
 	ctx = context.WithValue(ctx, traceStreamInputAsyncKey{}, stopCh)
 
