@@ -1,6 +1,8 @@
-# DuckDuckGo 搜索工具
+# (已废弃) DuckDuckGo 搜索工具
 
 [English](README.md) | 简体中文
+
+请注意，此实现已**废弃**。请使用 [DuckDuckGo V2](https://github.com/cloudwego/eino-ext/tree/main/components/tool/duckduckgo/v2)。
 
 这是一个为 [Eino](https://github.com/cloudwego/eino) 实现的 DuckDuckGo 搜索工具。该工具实现了 `InvokableTool` 接口，可以与 Eino 的 ChatModel 交互系统和 `ToolsNode` 无缝集成。
 
