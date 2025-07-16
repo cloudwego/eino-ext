@@ -229,6 +229,12 @@ func NewClient(config *ClientConfig) (*SearxngClient, error) {
 
 // sendRequestWithRetry sends the request with retry logic.
 func (s *SearxngClient) sendRequestWithRetry(ctx context.Context, req *http.Request) (*SearchResponse, error) {
+	if ctx == nil {
+		return nil, errors.New("context is nil")
+	}
+	if req == nil {
+		return nil, errors.New("request is nil")
+	}
 	var resp *http.Response
 	var err error
 	var attempt int
@@ -248,6 +254,11 @@ func (s *SearxngClient) sendRequestWithRetry(ctx context.Context, req *http.Requ
 			continue
 		}
 
+		// Check for successful response
+		if resp.StatusCode == http.StatusOK {
+			break
+		}
+
 		// Check for rate limit response
 		if resp.StatusCode == http.StatusTooManyRequests {
 			if attempt == s.config.MaxRetries {
@@ -256,8 +267,6 @@ func (s *SearxngClient) sendRequestWithRetry(ctx context.Context, req *http.Requ
 			time.Sleep(time.Second)
 			continue
 		}
-
-		break
 	}
 
 	defer resp.Body.Close()
@@ -284,6 +293,9 @@ func (s *SearxngClient) sendRequestWithRetry(ctx context.Context, req *http.Requ
 
 // Search sends a search request to Searxng API and returns the search results.
 func (s *SearxngClient) Search(ctx context.Context, params *SearchRequest) (*SearchResponse, error) {
+	if ctx == nil {
+		return nil, errors.New("context is nil")
+	}
 	if params == nil {
 		return nil, errors.New("params is nil")
 	}
@@ -323,6 +335,9 @@ func (s *SearxngClient) Search(ctx context.Context, params *SearchRequest) (*Sea
 }
 
 func (s *SearxngClient) SearchStream(ctx context.Context, params *SearchRequest) (*schema.StreamReader[*SearchResult], error) {
+	if ctx == nil {
+		return nil, errors.New("context is nil")
+	}
 	resp, err := s.Search(ctx, params)
 	if err != nil {
 		return nil, err
