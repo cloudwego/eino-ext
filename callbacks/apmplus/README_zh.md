@@ -7,7 +7,7 @@
 ## 特性
 
 - 实现了 `github.com/cloudwego/eino/internel/callbacks.Handler` 接口
-- 实现了会话功能，能够将 Eino 应用中的通一个会话里的多个请求关联起来
+- 实现了会话功能，能够将 Eino 应用中的同一个会话里的多个请求关联起来
 - 易于与 Eino 应用集成
 
 ## 安装
