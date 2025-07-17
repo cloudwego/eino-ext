@@ -2,6 +2,7 @@ module github.com/cloudwego/eino-ext/libs/acl/opentelemetry
 
 go 1.23.0
 
+
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/smartystreets/goconvey v1.8.1

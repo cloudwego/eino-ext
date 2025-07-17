@@ -8,38 +8,36 @@ import (
 	"github.com/smartystreets/goconvey/convey"
 )
 
-// Test_SetSession 为SetSession函数编写的测试函数
+// Test_SetSession tests the SetSession function
 func Test_SetSession(t *testing.T) {
-	mockey.PatchConvey("测试SetSession函数", t, func() {
-		mockey.PatchConvey("不传入SessionOption参数", func() {
-			// 初始化一个上下文
+	mockey.PatchConvey("Test SetSession function", t, func() {
+		mockey.PatchConvey("No SessionOption parameters", func() {
+			// Initialize a context
 			ctx := context.Background()
-			// 调用待测函数
+			// Call the function under test
 			newCtx := SetSession(ctx)
-			// 从上下文中获取sessionOptions
+			// Get sessionOptions from context
 			options, ok := newCtx.Value(apmplusSessionOptionKey{}).(*sessionOptions)
-			// 断言获取操作成功
+			// Assert retrieval success
 			convey.So(ok, convey.ShouldBeTrue)
-			// 断言sessionOptions的UserID为空字符串
+			// Assert UserID is empty
 			convey.So(options.UserID, convey.ShouldEqual, "")
-			// 断言sessionOptions的SessionID为空字符串
+			// Assert SessionID is empty
 			convey.So(options.SessionID, convey.ShouldEqual, "")
 		})
 
-		mockey.PatchConvey("传入一个SessionOption参数", func() {
-
-			// 初始化一个上下文
+		mockey.PatchConvey("With SessionOption parameters", func() {
+			// Initialize a context
 			ctx := context.Background()
-			// 调用待测函数，传入SessionOption参数
+			// Call the function with SessionOption parameters
 			newCtx := SetSession(ctx, WithUserID("testUser"), WithSessionID("testSession"))
-			// 从上下文中获取sessionOptions
+			// Get sessionOptions from context
 			options, ok := newCtx.Value(apmplusSessionOptionKey{}).(*sessionOptions)
-			// 断言获取操作成功
+			// Assert retrieval success
 			convey.So(ok, convey.ShouldBeTrue)
-			// 断言sessionOptions的UserID为"testUser"
+			// Assert UserID, SessionID matches
 			convey.So(options.UserID, convey.ShouldEqual, "testUser")
 			convey.So(options.SessionID, convey.ShouldEqual, "testSession")
-
 		})
 	})
 }
