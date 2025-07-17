@@ -206,7 +206,7 @@ Outer:
 			break Outer
 
 		default:
-			msg := cm.handleDeltaStreamEvent(cur)
+			msg := cm.handleDeltaStreamEvent(event)
 			if msg == nil {
 				continue
 			}

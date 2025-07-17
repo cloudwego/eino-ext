@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -111,6 +112,7 @@ func main() {
 		log.Fatalf("Stream failed, err=%v", err)
 	}
 
+	log.Println("typewriter output:")
 	var msgs []*schema.Message
 	for {
 		item, e := outStreamReader.Recv()
@@ -121,6 +123,7 @@ func main() {
 			log.Fatal(e)
 		}
 
+		fmt.Print(item.Content)
 		msgs = append(msgs, item)
 	}
 	msg, err = schema.ConcatMessages(msgs)
