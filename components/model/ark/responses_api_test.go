@@ -78,17 +78,7 @@ func TestResponsesAPIChatModelStream(t *testing.T) {
 			Return(&ssestream.Stream[responses.ResponseStreamEventUnion]{}).Build()
 		MockGeneric(schema.Pipe[*model.CallbackOutput]).
 			Return(sr, sw).Build()
-		Mock((*responsesAPIChatModel).receivedStreamResponse).
-			To(func(eventUnion responses.ResponseStreamEventUnion, mConf *model.Config,
-				sw *schema.StreamWriter[*model.CallbackOutput]) bool {
-				sw.Send(&model.CallbackOutput{
-					Message: &schema.Message{
-						Role:    schema.Assistant,
-						Content: "1",
-					},
-				}, nil)
-				return true
-			}).Build()
+		Mock((*responsesAPIChatModel).receivedStreamResponse).Return().Build()
 		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Err).
 			Return(nil).Build()
 
@@ -540,7 +530,7 @@ func TestResponsesAPIChatModelHandleDeltaStreamEvent(t *testing.T) {
 			Delta: "test",
 		}
 		msg := cm.handleDeltaStreamEvent(chunk)
-		assert.Equal(t, chunk.Delta, msg.Content)
+		assert.Equal(t, chunk.Delta, msg.ToolCalls[0].Function.Arguments)
 	})
 
 	PatchConvey("ResponseReasoningSummaryTextDeltaEvent", t, func() {
@@ -548,7 +538,8 @@ func TestResponsesAPIChatModelHandleDeltaStreamEvent(t *testing.T) {
 			Delta: "test",
 		}
 		msg := cm.handleDeltaStreamEvent(chunk)
-		assert.Equal(t, chunk.Delta, msg.Content)
+		assert.Equal(t, chunk.Delta, msg.ReasoningContent)
+		assert.Equal(t, chunk.Delta, msg.Extra[keyOfReasoningContent])
 	})
 }
 

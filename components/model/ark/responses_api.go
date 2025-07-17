@@ -181,7 +181,7 @@ Outer:
 			cm.sendCallbackOutput(sw, config, &schema.Message{
 				Role: schema.Assistant,
 				Extra: map[string]any{
-					keyOfSessionContextID: asEvent.Response.ID,
+					keyOfContextID: asEvent.Response.ID,
 				},
 			})
 			continue
@@ -241,10 +241,10 @@ Outer:
 func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
 	msg *schema.Message) {
 
-	responseID, ok := GetSessionContextID(msg)
+	responseID, ok := GetContextID(msg)
 	extra := map[string]any{}
 	if ok {
-		extra[keyOfSessionContextID] = responseID
+		extra[keyOfContextID] = responseID
 	}
 
 	var token *model.TokenUsage
@@ -653,7 +653,7 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*sch
 	msg := &schema.Message{
 		Role: schema.Assistant,
 		Extra: map[string]any{
-			keyOfSessionContextID: resp.ID,
+			keyOfContextID: resp.ID,
 		},
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.Status),

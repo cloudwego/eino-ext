@@ -26,7 +26,7 @@ const (
 	keyOfReasoningContent = "ark-reasoning-content"
 	keyOfModelName        = "ark-model-name"
 	videoURLFPS           = "ark-model-video-url-fps"
-	keyOfSessionContextID = "ark-session-context-id"
+	keyOfContextID        = "ark-context-id"
 )
 
 type arkRequestID string
@@ -81,15 +81,15 @@ func setModelName(msg *schema.Message, name string) {
 	setMsgExtra(msg, keyOfModelName, arkModelName(name))
 }
 
-// GetSessionContextID returns the conversation context ID of the given message.
+// GetContextID returns the conversation context ID of the given message.
 // Note:
 //   - Only the first chunk returns the response ID.
 //   - It is only available for ResponsesAPI.
-func GetSessionContextID(msg *schema.Message) (string, bool) {
+func GetContextID(msg *schema.Message) (string, bool) {
 	if msg == nil {
 		return "", false
 	}
-	contextID, ok := getMsgExtraValue[string](msg, keyOfSessionContextID)
+	contextID, ok := getMsgExtraValue[string](msg, keyOfContextID)
 	return contextID, ok
 }
 

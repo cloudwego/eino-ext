@@ -66,9 +66,9 @@ func main() {
 		log.Fatalf("CreatePrefix failed, err=%v", err)
 	}
 
-	firstContextID, ok := ark.GetSessionContextID(msg)
+	firstContextID, ok := ark.GetContextID(msg)
 	if !ok {
-		log.Fatalf("GetSessionContextID failed, err=%v", err)
+		log.Fatalf("GetContextID failed, err=%v", err)
 	}
 
 	cacheOpt.ContextID = &firstContextID
@@ -92,9 +92,9 @@ func main() {
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
 
-	secondContextID, ok := ark.GetSessionContextID(msg)
+	secondContextID, ok := ark.GetContextID(msg)
 	if !ok {
-		log.Fatalf("GetSessionContextID failed, err=%v", err)
+		log.Fatalf("GetContextID failed, err=%v", err)
 	}
 
 	cacheOpt.ContextID = &secondContextID

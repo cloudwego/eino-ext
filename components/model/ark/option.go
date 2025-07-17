@@ -68,7 +68,7 @@ type CacheOption struct {
 
 	// ContextID specifies the ID of the previous conversation.
 	// If APIType is ResponsesAPI and this is the first time the conversation uses the cache,
-	// ContextID should be nil and get the id of this round through [GetSessionContextID].
+	// ContextID should be nil and get the id of this round through [GetContextID].
 	ContextID *string
 
 	// SessionCacheOption is the configuration of ResponsesAPI session cache.
