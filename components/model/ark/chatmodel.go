@@ -138,12 +138,11 @@ type ChatModelConfig struct {
 	// It is set to be enabled by default.
 	Thinking *model.Thinking `json:"thinking,omitempty"`
 
-	Cache *Cache `json:"cache"`
+	Cache *CacheConfig `json:"cache"`
 }
 
-type Cache struct {
+type CacheConfig struct {
 	// APIType controls which API the cache uses to make calls.
-	// To learn more about it, see https://www.volcengine.com/docs/82379/1330310.
 	// Note that if the type is ResponsesAPI,
 	// the following configuration will not be available (ARK may support it in the future):
 	// `Region`, `AccessKey`, `SecretKey`, `Stop`, `FrequencyPenalty`, `LogitBias`, `PresencePenalty`,
@@ -152,12 +151,13 @@ type Cache struct {
 	APIType APIType `json:"api_type"`
 
 	// SessionCache is the configuration of ResponsesAPI session cache.
-	SessionCache *SessionCache `json:"session_cache"`
+	SessionCache *SessionCacheConfig `json:"session_cache"`
 }
 
-type SessionCache struct {
+type SessionCacheConfig struct {
 	// EnableCache specifies whether to enable session cache.
 	// If enabled, the model will cache each conversation and reuse it for subsequent requests.
+	// It can be overridden by [WithCache].
 	EnableCache bool `json:"enable_cache"`
 
 	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
@@ -168,7 +168,9 @@ type SessionCache struct {
 type APIType string
 
 const (
-	ContextAPI   APIType = "context_api"
+	// To learn more about ContextAPI, see https://www.volcengine.com/docs/82379/1528789
+	ContextAPI APIType = "context_api"
+	// To learn more about ResponsesAPI, see Thttps://www.volcengine.com/docs/82379/1569618
 	ResponsesAPI APIType = "responses_api"
 )
 
@@ -177,11 +179,11 @@ type ResponseFormat struct {
 	JSONSchema *model.ResponseFormatJSONSchemaJSONSchemaParam `json:"json_schema,omitempty"`
 }
 
-type Caching string
+type caching string
 
 const (
-	CachingEnabled  Caching = "enabled"
-	CachingDisabled Caching = "disabled"
+	cachingEnabled  caching = "enabled"
+	cachingDisabled caching = "disabled"
 )
 
 func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {

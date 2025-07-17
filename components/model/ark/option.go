@@ -62,7 +62,7 @@ func WithPrefixCache(contextID string) model.Option {
 }
 
 type CacheOption struct {
-	// See [Cache.APIType]
+	// See [CacheConfig.APIType]
 	// Required.
 	APIType APIType
 

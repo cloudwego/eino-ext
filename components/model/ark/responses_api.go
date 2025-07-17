@@ -47,7 +47,7 @@ type responsesAPIChatModel struct {
 	customHeader   map[string]string
 	responseFormat *ResponseFormat
 	thinking       *arkModel.Thinking
-	cache          *Cache
+	cache          *CacheConfig
 }
 
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
@@ -423,17 +423,17 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 	reqOpts []option.RequestOption) (responses.ResponseNewParams, []option.RequestOption, error) {
 
 	var (
-		store     = param.NewOpt(false)
-		caching   = CachingDisabled
-		cacheTTL  *int
-		contextID *string
+		store       = param.NewOpt(false)
+		cacheStatus = cachingDisabled
+		cacheTTL    *int
+		contextID   *string
 	)
 
 	if cm.cache != nil {
 		if cm.cache.SessionCache != nil {
 			if cm.cache.SessionCache.EnableCache {
 				store = param.NewOpt(true)
-				caching = CachingEnabled
+				cacheStatus = cachingEnabled
 			}
 			if cm.cache.SessionCache.TTL != nil {
 				cacheTTL = cm.cache.SessionCache.TTL
@@ -449,10 +449,10 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 			if cacheOpt.PersistCurrentContext != nil {
 				if *cacheOpt.PersistCurrentContext {
 					store = param.NewOpt(true)
-					caching = CachingEnabled
+					cacheStatus = cachingEnabled
 				} else {
 					store = param.NewOpt(false)
-					caching = CachingDisabled
+					cacheStatus = cachingDisabled
 				}
 			}
 			if cacheOpt.TTL != nil {
@@ -469,7 +469,7 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 	}
 
 	reqOpts = append(reqOpts, option.WithJSONSet("caching", map[string]any{
-		"type": caching,
+		"type": cacheStatus,
 	}))
 
 	return req, reqOpts, nil

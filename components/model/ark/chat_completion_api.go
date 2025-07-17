@@ -53,7 +53,7 @@ type completionAPIChatModel struct {
 	topLogProbs      int
 	responseFormat   *ResponseFormat
 	thinking         *model.Thinking
-	cache            *Cache
+	cache            *CacheConfig
 }
 
 type tool struct {

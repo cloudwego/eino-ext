@@ -22,6 +22,8 @@ import (
 	"testing"
 
 	. "github.com/bytedance/mockey"
+	openaiOption "github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/packages/param"
 	"github.com/openai/openai-go/packages/ssestream"
 	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/assert"
@@ -113,7 +115,7 @@ func TestResponsesAPIChatModelStream(t *testing.T) {
 	})
 }
 
-func Test_responsesAPIChatModel_injectInput(t *testing.T) {
+func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 	cm := &responsesAPIChatModel{}
 	initialReq := responses.ResponseNewParams{
 		Model: "test-model",
@@ -126,7 +128,7 @@ func Test_responsesAPIChatModel_injectInput(t *testing.T) {
 		assert.Equal(t, initialReq, req)
 	})
 
-	PatchConvey("user message", func() {
+	PatchConvey("user message", t, func() {
 		in := []*schema.Message{
 			{
 				Role:    schema.User,
@@ -212,7 +214,7 @@ func Test_responsesAPIChatModel_injectInput(t *testing.T) {
 	})
 }
 
-func TestToOpenaiMultiModalContent(t *testing.T) {
+func TestResponsesAPIChatModelToOpenaiMultiModalContent(t *testing.T) {
 	cm := &responsesAPIChatModel{}
 
 	PatchConvey("image message", t, func() {
@@ -271,5 +273,181 @@ func TestToOpenaiMultiModalContent(t *testing.T) {
 
 		_, err := cm.toOpenaiMultiModalContent(msg)
 		assert.NotNil(t, err)
+	})
+}
+
+func TestResponsesAPIChatModelToTools(t *testing.T) {
+	cm := &responsesAPIChatModel{}
+
+	PatchConvey("empty tools", t, func() {
+		tools := []*schema.ToolInfo{}
+		openAITools, err := cm.toTools(tools)
+		assert.Nil(t, err)
+		assert.Equal(t, 0, len(openAITools))
+	})
+
+	PatchConvey("single tool", t, func() {
+		tools := []*schema.ToolInfo{
+			{
+				Name: "test tool",
+				Desc: "description of test tool",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"param": {
+						Type:     schema.String,
+						Desc:     "description of param1",
+						Required: true,
+					},
+				}),
+			},
+		}
+		openAITools, err := cm.toTools(tools)
+		assert.Nil(t, err)
+		assert.Equal(t, 1, len(openAITools))
+		assert.Equal(t, tools[0].Name, openAITools[0].OfFunction.Name)
+		assert.Equal(t, param.NewOpt(tools[0].Desc), openAITools[0].OfFunction.Description)
+		assert.NotNil(t, openAITools[0].OfFunction.Parameters["properties"].(map[string]any)["param"])
+	})
+}
+
+func TestResponsesAPIChatModelInjectCache(t *testing.T) {
+	PatchConvey("not configure", t, func() {
+		var (
+			req     = responses.ResponseNewParams{}
+			cm      = &responsesAPIChatModel{}
+			reqOpts []openaiOption.RequestOption
+		)
+
+		arkOpts := &arkOptions{}
+		initialReqOptsLen := len(reqOpts)
+
+		newReq, newReqOpts, err := cm.injectCache(req, arkOpts, reqOpts)
+		assert.Nil(t, err)
+		assert.Equal(t, param.NewOpt(false), newReq.Store)
+		assert.Equal(t, initialReqOptsLen+1, len(newReqOpts))
+	})
+
+	PatchConvey("enable cache and set ttl", t, func() {
+		var (
+			req     = responses.ResponseNewParams{}
+			reqOpts []openaiOption.RequestOption
+		)
+
+		cm := &responsesAPIChatModel{
+			cache: &CacheConfig{
+				SessionCache: &SessionCacheConfig{
+					EnableCache: true,
+					TTL:         ptrOf(3600),
+				},
+			},
+		}
+
+		arkOpts := &arkOptions{}
+		initialReqOptsLen := len(reqOpts)
+
+		newReq, newReqOpts, err := cm.injectCache(req, arkOpts, reqOpts)
+		assert.Nil(t, err)
+		assert.Equal(t, initialReqOptsLen+2, len(newReqOpts))
+		assert.Equal(t, param.NewOpt(true), newReq.Store)
+	})
+
+	PatchConvey("option overridden config", t, func() {
+		var (
+			req     = responses.ResponseNewParams{}
+			reqOpts []openaiOption.RequestOption
+		)
+
+		cm := &responsesAPIChatModel{
+			cache: &CacheConfig{
+				SessionCache: &SessionCacheConfig{
+					EnableCache: false,
+				},
+			},
+		}
+
+		optTTL := 7200
+		contextID := "test-context"
+		persist := true
+		arkOpts := &arkOptions{
+			cache: &CacheOption{
+				ContextID: &contextID,
+				SessionCacheOption: &SessionCacheOption{
+					PersistCurrentContext: &persist,
+					TTL:                   &optTTL,
+				},
+			},
+		}
+
+		initialReqOptsLen := len(reqOpts)
+
+		newReq, newReqOpts, err := cm.injectCache(req, arkOpts, reqOpts)
+		assert.Nil(t, err)
+		assert.Equal(t, initialReqOptsLen+2, len(newReqOpts))
+		assert.Equal(t, param.NewOpt(true), newReq.Store)
+		assert.Equal(t, contextID, newReq.PreviousResponseID.Value)
+	})
+}
+
+func TestResponsesAPIChatModelHandleStreamEvent(t *testing.T) {
+	cm := &responsesAPIChatModel{}
+
+	PatchConvey("ResponseCreatedEvent", t, func() {
+		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
+			Type: "response.created",
+		}, nil, nil)
+		assert.True(t, needContinue)
+	})
+
+	PatchConvey("ResponseOutputItemDoneEvent", t, func() {
+		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock((*responsesAPIChatModel).handleOutputItemDoneStreamEvent).Return(&schema.Message{}).Build()
+		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
+			Type: "response.output_item.done",
+		}, nil, nil)
+		assert.True(t, needContinue)
+	})
+
+	PatchConvey("ResponseCompletedEvent", t, func() {
+		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock((*responsesAPIChatModel).handleOutputItemDoneStreamEvent).Return(&schema.Message{}).Build()
+		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
+			Type: "response.output_item.done",
+		}, nil, nil)
+		assert.True(t, needContinue)
+	})
+
+	PatchConvey("ResponseErrorEvent", t, func() {
+		MockGeneric((*schema.StreamWriter[*model.CallbackOutput]).Send).Return(false).Build()
+		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
+			Type: "error",
+		}, nil, nil)
+		assert.False(t, needContinue)
+	})
+
+	PatchConvey("ResponseIncompleteEvent", t, func() {
+		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock((*responsesAPIChatModel).handleIncompleteStreamEvent).Return(&schema.Message{}).Build()
+		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
+			Type: "response.incomplete",
+		}, nil, nil)
+		assert.False(t, needContinue)
+	})
+
+	PatchConvey("ResponseFailedEvent", t, func() {
+		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock((*responsesAPIChatModel).handleFailedStreamEvent).Return(&schema.Message{}).Build()
+		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
+			Type: "response.failed",
+		}, nil, nil)
+		assert.False(t, needContinue)
+	})
+
+	PatchConvey("Default", t, func() {
+		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock((*responsesAPIChatModel).handleDeltaStreamEvent).Return(&schema.Message{}).Build()
+		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
+			Type: "response.output_text.delta",
+		}, nil, nil)
+		assert.True(t, needContinue)
 	})
 }
