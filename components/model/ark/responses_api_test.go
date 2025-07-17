@@ -27,6 +27,7 @@ import (
 	"github.com/openai/openai-go/packages/ssestream"
 	"github.com/openai/openai-go/responses"
 	"github.com/stretchr/testify/assert"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -449,5 +450,110 @@ func TestResponsesAPIChatModelHandleStreamEvent(t *testing.T) {
 			Type: "response.output_text.delta",
 		}, nil, nil)
 		assert.True(t, needContinue)
+	})
+}
+
+func TestResponsesAPIChatModelHandleDeltaStreamEvent(t *testing.T) {
+	cm := &responsesAPIChatModel{}
+
+	PatchConvey("ResponseTextDeltaEvent", t, func() {
+		chunk := responses.ResponseTextDeltaEvent{
+			Delta: "test",
+		}
+		msg := cm.handleDeltaStreamEvent(chunk)
+		assert.Equal(t, chunk.Delta, msg.Content)
+	})
+
+	PatchConvey("ResponseFunctionCallArgumentsDeltaEvent", t, func() {
+		chunk := responses.ResponseFunctionCallArgumentsDeltaEvent{
+			Delta: "test",
+		}
+		msg := cm.handleDeltaStreamEvent(chunk)
+		assert.Equal(t, chunk.Delta, msg.Content)
+	})
+
+	PatchConvey("ResponseReasoningSummaryTextDeltaEvent", t, func() {
+		chunk := responses.ResponseReasoningSummaryTextDeltaEvent{
+			Delta: "test",
+		}
+		msg := cm.handleDeltaStreamEvent(chunk)
+		assert.Equal(t, chunk.Delta, msg.Content)
+	})
+}
+
+func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
+	cm := &responsesAPIChatModel{
+		temperature: ptrOf(float32(1.0)),
+		maxTokens:   ptrOf(1),
+		model:       "model",
+		topP:        ptrOf(float32(1.0)),
+		thinking: &arkModel.Thinking{
+			Type: arkModel.ThinkingTypeDisabled,
+		},
+		customHeader: map[string]string{
+			"h1": "v1",
+		},
+	}
+
+	PatchConvey("", t, func() {
+		Mock((*responsesAPIChatModel).checkOptions).To(func(mOpts *model.Options, arkOpts *arkOptions) error {
+			assert.Equal(t, int(float32(2.0)), int(*mOpts.Temperature))
+			assert.Equal(t, 2, *mOpts.MaxTokens)
+			assert.Equal(t, int(float32(2.0)), int(*mOpts.TopP))
+			assert.Equal(t, "model2", *mOpts.Model)
+
+			assert.Equal(t, arkModel.ThinkingTypeAuto, arkOpts.thinking.Type)
+			assert.Len(t, arkOpts.customHeaders, 2)
+			assert.Equal(t, "v2", arkOpts.customHeaders["h2"])
+			assert.Equal(t, "v3", arkOpts.customHeaders["h3"])
+
+			return nil
+		}).Build()
+
+		Mock((*responsesAPIChatModel).injectCache).To(func(req responses.ResponseNewParams, arkOpts *arkOptions,
+			reqOpts []openaiOption.RequestOption) (responses.ResponseNewParams, []openaiOption.RequestOption, error) {
+			return req, reqOpts, nil
+		}).Build()
+
+		in := []*schema.Message{
+			{
+				Role:    schema.User,
+				Content: "user",
+			},
+		}
+
+		opts := []model.Option{
+			model.WithTemperature(2.0),
+			model.WithMaxTokens(2),
+			model.WithTopP(2.0),
+			model.WithModel("model2"),
+			model.WithTools([]*schema.ToolInfo{
+				{
+					Name: "test tool",
+					Desc: "description of test tool",
+					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+						"param": {
+							Type:     schema.String,
+							Desc:     "description of param1",
+							Required: true,
+						},
+					}),
+				},
+			}),
+			WithThinking(&arkModel.Thinking{Type: arkModel.ThinkingTypeAuto}),
+			WithCustomHeader(map[string]string{
+				"h2": "v2",
+				"h3": "v3",
+			}),
+		}
+
+		req, reqOpts, err := cm.genRequestAndOptions(in, opts...)
+		assert.Nil(t, err)
+		assert.Equal(t, "model2", req.Model)
+		assert.Len(t, req.Input.OfInputItemList, 1)
+		assert.Equal(t, "user", req.Input.OfInputItemList[0].OfMessage.Content.OfString.Value)
+		assert.Len(t, req.Tools, 1)
+		assert.Equal(t, "test tool", req.Tools[0].OfFunction.Name)
+		assert.Len(t, reqOpts, 3)
 	})
 }

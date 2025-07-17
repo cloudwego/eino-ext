@@ -138,7 +138,7 @@ type ChatModelConfig struct {
 	// It is set to be enabled by default.
 	Thinking *model.Thinking `json:"thinking,omitempty"`
 
-	Cache *CacheConfig `json:"cache"`
+	Cache *CacheConfig `json:"cache,omitempty"`
 }
 
 type CacheConfig struct {
@@ -147,22 +147,24 @@ type CacheConfig struct {
 	// the following configuration will not be available (ARK may support it in the future):
 	// `Region`, `AccessKey`, `SecretKey`, `Stop`, `FrequencyPenalty`, `LogitBias`, `PresencePenalty`,
 	// `LogProbs`, `TopLogProbs`, `ResponseFormat.JSONSchema`.
-	// Required.
-	APIType APIType `json:"api_type"`
+	// It can be overridden by [WithCache].
+	// Optional. Default: ContextAPI.
+	APIType *APIType `json:"api_type,omitempty"`
 
 	// SessionCache is the configuration of ResponsesAPI session cache.
-	SessionCache *SessionCacheConfig `json:"session_cache"`
+	// It can be overridden by [WithCache].
+	// Optional.
+	SessionCache *SessionCacheConfig `json:"session_cache,omitempty"`
 }
 
 type SessionCacheConfig struct {
 	// EnableCache specifies whether to enable session cache.
 	// If enabled, the model will cache each conversation and reuse it for subsequent requests.
-	// It can be overridden by [WithCache].
 	EnableCache bool `json:"enable_cache"`
 
 	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
 	// Optional. Default: 3 * 86400 (3 days).
-	TTL *int `json:"ttl"`
+	TTL *int `json:"ttl,omitempty"`
 }
 
 type APIType string
@@ -372,7 +374,11 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
-	if cm.callByResponsesAPI(opts...) {
+	ok, err := cm.callByResponsesAPI(opts...)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
 		if err = cm.checkConfigIfResponsesAPI(); err != nil {
 			return nil, err
 		}
@@ -387,7 +393,11 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
-	if cm.callByResponsesAPI(opts...) {
+	ok, err := cm.callByResponsesAPI(opts...)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
 		if err = cm.checkConfigIfResponsesAPI(); err != nil {
 			return nil, err
 		}
@@ -397,17 +407,34 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	return cm.chatModel.Stream(ctx, in, opts...)
 }
 
-func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) bool {
+func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
 	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{}, opts...)
 
-	if arkOpts.cache == nil {
-		return false
+	if arkOpts.cache == nil && cm.config.Cache == nil {
+		return false, nil
 	}
-	if arkOpts.cache.APIType == ResponsesAPI {
-		return true
+	if arkOpts.cache != nil {
+		switch arkOpts.cache.APIType {
+		case ResponsesAPI:
+			return true, nil
+		case ContextAPI:
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid api type: %s", arkOpts.cache.APIType)
+		}
+	}
+	if cm.config.Cache != nil && cm.config.Cache.APIType != nil {
+		switch *cm.config.Cache.APIType {
+		case ResponsesAPI:
+			return true, nil
+		case ContextAPI:
+			return false, nil
+		default:
+			return false, fmt.Errorf("invalid api type: %s", *cm.config.Cache.APIType)
+		}
 	}
 
-	return false
+	return false, nil
 }
 
 func (cm *ChatModel) checkConfigIfResponsesAPI() error {

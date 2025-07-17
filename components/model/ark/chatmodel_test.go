@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bytedance/mockey"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino/schema"
@@ -96,4 +97,83 @@ func TestWithTools(t *testing.T) {
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).respChatModel.rawTools[0].Name)
 	assert.Equal(t, "test name", cm.chatModel.rawTools[0].Name)
 	assert.Equal(t, "test name", cm.respChatModel.rawTools[0].Name)
+}
+
+func TestCallByResponsesAPI(t *testing.T) {
+	mockey.PatchConvey("", t, func() {
+		cm := &ChatModel{
+			config: &ChatModelConfig{},
+		}
+		opt := WithCache(&CacheOption{
+			APIType: ResponsesAPI,
+		})
+
+		ok, err := cm.callByResponsesAPI(opt)
+		assert.Nil(t, err)
+		assert.True(t, ok)
+	})
+
+	mockey.PatchConvey("", t, func() {
+		cm := &ChatModel{
+			config: &ChatModelConfig{
+				Cache: &CacheConfig{
+					APIType: ptrOf(ContextAPI),
+				},
+			},
+		}
+		opt := WithCache(&CacheOption{
+			APIType: ResponsesAPI,
+		})
+
+		ok, err := cm.callByResponsesAPI(opt)
+		assert.Nil(t, err)
+		assert.True(t, ok)
+	})
+
+	mockey.PatchConvey("", t, func() {
+		cm := &ChatModel{
+			config: &ChatModelConfig{
+				Cache: &CacheConfig{
+					APIType: ptrOf(ResponsesAPI),
+				},
+			},
+		}
+		opt := WithCache(&CacheOption{
+			APIType: ContextAPI,
+		})
+
+		ok, err := cm.callByResponsesAPI(opt)
+		assert.Nil(t, err)
+		assert.False(t, ok)
+	})
+
+	mockey.PatchConvey("", t, func() {
+		cm := &ChatModel{
+			config: &ChatModelConfig{
+				Cache: &CacheConfig{
+					APIType: (*APIType)(ptrOf("")),
+				},
+			},
+		}
+		opt := WithCache(&CacheOption{
+			APIType: ContextAPI,
+		})
+
+		_, err := cm.callByResponsesAPI(opt)
+		assert.Nil(t, err)
+	})
+
+	mockey.PatchConvey("", t, func() {
+		cm := &ChatModel{
+			config: &ChatModelConfig{
+				Cache: &CacheConfig{
+					APIType: (*APIType)(ptrOf("")),
+				},
+			},
+		}
+		opt := WithCache(&CacheOption{})
+
+		_, err := cm.callByResponsesAPI(opt)
+		assert.NotNil(t, err)
+	})
 }
