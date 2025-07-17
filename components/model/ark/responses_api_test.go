@@ -78,11 +78,7 @@ func TestResponsesAPIChatModelStream(t *testing.T) {
 			Return(&ssestream.Stream[responses.ResponseStreamEventUnion]{}).Build()
 		MockGeneric(schema.Pipe[*model.CallbackOutput]).
 			Return(sr, sw).Build()
-		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
-			Return(Sequence(true).Then(true).Then(false)).Build()
-		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
-			Return(responses.ResponseStreamEventUnion{}).Build()
-		Mock((*responsesAPIChatModel).handleStreamEvent).
+		Mock((*responsesAPIChatModel).receivedStreamResponse).
 			To(func(eventUnion responses.ResponseStreamEventUnion, mConf *model.Config,
 				sw *schema.StreamWriter[*model.CallbackOutput]) bool {
 				sw.Send(&model.CallbackOutput{
@@ -388,68 +384,143 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 	})
 }
 
-func TestResponsesAPIChatModelHandleStreamEvent(t *testing.T) {
+func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 	cm := &responsesAPIChatModel{}
+	streamResp := &ssestream.Stream[responses.ResponseStreamEventUnion]{}
 
 	PatchConvey("ResponseCreatedEvent", t, func() {
-		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
-		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
-			Type: "response.created",
-		}, nil, nil)
-		assert.True(t, needContinue)
-	})
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
+			Return(Sequence(true).Then(false)).Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
+			Return(responses.ResponseStreamEventUnion{}).Build()
+		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
+		Mock(responses.ResponseStreamEventUnion.AsAny).
+			Return(responses.ResponseCreatedEvent{}).Build()
+		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
 
-	PatchConvey("ResponseOutputItemDoneEvent", t, func() {
-		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
-		Mock((*responsesAPIChatModel).handleOutputItemDoneStreamEvent).Return(&schema.Message{}).Build()
-		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
-			Type: "response.output_item.done",
-		}, nil, nil)
-		assert.True(t, needContinue)
+		cm.receivedStreamResponse(streamResp, nil, nil)
+		assert.Equal(t, 1, mocker.Times())
 	})
 
 	PatchConvey("ResponseCompletedEvent", t, func() {
-		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
-		Mock((*responsesAPIChatModel).handleOutputItemDoneStreamEvent).Return(&schema.Message{}).Build()
-		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
-			Type: "response.output_item.done",
-		}, nil, nil)
-		assert.True(t, needContinue)
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
+			Return(true).Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
+			Return(responses.ResponseStreamEventUnion{}).Build()
+		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
+		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock(responses.ResponseStreamEventUnion.AsAny).
+			Return(responses.ResponseCompletedEvent{}).Build()
+		Mock((*responsesAPIChatModel).handleCompletedStreamEvent).Return(&schema.Message{}).Build()
+
+		cm.receivedStreamResponse(streamResp, nil, nil)
+		assert.Equal(t, 1, mocker.Times())
 	})
 
 	PatchConvey("ResponseErrorEvent", t, func() {
-		MockGeneric((*schema.StreamWriter[*model.CallbackOutput]).Send).Return(false).Build()
-		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
-			Type: "error",
-		}, nil, nil)
-		assert.False(t, needContinue)
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
+			Return(true).Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
+			Return(responses.ResponseStreamEventUnion{}).Build()
+		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
+		mocker := MockGeneric((*schema.StreamWriter[*model.CallbackOutput]).Send).Return(false).Build()
+		Mock(responses.ResponseStreamEventUnion.AsAny).
+			Return(responses.ResponseErrorEvent{}).Build()
+
+		Mock((*responsesAPIChatModel).handleCompletedStreamEvent).Return(&schema.Message{}).Build()
+
+		cm.receivedStreamResponse(streamResp, nil, nil)
+		assert.Equal(t, 1, mocker.Times())
 	})
 
 	PatchConvey("ResponseIncompleteEvent", t, func() {
-		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
+			Return(Sequence(true).Then(false)).Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
+			Return(responses.ResponseStreamEventUnion{}).Build()
+		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
+		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock(responses.ResponseStreamEventUnion.AsAny).
+			Return(responses.ResponseIncompleteEvent{}).Build()
 		Mock((*responsesAPIChatModel).handleIncompleteStreamEvent).Return(&schema.Message{}).Build()
-		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
-			Type: "response.incomplete",
-		}, nil, nil)
-		assert.False(t, needContinue)
+
+		cm.receivedStreamResponse(streamResp, nil, nil)
+		assert.Equal(t, 1, mocker.Times())
 	})
 
 	PatchConvey("ResponseFailedEvent", t, func() {
-		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
+			Return(true).Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
+			Return(responses.ResponseStreamEventUnion{}).Build()
+		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
+		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		Mock(responses.ResponseStreamEventUnion.AsAny).
+			Return(responses.ResponseFailedEvent{}).Build()
 		Mock((*responsesAPIChatModel).handleFailedStreamEvent).Return(&schema.Message{}).Build()
-		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
-			Type: "response.failed",
-		}, nil, nil)
-		assert.False(t, needContinue)
+
+		cm.receivedStreamResponse(streamResp, nil, nil)
+		assert.Equal(t, 1, mocker.Times())
 	})
 
 	PatchConvey("Default", t, func() {
-		Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
+			Return(Sequence(true).Then(false)).Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
+			Return(responses.ResponseStreamEventUnion{}).Build()
+		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
+		Mock(responses.ResponseStreamEventUnion.AsAny).
+			Return(responses.ResponseTextDeltaEvent{}).Build()
+		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
 		Mock((*responsesAPIChatModel).handleDeltaStreamEvent).Return(&schema.Message{}).Build()
-		needContinue := cm.handleStreamEvent(responses.ResponseStreamEventUnion{
-			Type: "response.output_text.delta",
-		}, nil, nil)
-		assert.True(t, needContinue)
+
+		cm.receivedStreamResponse(streamResp, nil, nil)
+		assert.Equal(t, 1, mocker.Times())
+	})
+
+	PatchConvey("toolCallMetaMsg", t, func() {
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
+			Return(Sequence(true).Then(true).Then(false)).Build()
+		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
+			Return(responses.ResponseStreamEventUnion{}).Build()
+		Mock((*responsesAPIChatModel).isAddedToolCall).Return(
+			Sequence(
+				&schema.Message{
+					Role: schema.Assistant,
+					ToolCalls: []schema.ToolCall{
+						{
+							ID:   "123",
+							Type: "function",
+							Function: schema.FunctionCall{
+								Name:      "test",
+								Arguments: "test",
+							},
+						},
+					},
+				}, true).
+				Then(nil, false)).Build()
+		Mock(responses.ResponseStreamEventUnion.AsAny).
+			Return(responses.ResponseTextDeltaEvent{}).Build()
+		Mock((*responsesAPIChatModel).handleDeltaStreamEvent).Return(&schema.Message{
+			ToolCalls: []schema.ToolCall{
+				{
+					Function: schema.FunctionCall{
+						Arguments: "arguments",
+					},
+				},
+			},
+		}).Build()
+		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).To(
+			func(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
+				msg *schema.Message) {
+				assert.Equal(t, "123", msg.ToolCalls[0].ID)
+				assert.Equal(t, "test", msg.ToolCalls[0].Function.Name)
+				assert.Equal(t, "arguments", msg.ToolCalls[0].Function.Arguments)
+				assert.Equal(t, "function", msg.ToolCalls[0].Type)
+			}).Build()
+
+		cm.receivedStreamResponse(streamResp, nil, nil)
+		assert.Equal(t, 1, mocker.Times())
 	})
 }
 
@@ -555,5 +626,27 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 		assert.Len(t, req.Tools, 1)
 		assert.Equal(t, "test tool", req.Tools[0].OfFunction.Name)
 		assert.Len(t, reqOpts, 3)
+	})
+}
+
+func TestResponsesAPIChatModelIsAddedToolCall(t *testing.T) {
+	cm := &responsesAPIChatModel{}
+	PatchConvey("", t, func() {
+		Mock(responses.ResponseStreamEventUnion.AsAny).Return(
+			responses.ResponseOutputItemAddedEvent{},
+		).Build()
+		Mock(responses.ResponseOutputItemUnion.AsAny).Return(
+			responses.ResponseFunctionToolCall{
+				CallID: "123",
+				Type:   "function_call",
+				Name:   "name",
+			},
+		).Build()
+
+		msg, ok := cm.isAddedToolCall(responses.ResponseStreamEventUnion{})
+		assert.True(t, ok)
+		assert.Equal(t, "123", msg.ToolCalls[0].ID)
+		assert.Equal(t, "function_call", msg.ToolCalls[0].Type)
+		assert.Equal(t, "name", msg.ToolCalls[0].Function.Name)
 	})
 }

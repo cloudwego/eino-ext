@@ -25,6 +25,7 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
+	"github.com/openai/openai-go/packages/ssestream"
 	"github.com/openai/openai-go/responses"
 	"github.com/openai/openai-go/shared"
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -53,12 +54,6 @@ type responsesAPIChatModel struct {
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outMsg *schema.Message, err error) {
 
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
 	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generate request: %w", err)
@@ -71,6 +66,12 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		Tools:    cm.rawTools,
 		Config:   config,
 	})
+
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	resp, err := cm.client.New(ctx, req, reqOpts...)
 	if err != nil {
@@ -94,12 +95,6 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
-
 	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream request: %w", err)
@@ -112,6 +107,12 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		Tools:    cm.rawTools,
 		Config:   config,
 	})
+
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	streamResp := cm.client.NewStreaming(ctx, req, reqOpts...)
 	if streamResp.Err() != nil {
@@ -126,20 +127,13 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			if pe != nil {
 				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
+
+			cm.receivedStreamResponse(streamResp, config, sw)
+
 			_ = streamResp.Close()
 			sw.Close()
 		}()
 
-		for streamResp.Next() {
-			cur := streamResp.Current()
-			if !cm.handleStreamEvent(cur, config, sw) {
-				break
-			}
-		}
-
-		if streamResp.Err() != nil {
-			_ = sw.Send(nil, fmt.Errorf("failed to read stream: %w", streamResp.Err()))
-		}
 	}()
 
 	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
@@ -158,6 +152,90 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	)
 
 	return outStream, nil
+}
+
+func (cm *responsesAPIChatModel) receivedStreamResponse(streamResp *ssestream.Stream[responses.ResponseStreamEventUnion],
+	config *model.Config, sw *schema.StreamWriter[*model.CallbackOutput]) {
+
+	var toolCallMetaMsg *schema.Message
+
+	defer func() {
+		if toolCallMetaMsg != nil {
+			cm.sendCallbackOutput(sw, config, toolCallMetaMsg)
+		}
+	}()
+
+Outer:
+	for streamResp.Next() {
+		cur := streamResp.Current()
+
+		if msg, ok := cm.isAddedToolCall(cur); ok {
+			toolCallMetaMsg = msg
+			continue
+		}
+
+		event := cur.AsAny()
+
+		switch asEvent := event.(type) {
+		case responses.ResponseCreatedEvent:
+			cm.sendCallbackOutput(sw, config, &schema.Message{
+				Role: schema.Assistant,
+				Extra: map[string]any{
+					keyOfSessionContextID: asEvent.Response.ID,
+				},
+			})
+			continue
+
+		case responses.ResponseCompletedEvent:
+			msg := cm.handleCompletedStreamEvent(asEvent)
+			cm.sendCallbackOutput(sw, config, msg)
+			break Outer
+
+		case responses.ResponseErrorEvent:
+			sw.Send(nil, fmt.Errorf("received error: %s", asEvent.Message))
+			break Outer
+
+		case responses.ResponseIncompleteEvent:
+			msg := cm.handleIncompleteStreamEvent(asEvent)
+			cm.sendCallbackOutput(sw, config, msg)
+			break Outer
+
+		case responses.ResponseFailedEvent:
+			msg := cm.handleFailedStreamEvent(asEvent)
+			cm.sendCallbackOutput(sw, config, msg)
+			break Outer
+
+		default:
+			msg := cm.handleDeltaStreamEvent(cur)
+			if msg == nil {
+				continue
+			}
+
+			if toolCallMetaMsg != nil && len(msg.ToolCalls) > 0 {
+				toolCallMeta := toolCallMetaMsg.ToolCalls[0]
+				toolCall := msg.ToolCalls[0]
+
+				toolCall.ID = toolCallMeta.ID
+				toolCall.Type = toolCallMeta.Type
+				toolCall.Function.Name = toolCallMeta.Function.Name
+				for k, v := range toolCallMeta.Extra {
+					_, ok := toolCall.Extra[k]
+					if !ok {
+						toolCall.Extra[k] = v
+					}
+				}
+
+				msg.ToolCalls[0] = toolCall
+				toolCallMetaMsg = nil
+			}
+
+			cm.sendCallbackOutput(sw, config, msg)
+		}
+	}
+
+	if streamResp.Err() != nil {
+		_ = sw.Send(nil, fmt.Errorf("failed to read stream: %w", streamResp.Err()))
+	}
 }
 
 func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
@@ -186,53 +264,31 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 	}, nil)
 }
 
-func (cm *responsesAPIChatModel) handleStreamEvent(eventUnion responses.ResponseStreamEventUnion, mConf *model.Config,
-	sw *schema.StreamWriter[*model.CallbackOutput]) bool {
-
-	event := eventUnion.AsAny()
-
-	switch asEvent := event.(type) {
-	case responses.ResponseCreatedEvent:
-		cm.sendCallbackOutput(sw, mConf, &schema.Message{
-			Role: schema.Assistant,
-			Extra: map[string]any{
-				keyOfSessionContextID: asEvent.Response.ID,
-			},
-		})
-
-	case responses.ResponseOutputItemDoneEvent:
-		msg := cm.handleOutputItemDoneStreamEvent(asEvent)
-		if msg != nil {
-			cm.sendCallbackOutput(sw, mConf, msg)
-		}
-
-	case responses.ResponseCompletedEvent:
-		msg := cm.handleCompletedStreamEvent(asEvent)
-		cm.sendCallbackOutput(sw, mConf, msg)
-		return false
-
-	case responses.ResponseErrorEvent:
-		sw.Send(nil, fmt.Errorf("received error: %s", asEvent.Message))
-		return false
-
-	case responses.ResponseIncompleteEvent:
-		msg := cm.handleIncompleteStreamEvent(asEvent)
-		cm.sendCallbackOutput(sw, mConf, msg)
-		return false
-
-	case responses.ResponseFailedEvent:
-		msg := cm.handleFailedStreamEvent(asEvent)
-		cm.sendCallbackOutput(sw, mConf, msg)
-		return false
-
-	default:
-		msg := cm.handleDeltaStreamEvent(asEvent)
-		if msg != nil {
-			cm.sendCallbackOutput(sw, mConf, msg)
-		}
+func (cm *responsesAPIChatModel) isAddedToolCall(event responses.ResponseStreamEventUnion) (*schema.Message, bool) {
+	asEvent, ok := event.AsAny().(responses.ResponseOutputItemAddedEvent)
+	if !ok {
+		return nil, false
 	}
 
-	return true
+	asItem, ok := asEvent.Item.AsAny().(responses.ResponseFunctionToolCall)
+	if !ok {
+		return nil, false
+	}
+
+	msg := &schema.Message{
+		Role: schema.Assistant,
+		ToolCalls: []schema.ToolCall{
+			{
+				ID:   asItem.CallID,
+				Type: string(asItem.Type),
+				Function: schema.FunctionCall{
+					Name: asItem.Name,
+				},
+			},
+		},
+	}
+
+	return msg, true
 }
 
 func (cm *responsesAPIChatModel) handleCompletedStreamEvent(asChunk responses.ResponseCompletedEvent) *schema.Message {
@@ -275,38 +331,25 @@ func (cm *responsesAPIChatModel) handleDeltaStreamEvent(asChunk any) *schema.Mes
 
 	case responses.ResponseFunctionCallArgumentsDeltaEvent:
 		return &schema.Message{
-			Role:    schema.Assistant,
-			Content: asEvent.Delta,
-		}
-
-	case responses.ResponseReasoningSummaryTextDeltaEvent:
-		return &schema.Message{
-			Role:    schema.Assistant,
-			Content: asEvent.Delta,
-		}
-	}
-
-	return nil
-}
-
-func (cm *responsesAPIChatModel) handleOutputItemDoneStreamEvent(asEvent responses.ResponseOutputItemDoneEvent) *schema.Message {
-	item := asEvent.Item
-
-	switch asItem := item.AsAny().(type) {
-	case responses.ResponseFunctionToolCall:
-		return &schema.Message{
 			Role: schema.Assistant,
 			ToolCalls: []schema.ToolCall{
 				{
-					ID:   asItem.CallID,
-					Type: string(asItem.Type),
+					Index: ptrOf(int(asEvent.OutputIndex)),
 					Function: schema.FunctionCall{
-						Name:      asItem.Name,
-						Arguments: asItem.Arguments,
+						Arguments: asEvent.Delta,
 					},
 				},
 			},
 		}
+
+	case responses.ResponseReasoningSummaryTextDeltaEvent:
+		msg := &schema.Message{
+			Role:             schema.Assistant,
+			ReasoningContent: asEvent.Delta,
+		}
+		setReasoningContent(msg, asEvent.Delta)
+
+		return msg
 	}
 
 	return nil
@@ -645,6 +688,7 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*sch
 				continue
 			}
 			msg.ReasoningContent = asItem.Summary[0].Text
+			setReasoningContent(msg, msg.ReasoningContent)
 
 		case responses.ResponseFunctionToolCall:
 			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{

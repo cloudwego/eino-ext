@@ -194,7 +194,11 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	}
 
 	chatModel := buildChatCompletionAPIChatModel(config)
-	respChatModel := buildResponsesAPIChatModel(config)
+	
+	respChatModel, err := buildResponsesAPIChatModel(config)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ChatModel{
 		config:        config,
@@ -259,7 +263,13 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 	return cm
 }
 
-func buildResponsesAPIChatModel(config *ChatModelConfig) *responsesAPIChatModel {
+func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel, error) {
+	if config.Cache != nil && ptrFromOrZero(config.Cache.APIType) == ResponsesAPI {
+		if err := checkResponsesAPIConfig(config); err != nil {
+			return nil, err
+		}
+	}
+
 	var opts []option.RequestOption
 
 	if config.Timeout != nil {
@@ -298,7 +308,43 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) *responsesAPIChatModel 
 		cache:          config.Cache,
 	}
 
-	return cm
+	return cm, nil
+}
+
+func checkResponsesAPIConfig(config *ChatModelConfig) error {
+	if config.Region != "" {
+		return fmt.Errorf("'Region' is not supported by ResponsesAPI")
+	}
+	if config.APIKey == "" {
+		if config.AccessKey != "" {
+			return fmt.Errorf("'AccessKey' is not supported by ResponsesAPI")
+		}
+		if config.SecretKey != "" {
+			return fmt.Errorf("'SecretKey' is not supported by ResponsesAPI")
+		}
+	}
+	if len(config.Stop) > 0 {
+		return fmt.Errorf("'Stop' is not supported by ResponsesAPI")
+	}
+	if config.FrequencyPenalty != nil {
+		return fmt.Errorf("'FrequencyPenalty' is not supported by ResponsesAPI")
+	}
+	if len(config.LogitBias) > 0 {
+		return fmt.Errorf("'LogitBias' is not supported by ResponsesAPI")
+	}
+	if config.PresencePenalty != nil {
+		return fmt.Errorf("'PresencePenalty' is not supported by ResponsesAPI")
+	}
+	if config.LogProbs {
+		return fmt.Errorf("'LogProbs' is not supported by ResponsesAPI")
+	}
+	if config.TopLogProbs > 0 {
+		return fmt.Errorf("'TopLogProbs' is not supported by ResponsesAPI")
+	}
+	if config.ResponseFormat != nil && config.ResponseFormat.JSONSchema != nil {
+		return fmt.Errorf("'ResponseFormat.JSONSchema' is not supported by ResponsesAPI")
+	}
+	return nil
 }
 
 type ChatModel struct {
@@ -331,6 +377,10 @@ type CacheInfo struct {
 //
 // Note that it is unavailable for doubao models of version 1.6 and above.
 func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
+	if cm.config.Cache != nil && ptrFromOrZero(cm.config.Cache.APIType) == ResponsesAPI {
+		return nil, fmt.Errorf("CreatePrefixCache is not supported by ResponsesAPI")
+	}
+
 	req := model.CreateContextRequest{
 		Model:    cm.chatModel.model,
 		Mode:     model.ContextModeCommonPrefix,
@@ -379,9 +429,6 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		return nil, err
 	}
 	if ok {
-		if err = cm.checkConfigIfResponsesAPI(); err != nil {
-			return nil, err
-		}
 		return cm.respChatModel.Generate(ctx, in, opts...)
 	}
 
@@ -398,9 +445,6 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		return nil, err
 	}
 	if ok {
-		if err = cm.checkConfigIfResponsesAPI(); err != nil {
-			return nil, err
-		}
 		return cm.respChatModel.Stream(ctx, in, opts...)
 	}
 
@@ -435,40 +479,6 @@ func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
 	}
 
 	return false, nil
-}
-
-func (cm *ChatModel) checkConfigIfResponsesAPI() error {
-	if cm.config.Region != "" {
-		return fmt.Errorf("'Region' is not supported by responses API")
-	}
-	if cm.config.AccessKey != "" {
-		return fmt.Errorf("'AccessKey' is not supported by responses API")
-	}
-	if cm.config.SecretKey != "" {
-		return fmt.Errorf("'SecretKey' is not supported by responses API")
-	}
-	if len(cm.config.Stop) > 0 {
-		return fmt.Errorf("'Stop' is not supported by responses API")
-	}
-	if cm.config.FrequencyPenalty != nil {
-		return fmt.Errorf("'FrequencyPenalty' is not supported by responses API")
-	}
-	if len(cm.config.LogitBias) > 0 {
-		return fmt.Errorf("'LogitBias' is not supported by responses API")
-	}
-	if cm.config.PresencePenalty != nil {
-		return fmt.Errorf("'PresencePenalty' is not supported by responses API")
-	}
-	if cm.config.LogProbs {
-		return fmt.Errorf("'LogProbs' is not supported by responses API")
-	}
-	if cm.config.TopLogProbs > 0 {
-		return fmt.Errorf("'TopLogProbs' is not supported by responses API")
-	}
-	if cm.config.ResponseFormat != nil && cm.config.ResponseFormat.JSONSchema != nil {
-		return fmt.Errorf("'ResponseFormat.JSONSchema' is not supported by responses API")
-	}
-	return nil
 }
 
 func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChatModel, error) {

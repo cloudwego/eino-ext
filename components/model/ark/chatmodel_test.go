@@ -177,3 +177,36 @@ func TestCallByResponsesAPI(t *testing.T) {
 		assert.NotNil(t, err)
 	})
 }
+
+func TestBuildResponsesAPIChatModel(t *testing.T) {
+	mockey.PatchConvey("invalid config", t, func() {
+		_, err := buildResponsesAPIChatModel(&ChatModelConfig{
+			Stop: []string{"test"},
+			Cache: &CacheConfig{
+				APIType: ptrOf(ResponsesAPI),
+			},
+		})
+		assert.NotNil(t, err)
+	})
+
+	mockey.PatchConvey("valid config", t, func() {
+		_, err := buildResponsesAPIChatModel(&ChatModelConfig{
+			Cache: &CacheConfig{
+				APIType: ptrOf(ResponsesAPI),
+			},
+		})
+		assert.Nil(t, err)
+	})
+}
+
+func TestBuildChatCompletionAPIChatModel(t *testing.T) {
+	mockey.PatchConvey("invalid config", t, func() {
+		cli := buildChatCompletionAPIChatModel(&ChatModelConfig{
+			Stop: []string{"test"},
+			Cache: &CacheConfig{
+				APIType: ptrOf(ContextAPI),
+			},
+		})
+		assert.NotNil(t, cli)
+	})
+}

@@ -26,7 +26,7 @@ const (
 	keyOfReasoningContent = "ark-reasoning-content"
 	keyOfModelName        = "ark-model-name"
 	videoURLFPS           = "ark-model-video-url-fps"
-	keyOfSessionContextID = "session-context-id"
+	keyOfSessionContextID = "ark-session-context-id"
 )
 
 type arkRequestID string
@@ -89,7 +89,7 @@ func GetSessionContextID(msg *schema.Message) (string, bool) {
 	if msg == nil {
 		return "", false
 	}
-	contextID, ok := msg.Extra[keyOfSessionContextID].(string)
+	contextID, ok := getMsgExtraValue[string](msg, keyOfSessionContextID)
 	return contextID, ok
 }
 
