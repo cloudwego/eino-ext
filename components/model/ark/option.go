@@ -45,6 +45,7 @@ func WithThinking(thinking *arkModel.Thinking) model.Option {
 	})
 }
 
+// Deprecated: use WithCache instead.
 // WithPrefixCache creates an option to specify a context ID for the request.
 // The context ID is typically obtained from a previous call to CreatePrefixCache.
 //

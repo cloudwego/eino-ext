@@ -26,18 +26,23 @@ import (
 )
 
 func TestOptions(t *testing.T) {
+	cacheOpt := CacheOption{
+		APIType: ResponsesAPI,
+		SessionCacheOption: &SessionCacheOption{
+			PersistCurrentContext: ptrOf(true),
+			TTL:                   nil,
+		},
+	}
+
 	opt := model.GetImplSpecificOptions(&arkOptions{
 		customHeaders: nil,
 	}, WithCustomHeader(map[string]string{"k1": "v1"}),
-		WithCaching(CachingEnabled, 86400),
-		WithSessionCache("123"),
+		WithCache(&cacheOpt),
 		WithThinking(&arkModel.Thinking{
 			Type: arkModel.ThinkingTypeEnabled,
 		}))
 
 	assert.Equal(t, map[string]string{"k1": "v1"}, opt.customHeaders)
-	assert.Equal(t, CachingEnabled, *opt.caching)
-	assert.Equal(t, 86400, *opt.cachingTTL)
-	assert.Equal(t, "123", *opt.sessionContextID)
+	assert.Equal(t, cacheOpt, *opt.cache)
 	assert.Equal(t, arkModel.ThinkingTypeEnabled, opt.thinking.Type)
 }
