@@ -468,6 +468,7 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 	nrcm.tools = respTools
 
 	return &ChatModel{
+		config:        cm.config,
 		chatModel:     &ncm,
 		respChatModel: &nrcm,
 	}, nil
