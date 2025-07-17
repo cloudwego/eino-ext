@@ -102,7 +102,7 @@ func TestWithTools(t *testing.T) {
 func TestCallByResponsesAPI(t *testing.T) {
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			config: &ChatModelConfig{},
+			respChatModel: &responsesAPIChatModel{},
 		}
 		opt := WithCache(&CacheOption{
 			APIType: ResponsesAPI,
@@ -115,8 +115,8 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			config: &ChatModelConfig{
-				Cache: &CacheConfig{
+			respChatModel: &responsesAPIChatModel{
+				cache: &CacheConfig{
 					APIType: ptrOf(ContextAPI),
 				},
 			},
@@ -132,8 +132,8 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			config: &ChatModelConfig{
-				Cache: &CacheConfig{
+			respChatModel: &responsesAPIChatModel{
+				cache: &CacheConfig{
 					APIType: ptrOf(ResponsesAPI),
 				},
 			},
@@ -149,8 +149,8 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			config: &ChatModelConfig{
-				Cache: &CacheConfig{
+			respChatModel: &responsesAPIChatModel{
+				cache: &CacheConfig{
 					APIType: (*APIType)(ptrOf("")),
 				},
 			},
@@ -165,8 +165,8 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			config: &ChatModelConfig{
-				Cache: &CacheConfig{
+			respChatModel: &responsesAPIChatModel{
+				cache: &CacheConfig{
 					APIType: (*APIType)(ptrOf("")),
 				},
 			},

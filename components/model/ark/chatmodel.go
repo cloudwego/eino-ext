@@ -194,14 +194,13 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	}
 
 	chatModel := buildChatCompletionAPIChatModel(config)
-	
+
 	respChatModel, err := buildResponsesAPIChatModel(config)
 	if err != nil {
 		return nil, err
 	}
 
 	return &ChatModel{
-		config:        config,
 		chatModel:     chatModel,
 		respChatModel: respChatModel,
 	}, nil
@@ -348,7 +347,6 @@ func checkResponsesAPIConfig(config *ChatModelConfig) error {
 }
 
 type ChatModel struct {
-	config        *ChatModelConfig
 	respChatModel *responsesAPIChatModel
 	chatModel     *completionAPIChatModel
 }
@@ -377,7 +375,7 @@ type CacheInfo struct {
 //
 // Note that it is unavailable for doubao models of version 1.6 and above.
 func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
-	if cm.config.Cache != nil && ptrFromOrZero(cm.config.Cache.APIType) == ResponsesAPI {
+	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
 		return nil, fmt.Errorf("CreatePrefixCache is not supported by ResponsesAPI")
 	}
 
@@ -453,8 +451,9 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 
 func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
 	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{}, opts...)
+	configCache := cm.respChatModel.cache
 
-	if arkOpts.cache == nil && cm.config.Cache == nil {
+	if arkOpts.cache == nil && configCache == nil {
 		return false, nil
 	}
 	if arkOpts.cache != nil {
@@ -467,14 +466,14 @@ func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
 			return false, fmt.Errorf("invalid api type: %s", arkOpts.cache.APIType)
 		}
 	}
-	if cm.config.Cache != nil && cm.config.Cache.APIType != nil {
-		switch *cm.config.Cache.APIType {
+	if configCache != nil && configCache.APIType != nil {
+		switch *configCache.APIType {
 		case ResponsesAPI:
 			return true, nil
 		case ContextAPI:
 			return false, nil
 		default:
-			return false, fmt.Errorf("invalid api type: %s", *cm.config.Cache.APIType)
+			return false, fmt.Errorf("invalid api type: %s", *configCache.APIType)
 		}
 	}
 
@@ -505,7 +504,6 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 	nrcm.tools = respTools
 
 	return &ChatModel{
-		config:        cm.config,
 		chatModel:     &ncm,
 		respChatModel: &nrcm,
 	}, nil
