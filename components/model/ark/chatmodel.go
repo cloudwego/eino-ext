@@ -456,7 +456,7 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 
 	respTools, err := cm.respChatModel.toTools(tools)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert to ark responesAPI tools: %w", err)
+		return nil, fmt.Errorf("failed to convert to ark responsesAPI tools: %w", err)
 	}
 
 	ncm := *cm.chatModel
