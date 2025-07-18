@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"time"
 
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -36,8 +35,8 @@ func main() {
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
-		APIKey: os.Getenv("ARK_API_KEY"),
-		Model:  os.Getenv("ARK_MODEL_ID"),
+		APIKey: "973ee766-c4f5-4b5a-95b9-ad136774207c",
+		Model:  "ep-20250712212252-5nr2v",
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
@@ -49,7 +48,7 @@ func main() {
 	thinking := &arkModel.Thinking{
 		Type: arkModel.ThinkingTypeDisabled,
 	}
-	
+
 	cacheOpt := &ark.CacheOption{
 		APIType: ark.ResponsesAPI,
 		SessionCache: &ark.SessionCacheConfig{
@@ -86,10 +85,10 @@ func main() {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	log.Printf("\ngenerate output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	fmt.Printf("\ngenerate output: \n")
+	fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	fmt.Printf("  body: %s\n", string(respBody))
 
 	secondContextID, ok := ark.GetContextID(msg)
 	if !ok {
@@ -110,7 +109,7 @@ func main() {
 		log.Fatalf("Stream failed, err=%v", err)
 	}
 
-	log.Println("typewriter output:")
+	fmt.Println("\ntypewriter output:")
 	var msgs []*schema.Message
 	for {
 		item, e := outStreamReader.Recv()
@@ -124,12 +123,13 @@ func main() {
 		fmt.Print(item.Content)
 		msgs = append(msgs, item)
 	}
+
 	msg, err = schema.ConcatMessages(msgs)
 	if err != nil {
 		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
-	log.Printf("\nstream output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	fmt.Print("\n\nstream output: \n")
+	fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
 	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	fmt.Printf("  body: %s\n", string(respBody))
 }

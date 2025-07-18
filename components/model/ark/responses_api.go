@@ -128,12 +128,12 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
 
-			cm.receivedStreamResponse(streamResp, config, sw)
-
 			_ = streamResp.Close()
 			sw.Close()
 		}()
 
+		cm.receivedStreamResponse(streamResp, config, sw)
+		
 	}()
 
 	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,

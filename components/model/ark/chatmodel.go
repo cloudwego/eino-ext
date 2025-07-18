@@ -451,6 +451,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 
 func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
 	var cacheOpt *CacheOption
+
 	if cm.respChatModel.cache != nil {
 		apiType := ContextAPI
 		if cm.respChatModel.cache.APIType != nil {
