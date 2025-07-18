@@ -24,11 +24,12 @@ import (
 	"net/http"
 	"runtime/debug"
 
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/meguminnnnnnnnn/go-openai"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/meguminnnnnnnnn/go-openai"
 )
 
 type ChatCompletionResponseFormatType string
@@ -73,7 +74,6 @@ type Config struct {
 	// ByAzure indicates whether to use Azure OpenAI Service
 	// Required for Azure
 	ByAzure bool `json:"by_azure"`
-
 
 	// AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
 	// This is useful when the model name is different from the deployment name.
