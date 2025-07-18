@@ -322,8 +322,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		cm := &responsesAPIChatModel{
 			cache: &CacheConfig{
 				SessionCache: &SessionCacheConfig{
-					EnableCache: ptrOf(true),
-					TTL:         ptrOf(3600),
+					EnableCache: true,
 				},
 			},
 		}
@@ -346,7 +345,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		cm := &responsesAPIChatModel{
 			cache: &CacheConfig{
 				SessionCache: &SessionCacheConfig{
-					EnableCache: ptrOf(false),
+					EnableCache: false,
 				},
 			},
 		}
@@ -356,8 +355,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 			cache: &CacheOption{
 				ContextID: &contextID,
 				SessionCache: &SessionCacheConfig{
-					EnableCache: ptrOf(true),
-					TTL:         ptrOf(3600),
+					EnableCache: true,
 				},
 			},
 		}

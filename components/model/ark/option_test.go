@@ -29,8 +29,8 @@ func TestOptions(t *testing.T) {
 	cacheOpt := CacheOption{
 		APIType: ResponsesAPI,
 		SessionCache: &SessionCacheConfig{
-			EnableCache: ptrOf(true),
-			TTL:         nil,
+			EnableCache: true,
+			TTL:         86400,
 		},
 	}
 

@@ -49,14 +49,12 @@ func main() {
 	thinking := &arkModel.Thinking{
 		Type: arkModel.ThinkingTypeDisabled,
 	}
-
-	caching := true
-	ttl := 86400
+	
 	cacheOpt := &ark.CacheOption{
 		APIType: ark.ResponsesAPI,
 		SessionCache: &ark.SessionCacheConfig{
-			EnableCache: &caching,
-			TTL:         &ttl,
+			EnableCache: true,
+			TTL:         86400,
 		},
 	}
 

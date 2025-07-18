@@ -473,13 +473,11 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 
 	if cm.cache != nil {
 		if cm.cache.SessionCache != nil {
-			if cm.cache.SessionCache.EnableCache != nil && *cm.cache.SessionCache.EnableCache {
+			if cm.cache.SessionCache.EnableCache {
 				store = param.NewOpt(true)
 				cacheStatus = cachingEnabled
 			}
-			if cm.cache.SessionCache.TTL != nil {
-				cacheTTL = cm.cache.SessionCache.TTL
-			}
+			cacheTTL = &cm.cache.SessionCache.TTL
 		}
 	}
 
@@ -488,17 +486,14 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 
 		cacheOpt := arkOpts.cache.SessionCache
 		if cacheOpt != nil {
-			if cacheOpt.EnableCache != nil {
-				if *cacheOpt.EnableCache {
-					store = param.NewOpt(true)
-					cacheStatus = cachingEnabled
-				} else {
-					store = param.NewOpt(false)
-					cacheStatus = cachingDisabled
-				}
-			}
-			if cacheOpt.TTL != nil {
-				cacheTTL = cacheOpt.TTL
+			cacheTTL = &cacheOpt.TTL
+
+			if cacheOpt.EnableCache {
+				store = param.NewOpt(true)
+				cacheStatus = cachingEnabled
+			} else {
+				store = param.NewOpt(false)
+				cacheStatus = cachingDisabled
 			}
 		}
 	}
