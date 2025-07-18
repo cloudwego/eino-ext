@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,15 +16,13 @@
 
 package ark
 
-import "github.com/getkin/kin-openapi/openapi3"
+import (
+	"testing"
 
-type tool struct {
-	Function *functionDefinition `json:"function,omitempty"`
-}
+	"github.com/stretchr/testify/assert"
+)
 
-type functionDefinition struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description,omitempty"`
-	Parameters  *openapi3.Schema `json:"parameters"`
-	Examples    []string         `json:"examples"`
+func TestPanicErr(t *testing.T) {
+	err := newPanicErr("info", []byte("stack"))
+	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
 }
