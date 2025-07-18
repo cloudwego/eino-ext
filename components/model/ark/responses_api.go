@@ -178,12 +178,11 @@ Outer:
 
 		switch asEvent := event.(type) {
 		case responses.ResponseCreatedEvent:
-			cm.sendCallbackOutput(sw, config, &schema.Message{
+			msg := &schema.Message{
 				Role: schema.Assistant,
-				Extra: map[string]any{
-					keyOfContextID: asEvent.Response.ID,
-				},
-			})
+			}
+			setContextID(msg, asEvent.Response.ID)
+			cm.sendCallbackOutput(sw, config, msg)
 			continue
 
 		case responses.ResponseCompletedEvent:
@@ -241,8 +240,8 @@ Outer:
 func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
 	msg *schema.Message) {
 
-	responseID, ok := GetContextID(msg)
 	extra := map[string]any{}
+	responseID, ok := GetContextID(msg)
 	if ok {
 		extra[keyOfContextID] = responseID
 	}
@@ -474,7 +473,7 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 
 	if cm.cache != nil {
 		if cm.cache.SessionCache != nil {
-			if cm.cache.SessionCache.EnableCache {
+			if cm.cache.SessionCache.EnableCache != nil && *cm.cache.SessionCache.EnableCache {
 				store = param.NewOpt(true)
 				cacheStatus = cachingEnabled
 			}
@@ -487,10 +486,10 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 	if arkOpts.cache != nil {
 		contextID = arkOpts.cache.ContextID
 
-		cacheOpt := arkOpts.cache.SessionCacheOption
+		cacheOpt := arkOpts.cache.SessionCache
 		if cacheOpt != nil {
-			if cacheOpt.PersistCurrentContext != nil {
-				if *cacheOpt.PersistCurrentContext {
+			if cacheOpt.EnableCache != nil {
+				if *cacheOpt.EnableCache {
 					store = param.NewOpt(true)
 					cacheStatus = cachingEnabled
 				} else {
@@ -652,14 +651,13 @@ func (cm *responsesAPIChatModel) toCallbackConfig(req responses.ResponseNewParam
 func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*schema.Message, error) {
 	msg := &schema.Message{
 		Role: schema.Assistant,
-		Extra: map[string]any{
-			keyOfContextID: resp.ID,
-		},
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.Status),
 			Usage:        cm.toEinoTokenUsage(resp.Usage),
 		},
 	}
+
+	setContextID(msg, resp.ID)
 
 	if resp.Status == responses.ResponseStatusFailed {
 		msg.ResponseMeta.FinishReason = resp.Error.Message

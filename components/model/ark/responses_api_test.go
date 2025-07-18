@@ -322,7 +322,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		cm := &responsesAPIChatModel{
 			cache: &CacheConfig{
 				SessionCache: &SessionCacheConfig{
-					EnableCache: true,
+					EnableCache: ptrOf(true),
 					TTL:         ptrOf(3600),
 				},
 			},
@@ -346,20 +346,18 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		cm := &responsesAPIChatModel{
 			cache: &CacheConfig{
 				SessionCache: &SessionCacheConfig{
-					EnableCache: false,
+					EnableCache: ptrOf(false),
 				},
 			},
 		}
 
-		optTTL := 7200
 		contextID := "test-context"
-		persist := true
 		arkOpts := &arkOptions{
 			cache: &CacheOption{
 				ContextID: &contextID,
-				SessionCacheOption: &SessionCacheOption{
-					PersistCurrentContext: &persist,
-					TTL:                   &optTTL,
+				SessionCache: &SessionCacheConfig{
+					EnableCache: ptrOf(true),
+					TTL:         ptrOf(3600),
 				},
 			},
 		}

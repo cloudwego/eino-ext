@@ -83,7 +83,7 @@ func setModelName(msg *schema.Message, name string) {
 
 // GetContextID returns the conversation context ID of the given message.
 // Note:
-//   - Only the first chunk returns the response ID.
+//   - Only the first chunk returns the context ID.
 //   - It is only available for ResponsesAPI.
 func GetContextID(msg *schema.Message) (string, bool) {
 	if msg == nil {
@@ -91,6 +91,10 @@ func GetContextID(msg *schema.Message) (string, bool) {
 	}
 	contextID, ok := getMsgExtraValue[string](msg, keyOfContextID)
 	return contextID, ok
+}
+
+func setContextID(msg *schema.Message, contextID string) {
+	setMsgExtra(msg, keyOfContextID, contextID)
 }
 
 func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {

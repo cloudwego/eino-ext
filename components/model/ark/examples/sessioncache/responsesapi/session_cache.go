@@ -50,13 +50,13 @@ func main() {
 		Type: arkModel.ThinkingTypeDisabled,
 	}
 
-	persist := true
+	caching := true
 	ttl := 86400
 	cacheOpt := &ark.CacheOption{
 		APIType: ark.ResponsesAPI,
-		SessionCacheOption: &ark.SessionCacheOption{
-			PersistCurrentContext: &persist,
-			TTL:                   &ttl,
+		SessionCache: &ark.SessionCacheConfig{
+			EnableCache: &caching,
+			TTL:         &ttl,
 		},
 	}
 

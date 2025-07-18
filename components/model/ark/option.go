@@ -71,17 +71,8 @@ type CacheOption struct {
 	// ContextID should be nil and get the id of this round through [GetContextID].
 	ContextID *string
 
-	// SessionCacheOption is the configuration of ResponsesAPI session cache.
-	SessionCacheOption *SessionCacheOption
-}
-
-type SessionCacheOption struct {
-	// PersistCurrentContext specifies whether to persist the current conversation.
-	PersistCurrentContext *bool
-
-	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
-	// Optional. Default: 3 * 86400 (3 days).
-	TTL *int
+	// SessionCache is the configuration of ResponsesAPI session cache.
+	SessionCache *SessionCacheConfig
 }
 
 // WithCache is an option to configure model caching.

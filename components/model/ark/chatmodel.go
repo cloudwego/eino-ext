@@ -160,7 +160,8 @@ type CacheConfig struct {
 type SessionCacheConfig struct {
 	// EnableCache specifies whether to enable session cache.
 	// If enabled, the model will cache each conversation and reuse it for subsequent requests.
-	EnableCache bool `json:"enable_cache"`
+	// Optional. Default: false.
+	EnableCache *bool `json:"enable_cache"`
 
 	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
 	// Optional. Default: 3 * 86400 (3 days).
