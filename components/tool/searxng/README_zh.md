@@ -1,0 +1,233 @@
+# SearXNG 搜索工具
+
+[English](README.md) | 简体中文
+
+这是一个为 [Eino](https://github.com/cloudwego/eino) 实现的 SearXNG 搜索工具。该工具实现了 `InvokableTool` 和 `StreamableTool` 接口，可以与 Eino 的 ChatModel 交互系统和 `ToolsNode` 无缝集成，使用 SearXNG 实例提供增强的搜索功能。
+
+## 特性
+
+- 实现了 `github.com/cloudwego/eino/components/tool.InvokableTool` 接口
+- 实现了 `github.com/cloudwego/eino/components/tool.StreamableTool` 接口
+- 易于与 Eino 工具系统集成
+- 可配置的搜索参数
+- 支持自定义 SearXNG 实例
+- 内置重试机制和错误处理
+- 代理支持
+- 自定义请求头支持
+
+## 安装
+
+```bash
+go get github.com/cloudwego/eino-ext/components/tool/searxng
+```
+
+## 快速开始
+
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "time"
+
+    "github.com/cloudwego/eino-ext/components/tool/searxng"
+    "github.com/cloudwego/eino/components/tool"
+)
+
+func main() {
+    // 创建客户端配置
+    cfg := &searxng.ClientConfig{
+        BaseUrl: "https://searx.example.com/search", // 你的 SearXNG 实例 URL
+        Timeout: 30 * time.Second,
+        Headers: map[string]string{
+            "User-Agent": "MyApp/1.0",
+        },
+        MaxRetries: 3,
+    }
+
+    // 创建搜索工具
+    searchTool, err := searxng.BuildSearchInvokeTool(cfg)
+    if err != nil {
+        log.Fatalf("BuildSearchInvokeTool failed, err=%v", err)
+    }
+
+    // 或者创建流式工具
+    streamTool, err := searxng.BuildSearchStreamTool(cfg)
+    if err != nil {
+        log.Fatalf("BuildSearchStreamTool failed, err=%v", err)
+    }
+
+    // 与 Eino 的 ToolsNode 一起使用
+    tools := []tool.BaseTool{searchTool}
+    // ... 配置并使用 ToolsNode
+}
+```
+
+## 配置
+
+工具可以通过 `ClientConfig` 结构体进行配置：
+
+```go
+type ClientConfig struct {
+    BaseUrl    string            // SearXNG 实例的基础 URL（必需）
+    Headers    map[string]string // 自定义 HTTP 请求头
+    Timeout    time.Duration     // 请求超时时间（默认：30 秒）
+    ProxyURL   string           // 代理服务器 URL
+    MaxRetries int              // 最大重试次数（默认：3）
+}
+```
+
+## 搜索
+
+### 请求 Schema
+```go
+type SearchRequest struct {
+    Query      string  `json:"query"`                   // 搜索查询（必需）
+    PageNo     int     `json:"pageno"`                  // 页码（默认：1）
+    TimeRange  *string `json:"time_range,omitempty"`    // 时间范围："day"、"month"、"year"
+    Language   *string `json:"language,omitempty"`      // 语言代码（默认："all"）
+    SafeSearch *int    `json:"safesearch,omitempty"`    // 安全搜索级别：0、1、2（默认：0）
+    Engines    *string `json:"engines,omitempty"`       // 逗号分隔的搜索引擎列表
+}
+```
+
+#### 支持的语言
+- `all` - 所有语言（默认）
+- `en` - 英语
+- `zh` - 中文（简体）
+- `zh-CN` - 中文（简体，中国）
+- `zh-TW` - 中文（繁体，台湾）
+- `fr` - 法语
+- `de` - 德语
+- `es` - 西班牙语
+- `ja` - 日语
+- `ko` - 韩语
+- `ru` - 俄语
+- `ar` - 阿拉伯语
+- `pt` - 葡萄牙语
+- `it` - 意大利语
+- `nl` - 荷兰语
+- `pl` - 波兰语
+- `tr` - 土耳其语
+
+#### 支持的搜索引擎
+- `google` - Google 搜索
+- `duckduckgo` - DuckDuckGo
+- `baidu` - 百度（中文搜索引擎）
+- `bing` - 微软必应
+- `360search` - 360搜索（中文）
+- `yahoo` - 雅虎搜索
+- `quark` - 夸克搜索
+
+你可以通过逗号分隔指定多个引擎，例如：`"google,duckduckgo,bing"`
+
+### 响应 Schema
+```go
+type SearchResponse struct {
+    Query           string          `json:"query"`             // 搜索查询
+    NumberOfResults int             `json:"number_of_results"` // 结果数量
+    Results         []*SearchResult `json:"results"`           // 搜索结果
+}
+
+type SearchResult struct {
+    Title   string `json:"title"`   // 搜索结果的标题
+    Content string `json:"content"` // 结果的内容/描述
+    URL     string `json:"url"`     // 搜索结果的 URL
+}
+```
+
+## 使用示例
+
+### 基础搜索
+```go
+ctx := context.Background()
+request := &searxng.SearchRequest{
+    Query:  "人工智能",
+    PageNo: 1,
+}
+
+response, err := client.Search(ctx, request)
+if err != nil {
+    log.Printf("搜索失败: %v", err)
+    return
+}
+
+for _, result := range response.Results {
+    fmt.Printf("标题: %s\nURL: %s\n内容: %s\n\n", 
+        result.Title, result.URL, result.Content)
+}
+```
+
+### 带过滤器的高级搜索
+```go
+timeRange := "month"
+language := "zh-CN"
+safeSearch := 1
+engines := "baidu,bing" // 使用多个搜索引擎
+
+request := &searxng.SearchRequest{
+    Query:      "机器学习教程",
+    PageNo:     1,
+    TimeRange:  &timeRange,
+    Language:   &language,
+    SafeSearch: &safeSearch,
+    Engines:    &engines,
+}
+
+response, err := client.Search(ctx, request)
+// 处理响应...
+```
+
+### 英文搜索示例
+```go
+language := "en"
+engines := "google,duckduckgo" // 使用国际搜索引擎
+
+request := &searxng.SearchRequest{
+    Query:    "artificial intelligence tutorial",
+    PageNo:   1,
+    Language: &language,
+    Engines:  &engines,
+}
+
+response, err := client.Search(ctx, request)
+// 处理响应...
+```
+
+### 流式搜索
+```go
+streamReader, err := client.SearchStream(ctx, request)
+if err != nil {
+    log.Printf("流式搜索失败: %v", err)
+    return
+}
+
+for {
+    result, err := streamReader.Recv()
+    if err != nil {
+        if err == io.EOF {
+            break
+        }
+        log.Printf("流错误: %v", err)
+        break
+    }
+    
+    fmt.Printf("收到结果: %s\n", result.Title)
+}
+```
+
+## 错误处理
+
+该工具包含针对常见场景的内置错误处理：
+
+- 网络超时和连接错误
+- 速率限制（HTTP 429）
+- 无效的搜索参数
+- 空搜索结果
+- SearXNG 实例不可用
+
+## 更多详情
+
+- [Eino 文档](https://github.com/cloudwego/eino)
+- [SearXNG 文档](https://docs.searxng.org/)
