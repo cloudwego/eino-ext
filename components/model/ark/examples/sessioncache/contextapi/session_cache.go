@@ -46,12 +46,19 @@ func main() {
 	instructions := []*schema.Message{
 		schema.SystemMessage("Your name is superman"),
 	}
+
+	cacheInfo, err := chatModel.CreateSessionCache(ctx, instructions, 86400, nil)
+	if err != nil {
+		log.Fatalf("CreateSessionCache failed, err=%v", err)
+	}
+
 	thinking := &arkModel.Thinking{
 		Type: arkModel.ThinkingTypeDisabled,
 	}
 
 	cacheOpt := &ark.CacheOption{
-		APIType: ark.ResponsesAPI,
+		APIType:   ark.ContextAPI,
+		ContextID: &cacheInfo.ContextID,
 		SessionCache: &ark.SessionCacheConfig{
 			EnableCache: true,
 			TTL:         86400,
@@ -64,13 +71,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
-
-	firstContextID, ok := ark.GetContextID(msg)
-	if !ok {
-		log.Fatalf("GetContextID failed, err=%v", err)
-	}
-
-	cacheOpt.ContextID = &firstContextID
 
 	<-time.After(500 * time.Millisecond)
 
@@ -90,13 +90,6 @@ func main() {
 	fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
 	fmt.Printf("  body: %s\n", string(respBody))
-
-	secondContextID, ok := ark.GetContextID(msg)
-	if !ok {
-		log.Fatalf("GetContextID failed, err=%v", err)
-	}
-
-	cacheOpt.ContextID = &secondContextID
 
 	outStreamReader, err := chatModel.Stream(ctx, []*schema.Message{
 		{
