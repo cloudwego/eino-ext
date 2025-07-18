@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -35,8 +36,8 @@ func main() {
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
-		APIKey: "973ee766-c4f5-4b5a-95b9-ad136774207c",
-		Model:  "ep-20250712212252-5nr2v",
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
