@@ -70,6 +70,8 @@ type EmbeddingConfig struct {
 	Options map[string]any `json:"options,omitempty"`
 }
 
+var _ embedding.Embedder = (*Embedder)(nil)
+
 type Embedder struct {
 	cli  *api.Client
 	conf *EmbeddingConfig
