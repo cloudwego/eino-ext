@@ -39,7 +39,7 @@ func TestApmplusCallback(t *testing.T) {
 	})
 	callbacks.AppendGlobalHandlers(cbh)
 	ctx := context.Background()
-
+	ctx = SetSession(ctx, WithSessionID("test_session_id"), WithUserID("test_user_id"))
 	g := compose.NewGraph[string, string]()
 	err := g.AddLambdaNode("node1", compose.InvokableLambda(func(ctx context.Context, input string) (output string, err error) {
 		return input, nil

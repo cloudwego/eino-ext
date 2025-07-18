@@ -23,6 +23,7 @@ import (
 	"io"
 	"log"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -202,8 +203,9 @@ type requestInfo struct {
 type apmplusStateKey struct{}
 type apmplusState struct {
 	startTime   time.Time
-	span        trace.Span
+	span        *trace.Span
 	requestInfo *requestInfo
+	isRootNode  bool
 }
 
 type traceStreamInputAsyncKey struct{}
@@ -221,7 +223,13 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 	startTime := time.Now()
 	requestModel := ""
 	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(startTime))
-
+	// Check if it's the root node
+	isRootNode := ctx.Value(apmplusStateKey{}) == nil
+	if isRootNode {
+		span.SetAttributes(attribute.String("gen_ai.span.kind", "workflow"))
+	} else {
+		span.SetAttributes(attribute.String("gen_ai.span.kind", strings.ToLower(string(info.Component))))
+	}
 	contentReady := false
 
 	//TODO: covert input from other type of component
@@ -230,6 +238,12 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 	if err != nil {
 		log.Printf("extract stream model input error: %v, runinfo: %+v", err, info)
 	} else {
+		if isRootNode {
+			inMessageStr, err := sonic.MarshalString(inMessage)
+			if err == nil {
+				span.SetAttributes(attribute.String("gen_ai.input", inMessageStr))
+			}
+		}
 		for i, in := range inMessage {
 			if in != nil && len(in.Content) > 0 {
 				contentReady = true
@@ -253,12 +267,20 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 		if err == nil {
 			span.SetAttributes(attribute.String("gen_ai.prompt.0.role", string(schema.User)))
 			span.SetAttributes(attribute.String("gen_ai.prompt.0.content", in))
+			if isRootNode {
+				span.SetAttributes(attribute.String("gen_ai.input", in))
+			}
 		}
 	}
 
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
+	session, ok := ctx.Value(apmplusSessionOptionKey{}).(*sessionOptions)
+	if ok && session != nil {
+		span.SetAttributes(attribute.String("gen_ai.session.id", session.SessionID))
+		span.SetAttributes(attribute.String("gen_ai.user.id", session.UserID))
+	}
 
 	if info.Component == components.ComponentOfChatModel {
 		a.chatCount.Add(ctx, 1, metric.WithAttributes(
@@ -268,8 +290,9 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 
 	return context.WithValue(ctx, apmplusStateKey{}, &apmplusState{
 		startTime:   startTime,
-		span:        span,
+		span:        &span,
 		requestInfo: &requestInfo{model: requestModel},
+		isRootNode:  isRootNode,
 	})
 }
 
@@ -283,7 +306,7 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 		log.Printf("no state in context, runinfo: %+v", info)
 		return ctx
 	}
-	span := state.span
+	span := *state.span
 	startTime := state.startTime
 	endTime := time.Now()
 
@@ -309,7 +332,12 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 		if err == nil {
 			responseModel := ""
 			responseFinishReason := ""
-
+			if state.isRootNode {
+				outMessagesStr, err := sonic.MarshalString(outMessages)
+				if err == nil {
+					span.SetAttributes(attribute.String("gen_ai.output", outMessagesStr))
+				}
+			}
 			for i, out := range outMessages {
 				if out != nil && len(out.Content) > 0 {
 					contentReady = true
@@ -365,6 +393,9 @@ func (a *apmplusHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, out
 			log.Printf("marshal output error: %v, runinfo: %+v", err, info)
 		} else {
 			span.SetAttributes(attribute.String("gen_ai.completion.0.content", out))
+			if state.isRootNode {
+				span.SetAttributes(attribute.String("gen_ai.output", out))
+			}
 		}
 	}
 	span.SetAttributes(attribute.Bool("gen_ai.is_streaming", false))
@@ -382,7 +413,7 @@ func (a *apmplusHandler) OnError(ctx context.Context, info *callbacks.RunInfo, e
 		log.Printf("no state in context, runinfo: %+v", info)
 		return ctx
 	}
-	span := state.span
+	span := *state.span
 	requestInfo := state.requestInfo
 	defer func() {
 		if stopCh, ok := ctx.Value(traceStreamInputAsyncKey{}).(streamInputAsyncVal); ok {
@@ -415,11 +446,21 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 	startTime := time.Now()
 	requestInfo := &requestInfo{}
 	ctx, span := a.tracer.Start(ctx, spanName, trace.WithSpanKind(trace.SpanKindClient), trace.WithTimestamp(startTime))
-
+	// Check if it's the root node
+	isRootNode := ctx.Value(apmplusStateKey{}) == nil
+	if isRootNode {
+		span.SetAttributes(attribute.String("gen_ai.span.kind", "workflow"))
+	} else {
+		span.SetAttributes(attribute.String("gen_ai.span.kind", strings.ToLower(string(info.Component))))
+	}
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
-
+	session, ok := ctx.Value(apmplusSessionOptionKey{}).(*sessionOptions)
+	if ok && session != nil {
+		span.SetAttributes(attribute.String("gen_ai.session.id", session.SessionID))
+		span.SetAttributes(attribute.String("gen_ai.user.id", session.UserID))
+	}
 	stopCh := make(streamInputAsyncVal)
 	ctx = context.WithValue(ctx, traceStreamInputAsyncKey{}, stopCh)
 
@@ -449,6 +490,12 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 		if err != nil {
 			log.Printf("extract stream model input error: %v, runinfo: %+v", err, info)
 		} else {
+			if isRootNode {
+				inMessageStr, err := sonic.MarshalString(inMessage)
+				if err == nil {
+					span.SetAttributes(attribute.String("gen_ai.input", inMessageStr))
+				}
+			}
 			for i, in := range inMessage {
 				if in != nil && len(in.Content) > 0 {
 					contentReady = true
@@ -478,13 +525,17 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 			} else {
 				span.SetAttributes(attribute.String("gen_ai.prompt.0.role", string(schema.User)))
 				span.SetAttributes(attribute.String("gen_ai.prompt.0.content", in))
+				if isRootNode {
+					span.SetAttributes(attribute.String("gen_ai.input", in))
+				}
 			}
 		}
 	}()
 	return context.WithValue(ctx, apmplusStateKey{}, &apmplusState{
-		span:        span,
+		span:        &span,
 		startTime:   startTime,
 		requestInfo: requestInfo,
+		isRootNode:  isRootNode,
 	})
 }
 
@@ -498,7 +549,7 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 		log.Printf("no state in context, runinfo: %+v", info)
 		return ctx
 	}
-	span := state.span
+	span := *state.span
 	startTime := state.startTime
 
 	go func() {
@@ -533,6 +584,12 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 		// both work for ChatModel or not
 		usage, outMessages, _, config, err := extractModelOutput(convModelCallbackOutput(outs))
 		if err == nil {
+			if state.isRootNode {
+				outMessagesStr, err := sonic.MarshalString(outMessages)
+				if err == nil {
+					span.SetAttributes(attribute.String("gen_ai.output", outMessagesStr))
+				}
+			}
 			for i, out := range outMessages {
 				if out != nil && len(out.Content) > 0 {
 					contentReady = true
@@ -570,6 +627,9 @@ func (a *apmplusHandler) OnEndWithStreamOutput(ctx context.Context, info *callba
 				log.Printf("marshal stream output error: %v, runinfo: %+v", err, info)
 			} else {
 				span.SetAttributes(attribute.String("gen_ai.completion.0.content", out))
+				if state.isRootNode {
+					span.SetAttributes(attribute.String("gen_ai.output", out))
+				}
 			}
 		}
 		span.SetAttributes(attribute.Bool("gen_ai.is_streaming", true))

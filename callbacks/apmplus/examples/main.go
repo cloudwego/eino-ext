@@ -22,7 +22,9 @@ import (
 	"log"
 
 	"github.com/cloudwego/eino-ext/callbacks/apmplus"
+	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
@@ -46,4 +48,23 @@ func main() {
 
 	// Set apmplus as a global callback
 	callbacks.AppendGlobalHandlers(cbh)
+
+	// Create your eino application
+	chatModel, _ := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		BaseURL: "OPENAI_BASE_URL",
+		Model:   "OPENAI_MODEL_NAME",
+		APIKey:  "OPENAI_API_KEY",
+	})
+	// option: set your session info
+	ctx = apmplus.SetSession(ctx, apmplus.WithSessionID("session_abc"), apmplus.WithUserID("user_123"))
+	// call chat model
+	result, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "你是谁",
+		},
+	})
+	// handler resp
+	log.Printf("result: %+v\n err: %v\n\n", result, err)
+
 }
