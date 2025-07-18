@@ -450,12 +450,18 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 }
 
 func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
-	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{}, opts...)
-	configCache := cm.respChatModel.cache
-
-	if arkOpts.cache == nil && configCache == nil {
-		return false, nil
+	var cacheOpt *CacheOption
+	if cm.respChatModel.cache != nil {
+		cacheOpt = &CacheOption{
+			APIType:      ptrFromOrZero(cm.respChatModel.cache.APIType),
+			SessionCache: cm.respChatModel.cache.SessionCache,
+		}
 	}
+
+	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
+		cache: cacheOpt,
+	}, opts...)
+
 	if arkOpts.cache != nil {
 		switch arkOpts.cache.APIType {
 		case ResponsesAPI:
@@ -464,16 +470,6 @@ func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
 			return false, nil
 		default:
 			return false, fmt.Errorf("invalid api type: %s", arkOpts.cache.APIType)
-		}
-	}
-	if configCache != nil && configCache.APIType != nil {
-		switch *configCache.APIType {
-		case ResponsesAPI:
-			return true, nil
-		case ContextAPI:
-			return false, nil
-		default:
-			return false, fmt.Errorf("invalid api type: %s", *configCache.APIType)
 		}
 	}
 
