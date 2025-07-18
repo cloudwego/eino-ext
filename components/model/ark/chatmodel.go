@@ -375,6 +375,7 @@ type CacheInfo struct {
 // ref: https://www.volcengine.com/docs/82379/1396490#_1-%E5%88%9B%E5%BB%BA%E5%89%8D%E7%BC%80%E7%BC%93%E5%AD%98
 //
 // Note that it is unavailable for doubao models of version 1.6 and above.
+// Currently only supports calling by ContextAPI.
 func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
 	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
 		return nil, fmt.Errorf("CreatePrefixCache is not supported by ResponsesAPI")
