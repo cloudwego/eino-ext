@@ -176,6 +176,18 @@ func TestCallByResponsesAPI(t *testing.T) {
 		_, err := cm.callByResponsesAPI(opt)
 		assert.NotNil(t, err)
 	})
+
+	mockey.PatchConvey("", t, func() {
+		cm := &ChatModel{
+			respChatModel: &responsesAPIChatModel{
+				cache: &CacheConfig{},
+			},
+		}
+
+		ok, err := cm.callByResponsesAPI()
+		assert.Nil(t, err)
+		assert.False(t, ok)
+	})
 }
 
 func TestBuildResponsesAPIChatModel(t *testing.T) {
