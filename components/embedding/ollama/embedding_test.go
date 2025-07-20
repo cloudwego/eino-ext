@@ -49,6 +49,45 @@ func TestEmbedding(t *testing.T) {
 
 	expectedDimensions := len(mockEmbeddings[0])
 
+	t.Run("invalid param - missing config", func(t *testing.T) {
+		ctx := context.Background()
+		_, err := NewEmbedder(ctx, nil)
+
+		assert.NotNil(t, err)
+	})
+
+	t.Run("invalid param - invalid base_url", func(t *testing.T) {
+		ctx := context.Background()
+		_, err := NewEmbedder(ctx, &EmbeddingConfig{
+			BaseURL: "http://example.com:port",
+			Model:   model,
+			Timeout: 10 * time.Second,
+		})
+
+		assert.NotNil(t, err)
+	})
+
+	t.Run("optional base_url", func(t *testing.T) {
+		ctx := context.Background()
+		_, err := NewEmbedder(ctx, &EmbeddingConfig{
+			BaseURL: "",
+			Model:   model,
+			Timeout: 10 * time.Second,
+		})
+
+		assert.Nil(t, err)
+	})
+
+	t.Run("invalid param - missing model", func(t *testing.T) {
+		ctx := context.Background()
+		_, err := NewEmbedder(ctx, &EmbeddingConfig{
+			BaseURL: defaultBaseUrl,
+			Timeout: 10 * time.Second,
+		})
+
+		assert.NotNil(t, err)
+	})
+
 	t.Run("full param", func(t *testing.T) {
 		ctx := context.Background()
 		emb, err := NewEmbedder(ctx, &EmbeddingConfig{

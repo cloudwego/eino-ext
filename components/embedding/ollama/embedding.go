@@ -138,7 +138,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 
 	resp, err := e.cli.Embed(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("[Ollama]EmbedStrings error: %v", err)
+		return nil, fmt.Errorf("[Ollama] EmbedStrings error: %v", err)
 	}
 
 	// Convert [][]float32 to [][]float64

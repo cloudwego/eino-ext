@@ -18,6 +18,10 @@ package main
 
 import (
 	"context"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/compose"
+	callbacksHelper "github.com/cloudwego/eino/utils/callbacks"
 	"log"
 	"os"
 	"time"
@@ -37,19 +41,56 @@ func main() {
 		model = "nomic-embed-text"
 	}
 
-	embedded, err := ollama.NewEmbedder(ctx, &ollama.EmbeddingConfig{
+	embedder, err := ollama.NewEmbedder(ctx, &ollama.EmbeddingConfig{
 		BaseURL: baseURL,
 		Model:   model,
 		Timeout: 10 * time.Second,
 	})
 	if err != nil {
-		log.Fatalf("new embedded error: %v", err)
+		log.Fatalf("NewEmbedder of ollama error: %v", err)
+		return
 	}
 
-	embeddings, err := embedded.EmbedStrings(ctx, []string{"hello world", "how are you"})
+	log.Printf("===== call Embedder directly =====")
+
+	vectors, err := embedder.EmbedStrings(ctx, []string{"hello", "how are you"})
 	if err != nil {
-		log.Fatalf("embedding error: %v", err)
+		log.Fatalf("EmbedStrings of Ollama failed, err=%v", err)
 	}
 
-	log.Printf("embeddings: %v", embeddings)
+	log.Printf("vectors : %v", vectors)
+
+	log.Printf("===== call Embedder in Chain =====")
+
+	handlerHelper := &callbacksHelper.EmbeddingCallbackHandler{
+		OnStart: func(ctx context.Context, runInfo *callbacks.RunInfo, input *embedding.CallbackInput) context.Context {
+			log.Printf("input access, len: %v, content: %s\n", len(input.Texts), input.Texts)
+			return ctx
+		},
+		OnEnd: func(ctx context.Context, runInfo *callbacks.RunInfo, output *embedding.CallbackOutput) context.Context {
+			log.Printf("output finished, len: %v\n", len(output.Embeddings))
+			return ctx
+		},
+	}
+
+	handler := callbacksHelper.NewHandlerHelper().
+		Embedding(handlerHelper).
+		Handler()
+
+	chain := compose.NewChain[[]string, [][]float64]()
+	chain.AppendEmbedding(embedder)
+
+	// 编译并运行
+	runnable, err := chain.Compile(ctx)
+	if err != nil {
+		log.Fatalf("chain Compile failed, err=%v", err)
+	}
+
+	vectors, err = runnable.Invoke(ctx, []string{"hello", "how are you"},
+		compose.WithCallbacks(handler))
+	if err != nil {
+		log.Fatalf("Invoke of runnable failed, err=%v", err)
+	}
+
+	log.Printf("vectors in chain: %v", vectors)
 }
