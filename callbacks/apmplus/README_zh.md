@@ -7,6 +7,7 @@
 ## 特性
 
 - 实现了 `github.com/cloudwego/eino/internel/callbacks.Handler` 接口
+- 实现了会话功能，能够将 Eino 应用中的同一个会话里的多个请求关联起来
 - 易于与 Eino 应用集成
 
 ## 安装
@@ -46,7 +47,15 @@ func main() {
 
 	g := NewGraph[string,string]()
 	/*
-	 * compose and run graph
+	 * 构建并编译 eino graph
+	 */
+	runner, _ := g.Compile(ctx)
+	// 如想设置会话信息, 可通过 apmplus.SetSession 方法
+	ctx = apmplus.SetSession(ctx, apmplus.WithSessionID("your_session_id"), apmplus.WithUserID("your_user_id"))
+	// 执行 runner
+	result, _ := runner.Invoke(ctx, "input")
+	/*
+	 * 处理结果
 	 */
 
 	// 等待所有trace和metrics上报完成后退出
