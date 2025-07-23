@@ -338,7 +338,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		Tools:       nil,
 		ToolChoice:  c.toolChoice,
 	}, opts...)
-	openaiOptions := model.GetImplSpecificOptions(&openaiOptions{
+	openaiOpts := model.GetImplSpecificOptions(&openaiOptions{
 		ExtraFields:     c.config.ExtraFields,
 		ReasoningEffort: c.config.ReasoningEffort,
 	}, opts...)
@@ -356,11 +356,11 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		User:             dereferenceOrZero(c.config.User),
 		LogProbs:         c.config.LogProbs,
 		TopLogProbs:      c.config.TopLogProbs,
-		ReasoningEffort:  string(openaiOptions.ReasoningEffort),
+		ReasoningEffort:  string(openaiOpts.ReasoningEffort),
 	}
 
-	if len(openaiOptions.ExtraFields) > 0 {
-		req.SetExtraFields(openaiOptions.ExtraFields)
+	if len(openaiOpts.ExtraFields) > 0 {
+		req.SetExtraFields(openaiOpts.ExtraFields)
 	}
 
 	cbInput := &model.CallbackInput{
@@ -489,7 +489,9 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		}
 	}()
 
-	resp, err := c.cli.CreateChatCompletion(ctx, *req)
+	reqOpts := c.getChatCompletionRequestOptions(opts)
+
+	resp, err := c.cli.CreateChatCompletion(ctx, *req, reqOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -561,7 +563,9 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	stream, err := c.cli.CreateChatCompletionStream(ctx, *req)
+	reqOpts := c.getChatCompletionRequestOptions(opts)
+
+	stream, err := c.cli.CreateChatCompletionStream(ctx, *req, reqOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -658,6 +662,21 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	)
 
 	return outStream, nil
+}
+
+func (c *Client) getChatCompletionRequestOptions(opts []model.Option) []openai.ChatCompletionRequestOption {
+	openaiOpts := model.GetImplSpecificOptions(&openaiOptions{
+		ExtraFields:     c.config.ExtraFields,
+		ReasoningEffort: c.config.ReasoningEffort,
+	}, opts...)
+
+	var options []openai.ChatCompletionRequestOption
+
+	if openaiOpts.RequestBodySetter != nil {
+		options = append(options, openai.WithRequestBodySetter(openaiOpts.RequestBodySetter))
+	}
+
+	return options
 }
 
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {

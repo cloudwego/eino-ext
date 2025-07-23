@@ -182,7 +182,8 @@ func TestOpenAIGenerate(t *testing.T) {
 	}
 
 	t.Run("all param", func(t *testing.T) {
-		defer mockey.Mock((*openai.Client).CreateChatCompletion).To(func(ctx context.Context, request openai.ChatCompletionRequest) (response openai.ChatCompletionResponse, err error) {
+		defer mockey.Mock((*openai.Client).CreateChatCompletion).To(func(ctx context.Context,
+			request openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (response openai.ChatCompletionResponse, err error) {
 			if !reflect.DeepEqual(expectedRequestBody, request) {
 				return response, fmt.Errorf("request is unexpected")
 			}
@@ -253,7 +254,8 @@ func TestOpenAIGenerate(t *testing.T) {
 		}
 	})
 	t.Run("stream all param", func(t *testing.T) {
-		defer mockey.Mock((*openai.Client).CreateChatCompletionStream).To(func(ctx context.Context, request openai.ChatCompletionRequest) (response *openai.ChatCompletionStream, err error) {
+		defer mockey.Mock((*openai.Client).CreateChatCompletionStream).To(func(ctx context.Context,
+			request openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (response *openai.ChatCompletionStream, err error) {
 			expectedRequestBody := expectedRequestBody
 			expectedRequestBody.Stream = true
 			expectedRequestBody.StreamOptions = &openai.StreamOptions{IncludeUsage: true}

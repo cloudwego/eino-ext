@@ -7,7 +7,7 @@ require (
 	github.com/cloudwego/eino v0.3.51
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250626133421-3c142631c961
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250620092828-0d508a1dcdde
+	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250722145557-285a738ebcb9
 )
 
 require (

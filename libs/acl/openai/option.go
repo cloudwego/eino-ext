@@ -16,7 +16,11 @@
 
 package openai
 
-import "github.com/cloudwego/eino/components/model"
+import (
+	"github.com/meguminnnnnnnnn/go-openai"
+
+	"github.com/cloudwego/eino/components/model"
+)
 
 // https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort
 type ReasoningEffortLevel string
@@ -28,8 +32,9 @@ const (
 )
 
 type openaiOptions struct {
-	ExtraFields     map[string]any
-	ReasoningEffort ReasoningEffortLevel
+	ExtraFields       map[string]any
+	ReasoningEffort   ReasoningEffortLevel
+	RequestBodySetter openai.RequestBodySetter
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
@@ -41,5 +46,13 @@ func WithExtraFields(extraFields map[string]any) model.Option {
 func WithReasoningEffort(re ReasoningEffortLevel) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.ReasoningEffort = re
+	})
+}
+
+// WithRequestBodySetter is used to modify the request body before sending request.
+// Useful for compatibility with custom fields when calling other models using OpenAI API.
+func WithRequestBodySetter(setter openai.RequestBodySetter) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.RequestBodySetter = setter
 	})
 }

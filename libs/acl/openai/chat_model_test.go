@@ -23,6 +23,7 @@ import (
 	goopenai "github.com/meguminnnnnnnnn/go-openai"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -162,4 +163,16 @@ func TestLogProbs(t *testing.T) {
 			},
 		},
 	}}))
+}
+
+func TestClientGetChatCompletionRequestOptions(t *testing.T) {
+	cli := &Client{
+		config: &Config{},
+	}
+
+	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
+		WithRequestBodySetter(func(rawBody []byte) ([]byte, error) {
+			return rawBody, nil
+		}),
+	}), 1)
 }
