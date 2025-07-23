@@ -78,8 +78,44 @@ type ClientConfig struct {
     Timeout        time.Duration         // Request timeout (default: 30 seconds)
     ProxyURL       string                // Proxy server URL
     MaxRetries     int                   // Maximum retry attempts (default: 3)
+    HttpClient     *http.Client          // Custom HTTP client (optional)
     RequestConfig  *SearchRequestConfig  // Default search request configuration
 }
+```
+
+### Custom HTTP Client
+
+You can provide your own HTTP client for advanced configuration:
+
+```go
+import (
+    "crypto/tls"
+    "net/http"
+    "time"
+)
+
+// Create custom HTTP client with custom settings
+customClient := &http.Client{
+    Timeout: 60 * time.Second,
+    Transport: &http.Transport{
+        TLSClientConfig: &tls.Config{
+            InsecureSkipVerify: true, // Only for testing
+        },
+        MaxIdleConns:        100,
+        MaxIdleConnsPerHost: 10,
+    },
+}
+
+// Use custom client in config
+cfg := &searxng.ClientConfig{
+    BaseUrl:    "https://searx.example.com/search",
+    HttpClient: customClient, // Use custom HTTP client
+    RequestConfig: &searxng.SearchRequestConfig{
+        Language: searxng.LanguageEn,
+    },
+}
+
+searchTool, err := searxng.BuildSearchInvokeTool(cfg)
 ```
 ## Search
 

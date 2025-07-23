@@ -78,8 +78,44 @@ type ClientConfig struct {
     Timeout        time.Duration         // 请求超时时间（默认：30 秒）
     ProxyURL       string                // 代理服务器 URL
     MaxRetries     int                   // 最大重试次数（默认：3）
-    RequestConfig  *SearchRequestConfig  // 默认搜索请求配置
+    HttpClient     *http.Client          // 自定义 HTTP 客户端（可选）
+     RequestConfig  *SearchRequestConfig  // 默认搜索请求配置
 }
+```
+
+### 自定义 HTTP 客户端
+
+您可以提供自己的 HTTP 客户端进行高级配置：
+
+```go
+import (
+    "crypto/tls"
+    "net/http"
+    "time"
+)
+
+// 创建具有自定义设置的 HTTP 客户端
+customClient := &http.Client{
+    Timeout: 60 * time.Second,
+    Transport: &http.Transport{
+        TLSClientConfig: &tls.Config{
+            InsecureSkipVerify: true, // 仅用于测试
+        },
+        MaxIdleConns:        100,
+        MaxIdleConnsPerHost: 10,
+    },
+}
+
+// 在配置中使用自定义客户端
+cfg := &searxng.ClientConfig{
+    BaseUrl:    "https://searx.example.com/search",
+    HttpClient: customClient, // 使用自定义 HTTP 客户端
+    RequestConfig: &searxng.SearchRequestConfig{
+        Language: searxng.LanguageEn,
+    },
+}
+
+searchTool, err := searxng.BuildSearchInvokeTool(cfg)
 ```
 
 ## 搜索

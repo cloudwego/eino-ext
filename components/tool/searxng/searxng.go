@@ -239,8 +239,8 @@ type SearchResponse struct {
 }
 
 type SearxngClient struct {
-	client        *http.Client
-	config        *ClientConfig
+	client *http.Client
+	config *ClientConfig
 }
 
 // Config represents the search client configuration.
@@ -256,6 +256,10 @@ type ClientConfig struct {
 	//     "Accept-Language": "en-US",
 	//   }
 	Headers map[string]string `json:"headers"`
+
+	// HttpClient specifies the custom HTTP client to be used.
+	// If not specified, a default client will be used.
+	HttpClient *http.Client `json:"http_client"`
 
 	// Timeout specifies the maximum duration for a single request.
 	// Default is 30 seconds if not specified.
@@ -304,11 +308,19 @@ func NewClient(cfg *ClientConfig) (*SearxngClient, error) {
 		}
 	}
 
-	sc := &SearxngClient{
-		client: &http.Client{
+	// 使用外部提供的 HTTP client，如果没有则创建默认的
+	var httpClient *http.Client
+	if cfg.HttpClient != nil {
+		httpClient = cfg.HttpClient
+	} else {
+		httpClient = &http.Client{
 			Timeout: cfg.Timeout,
-		},
-		config:        cfg,
+		}
+	}
+
+	sc := &SearxngClient{
+		client: httpClient,
+		config: cfg,
 	}
 	return sc, nil
 }

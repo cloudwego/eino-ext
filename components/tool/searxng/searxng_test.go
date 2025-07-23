@@ -284,6 +284,10 @@ func TestValidateEngines(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
+	customClient := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
 	tests := []struct {
 		name    string
 		config  *ClientConfig
@@ -360,6 +364,24 @@ func TestNewClient(t *testing.T) {
 				client: &http.Client{
 					Timeout: 30 * time.Second,
 				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with custom http client",
+			config: &ClientConfig{
+				BaseUrl:    "http://localhost",
+				HttpClient: customClient,
+			},
+			want: &SearxngClient{
+				config: &ClientConfig{
+					BaseUrl:    "http://localhost",
+					Timeout:    30 * time.Second,
+					MaxRetries: 3,
+					Headers:    map[string]string{},
+					HttpClient: customClient,
+				},
+				client: customClient,
 			},
 			wantErr: false,
 		},
@@ -567,21 +589,6 @@ func TestSendRequestWithRetry_ContextCancelled(t *testing.T) {
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled error, got %v", err)
 	}
-}
-
-func safeSearchPtr(i int) *SafeSearchLevel {
-	s := SafeSearchLevel(i)
-	return &s
-}
-
-func timeRangePtr(s string) *TimeRange {
-	t := TimeRange(s)
-	return &t
-}
-
-func languagePtr(s string) *Language {
-	l := Language(s)
-	return &l
 }
 
 // Helper functions for tests
