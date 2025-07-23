@@ -2,14 +2,13 @@ module github.com/cloudwego/eino-ext/components/document/loader/s3
 
 go 1.23.0
 
-
 require (
 	github.com/aws/aws-sdk-go-v2 v1.32.3
 	github.com/aws/aws-sdk-go-v2/config v1.28.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.42
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.66.2
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.3.55
 	github.com/stretchr/testify v1.9.0
 )
 
