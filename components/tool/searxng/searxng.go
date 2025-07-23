@@ -131,21 +131,21 @@ type SearchRequestConfig struct {
 }
 
 func (s *SearchRequestConfig) validate() error {
-	// 只有当 TimeRange 不是零值时才验证
+	// Only validate TimeRange when it's not zero value
 	if s.TimeRange != "" {
 		if err := validateInSlice(s.TimeRange, validTimeRanges, "time_range"); err != nil {
 			return err
 		}
 	}
 
-	// 只有当 Language 不是零值时才验证
+	// Only validate Language when it's not zero value
 	if s.Language != "" {
 		if err := validateInSlice(s.Language, validLanguages, "language"); err != nil {
 			return err
 		}
 	}
 
-	// 只有当 SafeSearch 不是零值时才验证
+	// Only validate SafeSearch when it's not zero value
 	if s.SafeSearch != 0 {
 		if err := validateInSlice(s.SafeSearch, validSafeSearch, "safesearch"); err != nil {
 			return err
@@ -167,20 +167,20 @@ func (s *SearchRequest) build(cfg *SearchRequestConfig) url.Values {
 	params.Set("pageno", strconv.Itoa(s.PageNo))
 	params.Set("format", "json")
 	if cfg != nil {
-		// 只有当 TimeRange 不是零值时才添加
+		// Only add TimeRange when it's not zero value
 		if cfg.TimeRange != "" {
 			params.Set("time_range", string(cfg.TimeRange))
 		}
-		// 只有当 Language 不是零值时才添加
+		// Only add Language when it's not zero value
 		if cfg.Language != "" {
 			params.Set("language", string(cfg.Language))
 		}
-		// 只有当 SafeSearch 不是零值时才添加
+		// Only add SafeSearch when it's not zero value
 		if cfg.SafeSearch != 0 {
 			params.Set("safesearch", strconv.Itoa(int(cfg.SafeSearch)))
 		}
 		if len(cfg.Engines) > 0 {
-			// 将[]Engine转换为逗号分隔的字符串
+			// Convert []Engine to comma-separated string
 			engineStrs := make([]string, len(cfg.Engines))
 			for i, engine := range cfg.Engines {
 				engineStrs[i] = string(engine)
@@ -191,7 +191,7 @@ func (s *SearchRequest) build(cfg *SearchRequestConfig) url.Values {
 	return params
 }
 
-// validateInSlice 使用泛型验证值是否在给定的切片中
+// validateInSlice validates whether a value is in the given slice using generics
 func validateInSlice[T comparable](value T, validValues []T, paramName string) error {
 	for _, valid := range validValues {
 		if value == valid {
@@ -201,14 +201,14 @@ func validateInSlice[T comparable](value T, validValues []T, paramName string) e
 	return fmt.Errorf("%s must be one of: %+v", paramName, validValues)
 }
 
-// validateEngines 验证engines参数，支持多个engines
+// validateEngines validates engines parameter, supports multiple engines
 func validateEngines(engines []Engine) error {
 	if len(engines) == 0 {
 		return nil
 	}
 
 	for _, engine := range engines {
-		// 检查每个engine是否在有效列表中
+		// Check if each engine is in the valid list
 		valid := false
 		for _, validEngine := range validEngines {
 			if engine == validEngine {
@@ -301,14 +301,14 @@ func NewClient(cfg *ClientConfig) (*SearxngClient, error) {
 		cfg.Headers = make(map[string]string)
 	}
 
-	// 验证 requestConfig 的有效性
+	// Validate the validity of requestConfig
 	if cfg.RequestConfig != nil {
 		if err := cfg.RequestConfig.validate(); err != nil {
 			return nil, err
 		}
 	}
 
-	// 使用外部提供的 HTTP client，如果没有则创建默认的
+	// Use externally provided HTTP client, or create default one if not provided
 	var httpClient *http.Client
 	if cfg.HttpClient != nil {
 		httpClient = cfg.HttpClient
