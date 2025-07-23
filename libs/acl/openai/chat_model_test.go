@@ -171,8 +171,18 @@ func TestClientGetChatCompletionRequestOptions(t *testing.T) {
 	}
 
 	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
-		WithRequestBodySetter(func(rawBody []byte) ([]byte, error) {
+		WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
 			return rawBody, nil
 		}),
+	}), 1)
+}
+
+func TestClientWithExtraHeader(t *testing.T) {
+	cli := &Client{
+		config: &Config{},
+	}
+
+	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
+		WithExtraHeader(map[string]string{"test": "test"}),
 	}), 1)
 }

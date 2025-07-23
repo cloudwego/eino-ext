@@ -32,9 +32,10 @@ const (
 )
 
 type openaiOptions struct {
-	ExtraFields       map[string]any
-	ReasoningEffort   ReasoningEffortLevel
-	RequestBodySetter openai.RequestBodySetter
+	ExtraFields         map[string]any
+	ReasoningEffort     ReasoningEffortLevel
+	ExtraHeader         map[string]string
+	RequestBodyModifier openai.RequestBodyModifier
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
@@ -49,10 +50,17 @@ func WithReasoningEffort(re ReasoningEffortLevel) model.Option {
 	})
 }
 
-// WithRequestBodySetter is used to modify the request body before sending request.
+// WithRequestBodyModifier is used to modify the request body before sending request.
 // Useful for compatibility with custom fields when calling other models using OpenAI API.
-func WithRequestBodySetter(setter openai.RequestBodySetter) model.Option {
+func WithRequestBodyModifier(modifier openai.RequestBodyModifier) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
-		o.RequestBodySetter = setter
+		o.RequestBodyModifier = modifier
+	})
+}
+
+// WithExtraHeader is used to set extra headers for the request.
+func WithExtraHeader(header map[string]string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ExtraHeader = header
 	})
 }

@@ -338,7 +338,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		Tools:       nil,
 		ToolChoice:  c.toolChoice,
 	}, opts...)
-	openaiOpts := model.GetImplSpecificOptions(&openaiOptions{
+	specOptions := model.GetImplSpecificOptions(&openaiOptions{
 		ExtraFields:     c.config.ExtraFields,
 		ReasoningEffort: c.config.ReasoningEffort,
 	}, opts...)
@@ -356,11 +356,11 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		User:             dereferenceOrZero(c.config.User),
 		LogProbs:         c.config.LogProbs,
 		TopLogProbs:      c.config.TopLogProbs,
-		ReasoningEffort:  string(openaiOpts.ReasoningEffort),
+		ReasoningEffort:  string(specOptions.ReasoningEffort),
 	}
 
-	if len(openaiOpts.ExtraFields) > 0 {
-		req.SetExtraFields(openaiOpts.ExtraFields)
+	if len(specOptions.ExtraFields) > 0 {
+		req.SetExtraFields(specOptions.ExtraFields)
 	}
 
 	cbInput := &model.CallbackInput{
@@ -665,15 +665,19 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 }
 
 func (c *Client) getChatCompletionRequestOptions(opts []model.Option) []openai.ChatCompletionRequestOption {
-	openaiOpts := model.GetImplSpecificOptions(&openaiOptions{
+	specOptions := model.GetImplSpecificOptions(&openaiOptions{
 		ExtraFields:     c.config.ExtraFields,
 		ReasoningEffort: c.config.ReasoningEffort,
 	}, opts...)
 
 	var options []openai.ChatCompletionRequestOption
 
-	if openaiOpts.RequestBodySetter != nil {
-		options = append(options, openai.WithRequestBodySetter(openaiOpts.RequestBodySetter))
+	if specOptions.RequestBodyModifier != nil {
+		options = append(options, openai.WithRequestBodyModifier(specOptions.RequestBodyModifier))
+	}
+
+	if specOptions.ExtraHeader != nil {
+		options = append(options, openai.WithExtraHeader(specOptions.ExtraHeader))
 	}
 
 	return options
