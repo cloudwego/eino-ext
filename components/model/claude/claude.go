@@ -94,14 +94,15 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
 	}
 	return &ChatModel{
-		cli:           cli,
-		maxTokens:     config.MaxTokens,
-		model:         config.Model,
-		stopSequences: config.StopSequences,
-		temperature:   config.Temperature,
-		thinking:      config.Thinking,
-		topK:          config.TopK,
-		topP:          config.TopP,
+		cli:                    cli,
+		maxTokens:              config.MaxTokens,
+		model:                  config.Model,
+		stopSequences:          config.StopSequences,
+		temperature:            config.Temperature,
+		thinking:               config.Thinking,
+		topK:                   config.TopK,
+		topP:                   config.TopP,
+		disableParallelToolUse: config.DisableParallelToolUse,
 	}, nil
 }
 
@@ -179,6 +180,8 @@ type Config struct {
 
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
+
+	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 }
 
 type Thinking struct {
@@ -189,16 +192,17 @@ type Thinking struct {
 type ChatModel struct {
 	cli anthropic.Client
 
-	maxTokens     int
-	model         string
-	stopSequences []string
-	temperature   *float32
-	topK          *int32
-	topP          *float32
-	thinking      *Thinking
-	tools         []anthropic.ToolUnionParam
-	origTools     []*schema.ToolInfo
-	toolChoice    *schema.ToolChoice
+	maxTokens              int
+	model                  string
+	stopSequences          []string
+	temperature            *float32
+	topK                   *int32
+	topP                   *float32
+	thinking               *Thinking
+	tools                  []anthropic.ToolUnionParam
+	origTools              []*schema.ToolInfo
+	toolChoice             *schema.ToolChoice
+	disableParallelToolUse *bool
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -406,8 +410,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 	claudeOptions := model.GetImplSpecificOptions(&options{
-		TopK:     cm.topK,
-		Thinking: cm.thinking}, opts...)
+		TopK:                   cm.topK,
+		Thinking:               cm.thinking,
+		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
 
 	params := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
@@ -455,8 +460,12 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		case schema.ToolChoiceForbidden:
 			params.Tools = []anthropic.ToolUnionParam{} // act like forbid tools
 		case schema.ToolChoiceAllowed:
+			p := &anthropic.ToolChoiceAutoParam{}
+			if claudeOptions.DisableParallelToolUse != nil {
+				p.DisableParallelToolUse = param.NewOpt[bool](*claudeOptions.DisableParallelToolUse)
+			}
 			params.ToolChoice = anthropic.ToolChoiceUnionParam{
-				OfAuto: &anthropic.ToolChoiceAutoParam{},
+				OfAuto: p,
 			}
 		case schema.ToolChoiceForced:
 			if len(tools) == 0 {
@@ -464,8 +473,12 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 			} else if len(tools) == 1 {
 				params.ToolChoice = anthropic.ToolChoiceParamOfTool(*tools[0].GetName())
 			} else {
+				p := &anthropic.ToolChoiceAnyParam{}
+				if claudeOptions.DisableParallelToolUse != nil {
+					p.DisableParallelToolUse = param.NewOpt[bool](*claudeOptions.DisableParallelToolUse)
+				}
 				params.ToolChoice = anthropic.ToolChoiceUnionParam{
-					OfAny: &anthropic.ToolChoiceAnyParam{},
+					OfAny: p,
 				}
 			}
 		default:
