@@ -28,28 +28,87 @@ import (
 	"strings"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
-
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
-	"github.com/cloudwego/eino/schema"
 )
 
-// 全局变量定义支持的参数值
+// TimeRange represents the time range for search
+type TimeRange string
+
+const (
+	TimeRangeDay   TimeRange = "day"
+	TimeRangeMonth TimeRange = "month"
+	TimeRangeYear  TimeRange = "year"
+)
+
+// Language represents the language code for search
+type Language string
+
+const (
+	LanguageAll  Language = "all"
+	LanguageEn   Language = "en"
+	LanguageZh   Language = "zh"
+	LanguageZhCN Language = "zh-CN"
+	LanguageZhTW Language = "zh-TW"
+	LanguageFr   Language = "fr"
+	LanguageDe   Language = "de"
+	LanguageEs   Language = "es"
+	LanguageJa   Language = "ja"
+	LanguageKo   Language = "ko"
+	LanguageRu   Language = "ru"
+	LanguageAr   Language = "ar"
+	LanguagePt   Language = "pt"
+	LanguageIt   Language = "it"
+	LanguageNl   Language = "nl"
+	LanguagePl   Language = "pl"
+	LanguageTr   Language = "tr"
+)
+
+// SafeSearchLevel represents the safe search filter level
+type SafeSearchLevel int
+
+const (
+	SafeSearchNone     SafeSearchLevel = 0
+	SafeSearchModerate SafeSearchLevel = 1
+	SafeSearchStrict   SafeSearchLevel = 2
+)
+
+// Engine represents the search engine
+type Engine string
+
+const (
+	EngineGoogle     Engine = "google"
+	EngineDuckDuckGo Engine = "duckduckgo"
+	EngineBaidu      Engine = "baidu"
+	EngineBing       Engine = "bing"
+	Engine360Search  Engine = "360search"
+	EngineYahoo      Engine = "yahoo"
+	EngineQuark      Engine = "quark"
+)
+
 var (
-	validTimeRanges = []string{"day", "month", "year"}
-	validLanguages  = []string{"all", "en", "zh", "zh-CN", "zh-TW", "fr", "de", "es", "ja", "ko", "ru", "ar", "pt", "it", "nl", "pl", "tr"}
-	validSafeSearch = []int{0, 1, 2}
-	validEngines    = []string{"google", "duckduckgo", "baidu", "bing", "360search", "yahoo", "quark"}
+	// validTimeRanges defines the valid time range values for search
+	validTimeRanges = []TimeRange{TimeRangeDay, TimeRangeMonth, TimeRangeYear}
+
+	// validLanguages defines the valid language codes for search
+	validLanguages = []Language{LanguageAll, LanguageEn, LanguageZh, LanguageZhCN, LanguageZhTW, LanguageFr, LanguageDe, LanguageEs, LanguageJa, LanguageKo, LanguageRu, LanguageAr, LanguagePt, LanguageIt, LanguageNl, LanguagePl, LanguageTr}
+
+	// validSafeSearch defines the valid safe search levels
+	validSafeSearch = []SafeSearchLevel{SafeSearchNone, SafeSearchModerate, SafeSearchStrict}
+
+	// validEngines defines the valid search engines
+	validEngines = []Engine{EngineGoogle, EngineDuckDuckGo, EngineBaidu, EngineBing, Engine360Search, EngineYahoo, EngineQuark}
+)
+
+const (
+	toolName = "web_search"
+	toolDesc = `Performs a web search using the SearXNG API, ideal for general queries, news, articles, and online content.
+		Use this for broad information gathering, recent events, or when you need diverse web sources.`
 )
 
 type SearchRequest struct {
-	Query      string  `json:"query"`
-	PageNo     int     `json:"pageno"`
-	TimeRange  *string `json:"time_range,omitempty"`
-	Language   *string `json:"language,omitempty"`
-	SafeSearch *int    `json:"safesearch,omitempty"`
-	Engines    *string `json:"engines,omitempty"`
+	Query  string `json:"query" jsonschema:"required,description=The search query. This is the main input for the web search"`
+	PageNo int    `json:"pageno" jsonschema:"description=The page number of the search results. Default is 1"`
 }
 
 func (s *SearchRequest) validate() error {
@@ -61,26 +120,40 @@ func (s *SearchRequest) validate() error {
 		return errors.New("pageno must be greater than 0")
 	}
 
-	if s.TimeRange != nil {
-		if err := validateInSlice(*s.TimeRange, validTimeRanges, "time_range"); err != nil {
+	return nil
+}
+
+type SearchRequestConfig struct {
+	TimeRange  TimeRange       `json:"time_range,omitempty"`
+	Language   Language        `json:"language,omitempty"`
+	SafeSearch SafeSearchLevel `json:"safesearch,omitempty"`
+	Engines    []Engine        `json:"engines,omitempty"`
+}
+
+func (s *SearchRequestConfig) validate() error {
+	// 只有当 TimeRange 不是零值时才验证
+	if s.TimeRange != "" {
+		if err := validateInSlice(s.TimeRange, validTimeRanges, "time_range"); err != nil {
 			return err
 		}
 	}
 
-	if s.Language != nil {
-		if err := validateInSlice(*s.Language, validLanguages, "language"); err != nil {
+	// 只有当 Language 不是零值时才验证
+	if s.Language != "" {
+		if err := validateInSlice(s.Language, validLanguages, "language"); err != nil {
 			return err
 		}
 	}
 
-	if s.SafeSearch != nil {
-		if err := validateInSlice(*s.SafeSearch, validSafeSearch, "safesearch"); err != nil {
+	// 只有当 SafeSearch 不是零值时才验证
+	if s.SafeSearch != 0 {
+		if err := validateInSlice(s.SafeSearch, validSafeSearch, "safesearch"); err != nil {
 			return err
 		}
 	}
 
-	if s.Engines != nil {
-		if err := validateEngines(*s.Engines); err != nil {
+	if len(s.Engines) > 0 {
+		if err := validateEngines(s.Engines); err != nil {
 			return err
 		}
 	}
@@ -88,22 +161,32 @@ func (s *SearchRequest) validate() error {
 	return nil
 }
 
-func (s *SearchRequest) build() url.Values {
+func (s *SearchRequest) build(config *SearchRequestConfig) url.Values {
 	params := url.Values{}
 	params.Set("q", s.Query)
 	params.Set("pageno", strconv.Itoa(s.PageNo))
 	params.Set("format", "json")
-	if s.TimeRange != nil {
-		params.Set("time_range", *s.TimeRange)
-	}
-	if s.Language != nil {
-		params.Set("language", *s.Language)
-	}
-	if s.SafeSearch != nil {
-		params.Set("safesearch", strconv.Itoa(*s.SafeSearch))
-	}
-	if s.Engines != nil {
-		params.Set("engines", *s.Engines)
+	if config != nil {
+		// 只有当 TimeRange 不是零值时才添加
+		if config.TimeRange != "" {
+			params.Set("time_range", string(config.TimeRange))
+		}
+		// 只有当 Language 不是零值时才添加
+		if config.Language != "" {
+			params.Set("language", string(config.Language))
+		}
+		// 只有当 SafeSearch 不是零值时才添加
+		if config.SafeSearch != 0 {
+			params.Set("safesearch", strconv.Itoa(int(config.SafeSearch)))
+		}
+		if len(config.Engines) > 0 {
+			// 将[]Engine转换为逗号分隔的字符串
+			engineStrs := make([]string, len(config.Engines))
+			for i, engine := range config.Engines {
+				engineStrs[i] = string(engine)
+			}
+			params.Set("engines", strings.Join(engineStrs, ","))
+		}
 	}
 	return params
 }
@@ -118,20 +201,13 @@ func validateInSlice[T comparable](value T, validValues []T, paramName string) e
 	return fmt.Errorf("%s must be one of: %+v", paramName, validValues)
 }
 
-// validateEngines 验证engines参数，支持逗号分隔的多个engines
-func validateEngines(engines string) error {
-	if engines == "" {
+// validateEngines 验证engines参数，支持多个engines
+func validateEngines(engines []Engine) error {
+	if len(engines) == 0 {
 		return nil
 	}
 
-	// 分割逗号分隔的engines
-	engineList := strings.Split(engines, ",")
-	for _, engine := range engineList {
-		engine = strings.TrimSpace(engine)
-		if engine == "" {
-			continue
-		}
-
+	for _, engine := range engines {
 		// 检查每个engine是否在有效列表中
 		valid := false
 		for _, validEngine := range validEngines {
@@ -163,8 +239,9 @@ type SearchResponse struct {
 }
 
 type SearxngClient struct {
-	client *http.Client
-	config *ClientConfig
+	client        *http.Client
+	config        *ClientConfig
+	requestConfig *SearchRequestConfig
 }
 
 // Config represents the search client configuration.
@@ -201,7 +278,7 @@ type ClientConfig struct {
 	MaxRetries int `json:"max_retries"`
 }
 
-func NewClient(config *ClientConfig) (*SearxngClient, error) {
+func NewClient(config *ClientConfig, requestConfig *SearchRequestConfig) (*SearxngClient, error) {
 	if config == nil {
 		return nil, errors.New("config is nil")
 	}
@@ -222,7 +299,8 @@ func NewClient(config *ClientConfig) (*SearxngClient, error) {
 		client: &http.Client{
 			Timeout: config.Timeout,
 		},
-		config: config,
+		config:        config,
+		requestConfig: requestConfig,
 	}
 	return sc, nil
 }
@@ -306,7 +384,7 @@ func (s *SearxngClient) Search(ctx context.Context, params *SearchRequest) (*Sea
 	}
 
 	// Set default SafeSearch if not provided
-	query := params.build()
+	query := params.build(s.requestConfig)
 
 	// Build query URL
 	queryURL := fmt.Sprintf("%s?%s", s.config.BaseUrl, query.Encode())
@@ -347,287 +425,18 @@ func parseSearchResponse(body []byte) (*SearchResponse, error) {
 	return &response, nil
 }
 
-func getSearchSchema() *schema.ToolInfo {
-	sc := &openapi3.Schema{
-		Type:     openapi3.TypeObject,
-		Required: []string{"query"},
-		Properties: map[string]*openapi3.SchemaRef{
-			"query": {
-				Value: &openapi3.Schema{
-					Type:        openapi3.TypeString,
-					Description: "The search query. This is the main input for the web search",
-				},
-			},
-			"pageno": {
-				Value: &openapi3.Schema{
-					Type:        openapi3.TypeInteger,
-					Description: "The page number of the search results. Default is 1",
-					Default:     1,
-				},
-			},
-			"time_range": {
-				Value: &openapi3.Schema{
-					Description: "Time range of search",
-					OneOf: []*openapi3.SchemaRef{
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"day"},
-								Description: "Search information from the past day",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"month"},
-								Description: "Search information from the past month",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"year"},
-								Description: "Search information from the past year",
-							},
-						},
-					},
-				},
-			},
-			"language": {
-				Value: &openapi3.Schema{
-					Description: "Language of search",
-					Default:     "all",
-					OneOf: []*openapi3.SchemaRef{
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"all"},
-								Description: "Search in all languages",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"en"},
-								Description: "Search in English",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"zh"},
-								Description: "Search in Chinese",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"zh-CN"},
-								Description: "Search in Chinese (Simplified)",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"zh-TW"},
-								Description: "Search in Chinese (Traditional)",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"fr"},
-								Description: "Search in French",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"de"},
-								Description: "Search in German",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"es"},
-								Description: "Search in Spanish",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"ja"},
-								Description: "Search in Japanese",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"ko"},
-								Description: "Search in Korean",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"ru"},
-								Description: "Search in Russian",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"ar"},
-								Description: "Search in Arabic",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"pt"},
-								Description: "Search in Portuguese",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"it"},
-								Description: "Search in Italian",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"nl"},
-								Description: "Search in Dutch",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"pl"},
-								Description: "Search in Polish",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"tr"},
-								Description: "Search in Turkish",
-							},
-						},
-					},
-				},
-			},
-			"safesearch": {
-				Value: &openapi3.Schema{
-					Description: "Safe search filter level",
-					Default:     0,
-					OneOf: []*openapi3.SchemaRef{
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeInteger,
-								Enum:        []any{0},
-								Description: "None - No safe search filtering",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeInteger,
-								Enum:        []any{1},
-								Description: "Moderate - Moderate safe search filtering",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeInteger,
-								Enum:        []any{2},
-								Description: "Strict - Strict safe search filtering",
-							},
-						},
-					},
-				},
-			},
-			"engines": {
-				Value: &openapi3.Schema{
-					Type:        openapi3.TypeString,
-					Description: "Comma separated list, specifies the active search engines",
-					OneOf: []*openapi3.SchemaRef{
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"google"},
-								Description: "Google search engine",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"duckduckgo"},
-								Description: "DuckDuckGo search engine",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"baidu"},
-								Description: "Baidu search engine",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"bing"},
-								Description: "Bing search engine",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"360search"},
-								Description: "360 search engine",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"yahoo"},
-								Description: "Yahoo search engine",
-							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
-								Enum:        []any{"quark"},
-								Description: "Quark search engine",
-							},
-						},
-					},
-				},
-			},
-		},
+func BuildSearchInvokeTool(clientConfig *ClientConfig, requestConfig *SearchRequestConfig) (tool.InvokableTool, error) {
+	// 验证 requestConfig 的有效性
+	if requestConfig != nil {
+		if err := requestConfig.validate(); err != nil {
+			return nil, err
+		}
 	}
 
-	toolName := "web_search"
-	toolDesc := `Performs a web search using the SearXNG API, ideal for general queries, news, articles, and online content.
-		Use this for broad information gathering, recent events, or when you need diverse web sources.`
-
-	info := &schema.ToolInfo{
-		Name:        toolName,
-		Desc:        toolDesc,
-		ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(sc),
-	}
-
-	return info
-}
-
-func BuildSearchInvokeTool(cfg *ClientConfig) (tool.InvokableTool, error) {
-	client, err := NewClient(cfg)
+	client, err := NewClient(clientConfig, requestConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	searchTool := utils.NewTool(getSearchSchema(), client.Search)
-	return searchTool, nil
+	return utils.InferTool(toolName, toolDesc, client.Search)
 }

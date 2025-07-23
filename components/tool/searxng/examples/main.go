@@ -38,6 +38,17 @@ func main() {
 		log.Println("你也可以通过设置 SEARXNG_URL 环境变量来使用自定义实例")
 	}
 
+	// 创建搜索请求配置
+	requestConfig := searxng.SearchRequestConfig{
+		TimeRange:  searxng.TimeRangeMonth,
+		Language:   searxng.LanguageZh,
+		SafeSearch: searxng.SafeSearchNone,
+		Engines: []searxng.Engine{
+			searxng.EngineGoogle,
+			searxng.EngineDuckDuckGo,
+		}, // 使用多个搜索引擎
+	}
+
 	// 创建搜索工具
 	searchTool, err := searxng.BuildSearchInvokeTool(&searxng.ClientConfig{
 		BaseUrl:    searxngURL,
@@ -46,24 +57,15 @@ func main() {
 		Headers: map[string]string{
 			"User-Agent": "SearXNG-Example/1.0",
 		},
-	})
+	}, &requestConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 准备搜索参数
-	timeRange := "month"
-	language := "en"
-	safeSearch := 0
-	engines := "google,duckduckgo" // 使用多个搜索引擎
-
+	// 创建搜索工具时已经传入了 requestConfig，这里只需要基本参数
 	req := searxng.SearchRequest{
-		Query:      "CloudWeGo Eino",
-		PageNo:     1,
-		TimeRange:  &timeRange,
-		Language:   &language,
-		SafeSearch: &safeSearch,
-		Engines:    &engines,
+		Query:  "CloudWeGo Eino",
+		PageNo: 1,
 	}
 
 	args, err := json.Marshal(req)

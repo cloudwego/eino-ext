@@ -47,7 +47,16 @@ func main() {
     }
 
     // 创建搜索工具
-    searchTool, err := searxng.BuildSearchInvokeTool(cfg)
+    // 创建请求配置（可选）
+    requestConfig := &searxng.SearchRequestConfig{
+        TimeRange:  searxng.TimeRangeMonth,
+        Language:   searxng.LanguageZhCN,
+        SafeSearch: searxng.SafeSearchModerate,
+        Engines:    []searxng.Engine{searxng.EngineBaidu, searxng.EngineBing},
+    }
+
+    // 使用请求配置创建搜索工具
+    searchTool, err := searxng.BuildSearchInvokeTool(cfg, requestConfig)
     if err != nil {
         log.Fatalf("BuildSearchInvokeTool failed, err=%v", err)
     }
@@ -77,12 +86,15 @@ type ClientConfig struct {
 ### 请求 Schema
 ```go
 type SearchRequest struct {
-    Query      string  `json:"query"`                   // 搜索查询（必需）
-    PageNo     int     `json:"pageno"`                  // 页码（默认：1）
-    TimeRange  *string `json:"time_range,omitempty"`    // 时间范围："day"、"month"、"year"
-    Language   *string `json:"language,omitempty"`      // 语言代码（默认："all"）
-    SafeSearch *int    `json:"safesearch,omitempty"`    // 安全搜索级别：0、1、2（默认：0）
-    Engines    *string `json:"engines,omitempty"`       // 逗号分隔的搜索引擎列表
+    Query  string `json:"query"` // 搜索查询（必需）
+    PageNo int    `json:"pageno"` // 页码（默认：1）
+}
+
+type SearchRequestConfig struct {
+    TimeRange  TimeRange       `json:"time_range,omitempty"`  // 时间范围："day"、"month"、"year"
+    Language   Language        `json:"language,omitempty"`    // 语言代码（默认："all"）
+    SafeSearch SafeSearchLevel `json:"safesearch,omitempty"` // 安全搜索级别：0、1、2（默认：0）
+    Engines    []Engine        `json:"engines,omitempty"`     // 搜索引擎列表
 }
 ```
 
@@ -128,6 +140,7 @@ type SearchResult struct {
     Title   string `json:"title"`   // 搜索结果的标题
     Content string `json:"content"` // 结果的内容/描述
     URL     string `json:"url"`     // 搜索结果的 URL
+    Engine  string `json:"engine"`  // 搜索结果的来源引擎
 }
 ```
 
@@ -148,25 +161,31 @@ if err != nil {
 }
 
 for _, result := range response.Results {
-    fmt.Printf("标题: %s\nURL: %s\n内容: %s\n\n", 
+    fmt.Printf("标题: %s\nURL: %s\n内容: %s\n\n",
         result.Title, result.URL, result.Content)
 }
 ```
 
 ### 带过滤器的高级搜索
 ```go
-timeRange := "month"
-language := "zh-CN"
-safeSearch := 1
-engines := "baidu,bing" // 使用多个搜索引擎
+// 创建请求配置
+requestConfig := &searxng.SearchRequestConfig{
+    TimeRange:  searxng.TimeRangeMonth,
+    Language:   searxng.LanguageZhCN,
+    SafeSearch: searxng.SafeSearchModerate,
+    Engines:    []searxng.Engine{searxng.EngineBaidu, searxng.EngineBing},
+}
 
+// 使用请求配置创建客户端
+client, err := searxng.NewClient(cfg, requestConfig)
+if err != nil {
+    log.Fatalf("NewClient failed, err=%v", err)
+}
+
+// 创建搜索请求
 request := &searxng.SearchRequest{
-    Query:      "机器学习教程",
-    PageNo:     1,
-    TimeRange:  &timeRange,
-    Language:   &language,
-    SafeSearch: &safeSearch,
-    Engines:    &engines,
+    Query:  "机器学习教程",
+    PageNo: 1,
 }
 
 response, err := client.Search(ctx, request)

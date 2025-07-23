@@ -32,12 +32,8 @@ import (
 
 func TestSearchRequest_validate(t *testing.T) {
 	type fields struct {
-		Query      string
-		PageNo     int
-		TimeRange  *string
-		Language   *string
-		SafeSearch *int
-		Engines    *string
+		Query  string
+		PageNo int
 	}
 	tests := []struct {
 		name    string
@@ -67,61 +63,12 @@ func TestSearchRequest_validate(t *testing.T) {
 			},
 			wantErr: true,
 		},
-		{
-			name: "invalid time_range",
-			fields: fields{
-				Query:     "test",
-				PageNo:    1,
-				TimeRange: strPtr("invalid"),
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid language",
-			fields: fields{
-				Query:    "test",
-				PageNo:   1,
-				Language: strPtr("invalid"),
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid safesearch",
-			fields: fields{
-				Query:      "test",
-				PageNo:     1,
-				SafeSearch: intPtr(99),
-			},
-			wantErr: true,
-		},
-		{
-			name: "invalid engines",
-			fields: fields{
-				Query:   "test",
-				PageNo:  1,
-				Engines: strPtr("invalid"),
-			},
-			wantErr: true,
-		},
-		{
-			name: "valid engines",
-			fields: fields{
-				Query:   "test",
-				PageNo:  1,
-				Engines: strPtr("google,bing"),
-			},
-			wantErr: false,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &SearchRequest{
-				Query:      tt.fields.Query,
-				PageNo:     tt.fields.PageNo,
-				TimeRange:  tt.fields.TimeRange,
-				Language:   tt.fields.Language,
-				SafeSearch: tt.fields.SafeSearch,
-				Engines:    tt.fields.Engines,
+				Query:  tt.fields.Query,
+				PageNo: tt.fields.PageNo,
 			}
 			if err := s.validate(); (err != nil) != tt.wantErr {
 				t.Errorf("SearchRequest.validate() error = %v, wantErr %v", err, tt.wantErr)
@@ -130,26 +77,103 @@ func TestSearchRequest_validate(t *testing.T) {
 	}
 }
 
-func TestSearchRequest_build(t *testing.T) {
+func TestSearchRequestConfig_validate(t *testing.T) {
 	type fields struct {
-		Query      string
-		PageNo     int
-		TimeRange  *string
-		Language   *string
-		SafeSearch *int
-		Engines    *string
+		TimeRange  TimeRange
+		Language   Language
+		SafeSearch SafeSearchLevel
+		Engines    []Engine
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		wantErr bool
+	}{
+		{
+			name: "valid config",
+			fields: fields{
+				TimeRange:  TimeRangeDay,
+				Language:   LanguageEn,
+				SafeSearch: SafeSearchNone,
+				Engines:    []Engine{EngineGoogle, EngineBing},
+			},
+			wantErr: false,
+		},
+		{
+			name: "invalid time_range",
+			fields: fields{
+				TimeRange: timeRangeValue("invalid"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid language",
+			fields: fields{
+				Language: languageValue("invalid"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid safesearch",
+			fields: fields{
+				SafeSearch: safeSearchValue(99),
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid engines",
+			fields: fields{
+				Engines: enginePtr("invalid"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid engines",
+			fields: fields{
+				Engines: enginePtr("google,bing"),
+			},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &SearchRequestConfig{
+				TimeRange:  tt.fields.TimeRange,
+				Language:   tt.fields.Language,
+				SafeSearch: tt.fields.SafeSearch,
+				Engines:    tt.fields.Engines,
+			}
+			if err := s.validate(); (err != nil) != tt.wantErr {
+				t.Errorf("SearchRequestConfig.validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestSearchRequest_build(t *testing.T) {
+	type reqFields struct {
+		Query  string
+		PageNo int
+	}
+	type configFields struct {
+		TimeRange  TimeRange
+		Language   Language
+		SafeSearch SafeSearchLevel
+		Engines    []Engine
 	}
 	tests := []struct {
 		name   string
-		fields fields
+		req    reqFields
+		config *configFields
 		want   url.Values
 	}{
 		{
 			name: "basic request",
-			fields: fields{
+			req: reqFields{
 				Query:  "test",
 				PageNo: 1,
 			},
+			config: nil,
 			want: url.Values{
 				"q":      []string{"test"},
 				"pageno": []string{"1"},
@@ -158,13 +182,15 @@ func TestSearchRequest_build(t *testing.T) {
 		},
 		{
 			name: "full request",
-			fields: fields{
-				Query:      "test",
-				PageNo:     2,
-				TimeRange:  strPtr("day"),
-				Language:   strPtr("en"),
-				SafeSearch: intPtr(1),
-				Engines:    strPtr("google,bing"),
+			req: reqFields{
+				Query:  "test",
+				PageNo: 2,
+			},
+			config: &configFields{
+				TimeRange:  timeRangeValue("day"),
+				Language:   languageValue("en"),
+				SafeSearch: safeSearchValue(1),
+				Engines:    enginePtr("google,bing"),
 			},
 			want: url.Values{
 				"q":          []string{"test"},
@@ -180,14 +206,21 @@ func TestSearchRequest_build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &SearchRequest{
-				Query:      tt.fields.Query,
-				PageNo:     tt.fields.PageNo,
-				TimeRange:  tt.fields.TimeRange,
-				Language:   tt.fields.Language,
-				SafeSearch: tt.fields.SafeSearch,
-				Engines:    tt.fields.Engines,
+				Query:  tt.req.Query,
+				PageNo: tt.req.PageNo,
 			}
-			if got := s.build(); !reflect.DeepEqual(got, tt.want) {
+
+			var config *SearchRequestConfig
+			if tt.config != nil {
+				config = &SearchRequestConfig{
+					TimeRange:  tt.config.TimeRange,
+					Language:   tt.config.Language,
+					SafeSearch: tt.config.SafeSearch,
+					Engines:    tt.config.Engines,
+				}
+			}
+
+			if got := s.build(config); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("SearchRequest.build() = %v, want %v", got, tt.want)
 			}
 		})
@@ -231,16 +264,14 @@ func TestValidateInSlice(t *testing.T) {
 func TestValidateEngines(t *testing.T) {
 	tests := []struct {
 		name    string
-		engines string
+		engines []Engine
 		wantErr bool
 	}{
-		{"valid single", "google", false},
-		{"valid multiple", "google,bing", false},
-		{"valid with spaces", " google , bing ", false},
-		{"invalid single", "invalid", true},
-		{"invalid in multiple", "google,invalid", true},
-		{"empty", "", false},
-		{"empty with comma", ",", false},
+		{"valid single", []Engine{"google"}, false},
+		{"valid multiple", []Engine{"google", "bing"}, false},
+		{"invalid single", []Engine{"invalid"}, true},
+		{"invalid in multiple", []Engine{"google", "invalid"}, true},
+		{"empty", []Engine{}, false},
 	}
 
 	for _, tt := range tests {
@@ -254,7 +285,8 @@ func TestValidateEngines(t *testing.T) {
 
 func TestNewClient(t *testing.T) {
 	type args struct {
-		config *ClientConfig
+		config        *ClientConfig
+		requestConfig *SearchRequestConfig
 	}
 	tests := []struct {
 		name    string
@@ -265,7 +297,8 @@ func TestNewClient(t *testing.T) {
 		{
 			name: "nil config",
 			args: args{
-				config: nil,
+				config:        nil,
+				requestConfig: &SearchRequestConfig{},
 			},
 			want:    nil,
 			wantErr: true,
@@ -276,6 +309,7 @@ func TestNewClient(t *testing.T) {
 				config: &ClientConfig{
 					BaseUrl: "http://localhost",
 				},
+				requestConfig: &SearchRequestConfig{},
 			},
 			want: &SearxngClient{
 				config: &ClientConfig{
@@ -287,6 +321,7 @@ func TestNewClient(t *testing.T) {
 				client: &http.Client{
 					Timeout: 30 * time.Second,
 				},
+				requestConfig: &SearchRequestConfig{},
 			},
 			wantErr: false,
 		},
@@ -301,6 +336,7 @@ func TestNewClient(t *testing.T) {
 						"User-Agent": "test",
 					},
 				},
+				requestConfig: &SearchRequestConfig{},
 			},
 			want: &SearxngClient{
 				config: &ClientConfig{
@@ -314,13 +350,14 @@ func TestNewClient(t *testing.T) {
 				client: &http.Client{
 					Timeout: 10 * time.Second,
 				},
+				requestConfig: &SearchRequestConfig{},
 			},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewClient(tt.args.config)
+			got, err := NewClient(tt.args.config, tt.args.requestConfig)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewClient() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -431,7 +468,7 @@ func TestSearxngClient_Search(t *testing.T) {
 	client, err := NewClient(&ClientConfig{
 		BaseUrl:    server.URL,
 		MaxRetries: 1,
-	})
+	}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,31 +500,35 @@ func TestSearxngClient_Search(t *testing.T) {
 	}
 }
 
-func TestGetSearchSchema(t *testing.T) {
-	schemaInfo := getSearchSchema()
-	if schemaInfo == nil {
-		t.Fatal("getSearchSchema() returned nil")
-	}
-	if schemaInfo.Name != "web_search" {
-		t.Errorf("expected name 'web_search', got '%s'", schemaInfo.Name)
-	}
-	if schemaInfo.ParamsOneOf == nil {
-		t.Error("expected ParamsOneOf to be non-nil")
-	}
-}
+
 
 func TestBuildSearchInvokeTool(t *testing.T) {
-	tool, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"})
+	tool, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("BuildSearchInvokeTool() error = %v", err)
 	}
 	if tool == nil {
 		t.Fatal("BuildSearchInvokeTool() returned nil")
 	}
+
+	// Test with nil requestConfig
+	tool, err = BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, nil)
+	if err != nil {
+		t.Fatalf("BuildSearchInvokeTool() with nil requestConfig error = %v", err)
+	}
+	if tool == nil {
+		t.Fatal("BuildSearchInvokeTool() with nil requestConfig returned nil")
+	}
+
+	// Test with invalid requestConfig
+	_, err = BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, &SearchRequestConfig{TimeRange: "invalid"})
+	if err == nil {
+		t.Fatal("BuildSearchInvokeTool() with invalid requestConfig should return an error")
+	}
 }
 
 func TestBuildSearchInvokeTool_Error(t *testing.T) {
-	_, err := BuildSearchInvokeTool(nil)
+	_, err := BuildSearchInvokeTool(nil, &SearchRequestConfig{})
 	if err == nil {
 		t.Error("expected an error for nil config, got nil")
 	}
@@ -500,7 +541,7 @@ func TestSendRequestWithRetry_ContextCancelled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,6 +557,21 @@ func TestSendRequestWithRetry_ContextCancelled(t *testing.T) {
 	}
 }
 
+func safeSearchPtr(i int) *SafeSearchLevel {
+	s := SafeSearchLevel(i)
+	return &s
+}
+
+func timeRangePtr(s string) *TimeRange {
+	t := TimeRange(s)
+	return &t
+}
+
+func languagePtr(s string) *Language {
+	l := Language(s)
+	return &l
+}
+
 // Helper functions for tests
 func strPtr(s string) *string {
 	return &s
@@ -523,6 +579,34 @@ func strPtr(s string) *string {
 
 func intPtr(i int) *int {
 	return &i
+}
+
+func timeRangeValue(s string) TimeRange {
+	return TimeRange(s)
+}
+
+func languageValue(s string) Language {
+	return Language(s)
+}
+
+func safeSearchValue(i int) SafeSearchLevel {
+	return SafeSearchLevel(i)
+}
+
+func enginePtr(s string) []Engine {
+	// 将逗号分隔的字符串转换为[]Engine
+	if s == "" {
+		return nil
+	}
+	engineStrs := strings.Split(s, ",")
+	engines := make([]Engine, 0, len(engineStrs))
+	for _, engineStr := range engineStrs {
+		engineStr = strings.TrimSpace(engineStr)
+		if engineStr != "" {
+			engines = append(engines, Engine(engineStr))
+		}
+	}
+	return engines
 }
 
 func TestSearxngClient_Search_NoDefaultUserAgent(t *testing.T) {
@@ -538,7 +622,7 @@ func TestSearxngClient_Search_NoDefaultUserAgent(t *testing.T) {
 		Headers: map[string]string{
 			"User-Agent": "custom-agent",
 		},
-	})
+	}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -557,7 +641,7 @@ func TestSearxngClient_sendRequestWithRetry_FailedRequest(t *testing.T) {
 	client, err := NewClient(&ClientConfig{
 		BaseUrl:    "http://localhost:12345", // Non-existent server
 		MaxRetries: 1,
-	})
+	}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -579,7 +663,7 @@ func TestSearxngClient_sendRequestWithRetry_BadResponseBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -596,21 +680,46 @@ func TestSearxngClient_sendRequestWithRetry_BadResponseBody(t *testing.T) {
 }
 
 func TestSearchRequest_validate_valid(t *testing.T) {
-	timeRange := "day"
-	lang := "en"
-	safeSearch := 1
-	engines := "google"
+	// 创建并验证 SearchRequest
 	req := &SearchRequest{
-		Query:      "test",
-		PageNo:     1,
-		TimeRange:  &timeRange,
-		Language:   &lang,
-		SafeSearch: &safeSearch,
-		Engines:    &engines,
+		Query:  "test",
+		PageNo: 1,
 	}
+
 	err := req.validate()
 	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+		t.Errorf("unexpected error validating SearchRequest: %v", err)
+	}
+
+	// 创建并验证 SearchRequestConfig
+	config := &SearchRequestConfig{
+		TimeRange:  timeRangeValue("day"),
+		Language:   languageValue("en"),
+		SafeSearch: safeSearchValue(1),
+		Engines:    enginePtr("google"),
+	}
+
+	err = config.validate()
+	if err != nil {
+		t.Errorf("unexpected error validating SearchRequestConfig: %v", err)
+	}
+
+	// 测试 build 方法
+	params := req.build(config)
+	if params.Get("q") != "test" {
+		t.Errorf("expected query to be 'test', got '%s'", params.Get("q"))
+	}
+	if params.Get("time_range") != "day" {
+		t.Errorf("expected time_range to be 'day', got '%s'", params.Get("time_range"))
+	}
+	if params.Get("language") != "en" {
+		t.Errorf("expected language to be 'en', got '%s'", params.Get("language"))
+	}
+	if params.Get("safesearch") != "1" {
+		t.Errorf("expected safesearch to be '1', got '%s'", params.Get("safesearch"))
+	}
+	if params.Get("engines") != "google" {
+		t.Errorf("expected engines to be 'google', got '%s'", params.Get("engines"))
 	}
 }
 
@@ -623,7 +732,8 @@ func TestValidateInSlice_ErrorFormatting(t *testing.T) {
 }
 
 func TestValidateEngines_ErrorFormatting(t *testing.T) {
-	err := validateEngines("google,invalid_engine")
+	engines := []Engine{"google", "invalid_engine"}
+	err := validateEngines(engines)
 	expected := "engine 'invalid_engine' is not supported. Valid engines are: [google duckduckgo baidu bing 360search yahoo quark]"
 	if err == nil || err.Error() != expected {
 		t.Errorf("expected error string '%s', got '%v'", expected, err)
@@ -635,7 +745,7 @@ func TestSearchRequest_build_no_optionals(t *testing.T) {
 		Query:  "test",
 		PageNo: 1,
 	}
-	values := req.build()
+	values := req.build(nil)
 	if values.Get("time_range") != "" {
 		t.Error("time_range should not be set")
 	}
@@ -652,7 +762,7 @@ func TestSearchRequest_build_no_optionals(t *testing.T) {
 
 func TestNewClient_DefaultValues(t *testing.T) {
 	cfg := &ClientConfig{BaseUrl: "http://test.com"}
-	client, err := NewClient(cfg)
+	client, err := NewClient(cfg, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -674,7 +784,7 @@ func TestSearxngClient_Search_ContextCancelled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -692,7 +802,7 @@ func TestSearxngClient_Search_ContextCancelled(t *testing.T) {
 }
 
 func TestSearxngClient_Search_RequestCreationError(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://[::1]:namedport"}) // Invalid URL
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://[::1]:namedport"}, &SearchRequestConfig{}) // Invalid URL
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -714,7 +824,7 @@ func TestSearxngClient_sendRequestWithRetry_RateLimitSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1, Timeout: 100 * time.Millisecond})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1, Timeout: 100 * time.Millisecond}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -741,22 +851,14 @@ func TestParseSearchResponse_EmptyResults(t *testing.T) {
 }
 
 func TestValidateEngines_EmptyString(t *testing.T) {
-	if err := validateEngines(" "); err != nil {
-		t.Errorf("unexpected error for empty string: %v", err)
+	if err := validateEngines([]Engine{}); err != nil {
+		t.Errorf("unexpected error for empty engines slice: %v", err)
 	}
 }
 
-func TestSearchRequest_build_safesearch(t *testing.T) {
-	s := &SearchRequest{
-		Query:      "test",
-		PageNo:     1,
-		SafeSearch: intPtr(2),
-	}
-	v := s.build()
-	if got := v.Get("safesearch"); got != "2" {
-		t.Errorf("expected safesearch '2', got '%s'", got)
-	}
-}
+
+
+
 
 func TestSearxngClient_Search_DefaultUserAgent(t *testing.T) {
 	var ua string
@@ -766,7 +868,7 @@ func TestSearxngClient_Search_DefaultUserAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -788,7 +890,7 @@ func TestSearxngClient_sendRequestWithRetry_ParseError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,9 +972,9 @@ func Test_validateInSlice(t *testing.T) {
 	}
 }
 
-func Test_validateEngines(t *testing.T) {
+func TestSearchRequest_validate_params(t *testing.T) {
 	type args struct {
-		engines string
+		engines []Engine
 	}
 	tests := []struct {
 		name    string
@@ -881,28 +983,18 @@ func Test_validateEngines(t *testing.T) {
 	}{
 		{
 			name:    "empty",
-			args:    args{""},
+			args:    args{[]Engine{}},
 			wantErr: false,
 		},
 		{
 			name:    "valid",
-			args:    args{"google,bing"},
+			args:    args{[]Engine{"google", "bing"}},
 			wantErr: false,
 		},
 		{
 			name:    "invalid",
-			args:    args{"google,foo"},
+			args:    args{[]Engine{"google", "foo"}},
 			wantErr: true,
-		},
-		{
-			name:    "trim space",
-			args:    args{" google , bing "},
-			wantErr: false,
-		},
-		{
-			name:    "empty engine",
-			args:    args{"google, ,bing"},
-			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
@@ -938,7 +1030,7 @@ func TestSearxngClient_Search_WithHeader(t *testing.T) {
 	client, err := NewClient(&ClientConfig{
 		BaseUrl: server.URL,
 		Headers: map[string]string{"X-Test": "test-value"},
-	})
+	}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -965,7 +1057,7 @@ func TestSearxngClient_sendRequestWithRetry_RetrySuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 2, Timeout: 100 * time.Millisecond})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 2, Timeout: 100 * time.Millisecond}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -996,21 +1088,35 @@ func Test_intPtr(t *testing.T) {
 	}
 }
 
-func Test_getSearchSchema(t *testing.T) {
-	s := getSearchSchema()
-	if s.Name != "web_search" {
-		t.Errorf("expected name web_search, got %s", s.Name)
+
+
+func Test_enginePtr(t *testing.T) {
+	// 测试单个引擎
+	s := "google"
+	ep := enginePtr(s)
+	if len(ep) != 1 || string(ep[0]) != s {
+		t.Errorf("enginePtr failed for single engine, expected [%s], got %v", s, ep)
 	}
-	if s.Desc == "" {
-		t.Error("description should not be empty")
+
+	// 测试多个引擎
+	multi := "google,bing"
+	ep = enginePtr(multi)
+	if len(ep) != 2 || string(ep[0]) != "google" || string(ep[1]) != "bing" {
+		t.Errorf("enginePtr failed for multiple engines, expected [google,bing], got %v", ep)
 	}
-	if s.ParamsOneOf == nil {
-		t.Error("params should not be nil")
+
+	// 测试空字符串
+	empty := ""
+	ep = enginePtr(empty)
+	if ep != nil {
+		t.Errorf("enginePtr failed for empty string, expected nil, got %v", ep)
 	}
 }
 
+
+
 func Test_BuildSearchInvokeTool(t *testing.T) {
-	_, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"})
+	_, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1028,10 +1134,8 @@ func TestSearchRequest_validate_pageno(t *testing.T) {
 }
 
 func TestSearchRequest_validate_time_range(t *testing.T) {
-	req := &SearchRequest{
-		Query:     "test",
-		PageNo:    1,
-		TimeRange: strPtr("invalid"),
+	req := &SearchRequestConfig{
+		TimeRange: "invalid",
 	}
 	err := req.validate()
 	if err == nil {
@@ -1040,10 +1144,8 @@ func TestSearchRequest_validate_time_range(t *testing.T) {
 }
 
 func TestSearchRequest_validate_language(t *testing.T) {
-	req := &SearchRequest{
-		Query:    "test",
-		PageNo:   1,
-		Language: strPtr("invalid"),
+	req := &SearchRequestConfig{
+		Language: "invalid",
 	}
 	err := req.validate()
 	if err == nil {
@@ -1052,10 +1154,8 @@ func TestSearchRequest_validate_language(t *testing.T) {
 }
 
 func TestSearchRequest_validate_safesearch(t *testing.T) {
-	req := &SearchRequest{
-		Query:      "test",
-		PageNo:     1,
-		SafeSearch: intPtr(10),
+	req := &SearchRequestConfig{
+		SafeSearch: 10,
 	}
 	err := req.validate()
 	if err == nil {
@@ -1064,10 +1164,8 @@ func TestSearchRequest_validate_safesearch(t *testing.T) {
 }
 
 func TestSearchRequest_validate_engines(t *testing.T) {
-	req := &SearchRequest{
-		Query:   "test",
-		PageNo:  1,
-		Engines: strPtr("invalid"),
+	req := &SearchRequestConfig{
+		Engines: []Engine{"invalid"},
 	}
 	err := req.validate()
 	if err == nil {
@@ -1077,14 +1175,16 @@ func TestSearchRequest_validate_engines(t *testing.T) {
 
 func TestSearchRequest_build_all_params(t *testing.T) {
 	req := &SearchRequest{
-		Query:      "test",
-		PageNo:     2,
-		TimeRange:  strPtr("year"),
-		Language:   strPtr("zh-CN"),
-		SafeSearch: intPtr(2),
-		Engines:    strPtr("google,bing"),
+		Query:  "test",
+		PageNo: 2,
 	}
-	v := req.build()
+	config := &SearchRequestConfig{
+		TimeRange:  "year",
+		Language:   "zh-CN",
+		SafeSearch: 2,
+		Engines:    []Engine{"google", "bing"},
+	}
+	v := req.build(config)
 	if v.Get("q") != "test" {
 		t.Errorf("wrong q value")
 	}
@@ -1115,7 +1215,7 @@ func TestNewClient_Proxy(t *testing.T) {
 	}
 	// This test just ensures NewClient runs, but doesn't actually test proxy functionality
 	// as that would require a running proxy server.
-	_, err := NewClient(cfg)
+	_, err := NewClient(cfg, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("failed to create client with proxy: %v", err)
 	}
@@ -1127,7 +1227,7 @@ func TestSearxngClient_Search_EmptyResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1137,8 +1237,6 @@ func TestSearxngClient_Search_EmptyResponse(t *testing.T) {
 		t.Errorf("expected 'no search results found' error, got %v", err)
 	}
 }
-
-
 
 func Test_validateInSlice_Comparable(t *testing.T) {
 	if err := validateInSlice(1.0, []float64{1.0, 2.0}, "float"); err != nil {
@@ -1189,7 +1287,7 @@ func Test_parseSearchResponse_WithNilResults(t *testing.T) {
 }
 
 func Test_BuildSearchInvokeTool_WithNilConfig(t *testing.T) {
-	_, err := BuildSearchInvokeTool(nil)
+	_, err := BuildSearchInvokeTool(nil, &SearchRequestConfig{})
 	if err == nil {
 		t.Error("Expected an error, but got nil")
 	}
@@ -1200,7 +1298,7 @@ func Test_BuildSearchInvokeTool_WithNilConfig(t *testing.T) {
 }
 
 func Test_SearxngClient_Search_WithEmptyBaseUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: ""})
+	client, err := NewClient(&ClientConfig{BaseUrl: ""}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1211,7 +1309,7 @@ func Test_SearxngClient_Search_WithEmptyBaseUrl(t *testing.T) {
 }
 
 func Test_SearxngClient_sendRequestWithRetry_WithNilContext(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1223,7 +1321,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithNilContext(t *testing.T) {
 }
 
 func Test_SearxngClient_sendRequestWithRetry_WithNilRequest(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1234,7 +1332,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithNilRequest(t *testing.T) {
 }
 
 func Test_SearxngClient_Search_WithNilContext(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1245,7 +1343,7 @@ func Test_SearxngClient_Search_WithNilContext(t *testing.T) {
 }
 
 func Test_SearxngClient_Search_WithInvalidUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1256,7 +1354,7 @@ func Test_SearxngClient_Search_WithInvalidUrl(t *testing.T) {
 }
 
 func Test_SearxngClient_sendRequestWithRetry_WithInvalidUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1272,7 +1370,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithTimeout(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, Timeout: 100 * time.Millisecond})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, Timeout: 100 * time.Millisecond}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1288,7 +1386,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithRateLimit(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 0})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 0}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1304,7 +1402,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithNoResults(t *testing.T) {
 		fmt.Fprint(w, `{"results":[]}`)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1320,7 +1418,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithBadJson(t *testing.T) {
 		fmt.Fprint(w, `{"results":`)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1336,7 +1434,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithBadBody(t *testing.T) {
 		w.Header().Set("Content-Length", strconv.Itoa(1))
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

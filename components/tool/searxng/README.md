@@ -47,7 +47,16 @@ func main() {
     }
 
     // Create the search tool
-    searchTool, err := searxng.BuildSearchInvokeTool(cfg)
+    // Create request config (optional)
+    requestConfig := &searxng.SearchRequestConfig{
+        TimeRange:  searxng.TimeRangeMonth,
+        Language:   searxng.LanguageEn,
+        SafeSearch: searxng.SafeSearchModerate,
+        Engines:    []searxng.Engine{searxng.EngineGoogle, searxng.EngineBing},
+    }
+
+    // Create the search tool with request config
+    searchTool, err := searxng.BuildSearchInvokeTool(cfg, requestConfig)
     if err != nil {
         log.Fatalf("BuildSearchInvokeTool failed, err=%v", err)
     }
@@ -77,12 +86,15 @@ type ClientConfig struct {
 ### Request Schema
 ```go
 type SearchRequest struct {
-    Query      string  `json:"query"`                    // The search query (required)
-    PageNo     int     `json:"pageno"`                  // Page number (default: 1)
-    TimeRange  *string `json:"time_range,omitempty"`    // Time range: "day", "month", "year"
-    Language   *string `json:"language,omitempty"`      // Language code (default: "all")
-    SafeSearch *int    `json:"safesearch,omitempty"`    // Safe search level: 0, 1, 2 (default: 0)
-    Engines    *string `json:"engines,omitempty"`       // Comma-separated list of search engines
+    Query  string `json:"query"` // The search query (required)
+    PageNo int    `json:"pageno"` // Page number (default: 1)
+}
+
+type SearchRequestConfig struct {
+    TimeRange  TimeRange       `json:"time_range,omitempty"`  // Time range: "day", "month", "year"
+    Language   Language        `json:"language,omitempty"`    // Language code (default: "all")
+    SafeSearch SafeSearchLevel `json:"safesearch,omitempty"` // Safe search level: 0, 1, 2 (default: 0)
+    Engines    []Engine        `json:"engines,omitempty"`     // List of search engines
 }
 ```
 
@@ -128,6 +140,7 @@ type SearchResult struct {
     Title   string `json:"title"`   // Title of the search result
     Content string `json:"content"` // Content/description of the result
     URL     string `json:"url"`     // URL of the search result
+    Engine  string `json:"engine"`  // The engine of the search result
 }
 ```
 
@@ -155,18 +168,24 @@ for _, result := range response.Results {
 
 ### Advanced Search with Filters
 ```go
-timeRange := "month"
-language := "en"
-safeSearch := 1
-engines := "google,duckduckgo" // Use multiple search engines
+// Create request config
+requestConfig := &searxng.SearchRequestConfig{
+    TimeRange:  searxng.TimeRangeMonth,
+    Language:   searxng.LanguageEn,
+    SafeSearch: searxng.SafeSearchModerate,
+    Engines:    []searxng.Engine{searxng.EngineGoogle, searxng.EngineDuckDuckGo},
+}
 
+// Create client with request config
+client, err := searxng.NewClient(cfg, requestConfig)
+if err != nil {
+    log.Fatalf("NewClient failed, err=%v", err)
+}
+
+// Create search request
 request := &searxng.SearchRequest{
-    Query:      "machine learning tutorials",
-    PageNo:     1,
-    TimeRange:  &timeRange,
-    Language:   &language,
-    SafeSearch: &safeSearch,
-    Engines:    &engines,
+    Query:  "machine learning tutorials",
+    PageNo: 1,
 }
 
 response, err := client.Search(ctx, request)
