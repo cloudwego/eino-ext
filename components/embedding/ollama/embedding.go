@@ -59,6 +59,10 @@ type EmbeddingConfig struct {
 	// Required
 	Model string `json:"model"`
 
+	// Truncate specifies whether to truncate text to model's maximum context length
+	// When set to true, if text to embed exceeds the model's maximum context length,
+	// a call to EmbedStrings will return an error
+	// Optional.
 	Truncate *bool `json:"truncate,omitempty"`
 
 	// KeepAlive controls how long the model will stay loaded in memory following this request.
@@ -80,10 +84,6 @@ type Embedder struct {
 func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error) {
 	if config == nil {
 		return nil, fmt.Errorf("embedding config must not be nil")
-	}
-
-	if len(config.Model) == 0 {
-		return nil, fmt.Errorf("model must not be empty")
 	}
 
 	if len(config.BaseURL) == 0 {
@@ -110,6 +110,11 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) (
 	embeddings [][]float64, err error) {
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
 
 	req := &api.EmbedRequest{
 		Model:    e.conf.Model,
@@ -121,8 +126,12 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 		req.KeepAlive = &api.Duration{Duration: *e.conf.KeepAlive}
 	}
 
+	options := embedding.GetCommonOptions(&embedding.Options{
+		Model: &e.conf.Model,
+	}, opts...)
+
 	conf := &embedding.Config{
-		Model: e.conf.Model,
+		Model: *options.Model,
 	}
 
 	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
@@ -130,11 +139,6 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 		Texts:  texts,
 		Config: conf,
 	})
-	defer func() {
-		if err != nil {
-			callbacks.OnError(ctx, err)
-		}
-	}()
 
 	resp, err := e.cli.Embed(ctx, req)
 	if err != nil {

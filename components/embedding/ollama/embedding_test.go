@@ -80,10 +80,12 @@ func TestEmbedding(t *testing.T) {
 
 	t.Run("invalid param - missing model", func(t *testing.T) {
 		ctx := context.Background()
-		_, err := NewEmbedder(ctx, &EmbeddingConfig{
+		emb, err := NewEmbedder(ctx, &EmbeddingConfig{
 			BaseURL: defaultBaseUrl,
 			Timeout: 10 * time.Second,
 		})
+
+		_, err = emb.EmbedStrings(ctx, []string{"hello world"})
 
 		assert.NotNil(t, err)
 	})
