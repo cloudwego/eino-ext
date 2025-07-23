@@ -161,28 +161,28 @@ func (s *SearchRequestConfig) validate() error {
 	return nil
 }
 
-func (s *SearchRequest) build(config *SearchRequestConfig) url.Values {
+func (s *SearchRequest) build(cfg *SearchRequestConfig) url.Values {
 	params := url.Values{}
 	params.Set("q", s.Query)
 	params.Set("pageno", strconv.Itoa(s.PageNo))
 	params.Set("format", "json")
-	if config != nil {
+	if cfg != nil {
 		// 只有当 TimeRange 不是零值时才添加
-		if config.TimeRange != "" {
-			params.Set("time_range", string(config.TimeRange))
+		if cfg.TimeRange != "" {
+			params.Set("time_range", string(cfg.TimeRange))
 		}
 		// 只有当 Language 不是零值时才添加
-		if config.Language != "" {
-			params.Set("language", string(config.Language))
+		if cfg.Language != "" {
+			params.Set("language", string(cfg.Language))
 		}
 		// 只有当 SafeSearch 不是零值时才添加
-		if config.SafeSearch != 0 {
-			params.Set("safesearch", strconv.Itoa(int(config.SafeSearch)))
+		if cfg.SafeSearch != 0 {
+			params.Set("safesearch", strconv.Itoa(int(cfg.SafeSearch)))
 		}
-		if len(config.Engines) > 0 {
+		if len(cfg.Engines) > 0 {
 			// 将[]Engine转换为逗号分隔的字符串
-			engineStrs := make([]string, len(config.Engines))
-			for i, engine := range config.Engines {
+			engineStrs := make([]string, len(cfg.Engines))
+			for i, engine := range cfg.Engines {
 				engineStrs[i] = string(engine)
 			}
 			params.Set("engines", strings.Join(engineStrs, ","))
@@ -241,7 +241,6 @@ type SearchResponse struct {
 type SearxngClient struct {
 	client        *http.Client
 	config        *ClientConfig
-	requestConfig *SearchRequestConfig
 }
 
 // Config represents the search client configuration.
@@ -276,31 +275,40 @@ type ClientConfig struct {
 	// MaxRetries specifies the maximum number of retry attempts for failed requests.
 	// Default: 3
 	MaxRetries int `json:"max_retries"`
+
+	// RequestConfig specifies the search request configuration.
+	RequestConfig *SearchRequestConfig
 }
 
-func NewClient(config *ClientConfig, requestConfig *SearchRequestConfig) (*SearxngClient, error) {
-	if config == nil {
+func NewClient(cfg *ClientConfig) (*SearxngClient, error) {
+	if cfg == nil {
 		return nil, errors.New("config is nil")
 	}
 
-	if config.Timeout == 0 {
-		config.Timeout = 30 * time.Second
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 30 * time.Second
 	}
 
-	if config.MaxRetries == 0 {
-		config.MaxRetries = 3
+	if cfg.MaxRetries == 0 {
+		cfg.MaxRetries = 3
 	}
 
-	if config.Headers == nil {
-		config.Headers = make(map[string]string)
+	if cfg.Headers == nil {
+		cfg.Headers = make(map[string]string)
+	}
+
+	// 验证 requestConfig 的有效性
+	if cfg.RequestConfig != nil {
+		if err := cfg.RequestConfig.validate(); err != nil {
+			return nil, err
+		}
 	}
 
 	sc := &SearxngClient{
 		client: &http.Client{
-			Timeout: config.Timeout,
+			Timeout: cfg.Timeout,
 		},
-		config:        config,
-		requestConfig: requestConfig,
+		config:        cfg,
 	}
 	return sc, nil
 }
@@ -384,7 +392,7 @@ func (s *SearxngClient) Search(ctx context.Context, params *SearchRequest) (*Sea
 	}
 
 	// Set default SafeSearch if not provided
-	query := params.build(s.requestConfig)
+	query := params.build(s.config.RequestConfig)
 
 	// Build query URL
 	queryURL := fmt.Sprintf("%s?%s", s.config.BaseUrl, query.Encode())
@@ -425,15 +433,8 @@ func parseSearchResponse(body []byte) (*SearchResponse, error) {
 	return &response, nil
 }
 
-func BuildSearchInvokeTool(clientConfig *ClientConfig, requestConfig *SearchRequestConfig) (tool.InvokableTool, error) {
-	// 验证 requestConfig 的有效性
-	if requestConfig != nil {
-		if err := requestConfig.validate(); err != nil {
-			return nil, err
-		}
-	}
-
-	client, err := NewClient(clientConfig, requestConfig)
+func BuildSearchInvokeTool(cfg *ClientConfig) (tool.InvokableTool, error) {
+	client, err := NewClient(cfg)
 	if err != nil {
 		return nil, err
 	}

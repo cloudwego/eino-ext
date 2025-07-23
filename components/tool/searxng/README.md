@@ -36,6 +36,14 @@ import (
 )
 
 func main() {
+    // Create search request configuration
+    requestConfig := &searxng.SearchRequestConfig{
+        TimeRange:  searxng.TimeRangeMonth,
+        Language:   searxng.LanguageEn,
+        SafeSearch: searxng.SafeSearchModerate,
+        Engines:    []searxng.Engine{searxng.EngineGoogle, searxng.EngineBing},
+    }
+
     // Create client config
     cfg := &searxng.ClientConfig{
         BaseUrl: "https://searx.example.com/search", // Your SearXNG instance URL
@@ -44,19 +52,11 @@ func main() {
             "User-Agent": "MyApp/1.0",
         },
         MaxRetries: 3,
+        RequestConfig: requestConfig, // Add request config to client config
     }
 
     // Create the search tool
-    // Create request config (optional)
-    requestConfig := &searxng.SearchRequestConfig{
-        TimeRange:  searxng.TimeRangeMonth,
-        Language:   searxng.LanguageEn,
-        SafeSearch: searxng.SafeSearchModerate,
-        Engines:    []searxng.Engine{searxng.EngineGoogle, searxng.EngineBing},
-    }
-
-    // Create the search tool with request config
-    searchTool, err := searxng.BuildSearchInvokeTool(cfg, requestConfig)
+    searchTool, err := searxng.BuildSearchInvokeTool(cfg)
     if err != nil {
         log.Fatalf("BuildSearchInvokeTool failed, err=%v", err)
     }
@@ -73,14 +73,14 @@ The tool can be configured using the `ClientConfig` struct:
 
 ```go
 type ClientConfig struct {
-    BaseUrl    string            // Base URL of the SearXNG instance (required)
-    Headers    map[string]string // Custom HTTP headers
-    Timeout    time.Duration     // Request timeout (default: 30 seconds)
-    ProxyURL   string           // Proxy server URL
-    MaxRetries int              // Maximum retry attempts (default: 3)
+    BaseUrl        string                // Base URL of the SearXNG instance (required)
+    Headers        map[string]string     // Custom HTTP headers
+    Timeout        time.Duration         // Request timeout (default: 30 seconds)
+    ProxyURL       string                // Proxy server URL
+    MaxRetries     int                   // Maximum retry attempts (default: 3)
+    RequestConfig  *SearchRequestConfig  // Default search request configuration
 }
 ```
-
 ## Search
 
 ### Request Schema
@@ -161,8 +161,8 @@ if err != nil {
 }
 
 for _, result := range response.Results {
-    fmt.Printf("Title: %s\nURL: %s\nContent: %s\n\n", 
-        result.Title, result.URL, result.Content)
+    fmt.Printf("Title: %s\nURL: %s\nContent: %s\nEngine: %s\n\n", 
+        result.Title, result.URL, result.Content, result.Engine)
 }
 ```
 
@@ -176,8 +176,16 @@ requestConfig := &searxng.SearchRequestConfig{
     Engines:    []searxng.Engine{searxng.EngineGoogle, searxng.EngineDuckDuckGo},
 }
 
-// Create client with request config
-client, err := searxng.NewClient(cfg, requestConfig)
+// Create client config with request config
+cfg := &searxng.ClientConfig{
+    BaseUrl:       "https://searx.example.com/search",
+    Timeout:       30 * time.Second,
+    MaxRetries:    3,
+    RequestConfig: requestConfig, // Add request config to client config
+}
+
+// Create client
+client, err := searxng.NewClient(cfg)
 if err != nil {
     log.Fatalf("NewClient failed, err=%v", err)
 }
@@ -194,14 +202,25 @@ response, err := client.Search(ctx, request)
 
 ### Chinese Search Example
 ```go
-language := "zh-CN"
-engines := "baidu,bing" // Use Chinese-friendly search engines
+// Create request config for Chinese search
+requestConfig := &searxng.SearchRequestConfig{
+    Language: searxng.LanguageZhCN,
+    Engines:  []searxng.Engine{searxng.EngineBaidu, searxng.EngineBing}, // Use Chinese-friendly search engines
+}
 
+// Update client config with Chinese search request config
+cfg.RequestConfig = requestConfig
+
+// Create new client with updated config
+client, err = searxng.NewClient(cfg)
+if err != nil {
+    log.Fatalf("NewClient failed, err=%v", err)
+}
+
+// Create search request
 request := &searxng.SearchRequest{
-    Query:    "人工智能教程",
-    PageNo:   1,
-    Language: &language,
-    Engines:  &engines,
+    Query:  "人工智能教程",
+    PageNo: 1,
 }
 
 response, err := client.Search(ctx, request)

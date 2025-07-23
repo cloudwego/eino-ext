@@ -36,6 +36,14 @@ import (
 )
 
 func main() {
+    // 创建搜索请求配置
+    requestConfig := &searxng.SearchRequestConfig{
+        TimeRange:  searxng.TimeRangeMonth,
+        Language:   searxng.LanguageZhCN,
+        SafeSearch: searxng.SafeSearchModerate,
+        Engines:    []searxng.Engine{searxng.EngineBaidu, searxng.EngineBing},
+    }
+
     // 创建客户端配置
     cfg := &searxng.ClientConfig{
         BaseUrl: "https://searx.example.com/search", // 你的 SearXNG 实例 URL
@@ -44,19 +52,11 @@ func main() {
             "User-Agent": "MyApp/1.0",
         },
         MaxRetries: 3,
+        RequestConfig: requestConfig, // 将请求配置添加到客户端配置
     }
 
     // 创建搜索工具
-    // 创建请求配置（可选）
-    requestConfig := &searxng.SearchRequestConfig{
-        TimeRange:  searxng.TimeRangeMonth,
-        Language:   searxng.LanguageZhCN,
-        SafeSearch: searxng.SafeSearchModerate,
-        Engines:    []searxng.Engine{searxng.EngineBaidu, searxng.EngineBing},
-    }
-
-    // 使用请求配置创建搜索工具
-    searchTool, err := searxng.BuildSearchInvokeTool(cfg, requestConfig)
+    searchTool, err := searxng.BuildSearchInvokeTool(cfg)
     if err != nil {
         log.Fatalf("BuildSearchInvokeTool failed, err=%v", err)
     }
@@ -73,11 +73,12 @@ func main() {
 
 ```go
 type ClientConfig struct {
-    BaseUrl    string            // SearXNG 实例的基础 URL（必需）
-    Headers    map[string]string // 自定义 HTTP 请求头
-    Timeout    time.Duration     // 请求超时时间（默认：30 秒）
-    ProxyURL   string           // 代理服务器 URL
-    MaxRetries int              // 最大重试次数（默认：3）
+    BaseUrl        string                // SearXNG 实例的基础 URL（必需）
+    Headers        map[string]string     // 自定义 HTTP 请求头
+    Timeout        time.Duration         // 请求超时时间（默认：30 秒）
+    ProxyURL       string                // 代理服务器 URL
+    MaxRetries     int                   // 最大重试次数（默认：3）
+    RequestConfig  *SearchRequestConfig  // 默认搜索请求配置
 }
 ```
 
@@ -161,8 +162,8 @@ if err != nil {
 }
 
 for _, result := range response.Results {
-    fmt.Printf("标题: %s\nURL: %s\n内容: %s\n\n",
-        result.Title, result.URL, result.Content)
+    fmt.Printf("标题: %s\nURL: %s\n内容: %s\n引擎: %s\n\n",
+        result.Title, result.URL, result.Content, result.Engine)
 }
 ```
 
@@ -176,8 +177,16 @@ requestConfig := &searxng.SearchRequestConfig{
     Engines:    []searxng.Engine{searxng.EngineBaidu, searxng.EngineBing},
 }
 
-// 使用请求配置创建客户端
-client, err := searxng.NewClient(cfg, requestConfig)
+// 创建带请求配置的客户端配置
+cfg := &searxng.ClientConfig{
+    BaseUrl:       "https://searx.example.com/search",
+    Timeout:       30 * time.Second,
+    MaxRetries:    3,
+    RequestConfig: requestConfig, // 将请求配置添加到客户端配置
+}
+
+// 创建客户端
+client, err := searxng.NewClient(cfg)
 if err != nil {
     log.Fatalf("NewClient failed, err=%v", err)
 }
@@ -194,14 +203,25 @@ response, err := client.Search(ctx, request)
 
 ### 英文搜索示例
 ```go
-language := "en"
-engines := "google,duckduckgo" // 使用国际搜索引擎
+// 创建英文搜索的请求配置
+requestConfig := &searxng.SearchRequestConfig{
+    Language: searxng.LanguageEn,
+    Engines:  []searxng.Engine{searxng.EngineGoogle, searxng.EngineDuckDuckGo}, // 使用国际搜索引擎
+}
 
+// 更新客户端配置中的请求配置
+cfg.RequestConfig = requestConfig
+
+// 使用更新后的配置创建新客户端
+client, err = searxng.NewClient(cfg)
+if err != nil {
+    log.Fatalf("NewClient failed, err=%v", err)
+}
+
+// 创建搜索请求
 request := &searxng.SearchRequest{
-    Query:    "artificial intelligence tutorial",
-    PageNo:   1,
-    Language: &language,
-    Engines:  &engines,
+    Query:  "artificial intelligence tutorial",
+    PageNo: 1,
 }
 
 response, err := client.Search(ctx, request)

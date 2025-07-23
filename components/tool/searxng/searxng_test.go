@@ -284,32 +284,22 @@ func TestValidateEngines(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
-	type args struct {
-		config        *ClientConfig
-		requestConfig *SearchRequestConfig
-	}
 	tests := []struct {
 		name    string
-		args    args
+		config  *ClientConfig
 		want    *SearxngClient
 		wantErr bool
 	}{
 		{
-			name: "nil config",
-			args: args{
-				config:        nil,
-				requestConfig: &SearchRequestConfig{},
-			},
+			name:    "nil config",
+			config:  nil,
 			want:    nil,
 			wantErr: true,
 		},
 		{
 			name: "valid config",
-			args: args{
-				config: &ClientConfig{
-					BaseUrl: "http://localhost",
-				},
-				requestConfig: &SearchRequestConfig{},
+			config: &ClientConfig{
+				BaseUrl: "http://localhost",
 			},
 			want: &SearxngClient{
 				config: &ClientConfig{
@@ -321,22 +311,18 @@ func TestNewClient(t *testing.T) {
 				client: &http.Client{
 					Timeout: 30 * time.Second,
 				},
-				requestConfig: &SearchRequestConfig{},
 			},
 			wantErr: false,
 		},
 		{
 			name: "valid config with custom values",
-			args: args{
-				config: &ClientConfig{
-					BaseUrl:    "http://localhost",
-					Timeout:    10 * time.Second,
-					MaxRetries: 5,
-					Headers: map[string]string{
-						"User-Agent": "test",
-					},
+			config: &ClientConfig{
+				BaseUrl:    "http://localhost",
+				Timeout:    10 * time.Second,
+				MaxRetries: 5,
+				Headers: map[string]string{
+					"User-Agent": "test",
 				},
-				requestConfig: &SearchRequestConfig{},
 			},
 			want: &SearxngClient{
 				config: &ClientConfig{
@@ -350,14 +336,37 @@ func TestNewClient(t *testing.T) {
 				client: &http.Client{
 					Timeout: 10 * time.Second,
 				},
-				requestConfig: &SearchRequestConfig{},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid config with request config",
+			config: &ClientConfig{
+				BaseUrl: "http://localhost",
+				RequestConfig: &SearchRequestConfig{
+					Language: LanguageEn,
+				},
+			},
+			want: &SearxngClient{
+				config: &ClientConfig{
+					BaseUrl:    "http://localhost",
+					Timeout:    30 * time.Second,
+					MaxRetries: 3,
+					Headers:    map[string]string{},
+					RequestConfig: &SearchRequestConfig{
+						Language: LanguageEn,
+					},
+				},
+				client: &http.Client{
+					Timeout: 30 * time.Second,
+				},
 			},
 			wantErr: false,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := NewClient(tt.args.config, tt.args.requestConfig)
+			got, err := NewClient(tt.config)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("NewClient() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -468,7 +477,7 @@ func TestSearxngClient_Search(t *testing.T) {
 	client, err := NewClient(&ClientConfig{
 		BaseUrl:    server.URL,
 		MaxRetries: 1,
-	}, &SearchRequestConfig{})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -500,10 +509,8 @@ func TestSearxngClient_Search(t *testing.T) {
 	}
 }
 
-
-
 func TestBuildSearchInvokeTool(t *testing.T) {
-	tool, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, &SearchRequestConfig{})
+	tool, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"})
 	if err != nil {
 		t.Fatalf("BuildSearchInvokeTool() error = %v", err)
 	}
@@ -512,7 +519,7 @@ func TestBuildSearchInvokeTool(t *testing.T) {
 	}
 
 	// Test with nil requestConfig
-	tool, err = BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, nil)
+	tool, err = BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"})
 	if err != nil {
 		t.Fatalf("BuildSearchInvokeTool() with nil requestConfig error = %v", err)
 	}
@@ -521,14 +528,19 @@ func TestBuildSearchInvokeTool(t *testing.T) {
 	}
 
 	// Test with invalid requestConfig
-	_, err = BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, &SearchRequestConfig{TimeRange: "invalid"})
+	_, err = BuildSearchInvokeTool(&ClientConfig{
+		BaseUrl: "http://localhost",
+		RequestConfig: &SearchRequestConfig{
+			TimeRange: "invalid",
+		},
+	})
 	if err == nil {
 		t.Fatal("BuildSearchInvokeTool() with invalid requestConfig should return an error")
 	}
 }
 
 func TestBuildSearchInvokeTool_Error(t *testing.T) {
-	_, err := BuildSearchInvokeTool(nil, &SearchRequestConfig{})
+	_, err := BuildSearchInvokeTool(nil)
 	if err == nil {
 		t.Error("expected an error for nil config, got nil")
 	}
@@ -541,7 +553,7 @@ func TestSendRequestWithRetry_ContextCancelled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -622,7 +634,7 @@ func TestSearxngClient_Search_NoDefaultUserAgent(t *testing.T) {
 		Headers: map[string]string{
 			"User-Agent": "custom-agent",
 		},
-	}, &SearchRequestConfig{})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -641,7 +653,7 @@ func TestSearxngClient_sendRequestWithRetry_FailedRequest(t *testing.T) {
 	client, err := NewClient(&ClientConfig{
 		BaseUrl:    "http://localhost:12345", // Non-existent server
 		MaxRetries: 1,
-	}, &SearchRequestConfig{})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -663,7 +675,7 @@ func TestSearxngClient_sendRequestWithRetry_BadResponseBody(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -762,7 +774,7 @@ func TestSearchRequest_build_no_optionals(t *testing.T) {
 
 func TestNewClient_DefaultValues(t *testing.T) {
 	cfg := &ClientConfig{BaseUrl: "http://test.com"}
-	client, err := NewClient(cfg, &SearchRequestConfig{})
+	client, err := NewClient(cfg)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -784,7 +796,7 @@ func TestSearxngClient_Search_ContextCancelled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +814,7 @@ func TestSearxngClient_Search_ContextCancelled(t *testing.T) {
 }
 
 func TestSearxngClient_Search_RequestCreationError(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://[::1]:namedport"}, &SearchRequestConfig{}) // Invalid URL
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://[::1]:namedport"}) // Invalid URL
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -824,7 +836,7 @@ func TestSearxngClient_sendRequestWithRetry_RateLimitSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1, Timeout: 100 * time.Millisecond}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 1, Timeout: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -856,10 +868,6 @@ func TestValidateEngines_EmptyString(t *testing.T) {
 	}
 }
 
-
-
-
-
 func TestSearxngClient_Search_DefaultUserAgent(t *testing.T) {
 	var ua string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -868,7 +876,7 @@ func TestSearxngClient_Search_DefaultUserAgent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -890,7 +898,7 @@ func TestSearxngClient_sendRequestWithRetry_ParseError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1030,7 +1038,7 @@ func TestSearxngClient_Search_WithHeader(t *testing.T) {
 	client, err := NewClient(&ClientConfig{
 		BaseUrl: server.URL,
 		Headers: map[string]string{"X-Test": "test-value"},
-	}, &SearchRequestConfig{})
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1057,7 +1065,7 @@ func TestSearxngClient_sendRequestWithRetry_RetrySuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 2, Timeout: 100 * time.Millisecond}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 2, Timeout: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1088,8 +1096,6 @@ func Test_intPtr(t *testing.T) {
 	}
 }
 
-
-
 func Test_enginePtr(t *testing.T) {
 	// 测试单个引擎
 	s := "google"
@@ -1113,10 +1119,8 @@ func Test_enginePtr(t *testing.T) {
 	}
 }
 
-
-
 func Test_BuildSearchInvokeTool(t *testing.T) {
-	_, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"}, &SearchRequestConfig{})
+	_, err := BuildSearchInvokeTool(&ClientConfig{BaseUrl: "http://localhost"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1215,7 +1219,7 @@ func TestNewClient_Proxy(t *testing.T) {
 	}
 	// This test just ensures NewClient runs, but doesn't actually test proxy functionality
 	// as that would require a running proxy server.
-	_, err := NewClient(cfg, &SearchRequestConfig{})
+	_, err := NewClient(cfg)
 	if err != nil {
 		t.Fatalf("failed to create client with proxy: %v", err)
 	}
@@ -1227,7 +1231,7 @@ func TestSearxngClient_Search_EmptyResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1287,7 +1291,7 @@ func Test_parseSearchResponse_WithNilResults(t *testing.T) {
 }
 
 func Test_BuildSearchInvokeTool_WithNilConfig(t *testing.T) {
-	_, err := BuildSearchInvokeTool(nil, &SearchRequestConfig{})
+	_, err := BuildSearchInvokeTool(nil)
 	if err == nil {
 		t.Error("Expected an error, but got nil")
 	}
@@ -1298,7 +1302,7 @@ func Test_BuildSearchInvokeTool_WithNilConfig(t *testing.T) {
 }
 
 func Test_SearxngClient_Search_WithEmptyBaseUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: ""}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: ""})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1309,7 +1313,7 @@ func Test_SearxngClient_Search_WithEmptyBaseUrl(t *testing.T) {
 }
 
 func Test_SearxngClient_sendRequestWithRetry_WithNilContext(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1321,7 +1325,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithNilContext(t *testing.T) {
 }
 
 func Test_SearxngClient_sendRequestWithRetry_WithNilRequest(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1332,7 +1336,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithNilRequest(t *testing.T) {
 }
 
 func Test_SearxngClient_Search_WithNilContext(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1343,7 +1347,7 @@ func Test_SearxngClient_Search_WithNilContext(t *testing.T) {
 }
 
 func Test_SearxngClient_Search_WithInvalidUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1354,7 +1358,7 @@ func Test_SearxngClient_Search_WithInvalidUrl(t *testing.T) {
 }
 
 func Test_SearxngClient_sendRequestWithRetry_WithInvalidUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1370,7 +1374,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithTimeout(t *testing.T) {
 		time.Sleep(200 * time.Millisecond)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, Timeout: 100 * time.Millisecond}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, Timeout: 100 * time.Millisecond})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1386,7 +1390,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithRateLimit(t *testing.T) {
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 0}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL, MaxRetries: 0})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1402,7 +1406,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithNoResults(t *testing.T) {
 		fmt.Fprint(w, `{"results":[]}`)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1418,7 +1422,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithBadJson(t *testing.T) {
 		fmt.Fprint(w, `{"results":`)
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
@@ -1434,7 +1438,7 @@ func Test_SearxngClient_sendRequestWithRetry_WithBadBody(t *testing.T) {
 		w.Header().Set("Content-Length", strconv.Itoa(1))
 	}))
 	defer server.Close()
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL}, &SearchRequestConfig{})
+	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}

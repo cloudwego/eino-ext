@@ -41,7 +41,7 @@ func main() {
 	// Create search request configuration
 	requestConfig := searxng.SearchRequestConfig{
 		TimeRange:  searxng.TimeRangeMonth,
-		Language:   searxng.LanguageZh,
+		Language:   searxng.LanguageEn,
 		SafeSearch: searxng.SafeSearchNone,
 		Engines: []searxng.Engine{
 			searxng.EngineGoogle,
@@ -57,7 +57,8 @@ func main() {
 		Headers: map[string]string{
 			"User-Agent": "SearXNG-Example/1.0",
 		},
-	}, &requestConfig)
+		RequestConfig: &requestConfig,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
