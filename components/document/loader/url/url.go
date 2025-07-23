@@ -103,8 +103,10 @@ func (l *Loader) Load(ctx context.Context, src document.Source, opts ...document
 	if l.conf.Parser == nil {
 		return nil, errors.New("parser is nil")
 	}
+	
+	o := document.GetLoaderCommonOptions(&document.LoaderOptions{}, opts...)
 
-	docs, err = l.conf.Parser.Parse(ctx, readerCloser, parser.WithURI(src.URI))
+	docs, err = l.conf.Parser.Parse(ctx, readerCloser, append([]parser.Option{parser.WithURI(src.URI)}, o.ParserOptions...)...)
 	if err != nil {
 		return nil, fmt.Errorf("parse content of uri [%s] err: %w", src.URI, err)
 	}
