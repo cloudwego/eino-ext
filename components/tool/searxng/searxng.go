@@ -334,21 +334,6 @@ func (s *SearxngClient) Search(ctx context.Context, params *SearchRequest) (*Sea
 	return results, nil
 }
 
-func (s *SearxngClient) SearchStream(ctx context.Context, params *SearchRequest) (*schema.StreamReader[*SearchResult], error) {
-	if ctx == nil {
-		return nil, errors.New("context is nil")
-	}
-	resp, err := s.Search(ctx, params)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create StreamReader from Results
-	streamReader := schema.StreamReaderFromArray(resp.Results)
-
-	return streamReader, nil
-}
-
 func parseSearchResponse(body []byte) (*SearchResponse, error) {
 	var response SearchResponse
 	err := json.Unmarshal(body, &response)
@@ -644,15 +629,5 @@ func BuildSearchInvokeTool(cfg *ClientConfig) (tool.InvokableTool, error) {
 	}
 
 	searchTool := utils.NewTool(getSearchSchema(), client.Search)
-	return searchTool, nil
-}
-
-func BuildSearchStreamTool(cfg *ClientConfig) (tool.StreamableTool, error) {
-	client, err := NewClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	searchTool := utils.NewStreamTool(getSearchSchema(), client.SearchStream)
 	return searchTool, nil
 }

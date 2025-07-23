@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,8 +28,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/cloudwego/eino/schema"
 )
 
 func TestSearchRequest_validate(t *testing.T) {
@@ -466,59 +463,6 @@ func TestSearxngClient_Search(t *testing.T) {
 	}
 }
 
-func TestSearxngClient_SearchStream(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{"query": "test", "number_of_results": 2, "results": [{"title": "title1", "content": "content1", "url": "url1", "engine": "engine1"}, {"title": "title2", "content": "content2", "url": "url2", "engine": "engine2"}]}`)
-	}))
-	defer server.Close()
-
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	stream, err := client.SearchStream(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
-	if err != nil {
-		t.Fatalf("SearchStream() error = %v", err)
-	}
-
-	var results []*SearchResult
-	for {
-		res, err := stream.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
-				break
-			}
-			t.Fatalf("stream.Recv() error = %v", err)
-		}
-		results = append(results, res)
-	}
-
-	if len(results) != 2 {
-		t.Errorf("expected 2 results, got %d", len(results))
-	}
-	if results[0].Title != "title1" {
-		t.Errorf("expected title1, got %s", results[0].Title)
-	}
-}
-
-func TestSearxngClient_SearchStream_Error(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer server.Close()
-
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = client.SearchStream(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
-	if err == nil {
-		t.Error("expected an error, got nil")
-	}
-}
-
 func TestGetSearchSchema(t *testing.T) {
 	schemaInfo := getSearchSchema()
 	if schemaInfo == nil {
@@ -544,23 +488,6 @@ func TestBuildSearchInvokeTool(t *testing.T) {
 
 func TestBuildSearchInvokeTool_Error(t *testing.T) {
 	_, err := BuildSearchInvokeTool(nil)
-	if err == nil {
-		t.Error("expected an error for nil config, got nil")
-	}
-}
-
-func TestBuildSearchStreamTool(t *testing.T) {
-	tool, err := BuildSearchStreamTool(&ClientConfig{BaseUrl: "http://localhost"})
-	if err != nil {
-		t.Fatalf("BuildSearchStreamTool() error = %v", err)
-	}
-	if tool == nil {
-		t.Fatal("BuildSearchStreamTool() returned nil")
-	}
-}
-
-func TestBuildSearchStreamTool_Error(t *testing.T) {
-	_, err := BuildSearchStreamTool(nil)
 	if err == nil {
 		t.Error("expected an error for nil config, got nil")
 	}
@@ -772,23 +699,6 @@ func TestSearxngClient_Search_RequestCreationError(t *testing.T) {
 	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
 	if err == nil {
 		t.Error("expected an error for request creation, got nil")
-	}
-}
-
-func TestSearxngClient_SearchStream_RecvEOF(t *testing.T) {
-	results := []*SearchResult{
-		{Title: "t1"},
-	}
-	stream := schema.StreamReaderFromArray(results)
-
-	_, err := stream.Recv()
-	if err != nil {
-		t.Fatalf("first Recv failed: %v", err)
-	}
-
-	_, err = stream.Recv()
-	if !errors.Is(err, io.EOF) {
-		t.Errorf("expected io.EOF, got %v", err)
 	}
 }
 
@@ -1106,13 +1016,6 @@ func Test_BuildSearchInvokeTool(t *testing.T) {
 	}
 }
 
-func Test_BuildSearchStreamTool(t *testing.T) {
-	_, err := BuildSearchStreamTool(&ClientConfig{BaseUrl: "http://localhost"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
 func TestSearchRequest_validate_pageno(t *testing.T) {
 	req := &SearchRequest{
 		Query:  "test",
@@ -1235,22 +1138,7 @@ func TestSearxngClient_Search_EmptyResponse(t *testing.T) {
 	}
 }
 
-func TestSearxngClient_SearchStream_EmptyResponse(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, `{}`)
-	}))
-	defer server.Close()
 
-	client, err := NewClient(&ClientConfig{BaseUrl: server.URL})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = client.SearchStream(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
-	if err == nil || err.Error() != "no search results found" {
-		t.Errorf("expected 'no search results found' error, got %v", err)
-	}
-}
 
 func Test_validateInSlice_Comparable(t *testing.T) {
 	if err := validateInSlice(1.0, []float64{1.0, 2.0}, "float"); err != nil {
@@ -1311,34 +1199,12 @@ func Test_BuildSearchInvokeTool_WithNilConfig(t *testing.T) {
 	}
 }
 
-func Test_BuildSearchStreamTool_WithNilConfig(t *testing.T) {
-	_, err := BuildSearchStreamTool(nil)
-	if err == nil {
-		t.Error("Expected an error, but got nil")
-	}
-	expectedError := "config is nil"
-	if err.Error() != expectedError {
-		t.Errorf("Expected error message '%s', but got '%s'", expectedError, err.Error())
-	}
-}
-
 func Test_SearxngClient_Search_WithEmptyBaseUrl(t *testing.T) {
 	client, err := NewClient(&ClientConfig{BaseUrl: ""})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
-	if err == nil {
-		t.Error("Expected an error, but got nil")
-	}
-}
-
-func Test_SearxngClient_SearchStream_WithEmptyBaseUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: ""})
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	_, err = client.SearchStream(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
 	if err == nil {
 		t.Error("Expected an error, but got nil")
 	}
@@ -1378,45 +1244,12 @@ func Test_SearxngClient_Search_WithNilContext(t *testing.T) {
 	}
 }
 
-func Test_SearxngClient_SearchStream_WithNilContext(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	_, err = client.SearchStream(nil, &SearchRequest{Query: "test", PageNo: 1})
-	if err == nil {
-		t.Error("Expected an error, but got nil")
-	}
-}
-
-func Test_SearxngClient_SearchStream_WithNilParams(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://example.com"})
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	_, err = client.SearchStream(context.Background(), nil)
-	if err == nil {
-		t.Error("Expected an error, but got nil")
-	}
-}
-
 func Test_SearxngClient_Search_WithInvalidUrl(t *testing.T) {
 	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"})
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
-	if err == nil {
-		t.Error("Expected an error, but got nil")
-	}
-}
-
-func Test_SearxngClient_SearchStream_WithInvalidUrl(t *testing.T) {
-	client, err := NewClient(&ClientConfig{BaseUrl: "http://invalid-url"})
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-	_, err = client.SearchStream(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
 	if err == nil {
 		t.Error("Expected an error, but got nil")
 	}

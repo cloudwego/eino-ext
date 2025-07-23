@@ -52,12 +52,6 @@ func main() {
         log.Fatalf("BuildSearchInvokeTool failed, err=%v", err)
     }
 
-    // Or create a stream tool
-    streamTool, err := searxng.BuildSearchStreamTool(cfg)
-    if err != nil {
-        log.Fatalf("BuildSearchStreamTool failed, err=%v", err)
-    }
-
     // Use with Eino's ToolsNode
     tools := []tool.BaseTool{searchTool}
     // ... configure and use with ToolsNode
@@ -195,27 +189,7 @@ response, err := client.Search(ctx, request)
 // Handle response...
 ```
 
-### Stream Search
-```go
-streamReader, err := client.SearchStream(ctx, request)
-if err != nil {
-    log.Printf("SearchStream failed: %v", err)
-    return
-}
 
-for {
-    result, err := streamReader.Recv()
-    if err != nil {
-        if err == io.EOF {
-            break
-        }
-        log.Printf("Stream error: %v", err)
-        break
-    }
-    
-    fmt.Printf("Received result: %s\n", result.Title)
-}
-```
 
 ## Error Handling
 

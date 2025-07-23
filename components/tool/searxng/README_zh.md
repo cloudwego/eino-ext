@@ -52,12 +52,6 @@ func main() {
         log.Fatalf("BuildSearchInvokeTool failed, err=%v", err)
     }
 
-    // 或者创建流式工具
-    streamTool, err := searxng.BuildSearchStreamTool(cfg)
-    if err != nil {
-        log.Fatalf("BuildSearchStreamTool failed, err=%v", err)
-    }
-
     // 与 Eino 的 ToolsNode 一起使用
     tools := []tool.BaseTool{searchTool}
     // ... 配置并使用 ToolsNode
@@ -195,27 +189,7 @@ response, err := client.Search(ctx, request)
 // 处理响应...
 ```
 
-### 流式搜索
-```go
-streamReader, err := client.SearchStream(ctx, request)
-if err != nil {
-    log.Printf("流式搜索失败: %v", err)
-    return
-}
 
-for {
-    result, err := streamReader.Recv()
-    if err != nil {
-        if err == io.EOF {
-            break
-        }
-        log.Printf("流错误: %v", err)
-        break
-    }
-    
-    fmt.Printf("收到结果: %s\n", result.Title)
-}
-```
 
 ## 错误处理
 
