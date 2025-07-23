@@ -16,6 +16,12 @@
 
 package ark
 
+import (
+	"fmt"
+
+	"github.com/openai/openai-go/packages/param"
+)
+
 const typ = "Ark"
 
 func getType() string {
@@ -29,4 +35,60 @@ func dereferenceOrZero[T any](v *T) T {
 	}
 
 	return *v
+}
+
+func ptrFromOrZero[T any](v *T) T {
+	if v == nil {
+		var t T
+		return t
+	}
+	return *v
+}
+
+func ptrOf[T any](v T) *T {
+	return &v
+}
+
+func newOpenaiIntOpt(optVal *int) param.Opt[int64] {
+	if optVal == nil {
+		return param.Opt[int64]{}
+	}
+	return param.NewOpt(int64(*optVal))
+}
+
+func newOpenaiFloatOpt(optVal *float32) param.Opt[float64] {
+	if optVal == nil {
+		return param.Opt[float64]{}
+	}
+	return param.NewOpt(float64(*optVal))
+}
+
+func newOpenaiStringOpt(optVal *string) param.Opt[string] {
+	if optVal == nil {
+		return param.Opt[string]{}
+	}
+	return param.NewOpt(*optVal)
+}
+
+func newOpenaiBoolOpt(optVal *bool) param.Opt[bool] {
+	if optVal == nil {
+		return param.Opt[bool]{}
+	}
+	return param.NewOpt(*optVal)
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }

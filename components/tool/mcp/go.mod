@@ -2,12 +2,11 @@ module github.com/cloudwego/eino-ext/components/tool/mcp
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.3.27
 	github.com/getkin/kin-openapi v0.118.0
-	github.com/mark3labs/mcp-go v0.29.0
+	github.com/mark3labs/mcp-go v0.33.0
 	github.com/stretchr/testify v1.9.0
 )
 
