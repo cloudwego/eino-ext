@@ -351,70 +351,10 @@ type ChatModel struct {
 }
 
 type CacheInfo struct {
-	// ContextID specifies the id of prefix that can be used with WithPrefixCache option
+	// ContextID specifies the id of prefix that can be used with [WithCache] option.
 	ContextID string
 	// Usage specifies the token usage of prefix
 	Usage schema.TokenUsage
-}
-
-// CreatePrefixCache creates a prefix context on the server side that will be automatically included
-// in subsequent model calls without needing to resend these messages each time.
-// This improves efficiency by reducing token usage and request size.
-//
-// Parameters:
-//   - ctx: The context for the request
-//   - prefix: Initial messages to be cached as prefix context
-//   - ttl: Time-to-live in seconds for the cached prefix, default: 86400
-//
-// Returns:
-//   - info: Information about the created prefix cache, including the context ID and token usage
-//   - err: Any error encountered during the operation
-//
-// ref: https://www.volcengine.com/docs/82379/1396490#_1-%E5%88%9B%E5%BB%BA%E5%89%8D%E7%BC%80%E7%BC%93%E5%AD%98
-//
-// Note that it is unavailable for doubao models of version 1.6 and above.
-// Currently only supports calling by ContextAPI.
-func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
-	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
-		return nil, fmt.Errorf("CreatePrefixCache is not supported by ResponsesAPI")
-	}
-
-	req := model.CreateContextRequest{
-		Model:    cm.chatModel.model,
-		Mode:     model.ContextModeCommonPrefix,
-		Messages: make([]*model.ChatCompletionMessage, 0, len(prefix)),
-		TTL:      nil,
-	}
-	for _, msg := range prefix {
-		content, err := cm.chatModel.toArkContent(msg.Content, msg.MultiContent)
-		if err != nil {
-			return nil, fmt.Errorf("create prefix fail, convert message fail: %w", err)
-		}
-
-		req.Messages = append(req.Messages, &model.ChatCompletionMessage{
-			Content:    content,
-			Role:       string(msg.Role),
-			ToolCallID: msg.ToolCallID,
-			ToolCalls:  cm.chatModel.toArkToolCalls(msg.ToolCalls),
-		})
-	}
-	if ttl > 0 {
-		req.TTL = &ttl
-	}
-
-	resp, err := cm.chatModel.client.CreateContext(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("create prefix fail: %w", err)
-	}
-
-	return &CacheInfo{
-		ContextID: resp.ID,
-		Usage: schema.TokenUsage{
-			PromptTokens:     resp.Usage.PromptTokens,
-			CompletionTokens: resp.Usage.CompletionTokens,
-			TotalTokens:      resp.Usage.TotalTokens,
-		},
-	}, nil
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
@@ -537,4 +477,102 @@ func (cm *ChatModel) GetType() string {
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
+}
+
+// CreatePrefixCache creates a prefix context on the server side.
+// In each subsequent turn of conversation, use [WithCache] to pass in the ContextID.
+// The server will input the prefix cached context and this turn of input into the model for processing.
+// This improves efficiency by reducing token usage and request size.
+//
+// Parameters:
+//   - ctx: The context for the request
+//   - prefix: Initial messages to be cached as prefix context
+//   - ttl: Time-to-live in seconds for the cached prefix, default: 86400
+//
+// Returns:
+//   - info: Information about the created prefix cache, including the context ID and token usage
+//   - err: Any error encountered during the operation
+//
+// ref: https://www.volcengine.com/docs/82379/1396490#_1-%E5%88%9B%E5%BB%BA%E5%89%8D%E7%BC%80%E7%BC%93%E5%AD%98
+//
+// Note:
+//   - It is unavailable for doubao models of version 1.6 and above.
+//   - Currently, only supports calling by ContextAPI.
+func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
+	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
+		return nil, fmt.Errorf("CreatePrefixCache is not supported by ResponsesAPI")
+	}
+	return cm.createContextByContextAPI(ctx, prefix, ttl, model.ContextModeCommonPrefix, nil)
+}
+
+// CreateSessionCache creates an initial session context on the server side.
+// It returns an initial context ID.
+// In each subsequent turn of conversation, use [WithCache] to pass in the ContextID.
+// The server will input all cached context and this turn of input into the model for processing.
+// This turn of conversation will also be automatically cached.
+// Suitable for use in multi-turn conversation scenarios.
+// Note that it does not apply to concurrent requests.
+//
+// Parameters:
+//   - ctx: The context for the request
+//   - prefix: Initial messages to be cached as prefix context
+//   - ttl: Time-to-live in seconds for the cached prefix, default: 86400
+//   - truncation: Truncation strategy, default: nil
+//
+// Returns:
+//   - info: Information about the created session cache, including the context ID and token usage
+//   - err: Any error encountered during the operation
+//
+// ref: https://www.volcengine.com/docs/82379/1396491?redirect=1#%E5%BF%AB%E9%80%9F%E5%BC%80%E5%A7%8B
+//
+// Note:
+//   - It is unavailable for doubao models of version 1.6 and above.
+//   - Only supports calling by ContextAPI.
+func (cm *ChatModel) CreateSessionCache(ctx context.Context, prefix []*schema.Message, ttl int, truncation *model.TruncationStrategy) (info *CacheInfo, err error) {
+	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
+		return nil, fmt.Errorf("CreateSessionCache is not supported by ResponsesAPI")
+	}
+	return cm.createContextByContextAPI(ctx, prefix, ttl, model.ContextModeSession, truncation)
+}
+
+func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*schema.Message, ttl int, mode model.ContextMode,
+	truncation *model.TruncationStrategy) (info *CacheInfo, err error) {
+
+	req := model.CreateContextRequest{
+		Model:              cm.chatModel.model,
+		Mode:               mode,
+		Messages:           make([]*model.ChatCompletionMessage, 0, len(prefix)),
+		TTL:                nil,
+		TruncationStrategy: truncation,
+	}
+	for _, msg := range prefix {
+		content, err := cm.chatModel.toArkContent(msg.Content, msg.MultiContent)
+		if err != nil {
+			return nil, fmt.Errorf("convert message fail: %w", err)
+		}
+
+		req.Messages = append(req.Messages, &model.ChatCompletionMessage{
+			Content:    content,
+			Role:       string(msg.Role),
+			ToolCallID: msg.ToolCallID,
+			ToolCalls:  cm.chatModel.toArkToolCalls(msg.ToolCalls),
+		})
+	}
+	if ttl > 0 {
+		req.TTL = &ttl
+	}
+
+	resp, err := cm.chatModel.client.CreateContext(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("CreateContext fail: %w", err)
+	}
+
+	return &CacheInfo{
+		ContextID: resp.ID,
+		Usage: schema.TokenUsage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		},
+	}, nil
 }
