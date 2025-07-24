@@ -18,9 +18,8 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"log"
+	"os"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -29,41 +28,42 @@ import (
 
 func main() {
 	ctx := context.Background()
+
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL: "http://localhost:11434",
-		Model:   "llama3.2:1b",
+		Model:   "gemma3:4b",
 	})
 	if err != nil {
-		log.Printf("NewChatModel failed, err=%v", err)
+		log.Printf("NewChatModel failed, err=%v\n", err)
 		return
 	}
 
-	streamMsgs, err := chatModel.Stream(ctx, []*schema.Message{
+	image, err := os.ReadFile("./examples/image/eino.png")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
 		{
-			Role:    schema.User,
-			Content: "as a machine, how do you answer user's question?",
+			Role: schema.User,
+			MultiContent: []schema.ChatMessagePart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "describe this image",
+				},
+				{
+					Type: schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{
+						URL: string(image),
+					},
+				},
+			},
 		},
 	})
-
 	if err != nil {
-		log.Printf("Generate failed, err=%v", err)
+		log.Printf("Generate failed, err=%v\n", err)
 		return
 	}
 
-	defer streamMsgs.Close()
-
-	log.Println("typewriter output:")
-	for {
-		msg, err := streamMsgs.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Printf("\nstream.Recv failed, err=%v", err)
-			return
-		}
-		fmt.Print(msg.Content)
-	}
-
-	fmt.Print("\n")
+	log.Printf("output: \n%v\n", resp)
 }

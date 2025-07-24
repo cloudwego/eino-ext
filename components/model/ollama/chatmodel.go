@@ -52,6 +52,8 @@ type ChatModelConfig struct {
 	KeepAlive *time.Duration  `json:"keep_alive"`
 
 	Options *api.Options `json:"options"`
+
+	Thinking *bool `json:"thinking"`
 }
 
 // Check if ChatModel implements model.ChatModel
@@ -117,6 +119,11 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		cbOutput = &model.CallbackOutput{
 			Message: outMsg,
 			Config:  cbInput.Config,
+			TokenUsage: &model.TokenUsage{
+				PromptTokens:     resp.PromptEvalCount,
+				CompletionTokens: resp.EvalCount,
+				TotalTokens:      resp.PromptEvalCount + resp.EvalCount,
+			},
 			Extra: map[string]any{
 				CallbackMetricsExtraKey: resp.Metrics,
 			},
@@ -294,6 +301,7 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		Tools: tools,
 
 		Options: reqOptions,
+		Think:   cm.config.Thinking,
 	}
 
 	if cm.config.KeepAlive != nil {
@@ -342,11 +350,37 @@ func toOllamaMessage(einoMsg *schema.Message) (api.Message, error) {
 			},
 		})
 	}
+	om := api.Message{
+		Role:      string(einoMsg.Role),
+		Thinking:  einoMsg.ReasoningContent,
+		ToolCalls: toolCalls,
+	}
+	if len(einoMsg.MultiContent) == 0 {
+		om.Content = einoMsg.Content
+		return om, nil
+	}
 
-	// Notice: not support ToolCallID, MultiContent
+	content := ""
+	var images []api.ImageData
+	for _, mc := range einoMsg.MultiContent {
+		switch mc.Type {
+		case schema.ChatMessagePartTypeText:
+			content += mc.Text
+		case schema.ChatMessagePartTypeImageURL:
+			if mc.ImageURL == nil {
+				return api.Message{}, errors.New("image url is required")
+			}
+			images = append(images, api.ImageData(mc.ImageURL.URL))
+		default:
+			return api.Message{}, fmt.Errorf("unsupported content type: %s", mc.Type)
+		}
+	}
+
 	return api.Message{
 		Role:      string(einoMsg.Role),
-		Content:   einoMsg.Content,
+		Content:   content,
+		Images:    images,
+		Thinking:  einoMsg.ReasoningContent,
 		ToolCalls: toolCalls,
 	}, nil
 }
@@ -366,12 +400,17 @@ func toEinoMessage(resp api.ChatResponse) *schema.Message {
 
 	// Notice: not support Images
 	return &schema.Message{
-		Role:      schema.RoleType(resp.Message.Role),
-		Content:   resp.Message.Content,
-		ToolCalls: toolCalls,
+		Role:             schema.RoleType(resp.Message.Role),
+		Content:          resp.Message.Content,
+		ReasoningContent: resp.Message.Thinking,
+		ToolCalls:        toolCalls,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: resp.DoneReason,
-			Usage:        nil,
+			Usage: &schema.TokenUsage{
+				PromptTokens:     resp.PromptEvalCount,
+				CompletionTokens: resp.EvalCount,
+				TotalTokens:      resp.PromptEvalCount + resp.EvalCount,
+			},
 		},
 	}
 }
@@ -387,9 +426,10 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 	var ollamaTools []api.Tool
 	for _, einoTool := range einoTools {
 		properties := make(map[string]struct {
-			Type        string   `json:"type"`
-			Description string   `json:"description"`
-			Enum        []string `json:"enum,omitempty"`
+			Type        api.PropertyType `json:"type"`
+			Items       any              `json:"items,omitempty"`
+			Description string           `json:"description"`
+			Enum        []any            `json:"enum,omitempty"`
 		})
 		var required []string
 
@@ -402,23 +442,15 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 			required = openTool.Required
 
 			for name, param := range openTool.Properties {
-				enums := make([]string, 0, len(param.Value.Enum))
-				for _, e := range param.Value.Enum {
-					str, ok := e.(string)
-					if !ok {
-						return nil, fmt.Errorf("toOllamaTools: enum must be string, but got %v", e)
-					}
-					enums = append(enums, str)
-				}
-
 				properties[name] = struct {
-					Type        string   `json:"type"`
-					Description string   `json:"description"`
-					Enum        []string `json:"enum,omitempty"`
+					Type        api.PropertyType `json:"type"`
+					Items       any              `json:"items,omitempty"`
+					Description string           `json:"description"`
+					Enum        []any            `json:"enum,omitempty"`
 				}{
-					Type:        param.Value.Type,
+					Type:        []string{param.Value.Type},
 					Description: param.Value.Description,
-					Enum:        enums,
+					Enum:        param.Value.Enum,
 				}
 			}
 		}
@@ -430,11 +462,14 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 				Description: einoTool.Desc,
 				Parameters: struct {
 					Type       string   `json:"type"`
+					Defs       any      `json:"$defs,omitempty"`
+					Items      any      `json:"items,omitempty"`
 					Required   []string `json:"required"`
 					Properties map[string]struct {
-						Type        string   `json:"type"`
-						Description string   `json:"description"`
-						Enum        []string `json:"enum,omitempty"`
+						Type        api.PropertyType `json:"type"`
+						Items       any              `json:"items,omitempty"`
+						Description string           `json:"description"`
+						Enum        []any            `json:"enum,omitempty"`
 					} `json:"properties"`
 				}{
 					Type:       "object",
