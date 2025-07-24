@@ -33,7 +33,7 @@ import (
 func TestSearchRequest_validate(t *testing.T) {
 	type fields struct {
 		Query  string
-		PageNo int
+		PageNo *int
 	}
 	tests := []struct {
 		name    string
@@ -44,14 +44,14 @@ func TestSearchRequest_validate(t *testing.T) {
 			name: "valid request",
 			fields: fields{
 				Query:  "test",
-				PageNo: 1,
+				PageNo: intPtr(1),
 			},
 			wantErr: false,
 		},
 		{
 			name: "missing query",
 			fields: fields{
-				PageNo: 1,
+				PageNo: intPtr(1),
 			},
 			wantErr: true,
 		},
@@ -59,7 +59,7 @@ func TestSearchRequest_validate(t *testing.T) {
 			name: "invalid pageno",
 			fields: fields{
 				Query:  "test",
-				PageNo: 0,
+				PageNo: intPtr(0),
 			},
 			wantErr: true,
 		},
@@ -153,7 +153,7 @@ func TestSearchRequestConfig_validate(t *testing.T) {
 func TestSearchRequest_build(t *testing.T) {
 	type reqFields struct {
 		Query  string
-		PageNo int
+		PageNo *int
 	}
 	type configFields struct {
 		TimeRange  TimeRange
@@ -171,7 +171,7 @@ func TestSearchRequest_build(t *testing.T) {
 			name: "basic request",
 			req: reqFields{
 				Query:  "test",
-				PageNo: 1,
+				PageNo: intPtr(1),
 			},
 			config: nil,
 			want: url.Values{
@@ -184,7 +184,7 @@ func TestSearchRequest_build(t *testing.T) {
 			name: "full request",
 			req: reqFields{
 				Query:  "test",
-				PageNo: 2,
+				PageNo: intPtr(2),
 			},
 			config: &configFields{
 				TimeRange:  timeRangeValue("day"),
@@ -201,8 +201,8 @@ func TestSearchRequest_build(t *testing.T) {
 				"safesearch": []string{"1"},
 				"engines":    []string{"google,bing"},
 			},
-		},
-	}
+			},
+		}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &SearchRequest{
@@ -511,10 +511,10 @@ func TestSearxngClient_Search(t *testing.T) {
 	}{
 		{"nil params", nil, true, "params is nil"},
 		{"validation error", &SearchRequest{Query: ""}, true, "query is required"},
-		{"successful search", &SearchRequest{Query: "test", PageNo: 1}, false, ""},
-		{"rate limit", &SearchRequest{Query: "ratelimit", PageNo: 1}, true, "rate limit reached"},
-		{"no results", &SearchRequest{Query: "noresults", PageNo: 1}, true, "no search results found"},
-		{"server error", &SearchRequest{Query: "servererror", PageNo: 1}, true, "failed to parse search results"},
+		{"successful search", &SearchRequest{Query: "test", PageNo: intPtr(1)}, false, ""},
+		{"rate limit", &SearchRequest{Query: "ratelimit", PageNo: intPtr(1)}, true, "rate limit reached"},
+		{"no results", &SearchRequest{Query: "noresults", PageNo: intPtr(1)}, true, "no search results found"},
+		{"server error", &SearchRequest{Query: "servererror", PageNo: intPtr(1)}, true, "failed to parse search results"},
 	}
 
 	for _, tt := range tests {
@@ -645,7 +645,7 @@ func TestSearxngClient_Search_NoDefaultUserAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
@@ -701,7 +701,7 @@ func TestSearchRequest_validate_valid(t *testing.T) {
 	// 创建并验证 SearchRequest
 	req := &SearchRequest{
 		Query:  "test",
-		PageNo: 1,
+		PageNo: intPtr(1),
 	}
 
 	err := req.validate()
@@ -761,7 +761,7 @@ func TestValidateEngines_ErrorFormatting(t *testing.T) {
 func TestSearchRequest_build_no_optionals(t *testing.T) {
 	req := &SearchRequest{
 		Query:  "test",
-		PageNo: 1,
+		PageNo: intPtr(1),
 	}
 	values := req.build(nil)
 	if values.Get("time_range") != "" {
@@ -813,7 +813,7 @@ func TestSearxngClient_Search_ContextCancelled(t *testing.T) {
 		cancel()
 	}()
 
-	_, err = client.Search(ctx, &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(ctx, &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("expected context.Canceled error, got %v", err)
 	}
@@ -824,7 +824,7 @@ func TestSearxngClient_Search_RequestCreationError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err == nil {
 		t.Error("expected an error for request creation, got nil")
 	}
@@ -887,7 +887,7 @@ func TestSearxngClient_Search_DefaultUserAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -1049,7 +1049,7 @@ func TestSearxngClient_Search_WithHeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
 	}
@@ -1135,7 +1135,7 @@ func Test_BuildSearchInvokeTool(t *testing.T) {
 func TestSearchRequest_validate_pageno(t *testing.T) {
 	req := &SearchRequest{
 		Query:  "test",
-		PageNo: 0,
+		PageNo: intPtr(0),
 	}
 	err := req.validate()
 	if err == nil {
@@ -1186,7 +1186,7 @@ func TestSearchRequest_validate_engines(t *testing.T) {
 func TestSearchRequest_build_all_params(t *testing.T) {
 	req := &SearchRequest{
 		Query:  "test",
-		PageNo: 2,
+		PageNo: intPtr(2),
 	}
 	config := &SearchRequestConfig{
 		TimeRange:  "year",
@@ -1242,7 +1242,7 @@ func TestSearxngClient_Search_EmptyResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err == nil || err.Error() != "no search results found" {
 		t.Errorf("expected 'no search results found' error, got %v", err)
 	}
@@ -1312,7 +1312,7 @@ func Test_SearxngClient_Search_WithEmptyBaseUrl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err == nil {
 		t.Error("Expected an error, but got nil")
 	}
@@ -1346,7 +1346,7 @@ func Test_SearxngClient_Search_WithNilContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	_, err = client.Search(nil, &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(nil, &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err == nil {
 		t.Error("Expected an error, but got nil")
 	}
@@ -1357,7 +1357,7 @@ func Test_SearxngClient_Search_WithInvalidUrl(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create client: %v", err)
 	}
-	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: 1})
+	_, err = client.Search(context.Background(), &SearchRequest{Query: "test", PageNo: intPtr(1)})
 	if err == nil {
 		t.Error("Expected an error, but got nil")
 	}

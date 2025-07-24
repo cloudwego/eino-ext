@@ -108,7 +108,7 @@ const (
 
 type SearchRequest struct {
 	Query  string `json:"query" jsonschema:"required,description=The search query. This is the main input for the web search"`
-	PageNo int    `json:"pageno" jsonschema:"description=The page number of the search results. Default is 1"`
+	PageNo *int   `json:"pageno" jsonschema:"description=The page number of the search results. Default is 1"`
 }
 
 func (s *SearchRequest) validate() error {
@@ -116,7 +116,7 @@ func (s *SearchRequest) validate() error {
 		return errors.New("query is required")
 	}
 
-	if s.PageNo <= 0 {
+	if s.PageNo != nil && *s.PageNo <= 0 {
 		return errors.New("pageno must be greater than 0")
 	}
 
@@ -164,7 +164,9 @@ func (s *SearchRequestConfig) validate() error {
 func (s *SearchRequest) build(cfg *SearchRequestConfig) url.Values {
 	params := url.Values{}
 	params.Set("q", s.Query)
-	params.Set("pageno", strconv.Itoa(s.PageNo))
+	if s.PageNo != nil {
+		params.Set("pageno", strconv.Itoa(*s.PageNo))
+	}
 	params.Set("format", "json")
 	if cfg != nil {
 		// Only add TimeRange when it's not zero value

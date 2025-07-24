@@ -66,7 +66,6 @@ func main() {
 	// requestConfig was already passed when creating the search tool, only basic parameters needed here
 	req := searxng.SearchRequest{
 		Query:  "CloudWeGo Eino",
-		PageNo: 1,
 	}
 
 	args, err := json.Marshal(req)
