@@ -239,7 +239,6 @@ type SearchResponse struct {
 }
 
 type SearxngClient struct {
-	client *http.Client
 	config *ClientConfig
 }
 
@@ -309,17 +308,13 @@ func NewClient(cfg *ClientConfig) (*SearxngClient, error) {
 	}
 
 	// Use externally provided HTTP client, or create default one if not provided
-	var httpClient *http.Client
-	if cfg.HttpClient != nil {
-		httpClient = cfg.HttpClient
-	} else {
-		httpClient = &http.Client{
+	if cfg.HttpClient == nil {
+		cfg.HttpClient = &http.Client{
 			Timeout: cfg.Timeout,
 		}
 	}
 
 	sc := &SearxngClient{
-		client: httpClient,
 		config: cfg,
 	}
 	return sc, nil
@@ -343,7 +338,7 @@ func (s *SearxngClient) sendRequestWithRetry(ctx context.Context, req *http.Requ
 			return nil, err
 		}
 
-		resp, err = s.client.Do(req)
+		resp, err = s.config.HttpClient.Do(req)
 		if err != nil {
 			if attempt == s.config.MaxRetries {
 				return nil, fmt.Errorf("failed to send request after retries: %w", err)

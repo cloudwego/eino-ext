@@ -311,9 +311,9 @@ func TestNewClient(t *testing.T) {
 					Timeout:    30 * time.Second,
 					MaxRetries: 3,
 					Headers:    map[string]string{},
-				},
-				client: &http.Client{
-					Timeout: 30 * time.Second,
+					HttpClient: &http.Client{
+						Timeout: 30 * time.Second,
+					},
 				},
 			},
 			wantErr: false,
@@ -336,9 +336,9 @@ func TestNewClient(t *testing.T) {
 					Headers: map[string]string{
 						"User-Agent": "test",
 					},
-				},
-				client: &http.Client{
-					Timeout: 10 * time.Second,
+					HttpClient: &http.Client{
+						Timeout: 10 * time.Second,
+					},
 				},
 			},
 			wantErr: false,
@@ -360,9 +360,9 @@ func TestNewClient(t *testing.T) {
 					RequestConfig: &SearchRequestConfig{
 						Language: LanguageEn,
 					},
-				},
-				client: &http.Client{
-					Timeout: 30 * time.Second,
+					HttpClient: &http.Client{
+						Timeout: 30 * time.Second,
+					},
 				},
 			},
 			wantErr: false,
@@ -381,7 +381,6 @@ func TestNewClient(t *testing.T) {
 					Headers:    map[string]string{},
 					HttpClient: customClient,
 				},
-				client: customClient,
 			},
 			wantErr: false,
 		},
@@ -395,10 +394,10 @@ func TestNewClient(t *testing.T) {
 			}
 			// a deep equal on http.Client will fail
 			if got != nil {
-				if got.client.Timeout != tt.want.client.Timeout {
+				if got.config.HttpClient.Timeout != tt.want.config.HttpClient.Timeout {
 					t.Errorf("NewClient() http client timeout not equal")
 				}
-				got.client = tt.want.client
+				got.config.HttpClient = tt.want.config.HttpClient
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("NewClient() = %v, want %v", got, tt.want)
