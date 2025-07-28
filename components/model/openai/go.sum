@@ -15,8 +15,8 @@ github.com/cloudwego/base64x v0.1.5 h1:XPciSp1xaq2VCSt6lF0phncD4koWyULpl5bUxbfCy
 github.com/cloudwego/base64x v0.1.5/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJgA0rcu/8w=
 github.com/cloudwego/eino v0.3.51 h1:emSaDu49v9EEJYOusL42Li/VL5QBSyBvhxO9ZcKPZvs=
 github.com/cloudwego/eino v0.3.51/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
-github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250626133421-3c142631c961 h1:fGE3RFHaAsrLjA+2fkE0YMsPrkFI6pEKKZmbhD42L7E=
-github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250626133421-3c142631c961/go.mod h1:iB0W8l+OqKNL5LtJQ9JaGYXekhsxVxrDMfnfD9L+5gc=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250728034832-de7648551801 h1:ICPcNPybr7GKI4kWGw1QkvyOTqyJCiYMXTPB1779Ai4=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250728034832-de7648551801/go.mod h1:wRPVlA6A2a7Zje/fV9PBkP21QCivwi2RYaHteUjW+tI=
 github.com/cloudwego/iasm v0.2.0/go.mod h1:8rXZaNYT2n95jn+zTI1sDr+IgcD2GVs0nlbbQPiEFhY=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
@@ -77,12 +77,8 @@ github.com/mattn/go-colorable v0.1.2 h1:/bC9yWikZXAL9uJdulbSfyVNIR3n3trXl+v8+1sx
 github.com/mattn/go-colorable v0.1.2/go.mod h1:U0ppj6V5qS13XJ6of8GYAs25YV2eR4EVcfRqFIhoBtE=
 github.com/mattn/go-isatty v0.0.8 h1:HLtExJ+uU2HOZ+wI0Tt5DtUDrx8yhUqDcp7fYERX4CE=
 github.com/mattn/go-isatty v0.0.8/go.mod h1:Iq45c/XA43vh69/j3iqttzPXn0bhXyGjM0Hdxcsrc5s=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250620092828-0d508a1dcdde h1:pq2I0uxUR4lfr4OmqvE8QdHj9UML9b1jZu8L3dI2eu8=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250620092828-0d508a1dcdde/go.mod h1:CqSFsV6AkkL2fixd25WYjRAolns+gQrY1x/Cz9c30v8=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250722134937-51789266e547 h1:XYLuRnM8MeKDzgYFWkm5JD7kiOU2tuBZs++EUAQDFm8=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250722134937-51789266e547/go.mod h1:CqSFsV6AkkL2fixd25WYjRAolns+gQrY1x/Cz9c30v8=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250722145557-285a738ebcb9 h1:xFTpf7ojxmvWTNl5RvkgwSy1kn6QchFCBvYrpzSFhUU=
-github.com/meguminnnnnnnnn/go-openai v0.0.0-20250722145557-285a738ebcb9/go.mod h1:CqSFsV6AkkL2fixd25WYjRAolns+gQrY1x/Cz9c30v8=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250723112853-3bce976e5ccc h1:vdRbmKDHZMGb5SSUVAT9u+559Vr2gScV5ie/kcOvfeE=
+github.com/meguminnnnnnnnn/go-openai v0.0.0-20250723112853-3bce976e5ccc/go.mod h1:CqSFsV6AkkL2fixd25WYjRAolns+gQrY1x/Cz9c30v8=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b h1:j7+1HpAFS1zy5+Q4qx1fWh90gTKwiN4QCGoY9TWyyO4=
 github.com/mgutz/ansi v0.0.0-20170206155736-9520e82c474b/go.mod h1:01TrycV0kFyexm33Z7vhZRXopbI8J3TDReVlkTgMUxE=
 github.com/modern-go/concurrent v0.0.0-20180228061459-e0a39a4cb421/go.mod h1:6dJC0mAP4ikYIbvyc7fijjWJddQyLn8Ig3JB5CqoB9Q=
