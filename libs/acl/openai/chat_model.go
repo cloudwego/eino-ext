@@ -278,6 +278,9 @@ func toMessageRole(role string) schema.RoleType {
 		return schema.System
 	case openai.ChatMessageRoleTool:
 		return schema.Tool
+	case "":
+		// When the role field is an empty string, populate it with the schema.Assistant.
+		return schema.Assistant
 	default:
 		return schema.RoleType(role)
 	}
