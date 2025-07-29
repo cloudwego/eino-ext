@@ -435,12 +435,8 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opts
 		return req, nil, err
 	}
 
-	// Cannot set tools when previous response cached.
-	// See https://www.volcengine.com/docs/82379/1602228#%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E
-	if arkOpts.cache == nil || arkOpts.cache.ContextID == nil {
-		if req, err = cm.injectTools(req, options.Tools); err != nil {
-			return req, nil, err
-		}
+	if req, err = cm.injectTools(req, options.Tools); err != nil {
+		return req, nil, err
 	}
 
 	if req, reqOpts, err = cm.injectCache(req, arkOpts, reqOpts); err != nil {
@@ -626,7 +622,7 @@ func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) 
 func (cm *responsesAPIChatModel) injectTools(req responses.ResponseNewParams, optTools []*schema.ToolInfo) (responses.ResponseNewParams, error) {
 	tools := cm.tools
 
-	if len(optTools) > 0 {
+	if optTools != nil {
 		var err error
 		if tools, err = cm.toTools(optTools); err != nil {
 			return req, err
