@@ -100,6 +100,9 @@ type Config struct {
 	// Optional. Default: model's maximum
 	MaxTokens *int `json:"max_tokens,omitempty"`
 
+	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
+
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both.
 	// Range: 0.0 to 2.0. Higher values make output more random
@@ -342,24 +345,26 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		ToolChoice:  c.toolChoice,
 	}, opts...)
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:     c.config.ExtraFields,
-		ReasoningEffort: c.config.ReasoningEffort,
+		ExtraFields:         c.config.ExtraFields,
+		ReasoningEffort:     c.config.ReasoningEffort,
+		MaxCompletionTokens: c.config.MaxCompletionTokens,
 	}, opts...)
 
 	req := &openai.ChatCompletionRequest{
-		Model:            *options.Model,
-		MaxTokens:        dereferenceOrZero(options.MaxTokens),
-		Temperature:      options.Temperature,
-		TopP:             dereferenceOrZero(options.TopP),
-		Stop:             options.Stop,
-		PresencePenalty:  dereferenceOrZero(c.config.PresencePenalty),
-		Seed:             c.config.Seed,
-		FrequencyPenalty: dereferenceOrZero(c.config.FrequencyPenalty),
-		LogitBias:        c.config.LogitBias,
-		User:             dereferenceOrZero(c.config.User),
-		LogProbs:         c.config.LogProbs,
-		TopLogProbs:      c.config.TopLogProbs,
-		ReasoningEffort:  string(specOptions.ReasoningEffort),
+		Model:               *options.Model,
+		MaxTokens:           dereferenceOrZero(options.MaxTokens),
+		MaxCompletionTokens: dereferenceOrZero(specOptions.MaxCompletionTokens),
+		Temperature:         options.Temperature,
+		TopP:                dereferenceOrZero(options.TopP),
+		Stop:                options.Stop,
+		PresencePenalty:     dereferenceOrZero(c.config.PresencePenalty),
+		Seed:                c.config.Seed,
+		FrequencyPenalty:    dereferenceOrZero(c.config.FrequencyPenalty),
+		LogitBias:           c.config.LogitBias,
+		User:                dereferenceOrZero(c.config.User),
+		LogProbs:            c.config.LogProbs,
+		TopLogProbs:         c.config.TopLogProbs,
+		ReasoningEffort:     string(specOptions.ReasoningEffort),
 	}
 
 	if len(specOptions.ExtraFields) > 0 {
