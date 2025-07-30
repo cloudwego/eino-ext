@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"runtime/debug"
+	"slices"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/meguminnnnnnnnn/go-openai"
@@ -791,6 +792,33 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 }
 
 func toTools(tis []*schema.ToolInfo) ([]tool, error) {
+	var sortArrayFields func(*openapi3.Schema)
+	sortArrayFields = func(sc *openapi3.Schema) {
+		if sc == nil {
+			return
+		}
+		switch sc.Type {
+		case openapi3.TypeObject:
+			if len(sc.Required) == 0 {
+				return
+			}
+
+			slices.Sort(sc.Required)
+
+			for _, v := range sc.Properties {
+				sortArrayFields(v.Value)
+			}
+
+		case openapi3.TypeArray:
+			if sc.Items != nil && sc.Items.Value != nil {
+				sortArrayFields(sc.Items.Value)
+			}
+
+		default:
+			return
+		}
+	}
+
 	tools := make([]tool, len(tis))
 	for i := range tis {
 		ti := tis[i]
@@ -802,6 +830,8 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
+
+		sortArrayFields(paramsJSONSchema)
 
 		tools[i] = tool{
 			Function: &functionDefinition{
