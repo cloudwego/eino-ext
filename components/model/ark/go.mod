@@ -4,7 +4,8 @@ go 1.23.0
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.3.47
+	github.com/bytedance/sonic v1.13.2
+	github.com/cloudwego/eino v0.4.0
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/openai/openai-go v1.10.1
 	github.com/smartystreets/goconvey v1.8.1
@@ -13,7 +14,6 @@ require (
 )
 
 require (
-	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect

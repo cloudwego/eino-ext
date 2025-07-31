@@ -2,9 +2,8 @@ module github.com/cloudwego/eino-ext/components/embedding/cache
 
 go 1.23.0
 
-
 require (
-	github.com/cloudwego/eino v0.3.37
+	github.com/cloudwego/eino v0.4.0
 	github.com/stretchr/testify v1.10.0
 )
 

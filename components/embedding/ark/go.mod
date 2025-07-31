@@ -2,10 +2,9 @@ module github.com/cloudwego/eino-ext/components/embedding/ark
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.12
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/volcengine/volcengine-go-sdk v1.0.181
 )

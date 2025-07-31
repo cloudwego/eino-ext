@@ -2,11 +2,10 @@ module github.com/cloudwego/eino-ext/components/tool/sequentialthinking
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/smartystreets/goconvey v1.8.1
 )
 

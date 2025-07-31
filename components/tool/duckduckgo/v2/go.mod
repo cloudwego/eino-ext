@@ -7,7 +7,7 @@ toolchain go1.24.2
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.3.48
+	github.com/cloudwego/eino v0.4.0
 	github.com/corpix/uarand v0.2.0
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0

@@ -2,11 +2,10 @@ module github.com/cloudwego/eino-ext/components/tool/googlesearch
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/stretchr/testify v1.9.0
 	google.golang.org/api v0.204.0
 )

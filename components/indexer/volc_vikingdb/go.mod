@@ -2,10 +2,9 @@ module github.com/cloudwego/eino-ext/components/indexer/volc_vikingdb
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/volcengine/volc-sdk-golang v1.0.199
 )

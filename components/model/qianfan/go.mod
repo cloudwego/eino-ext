@@ -2,11 +2,10 @@ module github.com/cloudwego/eino-ext/components/model/qianfan
 
 go 1.23.0
 
-
 require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.9.0
 )

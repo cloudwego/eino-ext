@@ -2,11 +2,10 @@ module github.com/cloudwego/eino-ext/callbacks/langfuse
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/cloudwego/eino-ext/libs/acl/langfuse v0.0.0-20250409060521-ba8646352e4b
 	github.com/golang/mock v1.6.0
 	github.com/stretchr/testify v1.10.0

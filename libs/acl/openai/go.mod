@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250723112853-3bce976e5ccc
 	github.com/stretchr/testify v1.9.0
