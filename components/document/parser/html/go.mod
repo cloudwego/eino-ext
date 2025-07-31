@@ -2,10 +2,9 @@ module github.com/cloudwego/eino-ext/components/document/parser/html
 
 go 1.23.0
 
-
 require (
 	github.com/PuerkitoBio/goquery v1.8.1
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/stretchr/testify v1.9.0
 )

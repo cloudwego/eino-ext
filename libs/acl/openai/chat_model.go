@@ -778,6 +778,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 		}
 
 		if len(choice.Delta.ReasoningContent) > 0 {
+			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		}
 

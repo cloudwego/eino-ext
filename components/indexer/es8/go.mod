@@ -2,10 +2,9 @@ module github.com/cloudwego/eino-ext/components/indexer/es8
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/elastic/go-elasticsearch/v8 v8.16.0
 	github.com/smartystreets/goconvey v1.8.1
 )

@@ -2,10 +2,9 @@ module github.com/cloudwego/eino-ext/components/embedding/qianfan
 
 go 1.23.0
 
-
 require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 )
 
 require (

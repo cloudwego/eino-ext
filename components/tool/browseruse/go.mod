@@ -7,7 +7,7 @@ require (
 	github.com/bytedance/sonic v1.13.2
 	github.com/chromedp/cdproto v0.0.0-20250319231242-a755498943c8
 	github.com/chromedp/chromedp v0.13.3
-	github.com/cloudwego/eino v0.3.48
+	github.com/cloudwego/eino v0.4.0
 	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20250707031732-1bfb5847488c
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.9.0

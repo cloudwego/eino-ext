@@ -2,10 +2,9 @@ module github.com/cloudwego/eino-ext/components/indexer/redis
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.3.27
+	github.com/cloudwego/eino v0.4.0
 	github.com/redis/go-redis/v9 v9.10.0
 	github.com/smartystreets/goconvey v1.8.1
 )
