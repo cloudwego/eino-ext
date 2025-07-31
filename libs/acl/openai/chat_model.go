@@ -528,6 +528,7 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 			},
 		}
 		if len(msg.ReasoningContent) > 0 {
+			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
 		}
 
@@ -778,6 +779,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 		}
 
 		if len(choice.Delta.ReasoningContent) > 0 {
+			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		}
 
