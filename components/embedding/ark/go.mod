@@ -2,18 +2,20 @@ module github.com/cloudwego/eino-ext/components/embedding/ark
 
 go 1.23.0
 
-
 require (
 	github.com/bytedance/mockey v1.2.12
 	github.com/cloudwego/eino v0.3.27
 	github.com/smartystreets/goconvey v1.8.1
+	github.com/stretchr/testify v1.9.0
 	github.com/volcengine/volcengine-go-sdk v1.0.181
+	golang.org/x/sync v0.16.0
 )
 
 require (
 	github.com/bytedance/sonic v1.13.2 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/getkin/kin-openapi v0.118.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
@@ -35,6 +37,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.0.9 // indirect
 	github.com/perimeterx/marshmallow v1.1.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/smarty/assertions v1.15.0 // indirect
