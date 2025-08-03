@@ -80,7 +80,9 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	
 	// Convert documents to Milvus schema
 	rows, err := i.conf.DocumentConverter(docs, int(i.conf.Dim), vectors)
-	
+	if err != nil {
+		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
+	}
 	// Persistent vectors
 	insertOpt := milvusclient.NewColumnBasedInsertOption(i.conf.Collection, rows...)
 	
