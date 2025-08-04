@@ -20,6 +20,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/embedding"
@@ -31,6 +32,8 @@ import (
 
 func main() {
 	accessKey := os.Getenv("OPENAI_API_KEY")
+	baseURL := os.Getenv("OPENAI_BASE_URL")
+	byAzure := strings.ToLower(os.Getenv("OPENAI_BY_AZURE"))
 
 	ctx := context.Background()
 
@@ -38,11 +41,20 @@ func main() {
 		defaultDim = 1024
 	)
 
+	encodingFmt := openai.EmbeddingEncodingFormatFloat
 	embedder, err := openai.NewEmbedder(ctx, &openai.EmbeddingConfig{
-		APIKey:     accessKey,
-		Model:      "text-embedding-3-large",
-		Dimensions: &defaultDim,
-		Timeout:    0,
+		APIKey:  accessKey,
+		BaseURL: baseURL,
+		ByAzure: func() bool {
+			if byAzure == "true" {
+				return true
+			}
+			return false
+		}(),
+		Model:          "text-embedding-3-large",
+		Dimensions:     &defaultDim,
+		Timeout:        0,
+		EncodingFormat: &encodingFmt,
 	})
 	if err != nil {
 		log.Fatalf("NewEmbedder of openai failed, err=%v", err)

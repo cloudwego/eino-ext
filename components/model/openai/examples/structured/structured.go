@@ -28,7 +28,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
-	openai2 "github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
 func main() {
@@ -48,9 +47,9 @@ func main() {
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
 		APIKey: accessKey,
 		Model:  "gpt-4o",
-		ResponseFormat: &openai2.ChatCompletionResponseFormat{
-			Type: openai2.ChatCompletionResponseFormatTypeJSONSchema,
-			JSONSchema: &openai2.ChatCompletionResponseFormatJSONSchema{
+		ResponseFormat: &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONSchema,
+			JSONSchema: &openai.ChatCompletionResponseFormatJSONSchema{
 				Name:        "person",
 				Description: "data that describes a person",
 				Strict:      false,

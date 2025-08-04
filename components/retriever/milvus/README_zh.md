@@ -114,7 +114,7 @@ type RetrieverConfig struct {
     // Partition 是集合的分区名称
     // 可选，默认值为空
     Partition []string
-    // VectorField 是集合中的向量字段���称
+    // VectorField 是集合中的向量字段名称
     // 可选，默认值为 "vector"
     VectorField string
     // OutputFields 是要返回的字段
