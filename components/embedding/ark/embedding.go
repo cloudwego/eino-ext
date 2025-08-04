@@ -20,14 +20,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
-	"github.com/cloudwego/eino/components"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 var (
@@ -70,7 +72,34 @@ type EmbeddingConfig struct {
 	// Model specifies the ID of endpoint on ark platform
 	// Required
 	Model string `json:"model"`
+
+	// APIType specifies which api to use: text or multi-modal
+	// Optional. Default APITypeText
+	APIType *APIType `json:"api_type,omitempty"`
+
+	// MaxConcurrentRequests specifies the maximum number of concurrent multi-modal embedding api calls allowed
+	// Optional. Default: 5
+	MaxConcurrentRequests *int `json:"max_concurrent_requests"`
 }
+
+type APIType string
+
+const (
+	// APITypeText uses /embeddings text embedding api, see:
+	// VolcEngine
+	// API Reference: https://www.volcengine.com/docs/82379/1521766
+	// BaseURL: https://ark.cn-beijing.volces.com/api/v3
+	APITypeText APIType = "text_api"
+
+	// APITypeMultiModal uses /embeddings/multimodal multi-modal embedding api, see:
+	// VolcEngine:
+	// API Reference: https://www.volcengine.com/docs/82379/1523520
+	// BaseURL: https://ark.cn-beijing.volces.com/api/v3
+	// BytePlus:
+	// API Reference: https://docs.byteplus.com/en/docs/ModelArk/1409290
+	// BaseURL: https://ark.ap-southeast.bytepluses.com/api/v3
+	APITypeMultiModal APIType = "multi_modal_api"
+)
 
 type Embedder struct {
 	client *arkruntime.Client
@@ -89,6 +118,15 @@ func buildClient(config *EmbeddingConfig) *arkruntime.Client {
 	}
 	if config.RetryTimes == nil {
 		config.RetryTimes = &defaultRetryTimes
+	}
+	if config.APIType == nil {
+		apiType := APITypeText
+		config.APIType = &apiType
+	} else if *config.APIType == APITypeMultiModal {
+		if config.MaxConcurrentRequests == nil {
+			defaultMaxConcurrentRequests := 5
+			config.MaxConcurrentRequests = &defaultMaxConcurrentRequests
+		}
 	}
 
 	opts := []arkruntime.ConfigOption{
@@ -120,10 +158,14 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 
 func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) (
 	embeddings [][]float64, err error) {
-	req := e.genRequest(texts, opts...)
+
+	options := embedding.GetCommonOptions(&embedding.Options{
+		Model: &e.conf.Model,
+	}, opts...)
+	encodingFormat := model.EmbeddingEncodingFormatFloat
 	conf := &embedding.Config{
-		Model:          req.Model,
-		EncodingFormat: string(req.EncodingFormat),
+		Model:          dereferenceOrZero(options.Model),
+		EncodingFormat: string(encodingFormat),
 	}
 
 	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
@@ -137,22 +179,66 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 		}
 	}()
 
-	resp, err := e.client.CreateEmbeddings(ctx, &req)
-	if err != nil {
-		return nil, fmt.Errorf("[Ark]EmbedStrings error: %v", err)
-	}
-
 	var usage *embedding.TokenUsage
 
-	usage = &embedding.TokenUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
-	}
+	if e.conf.APIType == nil || *e.conf.APIType == APITypeText {
+		resp, err := e.client.CreateEmbeddings(ctx, model.EmbeddingRequestStrings{
+			Input:          texts,
+			Model:          conf.Model,
+			EncodingFormat: encodingFormat,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("[Ark] CreateEmbeddings error: %w", err)
+		}
 
-	embeddings = make([][]float64, len(resp.Data))
-	for i, d := range resp.Data {
-		embeddings[i] = toFloat64(d.Embedding)
+		usage = &embedding.TokenUsage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		}
+
+		embeddings = make([][]float64, len(resp.Data))
+		for i, d := range resp.Data {
+			embeddings[i] = toFloat64(d.Embedding)
+		}
+	} else {
+		mu := sync.Mutex{}
+		eg := errgroup.Group{}
+		eg.SetLimit(*e.conf.MaxConcurrentRequests)
+		usage = &embedding.TokenUsage{}
+		embeddings = make([][]float64, len(texts))
+
+		for i := 0; i < len(texts); i++ {
+			idx := i
+			text := texts[idx]
+
+			eg.Go(func() error {
+				res, err := e.client.CreateMultiModalEmbeddings(ctx, model.MultiModalEmbeddingRequest{
+					Input: []model.MultimodalEmbeddingInput{
+						{Type: model.MultiModalEmbeddingInputTypeText, Text: &text},
+					},
+					Model:          conf.Model,
+					EncodingFormat: &encodingFormat,
+				})
+				if err != nil {
+					return fmt.Errorf("[Ark] CreateMultiModalEmbeddings error: %w", err)
+				}
+
+				mu.Lock()
+				defer mu.Unlock()
+
+				usage.PromptTokens += res.Usage.PromptTokens
+				usage.CompletionTokens += res.Usage.TotalTokens - res.Usage.PromptTokens
+				usage.TotalTokens += res.Usage.TotalTokens
+				embeddings[idx] = toFloat64(res.Data.Embedding)
+
+				return nil
+			})
+		}
+
+		if err = eg.Wait(); err != nil {
+			return nil, err
+		}
 	}
 
 	callbacks.OnEnd(ctx, &embedding.CallbackOutput{
