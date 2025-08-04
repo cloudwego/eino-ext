@@ -23,14 +23,13 @@ import (
 	"io"
 	"net/http"
 	"runtime/debug"
-	"slices"
-
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/meguminnnnnnnnn/go-openai"
+	"sort"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/meguminnnnnnnnn/go-openai"
 )
 
 type ChatCompletionResponseFormatType string
@@ -810,7 +809,7 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 				return
 			}
 
-			slices.Sort(sc.Required)
+			sort.Strings(sc.Required)
 
 			for _, v := range sc.Properties {
 				sortArrayFields(v.Value)
