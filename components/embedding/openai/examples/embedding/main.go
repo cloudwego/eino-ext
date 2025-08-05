@@ -30,19 +30,26 @@ import (
 )
 
 func main() {
-	accessKey := os.Getenv("OPENAI_API_KEY")
-
 	ctx := context.Background()
 
 	var (
 		defaultDim = 1024
 	)
 
+	encodingFmt := openai.EmbeddingEncodingFormatFloat
 	embedder, err := openai.NewEmbedder(ctx, &openai.EmbeddingConfig{
-		APIKey:     accessKey,
-		Model:      "text-embedding-3-large",
-		Dimensions: &defaultDim,
-		Timeout:    0,
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+		Dimensions:     &defaultDim,
+		Timeout:        0,
+		EncodingFormat: &encodingFmt,
 	})
 	if err != nil {
 		log.Fatalf("NewEmbedder of openai failed, err=%v", err)

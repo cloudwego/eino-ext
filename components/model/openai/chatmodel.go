@@ -32,6 +32,15 @@ import (
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var _ model.ChatModel = (*ChatModel)(nil)
 
+const (
+	ChatCompletionResponseFormatTypeJSONObject = openai.ChatCompletionResponseFormatTypeJSONObject
+	ChatCompletionResponseFormatTypeJSONSchema = openai.ChatCompletionResponseFormatTypeJSONSchema
+	ChatCompletionResponseFormatTypeText       = openai.ChatCompletionResponseFormatTypeText
+)
+
+type ChatCompletionResponseFormat = openai.ChatCompletionResponseFormat
+type ChatCompletionResponseFormatJSONSchema = openai.ChatCompletionResponseFormatJSONSchema
+
 type ChatModelConfig struct {
 	// APIKey is your authentication key
 	// Use OpenAI API key or Azure API key depending on the service
@@ -103,7 +112,7 @@ type ChatModelConfig struct {
 
 	// ResponseFormat specifies the format of the model's response
 	// Optional. Use for structured outputs
-	ResponseFormat *openai.ChatCompletionResponseFormat `json:"response_format,omitempty"`
+	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
 
 	// Seed enables deterministic sampling for consistent outputs
 	// Optional. Set for reproducible results
