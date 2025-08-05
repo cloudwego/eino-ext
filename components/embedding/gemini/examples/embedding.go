@@ -19,22 +19,29 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 
 	"github.com/cloudwego/eino-ext/components/embedding/gemini"
+	"google.golang.org/genai"
 )
+
+func buildClient(ctx context.Context) *genai.Client {
+	// set via the GOOGLE_API_KEY or GEMINI_API_KEY environment variable
+	cli, err := genai.NewClient(ctx, &genai.ClientConfig{})
+	if err != nil {
+		log.Fatal("create genai client error: ", err)
+	}
+	return cli
+}
 
 func main() {
 	ctx := context.Background()
 
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		log.Fatal("GEMINI_API_KEY environment variable not set")
-	}
+	cli := buildClient(ctx)
 
 	embedder, err := gemini.NewEmbedder(ctx, &gemini.EmbeddingConfig{
-		APIKey: apiKey,
-		Model:  "gemini-embedding-001", // Or other models like "text-embedding-004"
+		Client:   cli,
+		Model:    "gemini-embedding-001", // Or other models like "text-embedding-004"
+		TaskType: "RETRIEVAL_QUERY",      // Or other task types like "EmbeddingTaskTypeImage"
 	})
 	if err != nil {
 		log.Printf("new embedder error: %v\n", err)

@@ -25,32 +25,48 @@ import (
 	"google.golang.org/genai"
 )
 
+// EmbeddingConfig contains the configuration for the Gemini embedding model.
 type EmbeddingConfig struct {
-	APIKey string `json:"api_key"`
-	Model  string `json:"model"`
+	// Client is the Gemimi API client instance
+	// Required for making API calls to Gemini
+	Client *genai.Client
+
+	// Model specifies which Gemini embedding model to use
+	// Examples: "gemini-embedding-001", "gemini-embedding-exp-03-07"
+	Model string
+
+	// Type of task for which the embedding will be used.
+	TaskType string
+
+	// Title for the text. Only applicable when TaskType is
+	// `RETRIEVAL_DOCUMENT`.
+	Title string
+
+	// Reduced dimension for the output embedding. If set,
+	// excessive values in the output embedding are truncated from the end.
+	// Supported by newer models since 2024 only. You cannot set this value if
+	// using the earlier model (`models/embedding-001`).
+	OutputDimensionality *int32
+
+	// Vertex API only. The MIME type of the input.
+	MIMEType string `json:"mimeType,omitempty"`
+
+	// Vertex API only. Whether to silently truncate inputs longer than
+	// the max sequence length. If this option is set to false, oversized inputs
+	// will lead to an INVALID_ARGUMENT error, similar to other text APIs.
+	AutoTruncate bool `json:"autoTruncate,omitempty"`
 }
 
 type Embedder struct {
-	client *genai.Client
-	conf   *EmbeddingConfig
+	cli *genai.Client
+
+	conf *EmbeddingConfig
 }
 
-func buildClient(ctx context.Context, apiKey string) (*genai.Client, error) {
-	return genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey:  apiKey,
-		Backend: genai.BackendGeminiAPI,
-	})
-}
-
-func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error) {
-	client, err := buildClient(ctx, config.APIKey)
-	if err != nil {
-		return nil, err
-	}
-
+func NewEmbedder(ctx context.Context, cfg *EmbeddingConfig) (*Embedder, error) {
 	return &Embedder{
-		client: client,
-		conf:   config,
+		cli:  cfg.Client,
+		conf: cfg,
 	}, nil
 }
 
@@ -79,10 +95,19 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	for _, text := range texts {
 		contents = append(contents, genai.NewContentFromText(text, genai.RoleUser))
 	}
-	resp, err := e.client.Models.EmbedContent(ctx,
+
+	embedContentConfig := &genai.EmbedContentConfig{
+		TaskType:             e.conf.TaskType,
+		Title:                e.conf.Title,
+		OutputDimensionality: e.conf.OutputDimensionality,
+		MIMEType:             e.conf.MIMEType,
+		AutoTruncate:         e.conf.AutoTruncate,
+	}
+
+	resp, err := e.cli.Models.EmbedContent(ctx,
 		e.conf.Model,
 		contents,
-		nil,
+		embedContentConfig,
 	)
 	if err != nil {
 		return nil, err
@@ -90,17 +115,27 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 
 	// Convert [][]float32 to [][]float64
 	embeddings = make([][]float64, len(resp.Embeddings))
+	var tokenUsage *embedding.TokenUsage
 	for i, emb := range resp.Embeddings {
 		embeddings[i] = make([]float64, len(emb.Values))
 		for j, v := range emb.Values {
 			embeddings[i][j] = float64(v)
+		}
+		if emb.Statistics != nil {
+			if tokenUsage == nil {
+				tokenUsage = &embedding.TokenUsage{
+					PromptTokens: int(emb.Statistics.TokenCount),
+				}
+			} else {
+				tokenUsage.PromptTokens += int(emb.Statistics.TokenCount)
+			}
 		}
 	}
 
 	callbacks.OnEnd(ctx, &embedding.CallbackOutput{
 		Embeddings: embeddings,
 		Config:     conf,
-		// gemini embedding does not return token usage
+		TokenUsage: tokenUsage,
 	})
 
 	return embeddings, nil

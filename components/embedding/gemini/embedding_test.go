@@ -26,17 +26,16 @@ import (
 )
 
 func Test_EmbedStrings(t *testing.T) {
-	PatchConvey("test buildClient", t, func() {
-		buildClient(context.Background(), "mock")
-	})
 	PatchConvey("test EmbedStrings", t, func() {
 		ctx := context.Background()
 		mockCli := &genai.Client{
 			Models: &genai.Models{},
 		}
-		Mock(buildClient).Return(mockCli, nil).Build()
 
-		embedder, err := NewEmbedder(ctx, &EmbeddingConfig{})
+		embedder, err := NewEmbedder(ctx, &EmbeddingConfig{
+			Client: mockCli,
+			Model:  "gemini-embedding-001",
+		})
 		convey.So(err, convey.ShouldBeNil)
 
 		mockResponse := &genai.EmbedContentResponse{
