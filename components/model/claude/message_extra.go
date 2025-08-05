@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	keyOfThinking = "_eino_claude_thinking"
+	keyOfThinking          = "_eino_claude_thinking"
+	keyOfThinkingSignature = "_eino_claude_thinking_signature"
 )
 
 func GetThinking(msg *schema.Message) (string, bool) {
@@ -44,4 +45,25 @@ func setThinking(msg *schema.Message, reasoningContent string) {
 		msg.Extra = make(map[string]interface{})
 	}
 	msg.Extra[keyOfThinking] = reasoningContent
+}
+
+func GetThinkingSignature(msg *schema.Message) (string, bool) {
+	if msg == nil {
+		return "", false
+	}
+	signature, ok := msg.Extra[keyOfThinkingSignature].(string)
+	if !ok {
+		return "", false
+	}
+	return signature, true
+}
+
+func SetThinkingSignature(msg *schema.Message, signature string) {
+	if msg == nil {
+		return
+	}
+	if msg.Extra == nil {
+		msg.Extra = make(map[string]interface{})
+	}
+	msg.Extra[keyOfThinkingSignature] = signature
 }
