@@ -22,7 +22,7 @@ import (
 
 const (
 	keyOfThinking          = "_eino_claude_thinking"
-	keyOfThinkingSignature = "_eino_thinking_signature"
+	keyOfThinkingSignature = "_eino_claude_thinking_signature"
 )
 
 func GetThinking(msg *schema.Message) (string, bool) {
