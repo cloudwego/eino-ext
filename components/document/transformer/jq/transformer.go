@@ -14,7 +14,9 @@ import (
 
 // --- Public Transformer Entrypoint ---
 
-type Transformer struct{}
+type Transformer struct {
+	Rules *TransformerRules
+}
 
 // implOptions is used to extract the rules from the generic TransformerOption.
 type implOptions struct {
@@ -26,12 +28,17 @@ func (t *Transformer) Transform(ctx context.Context, docs []*schema.Document, op
 	option := implOptions{}
 	document.GetTransformerImplSpecificOptions(&option, opts...)
 
-	if option.Rules == nil {
-		err = fmt.Errorf("jq transformer rules not provided in options")
+	rules := option.Rules
+	if rules == nil {
+		rules = t.Rules
+	}
+
+	if rules == nil {
+		err = fmt.Errorf("jq transformer rules not provided in options and no default rules available")
 		return
 	}
 
-	documents, err = option.Rules.Transform(ctx, docs, opts...)
+	documents, err = rules.Transform(ctx, docs, opts...)
 	return
 }
 
