@@ -1,4 +1,4 @@
-module github.com/cloudwego/eino-ext/components/document/transformer/splitter/jq
+module github.com/cloudwego/eino-ext/components/document/transformer/jq
 
 go 1.24.3
 
