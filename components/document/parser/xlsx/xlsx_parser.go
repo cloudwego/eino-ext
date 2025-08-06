@@ -40,14 +40,35 @@ type XlsxParser struct {
 	Config *Config
 }
 
+type Columns struct {
+	// NoHeader is set to false by default, which means that the first row is used as the table header
+	NoHeader bool
+
+	Content     []string          // e.g., ["A", "D", "F"]
+	Meta        []string          // e.g., ["B", "C"]
+	CustomNames map[string]string // e.g., {"A": "Name", "B": "Age"}
+}
+
 // Config Used to configure xlsxParser
 type Config struct {
 	// SheetName is set to Sheet1 by default, which means that the first table is processed
 	SheetName string
-	// NoHeader is set to false by default, which means that the first row is used as the table header
-	NoHeader bool
 	// IDPrefix is set to customize the prefix of document ID, default 1,2,3, ...
 	IDPrefix string
+
+	Columns Columns // Columns to be processed, if not set, all columns will be processed
+}
+
+// implOptions is used to extract the config from the generic parser.Option
+type implOptions struct {
+	Config *Config
+}
+
+// WithConfig specifies the xlsx parser config
+func WithConfig(config *Config) parser.Option {
+	return parser.WrapImplSpecificOptFn(func(o *implOptions) {
+		o.Config = config
+	})
 }
 
 // NewXlsxParser Create a new xlsxParser
@@ -61,30 +82,35 @@ func NewXlsxParser(ctx context.Context, config *Config) (xlp parser.Parser, err 
 	return xlp, nil
 }
 
-// generateID generates document ID based on configuration
-func (xlp *XlsxParser) generateID(i int) string {
-	if xlp.Config.IDPrefix == "" {
-		return fmt.Sprintf("%d", i)
+// columnLetterToIndex converts a column letter (A, B, C, ..., Z, AA, AB, ...) to a 0-based index
+func columnLetterToIndex(letter string) int {
+	letter = strings.ToUpper(letter)
+	index := 0
+	for i := 0; i < len(letter); i++ {
+		index = index*26 + int(letter[i]-'A'+1)
 	}
-	return fmt.Sprintf("%s%d", xlp.Config.IDPrefix, i)
-}
-
-// buildRowMetaData builds row metadata from row data and headers
-func (xlp *XlsxParser) buildRowMetaData(row []string, headers []string) map[string]any {
-	metaData := make(map[string]any)
-	if !xlp.Config.NoHeader {
-		for j, header := range headers {
-			if j < len(row) {
-				metaData[header] = row[j]
-			}
-		}
-	}
-	return metaData
+	return index - 1
 }
 
 // Parse parses the XLSX content from io.Reader.
 func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...parser.Option) ([]*schema.Document, error) {
 	option := parser.GetCommonOptions(&parser.Options{}, opts...)
+
+	// Extract implementation-specific options
+	implOpts := implOptions{}
+	parser.GetImplSpecificOptions(&implOpts, opts...)
+
+	// Use config from options if provided, otherwise use default from parser instance
+	config := implOpts.Config
+	if config == nil {
+		config = xlp.Config
+	}
+
+	// Return error if no config is available
+	if config == nil {
+		return nil, fmt.Errorf("xlsx parser config not provided in options and no default config available")
+	}
+
 	xlFile, err := excelize.OpenReader(reader)
 	if err != nil {
 		return nil, err
@@ -99,8 +125,8 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 
 	// Default
 	sheetName := sheets[0]
-	if xlp.Config.SheetName != "" {
-		sheetName = xlp.Config.SheetName
+	if config.SheetName != "" {
+		sheetName = config.SheetName
 	}
 
 	// Get all rows, header + data rows
@@ -117,7 +143,7 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 	// Process the header
 	startIdx := 0
 	var headers []string
-	if !xlp.Config.NoHeader && len(rows) > 0 {
+	if !config.Columns.NoHeader && len(rows) > 0 {
 		headers = rows[0]
 		startIdx = 1
 	}
@@ -128,17 +154,33 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 		if len(row) == 0 {
 			continue
 		}
-		// Convert row data to strings
-		contentParts := make([]string, len(row))
-		for j, cell := range row {
-			contentParts[j] = strings.TrimSpace(cell)
+
+		// Build content string based on Columns.Content if specified
+		var contentParts []string
+		if len(config.Columns.Content) > 0 {
+			// Only use specified columns for content
+			contentParts = make([]string, 0, len(config.Columns.Content))
+			for _, colLetter := range config.Columns.Content {
+				colIndex := columnLetterToIndex(colLetter)
+				if colIndex < len(row) {
+					contentParts = append(contentParts, strings.TrimSpace(row[colIndex]))
+				} else {
+					contentParts = append(contentParts, "")
+				}
+			}
+		} else {
+			// Use all columns for content
+			contentParts = make([]string, len(row))
+			for j, cell := range row {
+				contentParts[j] = strings.TrimSpace(cell)
+			}
 		}
 		content := strings.Join(contentParts, "\t")
 
 		meta := make(map[string]any)
 
-		// Build the row's Meta
-		rowMeta := xlp.buildRowMetaData(row, headers)
+		// Build the row's Meta using the current config
+		rowMeta := buildRowMetaData(config, row, headers)
 		meta[MetaDataRow] = rowMeta
 
 		// Get the Common ExtraMeta
@@ -148,7 +190,7 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 
 		// Create New Document
 		nDoc := &schema.Document{
-			ID:       xlp.generateID(i),
+			ID:       generateID(config, i),
 			Content:  content,
 			MetaData: meta,
 		}
@@ -157,4 +199,52 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 	}
 
 	return ret, nil
+}
+
+// generateID generates document ID based on configuration - extracted from the XlsxParser method
+func generateID(config *Config, i int) string {
+	if config.IDPrefix == "" {
+		return fmt.Sprintf("%d", i)
+	}
+	return fmt.Sprintf("%s%d", config.IDPrefix, i)
+}
+
+// buildRowMetaData builds row metadata from row data and headers - extracted from the XlsxParser method
+func buildRowMetaData(config *Config, row []string, headers []string) map[string]any {
+	metaData := make(map[string]any)
+
+	// If Columns.Meta is defined, only process those columns
+	if len(config.Columns.Meta) > 0 {
+		for _, colLetter := range config.Columns.Meta {
+			colIndex := columnLetterToIndex(colLetter)
+			if colIndex < len(row) {
+				// Determine the key name - use custom name if available
+				keyName := colLetter
+				if !config.Columns.NoHeader && colIndex < len(headers) {
+					keyName = headers[colIndex]
+				}
+				if customName, ok := config.Columns.CustomNames[colLetter]; ok {
+					keyName = customName
+				}
+				metaData[keyName] = row[colIndex]
+			}
+		}
+	} else if !config.Columns.NoHeader {
+		// Default behavior: use all columns with headers as keys
+		for j, header := range headers {
+			if j < len(row) {
+				// Check if this column index has a custom name by finding the corresponding column letter
+				keyName := header
+				for colLetter, customName := range config.Columns.CustomNames {
+					colIndex := columnLetterToIndex(colLetter)
+					if colIndex == j {
+						keyName = customName
+						break
+					}
+				}
+				metaData[keyName] = row[j]
+			}
+		}
+	}
+	return metaData
 }
