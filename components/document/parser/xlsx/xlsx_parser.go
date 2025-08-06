@@ -42,21 +42,21 @@ type XlsxParser struct {
 
 type Columns struct {
 	// NoHeader is set to false by default, which means that the first row is used as the table header
-	NoHeader bool
+	NoHeader bool `yaml:"no_header" json:"no_header"`
 
-	Content     []string          // e.g., ["A", "D", "F"]
-	Meta        []string          // e.g., ["B", "C"]
-	CustomNames map[string]string // e.g., {"A": "Name", "B": "Age"}
+	Content     []string          `yaml:"content,omitempty" json:"content,omitempty"`           // e.g., ["A", "D", "F"]
+	Meta        []string          `yaml:"meta,omitempty" json:"meta,omitempty"`                 // e.g., ["B", "C"]
+	CustomNames map[string]string `yaml:"custom_names,omitempty" json:"custom_names,omitempty"` // e.g., {"A": "Name", "B": "Age"}
 }
 
 // Config Used to configure xlsxParser
 type Config struct {
 	// SheetName is set to Sheet1 by default, which means that the first table is processed
-	SheetName string
+	SheetName string `yaml:"sheet_name,omitempty" json:"sheet_name,omitempty"`
 	// IDPrefix is set to customize the prefix of document ID, default 1,2,3, ...
-	IDPrefix string
+	IDPrefix string `yaml:"id_prefix,omitempty" json:"id_prefix,omitempty"`
 
-	Columns Columns // Columns to be processed, if not set, all columns will be processed
+	Columns Columns `yaml:"columns" json:"columns"` // Columns to be processed, if not set, all columns will be processed
 }
 
 // implOptions is used to extract the config from the generic parser.Option
