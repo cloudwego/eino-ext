@@ -751,7 +751,7 @@ func Test_parseSpanTypeFromComponent(t *testing.T) {
 			// 调用待测函数
 			result := parseSpanTypeFromComponent(components.ComponentOfTool)
 			// 断言结果是否符合预期
-			convey.So(result, convey.ShouldEqual, "function")
+			convey.So(result, convey.ShouldEqual, "tool")
 		})
 		mockey.PatchConvey("测试默认情况输入", func() {
 			// 定义一个不在常量列表中的 Component
