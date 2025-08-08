@@ -39,7 +39,7 @@ func Recovery(ctx context.Context) {
 	}
 
 	if ctx == nil {
-		ctx = context.Background() // nolint: byted_context_not_reinitialize -- false positive
+		ctx = context.Background()
 	}
 
 	log.Errorf("catch panic err=%v\nstacktrace=%s", e, debug.Stack())

@@ -200,7 +200,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 
 	outStream = schema.StreamReaderWithConvert(nsr,
 		func(src callbacks.CallbackOutput) (*schema.Message, error) {
-			s := src.(*model.CallbackOutput) // nolint: byted_interface_check_golintx
+			s := src.(*model.CallbackOutput)
 			if s.Message == nil {
 				return nil, schema.ErrNoValue
 			}
