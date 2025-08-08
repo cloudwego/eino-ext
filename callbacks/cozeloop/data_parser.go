@@ -537,8 +537,6 @@ func parseSpanTypeFromComponent(c components.Component) string {
 		return "loader"
 
 	case components.ComponentOfTool:
-		return "function"
-	case compose.ComponentOfToolsNode:
 		return "tool"
 
 	default:

@@ -17,6 +17,8 @@ github.com/cloudwego/base64x v0.1.5 h1:XPciSp1xaq2VCSt6lF0phncD4koWyULpl5bUxbfCy
 github.com/cloudwego/base64x v0.1.5/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJgA0rcu/8w=
 github.com/cloudwego/eino v0.3.27 h1:Oz4HcuivJyb+zT0W43Gmtb6wqmXZaYel0CS4iF6XsoI=
 github.com/cloudwego/eino v0.3.27/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
+github.com/cloudwego/eino v0.3.47 h1:nl1Q1QZhFAyl169M32KZB8vj1Zp6fqeSjVF1lVzUSsw=
+github.com/cloudwego/eino v0.3.47/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
 github.com/cloudwego/iasm v0.2.0/go.mod h1:8rXZaNYT2n95jn+zTI1sDr+IgcD2GVs0nlbbQPiEFhY=
 github.com/coze-dev/cozeloop-go v0.1.7 h1:Y9AbLFLJdYWGPJJecWScSeW8W4kY38CLzBx0/ha/lZ4=
 github.com/coze-dev/cozeloop-go v0.1.7/go.mod h1:rhHtKT9D8wdqd+X1heP2A7zNyTohuA16ESv+rhEClbE=
