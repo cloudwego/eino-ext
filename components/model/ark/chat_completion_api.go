@@ -212,7 +212,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 			}
 
 			sw.Close()
-			_ = cm.closeArkStreamReader(stream) // nolint: byted_returned_err_should_do_check
+			_ = cm.closeArkStreamReader(stream)
 
 		}()
 

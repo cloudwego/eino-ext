@@ -373,7 +373,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 			}
 
 			sw.Close()
-			_ = closeArkStreamReader(stream) // nolint: byted_returned_err_should_do_check
+			_ = closeArkStreamReader(stream)
 
 		}()
 
