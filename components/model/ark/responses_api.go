@@ -703,7 +703,10 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*sch
 
 func (cm *responsesAPIChatModel) toEinoTokenUsage(usage responses.ResponseUsage) *schema.TokenUsage {
 	return &schema.TokenUsage{
-		PromptTokens:     int(usage.InputTokens),
+		PromptTokens: int(usage.InputTokens),
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
+		},
 		CompletionTokens: int(usage.OutputTokens),
 		TotalTokens:      int(usage.TotalTokens),
 	}
@@ -711,7 +714,10 @@ func (cm *responsesAPIChatModel) toEinoTokenUsage(usage responses.ResponseUsage)
 
 func (cm *responsesAPIChatModel) toModelTokenUsage(usage responses.ResponseUsage) *model.TokenUsage {
 	return &model.TokenUsage{
-		PromptTokens:     int(usage.InputTokens),
+		PromptTokens: int(usage.InputTokens),
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
+		},
 		CompletionTokens: int(usage.OutputTokens),
 		TotalTokens:      int(usage.TotalTokens),
 	}

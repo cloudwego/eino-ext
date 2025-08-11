@@ -224,7 +224,7 @@ func extractText(node *html.Node) (string, error) {
 	orig := node
 	node = node.FirstChild
 	for node != nil {
-		if node == orig { // nolint: byted_address_compare_check
+		if node == orig {
 			break
 		}
 		if _, ok := ll[node]; !ok {
