@@ -539,16 +539,10 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
-	usage := &model.TokenUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
-	}
-
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     cbInput.Config,
-		TokenUsage: usage,
+		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
 	})
 
 	return outMsg, nil
