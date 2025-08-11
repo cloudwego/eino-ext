@@ -13,10 +13,10 @@ github.com/bytedance/sonic/loader v0.2.4/go.mod h1:N8A3vUdtUebEY2/VQC0MyhYeKUFos
 github.com/certifi/gocertifi v0.0.0-20190105021004-abcd57078448/go.mod h1:GJKEexRPVJrBSOjoqN5VNOIKJ5Q3RViH6eu3puDRwx4=
 github.com/cloudwego/base64x v0.1.5 h1:XPciSp1xaq2VCSt6lF0phncD4koWyULpl5bUxbfCyP4=
 github.com/cloudwego/base64x v0.1.5/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJgA0rcu/8w=
-github.com/cloudwego/eino v0.4.0 h1:5gMwO6HGtn/bn1M3l5cY8y9k+TO+fCcJZ14z+S3pTaQ=
-github.com/cloudwego/eino v0.4.0/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
-github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250804062529-6e67726a4b3f h1:J1tQBg6RDftrtm3vsv+ozlupdlNV+WGslpXiTDr/2xI=
-github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250804062529-6e67726a4b3f/go.mod h1:4EBgz8+68n1iuKyWC37Tu9NG1WJkPm+yLxvyLik28Us=
+github.com/cloudwego/eino v0.4.3 h1:ihHVHPMA8G2DPWeN+NTuIKr1QBAet9g84buH+LUl1bU=
+github.com/cloudwego/eino v0.4.3/go.mod h1:wUjz990apdsaOraOXdh6CdhVXq8DJsOvLsVlxNTcNfY=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250811130120-7b6b45476992 h1:MYorSBUQDIv64XJiFmWEEmugbzTYcbND2YQAzgXCusU=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250811130120-7b6b45476992/go.mod h1:KyHOuc2H4wLQQbuo7dPMIcNAemmH6axMHTeiSij2oXA=
 github.com/cloudwego/iasm v0.2.0/go.mod h1:8rXZaNYT2n95jn+zTI1sDr+IgcD2GVs0nlbbQPiEFhY=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
