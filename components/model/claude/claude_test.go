@@ -24,9 +24,10 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino/schema"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestClaude(t *testing.T) {
@@ -336,4 +337,18 @@ func TestWithTools(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "test model", ncm.(*ChatModel).model)
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
+}
+
+func TestInjectContentBlockBreakPoint(t *testing.T) {
+	lastBlock := anthropic.NewTextBlock("input")
+	injectContentBlockBreakPoint(lastBlock)
+	assert.NotEmpty(t, lastBlock.OfText.CacheControl.Type)
+
+	lastBlock = anthropic.NewImageBlock[anthropic.URLImageSourceParam](anthropic.URLImageSourceParam{})
+	injectContentBlockBreakPoint(lastBlock)
+	assert.NotEmpty(t, lastBlock.OfImage.CacheControl.Type)
+
+	lastBlock = anthropic.NewToolResultBlock("userID", "input", false)
+	injectContentBlockBreakPoint(lastBlock)
+	assert.NotEmpty(t, lastBlock.OfToolResult.CacheControl.Type)
 }

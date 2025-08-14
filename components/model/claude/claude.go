@@ -385,12 +385,17 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 			}
 		}
 
-		result = append(result, anthropic.ToolUnionParam{
-			OfTool: &anthropic.ToolParam{
-				Name:        tool.Name,
-				Description: param.NewOpt(tool.Desc),
-				InputSchema: inputSchema,
-			}})
+		toolParam := &anthropic.ToolParam{
+			Name:        tool.Name,
+			Description: param.NewOpt(tool.Desc),
+			InputSchema: inputSchema,
+		}
+
+		if isBreakpoint, _ := getToolInfoExtraValue[bool](tool, keyOfBreakPoint); isBreakpoint {
+			toolParam.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
+
+		result = append(result, anthropic.ToolUnionParam{OfTool: toolParam})
 	}
 
 	return result, nil
@@ -519,9 +524,11 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	// Convert messages
 	var systemTextBlocks []anthropic.TextBlockParam
 	for _, m := range system {
-		systemTextBlocks = append(systemTextBlocks, anthropic.TextBlockParam{
-			Text: m.Content,
-		})
+		block := anthropic.TextBlockParam{Text: m.Content}
+		if isBreakpoint, _ := getMsgExtraValue[bool](m, keyOfBreakPoint); isBreakpoint {
+			block.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
+		systemTextBlocks = append(systemTextBlocks, block)
 	}
 	if len(systemTextBlocks) > 0 {
 		params.System = systemTextBlocks
@@ -593,7 +600,6 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 }
 
 func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
-
 	var messageParams []anthropic.ContentBlockParamUnion
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
@@ -636,7 +642,26 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		mp = anthropic.NewUserMessage(messageParams...)
 	}
 
+	if isBreakpoint, _ := getMsgExtraValue[bool](message, keyOfBreakPoint); isBreakpoint && len(messageParams) > 0 {
+		injectContentBlockBreakPoint(messageParams[len(messageParams)-1])
+	}
+
 	return mp, nil
+}
+
+func injectContentBlockBreakPoint(lastBlock anthropic.ContentBlockParamUnion) {
+	if lastBlock.OfText != nil {
+		lastBlock.OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
+	if lastBlock.OfImage != nil {
+		lastBlock.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
+	if lastBlock.OfToolResult != nil {
+		lastBlock.OfToolResult.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
 }
 
 func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {

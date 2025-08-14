@@ -19,8 +19,9 @@ package claude
 import (
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestConcatMessages(t *testing.T) {
@@ -49,4 +50,32 @@ func TestConcatMessages(t *testing.T) {
 	reasoningContent, ok := GetThinking(msg)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "how are you", reasoningContent)
+}
+
+func TestSetMessageBreakpointOfClaude(t *testing.T) {
+	msg := &schema.Message{
+		Role:    schema.System,
+		Content: "test",
+		Extra: map[string]any{
+			"test": "test",
+		},
+	}
+
+	msg_ := SetMessageBreakpoint(msg)
+	assert.Len(t, msg.Extra, 1)
+	assert.Len(t, msg_.Extra, 2)
+}
+
+func TestSetToolInfoBreakpointOfClaude(t *testing.T) {
+	toolInfo := &schema.ToolInfo{
+		Name: "test",
+		Desc: "test",
+		Extra: map[string]any{
+			"test": "test",
+		},
+	}
+
+	toolInfo_ := SetToolInfoBreakpoint(toolInfo)
+	assert.Len(t, toolInfo.Extra, 1)
+	assert.Len(t, toolInfo_.Extra, 2)
 }
