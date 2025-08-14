@@ -31,6 +31,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+
 	"github.com/cloudwego/eino/components"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -529,7 +530,10 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 	}
 	if output.ResponseMeta != nil && output.ResponseMeta.Usage != nil {
 		result.TokenUsage = &model.TokenUsage{
-			PromptTokens:     output.ResponseMeta.Usage.PromptTokens,
+			PromptTokens: output.ResponseMeta.Usage.PromptTokens,
+			PromptTokenDetails: model.PromptTokenDetails{
+				CachedTokens: output.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+			},
 			CompletionTokens: output.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      output.ResponseMeta.Usage.TotalTokens,
 		}
@@ -608,14 +612,19 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 }
 
 func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
+	promptTokens := int(resp.Usage.InputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens)
+
 	message := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.StopReason),
 			Usage: &schema.TokenUsage{
-				PromptTokens:     int(resp.Usage.InputTokens),
+				PromptTokens: promptTokens,
+				PromptTokenDetails: schema.PromptTokenDetails{
+					CachedTokens: int(resp.Usage.CacheReadInputTokens),
+				},
 				CompletionTokens: int(resp.Usage.OutputTokens),
-				TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+				TotalTokens:      promptTokens + int(resp.Usage.OutputTokens),
 			},
 		},
 	}

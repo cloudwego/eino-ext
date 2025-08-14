@@ -35,7 +35,7 @@ func main() {
 
 	addr := "127.0.0.1:18001"
 
-	go func() { // nolint: byted_goroutine_recover
+	go func() {
 		fmt.Println("Serving directory on http://127.0.0.1:18001")
 		if err := http.ListenAndServe(addr, nil); err != nil {
 			fmt.Println("Server failed to start:", err)

@@ -26,10 +26,10 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/cloudwego/eino/components"
 	"github.com/ollama/ollama/api"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
@@ -418,7 +418,7 @@ func toEinoMessage(resp api.ChatResponse) *schema.Message {
 func parseJSONToObject(jsonStr string) (map[string]any, error) {
 	result := make(map[string]interface{})
 
-	err := json.Unmarshal([]byte(jsonStr), &result) // nolint: byted_json_accuracyloss_unknowstruct
+	err := json.Unmarshal([]byte(jsonStr), &result)
 	return result, err
 }
 

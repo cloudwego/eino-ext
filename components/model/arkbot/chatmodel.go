@@ -25,13 +25,14 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
@@ -373,7 +374,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 			}
 
 			sw.Close()
-			_ = closeArkStreamReader(stream) // nolint: byted_returned_err_should_do_check
+			_ = closeArkStreamReader(stream)
 
 		}()
 

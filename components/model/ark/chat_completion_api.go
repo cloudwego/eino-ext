@@ -212,7 +212,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 			}
 
 			sw.Close()
-			_ = cm.closeArkStreamReader(stream) // nolint: byted_returned_err_should_do_check
+			_ = cm.closeArkStreamReader(stream)
 
 		}()
 
@@ -622,7 +622,10 @@ func (cm *completionAPIChatModel) toEinoTokenUsage(usage *model.Usage) *schema.T
 	return &schema.TokenUsage{
 		CompletionTokens: usage.CompletionTokens,
 		PromptTokens:     usage.PromptTokens,
-		TotalTokens:      usage.TotalTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: usage.PromptTokensDetails.CachedTokens,
+		},
+		TotalTokens: usage.TotalTokens,
 	}
 }
 
@@ -637,6 +640,9 @@ func (cm *completionAPIChatModel) toModelCallbackUsage(respMeta *schema.Response
 	return &fmodel.TokenUsage{
 		CompletionTokens: usage.CompletionTokens,
 		PromptTokens:     usage.PromptTokens,
-		TotalTokens:      usage.TotalTokens,
+		PromptTokenDetails: fmodel.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
+		TotalTokens: usage.TotalTokens,
 	}
 }
