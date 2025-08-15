@@ -104,6 +104,7 @@ func NewOpenTelemetryProvider(opts ...Option) (*OtelProvider, error) {
 				sdktrace.WithSpanProcessor(bsp),
 			)
 		}
+		otel.SetTracerProvider(tracerProvider)
 	}
 
 	// Metrics
@@ -133,6 +134,7 @@ func NewOpenTelemetryProvider(opts ...Option) (*OtelProvider, error) {
 
 			meterProvider = metric.NewMeterProvider(reader, metric.WithResource(res))
 		}
+		otel.SetMeterProvider(meterProvider)
 	}
 
 	return &OtelProvider{
