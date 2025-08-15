@@ -468,7 +468,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 	recursionParseReflectTypeToJsonSchema = func(rt reflect.Type, ptrLevel int, visited map[reflect.Type]bool) (jsc *devmodel.JsonSchema) {
 		jsc = &devmodel.JsonSchema{}
-		jsc.Type = devmodel.JsonTypeOfNull
+		jsc.Type = generic.ToPtr(devmodel.JsonTypeOfNull)
 
 		switch rt.Kind() {
 		case reflect.Struct:
@@ -478,8 +478,8 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 			visited[rt] = true
 
-			jsc.Type = devmodel.JsonTypeOfObject
-			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Type = generic.ToPtr(devmodel.JsonTypeOfObject)
+			jsc.Title = generic.ToPtr(processPointer(rt.String(), ptrLevel))
 			jsc.Properties = make(map[string]*devmodel.JsonSchema, rt.NumField())
 			jsc.PropertyOrder = make([]string, 0, rt.NumField())
 			jsc.Required = make([]string, 0, rt.NumField())
@@ -519,36 +519,36 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 		case reflect.Pointer:
 			return recursionParseReflectTypeToJsonSchema(rt.Elem(), ptrLevel+1, visited)
 		case reflect.Map:
-			jsc.Type = devmodel.JsonTypeOfObject
-			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Type = generic.ToPtr(devmodel.JsonTypeOfObject)
+			jsc.Title = generic.ToPtr(processPointer(rt.String(), ptrLevel))
 			jsc.AdditionalProperties = recursionParseReflectTypeToJsonSchema(rt.Elem(), 0, visited)
 			return jsc
 
 		case reflect.Slice, reflect.Array:
-			jsc.Type = devmodel.JsonTypeOfArray
-			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Type = generic.ToPtr(devmodel.JsonTypeOfArray)
+			jsc.Title = generic.ToPtr(processPointer(rt.String(), ptrLevel))
 			jsc.Items = recursionParseReflectTypeToJsonSchema(rt.Elem(), 0, visited)
 			return jsc
 
 		case reflect.String:
-			jsc.Type = devmodel.JsonTypeOfString
-			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Type = generic.ToPtr(devmodel.JsonTypeOfString)
+			jsc.Title = generic.ToPtr(processPointer(rt.String(), ptrLevel))
 			return jsc
 
 		case reflect.Bool:
-			jsc.Type = devmodel.JsonTypeOfBoolean
-			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Type = generic.ToPtr(devmodel.JsonTypeOfBoolean)
+			jsc.Title = generic.ToPtr(processPointer(rt.String(), ptrLevel))
 			return jsc
 
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 			reflect.Float32, reflect.Float64,
 			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			jsc.Type = devmodel.JsonTypeOfNumber
-			jsc.Title = processPointer(rt.String(), ptrLevel)
+			jsc.Type = generic.ToPtr(devmodel.JsonTypeOfNumber)
+			jsc.Title = generic.ToPtr(processPointer(rt.String(), ptrLevel))
 			return jsc
 
 		case reflect.Interface:
-			jsc.Type = devmodel.JsonTypeOfInterface
+			jsc.Type = generic.ToPtr(devmodel.JsonTypeOfInterface)
 			return jsc
 
 		default:
