@@ -18,19 +18,12 @@ package openai
 
 import (
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
-	"github.com/cloudwego/eino/components/model"
 )
 
-// WithExtraFields is used to set extra body fields for the request.
-func WithExtraFields(extraFields map[string]any) model.Option {
-	return openai.WithExtraFields(extraFields)
-}
+type ReasoningEffortLevel openai.ReasoningEffortLevel
 
-// WithExtraHeader is used to set extra headers for the request.
-func WithExtraHeader(header map[string]string) model.Option {
-	return openai.WithExtraHeader(header)
-}
-
-func WithReasoningEffort(effort ReasoningEffortLevel) model.Option {
-	return openai.WithReasoningEffort(openai.ReasoningEffortLevel(effort))
-}
+const (
+	ReasoningEffortLevelLow    = ReasoningEffortLevel(openai.ReasoningEffortLevelLow)
+	ReasoningEffortLevelMedium = ReasoningEffortLevel(openai.ReasoningEffortLevelMedium)
+	ReasoningEffortLevelHigh   = ReasoningEffortLevel(openai.ReasoningEffortLevelHigh)
+)

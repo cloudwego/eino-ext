@@ -134,6 +134,10 @@ type ChatModelConfig struct {
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"extra_fields,omitempty"`
+
+	// ReasoningEffort will override the default reasoning level of "medium"
+	// Optional. Useful for fine tuning response latency vs. accuracy
+	ReasoningEffort ReasoningEffortLevel
 }
 
 type ChatModel struct {
@@ -170,6 +174,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			User:                 config.User,
 			AzureModelMapperFunc: config.AzureModelMapperFunc,
 			ExtraFields:          config.ExtraFields,
+			ReasoningEffort:      openai.ReasoningEffortLevel(config.ReasoningEffort),
 		}
 	}
 	cli, err := openai.NewClient(ctx, nConf)
