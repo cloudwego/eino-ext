@@ -21,6 +21,7 @@ import (
 	"log"
 
 	"github.com/cloudwego/eino/schema"
+	ollamaapi "github.com/ollama/ollama/api"
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 )
@@ -28,7 +29,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	thinking := true
+	thinking := ollamaapi.ThinkValue{Value: true}
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL:  "http://localhost:11434",
 		Model:    "qwen3:8b",

@@ -53,7 +53,7 @@ type ChatModelConfig struct {
 
 	Options *api.Options `json:"options"`
 
-	Thinking *bool `json:"thinking"`
+	Thinking *api.ThinkValue `json:"thinking"`
 }
 
 // Check if ChatModel implements model.ChatModel
@@ -301,12 +301,7 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		Tools: tools,
 
 		Options: reqOptions,
-	}
-
-	if cm.config.Thinking != nil {
-		req.Think = &api.ThinkValue{
-			Value: *cm.config.Thinking,
-		}
+		Think:   cm.config.Thinking,
 	}
 
 	if cm.config.KeepAlive != nil {
