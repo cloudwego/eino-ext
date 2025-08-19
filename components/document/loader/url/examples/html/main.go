@@ -22,8 +22,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/cloudwego/eino-ext/components/document/loader/url"
 	"github.com/cloudwego/eino/components/document"
+
+	"github.com/cloudwego/eino-ext/components/document/loader/url"
 )
 
 func main() {

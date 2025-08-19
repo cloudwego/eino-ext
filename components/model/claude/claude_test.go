@@ -37,6 +37,55 @@ func TestClaude(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
+	mockey.PatchConvey("requires at least 1 user msg", t, func() {
+		_, err := model.genMessageNewParams([]*schema.Message{
+			schema.SystemMessage("hello"),
+		})
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "only system message in input, require at least 1 user message")
+	})
+
+	mockey.PatchConvey("first non system msg should be user", t, func() {
+		_, err := model.genMessageNewParams([]*schema.Message{
+			schema.SystemMessage("hello"),
+			schema.AssistantMessage("world", nil),
+		})
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "first non-system message should be user message")
+	})
+
+	mockey.PatchConvey("multiple system msg", t, func() {
+		resp, err := model.genMessageNewParams([]*schema.Message{
+			schema.SystemMessage("hello"),
+			schema.SystemMessage("world"),
+			schema.UserMessage("again"),
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, anthropic.MessageNewParams{
+			Model: "claude-3-opus-20240229",
+			System: []anthropic.TextBlockParam{
+				{
+					Text: "hello",
+				},
+				{
+					Text: "world",
+				},
+			},
+			Messages: []anthropic.MessageParam{
+				{
+					Content: []anthropic.ContentBlockParamUnion{
+						{
+							OfText: &anthropic.TextBlockParam{
+								Text: "again",
+							},
+						},
+					},
+					Role: anthropic.MessageParamRoleUser,
+				},
+			},
+		}, resp)
+	})
+
 	mockey.PatchConvey("basic chat", t, func() {
 		// Mock API response
 		content := anthropic.ContentBlockUnion{
