@@ -535,8 +535,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	}
 
 	messages := make([]anthropic.MessageParam, 0, len(msgs))
+	hasTools := len(tools) > 0
 	for _, msg := range msgs {
-		message, err := convSchemaMessage(msg)
+		message, err := convSchemaMessage(msg, claudeOptions, hasTools)
 		if err != nil {
 			return anthropic.MessageNewParams{}, fmt.Errorf("convert schema message fail: %w", err)
 		}
@@ -599,18 +600,31 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
+func hasToolCalls(message *schema.Message) bool {
+	return len(message.ToolCalls) > 0
+}
+
+func convSchemaMessage(message *schema.Message, opts *options, hasTools bool) (mp anthropic.MessageParam, err error) {
+
 	var messageParams []anthropic.ContentBlockParamUnion
 
-	// Handle thinking content for assistant messages
 	if message.Role == schema.Assistant {
-		thinkingContent, hasThinking := GetThinking(message)
-		if hasThinking && thinkingContent != "" {
-			signature, hasSignature := GetThinkingSignature(message)
-			if !hasSignature || signature == "" {
-				return mp, fmt.Errorf("thinking content provided but no signature found - signature is required for thinking blocks")
+		shouldSendThinking := false
+
+		if opts != nil && opts.SendBackThinking != nil {
+			shouldSendThinking = *opts.SendBackThinking
+		} else if hasTools && hasToolCalls(message) {
+			shouldSendThinking = true
+		}
+
+		if shouldSendThinking {
+			thinkingContent, hasThinking := GetThinking(message)
+			if hasThinking && thinkingContent != "" {
+				signature, hasSignature := GetThinkingSignature(message)
+				if hasSignature && signature != "" {
+					messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
+				}
 			}
-			messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
 		}
 	}
 
