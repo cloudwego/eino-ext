@@ -54,16 +54,26 @@ type responsesAPIChatModel struct {
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outMsg *schema.Message, err error) {
 
-	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
+	options, specOptions, err := cm.getOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	req, reqOpts, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generate request: %w", err)
 	}
 
 	config := cm.toCallbackConfig(req)
 
+	tools := cm.rawTools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages: input,
-		Tools:    cm.rawTools,
+		Tools:    tools,
 		Config:   config,
 	})
 
@@ -95,16 +105,26 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 
-	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
+	options, specOptions, err := cm.getOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	req, reqOpts, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream request: %w", err)
 	}
 
 	config := cm.toCallbackConfig(req)
 
+	tools := cm.rawTools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages: input,
-		Tools:    cm.rawTools,
+		Tools:    tools,
 		Config:   config,
 	})
 
@@ -389,25 +409,8 @@ func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.To
 	return tools, nil
 }
 
-func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opts ...model.Option) (req responses.ResponseNewParams,
+func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options, specOptions *arkOptions) (req responses.ResponseNewParams,
 	reqOpts []option.RequestOption, err error) {
-
-	options := model.GetCommonOptions(&model.Options{
-		Temperature: cm.temperature,
-		MaxTokens:   cm.maxTokens,
-		Model:       &cm.model,
-		TopP:        cm.topP,
-		ToolChoice:  ptrOf(schema.ToolChoiceAllowed),
-	}, opts...)
-
-	arkOpts := model.GetImplSpecificOptions(&arkOptions{
-		customHeaders: cm.customHeader,
-		thinking:      cm.thinking,
-	}, opts...)
-
-	if err = cm.checkOptions(options, arkOpts); err != nil {
-		return req, nil, err
-	}
 
 	var text *responses.ResponseTextConfigParam
 	if cm.responseFormat != nil {
@@ -439,16 +442,16 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opts
 		return req, nil, err
 	}
 
-	if req, reqOpts, err = cm.injectCache(req, arkOpts, reqOpts); err != nil {
+	if req, reqOpts, err = cm.injectCache(req, specOptions, reqOpts); err != nil {
 		return req, nil, err
 	}
 
-	for k, v := range arkOpts.customHeaders {
+	for k, v := range specOptions.customHeaders {
 		reqOpts = append(reqOpts, option.WithHeaderAdd(k, v))
 	}
 
-	if arkOpts.thinking != nil {
-		reqOpts = append(reqOpts, option.WithJSONSet("thinking", arkOpts.thinking))
+	if specOptions.thinking != nil {
+		reqOpts = append(reqOpts, option.WithJSONSet("thinking", specOptions.thinking))
 	}
 
 	return req, reqOpts, nil
@@ -721,4 +724,25 @@ func (cm *responsesAPIChatModel) toModelTokenUsage(usage responses.ResponseUsage
 		CompletionTokens: int(usage.OutputTokens),
 		TotalTokens:      int(usage.TotalTokens),
 	}
+}
+
+func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options, *arkOptions, error) {
+	options := model.GetCommonOptions(&model.Options{
+		Temperature: cm.temperature,
+		MaxTokens:   cm.maxTokens,
+		Model:       &cm.model,
+		TopP:        cm.topP,
+		ToolChoice:  ptrOf(schema.ToolChoiceAllowed),
+	}, opts...)
+
+	arkOpts := model.GetImplSpecificOptions(&arkOptions{
+		customHeaders: cm.customHeader,
+		thinking:      cm.thinking,
+	}, opts...)
+
+	if err := cm.checkOptions(options, arkOpts); err != nil {
+		return nil, nil, err
+	}
+
+	return options, arkOpts, nil
 }
