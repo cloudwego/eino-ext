@@ -26,6 +26,8 @@ type options struct {
 	Thinking *Thinking
 
 	DisableParallelToolUse *bool
+
+	SendBackThinking *bool
 }
 
 func WithTopK(k int32) model.Option {
@@ -44,5 +46,11 @@ func WithDisableParallelToolUse() model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		b := true
 		o.DisableParallelToolUse = &b
+	})
+}
+
+func WithSendBackThinking(enabled bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.SendBackThinking = &enabled
 	})
 }
