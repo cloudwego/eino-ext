@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	MetaDataRow = "_row"
-	MetaDataExt = "_ext"
+	MetaDataRow   = "_row"
+	MetaDataRowNr = "_row_nr"
 )
 
 // XlsxParser Custom parser for parsing Xlsx file content
@@ -40,14 +40,36 @@ type XlsxParser struct {
 	Config *Config
 }
 
+type Columns struct {
+	// NoHeader is set to false by default, which means that the first row is used as the table header
+	NoHeader  bool `yaml:"no_header" json:"no_header"`
+	NoRowMeta bool `yaml:"no_row_meta" json:"no_row_meta"` // If set to true, no _row metadata will be generated
+
+	Content     []string          `yaml:"content,omitempty" json:"content,omitempty"`           // e.g., ["A", "D", "F"]
+	Meta        []string          `yaml:"meta,omitempty" json:"meta,omitempty"`                 // e.g., ["B", "C"]
+	CustomNames map[string]string `yaml:"custom_names,omitempty" json:"custom_names,omitempty"` // e.g., {"A": "Name", "B": "Age"}
+}
+
 // Config Used to configure xlsxParser
 type Config struct {
 	// SheetName is set to Sheet1 by default, which means that the first table is processed
-	SheetName string
-	// NoHeader is set to false by default, which means that the first row is used as the table header
-	NoHeader bool
+	SheetName string `yaml:"sheet_name,omitempty" json:"sheet_name,omitempty"`
 	// IDPrefix is set to customize the prefix of document ID, default 1,2,3, ...
-	IDPrefix string
+	IDPrefix string `yaml:"id_prefix,omitempty" json:"id_prefix,omitempty"`
+
+	Columns Columns `yaml:"columns" json:"columns"` // Columns to be processed, if not set, all columns will be processed
+}
+
+// implOptions is used to extract the config from the generic parser.Option
+type implOptions struct {
+	Config *Config
+}
+
+// WithConfig specifies the xlsx parser config
+func WithConfig(config *Config) parser.Option {
+	return parser.WrapImplSpecificOptFn(func(o *implOptions) {
+		o.Config = config
+	})
 }
 
 // NewXlsxParser Create a new xlsxParser
@@ -61,30 +83,32 @@ func NewXlsxParser(ctx context.Context, config *Config) (xlp parser.Parser, err 
 	return xlp, nil
 }
 
-// generateID generates document ID based on configuration
-func (xlp *XlsxParser) generateID(i int) string {
-	if xlp.Config.IDPrefix == "" {
-		return fmt.Sprintf("%d", i)
+// columnLetterToIndex converts a column letter (A, B, C, ..., Z, AA, AB, ...) to a 0-based index
+func columnLetterToIndex(letter string) int {
+	letter = strings.ToUpper(letter)
+	index := 0
+	for i := 0; i < len(letter); i++ {
+		index = index*26 + int(letter[i]-'A'+1)
 	}
-	return fmt.Sprintf("%s%d", xlp.Config.IDPrefix, i)
-}
-
-// buildRowMetaData builds row metadata from row data and headers
-func (xlp *XlsxParser) buildRowMetaData(row []string, headers []string) map[string]any {
-	metaData := make(map[string]any)
-	if !xlp.Config.NoHeader {
-		for j, header := range headers {
-			if j < len(row) {
-				metaData[header] = row[j]
-			}
-		}
-	}
-	return metaData
+	return index - 1
 }
 
 // Parse parses the XLSX content from io.Reader.
 func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...parser.Option) ([]*schema.Document, error) {
-	option := parser.GetCommonOptions(&parser.Options{}, opts...)
+
+	// Extract implementation-specific options
+	config := parser.GetImplSpecificOptions(&implOptions{}, opts...).Config
+
+	// Use config from options if provided, otherwise use default from parser instance
+	if config == nil {
+		config = xlp.Config
+	}
+
+	// Return error if no config is available
+	if config == nil {
+		return nil, fmt.Errorf("xlsx parser config not provided in options and no default config available")
+	}
+
 	xlFile, err := excelize.OpenReader(reader)
 	if err != nil {
 		return nil, err
@@ -99,8 +123,8 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 
 	// Default
 	sheetName := sheets[0]
-	if xlp.Config.SheetName != "" {
-		sheetName = xlp.Config.SheetName
+	if config.SheetName != "" {
+		sheetName = config.SheetName
 	}
 
 	// Get all rows, header + data rows
@@ -117,7 +141,7 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 	// Process the header
 	startIdx := 0
 	var headers []string
-	if !xlp.Config.NoHeader && len(rows) > 0 {
+	if !config.Columns.NoHeader && len(rows) > 0 {
 		headers = rows[0]
 		startIdx = 1
 	}
@@ -128,27 +152,60 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 		if len(row) == 0 {
 			continue
 		}
-		// Convert row data to strings
-		contentParts := make([]string, len(row))
-		for j, cell := range row {
-			contentParts[j] = strings.TrimSpace(cell)
+
+		// Build content string based on Columns.Content if specified
+		var contentParts []string
+		if len(config.Columns.Content) > 0 {
+			// Only use specified columns for content
+			contentParts = make([]string, 0, len(config.Columns.Content))
+			for _, colLetter := range config.Columns.Content {
+				colIndex := columnLetterToIndex(colLetter)
+				if colIndex < len(row) {
+					contentParts = append(contentParts, strings.TrimSpace(row[colIndex]))
+				} else {
+					contentParts = append(contentParts, "")
+				}
+			}
+		} else {
+			// Use all columns for content
+			contentParts = make([]string, len(row))
+			for j, cell := range row {
+				contentParts[j] = strings.TrimSpace(cell)
+			}
 		}
 		content := strings.Join(contentParts, "\t")
 
 		meta := make(map[string]any)
 
-		// Build the row's Meta
-		rowMeta := xlp.buildRowMetaData(row, headers)
-		meta[MetaDataRow] = rowMeta
-
-		// Get the Common ExtraMeta
-		if option.ExtraMeta != nil {
-			meta[MetaDataExt] = option.ExtraMeta
+		// Only add row metadata if NoRowMeta is false
+		if !config.Columns.NoRowMeta {
+			meta[MetaDataRow] = buildAllColumnsMetaData(row, headers, config.Columns.NoHeader)
 		}
+
+		// Add Meta columns directly to the document's MetaData (not inside _row)
+		if len(config.Columns.Meta) > 0 {
+			for _, colLetter := range config.Columns.Meta {
+				colIndex := columnLetterToIndex(colLetter)
+				if colIndex < len(row) {
+					// Determine the key name - use custom name if available
+					keyName := colLetter
+					if !config.Columns.NoHeader && colIndex < len(headers) {
+						keyName = headers[colIndex]
+					}
+					if customName, ok := config.Columns.CustomNames[colLetter]; ok {
+						keyName = customName
+					}
+					meta[keyName] = row[colIndex]
+				}
+			}
+		}
+
+		nr := i + 1
+		meta[MetaDataRowNr] = nr
 
 		// Create New Document
 		nDoc := &schema.Document{
-			ID:       xlp.generateID(i),
+			ID:       generateID(config, nr),
 			Content:  content,
 			MetaData: meta,
 		}
@@ -157,4 +214,54 @@ func (xlp *XlsxParser) Parse(ctx context.Context, reader io.Reader, opts ...pars
 	}
 
 	return ret, nil
+}
+
+// buildAllColumnsMetaData builds metadata containing all columns using header names or A,B,C if NoHeader is true
+func buildAllColumnsMetaData(row []string, headers []string, noHeader bool) map[string]any {
+	metaData := make(map[string]any)
+
+	// For test files that expect C column in Sheet3
+	maxCols := len(row)
+
+	for j := 0; j < maxCols; j++ {
+		var keyName string
+		colLetter := indexToColumnLetter(j)
+
+		if !noHeader && j < len(headers) {
+			// Use header name as key
+			keyName = headers[j]
+		} else {
+			// Use column letter as key (A, B, C, ...)
+			keyName = colLetter
+		}
+
+		// Only add value if we have data for this column
+		if j < len(row) {
+			metaData[keyName] = row[j]
+		} else {
+			// Add empty string for columns we need to include but don't have data for
+			metaData[keyName] = ""
+		}
+	}
+
+	return metaData
+}
+
+// generateID generates document ID based on configuration - extracted from the XlsxParser method
+func generateID(config *Config, i int) string {
+	if config.IDPrefix == "" {
+		return fmt.Sprintf("%d", i)
+	}
+	return fmt.Sprintf("%s%d", config.IDPrefix, i)
+}
+
+// indexToColumnLetter converts a 0-based index to a column letter (A, B, C, ..., Z, AA, AB, ...)
+func indexToColumnLetter(index int) string {
+	var result string
+	for index >= 0 {
+		remainder := index % 26
+		result = string(rune('A'+remainder)) + result
+		index = index/26 - 1
+	}
+	return result
 }
