@@ -27,10 +27,18 @@ import (
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
+// Retriever implements the retriever.Retriever interface for Milvus vector database
+// It provides semantic search capabilities using vector similarity
 type Retriever struct {
+	// conf holds the configuration for this retriever instance
 	conf *RetrieverConfig
 }
 
+// Retrieve performs semantic search in Milvus using the provided query string
+// It converts the query to vectors using the configured embedding model and searches for similar documents
+// ctx: the context for the operation
+// query: the text query to search for
+// opts: optional parameters to customize the search behavior
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
 	var typ string
 	// Get common options and implementation-specific options
@@ -108,10 +116,15 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	return docs, nil
 }
 
+// GetType returns the type identifier for this retriever component
+// This is used for component identification and callback tracking
 func (r *Retriever) GetType() string {
 	return typ
 }
 
+// NewRetriever creates a new Milvus retriever instance with the provided configuration
+// It validates the configuration before creating the retriever to ensure all required fields are set
+// config: the configuration for the retriever, must contain a valid Milvus client
 func NewRetriever(config *RetrieverConfig) (*Retriever, error) {
 	if err := config.validate(); err != nil {
 		return nil, fmt.Errorf("[NewRetriever] config validation failed: %w", err)

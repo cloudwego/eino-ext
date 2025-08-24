@@ -24,6 +24,10 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 )
 
+// makeEmbeddingCtx creates a context for embedding operations with proper callback handling
+// This ensures that embedding operations are properly tracked and monitored
+// ctx: the parent context
+// emb: the embedding component to create context for eino
 func makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
 	runInfo := &callbacks.RunInfo{
 		Component: components.ComponentOfEmbedding,
@@ -38,6 +42,9 @@ func makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Conte
 	return callbacks.ReuseHandlers(ctx, runInfo)
 }
 
+// vector2Float32 converts a float64 vector to float32 vector
+// This is required because Milvus uses float32 vectors while embeddings often return float64
+// vector: the input float64 vector to convert
 func vector2Float32(vector []float64) []float32 {
 	float32Arr := make([]float32, len(vector))
 	for i, v := range vector {

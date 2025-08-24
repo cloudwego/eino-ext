@@ -23,15 +23,31 @@ import (
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
+// RetrieverConfig defines the configuration for Milvus retriever
 type RetrieverConfig struct {
+	// Client is the Milvus client instance for database operations
+	// Required: Must be a valid Milvus client connection
 	Client *milvusclient.Client
 	
+	// Collection specifies the Milvus collection name to search in
+	// Optional: Defaults to "eino_collection" if not specified
 	Collection string
-	TopK       int
 	
-	Embedding         embedding.Embedder
+	// TopK defines the maximum number of documents to retrieve
+	// Optional: Defaults to 10 if not specified or <= 0
+	TopK int
+	
+	// Embedding is the embedder used to convert text queries to vectors
+	// Optional: Can be nil, but then must be provided via retriever options
+	Embedding embedding.Embedder
+	
+	// DocumentConverter converts Milvus search results to schema.Document objects
+	// Optional: Uses default converter if not specified
 	DocumentConverter DocumentConverter
-	VectorConverter   VectorConverter
+	
+	// VectorConverter converts float64 vectors to Milvus entity.Vector format
+	// Optional: Uses default converter if not specified
+	VectorConverter VectorConverter
 }
 
 func (c *RetrieverConfig) validate() error {

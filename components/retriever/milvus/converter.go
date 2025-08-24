@@ -24,10 +24,16 @@ import (
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
+// VectorConverter defines a function type that converts float64 vectors to Milvus entity.Vector format
+// This is used to transform embedding vectors into the format required by Milvus search operations
 type VectorConverter func(vectors [][]float64) ([]entity.Vector, error)
 
+// DocumentConverter defines a function type that converts Milvus search results to schema.Document objects
+// This is used to transform Milvus ResultSet into the standard document format used by the retriever
 type DocumentConverter func(result []milvusclient.ResultSet) ([]*schema.Document, error)
 
+// getDefaultVectorConverter returns the default vector converter implementation
+// It converts float64 vectors to FloatVector entities compatible with Milvus
 func getDefaultVectorConverter() VectorConverter {
 	return func(vectors [][]float64) ([]entity.Vector, error) {
 		if len(vectors) == 0 {
@@ -41,6 +47,8 @@ func getDefaultVectorConverter() VectorConverter {
 	}
 }
 
+// getDefaultDocumentConverter returns the default document converter implementation
+// It converts Milvus ResultSet to schema.Document objects with proper field mapping
 func getDefaultDocumentConverter() DocumentConverter {
 	return func(result []milvusclient.ResultSet) ([]*schema.Document, error) {
 		var errs []error
