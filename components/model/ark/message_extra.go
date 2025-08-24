@@ -17,6 +17,8 @@
 package ark
 
 import (
+	"encoding/gob"
+
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -41,6 +43,7 @@ func init() {
 		return chunks[len(chunks)-1], nil
 	})
 	_ = compose.RegisterSerializableType[arkRequestID]("_eino_ext_ark_request_id")
+	gob.RegisterName("_eino_ext_ark_request_id", arkRequestID(""))
 
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkModelName) (final arkModelName, err error) {
 		if len(chunks) == 0 {
@@ -50,6 +53,7 @@ func init() {
 		return chunks[len(chunks)-1], nil
 	})
 	_ = compose.RegisterSerializableType[arkModelName]("_eino_ext_ark_model_name")
+	gob.RegisterName("_eino_ext_ark_model_name", arkModelName(""))
 }
 
 func GetArkRequestID(msg *schema.Message) string {

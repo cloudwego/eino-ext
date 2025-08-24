@@ -568,7 +568,10 @@ func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.
 			message.ResponseMeta = &schema.ResponseMeta{}
 		}
 		message.ResponseMeta.Usage = &schema.TokenUsage{
-			PromptTokens:     int(resp.UsageMetadata.PromptTokenCount),
+			PromptTokens: int(resp.UsageMetadata.PromptTokenCount),
+			PromptTokenDetails: schema.PromptTokenDetails{
+				CachedTokens: int(resp.UsageMetadata.CachedContentTokenCount),
+			},
 			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
 			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
 		}

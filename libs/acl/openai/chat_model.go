@@ -23,6 +23,7 @@ import (
 	"io"
 	"net/http"
 	"runtime/debug"
+	"sort"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/meguminnnnnnnnn/go-openai"
@@ -99,6 +100,9 @@ type Config struct {
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
 	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
 
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both.
@@ -342,24 +346,26 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		ToolChoice:  c.toolChoice,
 	}, opts...)
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:     c.config.ExtraFields,
-		ReasoningEffort: c.config.ReasoningEffort,
+		ExtraFields:         c.config.ExtraFields,
+		ReasoningEffort:     c.config.ReasoningEffort,
+		MaxCompletionTokens: c.config.MaxCompletionTokens,
 	}, opts...)
 
 	req := &openai.ChatCompletionRequest{
-		Model:            *options.Model,
-		MaxTokens:        dereferenceOrZero(options.MaxTokens),
-		Temperature:      options.Temperature,
-		TopP:             dereferenceOrZero(options.TopP),
-		Stop:             options.Stop,
-		PresencePenalty:  dereferenceOrZero(c.config.PresencePenalty),
-		Seed:             c.config.Seed,
-		FrequencyPenalty: dereferenceOrZero(c.config.FrequencyPenalty),
-		LogitBias:        c.config.LogitBias,
-		User:             dereferenceOrZero(c.config.User),
-		LogProbs:         c.config.LogProbs,
-		TopLogProbs:      c.config.TopLogProbs,
-		ReasoningEffort:  string(specOptions.ReasoningEffort),
+		Model:               *options.Model,
+		MaxTokens:           dereferenceOrZero(options.MaxTokens),
+		MaxCompletionTokens: dereferenceOrZero(specOptions.MaxCompletionTokens),
+		Temperature:         options.Temperature,
+		TopP:                dereferenceOrZero(options.TopP),
+		Stop:                options.Stop,
+		PresencePenalty:     dereferenceOrZero(c.config.PresencePenalty),
+		Seed:                c.config.Seed,
+		FrequencyPenalty:    dereferenceOrZero(c.config.FrequencyPenalty),
+		LogitBias:           c.config.LogitBias,
+		User:                dereferenceOrZero(c.config.User),
+		LogProbs:            c.config.LogProbs,
+		TopLogProbs:         c.config.TopLogProbs,
+		ReasoningEffort:     string(specOptions.ReasoningEffort),
 	}
 
 	if len(specOptions.ExtraFields) > 0 {
@@ -522,6 +528,7 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 			},
 		}
 		if len(msg.ReasoningContent) > 0 {
+			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
 		}
 
@@ -532,16 +539,10 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
-	usage := &model.TokenUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
-	}
-
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     cbInput.Config,
-		TokenUsage: usage,
+		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
 	})
 
 	return outMsg, nil
@@ -772,6 +773,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 		}
 
 		if len(choice.Delta.ReasoningContent) > 0 {
+			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		}
 
@@ -791,6 +793,33 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 }
 
 func toTools(tis []*schema.ToolInfo) ([]tool, error) {
+	var sortArrayFields func(*openapi3.Schema)
+	sortArrayFields = func(sc *openapi3.Schema) {
+		if sc == nil {
+			return
+		}
+		switch sc.Type {
+		case openapi3.TypeObject:
+			if len(sc.Required) == 0 {
+				return
+			}
+
+			sort.Strings(sc.Required)
+
+			for _, v := range sc.Properties {
+				sortArrayFields(v.Value)
+			}
+
+		case openapi3.TypeArray:
+			if sc.Items != nil && sc.Items.Value != nil {
+				sortArrayFields(sc.Items.Value)
+			}
+
+		default:
+			return
+		}
+	}
+
 	tools := make([]tool, len(tis))
 	for i := range tis {
 		ti := tis[i]
@@ -802,6 +831,8 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
+
+		sortArrayFields(paramsJSONSchema)
 
 		tools[i] = tool{
 			Function: &functionDefinition{
@@ -819,10 +850,17 @@ func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
 	if usage == nil {
 		return nil
 	}
+
+	promptTokenDetails := schema.PromptTokenDetails{}
+	if usage.PromptTokensDetails != nil {
+		promptTokenDetails.CachedTokens = usage.PromptTokensDetails.CachedTokens
+	}
+
 	return &schema.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		TotalTokens:      usage.TotalTokens,
+		PromptTokens:       usage.PromptTokens,
+		PromptTokenDetails: promptTokenDetails,
+		CompletionTokens:   usage.CompletionTokens,
+		TotalTokens:        usage.TotalTokens,
 	}
 }
 
@@ -835,7 +873,10 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		return nil
 	}
 	return &model.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}

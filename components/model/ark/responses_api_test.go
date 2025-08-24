@@ -605,7 +605,10 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 			}),
 		}
 
-		req, reqOpts, err := cm.genRequestAndOptions(in, opts...)
+		options, specOptions, err := cm.getOptions(opts)
+		assert.NoError(t, err)
+
+		req, reqOpts, err := cm.genRequestAndOptions(in, options, specOptions)
 		assert.Nil(t, err)
 		assert.Equal(t, "model2", req.Model)
 		assert.Len(t, req.Input.OfInputItemList, 1)
