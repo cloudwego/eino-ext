@@ -18,57 +18,39 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"log"
-	"os"
 
 	"github.com/cloudwego/eino/schema"
+	ollamaapi "github.com/ollama/ollama/api"
 
-	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino-ext/components/model/ollama"
 )
 
 func main() {
 	ctx := context.Background()
-	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Model:   os.Getenv("OPENAI_MODEL"),
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		ByAzure: func() bool {
-			if os.Getenv("OPENAI_BY_AZURE") == "true" {
-				return true
-			}
-			return false
-		}(),
+
+	thinking := ollamaapi.ThinkValue{Value: true}
+	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
+		BaseURL:  "http://localhost:11434",
+		Model:    "qwen3:8b",
+		Thinking: &thinking,
 	})
 	if err != nil {
-		log.Fatalf("NewChatModel of openai failed, err=%v", err)
+		log.Printf("NewChatModel failed, err=%v\n", err)
+		return
 	}
 
-	streamMsgs, err := chatModel.Stream(ctx, []*schema.Message{
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
 		{
 			Role:    schema.User,
 			Content: "as a machine, how do you answer user's question?",
 		},
 	})
-
 	if err != nil {
-		log.Fatalf("Stream of openai failed, err=%v", err)
+		log.Printf("Generate failed, err=%v\n", err)
+		return
 	}
 
-	defer streamMsgs.Close()
-
-	fmt.Printf("typewriter output:")
-	for {
-		msg, err := streamMsgs.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatalf("Recv of streamMsgs failed, err=%v", err)
-		}
-		fmt.Print(msg.Content)
-	}
-
-	fmt.Print("\n")
+	log.Printf("output thinking: \n%v\n", resp.ReasoningContent)
+	log.Printf("output content: \n%v\n", resp.Content)
 }

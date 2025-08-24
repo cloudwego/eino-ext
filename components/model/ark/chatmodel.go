@@ -171,7 +171,7 @@ type APIType string
 const (
 	// To learn more about ContextAPI, see https://www.volcengine.com/docs/82379/1528789
 	ContextAPI APIType = "context_api"
-	// To learn more about ResponsesAPI, see Thttps://www.volcengine.com/docs/82379/1569618
+	// To learn more about ResponsesAPI, see https://www.volcengine.com/docs/82379/1569618
 	ResponsesAPI APIType = "responses_api"
 )
 
@@ -570,7 +570,10 @@ func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*sc
 	return &CacheInfo{
 		ContextID: resp.ID,
 		Usage: schema.TokenUsage{
-			PromptTokens:     resp.Usage.PromptTokens,
+			PromptTokens: resp.Usage.PromptTokens,
+			PromptTokenDetails: schema.PromptTokenDetails{
+				CachedTokens: resp.Usage.PromptTokensDetails.CachedTokens,
+			},
 			CompletionTokens: resp.Usage.CompletionTokens,
 			TotalTokens:      resp.Usage.TotalTokens,
 		},

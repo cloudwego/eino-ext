@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,33 +14,16 @@
  * limitations under the License.
  */
 
-package safego
+package openai
 
 import (
-	"context"
-	"runtime/debug"
-
-	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
+	"github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
-// Go safe goroutine.
-func Go(ctx context.Context, fn func()) {
-	go func() {
-		defer Recovery(ctx)
-		fn()
-	}()
-}
+type ReasoningEffortLevel openai.ReasoningEffortLevel
 
-// Recovery .
-func Recovery(ctx context.Context) {
-	e := recover()
-	if e == nil {
-		return
-	}
-
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	log.Errorf("catch panic err=%v\nstacktrace=%s", e, debug.Stack())
-}
+const (
+	ReasoningEffortLevelLow    = ReasoningEffortLevel(openai.ReasoningEffortLevelLow)
+	ReasoningEffortLevelMedium = ReasoningEffortLevel(openai.ReasoningEffortLevelMedium)
+	ReasoningEffortLevelHigh   = ReasoningEffortLevel(openai.ReasoningEffortLevelHigh)
+)

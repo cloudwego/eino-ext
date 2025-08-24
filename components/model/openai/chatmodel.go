@@ -32,6 +32,15 @@ import (
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var _ model.ChatModel = (*ChatModel)(nil)
 
+const (
+	ChatCompletionResponseFormatTypeJSONObject = openai.ChatCompletionResponseFormatTypeJSONObject
+	ChatCompletionResponseFormatTypeJSONSchema = openai.ChatCompletionResponseFormatTypeJSONSchema
+	ChatCompletionResponseFormatTypeText       = openai.ChatCompletionResponseFormatTypeText
+)
+
+type ChatCompletionResponseFormat = openai.ChatCompletionResponseFormat
+type ChatCompletionResponseFormatJSONSchema = openai.ChatCompletionResponseFormatJSONSchema
+
 type ChatModelConfig struct {
 	// APIKey is your authentication key
 	// Use OpenAI API key or Azure API key depending on the service
@@ -103,7 +112,7 @@ type ChatModelConfig struct {
 
 	// ResponseFormat specifies the format of the model's response
 	// Optional. Use for structured outputs
-	ResponseFormat *openai.ChatCompletionResponseFormat `json:"response_format,omitempty"`
+	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
 
 	// Seed enables deterministic sampling for consistent outputs
 	// Optional. Set for reproducible results
@@ -125,6 +134,10 @@ type ChatModelConfig struct {
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"extra_fields,omitempty"`
+
+	// ReasoningEffort will override the default reasoning level of "medium"
+	// Optional. Useful for fine tuning response latency vs. accuracy
+	ReasoningEffort ReasoningEffortLevel
 }
 
 type ChatModel struct {
@@ -161,6 +174,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			User:                 config.User,
 			AzureModelMapperFunc: config.AzureModelMapperFunc,
 			ExtraFields:          config.ExtraFields,
+			ReasoningEffort:      openai.ReasoningEffortLevel(config.ReasoningEffort),
 		}
 	}
 	cli, err := openai.NewClient(ctx, nConf)

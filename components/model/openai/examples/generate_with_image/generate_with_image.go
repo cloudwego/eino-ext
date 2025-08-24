@@ -28,14 +28,18 @@ import (
 )
 
 func main() {
-	accessKey := os.Getenv("OPENAI_API_KEY")
-
 	ctx := context.Background()
 
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  accessKey,
-		ByAzure: false,
-		Model:   "gpt-4o-2024-05-13",
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)

@@ -28,11 +28,9 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
-	openai2 "github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
 func main() {
-	accessKey := os.Getenv("OPENAI_API_KEY")
 
 	type Person struct {
 		Name   string `json:"name"`
@@ -46,11 +44,18 @@ func main() {
 
 	ctx := context.Background()
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey: accessKey,
-		Model:  "gpt-4o",
-		ResponseFormat: &openai2.ChatCompletionResponseFormat{
-			Type: openai2.ChatCompletionResponseFormatTypeJSONSchema,
-			JSONSchema: &openai2.ChatCompletionResponseFormatJSONSchema{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+		ResponseFormat: &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONSchema,
+			JSONSchema: &openai.ChatCompletionResponseFormatJSONSchema{
 				Name:        "person",
 				Description: "data that describes a person",
 				Strict:      false,

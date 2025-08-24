@@ -36,6 +36,7 @@ type openaiOptions struct {
 	ReasoningEffort     ReasoningEffortLevel
 	ExtraHeader         map[string]string
 	RequestBodyModifier openai.RequestBodyModifier
+	MaxCompletionTokens *int
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
@@ -62,5 +63,11 @@ func WithRequestBodyModifier(modifier openai.RequestBodyModifier) model.Option {
 func WithExtraHeader(header map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.ExtraHeader = header
+	})
+}
+
+func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.MaxCompletionTokens = &maxCompletionTokens
 	})
 }

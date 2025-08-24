@@ -17,9 +17,6 @@
 package deepseek
 
 import (
-	"strings"
-
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -28,20 +25,6 @@ const (
 	extraKeyPrefix           = "_eino_deepseek_prefix"
 )
 
-type reasoningContentType string
-
-func init() {
-	compose.RegisterStreamChunkConcatFunc(func(ts []reasoningContentType) (reasoningContentType, error) {
-		sb := strings.Builder{}
-		for _, t := range ts {
-			sb.WriteString(string(t))
-		}
-		return reasoningContentType(sb.String()), nil
-	})
-
-	_ = compose.RegisterSerializableType[reasoningContentType]("_eino_ext_deepseek_reasoning_content_type")
-}
-
 func SetReasoningContent(message *schema.Message, content string) {
 	if message == nil {
 		return
@@ -49,15 +32,15 @@ func SetReasoningContent(message *schema.Message, content string) {
 	if message.Extra == nil {
 		message.Extra = make(map[string]interface{})
 	}
-	message.Extra[extraKeyReasoningContent] = reasoningContentType(content)
+	message.Extra[extraKeyReasoningContent] = content
 }
 
 func GetReasoningContent(message *schema.Message) (string, bool) {
 	if message == nil || message.Extra == nil {
 		return "", false
 	}
-	result, ok := message.Extra[extraKeyReasoningContent].(reasoningContentType)
-	return string(result), ok
+	result, ok := message.Extra[extraKeyReasoningContent].(string)
+	return result, ok
 }
 
 func SetPrefix(message *schema.Message) {

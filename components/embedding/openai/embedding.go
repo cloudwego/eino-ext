@@ -28,6 +28,13 @@ import (
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
+const (
+	EmbeddingEncodingFormatFloat  = openai.EmbeddingEncodingFormatFloat
+	EmbeddingEncodingFormatBase64 = openai.EmbeddingEncodingFormatBase64
+)
+
+type EmbeddingEncodingFormat = openai.EmbeddingEncodingFormat
+
 type EmbeddingConfig struct {
 	// Timeout specifies the maximum duration to wait for API responses
 	// If HTTPClient is set, Timeout will not be used.
@@ -61,7 +68,7 @@ type EmbeddingConfig struct {
 	APIVersion string `json:"api_version"`
 
 	// The following fields correspond to OpenAI's chat completion API parameters
-	//Ref: https://platform.openai.com/docs/api-reference/embeddings/create
+	// Ref: https://platform.openai.com/docs/api-reference/embeddings/create
 
 	// Model specifies the ID of the model to use for embedding generation
 	// Required
@@ -69,7 +76,7 @@ type EmbeddingConfig struct {
 
 	// EncodingFormat specifies the format of the embeddings output
 	// Optional. Default: EmbeddingEncodingFormatFloat
-	EncodingFormat *openai.EmbeddingEncodingFormat `json:"encoding_format,omitempty"`
+	EncodingFormat *EmbeddingEncodingFormat `json:"encoding_format,omitempty"`
 
 	// Dimensions specifies the number of dimensions the resulting output embeddings should have
 	// Optional. Only supported in text-embedding-3 and later models
