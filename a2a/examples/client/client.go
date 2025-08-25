@@ -23,6 +23,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -303,7 +304,9 @@ func startNotificationServer(wg *sync.WaitGroup) {
 			return
 		}
 
-		fmt.Printf("Received POST request body:\n%s\n", string(body))
+		safeBody := strings.ReplaceAll(string(body), "\n", "")
+		safeBody = strings.ReplaceAll(safeBody, "\r", "")
+		fmt.Printf("Received POST request body:\n%s\n", safeBody)
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Request body received"))
