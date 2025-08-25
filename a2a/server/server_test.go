@@ -69,6 +69,111 @@ func TestMessageHandler(t *testing.T) {
 	assert.Equal(t, 1, len(task.Artifacts))
 }
 
+func TestStreamingMessageHandler(t *testing.T) {
+	ctx := context.Background()
+	r := &mockHandlerRegistrar{}
+	taskStore := newInMemoryTaskStore()
+	taskLocker := newInMemoryTaskLocker()
+
+	text := "hello world"
+	inputMessage := &models.Message{
+		Role:  models.RoleUser,
+		Parts: []models.Part{{Kind: models.PartKindText, Text: &text}},
+	}
+	inputMetadata := map[string]any{"1": "2"}
+	assert.NoError(t, RegisterHandlers(ctx, r, &Config{
+		AgentCardConfig: AgentCardConfig{},
+		MessageStreamingHandler: func(ctx context.Context, params *InputParams, writer ResponseEventWriter) error {
+			assert.Equal(t, models.TaskStateSubmitted, params.Task.Status.State)
+			assert.Equal(t, inputMessage, params.Input)
+			assert.Equal(t, inputMetadata, params.Metadata)
+			if err := writer.Write(models.ResponseEvent{
+				TaskContent: &models.TaskContent{Status: models.TaskStatus{State: models.TaskStateWorking}},
+			}); err != nil {
+				return err
+			}
+			if err := writer.Write(models.ResponseEvent{
+				Message: &models.Message{
+					MessageID: "test message id",
+				},
+			}); err != nil {
+				return err
+			}
+			if err := writer.Write(models.ResponseEvent{
+				TaskStatusUpdateEventContent: &models.TaskStatusUpdateEventContent{
+					Status: models.TaskStatus{State: models.TaskStateCompleted},
+				},
+			}); err != nil {
+				return err
+			}
+			if err := writer.Write(models.ResponseEvent{
+				TaskArtifactUpdateEventContent: &models.TaskArtifactUpdateEventContent{
+					Artifact: models.Artifact{
+						ArtifactID: "test artifact id",
+					},
+				},
+			}); err != nil {
+				return err
+			}
+			return nil
+		},
+		TaskEventsConsolidator: func(ctx context.Context, t *models.Task, events []models.ResponseEvent) *models.TaskContent {
+			tc := &models.TaskContent{
+				Status:    t.Status,
+				Artifacts: t.Artifacts,
+				History:   t.History,
+				Metadata:  t.Metadata,
+			}
+			for _, event := range events {
+				if event.Message != nil {
+					tc.History = append(tc.History, event.Message)
+				} else if event.TaskContent != nil {
+					tc.Status = event.TaskContent.Status
+					tc.Artifacts = event.TaskContent.Artifacts
+					tc.History = event.TaskContent.History
+					tc.Metadata = event.TaskContent.Metadata
+				} else if event.TaskStatusUpdateEventContent != nil {
+					tc.Status = event.TaskStatusUpdateEventContent.Status
+				} else if event.TaskArtifactUpdateEventContent != nil {
+					tc.Artifacts = append(tc.Artifacts, &event.TaskArtifactUpdateEventContent.Artifact)
+				}
+			}
+			return tc
+		},
+		TaskStore:  taskStore,
+		TaskLocker: taskLocker,
+	}))
+
+	// build message handler by streaming
+	result, err := r.h.SendMessage(ctx, &models.MessageSendParams{
+		Message:  *inputMessage,
+		Metadata: inputMetadata,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, models.TaskStateCompleted, result.Task.Status.State)
+	assert.Equal(t, 1, len(result.Task.History))
+	assert.Equal(t, 1, len(result.Task.Artifacts))
+
+	task, existed, err := taskStore.Get(ctx, result.Task.ID)
+	assert.NoError(t, err)
+	assert.True(t, existed)
+	assert.Equal(t, models.TaskStateCompleted, task.Status.State)
+	assert.Equal(t, 1, len(task.History))
+	assert.Equal(t, 1, len(task.Artifacts))
+
+	// streaming
+	writer := &mockWriter{}
+	err = r.h.SendMessageStreaming(ctx, &models.MessageSendParams{Message: *inputMessage, Metadata: inputMetadata}, writer)
+	assert.NoError(t, err)
+	assert.Equal(t, 4, len(writer.unions))
+	task, existed, err = taskStore.Get(ctx, writer.unions[0].GetTaskID())
+	assert.NoError(t, err)
+	assert.True(t, existed)
+	assert.Equal(t, models.TaskStateCompleted, task.Status.State)
+	assert.Equal(t, 1, len(task.History))
+	assert.Equal(t, 1, len(task.Artifacts))
+}
+
 func TestWrapSendMessageStreamingResponseUnion(t *testing.T) {
 	taskID := "TaskID"
 	contextID := "ContextID"
@@ -100,5 +205,18 @@ type mockHandlerRegistrar struct {
 
 func (m *mockHandlerRegistrar) Register(ctx context.Context, handlers *models.ServerHandlers) error {
 	m.h = handlers
+	return nil
+}
+
+type mockWriter struct {
+	unions []*models.SendMessageStreamingResponseUnion
+}
+
+func (m *mockWriter) Write(ctx context.Context, f *models.SendMessageStreamingResponseUnion) error {
+	m.unions = append(m.unions, f)
+	return nil
+}
+
+func (m *mockWriter) Close() error {
 	return nil
 }
