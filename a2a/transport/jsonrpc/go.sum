@@ -7,6 +7,8 @@ github.com/bytedance/sonic/loader v0.3.0 h1:dskwH8edlzNMctoruo8FPTJDF3vLtDT0sXZw
 github.com/bytedance/sonic/loader v0.3.0/go.mod h1:N8A3vUdtUebEY2/VQC0MyhYeKUFosQU6FxH2JmUe6VI=
 github.com/cloudwego/base64x v0.1.5 h1:XPciSp1xaq2VCSt6lF0phncD4koWyULpl5bUxbfCyP4=
 github.com/cloudwego/base64x v0.1.5/go.mod h1:0zlkT4Wn5C6NdauXdJRhSKRlJvmclQ1hhJgA0rcu/8w=
+github.com/cloudwego/eino-ext/a2a v0.0.0-20250825034609-dbf35043464f h1:SpdPFIwDjeQQG+RH+mJWOIoooZxby0NebtI+fJV4r3A=
+github.com/cloudwego/eino-ext/a2a v0.0.0-20250825034609-dbf35043464f/go.mod h1:z7Dpr4Td5Uh8ePjBaciMgWcJiM9QeNWAHLYY+kRBxWo=
 github.com/cloudwego/gopkg v0.1.4 h1:EoQiCG4sTonTPHxOGE0VlQs+sQR+Hsi2uN0qqwu8O50=
 github.com/cloudwego/gopkg v0.1.4/go.mod h1:FQuXsRWRsSqJLsMVd5SYzp8/Z1y5gXKnVvRrWUOsCMI=
 github.com/cloudwego/hertz v0.10.2 h1:scaVn4E/AQ/vuMAC8FXzUzsEXS/TF1ix1I+4slPhh7c=
