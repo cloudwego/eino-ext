@@ -35,7 +35,8 @@ import (
 )
 
 type ClientTransportBuilderOptions struct {
-	cli *client.Client
+	cli        *client.Client
+	sseBufSize *int
 }
 type ClientTransportBuilderOption func(*ClientTransportBuilderOptions)
 
@@ -45,8 +46,17 @@ func WithHertzClient(cli *client.Client) ClientTransportBuilderOption {
 	}
 }
 
+// WithSSEBufferSize specifies the maximum buffer size will be used in SSE Reader Processing.
+// if size <= 0, then default maximum size (64 * 1024) would be used.
+func WithSSEBufferSize(size int) ClientTransportBuilderOption {
+	return func(o *ClientTransportBuilderOptions) {
+		o.sseBufSize = &size
+	}
+}
+
 type clientTransportHandler struct {
-	cli *client.Client
+	cli        *client.Client
+	sseBufSize *int
 }
 
 func NewClientTransportHandler(opts ...ClientTransportBuilderOption) transport.ClientTransportHandler {
@@ -60,25 +70,28 @@ func NewClientTransportHandler(opts ...ClientTransportBuilderOption) transport.C
 		cli, _ = client.NewClient(client.WithDialTimeout(consts.DefaultDialTimeout))
 	}
 	return &clientTransportHandler{
-		cli: cli,
+		cli:        cli,
+		sseBufSize: o.sseBufSize,
 	}
 }
 
 func (c *clientTransportHandler) NewTransport(ctx context.Context, peer conninfo.Peer) (core.Transport, error) {
 	addr := peer.Address()
-	rounder := newClientRounder(addr, c.cli)
+	rounder := newClientRounder(addr, c.cli, c.sseBufSize)
 	return &httpClientTransport{rounder: rounder}, nil
 }
 
 type clientRounder struct {
-	cli  *client.Client
-	addr string
+	cli        *client.Client
+	addr       string
+	sseBufSize *int
 }
 
-func newClientRounder(addr string, cli *client.Client) *clientRounder {
+func newClientRounder(addr string, cli *client.Client, sseBufSize *int) *clientRounder {
 	return &clientRounder{
-		addr: addr,
-		cli:  cli,
+		addr:       addr,
+		cli:        cli,
+		sseBufSize: sseBufSize,
 	}
 }
 
@@ -121,6 +134,9 @@ func (c *clientRounder) Round(ctx context.Context, msg core.Message) (core.Messa
 		}, nil
 	case strings.Contains(ct, "text/event-stream"):
 		r, _ := sse.NewReader(resp)
+		if c.sseBufSize != nil {
+			r.SetMaxBufferSize(*c.sseBufSize)
+		}
 		sr := &sseReader{
 			reader: r,
 			buf:    utils.NewUnboundBuffer[sseData](),
