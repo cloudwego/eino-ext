@@ -1,0 +1,263 @@
+package jsonrpc
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	std_http "net/http"
+	"net/url"
+
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/client"
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/transport/http"
+	hertz_client "github.com/cloudwego/hertz/pkg/app/client"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
+
+	"github.com/cloudwego/eino-ext/a2a/models"
+	"github.com/cloudwego/eino-ext/a2a/transport"
+)
+
+type ClientConfig struct {
+	BaseURL       string
+	HandlerPath   string
+	AgentCardPath *string
+	HertzClient   *hertz_client.Client
+	SSEBufferSize *int
+}
+
+func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTransport, error) {
+	if config == nil {
+		return nil, errors.New("config is required")
+	}
+	agentCardPath := ".well-known/agent-card.json"
+	if config.AgentCardPath != nil {
+		agentCardPath = *config.AgentCardPath
+	}
+	transOpts := make([]http.ClientTransportBuilderOption, 0)
+	if config.HertzClient != nil {
+		transOpts = append(transOpts, http.WithHertzClient(config.HertzClient))
+	}
+	if config.SSEBufferSize != nil {
+		transOpts = append(transOpts, http.WithSSEBufferSize(*config.SSEBufferSize))
+	} else {
+		transOpts = append(transOpts, http.WithSSEBufferSize(bufio.MaxScanTokenSize))
+	}
+	var err error
+	var handlerURL string
+	if len(config.HandlerPath) > 0 {
+		handlerURL, err = url.JoinPath(config.BaseURL, config.HandlerPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to join handler url: %w", err)
+		}
+	} else {
+		handlerURL = config.BaseURL
+	}
+	cli, err := client.NewClient(
+		client.WithURL(handlerURL),
+		client.WithTransportHandler(http.NewClientTransportHandler(transOpts...)))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create jsonrpc client: %w", err)
+	}
+	conn, err := cli.NewConnection(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create jsonrpc client connection: %w", err)
+	}
+
+	hCli := config.HertzClient
+	if hCli == nil {
+		hCli, _ = hertz_client.NewClient(hertz_client.WithDialTimeout(consts.DefaultDialTimeout))
+	}
+
+	agentCardURL, err := url.JoinPath(config.BaseURL, agentCardPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to join agent card url: %w", err)
+	}
+	return &Transport{
+		agentCardURL: agentCardURL,
+		conn:         conn,
+		cli:          hCli,
+	}, nil
+}
+
+type Transport struct {
+	agentCardURL string
+	conn         core.Connection
+	cli          *hertz_client.Client
+}
+
+func (t *Transport) AgentCard(ctx context.Context) (*models.AgentCard, error) {
+	code, body, err := t.cli.Get(ctx, nil, t.agentCardURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get agent card: %w", err)
+	}
+	if code != std_http.StatusOK && code != std_http.StatusAccepted {
+		return nil, fmt.Errorf("failed to get agent card, code: %d, body: %s", code, string(body))
+	}
+
+	card := &models.AgentCard{}
+	err = json.Unmarshal(body, card)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal agent card: %w, body: %s", err, string(body))
+	}
+	return card, nil
+}
+
+func (t *Transport) SendMessage(ctx context.Context, params *models.MessageSendParams) (*models.SendMessageResponseUnion, error) {
+	var b json.RawMessage
+	err := t.conn.Call(ctx, "message/send", params, &b)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message: %w", err)
+	}
+	return extractSendMessageResponseUnion(b)
+}
+
+func (t *Transport) SendMessageStreaming(ctx context.Context, params *models.MessageSendParams) (models.ResponseReader, error) {
+	stream, err := t.conn.AsyncCall(ctx, "message/stream", params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send message: %w", err)
+	}
+	return &frameReader{stream}, nil
+}
+
+func (t *Transport) GetTask(ctx context.Context, params *models.TaskQueryParams) (*models.Task, error) {
+	ret := &models.Task{}
+	err := t.conn.Call(ctx, "tasks/get", params, ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+func (t *Transport) CancelTask(ctx context.Context, params *models.TaskIDParams) (*models.Task, error) {
+	ret := &models.Task{}
+	err := t.conn.Call(ctx, "tasks/cancel", params, ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+func (t *Transport) ResubscribeTask(ctx context.Context, params *models.TaskIDParams) (models.ResponseReader, error) {
+	ret, err := t.conn.AsyncCall(ctx, "tasks/resubscribe", params)
+	if err != nil {
+		return nil, err
+	}
+	return &frameReader{ret}, nil
+}
+
+func (t *Transport) SetPushNotificationConfig(ctx context.Context, params *models.TaskPushNotificationConfig) (*models.TaskPushNotificationConfig, error) {
+	ret := &models.TaskPushNotificationConfig{}
+	err := t.conn.Call(ctx, "tasks/pushNotificationConfig/set", params, ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+func (t *Transport) GetPushNotificationConfig(ctx context.Context, params *models.GetTaskPushNotificationConfigParams) (*models.TaskPushNotificationConfig, error) {
+	ret := &models.TaskPushNotificationConfig{}
+	err := t.conn.Call(ctx, "tasks/getPushNotificationConfig/get", params, ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+func (t *Transport) Close() error {
+	return nil
+}
+
+type frameReader struct {
+	a core.ClientAsync
+}
+
+func (f *frameReader) Read() (*models.SendMessageStreamingResponseUnion, error) {
+	var b json.RawMessage
+	err := f.a.Recv(context.Background(), &b)
+	if err != nil {
+		if err == io.EOF {
+			return nil, io.EOF
+		}
+		return nil, fmt.Errorf("failed to read frame: %w", err)
+	}
+	return extractSendMessageStreamingResponseUnion(b)
+}
+
+func (f *frameReader) Close() error {
+	return f.a.Close()
+}
+
+func extractKind(b json.RawMessage) (models.ResponseKind, error) {
+	kind := struct {
+		Kind models.ResponseKind `json:"kind"`
+	}{}
+	err := json.Unmarshal(b, &kind)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract send message response's kind: %w", err)
+	}
+	return kind.Kind, nil
+}
+
+func extractSendMessageResponseUnion(b json.RawMessage) (*models.SendMessageResponseUnion, error) {
+	su, err := extractSendMessageStreamingResponseUnion(b)
+	if err != nil {
+		return nil, err
+	}
+	if su == nil {
+		return nil, nil
+	}
+	return &models.SendMessageResponseUnion{
+		Message: su.Message,
+		Task:    su.Task,
+	}, nil
+}
+
+func extractSendMessageStreamingResponseUnion(b json.RawMessage) (*models.SendMessageStreamingResponseUnion, error) {
+	kind, err := extractKind(b)
+	if err != nil {
+		return nil, err
+	}
+	switch kind {
+	case models.ResponseKindMessage:
+		m := &models.Message{}
+		err = json.Unmarshal(b, &m)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract response's message: %w", err)
+		}
+		return &models.SendMessageStreamingResponseUnion{
+			Message: m,
+		}, nil
+	case models.ResponseKindTask:
+		t := &models.Task{}
+		err = json.Unmarshal(b, &t)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract response's task: %w", err)
+		}
+		return &models.SendMessageStreamingResponseUnion{
+			Task: t,
+		}, nil
+	case models.ResponseKindArtifactUpdate:
+		a := &models.TaskArtifactUpdateEvent{}
+		err = json.Unmarshal(b, &a)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract response's artifact update: %w", err)
+		}
+		return &models.SendMessageStreamingResponseUnion{
+			TaskArtifactUpdateEvent: a,
+		}, nil
+	case models.ResponseKindStatusUpdate:
+		s := &models.TaskStatusUpdateEvent{}
+		err = json.Unmarshal(b, &s)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract response's status update: %w", err)
+		}
+		return &models.SendMessageStreamingResponseUnion{
+			TaskStatusUpdateEvent: s,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported response's kind: %s", kind)
+	}
+}
