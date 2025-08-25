@@ -90,7 +90,7 @@ func main() {
 									Parts: []models.Part{
 										{
 											Kind: models.PartKindText,
-											Text: ptrOf(fmt.Sprintf("task messaage %d", i)),
+											Text: ptrOf(fmt.Sprintf("task message %d", i)),
 										},
 									},
 								},
@@ -116,7 +116,7 @@ func main() {
 									Parts: []models.Part{
 										{
 											Kind: models.PartKindText,
-											Text: ptrOf(fmt.Sprintf("status update messaage %d", i)),
+											Text: ptrOf(fmt.Sprintf("status update message %d", i)),
 										},
 									},
 								},
