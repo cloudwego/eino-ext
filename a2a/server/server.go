@@ -637,17 +637,6 @@ func (s *A2AServer) initTask(_ context.Context, taskID string) *models.Task {
 	}
 }
 
-func wrapSendMessageResponseUnion(sr models.ResponseEvent, taskID, contextID string) *models.SendMessageResponseUnion {
-	u := wrapSendMessageStreamingResponseUnion(sr, taskID, contextID)
-	if u == nil {
-		return nil
-	}
-	return &models.SendMessageResponseUnion{
-		Message: u.Message,
-		Task:    u.Task,
-	}
-}
-
 func wrapSendMessageStreamingResponseUnion(sr models.ResponseEvent, taskID, contextID string) *models.SendMessageStreamingResponseUnion {
 	if sr.Message != nil {
 		return &models.SendMessageStreamingResponseUnion{
