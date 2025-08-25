@@ -10,14 +10,14 @@ import (
 	std_http "net/http"
 	"net/url"
 
-	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/client"
-	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
-	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/transport/http"
+	"github.com/cloudwego/eino-ext/a2a/models"
+	"github.com/cloudwego/eino-ext/a2a/transport"
 	hertz_client "github.com/cloudwego/hertz/pkg/app/client"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 
-	"github.com/cloudwego/eino-ext/a2a/models"
-	"github.com/cloudwego/eino-ext/a2a/transport"
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/client"
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/transport/http"
 )
 
 type ClientConfig struct {
