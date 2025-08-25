@@ -1,6 +1,6 @@
 module github.com/cloudwego/eino-ext/a2a/transport/jsonrpc
 
-go 1.24.5
+go 1.18
 
 require (
 	github.com/bytedance/sonic v1.14.0
