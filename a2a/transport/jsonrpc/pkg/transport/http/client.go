@@ -138,6 +138,7 @@ func (c *clientRounder) Round(ctx context.Context, msg core.Message) (core.Messa
 			r.SetMaxBufferSize(*c.sseBufSize)
 		}
 		sr := &sseReader{
+			ctx:    ctx,
 			reader: r,
 			buf:    utils.NewUnboundBuffer[sseData](),
 		}
@@ -175,6 +176,7 @@ func (r *pingPongReader) Close() error {
 }
 
 type sseReader struct {
+	ctx        context.Context
 	reader     *sse.Reader
 	buf        *utils.UnboundBuffer[sseData]
 	err        error
@@ -187,7 +189,7 @@ type sseData struct {
 }
 
 func (s *sseReader) run() {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(s.ctx)
 	s.cancelFunc = cancel
 	go func() {
 		err := s.reader.ForEach(ctx, func(e *sse.Event) error {
