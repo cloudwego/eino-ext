@@ -58,7 +58,8 @@ type Config struct {
 	MessageStreamingHandler MessageStreamingHandler
 
 	// optional, uuid by default
-	TaskIDGenerator func(ctx context.Context) (string, error)
+	TaskIDGenerator    func(ctx context.Context) (string, error)
+	ContextIDGenerator func(ctx context.Context) (string, error)
 	// required
 	CancelTaskHandler CancelTaskHandler
 	// required
@@ -107,6 +108,11 @@ func RegisterHandlers(ctx context.Context, registrar transport.HandlerRegistrar,
 	}
 	if s.taskIDGenerator == nil {
 		s.taskIDGenerator = func(_ context.Context) (string, error) {
+			return uuid.NewString(), nil
+		}
+	}
+	if s.contextIDGenerator == nil {
+		s.contextIDGenerator = func(_ context.Context) (string, error) {
 			return uuid.NewString(), nil
 		}
 	}
@@ -171,6 +177,7 @@ func initA2AServer(config *Config) *A2AServer {
 		taskEventsConsolidator:  config.TaskEventsConsolidator,
 		logger:                  config.Logger,
 		taskIDGenerator:         config.TaskIDGenerator,
+		contextIDGenerator:      config.ContextIDGenerator,
 		taskStore:               config.TaskStore,
 		taskLocker:              config.TaskLocker,
 		queue:                   config.Queue,
@@ -208,11 +215,12 @@ type A2AServer struct {
 
 	logger Logger
 
-	taskIDGenerator func(ctx context.Context) (string, error)
-	taskStore       TaskStore
-	taskLocker      TaskLocker
-	queue           EventQueue
-	pushNotifier    PushNotifier
+	taskIDGenerator    func(ctx context.Context) (string, error)
+	contextIDGenerator func(ctx context.Context) (string, error)
+	taskStore          TaskStore
+	taskLocker         TaskLocker
+	queue              EventQueue
+	pushNotifier       PushNotifier
 }
 
 func (s *A2AServer) getTask(ctx context.Context, input *models.TaskQueryParams) (*models.Task, error) {
@@ -309,11 +317,10 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 			return nil, fmt.Errorf("task[%s] is nil", *input.Message.TaskID)
 		}
 	} else {
-		taskID, err := s.taskIDGenerator(ctx)
+		t, err = s.initTask(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate task id: %w", err)
+			return nil, err
 		}
-		t = s.initTask(ctx, taskID)
 
 		err = s.taskLocker.Lock(ctx, t.ID)
 		if err != nil {
@@ -416,11 +423,10 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			return fmt.Errorf("task[%s] is nil", *input.Message.TaskID)
 		}
 	} else {
-		taskID, err := s.taskIDGenerator(ctx)
+		t, err = s.initTask(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to generate task id: %w", err)
+			return err
 		}
-		t = s.initTask(ctx, taskID)
 
 		err = s.taskLocker.Lock(ctx, t.ID)
 		if err != nil {
@@ -626,15 +632,24 @@ func (s *A2AServer) getTasksPushNotificationConfig(ctx context.Context, input *m
 	}, nil
 }
 
-func (s *A2AServer) initTask(_ context.Context, taskID string) *models.Task {
+func (s *A2AServer) initTask(ctx context.Context) (*models.Task, error) {
+	taskID, err := s.taskIDGenerator(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate task id: %w", err)
+	}
+	contextID, err := s.contextIDGenerator(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate context id: %w", err)
+	}
 	return &models.Task{
-		ID: taskID,
+		ID:        taskID,
+		ContextID: contextID,
 		Status: models.TaskStatus{
 			State:     models.TaskStateSubmitted,
 			Timestamp: time.Now().Format(time.RFC3339),
 		},
 		History: []*models.Message{},
-	}
+	}, nil
 }
 
 func wrapSendMessageStreamingResponseUnion(sr models.ResponseEvent, taskID, contextID string) *models.SendMessageStreamingResponseUnion {
