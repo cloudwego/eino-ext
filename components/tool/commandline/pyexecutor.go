@@ -22,10 +22,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/eino-contrib/jsonschema"
+	"github.com/google/uuid"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/google/uuid"
 )
 
 const defaultPythonCommand = "python3"
@@ -51,17 +53,22 @@ func NewPyExecutor(_ context.Context, cfg *PyExecutorConfig) (*PyExecutor, error
 		info: &schema.ToolInfo{
 			Name: "python_execute",
 			Desc: "Executes Python code string. Note: Only print outputs are visible, function return values are not captured. Use print statements to see results.",
-			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
-				Type: openapi3.TypeObject,
-				Properties: map[string]*openapi3.SchemaRef{
-					"code": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeString,
-							Description: "The Python code to execute.",
-						},
-					},
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(
+				&jsonschema.Schema{
+					Type: string(schema.Object),
+					Properties: orderedmap.New[string, *jsonschema.Schema](
+						orderedmap.WithInitialData[string, *jsonschema.Schema](
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "code",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "The Python code to execute.",
+								},
+							},
+						),
+					),
 				},
-			}),
+			),
 		},
 		command:  command,
 		operator: cfg.Operator,

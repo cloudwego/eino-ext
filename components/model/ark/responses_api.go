@@ -382,7 +382,7 @@ func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.To
 			return nil, fmt.Errorf("tool info cannot be nil in WithTools")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}

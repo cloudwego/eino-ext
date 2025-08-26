@@ -428,7 +428,7 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		properties := make(map[string]api.ToolProperty)
 		var required []string
 
-		openTool, err := einoTool.ParamsOneOf.ToOpenAPIV3()
+		openTool, err := einoTool.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, err
 		}
@@ -436,11 +436,17 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		if openTool != nil {
 			required = openTool.Required
 
-			for name, param := range openTool.Properties {
-				properties[name] = api.ToolProperty{
-					Type:        []string{param.Value.Type},
-					Description: param.Value.Description,
-					Enum:        param.Value.Enum,
+			for pair := openTool.Properties.Oldest(); pair != nil; pair = pair.Next() {
+				var typ []string
+				if pair.Value.TypeEnhanced != nil {
+					typ = pair.Value.TypeEnhanced
+				} else {
+					typ = []string{pair.Value.Type}
+				}
+				properties[pair.Key] = api.ToolProperty{
+					Type:        typ,
+					Description: pair.Value.Description,
+					Enum:        pair.Value.Enum,
 				}
 			}
 		}

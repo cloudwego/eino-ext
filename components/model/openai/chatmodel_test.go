@@ -25,8 +25,9 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
-	"github.com/getkin/kin-openapi/openapi3gen"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/meguminnnnnnnnn/go-openai"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -36,14 +37,26 @@ import (
 )
 
 func TestOpenAIGenerate(t *testing.T) {
-	type testStruct struct {
-		A string `json:"a"`
-		B int    `json:"b"`
+	js := &jsonschema.Schema{
+		Type: string(schema.Object),
+		Properties: orderedmap.New[string, *jsonschema.Schema](
+			orderedmap.WithInitialData[string, *jsonschema.Schema](
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "a",
+					Value: &jsonschema.Schema{
+						Type: string(schema.String),
+					},
+				},
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "b",
+					Value: &jsonschema.Schema{
+						Type: string(schema.Integer),
+					},
+				},
+			),
+		),
 	}
-	testToolParam, err := openapi3gen.NewSchemaRefForValue(testStruct{}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	expectedSeed := 4
 	mockToolCallIdx := 5
 	var temperature float32 = 0.1
@@ -95,7 +108,7 @@ func TestOpenAIGenerate(t *testing.T) {
 				Function: &openai.FunctionDefinition{
 					Name:        "tool1",
 					Description: "tool1",
-					Parameters:  testToolParam.Value,
+					Parameters:  js,
 				},
 			},
 			{
@@ -103,7 +116,7 @@ func TestOpenAIGenerate(t *testing.T) {
 				Function: &openai.FunctionDefinition{
 					Name:        "tool2",
 					Description: "tool2",
-					Parameters:  testToolParam.Value,
+					Parameters:  js,
 				},
 			},
 		},
@@ -195,12 +208,12 @@ func TestOpenAIGenerate(t *testing.T) {
 			{
 				Name:        "tool1",
 				Desc:        "tool1",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(js),
 			},
 			{
 				Name:        "tool2",
 				Desc:        "tool2",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(js),
 			},
 		})
 		if err != nil {
@@ -267,12 +280,12 @@ func TestOpenAIGenerate(t *testing.T) {
 			{
 				Name:        "tool1",
 				Desc:        "tool1",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(js),
 			},
 			{
 				Name:        "tool2",
 				Desc:        "tool2",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(testToolParam.Value),
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(js),
 			},
 		})
 		if err != nil {
