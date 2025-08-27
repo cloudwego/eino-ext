@@ -158,7 +158,7 @@ func main() {
 	hz.Run()
 }
 
-func myTaskModifier(ctx context.Context, t *models.Task, events []models.ResponseEvent) *models.TaskContent {
+func myTaskModifier(ctx context.Context, t *models.Task, events []models.ResponseEvent, _ error) *models.TaskContent {
 	result := &models.TaskContent{
 		Status:    t.Status,
 		Artifacts: make([]*models.Artifact, len(t.Artifacts)),

@@ -150,7 +150,6 @@ func RegisterServerHandlers(ctx context.Context, a adk.Agent, cfg *ServerConfig)
 			DefaultOutputModes: cfg.DefaultOutputModes,
 			Skills:             cfg.Skills,
 		},
-		MessageHandler:          builder.buildHandler(),
 		MessageStreamingHandler: builder.buildStreamHandler(),
 		TaskIDGenerator:         cfg.TaskIDGenerator,
 		CancelTaskHandler:       builder.buildTaskCanceler(),
@@ -170,26 +169,6 @@ type a2aHandlersBuilder struct {
 	inputMessageConv          func(ctx context.Context, messages []*models.Message) ([]adk.Message, error)
 
 	eventConvertor func(ctx context.Context, event *adk.AsyncIterator[*adk.AgentEvent], writer func(p models.ResponseEvent) error) (err error)
-}
-
-func (a *a2aHandlersBuilder) buildHandler() server.MessageHandler {
-	return func(ctx context.Context, params *server.InputParams) (*models.TaskContent, error) {
-		iter, err := a.genIter(ctx, params.Task, params.Input, params.Metadata)
-		if err != nil {
-			return nil, err
-		}
-
-		var responseEvents []models.ResponseEvent
-		err = a.eventConvertor(
-			ctx,
-			iter,
-			func(p models.ResponseEvent) error {
-				responseEvents = append(responseEvents, p)
-				return nil
-			})
-
-		return a.einoResponseEventConcatenator(ctx, params.Task, responseEvents), nil
-	}
 }
 
 func (a *a2aHandlersBuilder) buildStreamHandler() server.MessageStreamingHandler {
@@ -414,7 +393,7 @@ func (d *defaultEventConvertor) messageVar2Status(ctx context.Context, agentName
 	return nil
 }
 
-func (a *a2aHandlersBuilder) einoResponseEventConcatenator(ctx context.Context, t *models.Task, events []models.ResponseEvent) *models.TaskContent {
+func (a *a2aHandlersBuilder) einoResponseEventConcatenator(ctx context.Context, t *models.Task, events []models.ResponseEvent, _ error) *models.TaskContent {
 	tc := &models.TaskContent{
 		Status:    t.Status,
 		Artifacts: t.Artifacts,
