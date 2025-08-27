@@ -49,11 +49,19 @@ func main() {
 
 	// 创建 Claude 模型
 	cm, err := claude.NewChatModel(ctx, &claude.Config{
-		// if you want to use Aws Bedrock Service, set these four field.
+		// if you want to use Aws Bedrock Service, set these four fields.
 		// ByBedrock:       true,
 		// AccessKey:       "",
 		// SecretAccessKey: "",
 		// Region:          "us-west-2",
+
+		// if you want to use Google Cloud Vertex AI, set these fields.
+		// ByVertex:          true,
+		// ProjectID:         "your-project-id",
+		// Scopes:            []string{"https://www.googleapis.com/auth/cloud-platform"},
+		// Region:            "global",
+		// GoogleCredentials: &google.Credentials{}, // Optional
+
 		APIKey: apiKey,
 		// Model:     "claude-3-5-sonnet-20240620",
 		BaseURL:   baseURLPtr,

@@ -29,12 +29,13 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
-	awsConfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-
-	"github.com/cloudwego/eino/components"
+	"golang.org/x/oauth2/google"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
@@ -60,7 +61,36 @@ var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 //	})
 func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 	var cli anthropic.Client
-	if !config.ByBedrock {
+	if config.ByBedrock {
+		var opts []func(*awsconfig.LoadOptions) error
+		if config.Region != "" {
+			opts = append(opts, awsconfig.WithRegion(config.Region))
+		}
+		if config.SecretAccessKey != "" && config.AccessKey != "" {
+			opts = append(opts, awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+				config.AccessKey,
+				config.SecretAccessKey,
+				config.SessionToken,
+			)))
+		} else if config.Profile != "" {
+			opts = append(opts, awsconfig.WithSharedConfigProfile(config.Profile))
+		}
+
+		if config.HTTPClient != nil {
+			opts = append(opts, awsconfig.WithHTTPClient(config.HTTPClient))
+		}
+		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+	} else if config.ByVertex {
+		if config.GoogleCredentials != nil {
+			cli = anthropic.NewClient(
+				vertex.WithCredentials(ctx, config.Region, config.ProjectID, config.GoogleCredentials),
+			)
+		} else {
+			cli = anthropic.NewClient(
+				vertex.WithGoogleAuth(ctx, config.Region, config.ProjectID, config.Scopes...),
+			)
+		}
+	} else {
 		var opts []option.RequestOption
 
 		opts = append(opts, option.WithAPIKey(config.APIKey))
@@ -74,26 +104,8 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		}
 
 		cli = anthropic.NewClient(opts...)
-	} else {
-		var opts []func(*awsConfig.LoadOptions) error
-		if config.Region != "" {
-			opts = append(opts, awsConfig.WithRegion(config.Region))
-		}
-		if config.SecretAccessKey != "" && config.AccessKey != "" {
-			opts = append(opts, awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
-				config.AccessKey,
-				config.SecretAccessKey,
-				config.SessionToken,
-			)))
-		} else if config.Profile != "" {
-			opts = append(opts, awsConfig.WithSharedConfigProfile(config.Profile))
-		}
-
-		if config.HTTPClient != nil {
-			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
-		}
-		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
 	}
+
 	return &ChatModel{
 		cli:                    cli,
 		maxTokens:              config.MaxTokens,
@@ -110,6 +122,8 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 // Config contains the configuration options for the Claude model
 type Config struct {
 	// ByBedrock indicates whether to use Bedrock Service
+	// If both [Config.ByBedrock] and [Config.ByVertex] are set to true,
+	// the [Config.ByBedrock] configuration will take precedence.
 	// Required for Bedrock
 	ByBedrock bool
 
@@ -134,9 +148,30 @@ type Config struct {
 	// Optional for Bedrock
 	Profile string
 
-	// Region is your Bedrock API region
-	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
-	// Optional for Bedrock
+	// ByVertex indicates whether to use Google Cloud Vertex AI
+	// If both [Config.ByBedrock] and [Config.ByVertex] are set to true,
+	// the [Config.ByBedrock] configuration will take precedence.
+	// Required for Google Vertex
+	ByVertex bool
+
+	// ProjectID is your Google Cloud project ID
+	// Obtain from: https://cloud.google.com/resource-manager/docs/creating-managing-projects
+	// Required for Google Vertex
+	ProjectID string
+
+	// Scopes is your list of Google Cloud OAuth scopes
+	// Obtain from: https://developers.google.com/identity/protocols/oauth2/scopes
+	// Required for Google Vertex
+	Scopes []string
+
+	// GoogleCredentials is your Google Cloud credentials.
+	// If set, these credentials will be used for authentication.
+	// If not set, the default application credentials will be used:
+	// https://cloud.google.com/docs/authentication/application-default-credentials
+	GoogleCredentials *google.Credentials
+
+	// Region is your Bedrock API region if using Bedrock, or your Google Cloud region if using Vertex AI
+	// Optional for Bedrock, but required for Google Vertex
 	Region string
 
 	// BaseURL is the custom API endpoint URL
@@ -149,8 +184,12 @@ type Config struct {
 	// Required
 	APIKey string
 
-	// Model specifies which Claude model to use
-	// Required
+	// Model specifies which Claude model to use.
+	//
+	// Note that the model names are different for Bedrock and Vertex.
+	// See https://docs.anthropic.com/en/api/claude-on-amazon-bedrock and https://docs.anthropic.com/en/api/claude-on-vertex-ai.
+	//
+	// Required.
 	Model string
 
 	// MaxTokens limits the maximum number of tokens in the response
@@ -308,7 +347,6 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			_ = sw.Send(nil, stream.Err())
 			return
 		}
-
 	}()
 	_, sr = callbacks.OnEndWithStreamOutput(ctx, sr)
 	return schema.StreamReaderWithConvert(sr, func(t *model.CallbackOutput) (*schema.Message, error) {
@@ -390,7 +428,8 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 				Name:        tool.Name,
 				Description: param.NewOpt(tool.Desc),
 				InputSchema: inputSchema,
-			}})
+			},
+		})
 	}
 
 	return result, nil
@@ -420,7 +459,8 @@ func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.M
 }
 
 func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (
-	anthropic.MessageNewParams, error) {
+	anthropic.MessageNewParams, error,
+) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
 	}
@@ -442,7 +482,8 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	claudeOptions := model.GetImplSpecificOptions(&options{
 		TopK:                   cm.topK,
 		Thinking:               cm.thinking,
-		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
+		DisableParallelToolUse: cm.disableParallelToolUse,
+	}, opts...)
 
 	params := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
@@ -593,7 +634,6 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 }
 
 func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
-
 	var messageParams []anthropic.ContentBlockParamUnion
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
@@ -673,7 +713,8 @@ type streamContext struct {
 }
 
 func convContentBlockToEinoMsg(
-	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext) error {
+	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext,
+) error {
 	//	case anthropic.TextBlock:
 	//	case anthropic.ToolUseBlock:
 	//	case anthropic.ServerToolUseBlock:
