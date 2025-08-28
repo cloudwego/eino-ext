@@ -165,7 +165,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 		assert.Equal(t, 1, len(req.Input.OfInputItemList))
 
 		item := req.Input.OfInputItemList[0]
-		assert.Equal(t, responses.EasyInputMessageRoleDeveloper, item.OfMessage.Role)
+		assert.Equal(t, responses.EasyInputMessageRoleSystem, item.OfMessage.Role)
 		assert.Equal(t, "You are a helpful assistant.", item.OfMessage.Content.OfString.Value)
 	})
 

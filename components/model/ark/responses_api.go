@@ -269,7 +269,10 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 	var token *model.TokenUsage
 	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
 		token = &model.TokenUsage{
-			PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
+			PromptTokens: msg.ResponseMeta.Usage.PromptTokens,
+			PromptTokenDetails: model.PromptTokenDetails{
+				CachedTokens: msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+			},
 			CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
 		}
@@ -545,7 +548,7 @@ func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in
 
 		case schema.System:
 			item.OfMessage = &responses.EasyInputMessageParam{
-				Role:    responses.EasyInputMessageRoleDeveloper,
+				Role:    responses.EasyInputMessageRoleSystem,
 				Content: content,
 			}
 

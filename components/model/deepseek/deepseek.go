@@ -736,7 +736,10 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		return nil
 	}
 	return &model.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}
