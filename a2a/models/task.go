@@ -146,7 +146,7 @@ type TaskStatusUpdateEvent struct {
 	// and the server does not expect to send more updates for *this specific* `stream` request.
 	// The server typically closes the SSE connection after sending an event with `final: true`.
 	// Default: `false` if omitted.
-	Final bool `json:"final,omitempty"`
+	Final bool `json:"final"`
 	// Arbitrary metadata for this specific status update event.
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
@@ -161,7 +161,7 @@ type TaskStatusUpdateEventContent struct {
 	// and the server does not expect to send more updates for *this specific* `stream` request.
 	// The server typically closes the SSE connection after sending an event with `final: true`.
 	// Default: `false` if omitted.
-	Final bool `json:"final,omitempty"`
+	Final bool `json:"final"`
 	// Arbitrary metadata for this specific status update event.
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
