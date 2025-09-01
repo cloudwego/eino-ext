@@ -117,7 +117,7 @@ func TestStreamingMessageHandler(t *testing.T) {
 			}
 			return nil
 		},
-		TaskEventsConsolidator: func(ctx context.Context, t *models.Task, events []models.ResponseEvent) *models.TaskContent {
+		TaskEventsConsolidator: func(ctx context.Context, t *models.Task, events []models.ResponseEvent, handlerErr error) *models.TaskContent {
 			tc := &models.TaskContent{
 				Status:    t.Status,
 				Artifacts: t.Artifacts,
