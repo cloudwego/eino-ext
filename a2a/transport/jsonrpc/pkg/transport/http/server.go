@@ -18,7 +18,6 @@ package http
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"sync"
 
@@ -76,7 +75,8 @@ type ServerTransportBuilder struct {
 func (s *ServerTransportBuilder) Build(ctx context.Context, hdl transport.ServerTransportHandler) (transport.ServerTransport, error) {
 	hz := s.hzIns
 	if hz == nil {
-		hz = hz_server.Default()
+		// sense the disconnection by default
+		hz = hz_server.Default(hz_server.WithSenseClientDisconnection(true))
 	}
 	hz.POST(s.path, s.POST)
 	s.hdl = hdl
@@ -95,12 +95,8 @@ func (s *ServerTransportBuilder) POST(c context.Context, ctx *app.RequestContext
 	ctx.VisitAllHeaders(func(key, val []byte) {
 		c = metadata.WithValue(c, string(key), string(val))
 	})
-	finishCh := s.rounder.newRound(c, msg, ctx)
-	select {
-	case <-c.Done():
-		fmt.Println("connection closed")
-	case <-finishCh:
-	}
+	// wait for handler return
+	<-s.rounder.newRound(c, msg, ctx)
 }
 
 type server struct {
