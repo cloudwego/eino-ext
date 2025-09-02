@@ -317,7 +317,7 @@ func (cm *responsesAPIChatModel) handleCompletedStreamEvent(asChunk responses.Re
 	return &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(asChunk.Type),
+			FinishReason: string(asChunk.Response.Status),
 			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
 		},
 	}
