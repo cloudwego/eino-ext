@@ -54,6 +54,7 @@ type completionAPIChatModel struct {
 	responseFormat   *ResponseFormat
 	thinking         *model.Thinking
 	cache            *CacheConfig
+	serviceIter      *string
 }
 
 type tool struct {
@@ -278,6 +279,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		LogitBias:        cm.logitBias,
 		PresencePenalty:  cm.presencePenalty,
 		Thinking:         arkOpts.thinking,
+		ServiceTier:      cm.serviceIter,
 	}
 
 	if cm.responseFormat != nil {
