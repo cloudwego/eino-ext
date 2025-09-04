@@ -49,7 +49,7 @@ type responsesAPIChatModel struct {
 	responseFormat *ResponseFormat
 	thinking       *arkModel.Thinking
 	cache          *CacheConfig
-	serviceIter    *string
+	serviceTier    *string
 }
 
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
@@ -436,7 +436,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
 		Temperature:     newOpenaiFloatOpt(options.Temperature),
 		TopP:            newOpenaiFloatOpt(options.TopP),
-		ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceIter)),
+		ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceTier)),
 	}
 
 	if req, err = cm.injectInput(req, in); err != nil {
