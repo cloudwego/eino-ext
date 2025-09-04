@@ -159,5 +159,8 @@ func GetServiceTier(msg *schema.Message) (string, bool) {
 }
 
 func setServiceTier(msg *schema.Message, serviceTier string) {
+	if len(serviceTier) == 0 {
+		return
+	}
 	setMsgExtra(msg, keyOfServiceTier, arkServiceTier(serviceTier))
 }

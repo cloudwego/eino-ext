@@ -415,6 +415,7 @@ func (cm *completionAPIChatModel) resolveChatResponse(resp model.ChatCompletionR
 
 	setModelName(msg, resp.Model)
 	setArkRequestID(msg, resp.ID)
+	setServiceTier(msg, resp.ServiceTier)
 
 	if content != nil && content.StringValue != nil {
 		msg.Content = *content.StringValue
