@@ -29,10 +29,12 @@ const (
 	keyOfModelName        = "ark-model-name"
 	videoURLFPS           = "ark-model-video-url-fps"
 	keyOfContextID        = "ark-context-id"
+	keyOfServiceTier      = "ark-service-tier"
 )
 
 type arkRequestID string
 type arkModelName string
+type arkServiceTier string
 
 func init() {
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkRequestID) (final arkRequestID, err error) {
@@ -54,6 +56,16 @@ func init() {
 	})
 	_ = compose.RegisterSerializableType[arkModelName]("_eino_ext_ark_model_name")
 	gob.RegisterName("_eino_ext_ark_model_name", arkModelName(""))
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []arkServiceTier) (final arkServiceTier, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+
+		return chunks[len(chunks)-1], nil
+	})
+	_ = compose.RegisterSerializableType[arkServiceTier]("_eino_ext_ark_service_tier")
+	gob.RegisterName("_eino_ext_ark_service_tier", arkServiceTier(""))
 }
 
 func GetArkRequestID(msg *schema.Message) string {
@@ -136,4 +148,16 @@ func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 		return nil
 	}
 	return &fps
+}
+
+func GetServiceTier(msg *schema.Message) (string, bool) {
+	t, ok := getMsgExtraValue[arkServiceTier](msg, keyOfServiceTier)
+	if !ok {
+		return "", false
+	}
+	return string(t), true
+}
+
+func setServiceTier(msg *schema.Message, serviceTier string) {
+	setMsgExtra(msg, keyOfServiceTier, arkServiceTier(serviceTier))
 }

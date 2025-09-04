@@ -469,6 +469,7 @@ func (cm *completionAPIChatModel) resolveStreamResponse(resp model.ChatCompletio
 	}
 	setArkRequestID(msg, resp.ID)
 	setModelName(msg, resp.Model)
+	setServiceTier(msg, resp.ServiceTier)
 
 	return msg, msgFound, nil
 }

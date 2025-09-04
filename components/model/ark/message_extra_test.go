@@ -35,6 +35,8 @@ func TestConcatMessages(t *testing.T) {
 	setReasoningContent(msgs[1], "are you")
 	setModelName(msgs[0], "model name")
 	setModelName(msgs[1], "model name")
+	setServiceTier(msgs[0], "service tier")
+	setServiceTier(msgs[1], "service tier")
 
 	msg, err := schema.ConcatMessages(msgs)
 	assert.NoError(t, err)
@@ -47,4 +49,8 @@ func TestConcatMessages(t *testing.T) {
 	modelName, ok := GetModelName(msg)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "model name", modelName)
+
+	serviceTier, ok := GetServiceTier(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "service tier", serviceTier)
 }

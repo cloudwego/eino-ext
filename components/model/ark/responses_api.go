@@ -203,11 +203,13 @@ Outer:
 				Role: schema.Assistant,
 			}
 			setContextID(msg, asEvent.Response.ID)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			continue
 
 		case responses.ResponseCompletedEvent:
 			msg := cm.handleCompletedStreamEvent(asEvent)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			break Outer
 
@@ -217,11 +219,13 @@ Outer:
 
 		case responses.ResponseIncompleteEvent:
 			msg := cm.handleIncompleteStreamEvent(asEvent)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			break Outer
 
 		case responses.ResponseFailedEvent:
 			msg := cm.handleFailedStreamEvent(asEvent)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			break Outer
 
@@ -661,6 +665,10 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*sch
 	}
 
 	setContextID(msg, resp.ID)
+
+	if len(resp.ServiceTier) > 0 {
+		setServiceTier(msg, string(resp.ServiceTier))
+	}
 
 	if resp.Status == responses.ResponseStatusFailed {
 		msg.ResponseMeta.FinishReason = resp.Error.Message
