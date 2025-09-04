@@ -49,6 +49,7 @@ type responsesAPIChatModel struct {
 	responseFormat *ResponseFormat
 	thinking       *arkModel.Thinking
 	cache          *CacheConfig
+	serviceTier    *string
 }
 
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
@@ -269,7 +270,10 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 	var token *model.TokenUsage
 	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
 		token = &model.TokenUsage{
-			PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
+			PromptTokens: msg.ResponseMeta.Usage.PromptTokens,
+			PromptTokenDetails: model.PromptTokenDetails{
+				CachedTokens: msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+			},
 			CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
 		}
@@ -314,7 +318,7 @@ func (cm *responsesAPIChatModel) handleCompletedStreamEvent(asChunk responses.Re
 	return &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(asChunk.Type),
+			FinishReason: string(asChunk.Response.Status),
 			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
 		},
 	}
@@ -432,6 +436,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
 		Temperature:     newOpenaiFloatOpt(options.Temperature),
 		TopP:            newOpenaiFloatOpt(options.TopP),
+		ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceTier)),
 	}
 
 	if req, err = cm.injectInput(req, in); err != nil {
@@ -545,7 +550,7 @@ func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in
 
 		case schema.System:
 			item.OfMessage = &responses.EasyInputMessageParam{
-				Role:    responses.EasyInputMessageRoleDeveloper,
+				Role:    responses.EasyInputMessageRoleSystem,
 				Content: content,
 			}
 
