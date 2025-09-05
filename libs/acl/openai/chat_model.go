@@ -101,6 +101,7 @@ type Config struct {
 	Model string `json:"model"`
 
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
+	// Deprecated: use MaxCompletionTokens. Not compatible with o1-series models.
 	// Optional. Default: model's maximum
 	MaxTokens *int `json:"max_tokens,omitempty"`
 
