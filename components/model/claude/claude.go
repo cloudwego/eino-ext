@@ -31,6 +31,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+
 	"github.com/cloudwego/eino/components"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -94,14 +95,15 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
 	}
 	return &ChatModel{
-		cli:           cli,
-		maxTokens:     config.MaxTokens,
-		model:         config.Model,
-		stopSequences: config.StopSequences,
-		temperature:   config.Temperature,
-		thinking:      config.Thinking,
-		topK:          config.TopK,
-		topP:          config.TopP,
+		cli:                    cli,
+		maxTokens:              config.MaxTokens,
+		model:                  config.Model,
+		stopSequences:          config.StopSequences,
+		temperature:            config.Temperature,
+		thinking:               config.Thinking,
+		topK:                   config.TopK,
+		topP:                   config.TopP,
+		disableParallelToolUse: config.DisableParallelToolUse,
 	}, nil
 }
 
@@ -179,6 +181,8 @@ type Config struct {
 
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
+
+	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 }
 
 type Thinking struct {
@@ -189,16 +193,17 @@ type Thinking struct {
 type ChatModel struct {
 	cli anthropic.Client
 
-	maxTokens     int
-	model         string
-	stopSequences []string
-	temperature   *float32
-	topK          *int32
-	topP          *float32
-	thinking      *Thinking
-	tools         []anthropic.ToolUnionParam
-	origTools     []*schema.ToolInfo
-	toolChoice    *schema.ToolChoice
+	maxTokens              int
+	model                  string
+	stopSequences          []string
+	temperature            *float32
+	topK                   *int32
+	topP                   *float32
+	thinking               *Thinking
+	tools                  []anthropic.ToolUnionParam
+	origTools              []*schema.ToolInfo
+	toolChoice             *schema.ToolChoice
+	disableParallelToolUse *bool
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -367,7 +372,7 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 
 	result := make([]anthropic.ToolUnionParam, 0, len(tools))
 	for _, tool := range tools {
-		s, err := tool.ToOpenAPIV3()
+		s, err := tool.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
 		}
@@ -391,9 +396,38 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 	return result, nil
 }
 
-func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
+func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.Message, error) {
+	userMsgIdx := -1
+	for i, msg := range input {
+		if msg.Role != schema.System {
+			if msg.Role != schema.User {
+				// claude requires first message to be user msg
+				// as specified in https://docs.anthropic.com/en/api/messages:
+				// 'You can specify a single user-role message,
+				// or you can include multiple user and assistant messages.'
+				return nil, nil, errors.New("first non-system message should be user message")
+			}
+			userMsgIdx = i
+			break
+		}
+	}
+
+	if userMsgIdx == -1 {
+		return nil, nil, errors.New("only system message in input, require at least 1 user message")
+	}
+
+	return input[:userMsgIdx], input[userMsgIdx:], nil
+}
+
+func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (
+	anthropic.MessageNewParams, error) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
+	}
+
+	system, msgs, err := preProcessMessages(input)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
 	}
 
 	commonOptions := model.GetCommonOptions(&model.Options{
@@ -406,8 +440,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 	claudeOptions := model.GetImplSpecificOptions(&options{
-		TopK:     cm.topK,
-		Thinking: cm.thinking}, opts...)
+		TopK:                   cm.topK,
+		Thinking:               cm.thinking,
+		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
 
 	params := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
@@ -455,8 +490,12 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		case schema.ToolChoiceForbidden:
 			params.Tools = []anthropic.ToolUnionParam{} // act like forbid tools
 		case schema.ToolChoiceAllowed:
+			p := &anthropic.ToolChoiceAutoParam{}
+			if claudeOptions.DisableParallelToolUse != nil {
+				p.DisableParallelToolUse = param.NewOpt[bool](*claudeOptions.DisableParallelToolUse)
+			}
 			params.ToolChoice = anthropic.ToolChoiceUnionParam{
-				OfAuto: &anthropic.ToolChoiceAutoParam{},
+				OfAuto: p,
 			}
 		case schema.ToolChoiceForced:
 			if len(tools) == 0 {
@@ -464,8 +503,12 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 			} else if len(tools) == 1 {
 				params.ToolChoice = anthropic.ToolChoiceParamOfTool(*tools[0].GetName())
 			} else {
+				p := &anthropic.ToolChoiceAnyParam{}
+				if claudeOptions.DisableParallelToolUse != nil {
+					p.DisableParallelToolUse = param.NewOpt[bool](*claudeOptions.DisableParallelToolUse)
+				}
 				params.ToolChoice = anthropic.ToolChoiceUnionParam{
-					OfAny: &anthropic.ToolChoiceAnyParam{},
+					OfAny: p,
 				}
 			}
 		default:
@@ -475,18 +518,17 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 
 	// Convert messages
 	var systemTextBlocks []anthropic.TextBlockParam
-	for len(input) > 1 && input[0].Role == schema.System {
+	for _, m := range system {
 		systemTextBlocks = append(systemTextBlocks, anthropic.TextBlockParam{
-			Text: input[0].Content,
+			Text: m.Content,
 		})
-		input = input[1:]
 	}
 	if len(systemTextBlocks) > 0 {
 		params.System = systemTextBlocks
 	}
 
-	messages := make([]anthropic.MessageParam, 0, len(input))
-	for _, msg := range input {
+	messages := make([]anthropic.MessageParam, 0, len(msgs))
+	for _, msg := range msgs {
 		message, err := convSchemaMessage(msg)
 		if err != nil {
 			return anthropic.MessageNewParams{}, fmt.Errorf("convert schema message fail: %w", err)
@@ -516,7 +558,10 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 	}
 	if output.ResponseMeta != nil && output.ResponseMeta.Usage != nil {
 		result.TokenUsage = &model.TokenUsage{
-			PromptTokens:     output.ResponseMeta.Usage.PromptTokens,
+			PromptTokens: output.ResponseMeta.Usage.PromptTokens,
+			PromptTokenDetails: model.PromptTokenDetails{
+				CachedTokens: output.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+			},
 			CompletionTokens: output.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      output.ResponseMeta.Usage.TotalTokens,
 		}
@@ -595,14 +640,19 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 }
 
 func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
+	promptTokens := int(resp.Usage.InputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens)
+
 	message := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.StopReason),
 			Usage: &schema.TokenUsage{
-				PromptTokens:     int(resp.Usage.InputTokens),
+				PromptTokens: promptTokens,
+				PromptTokenDetails: schema.PromptTokenDetails{
+					CachedTokens: int(resp.Usage.CacheReadInputTokens),
+				},
 				CompletionTokens: int(resp.Usage.OutputTokens),
-				TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+				TotalTokens:      promptTokens + int(resp.Usage.OutputTokens),
 			},
 		},
 	}

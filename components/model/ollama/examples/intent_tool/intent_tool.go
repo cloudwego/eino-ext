@@ -30,7 +30,7 @@ func main() {
 	ctx := context.Background()
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL: "http://localhost:11434",
-		Model:   "llama3-groq-tool-use",
+		Model:   "llama3.2:1b",
 	})
 	if err != nil {
 		log.Printf("NewChatModel failed, err=%v", err)

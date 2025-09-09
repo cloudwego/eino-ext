@@ -23,12 +23,15 @@ import (
 	"io"
 	"net/http"
 	"runtime/debug"
+	"sort"
+
+	"github.com/eino-contrib/jsonschema"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/meguminnnnnnnnn/go-openai"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/meguminnnnnnnnn/go-openai"
 )
 
 type ChatCompletionResponseFormatType string
@@ -51,10 +54,12 @@ type ChatCompletionResponseFormat struct {
 }
 
 type ChatCompletionResponseFormatJSONSchema struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description,omitempty"`
-	Schema      *openapi3.Schema `json:"schema"`
-	Strict      bool             `json:"strict"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Deprecated: use JSONSchema instead.
+	Schema     *openapi3.Schema   `json:"-"`
+	JSONSchema *jsonschema.Schema `json:"-"`
+	Strict     bool               `json:"strict"`
 }
 
 type Config struct {
@@ -73,7 +78,6 @@ type Config struct {
 	// ByAzure indicates whether to use Azure OpenAI Service
 	// Required for Azure
 	ByAzure bool `json:"by_azure"`
-
 
 	// AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
 	// This is useful when the model name is different from the deployment name.
@@ -99,6 +103,9 @@ type Config struct {
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
 	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
 
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both.
@@ -278,6 +285,9 @@ func toMessageRole(role string) schema.RoleType {
 		return schema.System
 	case openai.ChatMessageRoleTool:
 		return schema.Tool
+	case "":
+		// When the role field is an empty string, populate it with the schema.Assistant.
+		return schema.Assistant
 	default:
 		return schema.RoleType(role)
 	}
@@ -338,29 +348,31 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		Tools:       nil,
 		ToolChoice:  c.toolChoice,
 	}, opts...)
-	openaiOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:     c.config.ExtraFields,
-		ReasoningEffort: c.config.ReasoningEffort,
+	specOptions := model.GetImplSpecificOptions(&openaiOptions{
+		ExtraFields:         c.config.ExtraFields,
+		ReasoningEffort:     c.config.ReasoningEffort,
+		MaxCompletionTokens: c.config.MaxCompletionTokens,
 	}, opts...)
 
 	req := &openai.ChatCompletionRequest{
-		Model:            *options.Model,
-		MaxTokens:        dereferenceOrZero(options.MaxTokens),
-		Temperature:      options.Temperature,
-		TopP:             dereferenceOrZero(options.TopP),
-		Stop:             options.Stop,
-		PresencePenalty:  dereferenceOrZero(c.config.PresencePenalty),
-		Seed:             c.config.Seed,
-		FrequencyPenalty: dereferenceOrZero(c.config.FrequencyPenalty),
-		LogitBias:        c.config.LogitBias,
-		User:             dereferenceOrZero(c.config.User),
-		LogProbs:         c.config.LogProbs,
-		TopLogProbs:      c.config.TopLogProbs,
-		ReasoningEffort:  string(openaiOptions.ReasoningEffort),
+		Model:               *options.Model,
+		MaxTokens:           dereferenceOrZero(options.MaxTokens),
+		MaxCompletionTokens: dereferenceOrZero(specOptions.MaxCompletionTokens),
+		Temperature:         options.Temperature,
+		TopP:                dereferenceOrZero(options.TopP),
+		Stop:                options.Stop,
+		PresencePenalty:     dereferenceOrZero(c.config.PresencePenalty),
+		Seed:                c.config.Seed,
+		FrequencyPenalty:    dereferenceOrZero(c.config.FrequencyPenalty),
+		LogitBias:           c.config.LogitBias,
+		User:                dereferenceOrZero(c.config.User),
+		LogProbs:            c.config.LogProbs,
+		TopLogProbs:         c.config.TopLogProbs,
+		ReasoningEffort:     string(specOptions.ReasoningEffort),
 	}
 
-	if len(openaiOptions.ExtraFields) > 0 {
-		req.SetExtraFields(openaiOptions.ExtraFields)
+	if len(specOptions.ExtraFields) > 0 {
+		req.SetExtraFields(specOptions.ExtraFields)
 	}
 
 	cbInput := &model.CallbackInput{
@@ -489,7 +501,9 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		}
 	}()
 
-	resp, err := c.cli.CreateChatCompletion(ctx, *req)
+	reqOpts := c.getChatCompletionRequestOptions(opts)
+
+	resp, err := c.cli.CreateChatCompletion(ctx, *req, reqOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -517,6 +531,7 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 			},
 		}
 		if len(msg.ReasoningContent) > 0 {
+			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
 		}
 
@@ -527,16 +542,10 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
-	usage := &model.TokenUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
-	}
-
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     cbInput.Config,
-		TokenUsage: usage,
+		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
 	})
 
 	return outMsg, nil
@@ -561,7 +570,9 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	stream, err := c.cli.CreateChatCompletionStream(ctx, *req)
+	reqOpts := c.getChatCompletionRequestOptions(opts)
+
+	stream, err := c.cli.CreateChatCompletionStream(ctx, *req, reqOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -660,6 +671,25 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
+func (c *Client) getChatCompletionRequestOptions(opts []model.Option) []openai.ChatCompletionRequestOption {
+	specOptions := model.GetImplSpecificOptions(&openaiOptions{
+		ExtraFields:     c.config.ExtraFields,
+		ReasoningEffort: c.config.ReasoningEffort,
+	}, opts...)
+
+	var options []openai.ChatCompletionRequestOption
+
+	if specOptions.RequestBodyModifier != nil {
+		options = append(options, openai.WithRequestBodyModifier(specOptions.RequestBodyModifier))
+	}
+
+	if specOptions.ExtraHeader != nil {
+		options = append(options, openai.WithExtraHeader(specOptions.ExtraHeader))
+	}
+
+	return options
+}
+
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
 	if probs == nil {
 		return nil
@@ -746,6 +776,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 		}
 
 		if len(choice.Delta.ReasoningContent) > 0 {
+			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		}
 
@@ -765,6 +796,33 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 }
 
 func toTools(tis []*schema.ToolInfo) ([]tool, error) {
+	var sortArrayFields func(*jsonschema.Schema)
+	sortArrayFields = func(sc *jsonschema.Schema) {
+		if sc == nil {
+			return
+		}
+
+		switch sc.Type {
+		case string(schema.Object):
+			if len(sc.Required) == 0 {
+				return
+			}
+
+			sort.Strings(sc.Required)
+			for pair := sc.Properties.Oldest(); pair != nil; pair = pair.Next() {
+				sortArrayFields(pair.Value)
+			}
+
+		case string(schema.Array):
+			if sc.Items != nil {
+				sortArrayFields(sc.Items)
+			}
+
+		default:
+			return
+		}
+	}
+
 	tools := make([]tool, len(tis))
 	for i := range tis {
 		ti := tis[i]
@@ -772,10 +830,12 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 			return nil, fmt.Errorf("tool info cannot be nil in BindTools")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
+
+		sortArrayFields(paramsJSONSchema)
 
 		tools[i] = tool{
 			Function: &functionDefinition{
@@ -793,10 +853,17 @@ func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
 	if usage == nil {
 		return nil
 	}
+
+	promptTokenDetails := schema.PromptTokenDetails{}
+	if usage.PromptTokensDetails != nil {
+		promptTokenDetails.CachedTokens = usage.PromptTokensDetails.CachedTokens
+	}
+
 	return &schema.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		TotalTokens:      usage.TotalTokens,
+		PromptTokens:       usage.PromptTokens,
+		PromptTokenDetails: promptTokenDetails,
+		CompletionTokens:   usage.CompletionTokens,
+		TotalTokens:        usage.TotalTokens,
 	}
 }
 
@@ -809,7 +876,10 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		return nil
 	}
 	return &model.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}

@@ -17,6 +17,8 @@
 package arkbot
 
 import (
+	"encoding/gob"
+
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -61,9 +63,13 @@ func init() {
 	})
 
 	_ = compose.RegisterSerializableType[arkRequestID]("_eino_ext_ark_request_id")
+	gob.RegisterName("_eino_ext_ark_request_id", arkRequestID(""))
 	_ = compose.RegisterSerializableType[model.BotUsage]("_eino_ext_ark_bot_usage")
+	gob.RegisterName("_eino_ext_ark_bot_usage", &model.BotUsage{})
 	_ = compose.RegisterSerializableType[model.BotChatResultReference]("_eino_ext_ark_bot_chat_result_reference")
+	gob.RegisterName("_eino_ext_ark_bot_chat_result_reference", &model.BotChatResultReference{})
 	_ = compose.RegisterSerializableType[model.BotCoverImage]("_eino_ext_ark_bot_cover_image")
+	gob.RegisterName("_eino_ext_ark_bot_cover_image", &model.BotCoverImage{})
 }
 
 func setArkRequestID(msg *schema.Message, id string) {

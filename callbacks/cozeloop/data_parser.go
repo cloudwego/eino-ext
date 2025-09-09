@@ -23,6 +23,8 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
@@ -32,7 +34,6 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 )
 
 // CallbackDataParser tag parser for trace
@@ -537,8 +538,6 @@ func parseSpanTypeFromComponent(c components.Component) string {
 		return "loader"
 
 	case components.ComponentOfTool:
-		return "function"
-	case compose.ComponentOfToolsNode:
 		return "tool"
 
 	default:

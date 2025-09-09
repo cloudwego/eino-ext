@@ -17,13 +17,16 @@
 package gemini
 
 import (
-	"github.com/cloudwego/eino/components/model"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/getkin/kin-openapi/openapi3"
+
+	"github.com/cloudwego/eino/components/model"
 )
 
 type options struct {
-	TopK           *int32
-	ResponseSchema *openapi3.Schema
+	TopK               *int32
+	ResponseSchema     *openapi3.Schema
+	ResponseJSONSchema *jsonschema.Schema
 }
 
 func WithTopK(k int32) model.Option {
@@ -35,5 +38,11 @@ func WithTopK(k int32) model.Option {
 func WithResponseSchema(s *openapi3.Schema) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ResponseSchema = s
+	})
+}
+
+func WithResponseJSONSchema(s *jsonschema.Schema) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseJSONSchema = s
 	})
 }

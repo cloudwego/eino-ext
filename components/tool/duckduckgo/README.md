@@ -1,6 +1,8 @@
-# DuckDuckGo Search Tool
+# (Deprecated) DuckDuckGo Search Tool
 
 English | [简体中文](README_zh.md)
+
+Please note that this implementation is **deprecated**. Please use the [DuckDuckGo V2](https://github.com/cloudwego/eino-ext/tree/main/components/tool/duckduckgo/v2).
 
 A DuckDuckGo search tool implementation for [Eino](https://github.com/cloudwego/eino) that implements the `InvokableTool` interface. This enables seamless integration with Eino's ChatModel interaction system and `ToolsNode` for enhanced search capabilities.
 

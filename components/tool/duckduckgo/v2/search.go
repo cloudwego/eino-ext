@@ -22,7 +22,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
@@ -85,66 +86,62 @@ func NewSearch(ctx context.Context, config *Config) (Search, error) {
 }
 
 func getTextSearchSchema(toolName, toolDesc string) *schema.ToolInfo {
-	sc := &openapi3.Schema{
-		Type:     openapi3.TypeObject,
+	sc := &jsonschema.Schema{
+		Type:     string(schema.Object),
 		Required: []string{"query"},
-		Properties: map[string]*openapi3.SchemaRef{
-			"query": {
-				Value: &openapi3.Schema{
-					Type:        openapi3.TypeString,
-					Description: "The user's search query. The query is required.",
+		Properties: orderedmap.New[string, *jsonschema.Schema](
+			orderedmap.WithInitialData[string, *jsonschema.Schema](
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "query",
+					Value: &jsonschema.Schema{
+						Type:        string(schema.String),
+						Description: "The user's search query. The query is required.",
+					},
 				},
-			},
-			"time_range": {
-				Value: &openapi3.Schema{
-					Description: "The time range of search results",
-					Default:     "",
-					OneOf: []*openapi3.SchemaRef{
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "time_range",
+					Value: &jsonschema.Schema{
+						Type:        string(schema.String),
+						Description: "The time range of search results",
+						Default:     "",
+						OneOf: []*jsonschema.Schema{
+							{
+
+								Type:        string(schema.String),
 								Enum:        []any{"d"},
 								Description: "Search information from the past day",
 							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
+							{
+								Type:        string(schema.String),
 								Enum:        []any{"w"},
 								Description: "Search information from the past week",
 							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
+							{
+								Type:        string(schema.String),
 								Enum:        []any{"m"},
 								Description: "Search information from the past month",
 							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
+							{
+								Type:        string(schema.String),
 								Enum:        []any{"y"},
 								Description: "Search information from the past year",
 							},
-						},
-						{
-							Value: &openapi3.Schema{
-								Type:        openapi3.TypeString,
+							{
+								Type:        string(schema.String),
 								Enum:        []any{""},
 								Description: "Search information at any time",
 							},
 						},
 					},
 				},
-			},
-		},
+			),
+		),
 	}
 
 	info := &schema.ToolInfo{
 		Name:        toolName,
 		Desc:        toolDesc,
-		ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(sc),
+		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(sc),
 	}
 
 	return info

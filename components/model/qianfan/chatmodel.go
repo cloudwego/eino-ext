@@ -23,6 +23,7 @@ import (
 	"runtime/debug"
 
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
+
 	"github.com/cloudwego/eino/components"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -200,7 +201,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 
 	outStream = schema.StreamReaderWithConvert(nsr,
 		func(src callbacks.CallbackOutput) (*schema.Message, error) {
-			s := src.(*model.CallbackOutput) // nolint: byted_interface_check_golintx
+			s := src.(*model.CallbackOutput)
 			if s.Message == nil {
 				return nil, schema.ErrNoValue
 			}
@@ -501,7 +502,7 @@ func toQianfanTools(tools []*schema.ToolInfo) ([]qianfan.Tool, error) {
 
 	r := make([]qianfan.Tool, len(tools))
 	for i, tool := range tools {
-		parameters, err := tool.ParamsOneOf.ToOpenAPIV3()
+		parameters, err := tool.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, err
 		}

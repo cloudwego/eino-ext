@@ -19,13 +19,16 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"time"
 
-	"github.com/cloudwego/eino/schema"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
@@ -40,35 +43,74 @@ func main() {
 		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
-	info, err := chatModel.CreatePrefixCache(ctx, []*schema.Message{
-		schema.UserMessage("my name is megumin"),
-	}, 3600)
-	if err != nil {
-		log.Fatalf("CreatePrefix failed, err=%v", err)
+	instructions := []*schema.Message{
+		schema.SystemMessage("Your name is superman"),
+	}
+	thinking := &arkModel.Thinking{
+		Type: arkModel.ThinkingTypeDisabled,
 	}
 
-	inMsgs := []*schema.Message{
-		{
-			Role:    schema.User,
-			Content: "what id my name?",
+	cacheOpt := &ark.CacheOption{
+		APIType: ark.ResponsesAPI,
+		SessionCache: &ark.SessionCacheConfig{
+			EnableCache: true,
+			TTL:         86400,
 		},
 	}
 
-	msg, err := chatModel.Generate(ctx, inMsgs, ark.WithPrefixCache(info.ContextID))
+	msg, err := chatModel.Generate(ctx, instructions,
+		ark.WithThinking(thinking),
+		ark.WithCache(cacheOpt))
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	log.Printf("\ngenerate output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
-	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	firstContextID, ok := ark.GetContextID(msg)
+	if !ok {
+		log.Fatalf("GetContextID failed, err=%v", err)
+	}
 
-	outStreamReader, err := chatModel.Stream(ctx, inMsgs, ark.WithPrefixCache(info.ContextID))
+	cacheOpt.ContextID = &firstContextID
+
+	<-time.After(500 * time.Millisecond)
+
+	msg, err = chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "What's your name?",
+		},
+	},
+		ark.WithThinking(thinking),
+		ark.WithCache(cacheOpt))
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	fmt.Printf("\ngenerate output: \n")
+	fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
+	fmt.Printf("  body: %s\n", string(respBody))
+
+	secondContextID, ok := ark.GetContextID(msg)
+	if !ok {
+		log.Fatalf("GetContextID failed, err=%v", err)
+	}
+
+	cacheOpt.ContextID = &secondContextID
+
+	outStreamReader, err := chatModel.Stream(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "What do I ask you last time?",
+		},
+	},
+		ark.WithThinking(thinking),
+		ark.WithCache(cacheOpt))
 	if err != nil {
 		log.Fatalf("Stream failed, err=%v", err)
 	}
 
+	fmt.Println("\ntypewriter output:")
 	var msgs []*schema.Message
 	for {
 		item, e := outStreamReader.Recv()
@@ -79,14 +121,16 @@ func main() {
 			log.Fatal(e)
 		}
 
+		fmt.Print(item.Content)
 		msgs = append(msgs, item)
 	}
+
 	msg, err = schema.ConcatMessages(msgs)
 	if err != nil {
 		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
-	log.Printf("\nstream output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	fmt.Print("\n\nstream output: \n")
+	fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
 	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	fmt.Printf("  body: %s\n", string(respBody))
 }

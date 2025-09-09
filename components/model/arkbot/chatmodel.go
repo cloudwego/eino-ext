@@ -25,13 +25,14 @@ import (
 	"runtime/debug"
 	"time"
 
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
@@ -373,7 +374,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 			}
 
 			sw.Close()
-			_ = closeArkStreamReader(stream) // nolint: byted_returned_err_should_do_check
+			_ = closeArkStreamReader(stream)
 
 		}()
 
@@ -777,7 +778,7 @@ func toTools(tls []*schema.ToolInfo) ([]tool, error) {
 			return nil, fmt.Errorf("tool info cannot be nil")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}

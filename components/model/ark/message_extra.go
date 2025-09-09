@@ -17,6 +17,8 @@
 package ark
 
 import (
+	"encoding/gob"
+
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -26,10 +28,13 @@ const (
 	keyOfReasoningContent = "ark-reasoning-content"
 	keyOfModelName        = "ark-model-name"
 	videoURLFPS           = "ark-model-video-url-fps"
+	keyOfContextID        = "ark-context-id"
+	keyOfServiceTier      = "ark-service-tier"
 )
 
 type arkRequestID string
 type arkModelName string
+type arkServiceTier string
 
 func init() {
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkRequestID) (final arkRequestID, err error) {
@@ -40,6 +45,7 @@ func init() {
 		return chunks[len(chunks)-1], nil
 	})
 	_ = compose.RegisterSerializableType[arkRequestID]("_eino_ext_ark_request_id")
+	gob.RegisterName("_eino_ext_ark_request_id", arkRequestID(""))
 
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkModelName) (final arkModelName, err error) {
 		if len(chunks) == 0 {
@@ -49,53 +55,38 @@ func init() {
 		return chunks[len(chunks)-1], nil
 	})
 	_ = compose.RegisterSerializableType[arkModelName]("_eino_ext_ark_model_name")
+	gob.RegisterName("_eino_ext_ark_model_name", arkModelName(""))
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []arkServiceTier) (final arkServiceTier, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+
+		return chunks[len(chunks)-1], nil
+	})
+	_ = compose.RegisterSerializableType[arkServiceTier]("_eino_ext_ark_service_tier")
+	gob.RegisterName("_eino_ext_ark_service_tier", arkServiceTier(""))
 }
 
 func GetArkRequestID(msg *schema.Message) string {
-	reqID, ok := msg.Extra[keyOfRequestID].(arkRequestID)
-	if !ok {
-		return ""
-	}
+	reqID, _ := getMsgExtraValue[arkRequestID](msg, keyOfRequestID)
 	return string(reqID)
 }
 
 func setArkRequestID(msg *schema.Message, reqID string) {
-	if msg == nil {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
-	}
-	msg.Extra[keyOfRequestID] = arkRequestID(reqID)
+	setMsgExtra(msg, keyOfRequestID, arkRequestID(reqID))
 }
 
 func GetReasoningContent(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	reasoningContent, ok := msg.Extra[keyOfReasoningContent].(string)
-	if !ok {
-		return "", false
-	}
-
-	return reasoningContent, true
+	return getMsgExtraValue[string](msg, keyOfReasoningContent)
 }
 
 func setReasoningContent(msg *schema.Message, reasoningContent string) {
-	if msg == nil {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
-	}
-	msg.Extra[keyOfReasoningContent] = reasoningContent
+	setMsgExtra(msg, keyOfReasoningContent, reasoningContent)
 }
 
 func GetModelName(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	modelName, ok := msg.Extra[keyOfModelName].(arkModelName)
+	modelName, ok := getMsgExtraValue[arkModelName](msg, keyOfModelName)
 	if !ok {
 		return "", false
 	}
@@ -103,13 +94,42 @@ func GetModelName(msg *schema.Message) (string, bool) {
 }
 
 func setModelName(msg *schema.Message, name string) {
+	setMsgExtra(msg, keyOfModelName, arkModelName(name))
+}
+
+// GetContextID returns the conversation context ID of the given message.
+// Note:
+//   - Only the first chunk returns the context ID.
+//   - It is only available for ResponsesAPI.
+func GetContextID(msg *schema.Message) (string, bool) {
+	if msg == nil {
+		return "", false
+	}
+	contextID, ok := getMsgExtraValue[string](msg, keyOfContextID)
+	return contextID, ok
+}
+
+func setContextID(msg *schema.Message, contextID string) {
+	setMsgExtra(msg, keyOfContextID, contextID)
+}
+
+func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {
+	if msg == nil {
+		var t T
+		return t, false
+	}
+	val, ok := msg.Extra[key].(T)
+	return val, ok
+}
+
+func setMsgExtra(msg *schema.Message, key string, value any) {
 	if msg == nil {
 		return
 	}
 	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
+		msg.Extra = make(map[string]any)
 	}
-	msg.Extra[keyOfModelName] = arkModelName(name)
+	msg.Extra[key] = value
 }
 
 func SetFPS(part *schema.ChatMessageVideoURL, fps float64) {
@@ -128,4 +148,19 @@ func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 		return nil
 	}
 	return &fps
+}
+
+func GetServiceTier(msg *schema.Message) (string, bool) {
+	t, ok := getMsgExtraValue[arkServiceTier](msg, keyOfServiceTier)
+	if !ok {
+		return "", false
+	}
+	return string(t), true
+}
+
+func setServiceTier(msg *schema.Message, serviceTier string) {
+	if len(serviceTier) == 0 {
+		return
+	}
+	setMsgExtra(msg, keyOfServiceTier, arkServiceTier(serviceTier))
 }

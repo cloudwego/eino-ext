@@ -28,7 +28,8 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2"
 	"github.com/cloudwego/eino/components/model"
@@ -157,86 +158,99 @@ func NewBrowserUseTool(ctx context.Context, config *Config) (*Tool, error) {
 		info: &schema.ToolInfo{
 			Name: toolName,
 			Desc: toolDescription,
-			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
-				Type: openapi3.TypeObject,
-				Properties: map[string]*openapi3.SchemaRef{
-					"action": {
-						Value: &openapi3.Schema{
-							Type: openapi3.TypeObject,
-							Enum: []interface{}{
-								string(ActionGoToURL),
-								string(ActionClickElement),
-								string(ActionInputText),
-								string(ActionScrollDown),
-								string(ActionScrollUp),
-								//string(ActionSendKeys),
-								string(ActionWebSearch),
-								string(ActionWait),
-								string(ActionExtractContent),
-								string(ActionSwitchTab),
-								string(ActionOpenTab),
-								string(ActionCloseTab),
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(
+				&jsonschema.Schema{
+					Type: string(schema.Object),
+					Properties: orderedmap.New[string, *jsonschema.Schema](
+						orderedmap.WithInitialData[string, *jsonschema.Schema](
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "action",
+								Value: &jsonschema.Schema{
+									Type: string(schema.String),
+									Enum: []any{
+										string(ActionGoToURL),
+										string(ActionClickElement),
+										string(ActionInputText),
+										string(ActionScrollDown),
+										string(ActionScrollUp),
+										//string(ActionSendKeys),
+										string(ActionWebSearch),
+										string(ActionWait),
+										string(ActionExtractContent),
+										string(ActionSwitchTab),
+										string(ActionOpenTab),
+										string(ActionCloseTab),
+									},
+									Description: "The browser action to perform",
+								},
 							},
-							Description: "The browser action to perform",
-						},
-					},
-					"url": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeString,
-							Description: "URL for 'go_to_url' or 'open_tab' actions",
-						},
-					},
-					"index": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeInteger,
-							Description: "Element index for 'click_element', 'input_text' actions",
-						},
-					},
-					"text": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeString,
-							Description: "Text for 'input_text' actions",
-						},
-					},
-					"scroll_amount": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeInteger,
-							Description: "Pixels to scroll (positive for down, negative for up) for 'scroll_down' or 'scroll_up' actions",
-						},
-					},
-					"tab_id": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeInteger,
-							Description: "Tab ID for 'switch_tab' action",
-						},
-					},
-					"query": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeString,
-							Description: "Search query for 'web_search' action",
-						},
-					},
-					"goal": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeString,
-							Description: "Extraction goal for 'extract_content' action",
-						},
-					},
-					"keys": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeString,
-							Description: "Keys to send for 'send_keys' action",
-						},
-					},
-					"seconds": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeInteger,
-							Description: "Seconds to wait for 'wait' action",
-						},
-					},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "url",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "URL for 'go_to_url' or 'open_tab' actions",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "index",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.Integer),
+									Description: "Element index for 'click_element', 'input_text' actions",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "text",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Text for 'input_text' actions",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "scroll_amount",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.Integer),
+									Description: "Pixels to scroll (positive for down, negative for up) for 'scroll_down' or 'scroll_up' actions",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "tab_id",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.Integer),
+									Description: "Tab ID for 'switch_tab' action",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "query",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Search query for 'web_search' action",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "goal",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Extraction goal for 'extract_content' action",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "keys",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Keys to send for 'send_keys' action",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "seconds",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.Integer),
+									Description: "Seconds to wait for 'wait' action",
+								},
+							},
+						),
+					),
 				},
-				Required: []string{},
-			}),
+			),
 		},
 		tabs:       make([]TabInfo, 0),
 		searchTool: config.DDGSearchTool,

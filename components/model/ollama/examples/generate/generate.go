@@ -20,8 +20,9 @@ import (
 	"context"
 	"log"
 
-	"github.com/cloudwego/eino-ext/components/model/ollama"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/ollama"
 )
 
 func main() {
@@ -29,7 +30,7 @@ func main() {
 
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL: "http://localhost:11434",
-		Model:   "llama3",
+		Model:   "deepseek-r1:1.5b",
 	})
 	if err != nil {
 		log.Printf("NewChatModel failed, err=%v\n", err)

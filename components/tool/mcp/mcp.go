@@ -22,11 +22,12 @@ import (
 	"fmt"
 
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 )
 
 type Config struct {
@@ -65,7 +66,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("conv mcp tool input schema fail(marshal): %w, tool name: %s", err, t.Name)
 		}
-		inputSchema := &openapi3.Schema{}
+		inputSchema := &jsonschema.Schema{}
 		err = sonic.Unmarshal(marshaledInputSchema, inputSchema)
 		if err != nil {
 			return nil, fmt.Errorf("conv mcp tool input schema fail(unmarshal): %w, tool name: %s", err, t.Name)
@@ -76,7 +77,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 			info: &schema.ToolInfo{
 				Name:        t.Name,
 				Desc:        t.Description,
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(inputSchema),
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(inputSchema),
 			},
 			toolCallResultHandler: conf.ToolCallResultHandler,
 		})

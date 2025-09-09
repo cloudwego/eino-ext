@@ -144,7 +144,9 @@ func (l *loader) Load(ctx context.Context, src document.Source, opts ...document
 	}
 	defer resp.Body.Close()
 
-	docs, err = l.parser.Parse(ctx, resp.Body, parser.WithURI(src.URI))
+	o := document.GetLoaderCommonOptions(&document.LoaderOptions{}, opts...)
+
+	docs, err = l.parser.Parse(ctx, resp.Body, append([]parser.Option{parser.WithURI(src.URI)}, o.ParserOptions...)...)
 	if err != nil {
 		err = fmt.Errorf("s3 loader parse err: %w", err)
 		return nil, err

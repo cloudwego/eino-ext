@@ -23,8 +23,10 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino/schema"
@@ -165,16 +167,21 @@ func TestGemini(t *testing.T) {
 			{
 				Name: "get_weather",
 				Desc: "Get weather information",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
-					Type: "object",
-					Properties: map[string]*openapi3.SchemaRef{
-						"city": {
-							Value: &openapi3.Schema{
-								Type: "string",
-							},
-						},
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(
+					&jsonschema.Schema{
+						Type: string(schema.Object),
+						Properties: orderedmap.New[string, *jsonschema.Schema](
+							orderedmap.WithInitialData[string, *jsonschema.Schema](
+								orderedmap.Pair[string, *jsonschema.Schema]{
+									Key: "city",
+									Value: &jsonschema.Schema{
+										Type: string(schema.String),
+									},
+								},
+							),
+						),
 					},
-				}),
+				),
 			},
 		})
 		assert.NoError(t, err)

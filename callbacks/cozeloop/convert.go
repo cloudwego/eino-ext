@@ -19,11 +19,13 @@ package cozeloop
 import (
 	"context"
 
+	"github.com/bytedance/sonic"
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
+
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
-	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 )
 
 const toolTypeFunction = "function"
@@ -43,9 +45,20 @@ func convertModelOutput(output *model.CallbackOutput) *tracespec.ModelOutput {
 	}
 	return &tracespec.ModelOutput{
 		Choices: []*tracespec.ModelChoice{
-			{Index: 0, Message: convertModelMessage(output.Message)},
+			{
+				Index:        0,
+				FinishReason: getFinishReason(output.Message),
+				Message:      convertModelMessage(output.Message)},
 		},
 	}
+}
+
+func getFinishReason(msg *schema.Message) string {
+	if msg == nil || msg.ResponseMeta == nil {
+		return ""
+	}
+
+	return msg.ResponseMeta.FinishReason
 }
 
 func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
@@ -54,12 +67,13 @@ func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
 	}
 
 	msg := &tracespec.ModelMessage{
-		Role:       string(message.Role),
-		Content:    message.Content,
-		Parts:      make([]*tracespec.ModelMessagePart, len(message.MultiContent)),
-		Name:       message.Name,
-		ToolCalls:  make([]*tracespec.ModelToolCall, len(message.ToolCalls)),
-		ToolCallID: message.ToolCallID,
+		Role:             string(message.Role),
+		Content:          message.Content,
+		Parts:            make([]*tracespec.ModelMessagePart, len(message.MultiContent)),
+		Name:             message.Name,
+		ToolCalls:        make([]*tracespec.ModelToolCall, len(message.ToolCalls)),
+		ToolCallID:       message.ToolCallID,
+		ReasoningContent: message.ReasoningContent,
 	}
 
 	for i := range message.MultiContent {
@@ -91,6 +105,15 @@ func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
 		}
 	}
 
+	if message.Extra != nil {
+		msg.Metadata = make(map[string]string, len(message.Extra))
+		for k, v := range message.Extra {
+			if sv, err := sonic.MarshalString(v); err == nil {
+				msg.Metadata[k] = sv
+			}
+		}
+	}
+
 	return msg
 }
 
@@ -118,7 +141,7 @@ func convertTool(tool *schema.ToolInfo) *tracespec.ModelTool {
 	}
 
 	var params []byte
-	if raw, err := tool.ToOpenAPIV3(); err == nil && raw != nil {
+	if raw, err := tool.ToJSONSchema(); err == nil && raw != nil {
 		params, _ = raw.MarshalJSON()
 	}
 

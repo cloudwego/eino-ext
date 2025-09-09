@@ -16,7 +16,11 @@
 
 package openai
 
-import "github.com/cloudwego/eino/components/model"
+import (
+	"github.com/meguminnnnnnnnn/go-openai"
+
+	"github.com/cloudwego/eino/components/model"
+)
 
 // https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort
 type ReasoningEffortLevel string
@@ -28,8 +32,11 @@ const (
 )
 
 type openaiOptions struct {
-	ExtraFields     map[string]any
-	ReasoningEffort ReasoningEffortLevel
+	ExtraFields         map[string]any
+	ReasoningEffort     ReasoningEffortLevel
+	ExtraHeader         map[string]string
+	RequestBodyModifier openai.RequestBodyModifier
+	MaxCompletionTokens *int
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
@@ -41,5 +48,26 @@ func WithExtraFields(extraFields map[string]any) model.Option {
 func WithReasoningEffort(re ReasoningEffortLevel) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.ReasoningEffort = re
+	})
+}
+
+// WithRequestBodyModifier is used to modify the request body before sending request.
+// Useful for compatibility with custom fields when calling other models using OpenAI API.
+func WithRequestBodyModifier(modifier openai.RequestBodyModifier) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.RequestBodyModifier = modifier
+	})
+}
+
+// WithExtraHeader is used to set extra headers for the request.
+func WithExtraHeader(header map[string]string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ExtraHeader = header
+	})
+}
+
+func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.MaxCompletionTokens = &maxCompletionTokens
 	})
 }

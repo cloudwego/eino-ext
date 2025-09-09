@@ -20,9 +20,11 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/bytedance/mockey"
 	goopenai "github.com/meguminnnnnnnnn/go-openai"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -162,4 +164,79 @@ func TestLogProbs(t *testing.T) {
 			},
 		},
 	}}))
+}
+
+func TestClientGetChatCompletionRequestOptions(t *testing.T) {
+	cli := &Client{
+		config: &Config{},
+	}
+
+	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
+		WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
+			return rawBody, nil
+		}),
+	}), 1)
+}
+
+func TestClientWithExtraHeader(t *testing.T) {
+	cli := &Client{
+		config: &Config{},
+	}
+
+	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
+		WithExtraHeader(map[string]string{"test": "test"}),
+	}), 1)
+}
+
+func TestToTools(t *testing.T) {
+	mockey.PatchConvey("", t, func() {
+		mockTools := []*schema.ToolInfo{
+			{
+				Name: "test tool name",
+				Desc: "description of test tool",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"126": {
+						Type:     schema.String,
+						Required: true,
+					},
+					"123": {
+						Type:     schema.Array,
+						Required: true,
+						ElemInfo: &schema.ParameterInfo{
+							Type:     schema.Object,
+							Required: true,
+							SubParams: map[string]*schema.ParameterInfo{
+								"459": {
+									Type:     schema.String,
+									Required: true,
+								},
+								"458": {
+									Type:     schema.String,
+									Required: true,
+								},
+								"457": {
+									Type:     schema.String,
+									Required: true,
+								},
+							},
+						},
+					},
+					"129": {
+						Type:     schema.Object,
+						Required: true,
+					},
+				}),
+			},
+		}
+
+		tools, err := toTools(mockTools)
+		assert.Nil(t, err)
+		assert.Len(t, tools, 1)
+
+		sc := tools[0].Function.Parameters
+		assert.Equal(t, []string{"123", "126", "129"}, sc.Required)
+		props, ok := sc.Properties.Get("123")
+		assert.True(t, ok)
+		assert.Equal(t, []string{"457", "458", "459"}, props.Items.Required)
+	})
 }

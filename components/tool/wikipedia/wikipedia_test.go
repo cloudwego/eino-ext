@@ -36,11 +36,11 @@ func TestNewTool(t *testing.T) {
 	info, err := tool.Info(ctx)
 	assert.Nil(t, err)
 
-	doc, err := info.ParamsOneOf.ToOpenAPIV3()
+	doc, err := info.ParamsOneOf.ToJSONSchema()
 	assert.Nil(t, err)
-	assert.Len(t, doc.Properties, 1)
-	for _, v := range doc.Properties {
-		assert.NotEqual(t, "", v.Value.Description)
+	assert.Equal(t, 1, doc.Properties.Len())
+	for pair := doc.Properties.Oldest(); pair != nil; pair = pair.Next() {
+		assert.NotEqual(t, "", pair.Value.Description)
 	}
 }
 

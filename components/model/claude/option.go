@@ -24,6 +24,8 @@ type options struct {
 	TopK *int32
 
 	Thinking *Thinking
+
+	DisableParallelToolUse *bool
 }
 
 func WithTopK(k int32) model.Option {
@@ -35,5 +37,12 @@ func WithTopK(k int32) model.Option {
 func WithThinking(t *Thinking) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.Thinking = t
+	})
+}
+
+func WithDisableParallelToolUse() model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		b := true
+		o.DisableParallelToolUse = &b
 	})
 }
