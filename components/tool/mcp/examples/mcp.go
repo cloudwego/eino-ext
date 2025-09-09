@@ -45,7 +45,7 @@ func main() {
 		}
 		fmt.Println("Name:", info.Name)
 		fmt.Println("Desc:", info.Desc)
-		result, err := mcpTool.(tool.InvokableTool).InvokableRun(ctx, `{"operation":"add", "x":1, "y":1}`)
+		result, err := mcpTool.(tool.InvokableTool).InvokableRun(ctx, `{"operation":"add", "x":1, "y":1}`, mcpp.WithMeta(map[string]any{"test": "test"}))
 		if err != nil {
 			log.Fatal(err)
 		}
