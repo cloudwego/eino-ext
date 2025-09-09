@@ -369,6 +369,8 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		LogProbs:            c.config.LogProbs,
 		TopLogProbs:         c.config.TopLogProbs,
 		ReasoningEffort:     string(specOptions.ReasoningEffort),
+		Metadata:            specOptions.Metadata,
+		Store:               specOptions.Store,
 	}
 
 	if len(specOptions.ExtraFields) > 0 {
