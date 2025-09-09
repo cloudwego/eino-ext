@@ -87,10 +87,10 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 }
 
 type Options struct {
-	meta map[string]any
+	meta *mcp.Meta
 }
 
-func WithMeta(meta map[string]any) tool.Option {
+func WithMeta(meta *mcp.Meta) tool.Option {
 	return tool.WrapImplSpecificOptFn(func(o *Options) {
 		o.meta = meta
 	})
@@ -120,9 +120,7 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		}{
 			Name:      m.info.Name,
 			Arguments: json.RawMessage(argumentsInJSON),
-			Meta: &mcp.Meta{
-				AdditionalFields: options.meta,
-			},
+			Meta:      options.meta,
 		},
 	})
 	if err != nil {
