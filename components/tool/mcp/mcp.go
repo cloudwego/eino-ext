@@ -86,10 +86,21 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 	return ret, nil
 }
 
+type MetaOptions struct {
+	meta map[string]any
+}
+
+func WithMeta(meta map[string]any) tool.Option {
+	return tool.WrapImplSpecificOptFn(func(o *MetaOptions) {
+		o.meta = meta
+	})
+}
+
 type toolHelper struct {
 	cli                   client.MCPClient
 	info                  *schema.ToolInfo
 	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
+	metaOptions           MetaOptions
 }
 
 func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
@@ -97,6 +108,7 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
+	metaOptions := tool.GetImplSpecificOptions(&m.metaOptions, opts...)
 	result, err := m.cli.CallTool(ctx, mcp.CallToolRequest{
 		Request: mcp.Request{
 			Method: "tools/call",
@@ -108,6 +120,9 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		}{
 			Name:      m.info.Name,
 			Arguments: json.RawMessage(argumentsInJSON),
+			Meta: &mcp.Meta{
+				AdditionalFields: metaOptions.meta,
+			},
 		},
 	})
 	if err != nil {
