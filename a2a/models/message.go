@@ -75,9 +75,9 @@ type MessageSendConfiguration struct {
 	// HistoryLength specifies the number of recent messages to be retrieved
 	//HistoryLength *int `json:"historyLength"`
 	// PushNotificationConfig provides the server for sending asynchronous push notifications about task updates.
-	PushNotificationConfig *PushNotificationConfig `json:"pushNotificationConfig"`
-	// Blocking specifies if the server should treat the client as a blocking request
-	//Blocking *bool `json:"blocking"`  todo: what is the meaning of this
+	PushNotificationConfig *PushNotificationConfig `json:"pushNotificationConfig,omitempty"`
+	// Blocking specifies if the server should treat the client as a blocking request, true by default.
+	Blocking *bool `json:"blocking,omitempty"`
 }
 
 type SendMessageResponseUnion struct {
