@@ -224,17 +224,6 @@ type A2AServer struct {
 }
 
 func (s *A2AServer) getTask(ctx context.Context, input *models.TaskQueryParams) (*models.Task, error) {
-	err := s.taskLocker.Lock(ctx, input.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to acquire lock for new task[%s]: %w", input.ID, err)
-	}
-	defer func() {
-		unlockErr := s.taskLocker.Unlock(ctx, input.ID)
-		if unlockErr != nil {
-			s.logger(ctx, "failed to release lock for task[%s]: %s", input.ID, unlockErr.Error())
-		}
-	}()
-
 	t, ok, err := s.taskStore.Get(ctx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task[%s]: %w", input.ID, err)
@@ -298,12 +287,6 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 		if err != nil {
 			return nil, fmt.Errorf("failed to acquire lock for task[%s]: %s", *input.Message.TaskID, err)
 		}
-		defer func() {
-			unLockErr := s.taskLocker.Unlock(ctx, *input.Message.TaskID)
-			if unLockErr != nil {
-				s.logger(ctx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
-			}
-		}()
 
 		var ok bool
 		t, ok, err = s.taskStore.Get(ctx, *input.Message.TaskID)
@@ -326,12 +309,6 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 		if err != nil {
 			return nil, fmt.Errorf("failed to acquire lock for new task[%s]: %s", t.ID, err)
 		}
-		defer func() {
-			err = s.taskLocker.Unlock(ctx, t.ID)
-			if err != nil {
-				s.logger(ctx, "failed to release lock for task[%s]: %s", t.ID, err.Error())
-			}
-		}()
 	}
 
 	// register notification
@@ -345,6 +322,46 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 		}
 	}
 
+	if input.Configuration == nil || input.Configuration.Blocking == nil || *input.Configuration.Blocking {
+		// blocking
+		defer func() {
+			unLockErr := s.taskLocker.Unlock(ctx, t.ID)
+			if unLockErr != nil {
+				s.logger(ctx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
+			}
+		}()
+		frame, err := s.executeHandler(ctx, t, input)
+		if err != nil {
+			return nil, err
+		}
+		return &models.SendMessageResponseUnion{
+			Message: frame.Message,
+			Task:    frame.Task,
+		}, nil
+	}
+
+	// non-blocking
+	go func() {
+		defer func() {
+			if e := recover(); e != nil {
+				s.logger(ctx, "recovered panic while sending message: %s", utils.NewPanicErr(e, debug.Stack()))
+			}
+			unLockErr := s.taskLocker.Unlock(ctx, t.ID)
+			if unLockErr != nil {
+				s.logger(ctx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
+			}
+		}()
+		_, err = s.executeHandler(ctx, t, input)
+		if err != nil {
+			s.logger(ctx, err.Error())
+		}
+	}()
+	return &models.SendMessageResponseUnion{
+		Task: t,
+	}, nil
+}
+
+func (s *A2AServer) executeHandler(ctx context.Context, t *models.Task, input *models.MessageSendParams) (*models.SendMessageStreamingResponseUnion, error) {
 	resp, err := s.messageHandler(ctx, &InputParams{
 		Task:     t,
 		Input:    &input.Message,
@@ -376,11 +393,7 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 			}
 		}()
 	}
-
-	return &models.SendMessageResponseUnion{
-		Message: frame.Message,
-		Task:    frame.Task,
-	}, nil
+	return frame, nil
 }
 
 func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.MessageSendParams, writer models.ResponseWriter) error {
@@ -492,13 +505,13 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 		}
 
 		tc := s.taskEventsConsolidator(ctx, t, sr.events, err)
-		t = loadTaskContext(t, tc)
+		nt := loadTaskContext(t, tc)
 
-		err = s.taskStore.Save(ctx, t)
+		err = s.taskStore.Save(ctx, nt)
 		if err != nil {
-			pushErr := s.queue.Push(ctx, t.ID, nil, err)
+			pushErr := s.queue.Push(ctx, nt.ID, nil, err)
 			if err != nil {
-				s.logger(ctx, "failed to save task: %v, and failed to push task[%s] to queue: %v", err, t.ID, pushErr)
+				s.logger(ctx, "failed to save task: %v, and failed to push task[%s] to queue: %v", err, nt.ID, pushErr)
 			}
 			return
 		}
