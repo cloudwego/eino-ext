@@ -191,7 +191,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 		return ctx
 	}
 
-	ctx, state := c.getOrInitState(ctx, getName(info))
+	ctx, state := c.getOrInitState(ctx, getName(info), input)
 	if state == nil {
 		return ctx
 	}
@@ -295,6 +295,15 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 		log.Printf("marshal output error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
+	_, err = c.cli.CreateTrace(&langfuse.TraceEventBody{
+		BaseEventBody: langfuse.BaseEventBody{
+			ID: state.traceID,
+		},
+		Output: out,
+	})
+	if err != nil {
+		log.Printf("update trace with output error: %v, runinfo: %+v", err, info)
+	}
 	err = c.cli.EndSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
@@ -340,7 +349,15 @@ func (c *CallbackHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 		}
 		return ctx
 	}
-
+	_, updateErr := c.cli.CreateTrace(&langfuse.TraceEventBody{
+		BaseEventBody: langfuse.BaseEventBody{
+			ID: state.traceID,
+		},
+		Output: err.Error(),
+	})
+	if updateErr != nil {
+		log.Printf("update trace with error output error: %v, runinfo: %+v, execute error: %v", updateErr, info, err)
+	}
 	reportErr := c.cli.EndSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
@@ -362,7 +379,7 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 		return ctx
 	}
 
-	ctx, state := c.getOrInitState(ctx, getName(info))
+	ctx, state := c.getOrInitState(ctx, getName(info), input)
 	if state == nil {
 		return ctx
 	}
@@ -577,6 +594,15 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 		if err != nil {
 			log.Printf("marshal stream output error: %v, runinfo: %+v", err, info)
 		}
+		_, err = c.cli.CreateTrace(&langfuse.TraceEventBody{
+			BaseEventBody: langfuse.BaseEventBody{
+				ID: state.traceID,
+			},
+			Output: out,
+		})
+		if err != nil {
+			log.Printf("update trace with output error: %v, runinfo: %+v", err, info)
+		}
 		err = c.cli.EndSpan(&langfuse.SpanEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
@@ -594,15 +620,15 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	return ctx
 }
 
-func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (context.Context, *langfuseState) {
+func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string, input callbacks.CallbackInput) (context.Context, *langfuseState) {
 	state := ctx.Value(langfuseStateKey{})
 	if state != nil {
 		return ctx, state.(*langfuseState)
 	}
-
+	in, _ := sonic.MarshalString(input)
 	traceOpts := ctx.Value(langfuseTraceOptionKey{})
 	if traceOpts != nil {
-		nState, err := initState(ctx, c.cli, traceOpts.(*traceOptions))
+		nState, err := initState(ctx, c.cli, in, traceOpts.(*traceOptions))
 		if err != nil {
 			log.Printf("init state fail: %v", err)
 		}
@@ -613,7 +639,7 @@ func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (c
 	if len(name) == 0 {
 		name = curName
 	}
-	nState, err := initState(ctx, c.cli, &traceOptions{
+	nState, err := initState(ctx, c.cli, in, &traceOptions{
 		Name:      c.name,
 		UserID:    c.userID,
 		SessionID: c.sessionID,
