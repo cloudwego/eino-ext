@@ -38,7 +38,7 @@ type Langfuse interface {
 	EndGeneration(body *GenerationEventBody) error
 	CreateEvent(body *EventEventBody) (string, error)
 	Flush()
-	Prompt() *promptClient
+	Prompt() *PromptClient
 }
 
 // NewLangfuse creates a Langfuse client instance
@@ -88,13 +88,13 @@ func NewLangfuse(
 		o.maxRetry,
 	)
 	langfuseCli := newClient(httpCli, host, publicKey, secretKey, sdkVersion)
-	promptCli := &promptClient{cli: langfuseCli}
+	promptCli := &PromptClient{cli: langfuseCli}
 	return &langfuseIns{tm: tm, promptCli: promptCli}
 }
 
 type langfuseIns struct {
 	tm        *taskManager
-	promptCli *promptClient
+	promptCli *PromptClient
 }
 
 // CreateTrace creates a new trace in Langfuse
@@ -222,7 +222,7 @@ func (l *langfuseIns) Flush() {
 }
 
 // Prompt provides access to the prompt client for managing prompts.
-// Use the returned promptClient to create, retrieve and list prompts.
-func (l *langfuseIns) Prompt() *promptClient {
+// Use the returned PromptClient to create, retrieve and list prompts.
+func (l *langfuseIns) Prompt() *PromptClient {
 	return l.promptCli
 }

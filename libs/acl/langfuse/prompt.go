@@ -199,16 +199,16 @@ type ListPrompts struct {
 	Data     []PromptMeta `json:"data"`
 }
 
-// promptClient provides methods for interacting with the Langfuse prompts API.
+// PromptClient provides methods for interacting with the Langfuse prompts API.
 //
 // The client handles HTTP communication with the Langfuse API for prompt management
 // operations including creating, retrieving, and listing prompt templates.
-type promptClient struct {
+type PromptClient struct {
 	cli *client
 }
 
 // GetPrompt retrieves a specific prompt by name, version, and label.
-func (c *promptClient) GetPrompt(ctx context.Context, params GetParams) (*PromptEntry, error) {
+func (c *PromptClient) GetPrompt(ctx context.Context, params GetParams) (*PromptEntry, error) {
 	if params.Name == "" {
 		return nil, errors.New("'name' is required")
 	}
@@ -258,7 +258,7 @@ func (c *promptClient) GetPrompt(ctx context.Context, params GetParams) (*Prompt
 }
 
 // ListPrompt retrieves a list of prompts based on the provided parameters.
-func (c promptClient) ListPrompt(ctx context.Context, params ListParams) (*ListPrompts, error) {
+func (c PromptClient) ListPrompt(ctx context.Context, params ListParams) (*ListPrompts, error) {
 	url := c.cli.host + promptsPath
 
 	queryString := params.ToQueryString()
@@ -297,7 +297,7 @@ func (c promptClient) ListPrompt(ctx context.Context, params ListParams) (*ListP
 }
 
 // CreatePrompt creates a new prompt.
-func (c *promptClient) CreatePrompt(ctx context.Context, createPrompt *PromptEntry) (*PromptEntry, error) {
+func (c *PromptClient) CreatePrompt(ctx context.Context, createPrompt *PromptEntry) (*PromptEntry, error) {
 	if err := createPrompt.validate(); err != nil {
 		return nil, err
 	}
