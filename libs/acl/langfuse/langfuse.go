@@ -38,6 +38,7 @@ type Langfuse interface {
 	EndGeneration(body *GenerationEventBody) error
 	CreateEvent(body *EventEventBody) (string, error)
 	Flush()
+	Prompt() *promptClient
 }
 
 // NewLangfuse creates a Langfuse client instance
@@ -68,9 +69,10 @@ func NewLangfuse(
 		opt(o)
 	}
 
+	httpCli := &http.Client{Timeout: o.timeout}
 	tm := newTaskManager(
 		o.threads,
-		&http.Client{Timeout: o.timeout},
+		httpCli,
 		host,
 		o.maxTaskQueueSize,
 		o.flushAt,
@@ -85,11 +87,14 @@ func NewLangfuse(
 		secretKey,
 		o.maxRetry,
 	)
-	return &langfuseIns{tm: tm}
+	langfuseCli := newClient(httpCli, host, publicKey, secretKey, sdkVersion)
+	promptCli := &promptClient{cli: langfuseCli}
+	return &langfuseIns{tm: tm, promptCli: promptCli}
 }
 
 type langfuseIns struct {
-	tm *taskManager
+	tm        *taskManager
+	promptCli *promptClient
 }
 
 // CreateTrace creates a new trace in Langfuse
@@ -214,4 +219,10 @@ func (l *langfuseIns) CreateEvent(body *EventEventBody) (string, error) {
 //   - When you need to ensure all events have been successfully uploaded
 func (l *langfuseIns) Flush() {
 	l.tm.flush()
+}
+
+// Prompt provides access to the prompt client for managing prompts.
+// Use the returned promptClient to create, retrieve and list prompts.
+func (l *langfuseIns) Prompt() *promptClient {
+	return l.promptCli
 }
