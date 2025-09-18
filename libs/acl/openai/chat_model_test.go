@@ -235,6 +235,8 @@ func TestToTools(t *testing.T) {
 
 		sc := tools[0].Function.Parameters
 		assert.Equal(t, []string{"123", "126", "129"}, sc.Required)
-		assert.Equal(t, []string{"457", "458", "459"}, sc.Properties["123"].Value.Items.Value.Required)
+		props, ok := sc.Properties.Get("123")
+		assert.True(t, ok)
+		assert.Equal(t, []string{"457", "458", "459"}, props.Items.Required)
 	})
 }

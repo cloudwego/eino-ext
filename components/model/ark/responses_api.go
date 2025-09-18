@@ -49,21 +49,32 @@ type responsesAPIChatModel struct {
 	responseFormat *ResponseFormat
 	thinking       *arkModel.Thinking
 	cache          *CacheConfig
+	serviceTier    *string
 }
 
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outMsg *schema.Message, err error) {
 
-	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
+	options, specOptions, err := cm.getOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	req, reqOpts, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generate request: %w", err)
 	}
 
 	config := cm.toCallbackConfig(req)
 
+	tools := cm.rawTools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages: input,
-		Tools:    cm.rawTools,
+		Tools:    tools,
 		Config:   config,
 	})
 
@@ -95,16 +106,26 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 
-	req, reqOpts, err := cm.genRequestAndOptions(input, opts...)
+	options, specOptions, err := cm.getOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	req, reqOpts, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream request: %w", err)
 	}
 
 	config := cm.toCallbackConfig(req)
 
+	tools := cm.rawTools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages: input,
-		Tools:    cm.rawTools,
+		Tools:    tools,
 		Config:   config,
 	})
 
@@ -182,11 +203,13 @@ Outer:
 				Role: schema.Assistant,
 			}
 			setContextID(msg, asEvent.Response.ID)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			continue
 
 		case responses.ResponseCompletedEvent:
 			msg := cm.handleCompletedStreamEvent(asEvent)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			break Outer
 
@@ -196,11 +219,13 @@ Outer:
 
 		case responses.ResponseIncompleteEvent:
 			msg := cm.handleIncompleteStreamEvent(asEvent)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			break Outer
 
 		case responses.ResponseFailedEvent:
 			msg := cm.handleFailedStreamEvent(asEvent)
+			setServiceTier(msg, string(asEvent.Response.ServiceTier))
 			cm.sendCallbackOutput(sw, config, msg)
 			break Outer
 
@@ -249,7 +274,10 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 	var token *model.TokenUsage
 	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
 		token = &model.TokenUsage{
-			PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
+			PromptTokens: msg.ResponseMeta.Usage.PromptTokens,
+			PromptTokenDetails: model.PromptTokenDetails{
+				CachedTokens: msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+			},
 			CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
 		}
@@ -294,7 +322,7 @@ func (cm *responsesAPIChatModel) handleCompletedStreamEvent(asChunk responses.Re
 	return &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(asChunk.Type),
+			FinishReason: string(asChunk.Response.Status),
 			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
 		},
 	}
@@ -362,7 +390,7 @@ func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.To
 			return nil, fmt.Errorf("tool info cannot be nil in WithTools")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
@@ -389,25 +417,8 @@ func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.To
 	return tools, nil
 }
 
-func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opts ...model.Option) (req responses.ResponseNewParams,
+func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options, specOptions *arkOptions) (req responses.ResponseNewParams,
 	reqOpts []option.RequestOption, err error) {
-
-	options := model.GetCommonOptions(&model.Options{
-		Temperature: cm.temperature,
-		MaxTokens:   cm.maxTokens,
-		Model:       &cm.model,
-		TopP:        cm.topP,
-		ToolChoice:  ptrOf(schema.ToolChoiceAllowed),
-	}, opts...)
-
-	arkOpts := model.GetImplSpecificOptions(&arkOptions{
-		customHeaders: cm.customHeader,
-		thinking:      cm.thinking,
-	}, opts...)
-
-	if err = cm.checkOptions(options, arkOpts); err != nil {
-		return req, nil, err
-	}
 
 	var text *responses.ResponseTextConfigParam
 	if cm.responseFormat != nil {
@@ -429,6 +440,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opts
 		MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
 		Temperature:     newOpenaiFloatOpt(options.Temperature),
 		TopP:            newOpenaiFloatOpt(options.TopP),
+		ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceTier)),
 	}
 
 	if req, err = cm.injectInput(req, in); err != nil {
@@ -439,16 +451,16 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opts
 		return req, nil, err
 	}
 
-	if req, reqOpts, err = cm.injectCache(req, arkOpts, reqOpts); err != nil {
+	if req, reqOpts, err = cm.injectCache(req, specOptions, reqOpts); err != nil {
 		return req, nil, err
 	}
 
-	for k, v := range arkOpts.customHeaders {
+	for k, v := range specOptions.customHeaders {
 		reqOpts = append(reqOpts, option.WithHeaderAdd(k, v))
 	}
 
-	if arkOpts.thinking != nil {
-		reqOpts = append(reqOpts, option.WithJSONSet("thinking", arkOpts.thinking))
+	if specOptions.thinking != nil {
+		reqOpts = append(reqOpts, option.WithJSONSet("thinking", specOptions.thinking))
 	}
 
 	return req, reqOpts, nil
@@ -542,7 +554,7 @@ func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in
 
 		case schema.System:
 			item.OfMessage = &responses.EasyInputMessageParam{
-				Role:    responses.EasyInputMessageRoleDeveloper,
+				Role:    responses.EasyInputMessageRoleSystem,
 				Content: content,
 			}
 
@@ -654,6 +666,10 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*sch
 
 	setContextID(msg, resp.ID)
 
+	if len(resp.ServiceTier) > 0 {
+		setServiceTier(msg, string(resp.ServiceTier))
+	}
+
 	if resp.Status == responses.ResponseStatusFailed {
 		msg.ResponseMeta.FinishReason = resp.Error.Message
 		return msg, nil
@@ -721,4 +737,25 @@ func (cm *responsesAPIChatModel) toModelTokenUsage(usage responses.ResponseUsage
 		CompletionTokens: int(usage.OutputTokens),
 		TotalTokens:      int(usage.TotalTokens),
 	}
+}
+
+func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options, *arkOptions, error) {
+	options := model.GetCommonOptions(&model.Options{
+		Temperature: cm.temperature,
+		MaxTokens:   cm.maxTokens,
+		Model:       &cm.model,
+		TopP:        cm.topP,
+		ToolChoice:  ptrOf(schema.ToolChoiceAllowed),
+	}, opts...)
+
+	arkOpts := model.GetImplSpecificOptions(&arkOptions{
+		customHeaders: cm.customHeader,
+		thinking:      cm.thinking,
+	}, opts...)
+
+	if err := cm.checkOptions(options, arkOpts); err != nil {
+		return nil, nil, err
+	}
+
+	return options, arkOpts, nil
 }

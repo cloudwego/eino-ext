@@ -165,7 +165,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 		assert.Equal(t, 1, len(req.Input.OfInputItemList))
 
 		item := req.Input.OfInputItemList[0]
-		assert.Equal(t, responses.EasyInputMessageRoleDeveloper, item.OfMessage.Role)
+		assert.Equal(t, responses.EasyInputMessageRoleSystem, item.OfMessage.Role)
 		assert.Equal(t, "You are a helpful assistant.", item.OfMessage.Content.OfString.Value)
 	})
 
@@ -605,7 +605,10 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 			}),
 		}
 
-		req, reqOpts, err := cm.genRequestAndOptions(in, opts...)
+		options, specOptions, err := cm.getOptions(opts)
+		assert.NoError(t, err)
+
+		req, reqOpts, err := cm.genRequestAndOptions(in, options, specOptions)
 		assert.Nil(t, err)
 		assert.Equal(t, "model2", req.Model)
 		assert.Len(t, req.Input.OfInputItemList, 1)

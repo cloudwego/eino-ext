@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/cohesion-org/deepseek-go"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -437,7 +437,7 @@ func toTools(tis []*schema.ToolInfo) ([]deepseek.Tool, error) {
 			return nil, fmt.Errorf("tool info cannot be nil in BindTools")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
@@ -455,7 +455,7 @@ func toTools(tis []*schema.ToolInfo) ([]deepseek.Tool, error) {
 	return tools, nil
 }
 
-func toToolParam(s *openapi3.Schema) *deepseek.FunctionParameters {
+func toToolParam(s *jsonschema.Schema) *deepseek.FunctionParameters {
 	if s == nil {
 		return nil
 	}
@@ -469,8 +469,8 @@ func toToolParam(s *openapi3.Schema) *deepseek.FunctionParameters {
 		copy(required, s.Required)
 		ret.Required = required
 	}
-	for k, v := range s.Properties {
-		ret.Properties[k] = v
+	for pair := s.Properties.Oldest(); pair != nil; pair = pair.Next() {
+		ret.Properties[pair.Key] = pair.Value
 	}
 	return ret
 }
@@ -736,7 +736,10 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		return nil
 	}
 	return &model.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}

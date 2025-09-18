@@ -372,7 +372,7 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 
 	result := make([]anthropic.ToolUnionParam, 0, len(tools))
 	for _, tool := range tools {
-		s, err := tool.ToOpenAPIV3()
+		s, err := tool.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
 		}

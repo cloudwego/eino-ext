@@ -24,9 +24,11 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestClaude(t *testing.T) {
@@ -126,15 +128,16 @@ func TestClaude(t *testing.T) {
 			{
 				Name: "get_weather",
 				Desc: "Get weather information",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
 					Type: "object",
-					Properties: map[string]*openapi3.SchemaRef{
-						"city": {
-							Value: &openapi3.Schema{
+					Properties: orderedmap.New[string, *jsonschema.Schema](orderedmap.WithInitialData[string, *jsonschema.Schema](
+						orderedmap.Pair[string, *jsonschema.Schema]{
+							Key: "city",
+							Value: &jsonschema.Schema{
 								Type: "string",
 							},
-						},
-					},
+						}),
+					),
 				}),
 			},
 		})

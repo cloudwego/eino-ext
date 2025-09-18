@@ -502,7 +502,7 @@ func toQianfanTools(tools []*schema.ToolInfo) ([]qianfan.Tool, error) {
 
 	r := make([]qianfan.Tool, len(tools))
 	for i, tool := range tools {
-		parameters, err := tool.ParamsOneOf.ToOpenAPIV3()
+		parameters, err := tool.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, err
 		}

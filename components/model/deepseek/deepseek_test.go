@@ -23,10 +23,12 @@ import (
 	"time"
 
 	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino/schema"
 	"github.com/cohesion-org/deepseek-go"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestChatModelGenerate(t *testing.T) {
@@ -69,7 +71,22 @@ func TestChatModelGenerate(t *testing.T) {
 		Model:   "deepseek-chat",
 	})
 	assert.Nil(t, err)
-	err = cm.BindForcedTools([]*schema.ToolInfo{{Name: "deepseek-tool", ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{Type: openapi3.TypeObject, Properties: map[string]*openapi3.SchemaRef{"field1": {Value: &openapi3.Schema{Type: openapi3.TypeString}}}})}})
+	err = cm.BindForcedTools([]*schema.ToolInfo{
+		{
+			Name: "deepseek-tool",
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(
+				&jsonschema.Schema{
+					Type: string(schema.Object),
+					Properties: orderedmap.New[string, *jsonschema.Schema](orderedmap.WithInitialData[string, *jsonschema.Schema](
+						orderedmap.Pair[string, *jsonschema.Schema]{
+							Key:   "field1",
+							Value: &jsonschema.Schema{Type: string(schema.String)},
+						},
+					)),
+				},
+			),
+		},
+	})
 	assert.Nil(t, err)
 	result, err := cm.Generate(ctx, []*schema.Message{schema.SystemMessage("system"), schema.UserMessage("hello"), schema.AssistantMessage("assistant", nil), schema.UserMessage("hello")})
 	assert.Nil(t, err)
@@ -158,7 +175,24 @@ func TestChatModelStream(t *testing.T) {
 		ResponseFormatType: ResponseFormatTypeJSONObject,
 	})
 	assert.Nil(t, err)
-	err = cm.BindTools([]*schema.ToolInfo{{Name: "deepseek-tool", ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{Type: openapi3.TypeObject, Properties: map[string]*openapi3.SchemaRef{"field1": {Value: &openapi3.Schema{Type: openapi3.TypeString}}}})}})
+	err = cm.BindTools([]*schema.ToolInfo{
+		{
+			Name: "deepseek-tool",
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(
+				&jsonschema.Schema{
+					Type: string(schema.Object),
+					Properties: orderedmap.New[string, *jsonschema.Schema](
+						orderedmap.WithInitialData[string, *jsonschema.Schema](
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key:   "field1",
+								Value: &jsonschema.Schema{Type: string(schema.String)},
+							},
+						),
+					),
+				},
+			),
+		},
+	})
 	assert.Nil(t, err)
 	result, err := cm.Stream(ctx, []*schema.Message{schema.UserMessage("hello")})
 	assert.Nil(t, err)

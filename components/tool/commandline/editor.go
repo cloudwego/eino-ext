@@ -24,9 +24,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/eino-contrib/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
 )
 
 // Constants definition
@@ -95,60 +97,69 @@ func NewStrReplaceEditor(ctx context.Context, cfg *EditorConfig) (*StrReplaceEdi
 		info: &schema.ToolInfo{
 			Name: "str_replace_editor",
 			Desc: StrReplaceEditorDescription,
-			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
-				Type: openapi3.TypeObject,
-				Properties: map[string]*openapi3.SchemaRef{
-					"command": {
-						Value: &openapi3.Schema{
-							Description: "The commands to run. Allowed options are: `view`, `create`, `str_replace`, `insert`, `undo_edit`.",
-							Enum:        []interface{}{"view", "create", "str_replace", "insert", "undo_edit"},
-							Type:        openapi3.TypeString,
-						},
-					},
-					"path": {
-						Value: &openapi3.Schema{
-							Description: "Absolute path to file or directory.",
-							Type:        openapi3.TypeString,
-						},
-					},
-					"file_text": {
-						Value: &openapi3.Schema{
-							Description: "Required parameter of `create` command, with the content of the file to be created.",
-							Type:        openapi3.TypeString,
-						},
-					},
-					"old_str": {
-						Value: &openapi3.Schema{
-							Description: "Required parameter of `str_replace` command containing the string in `path` to replace.",
-							Type:        openapi3.TypeString,
-						},
-					},
-					"new_str": {
-						Value: &openapi3.Schema{
-							Description: "Optional parameter of `str_replace` command containing the new string (if not given, no string will be added). Required parameter of `insert` command containing the string to insert.",
-							Type:        openapi3.TypeString,
-						},
-					},
-					"insert_line": {
-						Value: &openapi3.Schema{
-							Description: "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`.",
-							Type:        openapi3.TypeInteger,
-						},
-					},
-					"view_range": {
-						Value: &openapi3.Schema{
-							Description: "Optional parameter of `view` command when `path` points to a file. If none is given, the full file is shown. If provided, the file will be shown in the indicated line number range, e.g. [11, 12] will show lines 11 and 12. Indexing at 1 to start. Setting `[start_line, -1]` shows all lines from `start_line` to the end of the file.",
-							Type:        openapi3.TypeArray,
-							Items: &openapi3.SchemaRef{
-								Value: &openapi3.Schema{
-									Type: openapi3.TypeInteger,
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(
+				&jsonschema.Schema{
+					Type:     string(schema.Object),
+					Required: []string{"command", "path"},
+					Properties: orderedmap.New[string, *jsonschema.Schema](
+						orderedmap.WithInitialData[string, *jsonschema.Schema](
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "command",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "The commands to run. Allowed options are: `view`, `create`, `str_replace`, `insert`, `undo_edit`.",
+									Enum:        []any{"view", "create", "str_replace", "insert", "undo_edit"},
 								},
 							},
-						},
-					},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "path",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Absolute path to file or directory.",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "file_text",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Required parameter of `create` command, with the content of the file to be created.",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "old_str",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Required parameter of `str_replace` command containing the string in `path` to replace.",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "new_str",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "Optional parameter of `str_replace` command containing the new string (if not given, no string will be added). Required parameter of `insert` command containing the string to insert.",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "insert_line",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.Integer),
+									Description: "Required parameter of `insert` command. The `new_str` will be inserted AFTER the line `insert_line` of `path`.",
+								},
+							},
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "view_range",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.Array),
+									Description: "Optional parameter of `view` command when `path` points to a file. If none is given, the full file is shown. If provided, the file will be shown in the indicated line number range, e.g. [11, 12] will show lines 11 and 12. Indexing at 1 to start. Setting `[start_line, -1]` shows all lines from `start_line` to the end of the file.",
+									Items: &jsonschema.Schema{
+										Type: string(schema.Integer),
+									},
+								},
+							},
+						),
+					),
 				},
-				Required: []string{"command", "path"},
-			}),
+			),
 		},
 		fileHistory: make(map[string][]string),
 		operator:    cfg.Operator,

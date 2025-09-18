@@ -138,6 +138,9 @@ type ChatModelConfig struct {
 	// It is set to be enabled by default.
 	Thinking *model.Thinking `json:"thinking,omitempty"`
 
+	// ServiceTier specifies whether to use the TPM guarantee package. The effective target has purchased the inference access point for the guarantee package.
+	ServiceTier *string `json:"service_tier"`
+
 	Cache *CacheConfig `json:"cache,omitempty"`
 }
 
@@ -256,6 +259,7 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		responseFormat:   config.ResponseFormat,
 		thinking:         config.Thinking,
 		cache:            config.Cache,
+		serviceTier:      config.ServiceTier,
 	}
 
 	return cm
@@ -304,6 +308,7 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 		responseFormat: config.ResponseFormat,
 		thinking:       config.Thinking,
 		cache:          config.Cache,
+		serviceTier:    config.ServiceTier,
 	}
 
 	return cm, nil
