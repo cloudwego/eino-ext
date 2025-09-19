@@ -37,6 +37,8 @@ type openaiOptions struct {
 	ExtraHeader         map[string]string
 	RequestBodyModifier openai.RequestBodyModifier
 	MaxCompletionTokens *int
+	Metadata            map[string]string
+	Store               bool
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
@@ -69,5 +71,21 @@ func WithExtraHeader(header map[string]string) model.Option {
 func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.MaxCompletionTokens = &maxCompletionTokens
+	})
+}
+
+func WithMetadata(metadata map[string]string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.Metadata = metadata
+		//If metadata is set, it needs to be stored.
+		if len(metadata) > 0 {
+			o.Store = true
+		}
+	})
+}
+
+func WithStore(store bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.Store = store
 	})
 }
