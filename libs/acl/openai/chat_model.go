@@ -18,6 +18,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -474,11 +475,17 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 			Type: openai.ChatCompletionResponseFormatType(c.config.ResponseFormat.Type),
 		}
 		if c.config.ResponseFormat.JSONSchema != nil {
+			js := c.config.ResponseFormat.JSONSchema
 			req.ResponseFormat.JSONSchema = &openai.ChatCompletionResponseFormatJSONSchema{
-				Name:        c.config.ResponseFormat.JSONSchema.Name,
-				Description: c.config.ResponseFormat.JSONSchema.Description,
-				Schema:      c.config.ResponseFormat.JSONSchema.Schema,
-				Strict:      c.config.ResponseFormat.JSONSchema.Strict,
+				Name: js.Name,
+				Schema: func() json.Marshaler {
+					if js.JSONSchema != nil {
+						return js.JSONSchema
+					}
+					return js.Schema
+				}(),
+				Description: js.Description,
+				Strict:      js.Strict,
 			}
 		}
 	}
