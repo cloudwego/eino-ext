@@ -528,8 +528,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	}
 
 	messages := make([]anthropic.MessageParam, 0, len(msgs))
+	hasTools := len(tools) > 0
 	for _, msg := range msgs {
-		message, err := convSchemaMessage(msg)
+		message, err := convSchemaMessage(msg, claudeOptions, hasTools)
 		if err != nil {
 			return anthropic.MessageNewParams{}, fmt.Errorf("convert schema message fail: %w", err)
 		}
@@ -592,9 +593,34 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
+func hasToolCalls(message *schema.Message) bool {
+	return len(message.ToolCalls) > 0
+}
+
+func convSchemaMessage(message *schema.Message, opts *options, hasTools bool) (mp anthropic.MessageParam, err error) {
 
 	var messageParams []anthropic.ContentBlockParamUnion
+
+	if message.Role == schema.Assistant {
+		shouldSendThinking := false
+
+		if opts != nil && opts.SendBackThinking != nil {
+			shouldSendThinking = *opts.SendBackThinking
+		} else if hasTools && hasToolCalls(message) {
+			shouldSendThinking = true
+		}
+
+		if shouldSendThinking {
+			thinkingContent, hasThinking := GetThinking(message)
+			if hasThinking && thinkingContent != "" {
+				signature, hasSignature := GetThinkingSignature(message)
+				if hasSignature && signature != "" {
+					messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
+				}
+			}
+		}
+	}
+
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
@@ -693,6 +719,7 @@ func convContentBlockToEinoMsg(
 	case anthropic.ThinkingBlock:
 		setThinking(dstMsg, block.Thinking)
 		dstMsg.ReasoningContent = block.Thinking
+		SetThinkingSignature(dstMsg, block.Signature)
 	case anthropic.RedactedThinkingBlock:
 	default:
 		return fmt.Errorf("unknown anthropic content block type: %T", block)
@@ -756,6 +783,11 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 			result.ToolCalls = append(result.ToolCalls,
 				toolEvent(false, "", "", delta.PartialJSON, streamCtx))
 		case anthropic.SignatureDelta:
+			if currentSig, hasSig := GetThinkingSignature(result); hasSig {
+				SetThinkingSignature(result, currentSig+delta.Signature)
+			} else {
+				SetThinkingSignature(result, delta.Signature)
+			}
 		}
 
 		return result, nil
