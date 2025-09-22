@@ -89,6 +89,9 @@ type ChatModelConfig struct {
 	// Optional. Default: model's maximum
 	MaxTokens *int `json:"max_tokens,omitempty"`
 
+	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
+
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both.
 	// Range: 0.0 to 2.0. Higher values make output more random
@@ -163,6 +166,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			HTTPClient:           httpClient,
 			Model:                config.Model,
 			MaxTokens:            config.MaxTokens,
+			MaxCompletionTokens:  config.MaxCompletionTokens,
 			Temperature:          config.Temperature,
 			TopP:                 config.TopP,
 			Stop:                 config.Stop,
