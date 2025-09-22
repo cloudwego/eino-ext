@@ -4,10 +4,10 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.4.7
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250826113018-8c6f6358d4bb
+	github.com/cloudwego/eino v0.5.4-0.20250919060620-7a251db1466c
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250922100556-f7bfc62ee8a0
 	github.com/eino-contrib/jsonschema v1.0.0
-	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250821095446-07791bea23a0
+	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250911091812-64fb16548d8e
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 )
 
