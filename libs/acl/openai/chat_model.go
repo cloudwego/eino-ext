@@ -18,6 +18,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -25,13 +26,13 @@ import (
 	"runtime/debug"
 	"sort"
 
-	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/meguminnnnnnnnn/go-openai"
-
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
+	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/meguminnnnnnnnn/go-openai"
 )
 
 type ChatCompletionResponseFormatType string
@@ -60,6 +61,13 @@ type ChatCompletionResponseFormatJSONSchema struct {
 	Schema     *openapi3.Schema   `json:"-"`
 	JSONSchema *jsonschema.Schema `json:"-"`
 	Strict     bool               `json:"strict"`
+}
+
+type Audio struct {
+	// Format Specifies the output audio format. Must be one of wav, mp3, flac, opus, or pcm16.
+	Format string `json:"format"`
+	// Voice The voice the model uses to respond. Supported voices are alloy, ash, ballad, coral, echo, fable, nova, onyx, sage, and shimmer.
+	Voice string `json:"voice"`
 }
 
 type Config struct {
@@ -162,6 +170,13 @@ type Config struct {
 	// ReasoningEffort will override the default reasoning level of "medium"
 	// Optional. Useful for fine tuning response latency vs. accuracy
 	ReasoningEffort ReasoningEffortLevel
+
+	// Modalities are output types that you would like the model to generate. Most models are capable of generating text, which is the default: ["text"]
+	// The gpt-4o-audio-preview model can also be used to generate audio. To request that this model generate both text and audio responses, you can use: ["text", "audio"]
+	Modalities []string `json:"modalities,omitempty"`
+
+	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
+	Audio Audio `json:"audio,omitempty"`
 }
 
 type Client struct {
@@ -371,6 +386,14 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		ReasoningEffort:     string(specOptions.ReasoningEffort),
 	}
 
+	if len(c.config.Modalities) > 0 {
+		if specOptions.ExtraFields == nil {
+			specOptions.ExtraFields = make(map[string]any)
+		}
+		specOptions.ExtraFields["modalities"] = c.config.Modalities
+		specOptions.ExtraFields["audio"] = c.config.Audio
+	}
+
 	if len(specOptions.ExtraFields) > 0 {
 		req.SetExtraFields(specOptions.ExtraFields)
 	}
@@ -486,6 +509,12 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 	return req, cbInput, nil
 }
 
+type audioData struct {
+	ID         string `json:"id"`
+	Data       string `json:"data"`
+	Transcript string `json:"transcript"`
+}
+
 func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
@@ -512,6 +541,25 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("received empty choices from OpenAI API response")
 	}
 
+	setOutputMessageAudio := func(message *schema.Message, audio json.RawMessage) error {
+		auData := &audioData{}
+		err := sonic.Unmarshal(audio, auData)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal audio data: %w", err)
+		}
+		if len(auData.Data) > 0 {
+			outputMessageAudio := &schema.ChatOutputMessageAudio{
+				ID:           &auData.ID,
+				DataOfBase64: &auData.Data,
+				Transcript:   &auData.Transcript,
+			}
+			message.MultiOutputContent = append(message.MultiOutputContent, schema.ChatOutputMessagePart{Audio: outputMessageAudio})
+
+		}
+
+		return nil
+	}
+
 	for _, choice := range resp.Choices {
 		if choice.Index != 0 {
 			continue
@@ -533,6 +581,13 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		if len(msg.ReasoningContent) > 0 {
 			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
+		}
+
+		if audio, ok := msg.ExtraFields["audio"]; ok {
+			err = setOutputMessageAudio(outMsg, audio)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		break
@@ -763,6 +818,28 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 			continue
 		}
 
+		setOutputMessageAudio := func(message *schema.Message, audio json.RawMessage) {
+			auData := &audioData{}
+			err := sonic.Unmarshal(audio, auData)
+			if err != nil { // if serialization fails, the illegal return value is not processed
+				return
+			}
+
+			if len(auData.Data) > 0 || len(auData.Transcript) > 0 {
+				outputMessageAudio := &schema.ChatOutputMessageAudio{
+					ID:           &auData.ID,
+					DataOfBase64: &auData.Data,
+					Transcript:   &auData.Transcript,
+				}
+				message.MultiOutputContent = append(message.MultiOutputContent, schema.ChatOutputMessagePart{Audio: outputMessageAudio})
+			}
+
+			if msg.Content == "" && len(auData.Transcript) > 0 {
+				msg.Content = auData.Transcript
+			}
+
+		}
+
 		found = true
 		msg = &schema.Message{
 			Role:      toMessageRole(choice.Delta.Role),
@@ -780,6 +857,10 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		}
 
+		if audio, ok := choice.Delta.ExtraFields["audio"]; ok {
+			setOutputMessageAudio(msg, audio)
+
+		}
 		break
 	}
 
