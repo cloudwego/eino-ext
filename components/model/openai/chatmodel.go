@@ -87,6 +87,8 @@ type ChatModelConfig struct {
 
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
+	// Deprecated: use MaxCompletionTokens. Not compatible with o1-series models.
+	// refs: https://platform.openai.com/docs/api-reference/chat/create#chat-create-max_tokens
 	MaxTokens *int `json:"max_tokens,omitempty"`
 
 	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
