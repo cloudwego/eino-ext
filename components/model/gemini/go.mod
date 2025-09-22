@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.4.7
+	github.com/cloudwego/eino v0.5.4-0.20250919060620-7a251db1466c
 	github.com/eino-contrib/jsonschema v1.0.0
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.10.0

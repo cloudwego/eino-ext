@@ -18,9 +18,11 @@ package gemini
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
@@ -64,6 +66,7 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		enableCodeExecution: cfg.EnableCodeExecution,
 		safetySettings:      cfg.SafetySettings,
 		thinkingConfig:      cfg.ThinkingConfig,
+		responseModalities:  cfg.ResponseModalities,
 	}, nil
 }
 
@@ -110,6 +113,12 @@ type Config struct {
 	SafetySettings []*genai.SafetySetting
 
 	ThinkingConfig *genai.ThinkingConfig
+
+	// Optional. The requested modalities of the response. Represents the set of
+	// modalities that the model can return.
+	// Enumeration values:
+	// - "MODALITY_UNSPECIFIED (default)"; TEXT; IMAGE; AUDIO
+	ResponseModalities []string `json:"responseModalities,omitempty"`
 }
 
 type ChatModel struct {
@@ -127,6 +136,7 @@ type ChatModel struct {
 	enableCodeExecution bool
 	safetySettings      []*genai.SafetySetting
 	thinkingConfig      *genai.ThinkingConfig
+	responseModalities  []string
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -294,6 +304,10 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	conf := &model.Config{}
 
 	m := &genai.GenerateContentConfig{}
+	if len(cm.responseModalities) > 0 {
+		m.ResponseModalities = cm.responseModalities
+	}
+
 	if commonOptions.Model != nil {
 		conf.Model = *commonOptions.Model
 	} else {
@@ -707,12 +721,21 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 			result.Role = schema.User
 		}
 
-		var texts []string
+		var (
+			texts           []string
+			inlineDataIndex = 0
+		)
+
 		for _, part := range candidate.Content.Parts {
+			var multiOutputContent schema.ChatOutputMessagePart
 			if part.Thought {
 				result.ReasoningContent = part.Text
 			} else if len(part.Text) > 0 {
 				texts = append(texts, part.Text)
+				multiOutputContent = schema.ChatOutputMessagePart{
+					Type: schema.ChatMessagePartTypeText,
+					Text: part.Text,
+				}
 			}
 			if part.FunctionCall != nil {
 				fc, err := convFC(part.FunctionCall)
@@ -723,14 +746,58 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 			}
 			if part.CodeExecutionResult != nil {
 				texts = append(texts, part.CodeExecutionResult.Output)
+				multiOutputContent = schema.ChatOutputMessagePart{
+					Type: schema.ChatMessagePartTypeText,
+					Text: part.Text,
+				}
 			}
 			if part.ExecutableCode != nil {
 				texts = append(texts, part.ExecutableCode.Code)
+				multiOutputContent = schema.ChatOutputMessagePart{
+					Type: schema.ChatMessagePartTypeText,
+					Text: part.Text,
+				}
 			}
+			if part.InlineData != nil && part.InlineData.Data != nil {
+				mimeType := part.InlineData.MIMEType
+				dataOfBase64 := base64.StdEncoding.EncodeToString(part.InlineData.Data)
+				if strings.HasPrefix(mimeType, "image") {
+					multiOutputContent = schema.ChatOutputMessagePart{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.ChatOutputMessageImage{
+							MIMEType:     mimeType,
+							DataOfBase64: genai.Ptr(dataOfBase64),
+						},
+					}
+				}
+				if strings.HasPrefix(mimeType, "video") {
+					multiOutputContent = schema.ChatOutputMessagePart{
+						Type: schema.ChatMessagePartTypeVideoURL,
+						Video: &schema.ChatOutputMessageVideo{
+							MIMEType:     mimeType,
+							DataOfBase64: genai.Ptr(dataOfBase64),
+						},
+					}
+				}
+				if strings.HasPrefix(mimeType, "audio") {
+					multiOutputContent = schema.ChatOutputMessagePart{
+						Type: schema.ChatMessagePartTypeAudioURL,
+						Audio: &schema.ChatOutputMessageAudio{
+							MIMEType:     mimeType,
+							DataOfBase64: genai.Ptr(dataOfBase64),
+						},
+					}
+				}
+				texts = append(texts, fmt.Sprintf("multi_output_content[%d]", inlineDataIndex))
+				inlineDataIndex++
+			}
+			result.MultiOutputContent = append(result.MultiOutputContent, multiOutputContent)
 		}
+
 		if len(texts) == 1 {
 			result.Content = texts[0]
 		} else if len(texts) > 1 {
+			result.Content = strings.Join(texts, "")
 			for _, text := range texts {
 				result.MultiContent = append(result.MultiContent, schema.ChatMessagePart{
 					Type: schema.ChatMessagePartTypeText,
