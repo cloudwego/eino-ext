@@ -9,6 +9,7 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.0
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.10.0
+	github.com/wk8/go-ordered-map/v2 v2.1.8
 	google.golang.org/genai v1.13.0
 )
 
@@ -51,7 +52,6 @@ require (
 	github.com/smarty/assertions v1.15.0 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
-	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/arch v0.12.0 // indirect

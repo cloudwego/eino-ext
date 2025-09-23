@@ -387,6 +387,9 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	}
 
 	m.ThinkingConfig = cm.thinkingConfig
+	if geminiOptions.ThinkingConfig != nil {
+		m.ThinkingConfig = geminiOptions.ThinkingConfig
+	}
 	return conf.Model, nInput, m, conf, nil
 }
 
