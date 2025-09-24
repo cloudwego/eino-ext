@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"log"
 	"os"
 
@@ -43,18 +44,23 @@ func main() {
 		log.Fatalf("os.ReadFile failed, err=%v\n", err)
 	}
 
+	imageStr := base64.StdEncoding.EncodeToString(image)
+
 	resp, err := chatModel.Generate(ctx, []*schema.Message{
 		{
 			Role: schema.User,
-			MultiContent: []schema.ChatMessagePart{
+			UserInputMultiContent: []schema.MessageInputPart{
 				{
 					Type: schema.ChatMessagePartTypeText,
 					Text: "describe this image",
 				},
 				{
 					Type: schema.ChatMessagePartTypeImageURL,
-					ImageURL: &schema.ChatMessageImageURL{
-						URL: string(image),
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: &imageStr,
+						},
+						Detail: schema.ImageURLDetailAuto,
 					},
 				},
 			},

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"runtime/debug"
 
 	"github.com/eino-contrib/jsonschema"
@@ -301,7 +302,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 	}
 
 	for _, msg := range in {
-		content, e := cm.toArkContent(msg.Content, msg.MultiContent)
+		content, e := cm.toArkContent(msg)
 		if e != nil {
 			return req, e
 		}
@@ -526,44 +527,184 @@ func (cm *completionAPIChatModel) toMessageToolCalls(toolCalls []*model.ToolCall
 	return ret
 }
 
-func (cm *completionAPIChatModel) toArkContent(content string, multiContent []schema.ChatMessagePart) (*model.ChatCompletionMessageContent, error) {
-	if len(multiContent) == 0 {
-		return &model.ChatCompletionMessageContent{StringValue: ptrOf(content)}, nil
+func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.ChatCompletionMessageContent, error) {
+	if len(msg.UserInputMultiContent) == 0 && len(msg.AssistantGenMultiContent) == 0 && len(msg.MultiContent) == 0 {
+		return &model.ChatCompletionMessageContent{StringValue: ptrOf(msg.Content)}, nil
 	}
 
-	parts := make([]*model.ChatCompletionMessageContentPart, 0, len(multiContent))
+	var parts []*model.ChatCompletionMessageContentPart
+	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
 
-	for _, part := range multiContent {
-		switch part.Type {
-		case schema.ChatMessagePartTypeText:
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeText,
-				Text: part.Text,
-			})
-		case schema.ChatMessagePartTypeImageURL:
-			if part.ImageURL == nil {
-				return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
+	if len(msg.UserInputMultiContent) > 0 {
+		if msg.Role != schema.User {
+			return nil, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
+		}
+		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.UserInputMultiContent))
+		var err error
+		for _, part := range msg.UserInputMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeText,
+					Text: part.Text,
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+				}
+				var imageURL string
+				if part.Image.URL != nil && *part.Image.URL != "" {
+					imageURL = *part.Image.URL
+				} else if part.Image.Base64Data != nil && *part.Image.Base64Data != "" {
+					if part.Image.MIMEType == "" {
+						return nil, fmt.Errorf("image part must have MIMEType when using Base64Data")
+					}
+					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("image part for user input must contain either a URL or Base64Data, but got: %+v", part.Image)
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeImageURL,
+					ImageURL: &model.ChatMessageImageURL{
+						URL:    imageURL,
+						Detail: model.ImageURLDetail(part.Image.Detail),
+					},
+				})
+			case schema.ChatMessagePartTypeVideoURL:
+				if part.Video == nil {
+					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in user message")
+				}
+				var videoURL string
+				if part.Video.URL != nil && *part.Video.URL != "" {
+					videoURL = *part.Video.URL
+				} else if part.Video.Base64Data != nil && *part.Video.Base64Data != "" {
+					if part.Video.MIMEType == "" {
+						return nil, fmt.Errorf("video part must have MIMEType when using Base64Data")
+					}
+					videoURL, err = ensureDataURL(*part.Video.Base64Data, part.Video.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("video part for user input must contain either a URL or Base64Data, but got: %+v", part.Video)
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeVideoURL,
+					VideoURL: &model.ChatMessageVideoURL{
+						URL: videoURL,
+						FPS: GetInputVideoFPS(part.Video),
+					},
+				})
+			default:
+				return nil, fmt.Errorf("unsupported chat message part type in user message: %s", part.Type)
 			}
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeImageURL,
-				ImageURL: &model.ChatMessageImageURL{
-					URL:    part.ImageURL.URL,
-					Detail: model.ImageURLDetail(part.ImageURL.Detail),
-				},
-			})
-		case schema.ChatMessagePartTypeVideoURL:
-			if part.VideoURL == nil {
-				return nil, fmt.Errorf("VideoURL field must not be nil when Type is ChatMessagePartTypeVideoURL")
+		}
+	} else if len(msg.AssistantGenMultiContent) > 0 {
+		if msg.Role != schema.Assistant {
+			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", msg.Role)
+		}
+		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.AssistantGenMultiContent))
+		var err error
+		for _, part := range msg.AssistantGenMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeText,
+					Text: part.Text,
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+				}
+				var imageURL string
+				if part.Image.URL != nil && *part.Image.URL != "" {
+					imageURL = *part.Image.URL
+				} else if part.Image.Base64Data != nil && *part.Image.Base64Data != "" {
+					if part.Image.MIMEType == "" {
+						return nil, fmt.Errorf("image part must have MIMEType when using Base64Data")
+					}
+					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("image part for assistant output must contain either a URL or Base64Data, but got: %+v", part.Image)
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeImageURL,
+					ImageURL: &model.ChatMessageImageURL{
+						URL: imageURL,
+					},
+				})
+			case schema.ChatMessagePartTypeVideoURL:
+				if part.Video == nil {
+					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in assistant message")
+				}
+				var videoURL string
+				if part.Video.URL != nil && *part.Video.URL != "" {
+					videoURL = *part.Video.URL
+				} else if part.Video.Base64Data != nil && *part.Video.Base64Data != "" {
+					if part.Video.MIMEType == "" {
+						return nil, fmt.Errorf("video part must have MIMEType when using Base64Data")
+					}
+					videoURL, err = ensureDataURL(*part.Video.Base64Data, part.Video.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("video part for assistant output must contain either a URL or Base64Data, but got: %+v", part.Video)
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeVideoURL,
+					VideoURL: &model.ChatMessageVideoURL{
+						URL: videoURL,
+						FPS: GetOutputVideoFPS(part.Video),
+					},
+				})
+			default:
+				return nil, fmt.Errorf("unsupported chat message part type in assistant message: %s", part.Type)
 			}
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeVideoURL,
-				VideoURL: &model.ChatMessageVideoURL{
-					URL: part.VideoURL.URL,
-					FPS: GetFPS(part.VideoURL),
-				},
-			})
-		default:
-			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
+		}
+	} else if len(msg.MultiContent) > 0 {
+		log.Printf("warning: MultiContent is deprecated, use UserInputMultiContent or AssistantGenMultiContent instead")
+		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.MultiContent))
+		for _, part := range msg.MultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeText,
+					Text: part.Text,
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.ImageURL == nil {
+					return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeImageURL,
+					ImageURL: &model.ChatMessageImageURL{
+						URL:    part.ImageURL.URL,
+						Detail: model.ImageURLDetail(part.ImageURL.Detail),
+					},
+				})
+			case schema.ChatMessagePartTypeVideoURL:
+				if part.VideoURL == nil {
+					return nil, fmt.Errorf("VideoURL field must not be nil when Type is ChatMessagePartTypeVideoURL")
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeVideoURL,
+					VideoURL: &model.ChatMessageVideoURL{
+						URL: part.VideoURL.URL,
+						FPS: GetFPS(part.VideoURL),
+					},
+				})
+			default:
+				return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
+			}
 		}
 	}
 

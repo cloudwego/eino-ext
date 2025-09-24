@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -654,7 +655,7 @@ func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) 
 	content := responses.EasyInputMessageContentUnionParam{}
 
 	if msg.Content != "" {
-		if len(msg.MultiContent) == 0 {
+		if len(msg.MultiContent) == 0 && len(msg.UserInputMultiContent) == 0 && len(msg.AssistantGenMultiContent) == 0 {
 			content.OfString = param.NewOpt(msg.Content)
 			return content, nil
 		}
@@ -666,37 +667,113 @@ func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) 
 		})
 	}
 
-	for _, c := range msg.MultiContent {
-		switch c.Type {
-		case schema.ChatMessagePartTypeText:
-			content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-				OfInputText: &responses.ResponseInputTextParam{
-					Text: c.Text,
-				},
-			})
+	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
+		return content, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
 
-		case schema.ChatMessagePartTypeImageURL:
-			if c.ImageURL == nil {
-				continue
+	if len(msg.UserInputMultiContent) > 0 {
+		if msg.Role != schema.User {
+			return content, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
+		}
+		for _, part := range msg.UserInputMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+					OfInputText: &responses.ResponseInputTextParam{
+						Text: part.Text,
+					},
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return content, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+				} else {
+					var imageURL string
+					var err error
+					if part.Image.URL != nil {
+						imageURL = *part.Image.URL
+					} else if part.Image.Base64Data != nil {
+						if part.Image.MIMEType == "" {
+							return content, fmt.Errorf("image part must have MIMEType when use Base64Data")
+						}
+						imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+						if err != nil {
+							return content, err
+						}
+					}
+					content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+						OfInputImage: &responses.ResponseInputImageParam{
+							ImageURL: param.NewOpt(imageURL),
+						},
+					})
+				}
+			default:
+				return content, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
 			}
-			content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-				OfInputImage: &responses.ResponseInputImageParam{
-					ImageURL: param.NewOpt(c.ImageURL.URL),
-				},
-			})
-
-		case schema.ChatMessagePartTypeFileURL:
-			if c.FileURL == nil {
-				continue
+		}
+		return content, nil
+	} else if len(msg.AssistantGenMultiContent) > 0 {
+		if msg.Role != schema.Assistant {
+			return content, fmt.Errorf("assistant gen multi content only support assistant role, got %s", msg.Role)
+		}
+		for _, part := range msg.AssistantGenMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+					OfInputText: &responses.ResponseInputTextParam{
+						Text: part.Text,
+					},
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return content, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+				} else {
+					var imageURL string
+					var err error
+					if part.Image.URL != nil {
+						imageURL = *part.Image.URL
+					} else if part.Image.Base64Data != nil {
+						if part.Image.MIMEType == "" {
+							return content, fmt.Errorf("image part must have MIMEType when use Base64Data")
+						}
+						imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+						if err != nil {
+							return content, err
+						}
+					}
+					content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+						OfInputImage: &responses.ResponseInputImageParam{
+							ImageURL: param.NewOpt(imageURL),
+						},
+					})
+				}
+			default:
+				return content, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", part.Type)
 			}
-			content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-				OfInputFile: &responses.ResponseInputFileParam{
-					FileURL: param.NewOpt(c.FileURL.URL),
-				},
-			})
+		}
+		return content, nil
+	} else {
+		for _, c := range msg.MultiContent {
+			switch c.Type {
+			case schema.ChatMessagePartTypeText:
+				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+					OfInputText: &responses.ResponseInputTextParam{
+						Text: c.Text,
+					},
+				})
 
-		default:
-			return content, fmt.Errorf("unsupported content type: %s", c.Type)
+			case schema.ChatMessagePartTypeImageURL:
+				if c.ImageURL == nil {
+					continue
+				}
+				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
+					OfInputImage: &responses.ResponseInputImageParam{
+						ImageURL: param.NewOpt(c.ImageURL.URL),
+					},
+				})
+
+			default:
+				return content, fmt.Errorf("unsupported content type: %s", c.Type)
+			}
 		}
 	}
 
@@ -839,4 +916,14 @@ func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 	}
 
 	return options, arkOpts, nil
+}
+
+func ensureDataURL(dataOfBase64, mimeType string) (string, error) {
+	if strings.HasPrefix(dataOfBase64, "data:") {
+		return "", fmt.Errorf("base64Data field must be a raw base64 string, but got a string with prefix 'data:'")
+	}
+	if mimeType == "" {
+		return "", fmt.Errorf("mimeType field is required")
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, dataOfBase64), nil
 }

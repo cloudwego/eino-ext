@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"log"
 	"os"
 
@@ -39,15 +40,25 @@ func main() {
 	}
 
 	multiModalMsg := schema.UserMessage("")
-	multiModalMsg.MultiContent = []schema.ChatMessagePart{
+	image, err := os.ReadFile("./examples/image/eino.png")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	imageStr := base64.StdEncoding.EncodeToString(image)
+	base64Str := "data:image/png;base64," + imageStr
+	multiModalMsg.UserInputMultiContent = []schema.MessageInputPart{
 		{
 			Type: schema.ChatMessagePartTypeText,
 			Text: "this picture is LangDChain's architecture, what's the picture's content",
 		},
 		{
 			Type: schema.ChatMessagePartTypeImageURL,
-			ImageURL: &schema.ChatMessageImageURL{
-				URL:    "https://d2908q01vomqb2.cloudfront.net/887309d048beef83ad3eabf2a79a64a389ab1c9f/2023/07/13/DBBLOG-3334-image001.png",
+			Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{
+					Base64Data: &base64Str,
+					MIMEType:   "image/png",
+				},
 				Detail: schema.ImageURLDetailAuto,
 			},
 		},

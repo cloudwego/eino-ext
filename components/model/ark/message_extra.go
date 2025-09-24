@@ -207,14 +207,62 @@ func SetFPS(part *schema.ChatMessageVideoURL, fps float64) {
 	if part == nil {
 		return
 	}
-	part.Extra[videoURLFPS] = fps
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	setFPS(part.Extra, fps)
 }
 
 func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 	if part == nil {
 		return nil
 	}
-	fps, ok := part.Extra[videoURLFPS].(float64)
+	return getFPS(part.Extra)
+}
+
+func setInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
+	if part == nil {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	setFPS(part.Extra, fps)
+}
+
+func GetInputVideoFPS(part *schema.MessageInputVideo) *float64 {
+	if part == nil {
+		return nil
+	}
+	return getFPS(part.Extra)
+}
+
+func setOutputVideoFPS(part *schema.MessageOutputVideo, fps float64) {
+	if part == nil {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	setFPS(part.Extra, fps)
+}
+
+func GetOutputVideoFPS(part *schema.MessageOutputVideo) *float64 {
+	if part == nil {
+		return nil
+	}
+	return getFPS(part.Extra)
+}
+
+func setFPS(extra map[string]any, fps float64) {
+	extra[videoURLFPS] = fps
+}
+
+func getFPS(extra map[string]any) *float64 {
+	if extra == nil {
+		return nil
+	}
+	fps, ok := extra[videoURLFPS].(float64)
 	if !ok {
 		return nil
 	}

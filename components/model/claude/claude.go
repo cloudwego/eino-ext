@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -664,19 +665,97 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		}
 	}
 
+	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
+		return mp, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
+
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
 		}
+	} else if len(message.UserInputMultiContent) > 0 {
+		if message.Role != schema.User {
+			return mp, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
+		}
+		for i := range message.UserInputMultiContent {
+			switch message.UserInputMultiContent[i].Type {
+			case schema.ChatMessagePartTypeText:
+				messageParams = append(messageParams, anthropic.NewTextBlock(message.UserInputMultiContent[i].Text))
+			case schema.ChatMessagePartTypeImageURL:
+				if message.UserInputMultiContent[i].Image == nil {
+					return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+				}
+				image := message.UserInputMultiContent[i].Image
+				if image.URL != nil && *image.URL != "" {
+					messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+						URL: *image.URL,
+					}))
+				} else if image.Base64Data != nil && *image.Base64Data != "" {
+					if image.MIMEType == "" {
+						return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+					}
+					if strings.HasPrefix(*image.Base64Data, "data:") {
+						return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+					}
+					messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
+				} else {
+					return mp, fmt.Errorf("image part must have either a URL or Base64Data")
+				}
+			default:
+				return mp, fmt.Errorf("anthropic message type not supported: %s", message.UserInputMultiContent[i].Type)
+			}
+		}
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		if message.Role != schema.Assistant {
+			return mp, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
+		}
+		for i := range message.AssistantGenMultiContent {
+			switch message.AssistantGenMultiContent[i].Type {
+			case schema.ChatMessagePartTypeText:
+				messageParams = append(messageParams, anthropic.NewTextBlock(message.AssistantGenMultiContent[i].Text))
+			case schema.ChatMessagePartTypeImageURL:
+				if message.AssistantGenMultiContent[i].Image == nil {
+					return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+				}
+				image := message.AssistantGenMultiContent[i].Image
+				if image.URL != nil && *image.URL != "" {
+					messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+						URL: *image.URL,
+					}))
+				} else if image.Base64Data != nil && *image.Base64Data != "" {
+					if image.MIMEType == "" {
+						return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+					}
+					if strings.HasPrefix(*image.Base64Data, "data:") {
+						return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+					}
+					messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
+				} else {
+					return mp, fmt.Errorf("image part must have either a URL or Base64Data")
+				}
+			default:
+				return mp, fmt.Errorf("anthropic message type not supported: %s", message.AssistantGenMultiContent[i].Type)
+			}
+		}
 	} else {
+		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
+		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
+		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
+		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:
 				messageParams = append(messageParams, anthropic.NewTextBlock(message.MultiContent[i].Text))
 			case schema.ChatMessagePartTypeImageURL:
 				if message.MultiContent[i].ImageURL == nil {
+					continue
+				}
+				if strings.HasPrefix(message.MultiContent[i].ImageURL.URL, "http") {
+					messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+						URL: message.MultiContent[i].ImageURL.URL,
+					}))
 					continue
 				}
 				mediaType, data, err_ := convImageBase64(message.MultiContent[i].ImageURL.URL)

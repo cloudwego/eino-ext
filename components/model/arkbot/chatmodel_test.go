@@ -176,7 +176,7 @@ func Test_Generate(t *testing.T) {
 				},
 			}
 
-			req, err := toArkContent(multiModalMsg.Content, multiModalMsg.MultiContent)
+			req, err := toArkContent(multiModalMsg)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req.StringValue, convey.ShouldBeNil)
 			convey.So(req.ListValue, convey.ShouldHaveLength, 2)
@@ -369,4 +369,174 @@ func TestLogProbs(t *testing.T) {
 			},
 		},
 	}}))
+}
+
+func Test_toArkContent(t *testing.T) {
+	PatchConvey("test toArkContent", t, func() {
+		base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+		httpURL := "https://example.com/image.png"
+
+		PatchConvey("UserInputMultiContent", func() {
+			PatchConvey("success", func() {
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeText, Text: "hello"},
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+					},
+				}
+				content, err := toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 3)
+				convey.So(content.ListValue[0].Text, convey.ShouldEqual, "hello")
+				convey.So(content.ListValue[1].ImageURL.URL, convey.ShouldContainSubstring, "data:image/png;base64,")
+				convey.So(content.ListValue[2].ImageURL.URL, convey.ShouldEqual, httpURL)
+			})
+
+			PatchConvey("nil image", func() {
+				msg := &schema.Message{
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
+					},
+				}
+				_, err := toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("empty image", func() {
+				msg := &schema.Message{
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{}},
+					},
+				}
+				_, err := toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("no mime type", func() {
+				msg := &schema.Message{
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}},
+					},
+				}
+				_, err := toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+		})
+
+		PatchConvey("AssistantGenMultiContent", func() {
+			PatchConvey("success", func() {
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{Type: schema.ChatMessagePartTypeText, Text: "assistant response"},
+					},
+				}
+				content, err := toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 1)
+			})
+
+			PatchConvey("success with image", func() {
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{
+							Type: schema.ChatMessagePartTypeImageURL,
+							Image: &schema.MessageOutputImage{
+								MessagePartCommon: schema.MessagePartCommon{
+									URL: &httpURL,
+								},
+							},
+						},
+						{
+							Type: schema.ChatMessagePartTypeImageURL,
+							Image: &schema.MessageOutputImage{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: &base64Data,
+									MIMEType:   "image/png",
+								},
+							},
+						},
+					},
+				}
+				content, err := toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 2)
+				convey.So(content.ListValue[0].ImageURL.URL, convey.ShouldEqual, httpURL)
+				convey.So(content.ListValue[1].ImageURL.URL, convey.ShouldContainSubstring, "data:image/png;base64,")
+			})
+
+			PatchConvey("wrong role", func() {
+				msg := &schema.Message{
+					Role:                     schema.User,
+					AssistantGenMultiContent: []schema.MessageOutputPart{{}},
+				}
+				_, err := toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("nil image", func() {
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
+					},
+				}
+				_, err := toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("empty image", func() {
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{}},
+					},
+				}
+				_, err := toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("no mime type", func() {
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}},
+					},
+				}
+				_, err := toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+		})
+
+		PatchConvey("MultiContent", func() {
+			msg := &schema.Message{
+				MultiContent: []schema.ChatMessagePart{
+					{Type: schema.ChatMessagePartTypeText, Text: "legacy"},
+					{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: httpURL}},
+				},
+			}
+			content, err := toArkContent(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(content.ListValue, convey.ShouldHaveLength, 2)
+		})
+
+		PatchConvey("Text Content", func() {
+			msg := &schema.Message{Content: "just text"}
+			content, err := toArkContent(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(*content.StringValue, convey.ShouldEqual, "just text")
+		})
+
+		PatchConvey("both UserInputMultiContent and AssistantGenMultiContent", func() {
+			msg := &schema.Message{
+				UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "user"}},
+				AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "assistant"}},
+			}
+			_, err := toArkContent(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+		})
+	})
 }

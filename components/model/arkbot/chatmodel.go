@@ -21,8 +21,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
@@ -216,8 +218,9 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Mes
 		Messages: make([]*model.ChatCompletionMessage, 0, len(prefix)),
 		TTL:      nil,
 	}
+
 	for _, msg := range prefix {
-		content, err := toArkContent(msg.Content, msg.MultiContent)
+		content, err := toArkContent(msg)
 		if err != nil {
 			return nil, fmt.Errorf("create prefix fail, convert message fail: %w", err)
 		}
@@ -457,7 +460,7 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	}
 
 	for _, msg := range in {
-		content, e := toArkContent(msg.Content, msg.MultiContent)
+		content, e := toArkContent(msg)
 		if e != nil {
 			return req, e
 		}
@@ -713,34 +716,123 @@ func toMessageToolCalls(toolCalls []*model.ToolCall) []schema.ToolCall {
 	return ret
 }
 
-func toArkContent(content string, multiContent []schema.ChatMessagePart) (*model.ChatCompletionMessageContent, error) {
-	if len(multiContent) == 0 {
-		return &model.ChatCompletionMessageContent{StringValue: ptrOf(content)}, nil
+func toArkContent(msg *schema.Message) (*model.ChatCompletionMessageContent, error) {
+	var parts []*model.ChatCompletionMessageContentPart
+
+	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 	}
 
-	parts := make([]*model.ChatCompletionMessageContentPart, 0, len(multiContent))
-
-	for _, part := range multiContent {
-		switch part.Type {
-		case schema.ChatMessagePartTypeText:
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeText,
-				Text: part.Text,
-			})
-		case schema.ChatMessagePartTypeImageURL:
-			if part.ImageURL == nil {
-				return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
-			}
-			parts = append(parts, &model.ChatCompletionMessageContentPart{
-				Type: model.ChatCompletionMessageContentPartTypeImageURL,
-				ImageURL: &model.ChatMessageImageURL{
-					URL:    part.ImageURL.URL,
-					Detail: model.ImageURLDetail(part.ImageURL.Detail),
-				},
-			})
-		default:
-			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
+	if len(msg.UserInputMultiContent) > 0 {
+		if msg.Role != schema.User {
+			return nil, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
 		}
+		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.UserInputMultiContent))
+		for _, part := range msg.UserInputMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeText,
+					Text: part.Text,
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+				}
+				var imageURL string
+				var err error
+				if part.Image.URL != nil && *part.Image.URL != "" {
+					imageURL = *part.Image.URL
+				} else if part.Image.Base64Data != nil && *part.Image.Base64Data != "" {
+					if part.Image.MIMEType == "" {
+						return nil, fmt.Errorf("image part must have MIMEType when using Base64Data")
+					}
+					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("image part for user input must contain either a URL or Base64Data, but got: %+v", part.Image)
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeImageURL,
+					ImageURL: &model.ChatMessageImageURL{
+						URL:    imageURL,
+						Detail: model.ImageURLDetail(part.Image.Detail),
+					},
+				})
+			default:
+				return nil, fmt.Errorf("unsupported chat message part type in user message: %s", part.Type)
+			}
+		}
+	} else if len(msg.AssistantGenMultiContent) > 0 {
+		if msg.Role != schema.Assistant {
+			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", msg.Role)
+		}
+		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.AssistantGenMultiContent))
+		for _, part := range msg.AssistantGenMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeText,
+					Text: part.Text,
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+				}
+				var imageURL string
+				var err error
+				if part.Image.URL != nil && *part.Image.URL != "" {
+					imageURL = *part.Image.URL
+				} else if part.Image.Base64Data != nil && *part.Image.Base64Data != "" {
+					if part.Image.MIMEType == "" {
+						return nil, fmt.Errorf("image part must have MIMEType when using Base64Data")
+					}
+					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				} else {
+					return nil, fmt.Errorf("image part for assistant output must contain either a URL or Base64Data, but got: %+v", part.Image)
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeImageURL,
+					ImageURL: &model.ChatMessageImageURL{
+						URL: imageURL,
+					},
+				})
+			default:
+				return nil, fmt.Errorf("unsupported chat message part type in assistant message: %s", part.Type)
+			}
+		}
+	} else if len(msg.MultiContent) > 0 {
+		log.Printf("warning: MultiContent is deprecated, use UserInputMultiContent or AssistantGenMultiContent instead")
+		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.MultiContent))
+		for _, part := range msg.MultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeText,
+					Text: part.Text,
+				})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.ImageURL == nil {
+					return nil, fmt.Errorf("ImageURL field must not be nil when Type is ChatMessagePartTypeImageURL")
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type: model.ChatCompletionMessageContentPartTypeImageURL,
+					ImageURL: &model.ChatMessageImageURL{
+						URL:    part.ImageURL.URL,
+						Detail: model.ImageURLDetail(part.ImageURL.Detail),
+					},
+				})
+			default:
+				return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
+			}
+		}
+	} else {
+		return &model.ChatCompletionMessageContent{StringValue: ptrOf(msg.Content)}, nil
 	}
 
 	return &model.ChatCompletionMessageContent{
@@ -793,6 +885,16 @@ func toTools(tls []*schema.ToolInfo) ([]tool, error) {
 	}
 
 	return tools, nil
+}
+
+func ensureDataURL(dataOfBase64, mimeType string) (string, error) {
+	if strings.HasPrefix(dataOfBase64, "data:") {
+		return "", fmt.Errorf("base64Data field must be a raw base64 string, but got a string with prefix 'data:'")
+	}
+	if mimeType == "" {
+		return "", fmt.Errorf("mimeType field is required")
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, dataOfBase64), nil
 }
 
 func closeArkStreamReader(r *autils.BotChatCompletionStreamReader) error {
