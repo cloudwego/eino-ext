@@ -29,12 +29,11 @@ import (
 
 	"github.com/cloudwego/eino-ext/a2a/client"
 	"github.com/cloudwego/eino-ext/a2a/models"
-	"github.com/cloudwego/eino-ext/a2a/transport"
 	"github.com/cloudwego/eino-ext/a2a/utils"
 )
 
 type AgentConfig struct {
-	Transport transport.ClientTransport
+	Client *client.A2AClient
 
 	// optional, from AgentCard by default
 	Name        *string
@@ -50,16 +49,13 @@ type AgentConfig struct {
 }
 
 func NewAgent(ctx context.Context, cfg AgentConfig) (adk.Agent, error) {
-	cli, err := client.NewA2AClient(ctx, &client.Config{
-		Transport: cfg.Transport,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create a2a client: %w", err)
+	if cfg.Client == nil {
+		return nil, errors.New("Client is required")
 	}
 	var name, desc string
 	var streaming bool
 	if cfg.Name == nil || cfg.Description == nil || cfg.Streaming == nil {
-		card, err := cli.AgentCard(ctx)
+		card, err := cfg.Client.AgentCard(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -83,7 +79,7 @@ func NewAgent(ctx context.Context, cfg AgentConfig) (adk.Agent, error) {
 		streaming:             streaming,
 		inputMessageConvertor: cfg.InputMessageConvertor,
 		outputConvertor:       cfg.OutputConvertor,
-		cli:                   cli,
+		cli:                   cfg.Client,
 	}
 	if a.inputMessageConvertor == nil {
 		a.inputMessageConvertor = func(ctx context.Context, messages []*schema.Message) (models.Message, error) {
