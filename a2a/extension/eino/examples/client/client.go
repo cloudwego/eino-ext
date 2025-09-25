@@ -28,6 +28,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 
+	"github.com/cloudwego/eino-ext/a2a/client"
 	"github.com/cloudwego/eino-ext/a2a/extension/eino"
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc"
 )
@@ -51,8 +52,15 @@ func nonStreamChat(ctx context.Context) {
 		BaseURL:     "http://127.0.0.1:8888",
 		HandlerPath: "/test",
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	cli, err := client.NewA2AClient(ctx, &client.Config{Transport: t})
+	if err != nil {
+		log.Fatal(err)
+	}
 	a, err := eino.NewAgent(ctx, eino.AgentConfig{
-		Transport:   t,
+		Client:      cli,
 		Name:        nil,
 		Description: nil,
 		Streaming:   &streaming,
@@ -80,8 +88,15 @@ func streamChat(ctx context.Context) {
 		BaseURL:     "http://127.0.0.1:8888",
 		HandlerPath: "/test",
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	cli, err := client.NewA2AClient(ctx, &client.Config{Transport: t})
+	if err != nil {
+		log.Fatal(err)
+	}
 	a, err := eino.NewAgent(ctx, eino.AgentConfig{
-		Transport: t,
+		Client:    cli,
 		Streaming: &streaming,
 	})
 	if err != nil {
@@ -107,8 +122,15 @@ func humanInTheLoop(ctx context.Context) {
 		BaseURL:     "http://127.0.0.1:8888",
 		HandlerPath: "/test",
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	cli, err := client.NewA2AClient(ctx, &client.Config{Transport: t})
+	if err != nil {
+		log.Fatal(err)
+	}
 	a, err := eino.NewAgent(ctx, eino.AgentConfig{
-		Transport: t,
+		Client: cli,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -123,8 +145,15 @@ func streamHumanInTheLoop(ctx context.Context) {
 		BaseURL:     "http://127.0.0.1:8888",
 		HandlerPath: "/test",
 	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	cli, err := client.NewA2AClient(ctx, &client.Config{Transport: t})
+	if err != nil {
+		log.Fatal(err)
+	}
 	a, err := eino.NewAgent(ctx, eino.AgentConfig{
-		Transport: t,
+		Client:    cli,
 		Streaming: &streaming,
 	})
 	if err != nil {
