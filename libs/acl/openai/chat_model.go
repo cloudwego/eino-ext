@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"runtime/debug"
+	"slices"
 	"sort"
 
 	"github.com/eino-contrib/jsonschema"
@@ -62,6 +63,15 @@ type ChatCompletionResponseFormatJSONSchema struct {
 	JSONSchema *jsonschema.Schema `json:"-"`
 	Strict     bool               `json:"strict"`
 }
+
+// Modality defines allowed output modalities
+type Modality string
+
+// Valid modalities
+const (
+	TextModality  Modality = "text"
+	AudioModality Modality = "audio"
+)
 
 type Config struct {
 	// APIKey is your authentication key
@@ -163,8 +173,23 @@ type Config struct {
 	// ReasoningEffort will override the default reasoning level of "medium"
 	// Optional. Useful for fine tuning response latency vs. accuracy
 	ReasoningEffort ReasoningEffortLevel
+
+	// Modalities are output types that you would like the model to generate.
+	// Allowed values: ["text", "audio"]
+	// Default: ["text"]
+	Modalities []Modality `json:"modalities,omitempty"`
+
+	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
+	Audio *Audio `json:"audio,omitempty"`
 }
 
+// Audio specifies the audio output settings
+type Audio struct {
+	// Format specifies the output audio format.
+	Format string `json:"format"`
+	// Voice specifies the voice the model uses to respond.
+	Voice string `json:"voice"`
+}
 type Client struct {
 	cli    *openai.Client
 	config *Config
@@ -172,6 +197,27 @@ type Client struct {
 	tools      []tool
 	rawTools   []*schema.ToolInfo
 	toolChoice *schema.ToolChoice
+}
+
+var mimeType2AudioFormat = map[string]string{
+	"audio/wav":      "wav",
+	"audio/vnd.wav":  "wav",
+	"audio/vnd.wave": "wav",
+	"audio/wave":     "wav",
+	"audio/x-pn-wav": "wav",
+	"audio/mpeg":     "wav",
+	"audio/x-wav":    "mp3",
+	"audio/mpeg3":    "mp3",
+	"audio/x-mpeg-3": "mp3",
+}
+
+// audioFormat2MimeTypes maps audio file formats to their corresponding MIME types.
+var audioFormat2MimeTypes = map[string]string{
+	"wav":   "audio/wav",
+	"mp3":   "audio/mpeg",
+	"flac":  "audio/flac",
+	"opus":  "audio/opus",
+	"pcm16": "audio/pcm",
 }
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
@@ -338,6 +384,172 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 	return ret
 }
 
+// buildMessageFromUserInputMultiContent builds a ChatCompletionMessage from UserInputMultiContent.
+// It processes various message parts like text, images, and audio, converting them into
+// the format expected by the OpenAI API.
+func buildMessageFromUserInputMultiContent(inMsg *schema.Message) (openai.ChatCompletionMessage, error) {
+	if inMsg.Role != schema.User {
+		return openai.ChatCompletionMessage{}, errors.New("invalid role for UserInputMultiContent: role must be 'user'")
+	}
+
+	comMessage := openai.ChatCompletionMessage{
+		Role:       toOpenAIRole(inMsg.Role),
+		Content:    inMsg.Content,
+		Name:       inMsg.Name,
+		ToolCalls:  toOpenAIToolCalls(inMsg.ToolCalls),
+		ToolCallID: inMsg.ToolCallID,
+	}
+	for _, part := range inMsg.UserInputMultiContent {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+				Type: openai.ChatMessagePartTypeText,
+				Text: part.Text,
+			})
+		case schema.ChatMessagePartTypeAudioURL:
+			if part.Audio == nil {
+				return comMessage, errors.New("the 'audio' field is required for parts of type 'audio_url'")
+			}
+			if part.Audio.Base64Data != nil {
+				format, ok := mimeType2AudioFormat[part.Audio.MIMEType]
+				if !ok {
+					return comMessage, fmt.Errorf("the 'format' field is required when type is audio_url, use SetMessageInputAudioFormat to set it")
+				}
+				comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeInputAudio,
+					InputAudio: &openai.ChatMessageInputAudio{
+						Data:   *part.Audio.Base64Data,
+						Format: format,
+					},
+				})
+			} else if part.Audio.URL != nil {
+				return comMessage, errors.New("for user role, audio message part does not accept URL, only base64 data is supported")
+			} else {
+				return comMessage, errors.New("audio message part must have url or base64 data")
+			}
+
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				return comMessage, errors.New("the 'image' field is required for parts of type 'image_url'")
+			}
+
+			if part.Image.URL != nil {
+				comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeImageURL,
+					ImageURL: &openai.ChatMessageImageURL{
+						URL:    *part.Image.URL,
+						Detail: openai.ImageURLDetail(part.Image.Detail),
+					},
+				})
+			} else if part.Image.Base64Data != nil {
+				if part.Image.MessagePartCommon.MIMEType == "" {
+					return comMessage, fmt.Errorf("mimetype is required when using base64data")
+				}
+				comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeImageURL,
+					ImageURL: &openai.ChatMessageImageURL{
+						URL:    fmt.Sprintf("data:%s;base64,%s", part.Image.MIMEType, *part.Image.Base64Data),
+						Detail: openai.ImageURLDetail(part.Image.Detail),
+					},
+				})
+			} else {
+				return comMessage, errors.New("image message part must have url or base64 data")
+			}
+
+		case schema.ChatMessagePartTypeVideoURL:
+			if part.Video == nil {
+				return comMessage, errors.New("the 'video' field is required for parts of type 'video_url'")
+			}
+			if part.Video.URL != nil {
+				comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeVideoURL,
+					VideoURL: &openai.ChatMessageVideoURL{
+						URL: *part.Video.URL,
+					},
+				})
+			} else if part.Video.Base64Data != nil {
+				if part.Video.MessagePartCommon.MIMEType == "" {
+					return comMessage, fmt.Errorf("mimetype is required when using base64data")
+				}
+
+				comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeVideoURL,
+					VideoURL: &openai.ChatMessageVideoURL{
+						URL: fmt.Sprintf("data:%s;base64,%s", part.Video.MIMEType, *part.Video.Base64Data),
+					},
+				})
+			} else {
+				return comMessage, errors.New("video message part must have url or base64 data")
+			}
+
+		default:
+			return openai.ChatCompletionMessage{}, fmt.Errorf("unsupported chat message part type: %s", part.Type)
+		}
+	}
+
+	return comMessage, nil
+}
+
+// buildMessageFromAssistantGenMultiContent builds a ChatCompletionMessage from AssistantGenMultiContent.
+// It processes text parts and a single audio part. If an audio part is found,
+// it creates a message with an audio ID and stops processing further parts.
+func buildMessageFromAssistantGenMultiContent(inMsg *schema.Message) (openai.ChatCompletionMessage, error) {
+	if inMsg.Role != schema.Assistant {
+		return openai.ChatCompletionMessage{}, errors.New("invalid role for AssistantGenMultiContent: role must be 'assistant'")
+	}
+	// Initialize the message with role and name.
+	comMessage := openai.ChatCompletionMessage{
+		Role: toOpenAIRole(inMsg.Role),
+		Name: inMsg.Name,
+	}
+
+partsLoop:
+	for _, part := range inMsg.AssistantGenMultiContent {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+				Type: openai.ChatMessagePartTypeText,
+				Text: part.Text,
+			})
+		case schema.ChatMessagePartTypeAudioURL:
+			audioID, ok := getMessageOutputAudioID(part.Audio)
+			if !ok {
+				return openai.ChatCompletionMessage{}, fmt.Errorf("failed to get audio ID from message output")
+			}
+			comMessage = openai.ChatCompletionMessage{
+				Role: toOpenAIRole(inMsg.Role),
+				Name: inMsg.Name,
+				Audio: &openai.Audio{
+					ID: string(audioID),
+				},
+			}
+			break partsLoop
+
+		default:
+			return openai.ChatCompletionMessage{}, fmt.Errorf("unsupported chat message part type for AssistantGenMultiContent: %s", part.Type)
+		}
+	}
+	return comMessage, nil
+}
+
+// Deprecated: This function is deprecated as the MultiContent field is deprecated.
+// buildMessageFromMultiContent builds a ChatCompletionMessage from a generic MultiContent field.
+// It converts the schema.MessagePart array into an array of openai.ChatMessagePart.
+func buildMessageFromMultiContent(inMsg *schema.Message) (openai.ChatCompletionMessage, error) {
+	mc, e := toOpenAIMultiContent(inMsg.MultiContent)
+	if e != nil {
+		return openai.ChatCompletionMessage{}, e
+	}
+	return openai.ChatCompletionMessage{
+		Role:         toOpenAIRole(inMsg.Role),
+		Content:      inMsg.Content,
+		MultiContent: mc,
+		Name:         inMsg.Name,
+		ToolCalls:    toOpenAIToolCalls(inMsg.ToolCalls),
+		ToolCallID:   inMsg.ToolCallID,
+	}, nil
+}
+
 func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionRequest, *model.CallbackInput, error) {
 
 	options := model.GetCommonOptions(&model.Options{
@@ -370,6 +582,25 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		LogProbs:            c.config.LogProbs,
 		TopLogProbs:         c.config.TopLogProbs,
 		ReasoningEffort:     string(specOptions.ReasoningEffort),
+	}
+
+	if len(c.config.Modalities) > 0 {
+		const (
+			modalities = "modalities"
+			audio      = "audio"
+		)
+		if specOptions.ExtraFields == nil {
+			specOptions.ExtraFields = make(map[string]any)
+		}
+		specOptions.ExtraFields[modalities] = c.config.Modalities
+		if slices.Contains(c.config.Modalities, AudioModality) && c.config.Audio == nil {
+			return nil, nil, errors.New("audio configuration is mandatory when 'audio' modality is specified")
+		}
+
+		if c.config.Audio != nil {
+			specOptions.ExtraFields[audio] = *c.config.Audio
+		}
+
 	}
 
 	if len(specOptions.ExtraFields) > 0 {
@@ -451,20 +682,36 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 	}
 
 	msgs := make([]openai.ChatCompletionMessage, 0, len(in))
+
 	for _, inMsg := range in {
-		mc, e := toOpenAIMultiContent(inMsg.MultiContent)
-		if e != nil {
-			return nil, nil, e
-		}
-		msg := openai.ChatCompletionMessage{
-			Role:         toOpenAIRole(inMsg.Role),
-			Content:      inMsg.Content,
-			MultiContent: mc,
-			Name:         inMsg.Name,
-			ToolCalls:    toOpenAIToolCalls(inMsg.ToolCalls),
-			ToolCallID:   inMsg.ToolCallID,
+		var (
+			msg openai.ChatCompletionMessage
+			err error
+		)
+		if len(inMsg.UserInputMultiContent) > 0 && len(inMsg.AssistantGenMultiContent) > 0 {
+			return nil, nil, errors.New("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 		}
 
+		if len(inMsg.UserInputMultiContent) > 0 {
+			msg, err = buildMessageFromUserInputMultiContent(inMsg)
+		} else if len(inMsg.AssistantGenMultiContent) > 0 {
+			msg, err = buildMessageFromAssistantGenMultiContent(inMsg)
+		} else if len(inMsg.MultiContent) > 0 {
+			msg, err = buildMessageFromMultiContent(inMsg)
+		} else {
+			msg = openai.ChatCompletionMessage{
+				Role:       toOpenAIRole(inMsg.Role),
+				Content:    inMsg.Content,
+				Name:       inMsg.Name,
+				ToolCalls:  toOpenAIToolCalls(inMsg.ToolCalls),
+				ToolCallID: inMsg.ToolCallID,
+			}
+
+		}
+
+		if err != nil {
+			return nil, nil, err
+		}
 		msgs = append(msgs, msg)
 	}
 
@@ -523,12 +770,11 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		if choice.Index != 0 {
 			continue
 		}
-
 		msg := choice.Message
 		outMsg = &schema.Message{
 			Role:       toMessageRole(msg.Role),
-			Content:    msg.Content,
 			Name:       msg.Name,
+			Content:    msg.Content,
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  toMessageToolCalls(msg.ToolCalls),
 			ResponseMeta: &schema.ResponseMeta{
@@ -537,9 +783,35 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 				LogProbs:     toLogProbs(choice.LogProbs),
 			},
 		}
+
 		if len(msg.ReasoningContent) > 0 {
 			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
+		}
+
+		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
+			mimeType, ok := audioFormat2MimeTypes[c.config.Audio.Format]
+			if !ok {
+				return nil, fmt.Errorf("audio mime type not found for config audio format %v", c.config.Audio.Format)
+			}
+
+			messageOutputPart := schema.MessageOutputPart{
+				Type: schema.ChatMessagePartTypeAudioURL,
+				Audio: &schema.MessageOutputAudio{
+					MessagePartCommon: schema.MessagePartCommon{
+						Base64Data: &msg.Audio.Data,
+						MIMEType:   mimeType,
+					},
+				},
+			}
+
+			if msg.Audio.ID == "" {
+				return nil, fmt.Errorf("failed to generate chat completion: message audio was returned but is missing audio ID")
+			}
+
+			setMessageOutputAudioID(messageOutputPart.Audio, audioID(msg.Audio.ID))
+			setMessageOutputAudioTranscript(messageOutputPart.Audio, msg.Audio.Transcript)
+			outMsg.AssistantGenMultiContent = []schema.MessageOutputPart{messageOutputPart}
 		}
 
 		break
@@ -560,7 +832,6 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 
 func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -585,6 +856,8 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	}
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
+
+	builder := newStreamMessageBuilder(c.config.Audio)
 	go func() {
 		defer func() {
 			panicErr := recover()
@@ -620,7 +893,11 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			// stream usage return in last chunk without message content, then
 			// last message received from callback output stream: Message == nil and TokenUsage != nil
 			// last message received from outStream: Message != nil
-			msg, found := resolveStreamResponse(chunk)
+			msg, found, buildErr := builder.build(chunk)
+			if buildErr != nil {
+				_ = sw.Send(nil, fmt.Errorf("failed to build message from stream chunk: %w", buildErr))
+				return
+			}
 			if !found {
 				continue
 			}
@@ -763,7 +1040,50 @@ func byteSlice2int64(in []byte) []int64 {
 	return ret
 }
 
-func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool) {
+type streamMessageBuilder struct {
+	audioCfg *Audio
+	audioID  string
+}
+
+func newStreamMessageBuilder(audio *Audio) *streamMessageBuilder {
+	return &streamMessageBuilder{
+		audioCfg: audio,
+	}
+}
+
+func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, audio *openai.Audio) error {
+	if b.audioID == "" && len(audio.ID) > 0 {
+		b.audioID = audio.ID
+	}
+
+	if len(audio.Data) > 0 || len(audio.Transcript) > 0 {
+		messageOutputPart := schema.MessageOutputPart{
+			Type: schema.ChatMessagePartTypeAudioURL,
+			Audio: &schema.MessageOutputAudio{
+				MessagePartCommon: schema.MessagePartCommon{},
+			},
+		}
+		if audio.Data != "" {
+			if b.audioCfg == nil {
+				return errors.New("audio config must be set when audio data is present")
+			}
+			mimeType, ok := audioFormat2MimeTypes[b.audioCfg.Format]
+			if !ok {
+				return fmt.Errorf("audio mime type not found for config audio format %v", b.audioCfg.Format)
+			}
+			messageOutputPart.Audio.MessagePartCommon.Base64Data = &audio.Data
+			messageOutputPart.Audio.MessagePartCommon.MIMEType = mimeType
+		}
+
+		setMessageOutputAudioID(messageOutputPart.Audio, audioID(b.audioID))
+		setMessageOutputAudioTranscript(messageOutputPart.Audio, audio.Transcript)
+		message.AssistantGenMultiContent = append(message.AssistantGenMultiContent, messageOutputPart)
+	}
+	return nil
+
+}
+
+func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
 		if choice.Index != 0 {
@@ -771,6 +1091,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 		}
 
 		found = true
+
 		msg = &schema.Message{
 			Role:      toMessageRole(choice.Delta.Role),
 			Content:   choice.Delta.Content,
@@ -787,6 +1108,13 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		}
 
+		if choice.Delta.Audio != nil {
+			err = b.setOutputMessageAudio(msg, choice.Delta.Audio)
+			if err != nil {
+				return nil, found, err
+			}
+		}
+
 		break
 	}
 
@@ -799,7 +1127,7 @@ func resolveStreamResponse(resp openai.ChatCompletionStreamResponse) (msg *schem
 		found = true
 	}
 
-	return msg, found
+	return msg, found, nil
 }
 
 func toTools(tis []*schema.ToolInfo) ([]tool, error) {

@@ -167,7 +167,8 @@ func Test_Generate(t *testing.T) {
 		}), convey.ShouldBeNil)
 
 		PatchConvey("test chat error", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			defer mocker.UnPatch()
 
 			outMsg, err := m.Generate(ctx, msgs)
 
@@ -176,7 +177,8 @@ func Test_Generate(t *testing.T) {
 		})
 
 		PatchConvey("test resolveChatResponse error", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			defer mocker.UnPatch()
 
 			outMsg, err := m.Generate(ctx, msgs)
 			convey.So(err, convey.ShouldNotBeNil)
@@ -184,8 +186,8 @@ func Test_Generate(t *testing.T) {
 		})
 
 		PatchConvey("test success", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatInvoke).Build()
-
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatInvoke).Build()
+			defer mocker.UnPatch()
 			outMsg, err := m.Generate(ctx, msgs,
 				model.WithTemperature(1),
 				model.WithMaxTokens(321),
@@ -229,7 +231,8 @@ func Test_Stream(t *testing.T) {
 		}
 
 		PatchConvey("test chan err", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatStreamError).Build()
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatStreamError).Build()
+			defer mocker.UnPatch()
 
 			outStream, err := m.Stream(ctx, msgs)
 			convey.So(err, convey.ShouldBeNil)
@@ -237,8 +240,9 @@ func Test_Stream(t *testing.T) {
 		})
 
 		PatchConvey("test chan success", func() {
-			Mock(GetMethod(cli, "Chat")).Return(MockChatStream).Build()
-
+			mocker := Mock(GetMethod(cli, "Chat")).Return(MockChatStream).Build()
+			defer mocker.UnPatch()
+			
 			outStream, err := m.Stream(ctx, msgs)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(outStream, convey.ShouldNotBeNil)
