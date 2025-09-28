@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -24,10 +24,10 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino/schema"
 )
 
 func ptr[T any](v T) *T {
@@ -46,14 +46,14 @@ func main() {
 		Size: "1K",
 
 		// Control whether to generate a set of images.
-		SequentialImageGeneration: ark.SequentialImageAuto,
+		SequentialImageGeneration: ark.SequentialImageGenerationAuto,
 
 		// Control the maximum number of images to generate
 		SequentialImageGenerationOption: &model.SequentialImageGenerationOptions{
 			MaxImages: ptr(2),
 		},
 
-		// Control the format of the generated jpge image.
+		// Control the format of the generated jpeg image.
 		ResponseFormat: ark.ImageResponseFormatURL,
 
 		// Control whether to add a watermark to the generated image

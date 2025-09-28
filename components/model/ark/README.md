@@ -289,32 +289,32 @@ type ImageGenerationConfig struct {
 	// When using custom resolutions, the total pixels must be between 1280x720 and 4096x4096,
 	// and the aspect ratio (width/height) must be between 1/16 and 16.
 	// Optional. Defaults to "2048x2048".
-	Size string
+	Size string `json:"size"`
 
-	// SequentialImage determines if the model should generate a sequence of images.
+	// SequentialImageGeneration determines if the model should generate a sequence of images.
 	// Possible values:
 	//  - "auto": The model decides whether to generate multiple images based on the prompt.
 	//  - "disabled": Only a single image is generated.
 	// Optional. Defaults to "disabled".
-	SequentialImageGeneration SequentialImageGeneration
+	SequentialImageGeneration SequentialImageGeneration `json:"sequential_image_generation"`
 
-	// SequentialImageOption sets the maximum number of images to generate when
-	// SequentialImage is set to "auto".
+	// SequentialImageGenerationOption sets the maximum number of images to generate when
+	// SequentialImageGeneration is set to "auto".
 	// The value must be between 1 and 15.
 	// Optional. Defaults to 15.
-	SequentialImageGenerationOption *model.SequentialImageGenerationOptions
+	SequentialImageGenerationOption *model.SequentialImageGenerationOptions `json:"sequential_image_generation_option"`
 
 	// ResponseFormat specifies how the generated image data is returned.
 	// Possible values:
 	//  - "url": A temporary URL to download the image (valid for 24 hours).
 	//  - "b64_json": The image data encoded as a Base64 string in the response.
 	// Optional. Defaults to "url".
-	ResponseFormat ImageResponseFormat
+	ResponseFormat ImageResponseFormat `json:"response_format"`
 
 	// DisableWatermark, if set to true, removes the "AI Generated" watermark
 	// from the bottom-right corner of the image.
 	// Optional. Defaults to false.
-	DisableWatermark bool
+	DisableWatermark bool `json:"disable_watermark"`
 }
 ```
 

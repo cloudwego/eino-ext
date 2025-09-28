@@ -26,13 +26,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	einoModel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 type ImageGenerationConfig struct {
@@ -76,32 +77,32 @@ type ImageGenerationConfig struct {
 	// When using custom resolutions, the total pixels must be between 1280x720 and 4096x4096,
 	// and the aspect ratio (width/height) must be between 1/16 and 16.
 	// Optional. Defaults to "2048x2048".
-	Size string
+	Size string `json:"size"`
 
-	// SequentialImage determines if the model should generate a sequence of images.
+	// SequentialImageGeneration determines if the model should generate a sequence of images.
 	// Possible values:
 	//  - "auto": The model decides whether to generate multiple images based on the prompt.
 	//  - "disabled": Only a single image is generated.
 	// Optional. Defaults to "disabled".
-	SequentialImageGeneration SequentialImageGeneration
+	SequentialImageGeneration SequentialImageGeneration `json:"sequential_image_generation"`
 
-	// SequentialImageOption sets the maximum number of images to generate when
-	// SequentialImage is set to "auto".
+	// SequentialImageGenerationOption sets the maximum number of images to generate when
+	// SequentialImageGeneration is set to "auto".
 	// The value must be between 1 and 15.
 	// Optional. Defaults to 15.
-	SequentialImageGenerationOption *model.SequentialImageGenerationOptions
+	SequentialImageGenerationOption *model.SequentialImageGenerationOptions `json:"sequential_image_generation_option"`
 
 	// ResponseFormat specifies how the generated image data is returned.
 	// Possible values:
 	//  - "url": A temporary URL to download the image (valid for 24 hours).
 	//  - "b64_json": The image data encoded as a Base64 string in the response.
 	// Optional. Defaults to "url".
-	ResponseFormat ImageResponseFormat
+	ResponseFormat ImageResponseFormat `json:"response_format"`
 
 	// DisableWatermark, if set to true, removes the "AI Generated" watermark
 	// from the bottom-right corner of the image.
 	// Optional. Defaults to false.
-	DisableWatermark bool
+	DisableWatermark bool `json:"disable_watermark"`
 }
 
 type ImageGenerationModel struct {
@@ -125,8 +126,8 @@ const (
 type SequentialImageGeneration string
 
 const (
-	SequentialImageDisabled SequentialImageGeneration = "disabled"
-	SequentialImageAuto     SequentialImageGeneration = "auto"
+	SequentialImageGenerationDisabled SequentialImageGeneration = "disabled"
+	SequentialImageGenerationAuto     SequentialImageGeneration = "auto"
 )
 
 func NewImageGenerationModel(_ context.Context, config *ImageGenerationConfig) (*ImageGenerationModel, error) {
@@ -182,12 +183,12 @@ func buildImageGenerationModel(config *ImageGenerationConfig) (*ImageGenerationM
 	)
 
 	if config.SequentialImageGeneration == "" {
-		seq = SequentialImageDisabled
+		seq = SequentialImageGenerationDisabled
 	} else {
 		seq = config.SequentialImageGeneration
 	}
 
-	if seq == SequentialImageDisabled {
+	if seq == SequentialImageGenerationDisabled {
 		seqOpt = nil
 	}
 
@@ -253,31 +254,56 @@ func (im *ImageGenerationModel) Generate(ctx context.Context, in []*schema.Messa
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("image generation failed, image data is empty")
 	}
-	imageParts := make([]schema.MessageOutputPart, 0, len(resp.Data))
+	// imageParts := make([]schema.MessageOutputPart, 0, len(resp.Data))
+	// for _, image := range resp.Data {
+	// 	img := &schema.MessageOutputImage{
+	// 		ConcatMode: schema.Full,
+	// 		MIMEType:   "image/jpeg",
+	// 	}
+	// 	if image.Url != nil {
+	// 		img.URL = image.Url
+	// 	} else if image.B64Json != nil {
+	// 		img.Base64Data = image.B64Json
+	// 	} else {
+	// 		continue // Skip if no image data is found
+	// 	}
+
+	// 	// Set additional info
+	// 	SetImageSize(img, image.Size)
+
+	// 	imageParts = append(imageParts, schema.MessageOutputPart{
+	// 		Type:  schema.ChatMessagePartTypeImageURL,
+	// 		Image: img,
+	// 	})
+	// }
+
+	imageURLs := make([]schema.ChatMessagePart, 0, len(resp.Data))
 	for _, image := range resp.Data {
-		img := &schema.MessageOutputImage{
-			ConcatMode: schema.Full,
+		// The `response_format` field in the API documentation specifies that the model currently only returns images in jpeg format.
+		// Ref: https://www.volcengine.com/docs/82379/1541523
+		imageURL := &schema.ChatMessageImageURL{
+			MIMEType: "image/jpeg",
 		}
 		if image.Url != nil {
-			img.URL = image.Url
+			imageURL.URL = *image.Url
 		} else if image.B64Json != nil {
-			img.Base64Data = image.B64Json
+			imageURL.URL = *image.B64Json
 		} else {
 			continue // Skip if no image data is found
 		}
 
 		// Set additional info
-		SetImageSize(img, image.Size)
+		SetImageSize(imageURL, image.Size)
 
-		imageParts = append(imageParts, schema.MessageOutputPart{
-			Type:  schema.ChatMessagePartTypeImageURL,
-			Image: img,
+		imageURLs = append(imageURLs, schema.ChatMessagePart{
+			Type:     schema.ChatMessagePartTypeImageURL,
+			ImageURL: imageURL,
 		})
 	}
 
 	outMsg = &schema.Message{
-		Role:                     schema.Assistant,
-		AssistantGenMultiContent: imageParts,
+		Role:         schema.Assistant,
+		MultiContent: imageURLs,
 	}
 
 	callbacks.OnEnd(ctx, &einoModel.CallbackOutput{
@@ -388,7 +414,7 @@ func (im *ImageGenerationModel) genRequest(in []*schema.Message, options *einoMo
 		Watermark: ptrOf(!im.disableWatermark),
 	}
 
-	if im.sequentialImageGeneration == SequentialImageAuto {
+	if im.sequentialImageGeneration == SequentialImageGenerationAuto {
 		req.SequentialImageGeneration = ptrOf(model.SequentialImageGeneration(im.sequentialImageGeneration))
 		req.SequentialImageGenerationOptions = im.sequentialImageGenerationOption
 	}
@@ -409,41 +435,36 @@ func (im *ImageGenerationModel) genRequest(in []*schema.Message, options *einoMo
 	return req, nil
 }
 
-// toPromptAndImages extracts the text prompt and image URLs from the input messages.
-// It aligns with the specific data structure required by the Ark Image Generation API:
-// - If one image is provided, it returns a single string.
-// - If multiple images are provided, it returns a slice of strings ([]string).
-// The `images` return value is an interface{} to accommodate this dynamic typing,
-// matching the `Image` field in the Ark SDK's `GenerateImagesRequest`.
 func toPromptAndImages(in []*schema.Message) (prompt string, images interface{}, err error) {
 	var promptBuilder strings.Builder
 	var imageURLs = make([]string, 0, len(in))
 	for _, msg := range in {
-		if msg.Role == schema.User {
+		if msg.Role == schema.System || msg.Role == schema.User {
 			if len(msg.Content) > 0 {
 				if promptBuilder.Len() > 0 {
 					promptBuilder.WriteByte('\n')
 				}
 				promptBuilder.WriteString(msg.Content)
 			}
-			if len(msg.UserInputMultiContent) > 0 {
-				for _, part := range msg.UserInputMultiContent {
-					if part.Type == schema.ChatMessagePartTypeImageURL {
-						if part.Image != nil && part.Image.URL != nil {
-							imageURLs = append(imageURLs, *part.Image.URL)
-						} else if part.Image != nil && part.Image.Base64Data != nil {
-							imageURLs = append(imageURLs, ensureImageDataURL(*part.Image.Base64Data, part.Image.MIMEType))
-						}
-					} else if part.Type == schema.ChatMessagePartTypeText {
-						if len(part.Text) > 0 {
-							if promptBuilder.Len() > 0 {
-								promptBuilder.WriteByte(' ')
-							}
-							promptBuilder.WriteString(part.Text)
-						}
-					}
-				}
-			} else if len(msg.MultiContent) > 0 {
+			// if len(msg.UserInputMultiContent) > 0 {
+			// 	for _, part := range msg.UserInputMultiContent {
+			// 		if part.Type == schema.ChatMessagePartTypeImageURL {
+			// 			if part.Image != nil && part.Image.URL != nil {
+			// 				imageURLs = append(imageURLs, *part.Image.URL)
+			// 			} else if part.Image != nil && part.Image.Base64Data != nil {
+			// 				imageURLs = append(imageURLs, ensureImageDataURL(*part.Image.Base64Data, part.Image.MIMEType))
+			// 			}
+			// 		} else if part.Type == schema.ChatMessagePartTypeText {
+			// 			if len(part.Text) > 0 {
+			// 				if promptBuilder.Len() > 0 {
+			// 					promptBuilder.WriteByte(' ')
+			// 				}
+			// 				promptBuilder.WriteString(part.Text)
+			// 			}
+			// 		}
+			// 	}
+			// }
+			if len(msg.MultiContent) > 0 {
 				for _, part := range msg.MultiContent {
 					if part.Type == schema.ChatMessagePartTypeImageURL {
 						if part.ImageURL != nil {
@@ -451,16 +472,13 @@ func toPromptAndImages(in []*schema.Message) (prompt string, images interface{},
 						}
 					} else if part.Type == schema.ChatMessagePartTypeText {
 						if len(part.Text) > 0 {
-							if promptBuilder.Len() > 0 {
-								promptBuilder.WriteByte(' ')
-							}
 							promptBuilder.WriteString(part.Text)
 						}
 					}
 				}
 			}
 		} else {
-			return "", nil, fmt.Errorf("image generation model only support user message, but got %v", msg.Role)
+			return "", nil, fmt.Errorf("image generation model only support user and system message, but got %v", msg.Role)
 		}
 	}
 	prompt = promptBuilder.String()
@@ -493,25 +511,52 @@ func (im *ImageGenerationModel) resolveStreamResponse(resp model.ImagesStreamRes
 		return nil, false, fmt.Errorf("image generation failed, errCode: %v, errMsg: %v", resp.Error.Code, resp.Error.Message)
 	}
 
-	image := &schema.MessageOutputImage{
-		ConcatMode: schema.Full,
+	// image := &schema.MessageOutputImage{
+	// 	ConcatMode: schema.Full,
+	// 	MIMEType:   "image/jpeg",
+	// }
+	// if resp.Url != nil {
+	// 	image.URL = resp.Url
+	// } else if resp.B64Json != nil {
+	// 	image.Base64Data = resp.B64Json
+	// } else {
+	// 	return nil, false, nil
+	// }
+
+	// SetImageSize(image, resp.Size)
+
+	// return &schema.Message{
+	// 	Role: schema.Assistant,
+	// 	AssistantGenMultiContent: []schema.MessageOutputPart{
+	// 		{
+	// 			Type:  schema.ChatMessagePartTypeImageURL,
+	// 			Image: image,
+	// 		},
+	// 	},
+	// }, true, nil
+
+	// The `response_format` field in the API documentation specifies that the model currently only returns images in jpeg format.
+	// Ref: https://www.volcengine.com/docs/82379/1541523
+	imageURL := &schema.ChatMessageImageURL{
+		MIMEType: "image/jpeg",
 	}
+
 	if resp.Url != nil {
-		image.URL = resp.Url
+		imageURL.URL = *resp.Url
 	} else if resp.B64Json != nil {
-		image.Base64Data = resp.B64Json
+		imageURL.URL = *resp.B64Json
 	} else {
 		return nil, false, nil
 	}
 
-	SetImageSize(image, resp.Size)
+	SetImageSize(imageURL, resp.Size)
 
 	return &schema.Message{
 		Role: schema.Assistant,
-		AssistantGenMultiContent: []schema.MessageOutputPart{
+		MultiContent: []schema.ChatMessagePart{
 			{
-				Type:  schema.ChatMessagePartTypeImageURL,
-				Image: image,
+				Type:     schema.ChatMessagePartTypeImageURL,
+				ImageURL: imageURL,
 			},
 		},
 	}, true, nil

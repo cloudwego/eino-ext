@@ -166,7 +166,7 @@ func setServiceTier(msg *schema.Message, serviceTier string) {
 	setMsgExtra(msg, keyOfServiceTier, arkServiceTier(serviceTier))
 }
 
-func SetImageSize(part *schema.MessageOutputImage, size string) {
+func SetImageSize(part *schema.ChatMessageImageURL, size string) {
 	if part == nil {
 		return
 	}
@@ -176,7 +176,7 @@ func SetImageSize(part *schema.MessageOutputImage, size string) {
 	part.Extra[ImageSizeKey] = size
 }
 
-func GetImageSize(part *schema.MessageOutputImage) (string, bool) {
+func GetImageSize(part *schema.ChatMessageImageURL) (string, bool) {
 	if part == nil {
 		return "", false
 	}
@@ -186,3 +186,24 @@ func GetImageSize(part *schema.MessageOutputImage) (string, bool) {
 	}
 	return size, true
 }
+
+// func SetImageSize(part *schema.MessageOutputImage, size string) {
+// 	if part == nil {
+// 		return
+// 	}
+// 	if part.Extra == nil {
+// 		part.Extra = make(map[string]any)
+// 	}
+// 	part.Extra[ImageSizeKey] = size
+// }
+
+// func GetImageSize(part *schema.MessageOutputImage) (string, bool) {
+// 	if part == nil {
+// 		return "", false
+// 	}
+// 	size, ok := part.Extra[ImageSizeKey].(string)
+// 	if !ok {
+// 		return "", false
+// 	}
+// 	return size, true
+// }
