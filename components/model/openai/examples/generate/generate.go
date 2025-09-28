@@ -22,9 +22,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino/schema"
-
 	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
@@ -55,9 +54,33 @@ func main() {
 			Content: "as a machine, how do you answer user's question?",
 		},
 	})
+
+	// Alternatively, you can use the following calling methods
+	//resp, err := chatModel.Generate(ctx, []*schema.Message{
+	//	{Role: schema.User,
+	//		UserInputMultiContent: []schema.MessageInputPart{
+	//			{Type: schema.ChatMessagePartTypeText, Text: "你好"},
+	//		}},
+	//})
+
+	// If the model supports multimodal scenarios, you can use the following call methods
+	//resp, err := chatModel.Generate(ctx, []*schema.Message{
+	//	{Role: schema.User,
+	//		UserInputMultiContent: []schema.MessageInputPart{
+	//			{Type: schema.ChatMessagePartTypeText, Text: "介绍下如下图片内容"},
+	//			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{
+	//				URL: of("https://img0.baidu.com/it/u=4078387433,1356951957&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=1034"),
+	//			}}},
+	//		}},
+	//})
+
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
 	fmt.Printf("output: \n%v", resp)
+}
+
+func of[T any](a T) *T {
+	return &a
 }

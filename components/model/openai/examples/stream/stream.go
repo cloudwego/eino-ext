@@ -52,6 +52,25 @@ func main() {
 		},
 	})
 
+	// Alternatively, you can use the following calling methods
+	//sr, err =  chatModel.Stream(ctx, []*schema.Message{
+	//	{Role: schema.User,
+	//		UserInputMultiContent: []schema.MessageInputPart{
+	//			{Type: schema.ChatMessagePartTypeText, Text: "你好"},
+	//		}},
+	//})
+
+	// If the model supports multimodal scenarios, you can use the following call methods
+	//sr, err = chatModel.Stream(ctx, []*schema.Message{
+	//	{Role: schema.User,
+	//		UserInputMultiContent: []schema.MessageInputPart{
+	//			{Type: schema.ChatMessagePartTypeText, Text: "介绍下如下图片内容"},
+	//			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{
+	//				URL: of("https://img0.baidu.com/it/u=4078387433,1356951957&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=1034"),
+	//			}}},
+	//		}},
+	//})
+
 	if err != nil {
 		log.Fatalf("Stream of openai failed, err=%v", err)
 	}
@@ -71,4 +90,8 @@ func main() {
 	}
 
 	fmt.Print("\n")
+}
+
+func of[T any](a T) *T {
+	return &a
 }

@@ -40,6 +40,13 @@ const (
 
 type ChatCompletionResponseFormat = openai.ChatCompletionResponseFormat
 type ChatCompletionResponseFormatJSONSchema = openai.ChatCompletionResponseFormatJSONSchema
+type Audio = openai.Audio
+type Modality = openai.Modality
+
+const (
+	TextModality  Modality = openai.TextModality
+	AudioModality Modality = openai.AudioModality
+)
 
 type ChatModelConfig struct {
 	// APIKey is your authentication key
@@ -143,6 +150,13 @@ type ChatModelConfig struct {
 	// ReasoningEffort will override the default reasoning level of "medium"
 	// Optional. Useful for fine tuning response latency vs. accuracy
 	ReasoningEffort ReasoningEffortLevel
+
+	// Modalities are output types that you would like the model to generate. Most models are capable of generating text, which is the default: ["text"]
+	// The gpt-4o-audio-preview model can also be used to generate audio. To request that this model generate both text and audio responses, you can use: ["text", "audio"]
+	Modalities []Modality `json:"modalities,omitempty"`
+
+	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
+	Audio *Audio `json:"audio,omitempty"`
 }
 
 type ChatModel struct {
@@ -181,6 +195,8 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			AzureModelMapperFunc: config.AzureModelMapperFunc,
 			ExtraFields:          config.ExtraFields,
 			ReasoningEffort:      openai.ReasoningEffortLevel(config.ReasoningEffort),
+			Modalities:           config.Modalities,
+			Audio:                config.Audio,
 		}
 	}
 	cli, err := openai.NewClient(ctx, nConf)
