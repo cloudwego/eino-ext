@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ollama/ollama/api"
+	"github.com/ollama/ollama/envconfig"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -39,8 +40,8 @@ var CallbackMetricsExtraKey = "ollama_metrics"
 
 // ChatModelConfig stores configuration options specific to Ollama
 type ChatModelConfig struct {
-	BaseURL string        `json:"base_url"`
-	Timeout time.Duration `json:"timeout"` // request timeout for http client
+	BaseURL string        `json:"base_url"` // optional, host can be configured via the OLLAMA_HOST environment variable otherwise default is http://localhost:11434
+	Timeout time.Duration `json:"timeout"`  // request timeout for http client
 
 	// HTTPClient specifies the client to send HTTP requests.
 	// If HTTPClient is set, Timeout will not be used.
@@ -81,6 +82,9 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		httpClient = &http.Client{Timeout: config.Timeout}
 	}
 
+	if len(config.BaseURL) == 0 {
+		config.BaseURL = envconfig.Host().String()
+	}
 	baseURL, err := url.Parse(config.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid base URL: %w", err)
