@@ -17,8 +17,6 @@
 package ark
 
 import (
-	"encoding/gob"
-
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -29,6 +27,8 @@ const (
 	keyOfModelName        = "ark-model-name"
 	videoURLFPS           = "ark-model-video-url-fps"
 	keyOfContextID        = "ark-context-id"
+	keyOfResponseID       = "ark-response-id"
+	keyOfResponseCaching  = "ark-response-caching"
 	keyOfServiceTier      = "ark-service-tier"
 	ImageSizeKey          = "seedream-image-size"
 )
@@ -42,31 +42,33 @@ func init() {
 		if len(chunks) == 0 {
 			return "", nil
 		}
-
 		return chunks[len(chunks)-1], nil
 	})
-	_ = compose.RegisterSerializableType[arkRequestID]("_eino_ext_ark_request_id")
-	gob.RegisterName("_eino_ext_ark_request_id", arkRequestID(""))
+	schema.RegisterName[arkRequestID]("_eino_ext_ark_request_id")
 
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkModelName) (final arkModelName, err error) {
 		if len(chunks) == 0 {
 			return "", nil
 		}
-
 		return chunks[len(chunks)-1], nil
 	})
-	_ = compose.RegisterSerializableType[arkModelName]("_eino_ext_ark_model_name")
-	gob.RegisterName("_eino_ext_ark_model_name", arkModelName(""))
+	schema.RegisterName[arkModelName]("_eino_ext_ark_model_name")
 
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkServiceTier) (final arkServiceTier, err error) {
 		if len(chunks) == 0 {
 			return "", nil
 		}
-
 		return chunks[len(chunks)-1], nil
 	})
-	_ = compose.RegisterSerializableType[arkServiceTier]("_eino_ext_ark_service_tier")
-	gob.RegisterName("_eino_ext_ark_service_tier", arkServiceTier(""))
+	schema.RegisterName[arkServiceTier]("_eino_ext_ark_service_tier")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []caching) (final caching, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+		return chunks[len(chunks)-1], nil
+	})
+	schema.RegisterName[caching]("_eino_ext_ark_response_caching")
 }
 
 func GetArkRequestID(msg *schema.Message) string {
@@ -98,20 +100,38 @@ func setModelName(msg *schema.Message, name string) {
 	setMsgExtra(msg, keyOfModelName, arkModelName(name))
 }
 
-// GetContextID returns the conversation context ID of the given message.
-// Note:
-//   - Only the first chunk returns the context ID.
-//   - It is only available for ResponsesAPI.
+// Deprecated: Use GetResponseID instead.
+// GetContextID returns the conversation context ID from the message.
+// Available only for ResponsesAPI responses.
 func GetContextID(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	contextID, ok := getMsgExtraValue[string](msg, keyOfContextID)
-	return contextID, ok
+	return getMsgExtraValue[string](msg, keyOfContextID)
 }
 
 func setContextID(msg *schema.Message, contextID string) {
 	setMsgExtra(msg, keyOfContextID, contextID)
+}
+
+// GetResponseID returns the response ID from the message.
+// Available only for ResponsesAPI responses.
+func GetResponseID(msg *schema.Message) (string, bool) {
+	return getMsgExtraValue[string](msg, keyOfResponseID)
+}
+
+func setResponseID(msg *schema.Message, responseID string) {
+	setMsgExtra(msg, keyOfResponseID, responseID)
+}
+
+func getResponseCaching(msg *schema.Message) (string, bool) {
+	caching_, ok := getMsgExtraValue[caching](msg, keyOfResponseCaching)
+	if !ok {
+		return "", false
+	}
+	return string(caching_), true
+}
+
+// setResponseCaching sets the cached status of the response.
+func setResponseCaching(msg *schema.Message, caching caching) {
+	setMsgExtra(msg, keyOfResponseCaching, caching)
 }
 
 func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {

@@ -19,8 +19,9 @@ package ark
 import (
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestConcatMessages(t *testing.T) {
@@ -37,6 +38,8 @@ func TestConcatMessages(t *testing.T) {
 	setModelName(msgs[1], "model name")
 	setServiceTier(msgs[0], "service tier")
 	setServiceTier(msgs[1], "service tier")
+	setResponseID(msgs[0], "resp id")
+	setResponseCaching(msgs[0], cachingEnabled)
 
 	msg, err := schema.ConcatMessages(msgs)
 	assert.NoError(t, err)
@@ -53,4 +56,12 @@ func TestConcatMessages(t *testing.T) {
 	serviceTier, ok := GetServiceTier(msg)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "service tier", serviceTier)
+
+	responseID, ok := GetResponseID(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "resp id", responseID)
+
+	caching_, ok := getResponseCaching(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, string(cachingEnabled), caching_)
 }
