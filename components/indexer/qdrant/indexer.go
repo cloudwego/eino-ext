@@ -28,7 +28,7 @@ import (
 	qdrant "github.com/qdrant/go-client/qdrant"
 )
 
-type IndexerConfig struct {
+type Config struct {
 	// Qdrant gRPC client
 	Client *qdrant.Client
 	// Collection name
@@ -38,46 +38,57 @@ type IndexerConfig struct {
 	// Distance metric
 	Distance qdrant.Distance
 	// BatchSize controls embedding texts size.
-	BatchSize int `json:"batch_size"`
+	BatchSize int
 	// Embedder used to generate vector representations for documents.
 	Embedding embedding.Embedder
-	// DocumentToFields supports customize mapping from Document to Qdrant fields.
-	DocumentToFields func(ctx context.Context, doc *schema.Document) (*Fields, error)
-}
-
-type Fields struct {
-	ID       string
-	Content  string
-	Vector   []float64
-	Metadata map[string]interface{}
 }
 
 type Indexer struct {
-	config *IndexerConfig
+	client     *qdrant.Client
+	collection string
+	vectorDim  int
+	distance   qdrant.Distance
+	batchSize  int
+	embedding  embedding.Embedder
 }
 
-func NewIndexer(ctx context.Context, config *IndexerConfig) (*Indexer, error) {
+func NewIndexer(ctx context.Context, config *Config) (*Indexer, error) {
 	if config.Embedding == nil {
 		return nil, fmt.Errorf("[NewIndexer] embedding not provided for qdrant indexer")
 	}
 	if config.Client == nil {
 		return nil, fmt.Errorf("[NewIndexer] qdrant client not provided")
 	}
-	if config.Collection == "" {
-		config.Collection = defaultCollection
+
+	collection := config.Collection
+	if collection == "" {
+		collection = defaultCollection
 	}
-	if config.DocumentToFields == nil {
-		config.DocumentToFields = defaultDocumentToFields
+
+	batchSize := config.BatchSize
+	if batchSize == 0 {
+		batchSize = 10
 	}
-	if config.BatchSize == 0 {
-		config.BatchSize = 10
+
+	indexer := &Indexer{
+		client:     config.Client,
+		collection: collection,
+		vectorDim:  config.VectorDim,
+		distance:   config.Distance,
+		batchSize:  batchSize,
+		embedding:  config.Embedding,
 	}
-	return &Indexer{config: config}, nil
+
+	if err := indexer.ensureCollection(ctx); err != nil {
+		return nil, fmt.Errorf("[NewIndexer] failed to ensure collection: %w", err)
+	}
+
+	return indexer, nil
 }
 
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
 	options := indexer.GetCommonOptions(&indexer.Options{
-		Embedding: i.config.Embedding,
+		Embedding: i.embedding,
 	}, opts...)
 
 	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
@@ -102,11 +113,8 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 
 func (i *Indexer) batchUpsert(ctx context.Context, docs []*schema.Document, options *indexer.Options) error {
 	emb := options.Embedding
-	batchSize := i.config.BatchSize
+	batchSize := i.batchSize
 
-	if err := i.ensureCollection(ctx); err != nil {
-		return err
-	}
 	for start := 0; start < len(docs); start += batchSize {
 		end := start + batchSize
 		if end > len(docs) {
@@ -118,11 +126,7 @@ func (i *Indexer) batchUpsert(ctx context.Context, docs []*schema.Document, opti
 			texts  []string
 		)
 		for _, doc := range batch {
-			fields, err := i.config.DocumentToFields(ctx, doc)
-			if err != nil {
-				return err
-			}
-			texts = append(texts, fields.Content)
+			texts = append(texts, doc.Content)
 		}
 		vectors, err := emb.EmbedStrings(ctx, texts)
 		if err != nil {
@@ -132,19 +136,18 @@ func (i *Indexer) batchUpsert(ctx context.Context, docs []*schema.Document, opti
 			return fmt.Errorf("[batchUpsert] invalid vector length, expected=%d, got=%d", len(batch), len(vectors))
 		}
 		for idx, doc := range batch {
-			fields, _ := i.config.DocumentToFields(ctx, doc)
 			point := &qdrant.PointStruct{
-				Id:      qdrant.NewID(fields.ID),
+				Id:      qdrant.NewID(doc.ID),
 				Vectors: qdrant.NewVectors(float64SliceToFloat32(vectors[idx])...),
 				Payload: qdrant.NewValueMap(map[string]any{
-					defaultContentKey:  fields.Content,
-					defaultMetadataKey: fields.Metadata,
+					defaultContentKey:  doc.Content,
+					defaultMetadataKey: doc.MetaData,
 				}),
 			}
 			points = append(points, point)
 		}
-		_, err = i.config.Client.Upsert(ctx, &qdrant.UpsertPoints{
-			CollectionName: i.config.Collection,
+		_, err = i.client.Upsert(ctx, &qdrant.UpsertPoints{
+			CollectionName: i.collection,
 			Points:         points,
 		})
 		if err != nil {
@@ -155,7 +158,7 @@ func (i *Indexer) batchUpsert(ctx context.Context, docs []*schema.Document, opti
 }
 
 func (i *Indexer) ensureCollection(ctx context.Context) error {
-	exists, err := i.config.Client.CollectionExists(ctx, i.config.Collection)
+	exists, err := i.client.CollectionExists(ctx, i.collection)
 	if err != nil {
 		return err
 	}
@@ -164,11 +167,11 @@ func (i *Indexer) ensureCollection(ctx context.Context) error {
 		return nil
 	}
 
-	err = i.config.Client.CreateCollection(ctx, &qdrant.CreateCollection{
-		CollectionName: i.config.Collection,
+	err = i.client.CreateCollection(ctx, &qdrant.CreateCollection{
+		CollectionName: i.collection,
 		VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
-			Size:     uint64(i.config.VectorDim),
-			Distance: i.config.Distance,
+			Size:     uint64(i.vectorDim),
+			Distance: i.distance,
 		}),
 	})
 	return err
@@ -180,17 +183,6 @@ func (i *Indexer) GetType() string {
 
 func (i *Indexer) IsCallbacksEnabled() bool {
 	return true
-}
-
-func defaultDocumentToFields(ctx context.Context, doc *schema.Document) (*Fields, error) {
-	if doc.ID == "" {
-		return nil, fmt.Errorf("[defaultDocumentToFields] doc id not set")
-	}
-	return &Fields{
-		ID:       doc.ID,
-		Content:  doc.Content,
-		Metadata: doc.MetaData,
-	}, nil
 }
 
 func float64SliceToFloat32(v []float64) []float32 {

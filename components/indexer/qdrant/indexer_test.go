@@ -69,7 +69,7 @@ func TestIndexer(t *testing.T) {
 	}}
 	docs := []*schema.Document{d1, d2}
 
-	i, err := NewIndexer(ctx, &IndexerConfig{
+	i, err := NewIndexer(ctx, &Config{
 		Client:     client,
 		Collection: CollectionName,
 		BatchSize:  10,

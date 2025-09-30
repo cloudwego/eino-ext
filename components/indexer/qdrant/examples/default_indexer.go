@@ -51,7 +51,7 @@ func main() {
 		dense[i] = vec
 	}
 
-	indexer, err := qri.NewIndexer(ctx, &qri.IndexerConfig{
+	indexer, err := qri.NewIndexer(ctx, &qri.Config{
 		Client:     client,
 		Collection: "eino_collection",
 		VectorDim:  dim,
