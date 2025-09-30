@@ -97,7 +97,7 @@ func TestRetrieve(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	i, err := NewRetriever(ctx, &RetrieverConfig{
+	i, err := NewRetriever(ctx, &Config{
 		Client:     client,
 		Collection: CollectionName,
 		Embedding:  &mockEmbeddingQdrant{dims: 4},

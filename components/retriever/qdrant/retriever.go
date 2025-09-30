@@ -26,7 +26,7 @@ import (
 	qdrant "github.com/qdrant/go-client/qdrant"
 )
 
-type RetrieverConfig struct {
+type Config struct {
 	// Qdrant gRPC client
 	Client *qdrant.Client
 	// Name of the Qdrant collection to query.
@@ -37,15 +37,17 @@ type RetrieverConfig struct {
 	ScoreThreshold *float64
 	// Number of top results to retrieve from Qdrant.
 	TopK int
-	// DocumentConverter converts Qdrant point to eino Document.
-	DocumentConverter func(ctx context.Context, id string, payload map[string]*qdrant.Value, score float32) (*schema.Document, error)
 }
 
 type Retriever struct {
-	config *RetrieverConfig
+	client         *qdrant.Client
+	collection     string
+	embedding      embedding.Embedder
+	scoreThreshold *float64
+	topK           int
 }
 
-func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, error) {
+func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	if config == nil {
 		return nil, fmt.Errorf("[NewRetriever] config is nil")
 	}
@@ -58,39 +60,26 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 	if config.Client == nil {
 		return nil, fmt.Errorf("[NewRetriever] qdrant client not provided")
 	}
-	if config.TopK == 0 {
-		config.TopK = 5
-	}
-	if config.DocumentConverter == nil {
-		config.DocumentConverter = defaultDocumentConverter()
-	}
-	return &Retriever{config: config}, nil
-}
 
-func defaultDocumentConverter() func(ctx context.Context, id string, payload map[string]*qdrant.Value, score float32) (*schema.Document, error) {
-	return func(ctx context.Context, id string, payload map[string]*qdrant.Value, score float32) (*schema.Document, error) {
-		doc := &schema.Document{
-			ID:       id,
-			MetaData: map[string]any{},
-		}
-		if val, ok := payload[defaultContentKey]; ok {
-			doc.Content = val.GetStringValue()
-		}
-		if val, ok := payload[defaultMetadataKey]; ok {
-			// TODO (Anush008): parse nested metadata into basic Go types.
-			// For now, we just store the fields as is.
-			doc.MetaData[defaultMetadataKey] = val.GetStructValue().Fields
-		}
-		doc.MetaData[defaultScoreMetadataKey] = score
-		return doc, nil
+	topK := config.TopK
+	if topK == 0 {
+		topK = 5
 	}
+
+	return &Retriever{
+		client:         config.Client,
+		collection:     config.Collection,
+		embedding:      config.Embedding,
+		scoreThreshold: config.ScoreThreshold,
+		topK:           topK,
+	}, nil
 }
 
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	co := retriever.GetCommonOptions(&retriever.Options{
-		TopK:           &r.config.TopK,
-		ScoreThreshold: r.config.ScoreThreshold,
-		Embedding:      r.config.Embedding,
+		TopK:           &r.topK,
+		ScoreThreshold: r.scoreThreshold,
+		Embedding:      r.embedding,
 	}, opts...)
 	io := retriever.GetImplSpecificOptions(&implOptions{}, opts...)
 
@@ -111,28 +100,39 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 
 	searchReq := qdrant.QueryPoints{
-		CollectionName: r.config.Collection,
+		CollectionName: r.collection,
 		Query:          qdrant.NewQueryDense(vec32),
 		Limit:          qdrant.PtrOf(uint64(*co.TopK)),
 		WithPayload:    qdrant.NewWithPayload(true),
 	}
-	if r.config.ScoreThreshold != nil {
-		searchReq.ScoreThreshold = qdrant.PtrOf(float32(*r.config.ScoreThreshold))
+	if r.scoreThreshold != nil {
+		searchReq.ScoreThreshold = qdrant.PtrOf(float32(*r.scoreThreshold))
 	}
 	if io.Filter != nil {
 		searchReq.Filter = io.Filter
 	}
 
-	resp, err := r.config.Client.Query(ctx, &searchReq)
+	resp, err := r.client.Query(ctx, &searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("[Retriever] qdrant search failed: %w", err)
 	}
 	docs := make([]*schema.Document, 0, len(resp))
 	for _, pt := range resp {
-		doc, err := r.config.DocumentConverter(ctx, pt.Id.GetUuid(), pt.Payload, pt.Score)
-		if err != nil {
-			return nil, err
+		doc := &schema.Document{
+			ID:       pt.Id.GetUuid(),
+			MetaData: map[string]any{},
 		}
+
+		if val, ok := pt.Payload[defaultContentKey]; ok {
+			doc.Content = val.GetStringValue()
+		}
+
+		if val, ok := pt.Payload[defaultMetadataKey]; ok {
+			doc.MetaData[defaultMetadataKey] = val.GetStructValue().Fields
+		}
+
+		doc.WithScore(float64(pt.Score))
+
 		docs = append(docs, doc)
 	}
 	return docs, nil

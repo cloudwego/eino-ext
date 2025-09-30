@@ -40,7 +40,7 @@ func main() {
 		panic(err)
 	}
 
-	r, err := qq.NewRetriever(ctx, &qq.RetrieverConfig{
+	r, err := qq.NewRetriever(ctx, &qq.Config{
 		Client:     client,
 		Collection: "test_collection",
 		Embedding:  &mockEmbedding{},

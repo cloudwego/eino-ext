@@ -17,7 +17,6 @@
 package qdrant
 
 const (
-	defaultContentKey       = "content"
-	defaultMetadataKey      = "metadata"
-	defaultScoreMetadataKey = "score"
+	defaultContentKey  = "content"
+	defaultMetadataKey = "metadata"
 )
