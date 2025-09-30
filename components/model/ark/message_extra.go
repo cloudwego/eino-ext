@@ -30,6 +30,7 @@ const (
 	videoURLFPS           = "ark-model-video-url-fps"
 	keyOfContextID        = "ark-context-id"
 	keyOfServiceTier      = "ark-service-tier"
+	ImageSizeKey          = "seedream-image-size"
 )
 
 type arkRequestID string
@@ -164,3 +165,45 @@ func setServiceTier(msg *schema.Message, serviceTier string) {
 	}
 	setMsgExtra(msg, keyOfServiceTier, arkServiceTier(serviceTier))
 }
+
+func SetImageSize(part *schema.ChatMessageImageURL, size string) {
+	if part == nil {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	part.Extra[ImageSizeKey] = size
+}
+
+func GetImageSize(part *schema.ChatMessageImageURL) (string, bool) {
+	if part == nil {
+		return "", false
+	}
+	size, ok := part.Extra[ImageSizeKey].(string)
+	if !ok {
+		return "", false
+	}
+	return size, true
+}
+
+// func SetImageSize(part *schema.MessageOutputImage, size string) {
+// 	if part == nil {
+// 		return
+// 	}
+// 	if part.Extra == nil {
+// 		part.Extra = make(map[string]any)
+// 	}
+// 	part.Extra[ImageSizeKey] = size
+// }
+
+// func GetImageSize(part *schema.MessageOutputImage) (string, bool) {
+// 	if part == nil {
+// 		return "", false
+// 	}
+// 	size, ok := part.Extra[ImageSizeKey].(string)
+// 	if !ok {
+// 		return "", false
+// 	}
+// 	return size, true
+// }
