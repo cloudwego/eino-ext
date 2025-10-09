@@ -296,7 +296,6 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 	req := &qianfan.ChatCompletionV2Request{
 		BaseRequestBody:     qianfan.BaseRequestBody{},
 		Model:               *options.Model,
-		Messages:            toQianfanMessages(input),
 		StreamOptions:       nil,
 		Temperature:         float64(dereferenceOrZero(options.Temperature)),
 		TopP:                float64(dereferenceOrZero(options.TopP)),
@@ -311,6 +310,15 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 		ParallelToolCalls:   dereferenceOrZero(cm.config.ParallelToolCalls),
 		ResponseFormat:      cm.config.ResponseFormat,
 	}
+
+	messages, err := toQianfanMultiModalMessages(input)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	req.SetExtra(map[string]interface{}{
+		"messages": messages,
+	})
 
 	if isStream {
 		req.StreamOptions = &qianfan.StreamOptions{IncludeUsage: true}
@@ -343,32 +351,243 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 	return req, cbInput, nil
 }
 
-func toQianfanMessages(input []*schema.Message) []qianfan.ChatCompletionV2Message {
-	r := make([]qianfan.ChatCompletionV2Message, len(input))
-	for i, m := range input {
-		msg := qianfan.ChatCompletionV2Message{
-			Role:       string(m.Role),
-			Content:    m.Content,
-			Name:       m.Name,
-			ToolCalls:  make([]qianfan.ToolCall, len(m.ToolCalls)),
-			ToolCallId: m.ToolCallID,
-		}
+type Detail string
 
-		for j, tc := range m.ToolCalls {
-			msg.ToolCalls[j] = qianfan.ToolCall{
-				Id:       tc.ID,
-				ToolType: tc.Type,
-				Function: qianfan.FunctionCallV2{
-					Name:      tc.Function.Name,
-					Arguments: tc.Function.Arguments,
+const (
+	// ImageURLDetailHigh means the high quality image url.
+	ImageURLDetailHigh Detail = "high"
+	// ImageURLDetailLow means the low quality image url.
+	ImageURLDetailLow Detail = "low"
+	// ImageURLDetailAuto means the auto quality image url.
+	ImageURLDetailAuto Detail = "auto"
+)
+
+type Image struct {
+	URL    string `json:"url"`
+	Detail Detail `json:"detail"`
+}
+type Video struct {
+	URL string  `json:"url"`
+	FPS float64 `json:"fps"`
+}
+type Type string
+
+const (
+	Text     Type = "text"
+	VideoURL Type = "video_url"
+	ImageURL Type = "image_url"
+)
+
+type ContentPart struct {
+	Type     Type   `json:"type"`
+	Text     string `json:"text"`
+	ImageURL *Image `json:"image_url"`
+	VideoURL *Video `json:"video_url"`
+}
+
+type ChatCompletionV3Message struct {
+	Role       string             `mapstructure:"role" json:"role,omitempty"`
+	Name       string             `mapstructure:"name" json:"name,omitempty"`
+	ToolCalls  []qianfan.ToolCall `mapstructure:"tool_calls,omitempty" json:"tool_calls,omitempty"` // 函数调用
+	ToolCallId string             `mapstructure:"tool_call_id,omitempty" json:"tool_call_id,omitempty"`
+	Content    []ContentPart      `mapstructure:"content,omitempty" json:"content,omitempty"`
+}
+
+// GetMessageInputVideoFPS extracts the video frames-per-second (FPS) from a message part.
+//
+// FPS determines the number of images to extract from a video per second.
+// The value must be in the range [0.2, 5]. The default is 2.
+// This is only supported by the Ernie 4.5 Turbo VL series.
+//
+// It returns the FPS value, or an error if the FPS is outside the supported range.
+func GetMessageInputVideoFPS(part schema.MessagePartCommon) (float64, error) {
+	const defaultQianFanVideoFps = 2
+	const minFps = 0.2
+	const maxFps = 5
+	if part.Extra == nil {
+		return defaultQianFanVideoFps, nil
+	}
+	fps, ok := part.Extra["fps"].(float64)
+	if !ok {
+		return defaultQianFanVideoFps, nil
+	}
+	if fps >= minFps && fps <= maxFps {
+		return fps, nil
+	}
+	return 0, fmt.Errorf("the FPS parameter for the Qianfan model is outside the valid range of [%v, %v]", minFps, maxFps)
+}
+
+func toQianfanMultiModalMessages(input []*schema.Message) ([]ChatCompletionV3Message, error) {
+	messages := make([]ChatCompletionV3Message, 0, len(input))
+	for _, m := range input {
+		var msg ChatCompletionV3Message
+		if len(m.UserInputMultiContent) > 0 {
+			parts, err := toUserInputMultiContentParts(m.UserInputMultiContent)
+			if err != nil {
+				return nil, err
+			}
+			msg.Content = parts
+		} else if len(m.AssistantGenMultiContent) > 0 {
+			parts, err := toAssistantGenMultiContentParts(m.AssistantGenMultiContent)
+			if err != nil {
+				return nil, err
+			}
+			msg.Content = parts
+		} else if len(m.Content) > 0 {
+			msg.Content = []ContentPart{
+				{
+					Type: Text,
+					Text: m.Content,
 				},
 			}
 		}
 
-		r[i] = msg
-	}
+		role, err := toQianfanRole(string(m.Role))
+		if err != nil {
+			return nil, err
+		}
+		msg.Role = role
 
-	return r
+		if m.ToolCalls != nil {
+			tcs, err := toQianfanToolCalls(m.ToolCalls)
+			if err != nil {
+				return nil, err
+			}
+			msg.ToolCalls = tcs
+		}
+
+		if m.ToolCallID != "" {
+			msg.ToolCallId = m.ToolCallID
+		}
+
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
+func toUserInputMultiContentParts(inputs []schema.MessageInputPart) ([]ContentPart, error) {
+	parts := make([]ContentPart, 0, len(inputs))
+	for _, mm := range inputs {
+		switch mm.Type {
+		case schema.ChatMessagePartTypeText:
+			parts = append(parts, ContentPart{
+				Type: Text,
+				Text: mm.Text,
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if mm.Image == nil {
+				continue
+			}
+			part := ContentPart{
+				Type:     ImageURL,
+				ImageURL: &Image{},
+			}
+			if mm.Image.URL != nil {
+				part.ImageURL.URL = *mm.Image.URL
+			} else if mm.Image.Base64Data != nil {
+				if mm.Image.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded image data")
+				}
+
+				part.ImageURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Image.MIMEType, *mm.Image.Base64Data)
+			} else {
+				return nil, errors.New("image message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		case schema.ChatMessagePartTypeVideoURL:
+			if mm.Video == nil {
+				continue
+			}
+			part := ContentPart{
+				Type:     VideoURL,
+				VideoURL: &Video{},
+			}
+			fps, err := GetMessageInputVideoFPS(mm.Video.MessagePartCommon)
+			if err != nil {
+				return nil, err
+			}
+
+			part.VideoURL.FPS = fps
+
+			if mm.Video.URL != nil {
+				part.VideoURL.URL = *mm.Video.URL
+			} else if mm.Video.Base64Data != nil {
+				if mm.Video.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded video data")
+				}
+
+				part.VideoURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Video.MIMEType, *mm.Video.Base64Data)
+			} else {
+				return nil, errors.New("video message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		default:
+			return nil, fmt.Errorf("unsupported message part type: %s", mm.Type)
+		}
+	}
+	return parts, nil
+}
+
+func toAssistantGenMultiContentParts(outputs []schema.MessageOutputPart) ([]ContentPart, error) {
+	parts := make([]ContentPart, 0, len(outputs))
+	for _, mm := range outputs {
+		switch mm.Type {
+		case schema.ChatMessagePartTypeText:
+			parts = append(parts, ContentPart{
+				Type: Text,
+				Text: mm.Text,
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if mm.Image == nil {
+				continue
+			}
+			part := ContentPart{
+				Type:     ImageURL,
+				ImageURL: &Image{},
+			}
+			if mm.Image.URL != nil {
+				part.ImageURL.URL = *mm.Image.URL
+			} else if mm.Image.Base64Data != nil {
+				if mm.Image.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded image data")
+				}
+				part.ImageURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Image.MIMEType, *mm.Image.Base64Data)
+			} else {
+				return nil, errors.New("image message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		case schema.ChatMessagePartTypeVideoURL:
+			if mm.Video == nil {
+				continue
+			}
+			part := ContentPart{
+				Type:     VideoURL,
+				VideoURL: &Video{},
+			}
+
+			fps, err := GetMessageInputVideoFPS(mm.Video.MessagePartCommon)
+			if err != nil {
+				return nil, err
+			}
+
+			part.VideoURL.FPS = fps
+			if mm.Video.URL != nil {
+				part.VideoURL.URL = *mm.Video.URL
+			} else if mm.Video.Base64Data != nil {
+				if mm.Video.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded video data")
+				}
+
+				part.VideoURL.URL = *mm.Video.Base64Data
+			} else {
+				return nil, errors.New("video message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		default:
+			return nil, fmt.Errorf("unsupported message part type: %s", mm.Type)
+		}
+	}
+	return parts, nil
 }
 
 func resolveQianfanResponse(resp *qianfan.ChatCompletionV2Response) (*schema.Message, error) {
@@ -398,7 +617,6 @@ func resolveQianfanResponse(resp *qianfan.ChatCompletionV2Response) (*schema.Mes
 	}
 
 	msg := &schema.Message{
-		Role:       schema.RoleType(choice.Message.Role),
 		Content:    choice.Message.Content,
 		Name:       choice.Message.Name,
 		ToolCalls:  toMessageToolCalls(choice.Message.ToolCalls),
@@ -409,7 +627,91 @@ func resolveQianfanResponse(resp *qianfan.ChatCompletionV2Response) (*schema.Mes
 		},
 	}
 
+	switch choice.Message.Role {
+	case "user":
+		msg.Role = schema.User
+	case "assistant":
+		msg.Role = schema.Assistant
+	case "function":
+		msg.Role = schema.Tool
+	default:
+		return nil, fmt.Errorf("unsupported role from qianfan: %s", choice.Message.Role)
+	}
+
 	return msg, nil
+}
+
+func toQianfanRole(role string) (string, error) {
+	switch role {
+	case "user", "system":
+		return "user", nil
+	case "assistant":
+		return "assistant", nil
+	case "tool":
+		return "function", nil
+	default:
+		return "", fmt.Errorf("unsupported role: %s", role)
+	}
+}
+
+func toQianfanToolCalls(toolCalls []schema.ToolCall) ([]qianfan.ToolCall, error) {
+	r := make([]qianfan.ToolCall, len(toolCalls))
+	for i, tc := range toolCalls {
+		r[i] = qianfan.ToolCall{
+			Id:       tc.ID,
+			ToolType: tc.Type,
+			Function: qianfan.FunctionCallV2{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		}
+	}
+	return r, nil
+}
+
+func toQianfanTools(tools []*schema.ToolInfo) ([]qianfan.Tool, error) {
+	r := make([]qianfan.Tool, len(tools))
+	for i, tool := range tools {
+		parameters, err := tool.ParamsOneOf.ToJSONSchema()
+		if err != nil {
+			return nil, err
+		}
+
+		r[i] = qianfan.Tool{
+			ToolType: "function",
+			Function: qianfan.FunctionV2{
+				Name:        tool.Name,
+				Description: tool.Desc,
+				Parameters:  parameters,
+			},
+		}
+	}
+
+	return r, nil
+}
+
+func (cm *ChatModel) GetType() string {
+	return getType()
+}
+
+func (cm *ChatModel) IsCallbacksEnabled() bool {
+	return true
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }
 
 func resolveQianfanStreamResponse(resp *qianfan.ChatCompletionV2Response) (
@@ -492,54 +794,5 @@ func toModelCallbackUsage(msg *schema.Message) *model.TokenUsage {
 		CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
 		PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
 		TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
-	}
-}
-
-func toQianfanTools(tools []*schema.ToolInfo) ([]qianfan.Tool, error) {
-	if len(tools) == 0 {
-		return nil, nil
-	}
-
-	r := make([]qianfan.Tool, len(tools))
-	for i, tool := range tools {
-		parameters, err := tool.ParamsOneOf.ToJSONSchema()
-		if err != nil {
-			return nil, err
-		}
-
-		r[i] = qianfan.Tool{
-			ToolType: "function",
-			Function: qianfan.FunctionV2{
-				Name:        tool.Name,
-				Description: tool.Desc,
-				Parameters:  parameters,
-			},
-		}
-	}
-
-	return r, nil
-}
-
-func (cm *ChatModel) GetType() string {
-	return getType()
-}
-
-func (cm *ChatModel) IsCallbacksEnabled() bool {
-	return true
-}
-
-type panicErr struct {
-	info  any
-	stack []byte
-}
-
-func (p *panicErr) Error() string {
-	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
-}
-
-func newPanicErr(info any, stack []byte) error {
-	return &panicErr{
-		info:  info,
-		stack: stack,
 	}
 }
