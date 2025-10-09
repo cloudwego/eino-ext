@@ -114,22 +114,10 @@ func isBreakpointMessage(msg *schema.Message) bool {
 }
 
 func GetThinkingSignature(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	signature, ok := msg.Extra[keyOfThinkingSignature].(string)
-	if !ok {
-		return "", false
-	}
-	return signature, true
+	signature, ok := getMsgExtraValue[string](msg, keyOfThinkingSignature)
+	return signature, ok
 }
 
 func SetThinkingSignature(msg *schema.Message, signature string) {
-	if msg == nil {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
-	}
-	msg.Extra[keyOfThinkingSignature] = signature
+	setMsgExtra(msg, keyOfThinkingSignature, signature)
 }
