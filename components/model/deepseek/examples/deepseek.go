@@ -91,7 +91,7 @@ func basicChat(ctx context.Context, cm model.ChatModel) {
 	if !ok {
 		fmt.Printf("Unexpected: non-reasoning")
 	} else {
-		fmt.Printf("Resoning Content: %s\n", reasoning)
+		fmt.Printf("Reasoning Content: %s\n", reasoning)
 	}
 	fmt.Printf("Assistant: %s\n", resp.Content)
 	if resp.ResponseMeta != nil && resp.ResponseMeta.Usage != nil {
@@ -127,7 +127,7 @@ func streamingChat(ctx context.Context, cm model.ChatModel) {
 			return
 		}
 		if reasoning, ok := deepseek.GetReasoningContent(resp); ok {
-			fmt.Printf("Resoning Content: %s\n", reasoning)
+			fmt.Printf("Reasoning Content: %s\n", reasoning)
 		}
 		if len(resp.Content) > 0 {
 			fmt.Printf("Content: %s\n", resp.Content)

@@ -165,13 +165,13 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opts = cm.parseCustomOpetions(opts...)
+	opts = cm.parseCustomOptions(opts...)
 	return cm.cli.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opts = cm.parseCustomOpetions(opts...)
+	opts = cm.parseCustomOptions(opts...)
 	outStream, err = cm.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
@@ -218,7 +218,7 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return cm.cli.BindForcedTools(tools)
 }
 
-func (cm *ChatModel) parseCustomOpetions(opts ...model.Option) []model.Option {
+func (cm *ChatModel) parseCustomOptions(opts ...model.Option) []model.Option {
 	qwenOpts := model.GetImplSpecificOptions(&options{
 		EnableThinking: cm.extraOptions.EnableThinking,
 	}, opts...)
