@@ -601,6 +601,17 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 
 func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
 	var messageParams []anthropic.ContentBlockParamUnion
+
+	if message.Role == schema.Assistant {
+		thinkingContent, hasThinking := GetThinking(message)
+		if hasThinking && thinkingContent != "" {
+			signature, hasSignature := GetThinkingSignature(message)
+			if hasSignature && signature != "" {
+				messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
+			}
+		}
+	}
+
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
@@ -718,6 +729,7 @@ func convContentBlockToEinoMsg(
 	case anthropic.ThinkingBlock:
 		setThinking(dstMsg, block.Thinking)
 		dstMsg.ReasoningContent = block.Thinking
+		SetThinkingSignature(dstMsg, block.Signature)
 	case anthropic.RedactedThinkingBlock:
 	default:
 		return fmt.Errorf("unknown anthropic content block type: %T", block)
@@ -781,6 +793,11 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 			result.ToolCalls = append(result.ToolCalls,
 				toolEvent(false, "", "", delta.PartialJSON, streamCtx))
 		case anthropic.SignatureDelta:
+			if currentSig, hasSig := GetThinkingSignature(result); hasSig {
+				SetThinkingSignature(result, currentSig+delta.Signature)
+			} else {
+				SetThinkingSignature(result, delta.Signature)
+			}
 		}
 
 		return result, nil

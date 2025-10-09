@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	keyOfThinking   = "_eino_claude_thinking"
-	keyOfBreakPoint = "_eino_claude_breakpoint"
+	keyOfThinking          = "_eino_claude_thinking"
+	keyOfBreakPoint        = "_eino_claude_breakpoint"
+	keyOfThinkingSignature = "_eino_claude_thinking_signature"
 )
 
 func GetThinking(msg *schema.Message) (string, bool) {
@@ -110,4 +111,13 @@ func isBreakpointTool(toolInfo *schema.ToolInfo) bool {
 func isBreakpointMessage(msg *schema.Message) bool {
 	isBreakpoint, _ := getMsgExtraValue[bool](msg, keyOfBreakPoint)
 	return isBreakpoint
+}
+
+func GetThinkingSignature(msg *schema.Message) (string, bool) {
+	signature, ok := getMsgExtraValue[string](msg, keyOfThinkingSignature)
+	return signature, ok
+}
+
+func SetThinkingSignature(msg *schema.Message, signature string) {
+	setMsgExtra(msg, keyOfThinkingSignature, signature)
 }
