@@ -535,9 +535,8 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	}
 
 	messages := make([]anthropic.MessageParam, 0, len(msgs))
-	hasTools := len(tools) > 0
 	for _, msg := range msgs {
-		message, err := convSchemaMessage(msg, claudeOptions, hasTools)
+		message, err := convSchemaMessage(msg)
 		if err != nil {
 			return anthropic.MessageNewParams{}, fmt.Errorf("convert schema message fail: %w", err)
 		}
@@ -600,7 +599,7 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func convSchemaMessage(message *schema.Message, opts *options, hasTools bool) (mp anthropic.MessageParam, err error) {
+func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
 	var messageParams []anthropic.ContentBlockParamUnion
 
 	if message.Role == schema.Assistant {
