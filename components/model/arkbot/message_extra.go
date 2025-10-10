@@ -17,10 +17,10 @@
 package arkbot
 
 import (
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 const (
@@ -65,6 +65,7 @@ func init() {
 	schema.RegisterName[*model.BotUsage]("_eino_ext_ark_bot_usage")
 	schema.RegisterName[*model.BotChatResultReference]("_eino_ext_ark_bot_chat_result_reference")
 	schema.RegisterName[*model.BotCoverImage]("_eino_ext_ark_bot_cover_image")
+
 }
 
 func setArkRequestID(msg *schema.Message, id string) {

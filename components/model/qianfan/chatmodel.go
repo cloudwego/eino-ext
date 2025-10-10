@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
 
@@ -67,6 +68,37 @@ type ChatModel struct {
 	tools      []qianfan.Tool
 	toolChoice *schema.ToolChoice
 	config     *ChatModelConfig
+}
+
+type image struct {
+	URL    string                `json:"url,omitempty"`
+	Detail schema.ImageURLDetail `json:"detail,omitempty"`
+}
+type video struct {
+	URL string   `json:"url,omitempty"`
+	FPS *float64 `json:"fps,omitempty"`
+}
+type ty string
+
+const (
+	Text     ty = "text"
+	VideoURL ty = "video_url"
+	ImageURL ty = "image_url"
+)
+
+type contentPart struct {
+	Type     ty     `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL *image `json:"image_url,omitempty"`
+	VideoURL *video `json:"video_url,omitempty"`
+}
+
+type chatCompletionV3Message struct {
+	Role       string             `json:"role,omitempty"`
+	Name       string             `json:"name,omitempty"`
+	ToolCalls  []qianfan.ToolCall `json:"tool_calls,omitempty"`
+	ToolCallId string             `json:"tool_call_id,omitempty"`
+	Content    []contentPart      `json:"content,omitempty"`
 }
 
 func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
@@ -351,90 +383,28 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 	return req, cbInput, nil
 }
 
-type Detail string
-
-const (
-	// ImageURLDetailHigh means the high quality image url.
-	ImageURLDetailHigh Detail = "high"
-	// ImageURLDetailLow means the low quality image url.
-	ImageURLDetailLow Detail = "low"
-	// ImageURLDetailAuto means the auto quality image url.
-	ImageURLDetailAuto Detail = "auto"
-)
-
-type Image struct {
-	URL    string `json:"url"`
-	Detail Detail `json:"detail"`
-}
-type Video struct {
-	URL string  `json:"url"`
-	FPS float64 `json:"fps"`
-}
-type Type string
-
-const (
-	Text     Type = "text"
-	VideoURL Type = "video_url"
-	ImageURL Type = "image_url"
-)
-
-type ContentPart struct {
-	Type     Type   `json:"type"`
-	Text     string `json:"text"`
-	ImageURL *Image `json:"image_url"`
-	VideoURL *Video `json:"video_url"`
-}
-
-type ChatCompletionV3Message struct {
-	Role       string             `mapstructure:"role" json:"role,omitempty"`
-	Name       string             `mapstructure:"name" json:"name,omitempty"`
-	ToolCalls  []qianfan.ToolCall `mapstructure:"tool_calls,omitempty" json:"tool_calls,omitempty"` // 函数调用
-	ToolCallId string             `mapstructure:"tool_call_id,omitempty" json:"tool_call_id,omitempty"`
-	Content    []ContentPart      `mapstructure:"content,omitempty" json:"content,omitempty"`
-}
-
-// GetMessageInputVideoFPS extracts the video frames-per-second (FPS) from a message part.
-//
-// FPS determines the number of images to extract from a video per second.
-// The value must be in the range [0.2, 5]. The default is 2.
-// This is only supported by the Ernie 4.5 Turbo VL series.
-//
-// It returns the FPS value, or an error if the FPS is outside the supported range.
-func GetMessageInputVideoFPS(part schema.MessagePartCommon) (float64, error) {
-	const defaultQianFanVideoFps = 2
-	const minFps = 0.2
-	const maxFps = 5
-	if part.Extra == nil {
-		return defaultQianFanVideoFps, nil
-	}
-	fps, ok := part.Extra["fps"].(float64)
-	if !ok {
-		return defaultQianFanVideoFps, nil
-	}
-	if fps >= minFps && fps <= maxFps {
-		return fps, nil
-	}
-	return 0, fmt.Errorf("the FPS parameter for the Qianfan model is outside the valid range of [%v, %v]", minFps, maxFps)
-}
-
-func toQianfanMultiModalMessages(input []*schema.Message) ([]ChatCompletionV3Message, error) {
-	messages := make([]ChatCompletionV3Message, 0, len(input))
+func toQianfanMultiModalMessages(input []*schema.Message) ([]chatCompletionV3Message, error) {
+	messages := make([]chatCompletionV3Message, 0, len(input))
 	for _, m := range input {
-		var msg ChatCompletionV3Message
+		var msg chatCompletionV3Message
+		if len(m.UserInputMultiContent) > 0 && len(m.AssistantGenMultiContent) > 0 {
+			return nil, errors.New("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+		}
+
 		if len(m.UserInputMultiContent) > 0 {
-			parts, err := toUserInputMultiContentParts(m.UserInputMultiContent)
+			parts, err := toUserInputMultiContentParts(m)
 			if err != nil {
 				return nil, err
 			}
 			msg.Content = parts
 		} else if len(m.AssistantGenMultiContent) > 0 {
-			parts, err := toAssistantGenMultiContentParts(m.AssistantGenMultiContent)
+			parts, err := toAssistantGenMultiContentParts(m)
 			if err != nil {
 				return nil, err
 			}
 			msg.Content = parts
 		} else if len(m.Content) > 0 {
-			msg.Content = []ContentPart{
+			msg.Content = []contentPart{
 				{
 					Type: Text,
 					Text: m.Content,
@@ -465,28 +435,45 @@ func toQianfanMultiModalMessages(input []*schema.Message) ([]ChatCompletionV3Mes
 	return messages, nil
 }
 
-func toUserInputMultiContentParts(inputs []schema.MessageInputPart) ([]ContentPart, error) {
-	parts := make([]ContentPart, 0, len(inputs))
+func validateBase64Data(data string) error {
+	if strings.HasPrefix(data, "data:") {
+		return errors.New("base64 data represents the binary data in Base64 encoded string format, cannot start with 'data:'")
+	}
+	return nil
+}
+
+func toUserInputMultiContentParts(inMsg *schema.Message) ([]contentPart, error) {
+	if inMsg.Role == schema.Assistant {
+		return nil, errors.New("invalid role for UserInputMultiContent: role must not be 'assistant'")
+	}
+
+	inputs := inMsg.UserInputMultiContent
+	parts := make([]contentPart, 0, len(inputs))
 	for _, mm := range inputs {
 		switch mm.Type {
 		case schema.ChatMessagePartTypeText:
-			parts = append(parts, ContentPart{
+			parts = append(parts, contentPart{
 				Type: Text,
 				Text: mm.Text,
 			})
 		case schema.ChatMessagePartTypeImageURL:
 			if mm.Image == nil {
-				continue
+				return nil, errors.New("the 'image' field is required for parts of type 'image_url'")
 			}
-			part := ContentPart{
+			part := contentPart{
 				Type:     ImageURL,
-				ImageURL: &Image{},
+				ImageURL: &image{Detail: mm.Image.Detail},
 			}
 			if mm.Image.URL != nil {
 				part.ImageURL.URL = *mm.Image.URL
 			} else if mm.Image.Base64Data != nil {
 				if mm.Image.MIMEType == "" {
 					return nil, errors.New("MIME type is required for base64-encoded image data")
+				}
+
+				err := validateBase64Data(*mm.Image.Base64Data)
+				if err != nil {
+					return nil, err
 				}
 
 				part.ImageURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Image.MIMEType, *mm.Image.Base64Data)
@@ -496,24 +483,27 @@ func toUserInputMultiContentParts(inputs []schema.MessageInputPart) ([]ContentPa
 			parts = append(parts, part)
 		case schema.ChatMessagePartTypeVideoURL:
 			if mm.Video == nil {
-				continue
+				return nil, errors.New("the 'video' field is required for parts of type 'video_url'")
 			}
-			part := ContentPart{
+			part := contentPart{
 				Type:     VideoURL,
-				VideoURL: &Video{},
-			}
-			fps, err := GetMessageInputVideoFPS(mm.Video.MessagePartCommon)
-			if err != nil {
-				return nil, err
+				VideoURL: &video{},
 			}
 
-			part.VideoURL.FPS = fps
+			fps, found := GetMessagePartVideoFPS(mm.Video.MessagePartCommon)
+			if found {
+				part.VideoURL.FPS = &fps
+			}
 
 			if mm.Video.URL != nil {
 				part.VideoURL.URL = *mm.Video.URL
 			} else if mm.Video.Base64Data != nil {
 				if mm.Video.MIMEType == "" {
 					return nil, errors.New("MIME type is required for base64-encoded video data")
+				}
+				err := validateBase64Data(*mm.Video.Base64Data)
+				if err != nil {
+					return nil, err
 				}
 
 				part.VideoURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Video.MIMEType, *mm.Video.Base64Data)
@@ -528,22 +518,27 @@ func toUserInputMultiContentParts(inputs []schema.MessageInputPart) ([]ContentPa
 	return parts, nil
 }
 
-func toAssistantGenMultiContentParts(outputs []schema.MessageOutputPart) ([]ContentPart, error) {
-	parts := make([]ContentPart, 0, len(outputs))
+func toAssistantGenMultiContentParts(inMsg *schema.Message) ([]contentPart, error) {
+	if inMsg.Role == schema.User {
+		return nil, errors.New("invalid role for AssistantGenMultiContent: role must not be 'user'")
+	}
+
+	outputs := inMsg.AssistantGenMultiContent
+	parts := make([]contentPart, 0, len(outputs))
 	for _, mm := range outputs {
 		switch mm.Type {
 		case schema.ChatMessagePartTypeText:
-			parts = append(parts, ContentPart{
+			parts = append(parts, contentPart{
 				Type: Text,
 				Text: mm.Text,
 			})
 		case schema.ChatMessagePartTypeImageURL:
 			if mm.Image == nil {
-				continue
+				return nil, errors.New("the 'image' field is required for parts of type 'image_url'")
 			}
-			part := ContentPart{
+			part := contentPart{
 				Type:     ImageURL,
-				ImageURL: &Image{},
+				ImageURL: &image{},
 			}
 			if mm.Image.URL != nil {
 				part.ImageURL.URL = *mm.Image.URL
@@ -551,6 +546,12 @@ func toAssistantGenMultiContentParts(outputs []schema.MessageOutputPart) ([]Cont
 				if mm.Image.MIMEType == "" {
 					return nil, errors.New("MIME type is required for base64-encoded image data")
 				}
+
+				err := validateBase64Data(*mm.Image.Base64Data)
+				if err != nil {
+					return nil, err
+				}
+
 				part.ImageURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Image.MIMEType, *mm.Image.Base64Data)
 			} else {
 				return nil, errors.New("image message part must have url or base64 data")
@@ -558,24 +559,27 @@ func toAssistantGenMultiContentParts(outputs []schema.MessageOutputPart) ([]Cont
 			parts = append(parts, part)
 		case schema.ChatMessagePartTypeVideoURL:
 			if mm.Video == nil {
-				continue
+				return nil, errors.New("the 'video' field is required for parts of type 'video_url'")
 			}
-			part := ContentPart{
+			part := contentPart{
 				Type:     VideoURL,
-				VideoURL: &Video{},
+				VideoURL: &video{},
 			}
 
-			fps, err := GetMessageInputVideoFPS(mm.Video.MessagePartCommon)
-			if err != nil {
-				return nil, err
+			fps, found := GetMessagePartVideoFPS(mm.Video.MessagePartCommon)
+			if found {
+				part.VideoURL.FPS = &fps
 			}
 
-			part.VideoURL.FPS = fps
 			if mm.Video.URL != nil {
 				part.VideoURL.URL = *mm.Video.URL
 			} else if mm.Video.Base64Data != nil {
 				if mm.Video.MIMEType == "" {
 					return nil, errors.New("MIME type is required for base64-encoded video data")
+				}
+				err := validateBase64Data(*mm.Video.Base64Data)
+				if err != nil {
+					return nil, err
 				}
 
 				part.VideoURL.URL = *mm.Video.Base64Data
