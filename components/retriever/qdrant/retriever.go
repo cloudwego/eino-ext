@@ -18,8 +18,11 @@ package qdrant
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
@@ -75,7 +78,7 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	}, nil
 }
 
-func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
 	co := retriever.GetCommonOptions(&retriever.Options{
 		TopK:           &r.topK,
 		ScoreThreshold: r.scoreThreshold,
@@ -83,11 +86,24 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}, opts...)
 	io := retriever.GetImplSpecificOptions(&implOptions{}, opts...)
 
+	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
+	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
+		Query:          query,
+		TopK:           *co.TopK,
+		Filter:         tryMarshalJsonString(io.Filter),
+		ScoreThreshold: co.ScoreThreshold,
+	})
+	defer func() {
+		if err != nil {
+			callbacks.OnError(ctx, err)
+		}
+	}()
+
 	emb := co.Embedding
 	if emb == nil {
 		return nil, fmt.Errorf("[qdrant retriever] embedding not provided")
 	}
-	vectors, err := emb.EmbedStrings(ctx, []string{query})
+	vectors, err := emb.EmbedStrings(r.makeEmbeddingCtx(ctx, emb), []string{query})
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +132,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if err != nil {
 		return nil, fmt.Errorf("[Retriever] qdrant search failed: %w", err)
 	}
-	docs := make([]*schema.Document, 0, len(resp))
+	docs = make([]*schema.Document, 0, len(resp))
 	for _, pt := range resp {
 		doc := &schema.Document{
 			ID:       pt.Id.GetUuid(),
@@ -135,7 +151,34 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 
 		docs = append(docs, doc)
 	}
+
+	callbacks.OnEnd(ctx, &retriever.CallbackOutput{Docs: docs})
+
 	return docs, nil
+}
+
+func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
+	runInfo := &callbacks.RunInfo{
+		Component: components.ComponentOfEmbedding,
+	}
+
+	if embType, ok := components.GetType(emb); ok {
+		runInfo.Type = embType
+	}
+
+	runInfo.Name = runInfo.Type + string(runInfo.Component)
+
+	return callbacks.ReuseHandlers(ctx, runInfo)
+}
+
+func tryMarshalJsonString(input any) string {
+	if input == nil {
+		return ""
+	}
+	if b, err := json.Marshal(input); err == nil {
+		return string(b)
+	}
+	return ""
 }
 
 const typ = "Qdrant"
