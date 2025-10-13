@@ -113,11 +113,11 @@ func isBreakpointMessage(msg *schema.Message) bool {
 	return isBreakpoint
 }
 
-func GetThinkingSignature(msg *schema.Message) (string, bool) {
+func getThinkingSignature(msg *schema.Message) (string, bool) {
 	signature, ok := getMsgExtraValue[string](msg, keyOfThinkingSignature)
 	return signature, ok
 }
 
-func SetThinkingSignature(msg *schema.Message, signature string) {
+func setThinkingSignature(msg *schema.Message, signature string) {
 	setMsgExtra(msg, keyOfThinkingSignature, signature)
 }

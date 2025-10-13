@@ -306,11 +306,18 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 
 		arkOpts := &arkOptions{}
 		initialReqOptsLen := len(reqOpts)
+		msgs := []*schema.Message{
+			{
+				Role:    schema.User,
+				Content: "Hello",
+			},
+		}
 
-		newReq, newReqOpts, err := cm.injectCache(req, arkOpts, reqOpts)
+		in_, newReq, newReqOpts, err := cm.injectCache(msgs, req, arkOpts, reqOpts)
 		assert.Nil(t, err)
 		assert.Equal(t, param.NewOpt(false), newReq.Store)
 		assert.Equal(t, initialReqOptsLen+1, len(newReqOpts))
+		assert.Len(t, in_, 1)
 	})
 
 	PatchConvey("enable cache and set ttl", t, func() {
@@ -329,11 +336,28 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 
 		arkOpts := &arkOptions{}
 		initialReqOptsLen := len(reqOpts)
+		msgs := []*schema.Message{
+			{
+				Role:    schema.User,
+				Content: "Hello",
+				Extra: map[string]any{
+					keyOfResponseID:      "test-response-id",
+					keyOfResponseCaching: cachingEnabled,
+				},
+			},
+			{
+				Role:    schema.User,
+				Content: "World",
+			},
+		}
 
-		newReq, newReqOpts, err := cm.injectCache(req, arkOpts, reqOpts)
+		in_, newReq, newReqOpts, err := cm.injectCache(msgs, req, arkOpts, reqOpts)
 		assert.Nil(t, err)
 		assert.Equal(t, initialReqOptsLen+2, len(newReqOpts))
 		assert.Equal(t, param.NewOpt(true), newReq.Store)
+		assert.Equal(t, "test-response-id", newReq.PreviousResponseID.Value)
+		assert.Len(t, in_, 1)
+		assert.Equal(t, "World", in_[0].Content)
 	})
 
 	PatchConvey("option overridden config", t, func() {
@@ -361,12 +385,27 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		}
 
 		initialReqOptsLen := len(reqOpts)
+		msgs := []*schema.Message{
+			{
+				Role:    schema.User,
+				Content: "Hello",
+				Extra: map[string]any{
+					keyOfResponseID:      "test-response-id",
+					keyOfResponseCaching: cachingEnabled,
+				},
+			},
+			{
+				Role:    schema.User,
+				Content: "World",
+			},
+		}
 
-		newReq, newReqOpts, err := cm.injectCache(req, arkOpts, reqOpts)
+		in_, newReq, newReqOpts, err := cm.injectCache(msgs, req, arkOpts, reqOpts)
 		assert.Nil(t, err)
 		assert.Equal(t, initialReqOptsLen+2, len(newReqOpts))
 		assert.Equal(t, param.NewOpt(true), newReq.Store)
-		assert.Equal(t, contextID, newReq.PreviousResponseID.Value)
+		assert.Equal(t, "test-context", newReq.PreviousResponseID.Value)
+		assert.Len(t, in_, 2)
 	})
 }
 
@@ -384,7 +423,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 			Return(responses.ResponseCreatedEvent{}).Build()
 		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
 
-		cm.receivedStreamResponse(streamResp, nil, nil)
+		cm.receivedStreamResponse(streamResp, nil, true, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 
@@ -399,7 +438,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 			Return(responses.ResponseCompletedEvent{}).Build()
 		Mock((*responsesAPIChatModel).handleCompletedStreamEvent).Return(&schema.Message{}).Build()
 
-		cm.receivedStreamResponse(streamResp, nil, nil)
+		cm.receivedStreamResponse(streamResp, nil, true, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 
@@ -415,7 +454,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 
 		Mock((*responsesAPIChatModel).handleCompletedStreamEvent).Return(&schema.Message{}).Build()
 
-		cm.receivedStreamResponse(streamResp, nil, nil)
+		cm.receivedStreamResponse(streamResp, nil, true, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 
@@ -430,7 +469,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 			Return(responses.ResponseIncompleteEvent{}).Build()
 		Mock((*responsesAPIChatModel).handleIncompleteStreamEvent).Return(&schema.Message{}).Build()
 
-		cm.receivedStreamResponse(streamResp, nil, nil)
+		cm.receivedStreamResponse(streamResp, nil, true, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 
@@ -445,7 +484,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 			Return(responses.ResponseFailedEvent{}).Build()
 		Mock((*responsesAPIChatModel).handleFailedStreamEvent).Return(&schema.Message{}).Build()
 
-		cm.receivedStreamResponse(streamResp, nil, nil)
+		cm.receivedStreamResponse(streamResp, nil, true, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 
@@ -460,7 +499,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
 		Mock((*responsesAPIChatModel).handleDeltaStreamEvent).Return(&schema.Message{}).Build()
 
-		cm.receivedStreamResponse(streamResp, nil, nil)
+		cm.receivedStreamResponse(streamResp, nil, true, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 
@@ -505,7 +544,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse(t *testing.T) {
 				assert.Equal(t, "function", msg.ToolCalls[0].Type)
 			}).Build()
 
-		cm.receivedStreamResponse(streamResp, nil, nil)
+		cm.receivedStreamResponse(streamResp, nil, true, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 }
@@ -568,9 +607,9 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 			return nil
 		}).Build()
 
-		Mock((*responsesAPIChatModel).injectCache).To(func(req responses.ResponseNewParams, arkOpts *arkOptions,
-			reqOpts []openaiOption.RequestOption) (responses.ResponseNewParams, []openaiOption.RequestOption, error) {
-			return req, reqOpts, nil
+		Mock((*responsesAPIChatModel).injectCache).To(func(in []*schema.Message, req responses.ResponseNewParams, arkOpts *arkOptions,
+			reqOpts []openaiOption.RequestOption) ([]*schema.Message, responses.ResponseNewParams, []openaiOption.RequestOption, error) {
+			return in, req, reqOpts, nil
 		}).Build()
 
 		in := []*schema.Message{
@@ -639,4 +678,11 @@ func TestResponsesAPIChatModelIsAddedToolCall(t *testing.T) {
 		assert.Equal(t, "function_call", msg.ToolCalls[0].Type)
 		assert.Equal(t, "name", msg.ToolCalls[0].Function.Name)
 	})
+}
+
+func TestGetArkRequestID(t *testing.T) {
+	item := responses.EasyInputMessageContentUnionParam{}
+	if item.OfString.Valid() {
+		t.Log("eq")
+	}
 }

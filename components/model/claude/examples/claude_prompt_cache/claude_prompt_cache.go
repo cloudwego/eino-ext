@@ -23,12 +23,14 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/claude"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
 	systemCache()
 	//toolInfoCache()
+	//sessionCache()
 }
 
 func systemCache() {
@@ -203,4 +205,80 @@ func toolInfoCache() {
 
 		log.Printf("time_consume=%f, output: \n%v", time.Now().Sub(now).Seconds(), resp)
 	}
+}
+
+func sessionCache() {
+	apiKey := os.Getenv("CLAUDE_API_KEY")
+	modelName := os.Getenv("CLAUDE_MODEL")
+	baseURL := os.Getenv("CLAUDE_BASE_URL")
+
+	ctx := context.Background()
+
+	cm, err := claude.NewChatModel(ctx, &claude.Config{
+		// if you want to use Aws Bedrock Service, set these four field.
+		// ByBedrock:       true,
+		// AccessKey:       "",
+		// SecretAccessKey: "",
+		// Region:          "us-west-2",
+		APIKey: apiKey,
+		// Model:     "claude-3-5-sonnet-20240620",
+		BaseURL:   &baseURL,
+		Model:     modelName,
+		MaxTokens: 3000,
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel of claude failed, err=%v", err)
+	}
+
+	opts := []model.Option{
+		claude.WithEnableAutoCache(true),
+	}
+
+	mockTools := []*schema.ToolInfo{
+		{
+			Name: "get_weather",
+			Desc: "Get the current weather in a given location",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"location": {
+						Type: "string",
+						Desc: "The city and state, e.g. San Francisco, CA",
+					},
+					"unit": {
+						Type: "string",
+						Enum: []string{"celsius", "fahrenheit"},
+						Desc: "The unit of temperature, either celsius or fahrenheit",
+					},
+				},
+			),
+		},
+	}
+
+	chatModelWithTools, err := cm.WithTools(mockTools)
+	if err != nil {
+		log.Fatalf("WithTools failed, err=%v", err)
+		return
+	}
+
+	input := []*schema.Message{
+		schema.SystemMessage("You are a tool calling assistant."),
+		schema.UserMessage("What tools can you call?"),
+	}
+
+	resp, err := chatModelWithTools.Generate(ctx, input, opts...)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+		return
+	}
+	log.Printf("output_1: \n%v\n\n", resp)
+
+	input = append(input, resp, schema.UserMessage("What am I asking last time?"))
+
+	resp, err = chatModelWithTools.Generate(ctx, input, opts...)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+		return
+	}
+
+	log.Printf("output_2: \n%v\n\n", resp)
 }

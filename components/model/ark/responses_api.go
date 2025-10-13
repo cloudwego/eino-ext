@@ -89,7 +89,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		return nil, fmt.Errorf("failed to create generate request: %w", err)
 	}
 
-	outMsg, err = cm.toOutputMessage(resp)
+	outMsg, err = cm.toOutputMessage(resp, req.Store.Value)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert output to schema.Message: %w", err)
 	}
@@ -153,7 +153,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			sw.Close()
 		}()
 
-		cm.receivedStreamResponse(streamResp, config, sw)
+		cm.receivedStreamResponse(streamResp, config, req.Store.Value, sw)
 
 	}()
 
@@ -175,8 +175,17 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	return outStream, nil
 }
 
+func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message, response responses.Response, enableCache bool) {
+	if enableCache {
+		setResponseCaching(msg, cachingEnabled)
+	}
+	setContextID(msg, response.ID)
+	setResponseID(msg, response.ID)
+	setServiceTier(msg, string(response.ServiceTier))
+}
+
 func (cm *responsesAPIChatModel) receivedStreamResponse(streamResp *ssestream.Stream[responses.ResponseStreamEventUnion],
-	config *model.Config, sw *schema.StreamWriter[*model.CallbackOutput]) {
+	config *model.Config, enableCache bool, sw *schema.StreamWriter[*model.CallbackOutput]) {
 
 	var toolCallMetaMsg *schema.Message
 
@@ -202,15 +211,18 @@ Outer:
 			msg := &schema.Message{
 				Role: schema.Assistant,
 			}
-			setContextID(msg, asEvent.Response.ID)
-			setServiceTier(msg, string(asEvent.Response.ServiceTier))
+
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
 			cm.sendCallbackOutput(sw, config, msg)
+
 			continue
 
 		case responses.ResponseCompletedEvent:
 			msg := cm.handleCompletedStreamEvent(asEvent)
-			setServiceTier(msg, string(asEvent.Response.ServiceTier))
+
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
 			cm.sendCallbackOutput(sw, config, msg)
+
 			break Outer
 
 		case responses.ResponseErrorEvent:
@@ -219,14 +231,17 @@ Outer:
 
 		case responses.ResponseIncompleteEvent:
 			msg := cm.handleIncompleteStreamEvent(asEvent)
-			setServiceTier(msg, string(asEvent.Response.ServiceTier))
+
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
 			cm.sendCallbackOutput(sw, config, msg)
+
 			break Outer
 
 		case responses.ResponseFailedEvent:
 			msg := cm.handleFailedStreamEvent(asEvent)
-			setServiceTier(msg, string(asEvent.Response.ServiceTier))
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
 			cm.sendCallbackOutput(sw, config, msg)
+
 			break Outer
 
 		default:
@@ -266,9 +281,13 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 	msg *schema.Message) {
 
 	extra := map[string]any{}
-	responseID, ok := GetContextID(msg)
+	contextID, ok := GetContextID(msg)
 	if ok {
-		extra[keyOfContextID] = responseID
+		extra[keyOfContextID] = contextID
+	}
+	responseID, ok := GetResponseID(msg)
+	if ok {
+		extra[keyOfResponseID] = responseID
 	}
 
 	var token *model.TokenUsage
@@ -443,15 +462,16 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceTier)),
 	}
 
-	if req, err = cm.injectInput(req, in); err != nil {
+	var in_ []*schema.Message
+	if in_, req, reqOpts, err = cm.injectCache(in, req, specOptions, reqOpts); err != nil {
+		return req, nil, err
+	}
+
+	if req, err = cm.injectInput(req, in_); err != nil {
 		return req, nil, err
 	}
 
 	if req, err = cm.injectTools(req, options.Tools); err != nil {
-		return req, nil, err
-	}
-
-	if req, reqOpts, err = cm.injectCache(req, specOptions, reqOpts); err != nil {
 		return req, nil, err
 	}
 
@@ -473,34 +493,36 @@ func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOption
 	return nil
 }
 
-func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, arkOpts *arkOptions,
-	reqOpts []option.RequestOption) (responses.ResponseNewParams, []option.RequestOption, error) {
+func (cm *responsesAPIChatModel) injectCache(in []*schema.Message, req responses.ResponseNewParams, arkOpts *arkOptions,
+	reqOpts []option.RequestOption) ([]*schema.Message, responses.ResponseNewParams, []option.RequestOption, error) {
 
 	var (
 		store       = param.NewOpt(false)
 		cacheStatus = cachingDisabled
 		cacheTTL    *int
+		headRespID  *string
 		contextID   *string
 	)
 
 	if cm.cache != nil {
-		if cm.cache.SessionCache != nil {
-			if cm.cache.SessionCache.EnableCache {
+		if sCache := cm.cache.SessionCache; sCache != nil {
+			if sCache.EnableCache {
 				store = param.NewOpt(true)
 				cacheStatus = cachingEnabled
 			}
-			cacheTTL = &cm.cache.SessionCache.TTL
+			cacheTTL = &sCache.TTL
 		}
 	}
 
-	if arkOpts.cache != nil {
-		contextID = arkOpts.cache.ContextID
+	if cacheOpt := arkOpts.cache; cacheOpt != nil {
+		// ContextID may be passed in the old logic
+		contextID = cacheOpt.ContextID
+		headRespID = cacheOpt.HeadPreviousResponseID
 
-		cacheOpt := arkOpts.cache.SessionCache
-		if cacheOpt != nil {
-			cacheTTL = &cacheOpt.TTL
+		if sCacheOpt := cacheOpt.SessionCache; sCacheOpt != nil {
+			cacheTTL = &sCacheOpt.TTL
 
-			if cacheOpt.EnableCache {
+			if sCacheOpt.EnableCache {
 				store = param.NewOpt(true)
 				cacheStatus = cachingEnabled
 			} else {
@@ -510,7 +532,45 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 		}
 	}
 
-	req.PreviousResponseID = newOpenaiStringOpt(contextID)
+	var (
+		preRespID *string
+		inputIdx  int
+	)
+
+	// If the user implements session caching with ContextID,
+	// ContextID and ResponseID will exist at the same time.
+	// Using ContextID is prioritized to maintain compatibility with the old logic.
+	// In this usage scenario, ResponseID cannot be used.
+	if cacheStatus == cachingEnabled && contextID == nil {
+		for i := len(in) - 1; i >= 0; i-- {
+			msg := in[i]
+			inputIdx = i
+			if caching_, _ := getResponseCaching(msg); caching_ != string(cachingEnabled) {
+				continue
+			}
+			if id, ok := GetResponseID(msg); ok {
+				preRespID = &id
+				break
+			}
+		}
+	}
+
+	if preRespID != nil {
+		if inputIdx+1 >= len(in) {
+			return in, req, reqOpts, fmt.Errorf("not found incremental input after ResponseID")
+		}
+		in = in[inputIdx+1:]
+	}
+
+	// ResponseID has a higher priority than HeadPreviousResponseID
+	if preRespID == nil {
+		preRespID = headRespID
+		if contextID != nil { // Prioritize ContextID
+			preRespID = contextID
+		}
+	}
+
+	req.PreviousResponseID = newOpenaiStringOpt(preRespID)
 	req.Store = store
 
 	if cacheTTL != nil {
@@ -521,7 +581,7 @@ func (cm *responsesAPIChatModel) injectCache(req responses.ResponseNewParams, ar
 		"type": cacheStatus,
 	}))
 
-	return req, reqOpts, nil
+	return in, req, reqOpts, nil
 }
 
 func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in []*schema.Message) (responses.ResponseNewParams, error) {
@@ -532,8 +592,6 @@ func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in
 	}
 
 	for _, msg := range in {
-		item := responses.ResponseInputItemUnionParam{}
-
 		content, err := cm.toOpenaiMultiModalContent(msg)
 		if err != nil {
 			return req, err
@@ -541,34 +599,52 @@ func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in
 
 		switch msg.Role {
 		case schema.User:
-			item.OfMessage = &responses.EasyInputMessageParam{
-				Role:    responses.EasyInputMessageRoleUser,
-				Content: content,
-			}
+			itemList = append(itemList, responses.ResponseInputItemUnionParam{
+				OfMessage: &responses.EasyInputMessageParam{
+					Role:    responses.EasyInputMessageRoleUser,
+					Content: content,
+				},
+			})
 
 		case schema.Assistant:
-			item.OfMessage = &responses.EasyInputMessageParam{
-				Role:    responses.EasyInputMessageRoleAssistant,
-				Content: content,
+			if content.OfString.Valid() || len(content.OfInputItemContentList) > 0 {
+				itemList = append(itemList, responses.ResponseInputItemUnionParam{
+					OfMessage: &responses.EasyInputMessageParam{
+						Role:    responses.EasyInputMessageRoleAssistant,
+						Content: content,
+					},
+				})
+			}
+
+			for _, toolCall := range msg.ToolCalls {
+				itemList = append(itemList, responses.ResponseInputItemUnionParam{
+					OfFunctionCall: &responses.ResponseFunctionToolCallParam{
+						CallID:    toolCall.ID,
+						Name:      toolCall.Function.Name,
+						Arguments: toolCall.Function.Arguments,
+					},
+				})
 			}
 
 		case schema.System:
-			item.OfMessage = &responses.EasyInputMessageParam{
-				Role:    responses.EasyInputMessageRoleSystem,
-				Content: content,
-			}
+			itemList = append(itemList, responses.ResponseInputItemUnionParam{
+				OfMessage: &responses.EasyInputMessageParam{
+					Role:    responses.EasyInputMessageRoleSystem,
+					Content: content,
+				},
+			})
 
 		case schema.Tool:
-			item.OfFunctionCallOutput = &responses.ResponseInputItemFunctionCallOutputParam{
-				CallID: msg.ToolCallID,
-				Output: msg.Content,
-			}
+			itemList = append(itemList, responses.ResponseInputItemUnionParam{
+				OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
+					CallID: msg.ToolCallID,
+					Output: msg.Content,
+				},
+			})
 
 		default:
 			return req, fmt.Errorf("unknown role: %s", msg.Role)
 		}
-
-		itemList = append(itemList, item)
 	}
 
 	req.Input = responses.ResponseNewParamsInputUnion{
@@ -655,7 +731,7 @@ func (cm *responsesAPIChatModel) toCallbackConfig(req responses.ResponseNewParam
 	}
 }
 
-func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*schema.Message, error) {
+func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response, enableCache bool) (*schema.Message, error) {
 	msg := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
@@ -664,7 +740,11 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response) (*sch
 		},
 	}
 
+	if enableCache {
+		setResponseCaching(msg, cachingEnabled)
+	}
 	setContextID(msg, resp.ID)
+	setResponseID(msg, resp.ID)
 
 	if len(resp.ServiceTier) > 0 {
 		setServiceTier(msg, string(resp.ServiceTier))
