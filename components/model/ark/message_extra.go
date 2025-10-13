@@ -297,37 +297,64 @@ func SetImageSize(part *schema.ChatMessageImageURL, size string) {
 	if part.Extra == nil {
 		part.Extra = make(map[string]any)
 	}
-	part.Extra[ImageSizeKey] = size
+	setImageSize(part.Extra, size)
 }
 
 func GetImageSize(part *schema.ChatMessageImageURL) (string, bool) {
 	if part == nil {
 		return "", false
 	}
-	size, ok := part.Extra[ImageSizeKey].(string)
+	return getImageSize(part.Extra)
+}
+
+func setOutputImageSize(part *schema.MessageOutputImage, size string) {
+	if part == nil {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	setImageSize(part.Extra, size)
+}
+
+func GetOutputImageSize(part *schema.MessageOutputImage) (string, bool) {
+	if part == nil {
+		return "", false
+	}
+	return getImageSize(part.Extra)
+}
+
+func setInputImageSize(part *schema.MessageInputImage, size string) {
+	if part == nil {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	setImageSize(part.Extra, size)
+}
+
+func GetInputImageSize(part *schema.MessageInputImage) (string, bool) {
+	if part == nil {
+		return "", false
+	}
+	return getImageSize(part.Extra)
+}
+
+func setImageSize(extra map[string]any, size string) {
+	if extra == nil {
+		return
+	}
+	extra[ImageSizeKey] = size
+}
+
+func getImageSize(extra map[string]any) (string, bool) {
+	if extra == nil {
+		return "", false
+	}
+	size, ok := extra[ImageSizeKey].(string)
 	if !ok {
 		return "", false
 	}
 	return size, true
 }
-
-// func SetImageSize(part *schema.MessageOutputImage, size string) {
-// 	if part == nil {
-// 		return
-// 	}
-// 	if part.Extra == nil {
-// 		part.Extra = make(map[string]any)
-// 	}
-// 	part.Extra[ImageSizeKey] = size
-// }
-
-// func GetImageSize(part *schema.MessageOutputImage) (string, bool) {
-// 	if part == nil {
-// 		return "", false
-// 	}
-// 	size, ok := part.Extra[ImageSizeKey].(string)
-// 	if !ok {
-// 		return "", false
-// 	}
-// 	return size, true
-// }

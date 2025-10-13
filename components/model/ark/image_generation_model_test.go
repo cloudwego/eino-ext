@@ -30,7 +30,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-func TestImageGenerationGenerate(t *testing.T) {
+func TestImageGeneration_Generate(t *testing.T) {
 	PatchConvey("test ImageGeneration Generate", t, func() {
 		ctx := context.Background()
 		im, err := NewImageGenerationModel(ctx, &ImageGenerationConfig{
@@ -38,156 +38,151 @@ func TestImageGenerationGenerate(t *testing.T) {
 			APIKey: "test-api-key",
 		})
 		convey.So(err, convey.ShouldBeNil)
-		msgs := []*schema.Message{
-			{
-				Role:    schema.User,
-				Content: "a cat",
-				MultiContent: []schema.ChatMessagePart{
-					{
-						Type: schema.ChatMessagePartTypeImageURL,
-						ImageURL: &schema.ChatMessageImageURL{
-							URL: "https://example.com/cat.png",
+
+		PatchConvey("with MultiContent input", func() {
+			msgs := []*schema.Message{
+				{
+					Role:    schema.User,
+					Content: "a cat",
+					MultiContent: []schema.ChatMessagePart{
+						{
+							Type: schema.ChatMessagePartTypeImageURL,
+							ImageURL: &schema.ChatMessageImageURL{
+								URL: "https://example.com/cat.png",
+							},
 						},
-					},
-					{
-						Type: schema.ChatMessagePartTypeText,
-						Text: "a cat",
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: "a cat",
+						},
 					},
 				},
-			},
-		}
+			}
 
-		PatchConvey("test generate images error", func() {
-			Mock(GetMethod(im.client, "GenerateImages")).Return(
-				nil, errors.New("test generate error")).Build()
+			PatchConvey("test generate images error", func() {
+				Mock(GetMethod(im.client, "GenerateImages")).Return(
+					nil, errors.New("test generate error")).Build()
 
-			outMsg, err := im.Generate(ctx, msgs)
+				outMsg, err := im.Generate(ctx, msgs)
 
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(outMsg, convey.ShouldBeNil)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(outMsg, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test response with error", func() {
+				Mock(GetMethod(im.client, "GenerateImages")).Return(
+					model.ImagesResponse{
+						Error: &model.GenerateImagesError{Code: "1", Message: "internal error"},
+					}, nil).Build()
+
+				outMsg, err := im.Generate(ctx, msgs)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "internal error")
+				convey.So(outMsg, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test success", func() {
+				testURL := "https://example.com/cat.png"
+				Mock(GetMethod(im.client, "GenerateImages")).Return(
+					model.ImagesResponse{
+						Data: []*model.Image{
+							{
+								Url: &testURL,
+							},
+						},
+						Usage: &model.GenerateImagesUsage{
+							TotalTokens:  10,
+							OutputTokens: 2,
+						},
+					}, nil).Build()
+
+				outMsg, err := im.Generate(ctx, msgs)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(outMsg, convey.ShouldNotBeNil)
+				convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
+				convey.So(len(outMsg.MultiContent), convey.ShouldEqual, 1)
+				convey.So(outMsg.MultiContent[0].ImageURL.URL, convey.ShouldEqual, testURL)
+			})
 		})
 
-		PatchConvey("test response with error", func() {
-			Mock(GetMethod(im.client, "GenerateImages")).Return(
-				model.ImagesResponse{
-					Error: &model.GenerateImagesError{Code: "1", Message: "internal error"},
-				}, nil).Build()
-
-			outMsg, err := im.Generate(ctx, msgs)
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "internal error")
-			convey.So(outMsg, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test success", func() {
-			testURL := "https://example.com/cat.png"
-			Mock(GetMethod(im.client, "GenerateImages")).Return(
-				model.ImagesResponse{
-					Data: []*model.Image{
+		PatchConvey("with UserInputMultiContent input", func() {
+			msgs := []*schema.Message{
+				{
+					Role:    schema.User,
+					Content: "a cat",
+					UserInputMultiContent: []schema.MessageInputPart{
 						{
-							Url: &testURL,
+							Type: schema.ChatMessagePartTypeImageURL,
+							Image: &schema.MessageInputImage{
+								MessagePartCommon: schema.MessagePartCommon{
+									URL: ptrOf("a cat"),
+								},
+							},
+						},
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: "a cat",
+						},
+						{
+							Type: schema.ChatMessagePartTypeImageURL,
+							Image: &schema.MessageInputImage{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: ptrOf("a cat"),
+									MIMEType:   "image/png",
+								},
+							},
 						},
 					},
-					Usage: &model.GenerateImagesUsage{
-						TotalTokens:  10,
-						OutputTokens: 2,
-					},
-				}, nil).Build()
+				},
+			}
 
-			outMsg, err := im.Generate(ctx, msgs)
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(outMsg, convey.ShouldNotBeNil)
-			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
-			convey.So(len(outMsg.MultiContent), convey.ShouldEqual, 1)
-			convey.So(outMsg.MultiContent[0].ImageURL.URL, convey.ShouldEqual, testURL)
+			PatchConvey("test generate images error", func() {
+				Mock(GetMethod(im.client, "GenerateImages")).Return(
+					nil, errors.New("test generate error")).Build()
+
+				outMsg, err := im.Generate(ctx, msgs)
+
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(outMsg, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test response with error", func() {
+				Mock(GetMethod(im.client, "GenerateImages")).Return(
+					model.ImagesResponse{
+						Error: &model.GenerateImagesError{Code: "1", Message: "internal error"},
+					}, nil).Build()
+
+				outMsg, err := im.Generate(ctx, msgs)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "internal error")
+				convey.So(outMsg, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test success", func() {
+				testURL := "http://example.com/cat.png"
+				Mock(GetMethod(im.client, "GenerateImages")).Return(
+					model.ImagesResponse{
+						Data: []*model.Image{
+							{
+								Url: &testURL,
+							},
+						},
+						Usage: &model.GenerateImagesUsage{
+							TotalTokens:  10,
+							OutputTokens: 2,
+						},
+					}, nil).Build()
+
+				outMsg, err := im.Generate(ctx, msgs)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(outMsg, convey.ShouldNotBeNil)
+				convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
+				convey.So(len(outMsg.AssistantGenMultiContent), convey.ShouldEqual, 1)
+				convey.So(*outMsg.AssistantGenMultiContent[0].Image.URL, convey.ShouldEqual, testURL)
+			})
 		})
 	})
 }
-
-// func TestImageGenerationGenerate(t *testing.T) {
-// 	PatchConvey("test ImageGeneration Generate", t, func() {
-// 		ctx := context.Background()
-// 		im, err := NewImageGenerationModel(ctx, &ImageGenerationConfig{
-// 			Model:  "test-image-model",
-// 			APIKey: "test-api-key",
-// 		})
-// 		convey.So(err, convey.ShouldBeNil)
-// 		msgs := []*schema.Message{
-// 			{
-// 				Role:    schema.User,
-// 				Content: "a cat",
-// 				UserInputMultiContent: []schema.MessageInputPart{
-// 					{
-// 						Type: schema.ChatMessagePartTypeImageURL,
-// 						Image: &schema.MessageInputImage{
-// 							MessagePartCommon: schema.MessagePartCommon{
-// 								URL: ptrOf("a cat"),
-// 							},
-// 						},
-// 					},
-// 					{
-// 						Type: schema.ChatMessagePartTypeText,
-// 						Text: "a cat",
-// 					},
-// 					{
-// 						Type: schema.ChatMessagePartTypeImageURL,
-// 						Image: &schema.MessageInputImage{
-// 							MessagePartCommon: schema.MessagePartCommon{
-// 								Base64Data: ptrOf("a cat"),
-// 								MIMEType:   "image/png",
-// 							},
-// 						},
-// 					},
-// 				},
-// 			},
-// 		}
-
-// 		PatchConvey("test generate images error", func() {
-// 			Mock(GetMethod(im.client, "GenerateImages")).Return(
-// 				nil, errors.New("test generate error")).Build()
-
-// 			outMsg, err := im.Generate(ctx, msgs)
-
-// 			convey.So(err, convey.ShouldNotBeNil)
-// 			convey.So(outMsg, convey.ShouldBeNil)
-// 		})
-
-// 		PatchConvey("test response with error", func() {
-// 			Mock(GetMethod(im.client, "GenerateImages")).Return(
-// 				model.ImagesResponse{
-// 					Error: &model.GenerateImagesError{Code: "1", Message: "internal error"},
-// 				}, nil).Build()
-
-// 			outMsg, err := im.Generate(ctx, msgs)
-// 			convey.So(err, convey.ShouldNotBeNil)
-// 			convey.So(err.Error(), convey.ShouldContainSubstring, "internal error")
-// 			convey.So(outMsg, convey.ShouldBeNil)
-// 		})
-
-// 		PatchConvey("test success", func() {
-// 			testURL := "http://example.com/cat.png"
-// 			Mock(GetMethod(im.client, "GenerateImages")).Return(
-// 				model.ImagesResponse{
-// 					Data: []*model.Image{
-// 						{
-// 							Url: &testURL,
-// 						},
-// 					},
-// 					Usage: &model.GenerateImagesUsage{
-// 						TotalTokens:  10,
-// 						OutputTokens: 2,
-// 					},
-// 				}, nil).Build()
-
-// 			outMsg, err := im.Generate(ctx, msgs)
-// 			convey.So(err, convey.ShouldBeNil)
-// 			convey.So(outMsg, convey.ShouldNotBeNil)
-// 			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
-// 			convey.So(len(outMsg.AssistantGenMultiContent), convey.ShouldEqual, 1)
-// 			convey.So(*outMsg.AssistantGenMultiContent[0].Image.URL, convey.ShouldEqual, testURL)
-// 		})
-// 	})
-// }
 
 func TestImageGenerationStream(t *testing.T) {
 	PatchConvey("test ImageGeneration Stream", t, func() {

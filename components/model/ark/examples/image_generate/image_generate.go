@@ -88,6 +88,7 @@ func main() {
 
 	log.Printf("stream output: \n")
 	index := 0
+	chunks := make([]*schema.Message, 0, 1024)
 	for {
 		msgChunk, err := sr.Recv()
 		if errors.Is(err, io.EOF) {
@@ -97,8 +98,19 @@ func main() {
 			log.Fatalf("Stream Recv failed, err=%v", err)
 		}
 
+		chunks = append(chunks, msgChunk)
+
 		respBody, _ = json.MarshalIndent(msgChunk, "  ", "  ")
 		log.Printf("stream chunk %d: body: %s\n", index, string(respBody))
 		index++
 	}
+
+	msg, err = schema.ConcatMessages(chunks)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+	log.Printf("stream final output: \n")
+	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  body: %s\n", string(respBody))
 }

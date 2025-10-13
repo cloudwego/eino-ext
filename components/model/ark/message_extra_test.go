@@ -102,6 +102,71 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, string(cachingEnabled), caching_)
 }
 
+func TestImageSizeFunctions(t *testing.T) {
+	t.Run("TestImageSize", func(t *testing.T) {
+		imgURL := &schema.ChatMessageImageURL{}
+		size := "1024x1024"
+
+		// Test Set and Get
+		SetImageSize(imgURL, size)
+		retrievedSize, ok := GetImageSize(imgURL)
+		assert.True(t, ok)
+		assert.Equal(t, size, retrievedSize)
+
+		// Test Get on new object
+		newImgURL := &schema.ChatMessageImageURL{}
+		_, ok = GetImageSize(newImgURL)
+		assert.False(t, ok)
+
+		// Test on nil object
+		SetImageSize(nil, size)
+		_, ok = GetImageSize(nil)
+		assert.False(t, ok)
+	})
+
+	t.Run("TestInputImageSize", func(t *testing.T) {
+		inputImg := &schema.MessageInputImage{}
+		size := "2048x2048"
+
+		// Test Set and Get
+		setInputImageSize(inputImg, size)
+		retrievedSize, ok := GetInputImageSize(inputImg)
+		assert.True(t, ok)
+		assert.Equal(t, size, retrievedSize)
+
+		// Test Get on new object
+		newInputImg := &schema.MessageInputImage{}
+		_, ok = GetInputImageSize(newInputImg)
+		assert.False(t, ok)
+
+		// Test on nil object
+		setInputImageSize(nil, size)
+		_, ok = GetInputImageSize(nil)
+		assert.False(t, ok)
+	})
+
+	t.Run("TestOutputImageSize", func(t *testing.T) {
+		outputImg := &schema.MessageOutputImage{}
+		size := "4096x4096"
+
+		// Test Set and Get
+		setOutputImageSize(outputImg, size)
+		retrievedSize, ok := GetOutputImageSize(outputImg)
+		assert.True(t, ok)
+		assert.Equal(t, size, retrievedSize)
+
+		// Test Get on new object
+		newOutputImg := &schema.MessageOutputImage{}
+		_, ok = GetOutputImageSize(newOutputImg)
+		assert.False(t, ok)
+
+		// Test on nil object
+		setOutputImageSize(nil, size)
+		_, ok = GetOutputImageSize(nil)
+		assert.False(t, ok)
+	})
+}
+
 func TestFPSFunctions(t *testing.T) {
 	t.Run("TestSetFPS", func(t *testing.T) {
 		videoURL := &schema.ChatMessageVideoURL{}

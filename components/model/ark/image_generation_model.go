@@ -123,6 +123,8 @@ const (
 	ImageResponseFormatB64 ImageResponseFormat = "b64_json"
 )
 
+const mimeTypeJPEG = "image/jpeg"
+
 type SequentialImageGeneration string
 
 const (
@@ -177,19 +179,9 @@ func buildImageGenerationModel(config *ImageGenerationConfig) (*ImageGenerationM
 		return nil, fmt.Errorf("image generation model requires APIKey")
 	}
 
-	var (
-		seq    SequentialImageGeneration
-		seqOpt *model.SequentialImageGenerationOptions
-	)
-
-	if config.SequentialImageGeneration == "" {
-		seq = SequentialImageGenerationDisabled
-	} else {
-		seq = config.SequentialImageGeneration
-	}
-
-	if seq == SequentialImageGenerationDisabled {
-		seqOpt = nil
+	var seqOpt *model.SequentialImageGenerationOptions
+	if config.SequentialImageGeneration == SequentialImageGenerationAuto {
+		seqOpt = config.SequentialImageGenerationOption
 	}
 
 	responseFormat := config.ResponseFormat
@@ -197,11 +189,14 @@ func buildImageGenerationModel(config *ImageGenerationConfig) (*ImageGenerationM
 		responseFormat = ImageResponseFormatURL
 	}
 
-	disableWatermark := config.DisableWatermark
-
 	size := config.Size
 	if size == "" {
 		size = "2048x2048"
+	}
+
+	seq := config.SequentialImageGeneration
+	if seq == "" {
+		seq = SequentialImageGenerationDisabled
 	}
 
 	return &ImageGenerationModel{
@@ -211,7 +206,7 @@ func buildImageGenerationModel(config *ImageGenerationConfig) (*ImageGenerationM
 		sequentialImageGeneration:       seq,
 		sequentialImageGenerationOption: seqOpt,
 		responseFormat:                  responseFormat,
-		disableWatermark:                disableWatermark,
+		disableWatermark:                config.DisableWatermark,
 	}, nil
 }
 
@@ -254,56 +249,22 @@ func (im *ImageGenerationModel) Generate(ctx context.Context, in []*schema.Messa
 	if len(resp.Data) == 0 {
 		return nil, fmt.Errorf("image generation failed, image data is empty")
 	}
-	// imageParts := make([]schema.MessageOutputPart, 0, len(resp.Data))
-	// for _, image := range resp.Data {
-	// 	img := &schema.MessageOutputImage{
-	// 		ConcatMode: schema.Full,
-	// 		MIMEType:   "image/jpeg",
-	// 	}
-	// 	if image.Url != nil {
-	// 		img.URL = image.Url
-	// 	} else if image.B64Json != nil {
-	// 		img.Base64Data = image.B64Json
-	// 	} else {
-	// 		continue // Skip if no image data is found
-	// 	}
 
-	// 	// Set additional info
-	// 	SetImageSize(img, image.Size)
-
-	// 	imageParts = append(imageParts, schema.MessageOutputPart{
-	// 		Type:  schema.ChatMessagePartTypeImageURL,
-	// 		Image: img,
-	// 	})
-	// }
-
+	imageParts := make([]schema.MessageOutputPart, 0, len(resp.Data))
 	imageURLs := make([]schema.ChatMessagePart, 0, len(resp.Data))
 	for _, image := range resp.Data {
-		// The `response_format` field in the API documentation specifies that the model currently only returns images in jpeg format.
-		// Ref: https://www.volcengine.com/docs/82379/1541523
-		imageURL := &schema.ChatMessageImageURL{
-			MIMEType: "image/jpeg",
+		part, legacyPart, ok := toCompatibleImageParts(image.Url, image.B64Json, image.Size)
+		if !ok {
+			continue
 		}
-		if image.Url != nil {
-			imageURL.URL = *image.Url
-		} else if image.B64Json != nil {
-			imageURL.URL = *image.B64Json
-		} else {
-			continue // Skip if no image data is found
-		}
-
-		// Set additional info
-		SetImageSize(imageURL, image.Size)
-
-		imageURLs = append(imageURLs, schema.ChatMessagePart{
-			Type:     schema.ChatMessagePartTypeImageURL,
-			ImageURL: imageURL,
-		})
+		imageParts = append(imageParts, part)
+		imageURLs = append(imageURLs, legacyPart)
 	}
 
 	outMsg = &schema.Message{
-		Role:         schema.Assistant,
-		MultiContent: imageURLs,
+		Role:                     schema.Assistant,
+		MultiContent:             imageURLs,
+		AssistantGenMultiContent: imageParts,
 	}
 
 	callbacks.OnEnd(ctx, &einoModel.CallbackOutput{
@@ -446,25 +407,21 @@ func toPromptAndImages(in []*schema.Message) (prompt string, images interface{},
 				}
 				promptBuilder.WriteString(msg.Content)
 			}
-			// if len(msg.UserInputMultiContent) > 0 {
-			// 	for _, part := range msg.UserInputMultiContent {
-			// 		if part.Type == schema.ChatMessagePartTypeImageURL {
-			// 			if part.Image != nil && part.Image.URL != nil {
-			// 				imageURLs = append(imageURLs, *part.Image.URL)
-			// 			} else if part.Image != nil && part.Image.Base64Data != nil {
-			// 				imageURLs = append(imageURLs, ensureImageDataURL(*part.Image.Base64Data, part.Image.MIMEType))
-			// 			}
-			// 		} else if part.Type == schema.ChatMessagePartTypeText {
-			// 			if len(part.Text) > 0 {
-			// 				if promptBuilder.Len() > 0 {
-			// 					promptBuilder.WriteByte(' ')
-			// 				}
-			// 				promptBuilder.WriteString(part.Text)
-			// 			}
-			// 		}
-			// 	}
-			// }
-			if len(msg.MultiContent) > 0 {
+			if len(msg.UserInputMultiContent) > 0 {
+				for _, part := range msg.UserInputMultiContent {
+					if part.Type == schema.ChatMessagePartTypeImageURL {
+						if part.Image != nil && part.Image.URL != nil {
+							imageURLs = append(imageURLs, *part.Image.URL)
+						} else if part.Image != nil && part.Image.Base64Data != nil {
+							imageURLs = append(imageURLs, ensureImageDataURL(*part.Image.Base64Data, part.Image.MIMEType))
+						}
+					} else if part.Type == schema.ChatMessagePartTypeText {
+						if len(part.Text) > 0 {
+							promptBuilder.WriteString(part.Text)
+						}
+					}
+				}
+			} else if len(msg.MultiContent) > 0 {
 				for _, part := range msg.MultiContent {
 					if part.Type == schema.ChatMessagePartTypeImageURL {
 						if part.ImageURL != nil {
@@ -511,55 +468,55 @@ func (im *ImageGenerationModel) resolveStreamResponse(resp model.ImagesStreamRes
 		return nil, false, fmt.Errorf("image generation failed, errCode: %v, errMsg: %v", resp.Error.Code, resp.Error.Message)
 	}
 
-	// image := &schema.MessageOutputImage{
-	// 	ConcatMode: schema.Full,
-	// 	MIMEType:   "image/jpeg",
-	// }
-	// if resp.Url != nil {
-	// 	image.URL = resp.Url
-	// } else if resp.B64Json != nil {
-	// 	image.Base64Data = resp.B64Json
-	// } else {
-	// 	return nil, false, nil
-	// }
-
-	// SetImageSize(image, resp.Size)
-
-	// return &schema.Message{
-	// 	Role: schema.Assistant,
-	// 	AssistantGenMultiContent: []schema.MessageOutputPart{
-	// 		{
-	// 			Type:  schema.ChatMessagePartTypeImageURL,
-	// 			Image: image,
-	// 		},
-	// 	},
-	// }, true, nil
-
-	// The `response_format` field in the API documentation specifies that the model currently only returns images in jpeg format.
-	// Ref: https://www.volcengine.com/docs/82379/1541523
-	imageURL := &schema.ChatMessageImageURL{
-		MIMEType: "image/jpeg",
-	}
-
-	if resp.Url != nil {
-		imageURL.URL = *resp.Url
-	} else if resp.B64Json != nil {
-		imageURL.URL = *resp.B64Json
-	} else {
+	newImg, legacyImgURL, ok := toCompatibleImageParts(resp.Url, resp.B64Json, resp.Size)
+	if !ok {
 		return nil, false, nil
 	}
 
-	SetImageSize(imageURL, resp.Size)
-
 	return &schema.Message{
-		Role: schema.Assistant,
-		MultiContent: []schema.ChatMessagePart{
-			{
-				Type:     schema.ChatMessagePartTypeImageURL,
-				ImageURL: imageURL,
-			},
-		},
+		Role:                     schema.Assistant,
+		MultiContent:             []schema.ChatMessagePart{legacyImgURL},
+		AssistantGenMultiContent: []schema.MessageOutputPart{newImg},
 	}, true, nil
+}
+
+func toCompatibleImageParts(url, b64Data *string, size string) (schema.MessageOutputPart, schema.ChatMessagePart, bool) {
+	if url == nil && b64Data == nil {
+		return schema.MessageOutputPart{}, schema.ChatMessagePart{}, false
+	}
+
+	// Build the new part for AssistantGenMultiContent
+	// The `response_format` field in the API documentation specifies that the model currently only returns images in jpeg format.
+	// Ref: https://www.volcengine.com/docs/82379/1541523
+	newImg := &schema.MessageOutputImage{
+		MessagePartCommon: schema.MessagePartCommon{
+			MIMEType:   mimeTypeJPEG,
+			URL:        url,
+			Base64Data: b64Data,
+		},
+	}
+	setOutputImageSize(newImg, size)
+	newPart := schema.MessageOutputPart{
+		Type:  schema.ChatMessagePartTypeImageURL,
+		Image: newImg,
+	}
+
+	// Build the legacy part for MultiContent to maintain backward compatibility
+	legacyImgURL := &schema.ChatMessageImageURL{
+		MIMEType: mimeTypeJPEG,
+	}
+	if url != nil {
+		legacyImgURL.URL = *url
+	} else if b64Data != nil {
+		legacyImgURL.URL = *b64Data // Replicate old behavior
+	}
+	SetImageSize(legacyImgURL, size)
+	legacyPart := schema.ChatMessagePart{
+		Type:     schema.ChatMessagePartTypeImageURL,
+		ImageURL: legacyImgURL,
+	}
+
+	return newPart, legacyPart, true
 }
 
 func (im *ImageGenerationModel) closeArkStreamReader(r *autils.ImageGenerationStreamReader) error {
