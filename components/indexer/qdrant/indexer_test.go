@@ -20,92 +20,98 @@ import (
 	"context"
 	"math/rand"
 	"testing"
-	"time"
 
+	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	qdrant "github.com/qdrant/go-client/qdrant"
-	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
+	. "github.com/smartystreets/goconvey/convey"
 )
 
-const TestImage string = "qdrant/qdrant:v1.15.1"
 const CollectionName string = "test_collection"
-const APIKey string = "test-api-key"
 
 func TestIndexer(t *testing.T) {
 	ctx := context.Background()
 
-	container, err := standaloneQdrant(ctx, APIKey)
-	require.NoError(t, err)
+	var collectionExistsCalled, createCollectionCalled, upsertCalled bool
+	var upsertCallCount int
 
-	err = container.Start(ctx)
-	require.NoError(t, err)
+	PatchConvey("TestIndexer", t, func() {
+		mockClient := &qdrant.Client{}
 
-	t.Cleanup(func() {
-		err := container.Terminate(ctx)
-		require.NoError(t, err)
+		Mock(qdrant.NewClient).Return(mockClient, nil).Build()
+
+		Mock((*qdrant.Client).CollectionExists).To(func(c *qdrant.Client, ctx context.Context, collectionName string) (bool, error) {
+			collectionExistsCalled = true
+			return false, nil
+		}).Build()
+
+		Mock((*qdrant.Client).CreateCollection).To(func(c *qdrant.Client, ctx context.Context, req *qdrant.CreateCollection) error {
+			createCollectionCalled = true
+			return nil
+		}).Build()
+
+		Mock((*qdrant.Client).Upsert).To(func(c *qdrant.Client, ctx context.Context, req *qdrant.UpsertPoints) (*qdrant.UpdateResult, error) {
+			upsertCalled = true
+			upsertCallCount++
+			return &qdrant.UpdateResult{}, nil
+		}).Build()
+
+		Mock((*qdrant.Client).Count).To(func(c *qdrant.Client, ctx context.Context, req *qdrant.CountPoints) (uint64, error) {
+			return uint64(upsertCallCount), nil
+		}).Build()
+
+		Convey("Given a Qdrant indexer with mocked client", func() {
+			Convey("When creating documents to store", func() {
+				d1 := &schema.Document{ID: "c60df334-dbbe-49b8-82d8-a2bd668602f6", Content: "asd"}
+				d2 := &schema.Document{ID: "7b83aca0-5f6c-4491-8dd4-22e15e9d582e", Content: "qwe", MetaData: map[string]any{
+					"mock_field_1": map[string]any{"extra_field_1": "asd"},
+					"mock_field_2": int64(123),
+				}}
+				docs := []*schema.Document{d1, d2}
+
+				Convey("And creating an indexer", func() {
+					i, err := NewIndexer(ctx, &Config{
+						Client:     mockClient,
+						Collection: CollectionName,
+						BatchSize:  10,
+						Embedding:  &mockEmbeddingQdrant{dims: 4},
+						VectorDim:  4,
+						Distance:   qdrant.Distance_Cosine,
+					})
+
+					Convey("Then the indexer should be created successfully", func() {
+						So(err, ShouldBeNil)
+						So(i, ShouldNotBeNil)
+					})
+
+					Convey("When storing documents", func() {
+						upsertCallCount = 0
+
+						ids, err := i.Store(ctx, docs)
+
+						Convey("Then the store operation should succeed", func() {
+							So(err, ShouldBeNil)
+							So(ids, ShouldNotBeNil)
+							So(len(ids), ShouldEqual, len(docs))
+						})
+
+						Convey("And the returned IDs should match the document IDs", func() {
+							expectedIDs := []string{d1.ID, d2.ID}
+							So(ids, ShouldResemble, expectedIDs)
+						})
+
+						Convey("And the mock methods should be called correctly", func() {
+							So(collectionExistsCalled, ShouldBeTrue)
+							So(createCollectionCalled, ShouldBeTrue)
+							So(upsertCalled, ShouldBeTrue)
+							So(upsertCallCount, ShouldEqual, 1)
+						})
+					})
+				})
+			})
+		})
 	})
-
-	host, err := container.Host(ctx)
-	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "6334/tcp")
-	require.NoError(t, err)
-
-	client, err := qdrant.NewClient(&qdrant.Config{
-		Host:                   host,
-		Port:                   port.Int(),
-		APIKey:                 APIKey,
-		UseTLS:                 false,
-		SkipCompatibilityCheck: true,
-	})
-	require.NoError(t, err)
-
-	d1 := &schema.Document{ID: "c60df334-dbbe-49b8-82d8-a2bd668602f6", Content: "asd"}
-	d2 := &schema.Document{ID: "7b83aca0-5f6c-4491-8dd4-22e15e9d582e", Content: "qwe", MetaData: map[string]any{
-		"mock_field_1": map[string]any{"extra_field_1": "asd"},
-		"mock_field_2": int64(123),
-	}}
-	docs := []*schema.Document{d1, d2}
-
-	i, err := NewIndexer(ctx, &Config{
-		Client:     client,
-		Collection: CollectionName,
-		BatchSize:  10,
-		Embedding:  &mockEmbeddingQdrant{dims: 4},
-		VectorDim:  4,
-		Distance:   qdrant.Distance_Cosine,
-	})
-	require.NoError(t, err)
-
-	ids, err := i.Store(ctx, docs)
-	require.NoError(t, err)
-	require.Len(t, ids, len(docs))
-
-	count, err := client.Count(ctx, &qdrant.CountPoints{
-		CollectionName: CollectionName,
-	})
-	require.NoError(t, err)
-	require.Equal(t, uint64(len(docs)), count)
-}
-
-func standaloneQdrant(ctx context.Context, apiKey string) (testcontainers.Container, error) {
-	req := testcontainers.ContainerRequest{
-		Image:        TestImage,
-		ExposedPorts: []string{"6334/tcp"},
-		Env: map[string]string{
-			"QDRANT__SERVICE__API_KEY": apiKey,
-		},
-		WaitingFor: wait.ForAll(
-			wait.ForListeningPort("6334/tcp").WithStartupTimeout(5 * time.Second),
-		),
-	}
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-	})
-
-	return container, err
 }
 
 type mockEmbeddingQdrant struct {

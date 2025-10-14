@@ -21,111 +21,192 @@ import (
 	"fmt"
 	"math/rand"
 	"testing"
-	"time"
 
+	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
-	"github.com/google/uuid"
 	qdrant "github.com/qdrant/go-client/qdrant"
-	"github.com/stretchr/testify/require"
-
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
+	. "github.com/smartystreets/goconvey/convey"
 )
 
-const TestImage string = "qdrant/qdrant:v1.15.1"
 const CollectionName string = "test_collection"
-const APIKey string = "test-api-key"
 
-func TestRetrieve(t *testing.T) {
-	ctx := context.Background()
+func TestNewRetrieverValidation(t *testing.T) {
+	PatchConvey("TestNewRetrieverValidation", t, func() {
+		mockEmbedding := &mockEmbeddingQdrant{dims: 4}
 
-	container, err := standaloneQdrant(ctx, APIKey)
-	require.NoError(t, err)
+		Convey("Given nil config", func() {
+			retriever, err := NewRetriever(context.Background(), nil)
 
-	err = container.Start(ctx)
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		err := container.Terminate(ctx)
-		require.NoError(t, err)
-	})
-
-	host, err := container.Host(ctx)
-	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "6334/tcp")
-	require.NoError(t, err)
-
-	client, err := qdrant.NewClient(&qdrant.Config{
-		Host:                   host,
-		Port:                   port.Int(),
-		APIKey:                 APIKey,
-		UseTLS:                 false,
-		SkipCompatibilityCheck: true,
-	})
-	require.NoError(t, err)
-
-	err = client.CreateCollection(ctx, &qdrant.CreateCollection{
-		CollectionName: CollectionName,
-		VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
-			Size:     4,
-			Distance: qdrant.Distance_Cosine,
-		}),
-	})
-	require.NoError(t, err)
-
-	points := make([]*qdrant.PointStruct, 0)
-	for i := 0; i < 100; i++ {
-		content := fmt.Sprintf("content %d", i)
-		metadata := map[string]any{
-			"something": "something",
-		}
-
-		points = append(points, &qdrant.PointStruct{
-			Id:      qdrant.NewID(uuid.NewString()),
-			Vectors: qdrant.NewVectorsDense([]float32{rand.Float32(), rand.Float32(), rand.Float32(), rand.Float32()}),
-			Payload: qdrant.NewValueMap(map[string]any{
-				defaultContentKey:  content,
-				defaultMetadataKey: metadata,
-			}),
+			Convey("Then it should return an error", func() {
+				So(err, ShouldNotBeNil)
+				So(retriever, ShouldBeNil)
+				So(err.Error(), ShouldContainSubstring, "config is nil")
+			})
 		})
-	}
 
-	_, err = client.Upsert(ctx, &qdrant.UpsertPoints{
-		CollectionName: CollectionName,
-		Points:         points,
-		Wait:           qdrant.PtrOf(true),
+		Convey("Given config with nil embedding", func() {
+			retriever, err := NewRetriever(context.Background(), &Config{
+				Client:     nil,
+				Collection: CollectionName,
+				Embedding:  nil,
+			})
+
+			Convey("Then it should return an error", func() {
+				So(err, ShouldNotBeNil)
+				So(retriever, ShouldBeNil)
+				So(err.Error(), ShouldContainSubstring, "embedding not provided")
+			})
+		})
+
+		Convey("Given config with empty collection", func() {
+			retriever, err := NewRetriever(context.Background(), &Config{
+				Client:     nil,
+				Collection: "",
+				Embedding:  mockEmbedding,
+			})
+
+			Convey("Then it should return an error", func() {
+				So(err, ShouldNotBeNil)
+				So(retriever, ShouldBeNil)
+				So(err.Error(), ShouldContainSubstring, "collection not provided")
+			})
+		})
+
+		Convey("Given config with nil client", func() {
+			retriever, err := NewRetriever(context.Background(), &Config{
+				Client:     nil,
+				Collection: CollectionName,
+				Embedding:  mockEmbedding,
+			})
+
+			Convey("Then it should return an error", func() {
+				So(err, ShouldNotBeNil)
+				So(retriever, ShouldBeNil)
+				So(err.Error(), ShouldContainSubstring, "client not provided")
+			})
+		})
 	})
-	require.NoError(t, err)
-
-	i, err := NewRetriever(ctx, &Config{
-		Client:     client,
-		Collection: CollectionName,
-		Embedding:  &mockEmbeddingQdrant{dims: 4},
-		TopK:       5,
-	})
-	require.NoError(t, err)
-
-	docs, err := i.Retrieve(ctx, "query")
-	require.NoError(t, err)
-	require.Len(t, docs, 5)
 }
 
-func standaloneQdrant(ctx context.Context, apiKey string) (testcontainers.Container, error) {
-	req := testcontainers.ContainerRequest{
-		Image:        TestImage,
-		ExposedPorts: []string{"6334/tcp"},
-		Env: map[string]string{
-			"QDRANT__SERVICE__API_KEY": apiKey,
-		},
-		WaitingFor: wait.ForAll(
-			wait.ForListeningPort("6334/tcp").WithStartupTimeout(5 * time.Second),
-		),
-	}
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: req,
-	})
+func TestRetrieverRetrieve(t *testing.T) {
+	PatchConvey("TestRetrieverRetrieve", t, func() {
+		ctx := context.Background()
+		mockEmbedding := &mockEmbeddingQdrant{dims: 4}
+		mockClient := &qdrant.Client{}
 
-	return container, err
+		var queryCalled bool
+
+		Mock((*qdrant.Client).Query).To(func(c *qdrant.Client, ctx context.Context, req *qdrant.QueryPoints) ([]*qdrant.ScoredPoint, error) {
+			queryCalled = true
+
+			return []*qdrant.ScoredPoint{
+				{
+					Id:    qdrant.NewID("fba95545-ef38-4880-bf4a-b98174554103"),
+					Score: 0.95,
+					Payload: map[string]*qdrant.Value{
+						defaultContentKey: qdrant.NewValueString("Test content 1"),
+					},
+				},
+			}, nil
+		}).Build()
+
+		Convey("Given a valid retriever", func() {
+			retriever, err := NewRetriever(ctx, &Config{
+				Client:     mockClient,
+				Collection: CollectionName,
+				Embedding:  mockEmbedding,
+				TopK:       5,
+			})
+
+			Convey("Then the retriever should be created successfully", func() {
+				So(err, ShouldBeNil)
+				So(retriever, ShouldNotBeNil)
+			})
+
+			Convey("When retrieving documents", func() {
+				docs, err := retriever.Retrieve(ctx, "test query")
+
+				Convey("Then the retrieve operation should succeed", func() {
+					So(err, ShouldBeNil)
+					So(docs, ShouldNotBeNil)
+					So(len(docs), ShouldEqual, 1)
+				})
+
+				Convey("And the document should have correct content", func() {
+					So(docs[0].Content, ShouldEqual, "Test content 1")
+					So(docs[0].ID, ShouldEqual, "fba95545-ef38-4880-bf4a-b98174554103")
+				})
+
+				Convey("And the mock Query method should be called", func() {
+					So(queryCalled, ShouldBeTrue)
+				})
+			})
+		})
+	})
+}
+
+func TestRetrieverRetrieveWithError(t *testing.T) {
+	PatchConvey("TestRetrieverRetrieveWithError", t, func() {
+		ctx := context.Background()
+		mockEmbedding := &mockEmbeddingQdrant{
+			err:  fmt.Errorf("embedding failed"),
+			dims: 4,
+		}
+		mockClient := &qdrant.Client{}
+
+		Convey("Given a retriever with failing embedding", func() {
+			retriever, err := NewRetriever(ctx, &Config{
+				Client:     mockClient,
+				Collection: CollectionName,
+				Embedding:  mockEmbedding,
+				TopK:       5,
+			})
+
+			Convey("Then the retriever should be created successfully", func() {
+				So(err, ShouldBeNil)
+				So(retriever, ShouldNotBeNil)
+			})
+
+			Convey("When retrieving documents", func() {
+				docs, err := retriever.Retrieve(ctx, "test query")
+
+				Convey("Then the retrieve operation should fail", func() {
+					So(err, ShouldNotBeNil)
+					So(docs, ShouldBeNil)
+					So(err.Error(), ShouldContainSubstring, "embedding failed")
+				})
+			})
+		})
+	})
+}
+
+func TestRetrieverTypeAndCallbacks(t *testing.T) {
+	PatchConvey("TestRetrieverTypeAndCallbacks", t, func() {
+		mockEmbedding := &mockEmbeddingQdrant{dims: 4}
+		mockClient := &qdrant.Client{}
+
+		Convey("Given a valid retriever", func() {
+			retriever, err := NewRetriever(context.Background(), &Config{
+				Client:     mockClient,
+				Collection: CollectionName,
+				Embedding:  mockEmbedding,
+				TopK:       5,
+			})
+
+			Convey("Then the retriever should be created successfully", func() {
+				So(err, ShouldBeNil)
+				So(retriever, ShouldNotBeNil)
+			})
+
+			Convey("And GetType should return 'Qdrant'", func() {
+				So(retriever.GetType(), ShouldEqual, "Qdrant")
+			})
+
+			Convey("And IsCallbacksEnabled should return true", func() {
+				So(retriever.IsCallbacksEnabled(), ShouldBeTrue)
+			})
+		})
+	})
 }
 
 type mockEmbeddingQdrant struct {
