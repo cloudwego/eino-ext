@@ -18,8 +18,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -62,18 +62,32 @@ func main() {
 	for _, msg := range useMsgs {
 		input = append(input, msg)
 
-		output, err := chatModel.Generate(ctx, input,
+		streamResp, err := chatModel.Stream(ctx, input,
 			ark.WithThinking(thinking),
 			ark.WithCache(cacheOpt))
 		if err != nil {
-			log.Fatalf("Generate failed, err=%v", err)
+			log.Fatalf("Stream failed, err=%v", err)
 		}
 
-		fmt.Printf("generate output: \n")
-		fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(output))
-		respBody, _ := json.MarshalIndent(output, "  ", "  ")
-		fmt.Printf("  body: %s\n\n", string(respBody))
+		var messages []*schema.Message
+		for {
+			chunk, err := streamResp.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Fatalf("Recv of streamResp failed, err=%v", err)
+			}
+			messages = append(messages, chunk)
+		}
 
-		input = append(input, output)
+		resp, err := schema.ConcatMessages(messages)
+		if err != nil {
+			log.Fatalf("ConcatMessages of ark failed, err=%v", err)
+		}
+
+		fmt.Printf("stream output: \n%v\n\n", resp)
+
+		input = append(input, resp)
 	}
 }
