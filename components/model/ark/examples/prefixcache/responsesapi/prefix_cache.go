@@ -41,6 +41,24 @@ func main() {
 		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
+	chatModelWithTools, err := chatModel.WithTools([]*schema.ToolInfo{
+		{
+			Name: "get_weather",
+			Desc: "Get the current weather in a given location",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"location": {
+						Type: "string",
+						Desc: "The city and state, e.g. San Francisco, CA",
+					},
+				},
+			),
+		},
+	})
+	if err != nil {
+		log.Fatalf("WithTools failed, err=%v", err)
+	}
+
 	thinking := &arkModel.Thinking{
 		Type: arkModel.ThinkingTypeDisabled,
 	}
@@ -52,7 +70,7 @@ func main() {
 		},
 	}
 
-	outMsg, err := chatModel.Generate(ctx, []*schema.Message{
+	outMsg, err := chatModelWithTools.Generate(ctx, []*schema.Message{
 		schema.UserMessage("my name is megumin"),
 	}, ark.WithThinking(thinking),
 		ark.WithCache(cacheOpt))
@@ -65,7 +83,7 @@ func main() {
 		log.Fatalf("not found response id in message")
 	}
 
-	msg, err := chatModel.Generate(ctx, []*schema.Message{
+	msg, err := chatModelWithTools.Generate(ctx, []*schema.Message{
 		schema.UserMessage("what is my name?"),
 	}, ark.WithThinking(thinking),
 		ark.WithCache(&ark.CacheOption{

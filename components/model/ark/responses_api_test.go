@@ -104,18 +104,20 @@ func TestResponsesAPIChatModelStream(t *testing.T) {
 
 func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 	cm := &responsesAPIChatModel{}
-	initialReq := responses.ResponseNewParams{
-		Model: "test-model",
-	}
 
 	PatchConvey("empty input message", t, func() {
+		req := &responses.ResponseNewParams{
+			Model: "test-model",
+		}
 		in := []*schema.Message{}
-		req, err := cm.injectInput(initialReq, in)
+		err := cm.populateInput(req, in)
 		assert.Nil(t, err)
-		assert.Equal(t, initialReq, req)
 	})
 
 	PatchConvey("user message", t, func() {
+		req := &responses.ResponseNewParams{
+			Model: "test-model",
+		}
 		in := []*schema.Message{
 			{
 				Role:    schema.User,
@@ -123,9 +125,8 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		req, err := cm.injectInput(initialReq, in)
+		err := cm.populateInput(req, in)
 		assert.Nil(t, err)
-		assert.Equal(t, initialReq.Model, req.Model)
 		assert.Equal(t, 1, len(req.Input.OfInputItemList))
 
 		item := req.Input.OfInputItemList[0]
@@ -134,6 +135,9 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 	})
 
 	PatchConvey("assistant message", t, func() {
+		req := &responses.ResponseNewParams{
+			Model: "test-model",
+		}
 		in := []*schema.Message{
 			{
 				Role:    schema.Assistant,
@@ -141,9 +145,8 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		req, err := cm.injectInput(initialReq, in)
+		err := cm.populateInput(req, in)
 		assert.Nil(t, err)
-		assert.Equal(t, initialReq.Model, req.Model)
 		assert.Equal(t, 1, len(req.Input.OfInputItemList))
 
 		item := req.Input.OfInputItemList[0]
@@ -152,6 +155,9 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 	})
 
 	PatchConvey("system message", t, func() {
+		req := &responses.ResponseNewParams{
+			Model: "test-model",
+		}
 		in := []*schema.Message{
 			{
 				Role:    schema.System,
@@ -159,9 +165,8 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		req, err := cm.injectInput(initialReq, in)
+		err := cm.populateInput(req, in)
 		assert.Nil(t, err)
-		assert.Equal(t, initialReq.Model, req.Model)
 		assert.Equal(t, 1, len(req.Input.OfInputItemList))
 
 		item := req.Input.OfInputItemList[0]
@@ -170,6 +175,9 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 	})
 
 	PatchConvey("tool call", t, func() {
+		req := &responses.ResponseNewParams{
+			Model: "test-model",
+		}
 		in := []*schema.Message{
 			{
 				Role:       schema.Tool,
@@ -178,9 +186,8 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		req, err := cm.injectInput(initialReq, in)
+		err := cm.populateInput(req, in)
 		assert.Nil(t, err)
-		assert.Equal(t, initialReq.Model, req.Model)
 		assert.Equal(t, 1, len(req.Input.OfInputItemList))
 
 		item := req.Input.OfInputItemList[0]
@@ -189,6 +196,9 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 	})
 
 	PatchConvey("unknown role", t, func() {
+		req := &responses.ResponseNewParams{
+			Model: "test-model",
+		}
 		in := []*schema.Message{
 			{
 				Role:    "unknown_role",
@@ -196,7 +206,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		_, err := cm.injectInput(initialReq, in)
+		err := cm.populateInput(req, in)
 		assert.NotNil(t, err)
 	})
 }
@@ -313,7 +323,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 			},
 		}
 
-		in_, newReq, newReqOpts, err := cm.injectCache(msgs, req, arkOpts, reqOpts)
+		in_, newReq, newReqOpts, err := cm.populateCache(msgs, req, arkOpts, reqOpts)
 		assert.Nil(t, err)
 		assert.Equal(t, param.NewOpt(false), newReq.Store)
 		assert.Equal(t, initialReqOptsLen+1, len(newReqOpts))
@@ -351,7 +361,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 			},
 		}
 
-		in_, newReq, newReqOpts, err := cm.injectCache(msgs, req, arkOpts, reqOpts)
+		in_, newReq, newReqOpts, err := cm.populateCache(msgs, req, arkOpts, reqOpts)
 		assert.Nil(t, err)
 		assert.Equal(t, initialReqOptsLen+2, len(newReqOpts))
 		assert.Equal(t, param.NewOpt(true), newReq.Store)
@@ -400,7 +410,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 			},
 		}
 
-		in_, newReq, newReqOpts, err := cm.injectCache(msgs, req, arkOpts, reqOpts)
+		in_, newReq, newReqOpts, err := cm.populateCache(msgs, req, arkOpts, reqOpts)
 		assert.Nil(t, err)
 		assert.Equal(t, initialReqOptsLen+2, len(newReqOpts))
 		assert.Equal(t, param.NewOpt(true), newReq.Store)
@@ -607,7 +617,7 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 			return nil
 		}).Build()
 
-		Mock((*responsesAPIChatModel).injectCache).To(func(in []*schema.Message, req responses.ResponseNewParams, arkOpts *arkOptions,
+		Mock((*responsesAPIChatModel).populateCache).To(func(in []*schema.Message, req responses.ResponseNewParams, arkOpts *arkOptions,
 			reqOpts []openaiOption.RequestOption) ([]*schema.Message, responses.ResponseNewParams, []openaiOption.RequestOption, error) {
 			return in, req, reqOpts, nil
 		}).Build()

@@ -280,16 +280,6 @@ Outer:
 func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
 	msg *schema.Message) {
 
-	extra := map[string]any{}
-	contextID, ok := GetContextID(msg)
-	if ok {
-		extra[keyOfContextID] = contextID
-	}
-	responseID, ok := GetResponseID(msg)
-	if ok {
-		extra[keyOfResponseID] = responseID
-	}
-
 	var token *model.TokenUsage
 	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
 		token = &model.TokenUsage{
@@ -306,7 +296,6 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 		Message:    msg,
 		Config:     reqConf,
 		TokenUsage: token,
-		Extra:      extra,
 	}, nil)
 }
 
@@ -463,15 +452,15 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 	}
 
 	var in_ []*schema.Message
-	if in_, req, reqOpts, err = cm.injectCache(in, req, specOptions, reqOpts); err != nil {
+	if in_, req, reqOpts, err = cm.populateCache(in, req, specOptions, reqOpts); err != nil {
 		return req, nil, err
 	}
 
-	if req, err = cm.injectInput(req, in_); err != nil {
+	if err = cm.populateInput(&req, in_); err != nil {
 		return req, nil, err
 	}
 
-	if req, err = cm.injectTools(req, options.Tools); err != nil {
+	if err = cm.populateTools(&req, options.Tools); err != nil {
 		return req, nil, err
 	}
 
@@ -493,7 +482,7 @@ func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOption
 	return nil
 }
 
-func (cm *responsesAPIChatModel) injectCache(in []*schema.Message, req responses.ResponseNewParams, arkOpts *arkOptions,
+func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, req responses.ResponseNewParams, arkOpts *arkOptions,
 	reqOpts []option.RequestOption) ([]*schema.Message, responses.ResponseNewParams, []option.RequestOption, error) {
 
 	var (
@@ -584,17 +573,17 @@ func (cm *responsesAPIChatModel) injectCache(in []*schema.Message, req responses
 	return in, req, reqOpts, nil
 }
 
-func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in []*schema.Message) (responses.ResponseNewParams, error) {
+func (cm *responsesAPIChatModel) populateInput(req *responses.ResponseNewParams, in []*schema.Message) error {
 	itemList := make([]responses.ResponseInputItemUnionParam, 0, len(in))
 
 	if len(in) == 0 {
-		return req, nil
+		return nil
 	}
 
 	for _, msg := range in {
 		content, err := cm.toOpenaiMultiModalContent(msg)
 		if err != nil {
-			return req, err
+			return err
 		}
 
 		switch msg.Role {
@@ -643,7 +632,7 @@ func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in
 			})
 
 		default:
-			return req, fmt.Errorf("unknown role: %s", msg.Role)
+			return fmt.Errorf("unknown role: %s", msg.Role)
 		}
 	}
 
@@ -651,7 +640,7 @@ func (cm *responsesAPIChatModel) injectInput(req responses.ResponseNewParams, in
 		OfInputItemList: itemList,
 	}
 
-	return req, nil
+	return nil
 }
 
 func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) (responses.EasyInputMessageContentUnionParam, error) {
@@ -707,19 +696,24 @@ func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) 
 	return content, nil
 }
 
-func (cm *responsesAPIChatModel) injectTools(req responses.ResponseNewParams, optTools []*schema.ToolInfo) (responses.ResponseNewParams, error) {
+func (cm *responsesAPIChatModel) populateTools(req *responses.ResponseNewParams, optTools []*schema.ToolInfo) error {
+	// When caching is enabled, the tool is only passed on the first request.
+	if req.PreviousResponseID.Valid() {
+		return nil
+	}
+
 	tools := cm.tools
 
 	if optTools != nil {
 		var err error
 		if tools, err = cm.toTools(optTools); err != nil {
-			return req, err
+			return err
 		}
 	}
 
 	req.Tools = tools
 
-	return req, nil
+	return nil
 }
 
 func (cm *responsesAPIChatModel) toCallbackConfig(req responses.ResponseNewParams) *model.Config {
