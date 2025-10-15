@@ -76,6 +76,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		Messages: input,
 		Tools:    tools,
 		Config:   config,
+		Extra:    map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	defer func() {
@@ -98,6 +99,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		Message:    outMsg,
 		Config:     config,
 		TokenUsage: cm.toModelTokenUsage(resp.Usage),
+		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	return outMsg, nil
@@ -127,6 +129,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		Messages: input,
 		Tools:    tools,
 		Config:   config,
+		Extra:    map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	defer func() {
@@ -159,6 +162,10 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 
 	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
 		func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
+			if src.Extra == nil {
+				src.Extra = make(map[string]any)
+			}
+			src.Extra[callbackExtraKeyThinking] = specOptions.thinking
 			return src, nil
 		}))
 

@@ -54,3 +54,7 @@ const (
 	cachingEnabled  caching = "enabled"
 	cachingDisabled caching = "disabled"
 )
+
+const (
+	callbackExtraKeyThinking = "thinking"
+)
