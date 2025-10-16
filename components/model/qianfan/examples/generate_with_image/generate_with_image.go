@@ -23,38 +23,27 @@ import (
 	"log"
 	"os"
 
-	"google.golang.org/genai"
-
-	"github.com/cloudwego/eino-ext/components/model/gemini"
+	"github.com/cloudwego/eino-ext/components/model/qianfan"
 	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: apiKey,
+	qcfg := qianfan.GetQianfanSingletonConfig()
+	// How to get Access Key/Secret Key: https://cloud.baidu.com/doc/Reference/s/9jwvz2egb
+	qcfg.AccessKey = "your_access_key"
+	qcfg.SecretKey = "your_secret_key"
+	modelName := os.Getenv("MODEL_NAME")
+	chatModel, err := qianfan.NewChatModel(ctx, &qianfan.ChatModelConfig{
+		Model:               modelName,
+		Temperature:         of(float32(0.7)),
+		TopP:                of(float32(0.7)),
+		MaxCompletionTokens: of(1024),
+		Seed:                of(0),
 	})
-	if err != nil {
-		log.Fatalf("NewClient of gemini failed, err=%v", err)
-	}
-	defer func() {
-		if err != nil {
-			log.Printf("close client error: %v", err)
-		}
-	}()
 
-	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
-		Client: client,
-		Model:  "gemini-1.5-flash",
-		ThinkingConfig: &genai.ThinkingConfig{
-			IncludeThoughts: true,
-			ThinkingBudget:  nil,
-		},
-	})
 	if err != nil {
-		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
 	}
 
 	image, err := os.ReadFile("./examples/generate_with_image/test.jpg")
@@ -62,14 +51,7 @@ func main() {
 		log.Fatalf("os.ReadFile failed, err=%v\n", err)
 	}
 
-	imageStr := base64.StdEncoding.EncodeToString(image)
-	defer func() {
-		if err != nil {
-			log.Printf("Delete file error: %v", err)
-		}
-	}()
-
-	resp, err := cm.Generate(ctx, []*schema.Message{
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
 		{
 			Role: schema.User,
 			UserInputMultiContent: []schema.MessageInputPart{
@@ -81,7 +63,7 @@ func main() {
 					Type: schema.ChatMessagePartTypeImageURL,
 					Image: &schema.MessageInputImage{
 						MessagePartCommon: schema.MessagePartCommon{
-							Base64Data: &imageStr,
+							Base64Data: of(base64.StdEncoding.EncodeToString(image)),
 							MIMEType:   "image/jpeg",
 						},
 						Detail: schema.ImageURLDetailAuto,
@@ -95,4 +77,8 @@ func main() {
 		return
 	}
 	fmt.Printf("Assistant: %s\n", resp.Content)
+}
+
+func of[T any](t T) *T {
+	return &t
 }

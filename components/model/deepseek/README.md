@@ -30,11 +30,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
+	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/deepseek"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
@@ -43,12 +42,12 @@ func main() {
 	if apiKey == "" {
 		log.Fatal("DEEPSEEK_API_KEY environment variable is not set")
 	}
-
-	// 创建 deepseek 模型
 	cm, err := deepseek.NewChatModel(ctx, &deepseek.ChatModelConfig{
-		APIKey:    apiKey,
-		Model:     "deepseek-reasoner",
-		MaxTokens: 2000,
+		APIKey:  apiKey,                          
+		Model:    os.Getenv("MODEL_NAME"),           
+		BaseURL: "https://api.deepseek.com/beta", 
+	
+
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -84,6 +83,7 @@ func main() {
 			resp.ResponseMeta.Usage.CompletionTokens,
 			resp.ResponseMeta.Usage.TotalTokens)
 	}
+
 }
 ```
 
@@ -92,62 +92,83 @@ func main() {
 The model can be configured using the `deepseek.ChatModelConfig` struct:
 
 ```go
+
 type ChatModelConfig struct {
-// APIKey is your authentication key
-// Required
-APIKey string `json:"api_key"`
+	// APIKey is your authentication key
+	// Required
+	APIKey string `json:"api_key"`
 
-// Timeout specifies the maximum duration to wait for API responses
-// Optional. Default: 5 minutes
-Timeout time.Duration `json:"timeout"`
+	// Timeout specifies the maximum duration to wait for API responses
+	// Optional. Default: 5 minutes
+	Timeout time.Duration `json:"timeout"`
 
-// BaseURL is your custom deepseek endpoint url
-// Optional. Default: https://api.deepseek.com/
-BaseURL string `json:"base_url"`
+	// HTTPClient specifies the client to send HTTP requests.
+	// Optional. Default http.DefaultClient
+	HTTPClient *http.Client `json:"http_client"`
 
-// The following fields correspond to DeepSeek's chat API parameters
-// Ref: https://api-docs.deepseek.com/api/create-chat-completion
+	// BaseURL is your custom deepseek endpoint url
+	// Optional. Default: https://api.deepseek.com/
+	BaseURL string `json:"base_url"`
 
-// Model specifies the ID of the model to use
-// Required
-Model string `json:"model"`
+	// Path sets the path for the API request. Defaults to "chat/completions", if not set.
+	// Example usages would be "/c/chat/" or any http after the baseURL extension
+	// Path 用于设置 API 请求的路径。如果未设置，则默认为 "chat/completions"。
+	// 用法示例可以是 "/c/chat/" 或 baseURL 之后的任何 http 路径。
+	Path string `json:"path"`
 
-// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
-// Range: [1, 8192].
-// Optional. Default: 4096
-MaxTokens int `json:"max_tokens,omitempty"`
+	// The following fields correspond to DeepSeek's chat API parameters
+	// Ref: https://api-docs.deepseek.com/api/create-chat-completion
 
-// Temperature specifies what sampling temperature to use
-// Generally recommend altering this or TopP but not both.
-// Range: [0.0, 2.0]. Higher values make output more random
-// Optional. Default: 1.0
-Temperature float32 `json:"temperature,omitempty"`
+	// Model specifies the ID of the model to use
+	// Required
+	Model string `json:"model"`
 
-// TopP controls diversity via nucleus sampling
-// Generally recommend altering this or Temperature but not both.
-// Range: [0.0, 1.0]. Lower values make output more focused
-// Optional. Default: 1.0
-TopP float32 `json:"top_p,omitempty"`
+	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
+	// Range: [1, 8192].
+	// Optional. Default: 4096
+	MaxTokens int `json:"max_tokens,omitempty"`
 
-// Stop sequences where the API will stop generating further tokens
-// Optional. Example: []string{"\n", "User:"}
-Stop []string `json:"stop,omitempty"`
+	// Temperature specifies what sampling temperature to use
+	// Generally recommend altering this or TopP but not both.
+	// Range: [0.0, 2.0]. Higher values make output more random
+	// Optional. Default: 1.0
+	Temperature float32 `json:"temperature,omitempty"`
 
-// PresencePenalty prevents repetition by penalizing tokens based on presence
-// Range: [-2.0, 2.0]. Positive values increase likelihood of new topics
-// Optional. Default: 0
-PresencePenalty float32 `json:"presence_penalty,omitempty"`
+	// TopP controls diversity via nucleus sampling
+	// Generally recommend altering this or Temperature but not both.
+	// Range: [0.0, 1.0]. Lower values make output more focused
+	// Optional. Default: 1.0
+	TopP float32 `json:"top_p,omitempty"`
 
-// ResponseFormat specifies the format of the model's response
-// Optional. Use for structured outputs
-ResponseFormatType ResponseFormatType `json:"response_format_type,omitempty"`
+	// Stop sequences where the API will stop generating further tokens
+	// Optional. Example: []string{"\n", "User:"}
+	Stop []string `json:"stop,omitempty"`
 
-// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
-// Range: [-2.0, 2.0]. Positive values decrease likelihood of repetition
-// Optional. Default: 0
-FrequencyPenalty float32 `json:"frequency_penalty,omitempty"`
+	// PresencePenalty prevents repetition by penalizing tokens based on presence
+	// Range: [-2.0, 2.0]. Positive values increase likelihood of new topics
+	// Optional. Default: 0
+	PresencePenalty float32 `json:"presence_penalty,omitempty"`
+
+	// ResponseFormat specifies the format of the model's response
+	// Optional. Use for structured outputs
+	ResponseFormatType ResponseFormatType `json:"response_format_type,omitempty"`
+
+	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
+	// Range: [-2.0, 2.0]. Positive values decrease likelihood of repetition
+	// Optional. Default: 0
+	FrequencyPenalty float32 `json:"frequency_penalty,omitempty"`
+
+	// LogProbs specifies whether to return log probabilities of the output tokens.
+	LogProbs bool `json:"log_probs"`
+
+	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+	TopLogProbs int `json:"top_log_probs"`
 }
+
 ```
+
+
+
 
 ## For More Details
 

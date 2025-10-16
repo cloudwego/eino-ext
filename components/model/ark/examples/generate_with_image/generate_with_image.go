@@ -46,7 +46,7 @@ func main() {
 	}
 
 	imageStr := base64.StdEncoding.EncodeToString(image)
-	base64Str := "data:image/png;base64," + imageStr
+
 	multiModalMsg.UserInputMultiContent = []schema.MessageInputPart{
 		{
 			Type: schema.ChatMessagePartTypeText,
@@ -56,7 +56,7 @@ func main() {
 			Type: schema.ChatMessagePartTypeImageURL,
 			Image: &schema.MessageInputImage{
 				MessagePartCommon: schema.MessagePartCommon{
-					Base64Data: &base64Str,
+					Base64Data: &imageStr,
 					MIMEType:   "image/png",
 				},
 				Detail: schema.ImageURLDetailAuto,

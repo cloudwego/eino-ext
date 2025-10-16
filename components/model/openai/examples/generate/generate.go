@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,9 +22,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino/schema"
-
 	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
@@ -44,6 +43,7 @@ func main() {
 			}
 			return false
 		}(),
+		ReasoningEffort: openai.ReasoningEffortLevelHigh,
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
@@ -58,6 +58,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
-
 	fmt.Printf("output: \n%v", resp)
+
 }

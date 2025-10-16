@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,19 +18,16 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
+
 	"io"
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino-ext/components/model/claude"
+	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
-
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/model/claude"
 )
 
 func main() {
@@ -47,7 +44,7 @@ func main() {
 		baseURLPtr = &baseURL
 	}
 
-	// 创建 Claude 模型
+	// Create a Claude model
 	cm, err := claude.NewChatModel(ctx, &claude.Config{
 		// if you want to use Aws Bedrock Service, set these four field.
 		// ByBedrock:       true,
@@ -64,104 +61,7 @@ func main() {
 		log.Fatalf("NewChatModel of claude failed, err=%v", err)
 	}
 
-	fmt.Println("\n=== Basic Chat ===")
-	basicChat(ctx, cm)
-
-	fmt.Println("\n=== Streaming Chat ===")
-	streamingChat(ctx, cm)
-
-	fmt.Println("\n=== Function Calling ===")
-	functionCalling(ctx, cm)
-
-	fmt.Println("\n=== Image Processing ===")
-	imageProcessing(ctx, cm)
-}
-
-func basicChat(ctx context.Context, cm model.BaseChatModel) {
-	messages := []*schema.Message{
-		{
-			Role:    schema.System,
-			Content: "You are a helpful AI assistant. Be concise in your responses.",
-		},
-		{
-			Role:    schema.User,
-			Content: "What is the capital of France?",
-		},
-	}
-
-	resp, err := cm.Generate(ctx, messages, claude.WithThinking(&claude.Thinking{
-		Enable:       true,
-		BudgetTokens: 1024,
-	}))
-	if err != nil {
-		log.Printf("Generate error: %v", err)
-		return
-	}
-
-	thinking, ok := claude.GetThinking(resp)
-	fmt.Printf("Thinking(have: %v): %s\n", ok, thinking)
-	fmt.Printf("Assistant: %s\n", resp.Content)
-	if resp.ResponseMeta != nil && resp.ResponseMeta.Usage != nil {
-		fmt.Printf("Tokens used: %d (prompt) + %d (completion) = %d (total)\n",
-			resp.ResponseMeta.Usage.PromptTokens,
-			resp.ResponseMeta.Usage.CompletionTokens,
-			resp.ResponseMeta.Usage.TotalTokens)
-	}
-}
-
-func streamingChat(ctx context.Context, cm model.BaseChatModel) {
-	messages := []*schema.Message{
-		schema.SystemMessage("You are a helpful AI assistant. Be concise in your responses."),
-		{
-			Role:    schema.User,
-			Content: "Write a short poem about spring, word by word.",
-		},
-	}
-
-	stream, err := cm.Stream(ctx, messages, claude.WithThinking(&claude.Thinking{
-		Enable:       true,
-		BudgetTokens: 1024,
-	}))
-	if err != nil {
-		log.Printf("Stream error: %v", err)
-		return
-	}
-	isFirstThinking := false
-	isFirstContent := false
-
-	fmt.Print("Assistant: ----------\n")
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Printf("Stream receive error: %v", err)
-			return
-		}
-
-		thinkingContent, ok := claude.GetThinking(resp)
-		if ok {
-			if !isFirstThinking {
-				isFirstThinking = true
-				fmt.Print("\nThinking: ----------\n")
-			}
-			fmt.Print(thinkingContent)
-		}
-
-		if len(resp.Content) > 0 {
-			if !isFirstContent {
-				isFirstContent = true
-				fmt.Print("\nContent: ----------\n")
-			}
-			fmt.Print(resp.Content)
-		}
-	}
-	fmt.Println("\n----------")
-}
-
-func functionCalling(ctx context.Context, cm model.ToolCallingChatModel) {
-	toolModel, err := cm.WithTools([]*schema.ToolInfo{
+	_, err = cm.WithTools([]*schema.ToolInfo{
 		{
 			Name: "get_weather",
 			Desc: "Get current weather information for a city",
@@ -191,8 +91,6 @@ func functionCalling(ctx context.Context, cm model.ToolCallingChatModel) {
 		log.Printf("Bind tools error: %v", err)
 		return
 	}
-
-	cm = toolModel
 
 	streamResp, err := cm.Stream(ctx, []*schema.Message{
 		schema.SystemMessage("You are a helpful AI assistant. Be concise in your responses."),
@@ -235,37 +133,4 @@ func functionCalling(ctx context.Context, cm model.ToolCallingChatModel) {
 		}
 		fmt.Printf("Final response: %s\n", weatherResp.Content)
 	}
-}
-
-func imageProcessing(ctx context.Context, cm model.BaseChatModel) {
-	imageBinary, err := os.ReadFile("examples/test.jpg")
-	if err != nil {
-		log.Fatalf("read file failed, err=%v", err)
-	}
-	base64Str := base64.StdEncoding.EncodeToString(imageBinary)
-	resp, err := cm.Generate(ctx, []*schema.Message{
-		{
-			Role: schema.User,
-			UserInputMultiContent: []schema.MessageInputPart{
-				{
-					Type: schema.ChatMessagePartTypeText,
-					Text: "What do you see in this image?",
-				},
-				{
-					Type: schema.ChatMessagePartTypeImageURL,
-					Image: &schema.MessageInputImage{
-						MessagePartCommon: schema.MessagePartCommon{
-							Base64Data: &base64Str,
-							MIMEType:   "image/jpeg",
-						},
-					},
-				},
-			},
-		},
-	})
-	if err != nil {
-		log.Printf("Generate error: %v", err)
-		return
-	}
-	fmt.Printf("Assistant: %s\n", resp.Content)
 }

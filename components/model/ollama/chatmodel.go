@@ -39,6 +39,9 @@ import (
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var CallbackMetricsExtraKey = "ollama_metrics"
 
+type Options = api.Options
+type ThinkValue = api.ThinkValue
+
 // ChatModelConfig stores configuration options specific to Ollama
 type ChatModelConfig struct {
 	BaseURL string        `json:"base_url"`
@@ -53,9 +56,9 @@ type ChatModelConfig struct {
 	Format    json.RawMessage `json:"format"`
 	KeepAlive *time.Duration  `json:"keep_alive"`
 
-	Options *api.Options `json:"options"`
+	Options *Options `json:"options"`
 
-	Thinking *api.ThinkValue `json:"thinking"`
+	Thinking *ThinkValue `json:"thinking"`
 }
 
 // Check if ChatModel implements model.ChatModel

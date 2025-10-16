@@ -22,29 +22,29 @@ import (
 	"io"
 	"log"
 	"os"
+	"time"
 
+	"github.com/cloudwego/eino-ext/components/model/deepseek"
 	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/model/openai"
 )
 
 func main() {
 	ctx := context.Background()
-	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Model:   os.Getenv("OPENAI_MODEL"),
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		ByAzure: func() bool {
-			if os.Getenv("OPENAI_BY_AZURE") == "true" {
-				return true
-			}
-			return false
-		}(),
+	apiKey := os.Getenv("DEEPSEEK_API_KEY")
+	if apiKey == "" {
+		log.Fatal("DEEPSEEK_API_KEY environment variable is not set")
+	}
+	cm, err := deepseek.NewChatModel(ctx, &deepseek.ChatModelConfig{
+		APIKey:  apiKey,
+		Model:   os.Getenv("MODEL_NAME"),
+		BaseURL: "https://api.deepseek.com/beta",
+		Timeout: 30 * time.Second,
 	})
 	if err != nil {
-		log.Fatalf("NewChatModel of openai failed, err=%v", err)
+		log.Fatal(err)
 	}
-	err = chatModel.BindForcedTools([]*schema.ToolInfo{
+
+	_, err = cm.WithTools([]*schema.ToolInfo{
 		{
 			Name: "user_company",
 			Desc: "Retrieve the user's company and position based on their name and email.",
@@ -62,9 +62,9 @@ func main() {
 				}),
 		}})
 	if err != nil {
-		log.Fatalf("BindForcedTools of openai failed, err=%v", err)
+		log.Fatalf("BindTools of deepseek failed, err=%v", err)
 	}
-	resp, err := chatModel.Generate(ctx, []*schema.Message{{
+	resp, err := cm.Generate(ctx, []*schema.Message{{
 		Role:    schema.System,
 		Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
 	}, {
@@ -72,11 +72,11 @@ func main() {
 		Content: "My name is John and my email is john@abc.com，Please recommend some houses that suit me.",
 	}})
 	if err != nil {
-		log.Fatalf("Generate of openai failed, err=%v", err)
+		log.Fatalf("Generate of deepseek failed, err=%v", err)
 	}
 	fmt.Printf("output: \n%v", resp)
 
-	streamResp, err := chatModel.Stream(ctx, []*schema.Message{
+	streamResp, err := cm.Stream(ctx, []*schema.Message{
 		{
 			Role:    schema.System,
 			Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
@@ -86,7 +86,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatalf("Stream of openai failed, err=%v", err)
+		log.Fatalf("Stream of deepseek failed, err=%v", err)
 	}
 	var messages []*schema.Message
 	for {
@@ -101,7 +101,8 @@ func main() {
 	}
 	resp, err = schema.ConcatMessages(messages)
 	if err != nil {
-		log.Fatalf("ConcatMessages of openai failed, err=%v", err)
+		log.Fatalf("ConcatMessages of deepseek failed, err=%v", err)
 	}
 	fmt.Printf("stream output: \n%v", resp)
+
 }

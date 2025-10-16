@@ -23,21 +23,6 @@ go get github.com/cloudwego/eino-ext/components/model/arkbot@latest
 Here's a quick example of how to use the Ark Bot:
 
 ```go
-/*
- * Copyright 2024 CloudWeGo Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 
 package main
 
@@ -45,6 +30,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"os"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -55,9 +41,9 @@ func main() {
 	ctx := context.Background()
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
-	chatModel, err := arkbot.NewChatModel(ctx, &arkbot.ChatModelConfig{
-		APIKey: "xxx",
-		Model:  "yyy",
+	chatModel, err := arkbot.NewChatModel(ctx, &arkbot.Config{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
 	})
 
 	if err != nil {
@@ -90,6 +76,7 @@ func main() {
 	log.Printf("  body: %s\n", string(respBody))
 }
 
+
 ```
 
 ## Configuration
@@ -97,10 +84,17 @@ func main() {
 The model can be configured using the `arkbot.Config` struct:
 
 ```go
-type Config struct {
+    
+    type Config struct {
     // Timeout specifies the maximum duration to wait for API responses
+    // If HTTPClient is set, Timeout will not be used.
     // Optional. Default: 10 minutes
     Timeout *time.Duration `json:"timeout"`
+    
+    // HTTPClient specifies the client to send HTTP requests.
+    // If HTTPClient is set, Timeout will not be used.
+    // Optional. Default &http.Client{Timeout: Timeout}
+    HTTPClient *http.Client `json:"http_client"`
     
     // RetryTimes specifies the number of retry attempts for failed API calls
     // Optional. Default: 2
@@ -127,7 +121,7 @@ type Config struct {
     // Required
     Model string `json:"model"`
     
-    // MaxTokens limits the maximum number of tokens that can be generated in the chat completion and the range of values is [0, 4096]
+    // MaxTokens limits the maximum number of tokens that can be generated in the chat completion.
     // Optional. Default: 4096
     MaxTokens *int `json:"max_tokens,omitempty"`
     
@@ -163,7 +157,16 @@ type Config struct {
     
     // CustomHeader the http header passed to model when requesting model
     CustomHeader map[string]string `json:"custom_header"`
-}
+    
+    // LogProbs specifies whether to return log probabilities of the output tokens.
+    LogProbs bool `json:"log_probs"`
+    
+    // TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+    TopLogProbs int `json:"top_log_probs"`
+    
+    // ResponseFormat specifies the format that the model must output.
+    ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+    }
 ```
 
 ## Request Options

@@ -18,8 +18,8 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
-	"io"
 	"log"
 	"os"
 
@@ -32,7 +32,7 @@ func main() {
 	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
 	apiKey := os.Getenv("DASHSCOPE_API_KEY")
 	modelName := os.Getenv("MODEL_NAME")
-	cm, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
+	chatModel, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
 		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
 		APIKey:      apiKey,
 		Timeout:     0,
@@ -41,54 +41,43 @@ func main() {
 		Temperature: of(float32(0.7)),
 		TopP:        of(float32(0.7)),
 	})
+
 	if err != nil {
 		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
-	sr, err := cm.Stream(ctx, []*schema.Message{
-		schema.UserMessage("你好"),
+	image, err := os.ReadFile("./examples/generate_with_image/test.jpg")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "What do you see in this image?",
+				},
+				{
+					Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: of(base64.StdEncoding.EncodeToString(image)),
+							MIMEType:   "image/jpeg",
+						},
+						Detail: schema.ImageURLDetailAuto,
+					},
+				},
+			},
+		},
 	})
 	if err != nil {
-		log.Fatalf("Stream of qwen failed, err=%v", err)
+		log.Printf("Generate error: %v", err)
+		return
 	}
+	fmt.Printf("Assistant: %s\n", resp.Content)
 
-	var msgs []*schema.Message
-	for {
-		msg, err := sr.Recv()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-
-			log.Fatalf("Stream of qwen failed, err=%v", err)
-		}
-
-		fmt.Println(msg)
-		// assistant: 你好
-		// finish_reason:
-		// : ！
-		// finish_reason:
-		// : 有什么
-		// finish_reason:
-		// : 可以帮助
-		// finish_reason:
-		// : 你的吗？
-		// finish_reason:
-		// :
-		// finish_reason: stop
-		// usage: &{9 7 16}
-		msgs = append(msgs, msg)
-	}
-
-	msg, err := schema.ConcatMessages(msgs)
-	if err != nil {
-		log.Fatalf("ConcatMessages failed, err=%v", err)
-	}
-
-	fmt.Println(msg)
-	// assistant: 你好！有什么可以帮助你的吗？
-	// finish_reason: stop
-	// usage: &{9 7 16}
 }
 
 func of[T any](t T) *T {

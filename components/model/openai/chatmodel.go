@@ -46,6 +46,11 @@ type Modality = openai.Modality
 type AudioFormat string
 
 const (
+	TextModality  Modality = openai.TextModality
+	AudioModality Modality = openai.AudioModality
+)
+
+const (
 	AudioFormatMp3   AudioFormat = "mp3"
 	AudioFormatWav   AudioFormat = "wav"
 	AudioFormatFlac  AudioFormat = "flac"

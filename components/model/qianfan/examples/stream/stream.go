@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"github.com/cloudwego/eino-ext/components/model/qianfan"
 	"github.com/cloudwego/eino/schema"
@@ -32,9 +33,9 @@ func main() {
 	// How to get Access Key/Secret Key: https://cloud.baidu.com/doc/Reference/s/9jwvz2egb
 	qcfg.AccessKey = "your_access_key"
 	qcfg.SecretKey = "your_secret_key"
-
+	modelName := os.Getenv("MODEL_NAME")
 	cm, err := qianfan.NewChatModel(ctx, &qianfan.ChatModelConfig{
-		Model:               "ernie-3.5-8k",
+		Model:               modelName,
 		Temperature:         of(float32(0.7)),
 		TopP:                of(float32(0.7)),
 		MaxCompletionTokens: of(1024),
@@ -44,27 +45,8 @@ func main() {
 	}
 
 	sr, err := cm.Stream(ctx, []*schema.Message{
-		schema.UserMessage("你好"),
+		schema.UserMessage("hello"),
 	})
-
-	// Alternatively, you can use the following calling methods
-	//sr, err =  cm.Stream(ctx, []*schema.Message{
-	//	{Role: schema.User,
-	//		UserInputMultiContent: []schema.MessageInputPart{
-	//			{Type: schema.ChatMessagePartTypeText, Text: "你好"},
-	//		}},
-	//})
-
-	// If the model supports multimodal scenarios, you can use the following call methods
-	//sr, err = cm.Stream(ctx, []*schema.Message{
-	//	{Role: schema.User,
-	//		UserInputMultiContent: []schema.MessageInputPart{
-	//			{Type: schema.ChatMessagePartTypeText, Text: "介绍下如下图片内容"},
-	//			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{
-	//				URL: of("https://img0.baidu.com/it/u=4078387433,1356951957&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=1034"),
-	//			}}},
-	//		}},
-	//})
 
 	if err != nil {
 		log.Fatalf("Stream of qianfan failed, err=%v", err)
@@ -84,33 +66,12 @@ func main() {
 		fmt.Println(m)
 		ms = append(ms, m)
 	}
-
-	// assistant: 您好！
-	// assistant: 我是文心
-	// assistant: 一言，
-	// assistant: 很高兴与您
-	// assistant: 交流。
-	// assistant: 请问有什么
-	// assistant: 我可以帮助
-	// assistant: 您的吗
-	// assistant: ？
-	// assistant: 无论是知识
-	// assistant: 问答、
-	// assistant: 文本创作
-	// assistant: 还是其他
-	// assistant: 任何问题，
-	// assistant: 我都会尽力
-	// assistant: 为您提供帮助
-	// assistant: 。
-
 	sm, err := schema.ConcatMessages(ms)
 	if err != nil {
 		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
 
 	fmt.Println(sm)
-	// assistant: 您好！我是文心一言，很高兴与您交流。请问有什么我可以帮助您的吗？无论是知识问答、文本创作还是其他任何问题，我都会尽力为您提供帮助。
-	// usage: &{1 32 33}
 }
 
 func of[T any](t T) *T {

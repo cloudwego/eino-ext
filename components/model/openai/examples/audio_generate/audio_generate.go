@@ -18,19 +18,23 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"io"
+
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino/schema"
-
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
 	ctx := context.Background()
+
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		// if you want to use Azure OpenAI Service, set these two field.
+		// BaseURL: "https://{RESOURCE_NAME}.openai.azure.com",
+		// ByAzure: true,
+		// APIVersion: "2024-06-01",
 		APIKey:  os.Getenv("OPENAI_API_KEY"),
 		Model:   os.Getenv("OPENAI_MODEL"),
 		BaseURL: os.Getenv("OPENAI_BASE_URL"),
@@ -40,35 +44,31 @@ func main() {
 			}
 			return false
 		}(),
-	})
-	if err != nil {
-		log.Fatalf("NewChatModel of openai failed, err=%v", err)
-	}
-
-	streamMsgs, err := chatModel.Stream(ctx, []*schema.Message{
-		{
-			Role:    schema.User,
-			Content: "as a machine, how do you answer user's question?",
+		ReasoningEffort: openai.ReasoningEffortLevelHigh,
+		Modalities:      []openai.Modality{openai.AudioModality, openai.TextModality},
+		Audio: &openai.Audio{
+			Format: openai.AudioFormatMp3,
+			Voice:  openai.AudioVoiceAlloy,
 		},
 	})
-
 	if err != nil {
-		log.Fatalf("Stream of openai failed, err=%v", err)
+		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
-	defer streamMsgs.Close()
-
-	fmt.Printf("typewriter output:")
-	for {
-		msg, err := streamMsgs.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatalf("Recv of streamMsgs failed, err=%v", err)
-		}
-		fmt.Print(msg.Content)
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "help me convert the following text to speech"},
+				{Type: schema.ChatMessagePartTypeText, Text: "Hello, what can I help you with?"},
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	fmt.Print("\n")
+	respBody, _ := sonic.MarshalIndent(resp, " ", " ")
+	log.Printf(" body: %s\n", string(respBody))
+
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/cloudwego/eino/schema"
 	ollamaapi "github.com/eino-contrib/ollama/api"
@@ -28,11 +29,11 @@ import (
 
 func main() {
 	ctx := context.Background()
-
+	modelName := os.Getenv("MODEL_NAME")
 	thinking := ollamaapi.ThinkValue{Value: true}
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL:  "http://localhost:11434",
-		Model:    "qwen3:8b",
+		Model:    modelName,
 		Thinking: &thinking,
 	})
 	if err != nil {

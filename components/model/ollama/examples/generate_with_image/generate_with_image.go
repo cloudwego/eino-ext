@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
+	"fmt"
 	"log"
 	"os"
 
@@ -29,47 +29,44 @@ import (
 
 func main() {
 	ctx := context.Background()
-
+	modelName := os.Getenv("MODEL_NAME")
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL: "http://localhost:11434",
-		Model:   "gemma3:4b",
+		Model:   modelName,
 	})
 	if err != nil {
 		log.Printf("NewChatModel failed, err=%v\n", err)
 		return
 	}
 
-	image, err := os.ReadFile("./examples/image/eino.png")
-	if err != nil {
-		log.Fatalf("os.ReadFile failed, err=%v\n", err)
-	}
-
-	imageStr := base64.StdEncoding.EncodeToString(image)
-
-	resp, err := chatModel.Generate(ctx, []*schema.Message{
-		{
-			Role: schema.User,
-			UserInputMultiContent: []schema.MessageInputPart{
-				{
-					Type: schema.ChatMessagePartTypeText,
-					Text: "describe this image",
-				},
-				{
-					Type: schema.ChatMessagePartTypeImageURL,
-					Image: &schema.MessageInputImage{
-						MessagePartCommon: schema.MessagePartCommon{
-							Base64Data: &imageStr,
-						},
-						Detail: schema.ImageURLDetailAuto,
+	multiModalMsg := &schema.Message{
+		UserInputMultiContent: []schema.MessageInputPart{
+			{
+				Type: schema.ChatMessagePartTypeText,
+				Text: "this picture is a landscape photo, what's the picture's content",
+			},
+			{
+				Type: schema.ChatMessagePartTypeImageURL,
+				Image: &schema.MessageInputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						URL: of("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT11qEDxU4X_MVKYQVU5qiAVFidA58f8GG0bQ&s"),
 					},
+					Detail: schema.ImageURLDetailAuto,
 				},
 			},
 		},
-	})
-	if err != nil {
-		log.Printf("Generate failed, err=%v\n", err)
-		return
 	}
 
-	log.Printf("output: \n%v\n", resp)
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		multiModalMsg,
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	fmt.Printf("output: \n%v", resp)
+}
+
+func of[T any](a T) *T {
+	return &a
 }
