@@ -41,6 +41,41 @@ const (
 type ChatCompletionResponseFormat = openai.ChatCompletionResponseFormat
 type ChatCompletionResponseFormatJSONSchema = openai.ChatCompletionResponseFormatJSONSchema
 
+type Modality = openai.Modality
+
+type AudioFormat string
+
+const (
+	AudioFormatMp3   AudioFormat = "mp3"
+	AudioFormatWav   AudioFormat = "wav"
+	AudioFormatFlac  AudioFormat = "flac"
+	AudioFormatOpus  AudioFormat = "opus"
+	AudioFormatPcm16 AudioFormat = "pcm16"
+)
+
+type AudioVoice string
+
+const (
+	AudioVoiceAlloy   AudioVoice = "alloy"
+	AudioVoiceAsh     AudioVoice = "ash"
+	AudioVoiceBallad  AudioVoice = "ballad"
+	AudioVoiceCoral   AudioVoice = "coral"
+	AudioVoiceEcho    AudioVoice = "echo"
+	AudioVoiceFable   AudioVoice = "fable"
+	AudioVoiceNova    AudioVoice = "nova"
+	AudioVoiceOnyx    AudioVoice = "onyx"
+	AudioVoiceSage    AudioVoice = "sage"
+	AudioVoiceShimmer AudioVoice = "shimmer"
+)
+
+// Audio specifies the audio output settings
+type Audio struct {
+	// Format specifies the output audio format.
+	Format AudioFormat `json:"format"`
+	// Voice specifies the voice the model uses to respond.
+	Voice AudioVoice `json:"voice"`
+}
+
 type ChatModelConfig struct {
 	// APIKey is your authentication key
 	// Use OpenAI API key or Azure API key depending on the service
@@ -143,6 +178,13 @@ type ChatModelConfig struct {
 	// ReasoningEffort will override the default reasoning level of "medium"
 	// Optional. Useful for fine tuning response latency vs. accuracy
 	ReasoningEffort ReasoningEffortLevel
+
+	// Modalities are output types that you would like the model to generate. Most models are capable of generating text, which is the default: ["text"]
+	// The gpt-4o-audio-preview model can also be used to generate audio. To request that this model generate both text and audio responses, you can use: ["text", "audio"]
+	Modalities []Modality `json:"modalities,omitempty"`
+
+	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
+	Audio *Audio `json:"audio,omitempty"`
 }
 
 type ChatModel struct {
@@ -181,7 +223,15 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			AzureModelMapperFunc: config.AzureModelMapperFunc,
 			ExtraFields:          config.ExtraFields,
 			ReasoningEffort:      openai.ReasoningEffortLevel(config.ReasoningEffort),
+			Modalities:           config.Modalities,
 		}
+
+		if config.Audio != nil {
+			nConf.Audio = &openai.Audio{
+				Format: string(config.Audio.Format),
+				Voice:  string(config.Audio.Voice)}
+		}
+
 	}
 	cli, err := openai.NewClient(ctx, nConf)
 	if err != nil {
