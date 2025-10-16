@@ -7,10 +7,11 @@ toolchain go1.24.2
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/cloudwego/eino v0.4.7
-	github.com/ollama/ollama v0.11.4
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.10.0
 )
+
+require github.com/eino-contrib/ollama v0.1.0
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
@@ -24,6 +25,7 @@ require (
 	github.com/getkin/kin-openapi v0.118.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/swag v0.19.5 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/invopop/yaml v0.1.0 // indirect

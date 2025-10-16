@@ -2,12 +2,16 @@
 
 A Volcengine Ark model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Model` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
 
+This package provides two distinct models:
+- **ChatModel**: For text-based and multi-modal chat completions.
+- **ImageGenerationModel**: For generating images from text prompts or image.
+
 ## Features
 
 - Implements `github.com/cloudwego/eino/components/model.Model`
 - Easy integration with Eino's model system
 - Configurable model parameters
-- Support for chat completion
+- Support for both chat completion and image generation
 - Support for streaming responses
 - Custom response parsing support
 - Flexible model configuration
@@ -18,9 +22,15 @@ A Volcengine Ark model implementation for [Eino](https://github.com/cloudwego/ei
 go get github.com/cloudwego/eino-ext/components/model/ark@latest
 ```
 
-## Quick Start
+---
 
-Here's a quick example of how to use the Ark model:
+## Chat Completion
+
+This model is used for standard chat and text generation tasks.
+
+### Quick Start
+
+Here's a quick example of how to use the `ChatModel`:
 
 ```go
 package main
@@ -97,9 +107,9 @@ func main() {
 }
 ```
 
-## Configuration
+### Configuration
 
-The model can be configured using the `ark.ChatModelConfig` struct:
+The `ChatModel` can be configured using the `ark.ChatModelConfig` struct:
 
 ```go
 type ChatModelConfig struct {
@@ -171,14 +181,141 @@ type ChatModelConfig struct {
 }
 ```
 
-## Request Options
+### Request Options
 
-The Ark model supports various request options to customize the behavior of API calls. Here are the available options:
+The `ChatModel` supports various request options to customize the behavior of API calls. Here are the available options:
 
 ```go
 // WithCustomHeader sets custom headers for a single request
 // the headers will override all the headers given in ChatModelConfig.CustomHeader
 func WithCustomHeader(m map[string]string) model.Option {}
+```
+
+---
+
+## Image Generation
+
+This model is used specifically for generating images from text prompts.
+
+### Quick Start
+
+Here's a quick example of how to use the `ImageGenerationModel`:
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino-ext/components/model/ark"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Get ARK_API_KEY and an image generation model ID
+	imageGenerationModel, err := ark.NewImageGenerationModel(ctx, &ark.ImageGenerationConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_IMAGE_MODEL_ID"), // Use an appropriate image model ID
+	})
+
+	if err != nil {
+		log.Fatalf("NewImageGenerationModel failed, err=%v", err)
+	}
+
+	inMsgs := []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "a photo of a cat sitting on a table",
+		},
+	}
+
+	msg, err := imageGenerationModel.Generate(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	log.Printf("\ngenerate output: \n")
+	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  body: %s\n", string(respBody))
+
+	sr, err := imageGenerationModel.Stream(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Stream failed, err=%v", err)
+	}
+
+	log.Printf("stream output: \n")
+	index := 0
+	for {
+		msgChunk, err := sr.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Stream Recv failed, err=%v", err)
+		}
+
+		respBody, _ = json.MarshalIndent(msgChunk, "  ", "  ")
+		log.Printf("stream chunk %d: body: %s\n", index, string(respBody))
+		index++
+	}
+}
+```
+
+### Configuration
+
+The `ImageGenerationModel` can be configured using the `ark.ImageGenerationConfig` struct:
+
+```go
+type ImageGenerationConfig struct {
+    // --- Authentication and basic connection settings ---
+    // (Timeout, HTTPClient, RetryTimes, BaseURL, Region, APIKey)
+    // ...
+
+    // --- Image Generation Specific Parameters ---
+    // Ref: https://www.volcengine.com/docs/82379/1541523
+
+    // Model specifies the ID of the image generation endpoint on the Ark platform.
+    // Required.
+    Model string `json:"model"`
+
+    // Size specifies the dimensions of the generated image.
+	// It can be a resolution keyword (e.g., "1K", "2K", "4K") or a custom resolution
+	// in "{width}x{height}" format (e.g., "1920x1080").
+	// When using custom resolutions, the total pixels must be between 1280x720 and 4096x4096,
+	// and the aspect ratio (width/height) must be between 1/16 and 16.
+	// Optional. Defaults to "2048x2048".
+	Size string `json:"size"`
+
+	// SequentialImageGeneration determines if the model should generate a sequence of images.
+	// Possible values:
+	//  - "auto": The model decides whether to generate multiple images based on the prompt.
+	//  - "disabled": Only a single image is generated.
+	// Optional. Defaults to "disabled".
+	SequentialImageGeneration SequentialImageGeneration `json:"sequential_image_generation"`
+
+	// SequentialImageGenerationOption sets the maximum number of images to generate when
+	// SequentialImageGeneration is set to "auto".
+	// The value must be between 1 and 15.
+	// Optional. Defaults to 15.
+	SequentialImageGenerationOption *model.SequentialImageGenerationOptions `json:"sequential_image_generation_option"`
+
+	// ResponseFormat specifies how the generated image data is returned.
+	// Possible values:
+	//  - "url": A temporary URL to download the image (valid for 24 hours).
+	//  - "b64_json": The image data encoded as a Base64 string in the response.
+	// Optional. Defaults to "url".
+	ResponseFormat ImageResponseFormat `json:"response_format"`
+
+	// DisableWatermark, if set to true, removes the "AI Generated" watermark
+	// from the bottom-right corner of the image.
+	// Optional. Defaults to false.
+	DisableWatermark bool `json:"disable_watermark"`
+}
 ```
 
 ## For More Details

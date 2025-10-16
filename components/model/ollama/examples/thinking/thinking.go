@@ -21,7 +21,7 @@ import (
 	"log"
 
 	"github.com/cloudwego/eino/schema"
-	ollamaapi "github.com/ollama/ollama/api"
+	ollamaapi "github.com/eino-contrib/ollama/api"
 
 	"github.com/cloudwego/eino-ext/components/model/ollama"
 )
