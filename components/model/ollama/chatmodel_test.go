@@ -24,7 +24,7 @@ import (
 	"time"
 
 	. "github.com/bytedance/mockey"
-	"github.com/ollama/ollama/api"
+	"github.com/eino-contrib/ollama/api"
 	"github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
 

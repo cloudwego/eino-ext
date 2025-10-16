@@ -444,7 +444,7 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		Tools:       nil,
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
-	claudeOptions := model.GetImplSpecificOptions(&options{
+	specOptions := model.GetImplSpecificOptions(&options{
 		TopK:                   cm.topK,
 		Thinking:               cm.thinking,
 		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
@@ -465,30 +465,99 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	if len(commonOptions.Stop) > 0 {
 		params.StopSequences = commonOptions.Stop
 	}
-	if claudeOptions.TopK != nil {
-		params.TopK = param.NewOpt(int64(*claudeOptions.TopK))
+	if specOptions.TopK != nil {
+		params.TopK = param.NewOpt(int64(*specOptions.TopK))
 	}
 
-	if claudeOptions.Thinking != nil && claudeOptions.Thinking.Enable {
+	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
 		params.Thinking = anthropic.ThinkingConfigParamUnion{
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
 				Type:         "enabled",
-				BudgetTokens: int64(claudeOptions.Thinking.BudgetTokens),
+				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
 			},
 		}
 	}
 
+	if err = cm.populateTools(&params, commonOptions, specOptions); err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
+	if err = cm.populateInput(&params, system, msgs, specOptions); err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
+	return params, nil
+}
+
+func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []*schema.Message, msgs []*schema.Message, specOptions *options) error {
+	// populate system messages
+	hasSetSysBreakPoint := false
+	for _, m := range system {
+		block := anthropic.TextBlockParam{Text: m.Content}
+		if isBreakpointMessage(m) {
+			hasSetSysBreakPoint = true
+			block.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
+		params.System = append(params.System, block)
+	}
+
+	// if no breakpoint has been set, a breakpoint will be set for the last system message
+	if len(params.System) > 0 && !hasSetSysBreakPoint && fromOrDefault(specOptions.EnableAutoCache, false) {
+		params.System[len(params.System)-1].CacheControl = anthropic.NewCacheControlEphemeralParam()
+	}
+
+	msgParams := make([]anthropic.MessageParam, 0, len(msgs))
+	hasSetMsgBreakPoint := false
+
+	for _, msg := range msgs {
+		msgParam, err := convSchemaMessage(msg)
+		if err != nil {
+			return fmt.Errorf("convert schema message fail: %w", err)
+		}
+
+		if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
+			hasSetMsgBreakPoint = true
+		}
+
+		msgParams = append(msgParams, msgParam)
+	}
+
+	if !hasSetMsgBreakPoint && fromOrDefault(specOptions.EnableAutoCache, false) {
+		lastMsgParam := msgParams[len(msgParams)-1]
+		lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
+		populateContentBlockBreakPoint(lastBlock)
+	}
+
+	params.Messages = msgParams
+
+	return nil
+}
+
+func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOptions *model.Options, specOptions *options) error {
 	tools := cm.tools
+
 	if commonOptions.Tools != nil {
 		var err error
 		if tools, err = toAnthropicToolParam(commonOptions.Tools); err != nil {
-			return anthropic.MessageNewParams{}, err
+			return err
 		}
 	}
 
-	if len(tools) > 0 {
-		params.Tools = tools
+	if len(tools) > 0 && fromOrDefault(specOptions.EnableAutoCache, false) {
+		hasBreakpoint := false
+		for _, tool := range tools {
+			if ctrl := tool.GetCacheControl(); ctrl != nil && ctrl.Type != "" {
+				hasBreakpoint = true
+				break
+			}
+		}
+		// if no breakpoint has been set, a breakpoint will be set for the last tool
+		if !hasBreakpoint {
+			tools[len(tools)-1].OfTool.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
 	}
+
+	params.Tools = tools
 
 	if commonOptions.ToolChoice != nil {
 		switch *commonOptions.ToolChoice {
@@ -496,55 +565,32 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 			params.Tools = []anthropic.ToolUnionParam{} // act like forbid tools
 		case schema.ToolChoiceAllowed:
 			p := &anthropic.ToolChoiceAutoParam{}
-			if claudeOptions.DisableParallelToolUse != nil {
-				p.DisableParallelToolUse = param.NewOpt[bool](*claudeOptions.DisableParallelToolUse)
+			if specOptions.DisableParallelToolUse != nil {
+				p.DisableParallelToolUse = param.NewOpt[bool](*specOptions.DisableParallelToolUse)
 			}
 			params.ToolChoice = anthropic.ToolChoiceUnionParam{
 				OfAuto: p,
 			}
 		case schema.ToolChoiceForced:
 			if len(tools) == 0 {
-				return anthropic.MessageNewParams{}, fmt.Errorf("tool choice is forced but tool is not provided")
+				return fmt.Errorf("tool choice is forced but tool is not provided")
 			} else if len(tools) == 1 {
 				params.ToolChoice = anthropic.ToolChoiceParamOfTool(*tools[0].GetName())
 			} else {
 				p := &anthropic.ToolChoiceAnyParam{}
-				if claudeOptions.DisableParallelToolUse != nil {
-					p.DisableParallelToolUse = param.NewOpt[bool](*claudeOptions.DisableParallelToolUse)
+				if specOptions.DisableParallelToolUse != nil {
+					p.DisableParallelToolUse = param.NewOpt[bool](*specOptions.DisableParallelToolUse)
 				}
 				params.ToolChoice = anthropic.ToolChoiceUnionParam{
 					OfAny: p,
 				}
 			}
 		default:
-			return anthropic.MessageNewParams{}, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
+			return fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
 		}
 	}
 
-	// Convert messages
-	var systemTextBlocks []anthropic.TextBlockParam
-	for _, m := range system {
-		block := anthropic.TextBlockParam{Text: m.Content}
-		if isBreakpointMessage(m) {
-			block.CacheControl = anthropic.NewCacheControlEphemeralParam()
-		}
-		systemTextBlocks = append(systemTextBlocks, block)
-	}
-	if len(systemTextBlocks) > 0 {
-		params.System = systemTextBlocks
-	}
-
-	messages := make([]anthropic.MessageParam, 0, len(msgs))
-	for _, msg := range msgs {
-		message, err := convSchemaMessage(msg)
-		if err != nil {
-			return anthropic.MessageNewParams{}, fmt.Errorf("convert schema message fail: %w", err)
-		}
-		messages = append(messages, message)
-	}
-	params.Messages = messages
-
-	return params, nil
+	return nil
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
@@ -601,6 +647,17 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 
 func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
 	var messageParams []anthropic.ContentBlockParamUnion
+
+	if message.Role == schema.Assistant {
+		thinkingContent, hasThinking := GetThinking(message)
+		if hasThinking && thinkingContent != "" {
+			signature, hasSignature := getThinkingSignature(message)
+			if hasSignature && signature != "" {
+				messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
+			}
+		}
+	}
+
 	if len(message.Content) > 0 {
 		if len(message.ToolCallID) > 0 {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
@@ -633,6 +690,10 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 			message.ToolCalls[i].Function.Name))
 	}
 
+	if len(messageParams) > 0 && isBreakpointMessage(message) {
+		populateContentBlockBreakPoint(messageParams[len(messageParams)-1])
+	}
+
 	switch message.Role {
 	case schema.Assistant:
 		mp = anthropic.NewAssistantMessage(messageParams...)
@@ -642,24 +703,24 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		mp = anthropic.NewUserMessage(messageParams...)
 	}
 
-	if isBreakpointMessage(message) && len(messageParams) > 0 {
-		injectContentBlockBreakPoint(messageParams[len(messageParams)-1])
-	}
-
 	return mp, nil
 }
 
-func injectContentBlockBreakPoint(lastBlock anthropic.ContentBlockParamUnion) {
-	if lastBlock.OfText != nil {
-		lastBlock.OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion) {
+	if block.OfText != nil {
+		block.OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
 		return
 	}
-	if lastBlock.OfImage != nil {
-		lastBlock.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	if block.OfImage != nil {
+		block.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
 		return
 	}
-	if lastBlock.OfToolResult != nil {
-		lastBlock.OfToolResult.CacheControl = anthropic.NewCacheControlEphemeralParam()
+	if block.OfToolResult != nil {
+		block.OfToolResult.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
+	if block.OfToolUse != nil {
+		block.OfToolUse.CacheControl = anthropic.NewCacheControlEphemeralParam()
 		return
 	}
 }
@@ -718,6 +779,7 @@ func convContentBlockToEinoMsg(
 	case anthropic.ThinkingBlock:
 		setThinking(dstMsg, block.Thinking)
 		dstMsg.ReasoningContent = block.Thinking
+		setThinkingSignature(dstMsg, block.Signature)
 	case anthropic.RedactedThinkingBlock:
 	default:
 		return fmt.Errorf("unknown anthropic content block type: %T", block)
@@ -781,6 +843,11 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 			result.ToolCalls = append(result.ToolCalls,
 				toolEvent(false, "", "", delta.PartialJSON, streamCtx))
 		case anthropic.SignatureDelta:
+			if currentSig, hasSig := getThinkingSignature(result); hasSig {
+				setThinkingSignature(result, currentSig+delta.Signature)
+			} else {
+				setThinkingSignature(result, delta.Signature)
+			}
 		}
 
 		return result, nil

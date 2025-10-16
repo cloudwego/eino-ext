@@ -109,6 +109,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Messages: in,
 		Tools:    tools, // join tool info from call options
 		Config:   reqConf,
+		Extra:    map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 
 	defer func() {
@@ -137,6 +138,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Message:    outMsg,
 		Config:     reqConf,
 		TokenUsage: cm.toModelCallbackUsage(outMsg.ResponseMeta),
+		Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 
 	return outMsg, nil
@@ -186,6 +188,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 		Messages: in,
 		Tools:    tools,
 		Config:   reqConf,
+		Extra:    map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 	defer func() {
 		if err != nil {
@@ -242,6 +245,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 				Message:    msg,
 				Config:     reqConf,
 				TokenUsage: cm.toModelCallbackUsage(msg.ResponseMeta),
+				Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 			}, nil)
 			if closed {
 				return
