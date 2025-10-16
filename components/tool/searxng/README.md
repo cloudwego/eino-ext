@@ -277,5 +277,5 @@ The tool includes built-in error handling for common scenarios:
 
 ## For More Details
 
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [SearXNG Documentation](https://docs.searxng.org/)

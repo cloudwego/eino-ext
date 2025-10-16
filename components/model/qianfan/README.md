@@ -1,6 +1,6 @@
 # Qianfan Model
 
-A Qianfan model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Model` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+A Qianfan model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
 
 ## Features
 
@@ -136,7 +136,304 @@ type ChatModelConfig struct {
 
 
 
+
+## examples
+
+### generate
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qianfan"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+
+	qcfg := qianfan.GetQianfanSingletonConfig()
+	// How to get Access Key/Secret Key: https://cloud.baidu.com/doc/Reference/s/9jwvz2egb
+	qcfg.AccessKey = "your_access_key"
+	qcfg.SecretKey = "your_secret_key"
+	modelName := os.Getenv("MODEL_NAME")
+	cm, err := qianfan.NewChatModel(ctx, &qianfan.ChatModelConfig{
+		Model:               modelName,
+		Temperature:         of(float32(0.7)),
+		TopP:                of(float32(0.7)),
+		MaxCompletionTokens: of(1024),
+		Seed:                of(0),
+	})
+
+	if err != nil {
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
+	}
+
+	ir, err := cm.Generate(ctx, []*schema.Message{
+		schema.UserMessage("hello"),
+	})
+
+	if err != nil {
+		log.Fatalf("Generate of qianfan failed, err=%v", err)
+	}
+
+	fmt.Println(ir)
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+### generate_with_image
+
+```go
+
+package main
+
+import (
+	"context"
+	"encoding/base64"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qianfan"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+	qcfg := qianfan.GetQianfanSingletonConfig()
+	// How to get Access Key/Secret Key: https://cloud.baidu.com/doc/Reference/s/9jwvz2egb
+	qcfg.AccessKey = "your_access_key"
+	qcfg.SecretKey = "your_secret_key"
+	modelName := os.Getenv("MODEL_NAME")
+	chatModel, err := qianfan.NewChatModel(ctx, &qianfan.ChatModelConfig{
+		Model:               modelName,
+		Temperature:         of(float32(0.7)),
+		TopP:                of(float32(0.7)),
+		MaxCompletionTokens: of(1024),
+		Seed:                of(0),
+	})
+
+	if err != nil {
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
+	}
+
+	image, err := os.ReadFile("./examples/generate_with_image/test.jpg")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "What do you see in this image?",
+				},
+				{
+					Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: of(base64.StdEncoding.EncodeToString(image)),
+							MIMEType:   "image/jpeg",
+						},
+						Detail: schema.ImageURLDetailAuto,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		log.Printf("Generate error: %v", err)
+		return
+	}
+	fmt.Printf("Assistant: %s\n", resp.Content)
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+### stream
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qianfan"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+	qcfg := qianfan.GetQianfanSingletonConfig()
+	// How to get Access Key/Secret Key: https://cloud.baidu.com/doc/Reference/s/9jwvz2egb
+	qcfg.AccessKey = "your_access_key"
+	qcfg.SecretKey = "your_secret_key"
+	modelName := os.Getenv("MODEL_NAME")
+	cm, err := qianfan.NewChatModel(ctx, &qianfan.ChatModelConfig{
+		Model:               modelName,
+		Temperature:         of(float32(0.7)),
+		TopP:                of(float32(0.7)),
+		MaxCompletionTokens: of(1024),
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
+	}
+
+	sr, err := cm.Stream(ctx, []*schema.Message{
+		schema.UserMessage("hello"),
+	})
+
+	if err != nil {
+		log.Fatalf("Stream of qianfan failed, err=%v", err)
+	}
+
+	var ms []*schema.Message
+	for {
+		m, err := sr.Recv()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			log.Fatalf("Stream of qianfan failed, err=%v", err)
+		}
+
+		fmt.Println(m)
+		ms = append(ms, m)
+	}
+	sm, err := schema.ConcatMessages(ms)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+
+	fmt.Println(sm)
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+### tool
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qianfan"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+	qcfg := qianfan.GetQianfanSingletonConfig()
+	// How to get Access Key/Secret Key: https://cloud.baidu.com/doc/Reference/s/9jwvz2egb
+	qcfg.AccessKey = "your_access_key"
+	qcfg.SecretKey = "your_secret_key"
+
+	modelName := os.Getenv("MODEL_NAME")
+	cm, err := qianfan.NewChatModel(ctx, &qianfan.ChatModelConfig{
+		Model:               modelName,
+		Temperature:         of(float32(0.7)),
+		TopP:                of(float32(0.7)),
+		MaxCompletionTokens: of(1024),
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
+	}
+
+	err = cm.BindTools([]*schema.ToolInfo{
+		{
+			Name: "user_company",
+			Desc: "Query the user's company and position information based on their name and email",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name": {
+						Type: "string",
+						Desc: "The user's name",
+					},
+					"email": {
+						Type: "string",
+						Desc: "The user's email",
+					},
+				}),
+		},
+		{
+			Name: "user_salary",
+			Desc: "Query the user's salary information based on their name and email",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name": {
+						Type: "string",
+						Desc: "The user's name",
+					},
+					"email": {
+						Type: "string",
+						Desc: "The user's email",
+					},
+				}),
+		},
+	})
+	if err != nil {
+		log.Fatalf("BindTools of qianfan failed, err=%v", err)
+	}
+
+	resp, err := cm.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "You are a real estate agent. Use the user_company and user_salary APIs to provide relevant property information based on the user's salary and job. Email is required",
+		},
+		{
+			Role:    schema.User,
+			Content: "My name is zhangsan, and my email is zhangsan@bytedance.com. Please recommend some suitable houses for me.",
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("Generate of qianfan failed, err=%v", err)
+	}
+
+	fmt.Println(resp)
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+
+
 ## For More Details
 
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [Qianfan Documentation](https://cloud.baidu.com/doc/qianfan-api/s/rm7u7qdiq)

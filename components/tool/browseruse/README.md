@@ -55,4 +55,4 @@ func main() {
 
 ## For More Details
 
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

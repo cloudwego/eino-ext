@@ -358,6 +358,6 @@ Here is documentation on the API:
 ```
 
 ## For More Details
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [InvokableTool Interface Reference](https://pkg.go.dev/github.com/cloudwego/eino/components/tool)
 - [langchain_community Reference](https://python.langchain.com/docs/integrations/tools/requests/)

@@ -1,6 +1,6 @@
 # Qwen Model
 
-A Qwen model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Model` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+A Qwen model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
 
 ## Features
 
@@ -160,6 +160,366 @@ EnableThinking *bool `json:"enable_thinking,omitempty"`
 
 
 
+
+## examples
+
+### generate
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qwen"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
+	apiKey := os.Getenv("DASHSCOPE_API_KEY")
+	modelName := os.Getenv("MODEL_NAME")
+	chatModel, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
+		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		APIKey:      apiKey,
+		Timeout:     0,
+		Model:       modelName,
+		MaxTokens:   of(2048),
+		Temperature: of(float32(0.7)),
+		TopP:        of(float32(0.7)),
+	})
+
+	if err != nil {
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		schema.UserMessage("as a machine, how do you answer user's question?"),
+	})
+	if err != nil {
+		log.Fatalf("Generate of qwen failed, err=%v", err)
+	}
+
+	fmt.Printf("output: \n%v", resp)
+
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+### generate_with_image
+
+```go
+
+package main
+
+import (
+	"context"
+	"encoding/base64"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qwen"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
+	apiKey := os.Getenv("DASHSCOPE_API_KEY")
+	modelName := os.Getenv("MODEL_NAME")
+	chatModel, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
+		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		APIKey:      apiKey,
+		Timeout:     0,
+		Model:       modelName,
+		MaxTokens:   of(2048),
+		Temperature: of(float32(0.7)),
+		TopP:        of(float32(0.7)),
+	})
+
+	if err != nil {
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
+	}
+
+	image, err := os.ReadFile("./examples/generate_with_image/test.jpg")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "What do you see in this image?",
+				},
+				{
+					Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: of(base64.StdEncoding.EncodeToString(image)),
+							MIMEType:   "image/jpeg",
+						},
+						Detail: schema.ImageURLDetailAuto,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		log.Printf("Generate error: %v", err)
+		return
+	}
+	fmt.Printf("Assistant: %s\n", resp.Content)
+
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+### stream
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qwen"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
+	apiKey := os.Getenv("DASHSCOPE_API_KEY")
+	modelName := os.Getenv("MODEL_NAME")
+	cm, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
+		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		APIKey:      apiKey,
+		Timeout:     0,
+		Model:       modelName,
+		MaxTokens:   of(2048),
+		Temperature: of(float32(0.7)),
+		TopP:        of(float32(0.7)),
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
+	}
+
+	sr, err := cm.Stream(ctx, []*schema.Message{
+		schema.UserMessage("你好"),
+	})
+	if err != nil {
+		log.Fatalf("Stream of qwen failed, err=%v", err)
+	}
+
+	var msgs []*schema.Message
+	for {
+		msg, err := sr.Recv()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+
+			log.Fatalf("Stream of qwen failed, err=%v", err)
+		}
+
+		fmt.Println(msg)
+		// assistant: 你好
+		// finish_reason:
+		// : ！
+		// finish_reason:
+		// : 有什么
+		// finish_reason:
+		// : 可以帮助
+		// finish_reason:
+		// : 你的吗？
+		// finish_reason:
+		// :
+		// finish_reason: stop
+		// usage: &{9 7 16}
+		msgs = append(msgs, msg)
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+
+	fmt.Println(msg)
+	// assistant: 你好！有什么可以帮助你的吗？
+	// finish_reason: stop
+	// usage: &{9 7 16}
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+### tool
+
+```go
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/qwen"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
+	apiKey := os.Getenv("DASHSCOPE_API_KEY")
+	modelName := os.Getenv("MODEL_NAME")
+	cm, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
+		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		APIKey:      apiKey,
+		Timeout:     0,
+		Model:       modelName,
+		MaxTokens:   of(2048),
+		Temperature: of(float32(0.7)),
+		TopP:        of(float32(0.7)),
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
+	}
+
+	err = cm.BindTools([]*schema.ToolInfo{
+		{
+			Name: "user_company",
+			Desc: "根据用户的姓名和邮箱，查询用户的公司和职位信息",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name": {
+						Type: "string",
+						Desc: "用户的姓名",
+					},
+					"email": {
+						Type: "string",
+						Desc: "用户的邮箱",
+					},
+				}),
+		},
+		{
+			Name: "user_salary",
+			Desc: "根据用户的姓名和邮箱，查询用户的薪酬信息",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name": {
+						Type: "string",
+						Desc: "用户的姓名",
+					},
+					"email": {
+						Type: "string",
+						Desc: "用户的邮箱",
+					},
+				}),
+		},
+	})
+	if err != nil {
+		log.Fatalf("BindTools of qwen failed, err=%v", err)
+	}
+
+	resp, err := cm.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "你是一名房产经纪人，结合用户的薪酬和工作，使用 user_company、user_salary 两个 API，为其提供相关的房产信息。邮箱是必须的",
+		},
+		{
+			Role:    schema.User,
+			Content: "我的姓名是 zhangsan，我的邮箱是 zhangsan@bytedance.com，请帮我推荐一些适合我的房子。",
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("Generate of qwen failed, err=%v", err)
+	}
+
+	fmt.Println(resp)
+	// assistant:
+	// tool_calls: [{0x14000275930 call_1e25169e05fc4596a55afb function {user_company {"email": "zhangsan@bytedance.com", "name": "zhangsan"}} map[]}]
+	// finish_reason: tool_calls
+	// usage: &{316 32 348}
+
+	// ==========================
+	// using stream
+	fmt.Printf("\n\n======== Stream ========\n")
+	sr, err := cm.Stream(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "你是一名房产经纪人，结合用户的薪酬和工作，使用 user_company、user_salary 两个 API，为其提供相关的房产信息。邮箱是必须的",
+		},
+		{
+			Role:    schema.User,
+			Content: "我的姓名是 lisi，我的邮箱是 lisi@bytedance.com，请帮我推荐一些适合我的房子。",
+		},
+	})
+	if err != nil {
+		log.Fatalf("Stream of qwen failed, err=%v", err)
+	}
+
+	msgs := make([]*schema.Message, 0)
+	for {
+		msg, err := sr.Recv()
+		if err != nil {
+			break
+		}
+		jsonMsg, err := json.Marshal(msg)
+		if err != nil {
+			log.Fatalf("json.Marshal failed, err=%v", err)
+		}
+		fmt.Printf("%s\n", jsonMsg)
+		msgs = append(msgs, msg)
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+	jsonMsg, err := json.Marshal(msg)
+	if err != nil {
+		log.Fatalf("json.Marshal failed, err=%v", err)
+	}
+	fmt.Printf("final: %s\n", jsonMsg)
+}
+
+func of[T any](t T) *T {
+	return &t
+}
+
+```
+
+
+
 ## For More Details
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [Qwen Documentation](https://help.aliyun.com/zh/model-studio/use-qwen-by-calling-api)

@@ -1,6 +1,6 @@
 # OpenAI Model
 
-A OpenAI model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Model` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+A OpenAI model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
 
 ## Features
 
@@ -193,7 +193,468 @@ Audio *Audio `json:"audio,omitempty"`
 }
 ```
 
+
+## examples
+
+### generate
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+
+	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		// if you want to use Azure OpenAI Service, set these two field.
+		// BaseURL: "https://{RESOURCE_NAME}.openai.azure.com",
+		// ByAzure: true,
+		// APIVersion: "2024-06-01",
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+		ReasoningEffort: openai.ReasoningEffortLevelHigh,
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel failed, err=%v", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "as a machine, how do you answer user's question?",
+		},
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+	fmt.Printf("output: \n%v", resp)
+
+}
+
+```
+
+### generate_with_image
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/openai"
+)
+
+func main() {
+	ctx := context.Background()
+
+	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel failed, err=%v", err)
+
+	}
+
+	multiModalMsg := &schema.Message{
+		UserInputMultiContent: []schema.MessageInputPart{
+			{
+				Type: schema.ChatMessagePartTypeText,
+				Text: "this picture is a landscape photo, what's the picture's content",
+			},
+			{
+				Type: schema.ChatMessagePartTypeImageURL,
+				Image: &schema.MessageInputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						URL: of("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT11qEDxU4X_MVKYQVU5qiAVFidA58f8GG0bQ&s"),
+					},
+					Detail: schema.ImageURLDetailAuto,
+				},
+			},
+		},
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		multiModalMsg,
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	fmt.Printf("output: \n%v", resp)
+}
+
+func of[T any](a T) *T {
+	return &a
+}
+
+```
+
+### stream
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/openai"
+)
+
+func main() {
+	ctx := context.Background()
+	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel of openai failed, err=%v", err)
+	}
+
+	streamMsgs, err := chatModel.Stream(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "as a machine, how do you answer user's question?",
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("Stream of openai failed, err=%v", err)
+	}
+
+	defer streamMsgs.Close()
+
+	fmt.Printf("typewriter output:")
+	for {
+		msg, err := streamMsgs.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Recv of streamMsgs failed, err=%v", err)
+		}
+		fmt.Print(msg.Content)
+	}
+
+	fmt.Print("\n")
+}
+
+```
+
+### intent_tool
+
+```go
+
+package main
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/openai"
+)
+
+func main() {
+	ctx := context.Background()
+	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel of openai failed, err=%v", err)
+	}
+	err = chatModel.BindForcedTools([]*schema.ToolInfo{
+		{
+			Name: "user_company",
+			Desc: "Retrieve the user's company and position based on their name and email.",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name":  {Type: "string", Desc: "user's name"},
+					"email": {Type: "string", Desc: "user's email"}}),
+		}, {
+			Name: "user_salary",
+			Desc: "Retrieve the user's salary based on their name and email.\n",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name":  {Type: "string", Desc: "user's name"},
+					"email": {Type: "string", Desc: "user's email"},
+				}),
+		}})
+	if err != nil {
+		log.Fatalf("BindForcedTools of openai failed, err=%v", err)
+	}
+	resp, err := chatModel.Generate(ctx, []*schema.Message{{
+		Role:    schema.System,
+		Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
+	}, {
+		Role:    schema.User,
+		Content: "My name is John and my email is john@abc.com，Please recommend some houses that suit me.",
+	}})
+	if err != nil {
+		log.Fatalf("Generate of openai failed, err=%v", err)
+	}
+	fmt.Printf("output: \n%v", resp)
+
+	streamResp, err := chatModel.Stream(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
+		}, {
+			Role:    schema.User,
+			Content: "My name is John and my email is john@abc.com，Please recommend some houses that suit me.",
+		},
+	})
+	if err != nil {
+		log.Fatalf("Stream of openai failed, err=%v", err)
+	}
+	var messages []*schema.Message
+	for {
+		chunk, err := streamResp.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Recv of streamResp failed, err=%v", err)
+		}
+		messages = append(messages, chunk)
+	}
+	resp, err = schema.ConcatMessages(messages)
+	if err != nil {
+		log.Fatalf("ConcatMessages of openai failed, err=%v", err)
+	}
+	fmt.Printf("stream output: \n%v", resp)
+}
+
+```
+
+### audio_generate
+
+```go
+
+package main
+
+import (
+	"context"
+
+	"log"
+	"os"
+
+	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+
+	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		// if you want to use Azure OpenAI Service, set these two field.
+		// BaseURL: "https://{RESOURCE_NAME}.openai.azure.com",
+		// ByAzure: true,
+		// APIVersion: "2024-06-01",
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+		ReasoningEffort: openai.ReasoningEffortLevelHigh,
+		Modalities:      []openai.Modality{openai.AudioModality, openai.TextModality},
+		Audio: &openai.Audio{
+			Format: openai.AudioFormatMp3,
+			Voice:  openai.AudioVoiceAlloy,
+		},
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel failed, err=%v", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "help me convert the following text to speech"},
+				{Type: schema.ChatMessagePartTypeText, Text: "Hello, what can I help you with?"},
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	respBody, _ := sonic.MarshalIndent(resp, " ", " ")
+	log.Printf(" body: %s\n", string(respBody))
+
+}
+
+```
+
+### structured
+
+```go
+
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/eino-contrib/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
+	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/openai"
+)
+
+func main() {
+	type Person struct {
+		Name   string `json:"name"`
+		Height int    `json:"height"`
+		Weight int    `json:"weight"`
+	}
+
+	js := &jsonschema.Schema{
+		Type: string(schema.Object),
+		Properties: orderedmap.New[string, *jsonschema.Schema](
+			orderedmap.WithInitialData[string, *jsonschema.Schema](
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "name",
+					Value: &jsonschema.Schema{
+						Type: string(schema.String),
+					},
+				},
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "height",
+					Value: &jsonschema.Schema{
+						Type: string(schema.Integer),
+					},
+				},
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "weight",
+					Value: &jsonschema.Schema{
+						Type: string(schema.Integer),
+					},
+				},
+			),
+		),
+	}
+
+	ctx := context.Background()
+	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+		ResponseFormat: &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONSchema,
+			JSONSchema: &openai.ChatCompletionResponseFormatJSONSchema{
+				Name:        "person",
+				Description: "data that describes a person",
+				Strict:      false,
+				JSONSchema:  js,
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel failed, err=%v", err)
+	}
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "Parse the user input into the specified json struct",
+		},
+		{
+			Role:    schema.User,
+			Content: "John is one meter seventy tall and weighs sixty kilograms",
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("Generate of openai failed, err=%v", err)
+	}
+
+	result := &Person{}
+	err = json.Unmarshal([]byte(resp.Content), result)
+	if err != nil {
+		log.Fatalf("Unmarshal of openai failed, err=%v", err)
+	}
+	fmt.Printf("%+v", *result)
+}
+
+```
+
+
+
 ## For More Details
 
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [OpenAI Documentation](https://platform.openai.com/docs/api-reference/chat/create)
