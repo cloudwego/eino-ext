@@ -219,15 +219,19 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	if err != nil {
 		return nil, err
 	}
+
 	resp, err := cm.cli.Messages.New(ctx, msgParam)
 	if err != nil {
 		return nil, fmt.Errorf("create new message fail: %w", err)
 	}
+
 	message, err = convOutputMessage(resp)
 	if err != nil {
 		return nil, fmt.Errorf("convert response to schema message fail: %w", err)
 	}
+
 	callbacks.OnEnd(ctx, cm.getCallbackOutput(message))
+
 	return message, nil
 }
 
@@ -276,6 +280,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				waitList = append(waitList, message)
 				continue
 			}
+
 			if len(waitList) != 0 {
 				message, err = schema.ConcatMessages(append(waitList, message))
 				if err != nil {
@@ -284,6 +289,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				}
 				waitList = []*schema.Message{}
 			}
+
 			closed := sw.Send(cm.getCallbackOutput(message), nil)
 			if closed {
 				return
@@ -685,9 +691,17 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	}
 
 	for i := range message.ToolCalls {
-		messageParams = append(messageParams, anthropic.NewToolUseBlock(message.ToolCalls[i].ID,
-			json.RawMessage(message.ToolCalls[i].Function.Arguments),
-			message.ToolCalls[i].Function.Name))
+		tc := message.ToolCalls[i]
+
+		args := tc.Function.Arguments
+		if args == "" {
+			args = "{}"
+		}
+		// Arguments are limited to object type.
+		// Since json marshaling will be performed before the request,
+		// and arguments are already a json string, marshaling should not be performed,
+		// so it needs to be forcibly converted to json.RawMessage.
+		messageParams = append(messageParams, anthropic.NewToolUseBlock(tc.ID, json.RawMessage(args), tc.Function.Name))
 	}
 
 	if len(messageParams) > 0 && isBreakpointMessage(message) {
@@ -905,6 +919,10 @@ func toolEvent(isStart bool, toolCallID, toolName string, input any, sc *streamC
 	} else if arg, ok_ := input.(string); ok_ {
 		arguments = arg
 	}
+
+	// If the arguments of the tool call are empty,
+	// Claude will repeatedly output multiple identical streaming chunks, and the arguments are all "{}"
+	// There will be problems when concat streaming chunks.
 	if arguments == "{}" {
 		arguments = ""
 	}
