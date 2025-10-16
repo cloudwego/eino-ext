@@ -2,6 +2,8 @@
 
 A DuckDuckGo text search tool implementation for [Eino](https://github.com/cloudwego/eino) that implements the `InvokableTool` interface. This enables seamless integration with Eino's ChatModel interaction system and `ToolsNode` for enhanced search capabilities.
 
+This is **not recommended for production** use. The DuckDuckGO tool doesn't use a standard OpenAPI. The service interface may change at any time, and reliability cannot be guaranteed.
+
 ## Features
 
 - Implements `github.com/cloudwego/eino/components/tool.InvokableTool`

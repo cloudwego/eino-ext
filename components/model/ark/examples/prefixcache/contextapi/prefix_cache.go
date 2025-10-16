@@ -54,7 +54,10 @@ func main() {
 		},
 	}
 
-	msg, err := chatModel.Generate(ctx, inMsgs, ark.WithPrefixCache(info.ContextID))
+	msg, err := chatModel.Generate(ctx, inMsgs, ark.WithCache(&ark.CacheOption{
+		APIType:   ark.ContextAPI,
+		ContextID: &info.ContextID,
+	}))
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
@@ -64,7 +67,10 @@ func main() {
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
 
-	outStreamReader, err := chatModel.Stream(ctx, inMsgs, ark.WithPrefixCache(info.ContextID))
+	outStreamReader, err := chatModel.Stream(ctx, inMsgs, ark.WithCache(&ark.CacheOption{
+		APIType:   ark.ContextAPI,
+		ContextID: &info.ContextID,
+	}))
 	if err != nil {
 		log.Fatalf("Stream failed, err=%v", err)
 	}

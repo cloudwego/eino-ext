@@ -20,11 +20,12 @@ import (
 	"context"
 
 	"github.com/bytedance/sonic"
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
+
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
-	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 )
 
 const toolTypeFunction = "function"
@@ -140,7 +141,7 @@ func convertTool(tool *schema.ToolInfo) *tracespec.ModelTool {
 	}
 
 	var params []byte
-	if raw, err := tool.ToOpenAPIV3(); err == nil && raw != nil {
+	if raw, err := tool.ToJSONSchema(); err == nil && raw != nil {
 		params, _ = raw.MarshalJSON()
 	}
 

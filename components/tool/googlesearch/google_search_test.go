@@ -214,28 +214,27 @@ func TestGooGleSearchTool(t *testing.T) {
 `
 	const expectedSchema = `
 {
-	"type": "object",
-	"properties": {
-	  "lang": {
-		"description": "sets the user interface language",
-		"type": "string"
-	  },
-	  "num": {
-		"description": "number of search results to return",
-		"type": "integer"
-	  },
-	  "offset": {
-		"description": "the index of the first result to return.",
-		"type": "integer"
-	  },
-	  "query": {
-		"description": "queried string to the search engine",
-		"type": "string"
-	  }
-	},
-	"required": [
-	  "query"
-	]
+  "properties" : {
+    "query" : {
+      "description" : "queried string to the search engine",
+      "type" : "string"
+    },
+    "num" : {
+      "description" : "number of search results to return",
+      "type" : "integer"
+    },
+    "offset" : {
+      "description" : "the index of the first result to return.",
+      "type" : "integer"
+    },
+    "lang" : {
+      "description" : "sets the user interface language",
+      "type" : "string"
+    }
+  },
+  "additionalProperties" : false,
+  "required" : [ "query" ],
+  "type" : "object"
 }
 `
 	const expectedToolOutput = `
@@ -284,7 +283,7 @@ func TestGooGleSearchTool(t *testing.T) {
 		tl, err := st.Info(ctx)
 		assert.NoError(t, err)
 
-		js, err := tl.ToOpenAPIV3()
+		js, err := tl.ToJSONSchema()
 		assert.NoError(t, err)
 		body, err := js.MarshalJSON()
 		assert.NoError(t, err)

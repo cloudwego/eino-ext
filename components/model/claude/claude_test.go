@@ -24,9 +24,11 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestClaude(t *testing.T) {
@@ -126,15 +128,16 @@ func TestClaude(t *testing.T) {
 			{
 				Name: "get_weather",
 				Desc: "Get weather information",
-				ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
 					Type: "object",
-					Properties: map[string]*openapi3.SchemaRef{
-						"city": {
-							Value: &openapi3.Schema{
+					Properties: orderedmap.New[string, *jsonschema.Schema](orderedmap.WithInitialData[string, *jsonschema.Schema](
+						orderedmap.Pair[string, *jsonschema.Schema]{
+							Key: "city",
+							Value: &jsonschema.Schema{
 								Type: "string",
 							},
-						},
-					},
+						}),
+					),
 				}),
 			},
 		})
@@ -336,4 +339,22 @@ func TestWithTools(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "test model", ncm.(*ChatModel).model)
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
+}
+
+func TestPopulateContentBlockBreakPoint(t *testing.T) {
+	block := anthropic.NewTextBlock("input")
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfText.CacheControl.Type)
+
+	block = anthropic.NewImageBlock[anthropic.URLImageSourceParam](anthropic.URLImageSourceParam{})
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfImage.CacheControl.Type)
+
+	block = anthropic.NewToolResultBlock("userID", "input", false)
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfToolResult.CacheControl.Type)
+
+	block = anthropic.NewToolUseBlock("123", "input", "test_tool")
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfToolUse.CacheControl.Type)
 }

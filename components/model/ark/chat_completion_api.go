@@ -23,7 +23,7 @@ import (
 	"io"
 	"runtime/debug"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
@@ -54,6 +54,7 @@ type completionAPIChatModel struct {
 	responseFormat   *ResponseFormat
 	thinking         *model.Thinking
 	cache            *CacheConfig
+	serviceTier      *string
 }
 
 type tool struct {
@@ -61,10 +62,10 @@ type tool struct {
 }
 
 type functionDefinition struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description,omitempty"`
-	Parameters  *openapi3.Schema `json:"parameters"`
-	Examples    []string         `json:"examples"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Parameters  *jsonschema.Schema `json:"parameters"`
+	Examples    []string           `json:"examples"`
 }
 
 func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
@@ -108,6 +109,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Messages: in,
 		Tools:    tools, // join tool info from call options
 		Config:   reqConf,
+		Extra:    map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 
 	defer func() {
@@ -136,6 +138,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Message:    outMsg,
 		Config:     reqConf,
 		TokenUsage: cm.toModelCallbackUsage(outMsg.ResponseMeta),
+		Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 
 	return outMsg, nil
@@ -185,6 +188,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 		Messages: in,
 		Tools:    tools,
 		Config:   reqConf,
+		Extra:    map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 	defer func() {
 		if err != nil {
@@ -241,6 +245,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 				Message:    msg,
 				Config:     reqConf,
 				TokenUsage: cm.toModelCallbackUsage(msg.ResponseMeta),
+				Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 			}, nil)
 			if closed {
 				return
@@ -278,6 +283,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		LogitBias:        cm.logitBias,
 		PresencePenalty:  cm.presencePenalty,
 		Thinking:         arkOpts.thinking,
+		ServiceTier:      cm.serviceTier,
 	}
 
 	if cm.responseFormat != nil {
@@ -413,6 +419,7 @@ func (cm *completionAPIChatModel) resolveChatResponse(resp model.ChatCompletionR
 
 	setModelName(msg, resp.Model)
 	setArkRequestID(msg, resp.ID)
+	setServiceTier(msg, resp.ServiceTier)
 
 	if content != nil && content.StringValue != nil {
 		msg.Content = *content.StringValue
@@ -467,6 +474,7 @@ func (cm *completionAPIChatModel) resolveStreamResponse(resp model.ChatCompletio
 	}
 	setArkRequestID(msg, resp.ID)
 	setModelName(msg, resp.Model)
+	setServiceTier(msg, resp.ServiceTier)
 
 	return msg, msgFound, nil
 }
@@ -479,7 +487,7 @@ func (cm *completionAPIChatModel) toTools(tls []*schema.ToolInfo) ([]tool, error
 			return nil, fmt.Errorf("tool info cannot be nil")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}

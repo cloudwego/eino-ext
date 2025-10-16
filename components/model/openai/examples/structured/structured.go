@@ -23,7 +23,8 @@ import (
 	"log"
 	"os"
 
-	"github.com/getkin/kin-openapi/openapi3gen"
+	"github.com/eino-contrib/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -31,15 +32,36 @@ import (
 )
 
 func main() {
-
 	type Person struct {
 		Name   string `json:"name"`
 		Height int    `json:"height"`
 		Weight int    `json:"weight"`
 	}
-	personSchema, err := openapi3gen.NewSchemaRefForValue(&Person{}, nil)
-	if err != nil {
-		log.Fatalf("NewSchemaRefForValue failed, err=%v", err)
+
+	js := &jsonschema.Schema{
+		Type: string(schema.Object),
+		Properties: orderedmap.New[string, *jsonschema.Schema](
+			orderedmap.WithInitialData[string, *jsonschema.Schema](
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "name",
+					Value: &jsonschema.Schema{
+						Type: string(schema.String),
+					},
+				},
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "height",
+					Value: &jsonschema.Schema{
+						Type: string(schema.Integer),
+					},
+				},
+				orderedmap.Pair[string, *jsonschema.Schema]{
+					Key: "weight",
+					Value: &jsonschema.Schema{
+						Type: string(schema.Integer),
+					},
+				},
+			),
+		),
 	}
 
 	ctx := context.Background()
@@ -59,7 +81,7 @@ func main() {
 				Name:        "person",
 				Description: "data that describes a person",
 				Strict:      false,
-				Schema:      personSchema.Value,
+				JSONSchema:  js,
 			},
 		},
 	})
