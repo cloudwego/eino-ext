@@ -2,20 +2,16 @@
 
 English | [简体中文](README_zh.md)
 
-An Milvus 2.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever`
-interface. This enables seamless integration
-with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
-
 ## Quick Start
 
 ### Installation
 
 ```bash
-go get github.com/milvus-io/milvus-sdk-go/v2@2.4.2
-go get github.com/cloudwego/eino-ext/retriever/milvus@latest
+go get github.com/milvus-io/milvus/client/v2
+go get github.com/cloudwego/eino-ext/components/retriever/milvus
 ```
 
-### Create the Milvus Retriever
+### Example
 
 ```go
 package main
@@ -24,120 +20,108 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-
-	"github.com/cloudwego/eino-ext/components/embedding/ark"
-	"github.com/milvus-io/milvus-sdk-go/v2/client"
 
 	"github.com/cloudwego/eino-ext/components/retriever/milvus"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
 func main() {
-	// Get the environment variables
-	addr := os.Getenv("MILVUS_ADDR")
-	username := os.Getenv("MILVUS_USERNAME")
-	password := os.Getenv("MILVUS_PASSWORD")
-	arkApiKey := os.Getenv("ARK_API_KEY")
-	arkModel := os.Getenv("ARK_MODEL")
-
-	// Create a client
-	ctx := context.Background()
-	cli, err := client.NewClient(ctx, client.Config{
-		Address:  addr,
-		Username: username,
-		Password: password,
+	// Create Milvus client
+	client, err := milvusclient.New(context.Background(), &milvusclient.ClientConfig{
+		Address: "localhost:19530",
 	})
 	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-		return
+		log.Fatal(err)
 	}
-	defer cli.Close()
+	defer client.Close(context.Background())
 
-	// Create an embedding model
-	emb, err := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
-		APIKey: arkApiKey,
-		Model:  arkModel,
+	// Create embedding model (example using a hypothetical embedding service)
+	embeddingModel := embedding.NewOpenAIEmbedding(&embedding.OpenAIConfig{
+		APIKey: "your-api-key",
+		Model:  "text-embedding-ada-002",
 	})
 
-	// Create a retriever
-	retriever, err := milvus.NewRetriever(ctx, &milvus.RetrieverConfig{
-		Client:      cli,
-		Collection:  "",
-		Partition:   nil,
-		VectorField: "",
-		OutputFields: []string{
-			"id",
-			"content",
-			"metadata",
-		},
-		DocumentConverter: nil,
-		MetricType:        "",
-		TopK:              0,
-		ScoreThreshold:    5,
-		Sp:                nil,
-		Embedding:         emb,
+	// Create Milvus retriever
+	retriever, err := milvus.NewRetriever(&milvus.RetrieverConfig{
+		Client:     client,
+		Collection: "my_documents",
+		TopK:       10,
+		Embedding:  embeddingModel,
 	})
 	if err != nil {
-		log.Fatalf("Failed to create retriever: %v", err)
-		return
+		log.Fatal(err)
 	}
 
-	// Retrieve documents
-	documents, err := retriever.Retrieve(ctx, "milvus")
+	// Perform semantic search
+	docs, err := retriever.Retrieve(context.Background(), "What is machine learning?")
 	if err != nil {
-		log.Fatalf("Failed to retrieve: %v", err)
-		return
+		log.Fatal(err)
 	}
-	
-	// Print the documents
-	for i, doc := range documents {
-		fmt.Printf("Document %d:\n", i)
-		fmt.Printf("title: %s\n", doc.ID)
-		fmt.Printf("content: %s\n", doc.Content)
-		fmt.Printf("metadata: %v\n", doc.MetaData)
+
+	// Process results
+	for i, doc := range docs {
+		fmt.Printf("Document %d: %s\n", i+1, doc.PageContent)
+		fmt.Printf("Score: %v\n", doc.MetaData["score"])
+		fmt.Println("---")
 	}
 }
 ```
 
 ## Configuration
 
+### RetrieverConfig
+
+| Parameter | Type | Required/Optional | Default | Description |
+|-----------|------|-------------------|---------|-------------|
+| `Client` | `*milvusclient.Client` | **Required** | - | Milvus client instance for database operations |
+| `Collection` | `string` | Optional | `"eino_collection"` | Milvus collection name to search in |
+| `TopK` | `int` | Optional | `5` | Maximum number of documents to retrieve |
+| `Embedding` | `embedding.Embedder` | Optional | `nil` | Embedder for converting text queries to vectors |
+| `DocumentConverter` | `DocumentConverter` | Optional | Default converter | Converts Milvus search results to schema.Document objects |
+| `VectorConverter` | `VectorConverter` | Optional | Default converter | Converts float64 vectors to Milvus entity.Vector format |
+
+### Search Options
+
+The retriever supports various search options that can be passed to the `Retrieve` method:
+
+#### WithLimit
+
 ```go
-type RetrieverConfig struct {
-	// Client is the milvus client to be called
-	// Required
-	Client client.Client
-
-	// Default Retriever config
-	// Collection is the collection name in the milvus database
-	// Optional, and the default value is "eino_collection"
-	Collection string
-	// Partition is the collection partition name
-	// Optional, and the default value is empty
-	Partition []string
-	// VectorField is the vector field name in the collection
-	// Optional, and the default value is "vector"
-	VectorField string
-	// OutputFields is the fields to be returned
-	// Optional, and the default value is empty
-	OutputFields []string
-	// DocumentConverter is the function to convert the search result to s.Document
-	// Optional, and the default value is defaultDocumentConverter
-	DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*s.Document, error)
-	// MetricType is the metric type for vector
-	// Optional, and the default value is "HAMMING"
-	MetricType entity.MetricType
-	// TopK is the top k results to be returned
-	// Optional, and the default value is 5
-	TopK int
-	// ScoreThreshold is the threshold for the search result
-	// Optional, and the default value is 0
-	ScoreThreshold float64
-	// SearchParams
-	// Optional, and the default value is entity.IndexAUTOINDEXSearchParam, and the level is 1
-	Sp entity.SearchParam
-
-	// Embedding is the embedding vectorization method for values needs to be embedded from s.Document's content.
-	// Required
-	Embedding embedding.Embedder
-}
+// Override the TopK value for a specific search
+docs, err := retriever.Retrieve(ctx, "query", milvus.WithLimit(20))
 ```
+
+#### WithHybridSearchOption
+
+```go
+// Use hybrid search for more complex scenarios
+hybridSearch := milvus.NewHybridSearchOption("vector_field", 10).
+	WithFilter("category == 'technology'").
+	WithOffset(5)
+
+docs, err := retriever.Retrieve(ctx, "query", milvus.WithHybridSearchOption(hybridSearch))
+```
+
+### Hybrid Search Configuration
+
+The `HybridSearch` type provides advanced search capabilities:
+
+| Method | Description | Required/Optional |
+|--------|-------------|-------------------|
+| `WithANNSField(field)` | Set vector field name | Optional |
+| `WithFilter(expr)` | Add boolean filter expression | Optional |
+| `WithGroupByField(field)` | Group results by field | Optional |
+| `WithGroupSize(size)` | Set group size | Optional |
+| `WithStrictGroupSize(strict)` | Enforce strict group size | Optional |
+| `WithSearchParam(key, value)` | Add search parameters | Optional |
+| `WithAnnParam(param)` | Set ANN parameters | Optional |
+| `WithOffset(offset)` | Skip results | Optional |
+| `WithIgnoreGrowing(ignore)` | Ignore growing segments | Optional |
+| `WithTemplateParam(key, val)` | Add template parameters | Optional |
+
+## Vector Dimension Calculation
+
+When working with Milvus, you need to ensure that your vector dimensions match the collection schema. The dimension depends on your embedding model.
+
+For more information about vector dimensions and collection setup, refer to the [Milvus official documentation](https://milvus.io/docs).
