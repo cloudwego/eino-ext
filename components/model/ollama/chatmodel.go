@@ -24,9 +24,10 @@ import (
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strings"
 	"time"
 
-	"github.com/ollama/ollama/api"
+	"github.com/eino-contrib/ollama/api"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -370,6 +371,11 @@ func toOllamaMessage(einoMsg *schema.Message) (api.Message, error) {
 			if mc.ImageURL == nil {
 				return api.Message{}, errors.New("image url is required")
 			}
+
+			if err := validateImageURL(mc.ImageURL.URL); err != nil {
+				return api.Message{}, err
+			}
+
 			images = append(images, api.ImageData(mc.ImageURL.URL))
 		default:
 			return api.Message{}, fmt.Errorf("unsupported content type: %s", mc.Type)
@@ -383,6 +389,13 @@ func toOllamaMessage(einoMsg *schema.Message) (api.Message, error) {
 		Thinking:  einoMsg.ReasoningContent,
 		ToolCalls: toolCalls,
 	}, nil
+}
+
+func validateImageURL(url string) error {
+	if strings.HasPrefix(url, "http") || strings.HasPrefix(url, "https") {
+		return errors.New("ollama model only supports base64-encoded strings for the raw binary")
+	}
+	return nil
 }
 
 func toEinoMessage(resp api.ChatResponse) *schema.Message {
@@ -428,7 +441,7 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		properties := make(map[string]api.ToolProperty)
 		var required []string
 
-		openTool, err := einoTool.ParamsOneOf.ToOpenAPIV3()
+		openTool, err := einoTool.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, err
 		}
@@ -436,11 +449,17 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		if openTool != nil {
 			required = openTool.Required
 
-			for name, param := range openTool.Properties {
-				properties[name] = api.ToolProperty{
-					Type:        []string{param.Value.Type},
-					Description: param.Value.Description,
-					Enum:        param.Value.Enum,
+			for pair := openTool.Properties.Oldest(); pair != nil; pair = pair.Next() {
+				var typ []string
+				if pair.Value.TypeEnhanced != nil {
+					typ = pair.Value.TypeEnhanced
+				} else {
+					typ = []string{pair.Value.Type}
+				}
+				properties[pair.Key] = api.ToolProperty{
+					Type:        typ,
+					Description: pair.Value.Description,
+					Enum:        pair.Value.Enum,
 				}
 			}
 		}

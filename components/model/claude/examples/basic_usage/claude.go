@@ -24,9 +24,11 @@ import (
 	"log"
 	"os"
 
+	"github.com/eino-contrib/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/cloudwego/eino-ext/components/model/claude"
 )
@@ -163,22 +165,24 @@ func functionCalling(ctx context.Context, cm model.ToolCallingChatModel) {
 		{
 			Name: "get_weather",
 			Desc: "Get current weather information for a city",
-			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
 				Type: "object",
-				Properties: map[string]*openapi3.SchemaRef{
-					"city": {
-						Value: &openapi3.Schema{
+				Properties: orderedmap.New[string, *jsonschema.Schema](orderedmap.WithInitialData[string, *jsonschema.Schema](
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "city",
+						Value: &jsonschema.Schema{
 							Type:        "string",
 							Description: "The city name",
 						},
 					},
-					"unit": {
-						Value: &openapi3.Schema{
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "unit",
+						Value: &jsonschema.Schema{
 							Type: "string",
 							Enum: []interface{}{"celsius", "fahrenheit"},
 						},
 					},
-				},
+				)),
 				Required: []string{"city"},
 			}),
 		},

@@ -19,8 +19,9 @@ package ark
 import (
 	"testing"
 
-	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestConcatMessages(t *testing.T) {
@@ -35,6 +36,14 @@ func TestConcatMessages(t *testing.T) {
 	setReasoningContent(msgs[1], "are you")
 	setModelName(msgs[0], "model name")
 	setModelName(msgs[1], "model name")
+	setServiceTier(msgs[0], "service tier")
+	setServiceTier(msgs[1], "service tier")
+	setResponseID(msgs[0], "resp id")
+	setResponseCaching(msgs[0], cachingEnabled)
+	setResponseID(msgs[0], "resp id")
+	setResponseID(msgs[1], "resp id")
+	setContextID(msgs[0], "context id")
+	setContextID(msgs[1], "context id")
 
 	msg, err := schema.ConcatMessages(msgs)
 	assert.NoError(t, err)
@@ -47,4 +56,41 @@ func TestConcatMessages(t *testing.T) {
 	modelName, ok := GetModelName(msg)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "model name", modelName)
+
+	serviceTier, ok := GetServiceTier(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "service tier", serviceTier)
+
+	responseID, ok := GetResponseID(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "resp id", responseID)
+
+	caching_, ok := getResponseCaching(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, string(cachingEnabled), caching_)
+
+	respID, ok := GetResponseID(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "resp id", respID)
+
+	respID, ok = GetResponseID(&schema.Message{
+		Extra: map[string]any{
+			keyOfResponseID: "resp id",
+		},
+	})
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "resp id", respID)
+
+	contextID, ok := GetContextID(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "context id", contextID)
+
+	contextID, ok = GetContextID(&schema.Message{
+		Extra: map[string]any{
+			keyOfContextID: "context id",
+		},
+	})
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "context id", contextID)
+
 }

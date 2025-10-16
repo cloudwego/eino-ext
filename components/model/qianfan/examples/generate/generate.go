@@ -38,6 +38,7 @@ func main() {
 		TopP:                of(float32(0.7)),
 		MaxCompletionTokens: of(1024),
 	})
+
 	if err != nil {
 		log.Fatalf("NewChatModel of qianfan failed, err=%v", err)
 	}
@@ -45,6 +46,26 @@ func main() {
 	ir, err := cm.Generate(ctx, []*schema.Message{
 		schema.UserMessage("你好"),
 	})
+
+	// Alternatively, you can use the following calling methods
+	//ir, err = cm.Generate(ctx, []*schema.Message{
+	//	{Role: schema.User,
+	//		UserInputMultiContent: []schema.MessageInputPart{
+	//			{Type: schema.ChatMessagePartTypeText, Text: "你好"},
+	//		}},
+	//})
+
+	// If the model supports multimodal scenarios, you can use the following call methods
+	//ir, err = cm.Generate(ctx, []*schema.Message{
+	//	{Role: schema.User,
+	//		UserInputMultiContent: []schema.MessageInputPart{
+	//			{Type: schema.ChatMessagePartTypeText, Text: "介绍下如下图片内容"},
+	//			{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{
+	//				URL: of("https://img0.baidu.com/it/u=4078387433,1356951957&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=1034"),
+	//			}}},
+	//		}},
+	//})
+
 	if err != nil {
 		log.Fatalf("Generate of qianfan failed, err=%v", err)
 	}

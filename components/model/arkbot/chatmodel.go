@@ -778,7 +778,7 @@ func toTools(tls []*schema.ToolInfo) ([]tool, error) {
 			return nil, fmt.Errorf("tool info cannot be nil")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}

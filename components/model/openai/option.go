@@ -34,3 +34,8 @@ func WithExtraHeader(header map[string]string) model.Option {
 func WithReasoningEffort(effort ReasoningEffortLevel) model.Option {
 	return openai.WithReasoningEffort(openai.ReasoningEffortLevel(effort))
 }
+
+// WithMaxCompletionTokens is used to set the max completion tokens for the request.
+func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
+	return openai.WithMaxCompletionTokens(maxCompletionTokens)
+}

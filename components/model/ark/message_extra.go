@@ -17,8 +17,6 @@
 package ark
 
 import (
-	"encoding/gob"
-
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -29,31 +27,78 @@ const (
 	keyOfModelName        = "ark-model-name"
 	videoURLFPS           = "ark-model-video-url-fps"
 	keyOfContextID        = "ark-context-id"
+	keyOfResponseID       = "ark-response-id"
+	keyOfResponseCaching  = "ark-response-caching"
+	keyOfServiceTier      = "ark-service-tier"
+	ImageSizeKey          = "seedream-image-size"
 )
 
 type arkRequestID string
 type arkModelName string
+type arkServiceTier string
+type arkResponseID string
+type arkContextID string
 
 func init() {
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkRequestID) (final arkRequestID, err error) {
 		if len(chunks) == 0 {
 			return "", nil
 		}
-
 		return chunks[len(chunks)-1], nil
 	})
-	_ = compose.RegisterSerializableType[arkRequestID]("_eino_ext_ark_request_id")
-	gob.RegisterName("_eino_ext_ark_request_id", arkRequestID(""))
+	schema.RegisterName[arkRequestID]("_eino_ext_ark_request_id")
 
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkModelName) (final arkModelName, err error) {
 		if len(chunks) == 0 {
 			return "", nil
 		}
-
 		return chunks[len(chunks)-1], nil
 	})
-	_ = compose.RegisterSerializableType[arkModelName]("_eino_ext_ark_model_name")
-	gob.RegisterName("_eino_ext_ark_model_name", arkModelName(""))
+	schema.RegisterName[arkModelName]("_eino_ext_ark_model_name")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []arkServiceTier) (final arkServiceTier, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+		return chunks[len(chunks)-1], nil
+	})
+	schema.RegisterName[arkServiceTier]("_eino_ext_ark_service_tier")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []caching) (final caching, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+		return chunks[len(chunks)-1], nil
+	})
+	schema.RegisterName[caching]("_eino_ext_ark_response_caching")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []arkContextID) (final arkContextID, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+		// Some chunks may not contain a contextID, so it is more reliable to take the first non-empty contextID.
+		for _, chunk := range chunks {
+			if chunk != "" {
+				return chunk, nil
+			}
+		}
+		return "", nil
+	})
+	schema.RegisterName[arkContextID]("_eino_ext_ark_context_id")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []arkResponseID) (final arkResponseID, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+		// Some chunks may not contain a responseID, so it is more reliable to take the first non-empty responseID.
+		for _, chunk := range chunks {
+			if chunk != "" {
+				return chunk, nil
+			}
+		}
+		return "", nil
+	})
+	schema.RegisterName[arkResponseID]("_eino_ext_ark_response_id")
 }
 
 func GetArkRequestID(msg *schema.Message) string {
@@ -85,20 +130,58 @@ func setModelName(msg *schema.Message, name string) {
 	setMsgExtra(msg, keyOfModelName, arkModelName(name))
 }
 
-// GetContextID returns the conversation context ID of the given message.
-// Note:
-//   - Only the first chunk returns the context ID.
-//   - It is only available for ResponsesAPI.
+// Deprecated: Use GetResponseID instead.
+// GetContextID returns the conversation context ID from the message.
+// Available only for ResponsesAPI responses.
 func GetContextID(msg *schema.Message) (string, bool) {
-	if msg == nil {
+	contextID_, ok := getMsgExtraValue[arkContextID](msg, keyOfContextID)
+	if ok {
+		return string(contextID_), true
+	}
+	// Since registering the concat logic requires defining `arkContextID` type,
+	// this fallback logic needs to be retained to be compatible with `string` type.
+	contextIDStr, ok := getMsgExtraValue[string](msg, keyOfContextID)
+	if !ok {
 		return "", false
 	}
-	contextID, ok := getMsgExtraValue[string](msg, keyOfContextID)
-	return contextID, ok
+	return contextIDStr, true
 }
 
 func setContextID(msg *schema.Message, contextID string) {
-	setMsgExtra(msg, keyOfContextID, contextID)
+	setMsgExtra(msg, keyOfContextID, arkContextID(contextID))
+}
+
+// GetResponseID returns the response ID from the message.
+// Available only for ResponsesAPI responses.
+func GetResponseID(msg *schema.Message) (string, bool) {
+	responseID_, ok := getMsgExtraValue[arkResponseID](msg, keyOfResponseID)
+	if ok {
+		return string(responseID_), true
+	}
+	// Since registering the concat logic requires defining `arkResponseID` type,
+	// this fallback logic needs to be retained to be compatible with `string` type.
+	responseIDStr, ok := getMsgExtraValue[string](msg, keyOfResponseID)
+	if !ok {
+		return "", false
+	}
+	return responseIDStr, true
+}
+
+func setResponseID(msg *schema.Message, responseID string) {
+	setMsgExtra(msg, keyOfResponseID, arkResponseID(responseID))
+}
+
+func getResponseCaching(msg *schema.Message) (string, bool) {
+	caching_, ok := getMsgExtraValue[caching](msg, keyOfResponseCaching)
+	if !ok {
+		return "", false
+	}
+	return string(caching_), true
+}
+
+// setResponseCaching sets the cached status of the response.
+func setResponseCaching(msg *schema.Message, caching caching) {
+	setMsgExtra(msg, keyOfResponseCaching, caching)
 }
 
 func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {
@@ -137,3 +220,60 @@ func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 	}
 	return &fps
 }
+
+func GetServiceTier(msg *schema.Message) (string, bool) {
+	t, ok := getMsgExtraValue[arkServiceTier](msg, keyOfServiceTier)
+	if !ok {
+		return "", false
+	}
+	return string(t), true
+}
+
+func setServiceTier(msg *schema.Message, serviceTier string) {
+	if len(serviceTier) == 0 {
+		return
+	}
+	setMsgExtra(msg, keyOfServiceTier, arkServiceTier(serviceTier))
+}
+
+func SetImageSize(part *schema.ChatMessageImageURL, size string) {
+	if part == nil {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	part.Extra[ImageSizeKey] = size
+}
+
+func GetImageSize(part *schema.ChatMessageImageURL) (string, bool) {
+	if part == nil {
+		return "", false
+	}
+	size, ok := part.Extra[ImageSizeKey].(string)
+	if !ok {
+		return "", false
+	}
+	return size, true
+}
+
+// func SetImageSize(part *schema.MessageOutputImage, size string) {
+// 	if part == nil {
+// 		return
+// 	}
+// 	if part.Extra == nil {
+// 		part.Extra = make(map[string]any)
+// 	}
+// 	part.Extra[ImageSizeKey] = size
+// }
+
+// func GetImageSize(part *schema.MessageOutputImage) (string, bool) {
+// 	if part == nil {
+// 		return "", false
+// 	}
+// 	size, ok := part.Extra[ImageSizeKey].(string)
+// 	if !ok {
+// 		return "", false
+// 	}
+// 	return size, true
+// }
