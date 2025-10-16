@@ -160,36 +160,6 @@ type CacheConfig struct {
 	SessionCache *SessionCacheConfig `json:"session_cache,omitempty"`
 }
 
-type SessionCacheConfig struct {
-	// EnableCache specifies whether to enable session cache.
-	// If enabled, the model will cache each conversation and reuse it for subsequent requests.
-	EnableCache bool `json:"enable_cache"`
-
-	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
-	TTL int `json:"ttl"`
-}
-
-type APIType string
-
-const (
-	// To learn more about ContextAPI, see https://www.volcengine.com/docs/82379/1528789
-	ContextAPI APIType = "context_api"
-	// To learn more about ResponsesAPI, see https://www.volcengine.com/docs/82379/1569618
-	ResponsesAPI APIType = "responses_api"
-)
-
-type ResponseFormat struct {
-	Type       model.ResponseFormatType                       `json:"type"`
-	JSONSchema *model.ResponseFormatJSONSchemaJSONSchemaParam `json:"json_schema,omitempty"`
-}
-
-type caching string
-
-const (
-	cachingEnabled  caching = "enabled"
-	cachingDisabled caching = "disabled"
-)
-
 func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
 	if config == nil {
 		config = &ChatModelConfig{}

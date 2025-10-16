@@ -341,16 +341,20 @@ func TestWithTools(t *testing.T) {
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
 }
 
-func TestInjectContentBlockBreakPoint(t *testing.T) {
-	lastBlock := anthropic.NewTextBlock("input")
-	injectContentBlockBreakPoint(lastBlock)
-	assert.NotEmpty(t, lastBlock.OfText.CacheControl.Type)
+func TestPopulateContentBlockBreakPoint(t *testing.T) {
+	block := anthropic.NewTextBlock("input")
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfText.CacheControl.Type)
 
-	lastBlock = anthropic.NewImageBlock[anthropic.URLImageSourceParam](anthropic.URLImageSourceParam{})
-	injectContentBlockBreakPoint(lastBlock)
-	assert.NotEmpty(t, lastBlock.OfImage.CacheControl.Type)
+	block = anthropic.NewImageBlock[anthropic.URLImageSourceParam](anthropic.URLImageSourceParam{})
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfImage.CacheControl.Type)
 
-	lastBlock = anthropic.NewToolResultBlock("userID", "input", false)
-	injectContentBlockBreakPoint(lastBlock)
-	assert.NotEmpty(t, lastBlock.OfToolResult.CacheControl.Type)
+	block = anthropic.NewToolResultBlock("userID", "input", false)
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfToolResult.CacheControl.Type)
+
+	block = anthropic.NewToolUseBlock("123", "input", "test_tool")
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfToolUse.CacheControl.Type)
 }

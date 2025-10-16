@@ -26,6 +26,8 @@ type options struct {
 	Thinking *Thinking
 
 	DisableParallelToolUse *bool
+
+	EnableAutoCache *bool
 }
 
 func WithTopK(k int32) model.Option {
@@ -44,5 +46,14 @@ func WithDisableParallelToolUse() model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		b := true
 		o.DisableParallelToolUse = &b
+	})
+}
+
+// WithEnableAutoCache enables automatic caching in a multi-turn conversation.
+// The caching strategy sets separate breakpoints for tool and system messages.
+// Additionally, a breakpoint is set on the last input message of each turn to cache the session.
+func WithEnableAutoCache(enabled bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.EnableAutoCache = &enabled
 	})
 }

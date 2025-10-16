@@ -66,12 +66,24 @@ type CacheOption struct {
 	// Required.
 	APIType APIType
 
-	// ContextID specifies the ID of the previous conversation.
-	// If APIType is ResponsesAPI and this is the first time the conversation uses the cache,
-	// ContextID should be nil and get the id of this round through [GetContextID].
+	// ContextID is the unique identifier returned by ContextAPI.
+	// Note: This field is only applicable when using ContextAPI.
+	// Important: ContextID will not be compatible with response ID from ResponsesAPI in future releases.
+	// For prefix caching with ResponsesAPI, use HeadPreviousResponseID instead.
+	// For session caching with ResponsesAPI, use SessionCache instead.
+	// Optional.
 	ContextID *string
 
+	// HeadPreviousResponseID is a response ID from a previous ResponsesAPI call.
+	// This ID links the current request to a previous conversation context, enabling
+	// features like conversation continuation and prefix caching.
+	// The referenced response must be cached before use.
+	// Only applicable for ResponsesAPI.
+	// Optional.
+	HeadPreviousResponseID *string
+
 	// SessionCache is the configuration of ResponsesAPI session cache.
+	// Optional.
 	SessionCache *SessionCacheConfig
 }
 

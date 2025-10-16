@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/baidubce/bce-qianfan-sdk/go/qianfan"
 
@@ -67,6 +68,37 @@ type ChatModel struct {
 	tools      []qianfan.Tool
 	toolChoice *schema.ToolChoice
 	config     *ChatModelConfig
+}
+
+type image struct {
+	URL    string                `json:"url,omitempty"`
+	Detail schema.ImageURLDetail `json:"detail,omitempty"`
+}
+type video struct {
+	URL string   `json:"url,omitempty"`
+	FPS *float64 `json:"fps,omitempty"`
+}
+type ty string
+
+const (
+	Text     ty = "text"
+	VideoURL ty = "video_url"
+	ImageURL ty = "image_url"
+)
+
+type contentPart struct {
+	Type     ty     `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL *image `json:"image_url,omitempty"`
+	VideoURL *video `json:"video_url,omitempty"`
+}
+
+type chatCompletionV3Message struct {
+	Role       string             `json:"role,omitempty"`
+	Name       string             `json:"name,omitempty"`
+	ToolCalls  []qianfan.ToolCall `json:"tool_calls,omitempty"`
+	ToolCallId string             `json:"tool_call_id,omitempty"`
+	Content    []contentPart      `json:"content,omitempty"`
 }
 
 func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
@@ -296,7 +328,6 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 	req := &qianfan.ChatCompletionV2Request{
 		BaseRequestBody:     qianfan.BaseRequestBody{},
 		Model:               *options.Model,
-		Messages:            toQianfanMessages(input),
 		StreamOptions:       nil,
 		Temperature:         float64(dereferenceOrZero(options.Temperature)),
 		TopP:                float64(dereferenceOrZero(options.TopP)),
@@ -311,6 +342,15 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 		ParallelToolCalls:   dereferenceOrZero(cm.config.ParallelToolCalls),
 		ResponseFormat:      cm.config.ResponseFormat,
 	}
+
+	messages, err := toQianfanMultiModalMessages(input)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	req.SetExtra(map[string]interface{}{
+		"messages": messages,
+	})
 
 	if isStream {
 		req.StreamOptions = &qianfan.StreamOptions{IncludeUsage: true}
@@ -343,32 +383,215 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 	return req, cbInput, nil
 }
 
-func toQianfanMessages(input []*schema.Message) []qianfan.ChatCompletionV2Message {
-	r := make([]qianfan.ChatCompletionV2Message, len(input))
-	for i, m := range input {
-		msg := qianfan.ChatCompletionV2Message{
-			Role:       string(m.Role),
-			Content:    m.Content,
-			Name:       m.Name,
-			ToolCalls:  make([]qianfan.ToolCall, len(m.ToolCalls)),
-			ToolCallId: m.ToolCallID,
+func toQianfanMultiModalMessages(input []*schema.Message) ([]chatCompletionV3Message, error) {
+	messages := make([]chatCompletionV3Message, 0, len(input))
+	for _, m := range input {
+		var msg chatCompletionV3Message
+		if len(m.UserInputMultiContent) > 0 && len(m.AssistantGenMultiContent) > 0 {
+			return nil, errors.New("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 		}
 
-		for j, tc := range m.ToolCalls {
-			msg.ToolCalls[j] = qianfan.ToolCall{
-				Id:       tc.ID,
-				ToolType: tc.Type,
-				Function: qianfan.FunctionCallV2{
-					Name:      tc.Function.Name,
-					Arguments: tc.Function.Arguments,
+		if len(m.UserInputMultiContent) > 0 {
+			parts, err := toUserInputMultiContentParts(m)
+			if err != nil {
+				return nil, err
+			}
+			msg.Content = parts
+		} else if len(m.AssistantGenMultiContent) > 0 {
+			parts, err := toAssistantGenMultiContentParts(m)
+			if err != nil {
+				return nil, err
+			}
+			msg.Content = parts
+		} else if len(m.Content) > 0 {
+			msg.Content = []contentPart{
+				{
+					Type: Text,
+					Text: m.Content,
 				},
 			}
 		}
 
-		r[i] = msg
+		role, err := toQianfanRole(string(m.Role))
+		if err != nil {
+			return nil, err
+		}
+		msg.Role = role
+
+		if m.ToolCalls != nil {
+			tcs, err := toQianfanToolCalls(m.ToolCalls)
+			if err != nil {
+				return nil, err
+			}
+			msg.ToolCalls = tcs
+		}
+
+		if m.ToolCallID != "" {
+			msg.ToolCallId = m.ToolCallID
+		}
+
+		messages = append(messages, msg)
+	}
+	return messages, nil
+}
+
+func validateBase64Data(data string) error {
+	if strings.HasPrefix(data, "data:") {
+		return errors.New("base64 data represents the binary data in Base64 encoded string format, cannot start with 'data:'")
+	}
+	return nil
+}
+
+func toUserInputMultiContentParts(inMsg *schema.Message) ([]contentPart, error) {
+	if inMsg.Role == schema.Assistant {
+		return nil, errors.New("invalid role for UserInputMultiContent: role must not be 'assistant'")
 	}
 
-	return r
+	inputs := inMsg.UserInputMultiContent
+	parts := make([]contentPart, 0, len(inputs))
+	for _, mm := range inputs {
+		switch mm.Type {
+		case schema.ChatMessagePartTypeText:
+			parts = append(parts, contentPart{
+				Type: Text,
+				Text: mm.Text,
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if mm.Image == nil {
+				return nil, errors.New("the 'image' field is required for parts of type 'image_url'")
+			}
+			part := contentPart{
+				Type:     ImageURL,
+				ImageURL: &image{Detail: mm.Image.Detail},
+			}
+			if mm.Image.URL != nil {
+				part.ImageURL.URL = *mm.Image.URL
+			} else if mm.Image.Base64Data != nil {
+				if mm.Image.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded image data")
+				}
+
+				err := validateBase64Data(*mm.Image.Base64Data)
+				if err != nil {
+					return nil, err
+				}
+
+				part.ImageURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Image.MIMEType, *mm.Image.Base64Data)
+			} else {
+				return nil, errors.New("image message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		case schema.ChatMessagePartTypeVideoURL:
+			if mm.Video == nil {
+				return nil, errors.New("the 'video' field is required for parts of type 'video_url'")
+			}
+			part := contentPart{
+				Type:     VideoURL,
+				VideoURL: &video{},
+			}
+
+			fps, found := GetMessagePartVideoFPS(mm.Video.MessagePartCommon)
+			if found {
+				part.VideoURL.FPS = &fps
+			}
+
+			if mm.Video.URL != nil {
+				part.VideoURL.URL = *mm.Video.URL
+			} else if mm.Video.Base64Data != nil {
+				if mm.Video.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded video data")
+				}
+				err := validateBase64Data(*mm.Video.Base64Data)
+				if err != nil {
+					return nil, err
+				}
+
+				part.VideoURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Video.MIMEType, *mm.Video.Base64Data)
+			} else {
+				return nil, errors.New("video message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		default:
+			return nil, fmt.Errorf("unsupported message part type: %s", mm.Type)
+		}
+	}
+	return parts, nil
+}
+
+func toAssistantGenMultiContentParts(inMsg *schema.Message) ([]contentPart, error) {
+	if inMsg.Role == schema.User {
+		return nil, errors.New("invalid role for AssistantGenMultiContent: role must not be 'user'")
+	}
+
+	outputs := inMsg.AssistantGenMultiContent
+	parts := make([]contentPart, 0, len(outputs))
+	for _, mm := range outputs {
+		switch mm.Type {
+		case schema.ChatMessagePartTypeText:
+			parts = append(parts, contentPart{
+				Type: Text,
+				Text: mm.Text,
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if mm.Image == nil {
+				return nil, errors.New("the 'image' field is required for parts of type 'image_url'")
+			}
+			part := contentPart{
+				Type:     ImageURL,
+				ImageURL: &image{},
+			}
+			if mm.Image.URL != nil {
+				part.ImageURL.URL = *mm.Image.URL
+			} else if mm.Image.Base64Data != nil {
+				if mm.Image.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded image data")
+				}
+
+				err := validateBase64Data(*mm.Image.Base64Data)
+				if err != nil {
+					return nil, err
+				}
+
+				part.ImageURL.URL = fmt.Sprintf("data:%s;base64,%s", mm.Image.MIMEType, *mm.Image.Base64Data)
+			} else {
+				return nil, errors.New("image message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		case schema.ChatMessagePartTypeVideoURL:
+			if mm.Video == nil {
+				return nil, errors.New("the 'video' field is required for parts of type 'video_url'")
+			}
+			part := contentPart{
+				Type:     VideoURL,
+				VideoURL: &video{},
+			}
+
+			fps, found := GetMessagePartVideoFPS(mm.Video.MessagePartCommon)
+			if found {
+				part.VideoURL.FPS = &fps
+			}
+
+			if mm.Video.URL != nil {
+				part.VideoURL.URL = *mm.Video.URL
+			} else if mm.Video.Base64Data != nil {
+				if mm.Video.MIMEType == "" {
+					return nil, errors.New("MIME type is required for base64-encoded video data")
+				}
+				err := validateBase64Data(*mm.Video.Base64Data)
+				if err != nil {
+					return nil, err
+				}
+
+				part.VideoURL.URL = *mm.Video.Base64Data
+			} else {
+				return nil, errors.New("video message part must have url or base64 data")
+			}
+			parts = append(parts, part)
+		default:
+			return nil, fmt.Errorf("unsupported message part type: %s", mm.Type)
+		}
+	}
+	return parts, nil
 }
 
 func resolveQianfanResponse(resp *qianfan.ChatCompletionV2Response) (*schema.Message, error) {
@@ -398,7 +621,6 @@ func resolveQianfanResponse(resp *qianfan.ChatCompletionV2Response) (*schema.Mes
 	}
 
 	msg := &schema.Message{
-		Role:       schema.RoleType(choice.Message.Role),
 		Content:    choice.Message.Content,
 		Name:       choice.Message.Name,
 		ToolCalls:  toMessageToolCalls(choice.Message.ToolCalls),
@@ -409,7 +631,91 @@ func resolveQianfanResponse(resp *qianfan.ChatCompletionV2Response) (*schema.Mes
 		},
 	}
 
+	switch choice.Message.Role {
+	case "user":
+		msg.Role = schema.User
+	case "assistant":
+		msg.Role = schema.Assistant
+	case "function":
+		msg.Role = schema.Tool
+	default:
+		return nil, fmt.Errorf("unsupported role from qianfan: %s", choice.Message.Role)
+	}
+
 	return msg, nil
+}
+
+func toQianfanRole(role string) (string, error) {
+	switch role {
+	case "user", "system":
+		return "user", nil
+	case "assistant":
+		return "assistant", nil
+	case "tool":
+		return "function", nil
+	default:
+		return "", fmt.Errorf("unsupported role: %s", role)
+	}
+}
+
+func toQianfanToolCalls(toolCalls []schema.ToolCall) ([]qianfan.ToolCall, error) {
+	r := make([]qianfan.ToolCall, len(toolCalls))
+	for i, tc := range toolCalls {
+		r[i] = qianfan.ToolCall{
+			Id:       tc.ID,
+			ToolType: tc.Type,
+			Function: qianfan.FunctionCallV2{
+				Name:      tc.Function.Name,
+				Arguments: tc.Function.Arguments,
+			},
+		}
+	}
+	return r, nil
+}
+
+func toQianfanTools(tools []*schema.ToolInfo) ([]qianfan.Tool, error) {
+	r := make([]qianfan.Tool, len(tools))
+	for i, tool := range tools {
+		parameters, err := tool.ParamsOneOf.ToJSONSchema()
+		if err != nil {
+			return nil, err
+		}
+
+		r[i] = qianfan.Tool{
+			ToolType: "function",
+			Function: qianfan.FunctionV2{
+				Name:        tool.Name,
+				Description: tool.Desc,
+				Parameters:  parameters,
+			},
+		}
+	}
+
+	return r, nil
+}
+
+func (cm *ChatModel) GetType() string {
+	return getType()
+}
+
+func (cm *ChatModel) IsCallbacksEnabled() bool {
+	return true
+}
+
+type panicErr struct {
+	info  any
+	stack []byte
+}
+
+func (p *panicErr) Error() string {
+	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return &panicErr{
+		info:  info,
+		stack: stack,
+	}
 }
 
 func resolveQianfanStreamResponse(resp *qianfan.ChatCompletionV2Response) (
@@ -492,54 +798,5 @@ func toModelCallbackUsage(msg *schema.Message) *model.TokenUsage {
 		CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
 		PromptTokens:     msg.ResponseMeta.Usage.PromptTokens,
 		TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
-	}
-}
-
-func toQianfanTools(tools []*schema.ToolInfo) ([]qianfan.Tool, error) {
-	if len(tools) == 0 {
-		return nil, nil
-	}
-
-	r := make([]qianfan.Tool, len(tools))
-	for i, tool := range tools {
-		parameters, err := tool.ParamsOneOf.ToJSONSchema()
-		if err != nil {
-			return nil, err
-		}
-
-		r[i] = qianfan.Tool{
-			ToolType: "function",
-			Function: qianfan.FunctionV2{
-				Name:        tool.Name,
-				Description: tool.Desc,
-				Parameters:  parameters,
-			},
-		}
-	}
-
-	return r, nil
-}
-
-func (cm *ChatModel) GetType() string {
-	return getType()
-}
-
-func (cm *ChatModel) IsCallbacksEnabled() bool {
-	return true
-}
-
-type panicErr struct {
-	info  any
-	stack []byte
-}
-
-func (p *panicErr) Error() string {
-	return fmt.Sprintf("panic error: %v, \nstack: %s", p.info, string(p.stack))
-}
-
-func newPanicErr(info any, stack []byte) error {
-	return &panicErr{
-		info:  info,
-		stack: stack,
 	}
 }
