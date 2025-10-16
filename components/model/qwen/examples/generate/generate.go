@@ -22,16 +22,15 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino/schema"
-
 	"github.com/cloudwego/eino-ext/components/model/qwen"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
 	ctx := context.Background()
 	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
 	apiKey := os.Getenv("DASHSCOPE_API_KEY")
-	cm, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
+	chatModel, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
 		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
 		APIKey:      apiKey,
 		Timeout:     0,
@@ -40,21 +39,81 @@ func main() {
 		Temperature: of(float32(0.7)),
 		TopP:        of(float32(0.7)),
 	})
+
 	if err != nil {
 		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
-	ir, err := cm.Generate(ctx, []*schema.Message{
-		schema.UserMessage("你好"),
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		schema.UserMessage("as a machine, how do you answer user's question?"),
 	})
 	if err != nil {
 		log.Fatalf("Generate of qwen failed, err=%v", err)
 	}
 
-	fmt.Println(ir)
-	// assistant: 你好！有什么我可以帮助你的吗？
-	// finish_reason: stop
-	// usage: &{9 8 17}
+	fmt.Printf("output: \n%v", resp)
+
+	/***
+	Multi-modal input processing
+
+	resp, err = chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "analyze the content of the image below for me"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{
+					MessagePartCommon: schema.MessagePartCommon{URL: of("https://img0.baidu.com/it/u=4078387433,1356951957&fm=253&fmt=auto&app=138&f=JPEG?w=800&h=1034")},
+				}},
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+
+	For multi-modal output, such as when the openai qwen3-omni-flash model supports speech generation, you need to set Modalities and Audio when initializing the chat model:
+
+	chatModel, err = openai.NewChatModel(ctx, &openai.ChatModelConfig{
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+
+		Modalities: []openai.Modality{openai.TextModality, openai.AudioModality},
+		Audio: &openai.Audio{
+			Format: openai.AudioFormatFlac,
+			Voice:  openai.AudioVoiceAlloy,
+		},
+	})
+	if err != nil {
+		log.Fatalf("NewChatModel failed, err=%v", err)
+	}
+
+	resp, err = chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "help me convert the following text to speech"},
+				{Type: schema.ChatMessagePartTypeText, Text: "Hello, what can I help you with?"},
+			},
+		},
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	// resp.AssistantGenMultiContent stores the multi-modal return results
+	for _, content := range resp.AssistantGenMultiContent {
+		fmt.Printf("gen multi content: \n%v", content)
+	}
+	***/
+
 }
 
 func of[T any](t T) *T {

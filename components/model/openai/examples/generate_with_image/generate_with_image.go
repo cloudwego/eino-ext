@@ -47,15 +47,17 @@ func main() {
 	}
 
 	multiModalMsg := schema.UserMessage("")
-	multiModalMsg.MultiContent = []schema.ChatMessagePart{
+	multiModalMsg.UserInputMultiContent = []schema.MessageInputPart{
 		{
 			Type: schema.ChatMessagePartTypeText,
 			Text: "this picture is a landscape photo, what's the picture's content",
 		},
 		{
 			Type: schema.ChatMessagePartTypeImageURL,
-			ImageURL: &schema.ChatMessageImageURL{
-				URL:    "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT11qEDxU4X_MVKYQVU5qiAVFidA58f8GG0bQ&s",
+			Image: &schema.MessageInputImage{
+				MessagePartCommon: schema.MessagePartCommon{
+					URL: of("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT11qEDxU4X_MVKYQVU5qiAVFidA58f8GG0bQ&s"),
+				},
 				Detail: schema.ImageURLDetailAuto,
 			},
 		},
@@ -69,4 +71,8 @@ func main() {
 	}
 
 	fmt.Printf("output: \n%v", resp)
+}
+
+func of[T any](a T) *T {
+	return &a
 }
