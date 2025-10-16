@@ -7,7 +7,7 @@ require (
 	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.4.7
 	github.com/coze-dev/cozeloop-go v0.1.7
-	github.com/coze-dev/cozeloop-go/spec v0.1.0
+	github.com/coze-dev/cozeloop-go/spec v0.1.5
 	github.com/smartystreets/goconvey v1.8.1
 )
 
