@@ -18,14 +18,17 @@
 package ark
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/responses"
+	"github.com/tidwall/sjson"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
@@ -203,7 +206,13 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		arkruntime.WithTimeout(timeout),
 	}
 	if config.HTTPClient != nil {
-		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
+		cli := *config.HTTPClient
+		cli.Transport = newBodyTransport(cli.Transport)
+		opts = append(opts, arkruntime.WithHTTPClient(&cli))
+	} else {
+		opts = append(opts, arkruntime.WithHTTPClient(&http.Client{
+			Transport: newBodyTransport(http.DefaultTransport),
+		}))
 	}
 
 	var client *arkruntime.Client
@@ -250,7 +259,13 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 		opts = append(opts, option.WithRequestTimeout(defaultTimeout))
 	}
 	if config.HTTPClient != nil {
-		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		cli := *config.HTTPClient
+		cli.Transport = newBodyTransport(cli.Transport)
+		opts = append(opts, option.WithHTTPClient(&cli))
+	} else {
+		opts = append(opts, option.WithHTTPClient(&http.Client{
+			Transport: newBodyTransport(http.DefaultTransport),
+		}))
 	}
 	if config.BaseURL != "" {
 		opts = append(opts, option.WithBaseURL(config.BaseURL))
@@ -337,6 +352,11 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
+	specOptions := fmodel.GetImplSpecificOptions(&arkOptions{}, opts...)
+	if specOptions.reasoningEffort != nil {
+		ctx = context.WithValue(ctx, contextKeyReasoningEffort, *specOptions.reasoningEffort)
+	}
+
 	ok, err := cm.callByResponsesAPI(opts...)
 	if err != nil {
 		return nil, err
@@ -352,6 +372,11 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	outStream *schema.StreamReader[*schema.Message], err error) {
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+
+	specOptions := fmodel.GetImplSpecificOptions(&arkOptions{}, opts...)
+	if specOptions.reasoningEffort != nil {
+		ctx = context.WithValue(ctx, contextKeyReasoningEffort, *specOptions.reasoningEffort)
+	}
 
 	ok, err := cm.callByResponsesAPI(opts...)
 	if err != nil {
@@ -553,4 +578,44 @@ func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*sc
 			TotalTokens:      resp.Usage.TotalTokens,
 		},
 	}, nil
+}
+
+type bodyTransport struct {
+	next http.RoundTripper
+}
+
+func newBodyTransport(next http.RoundTripper) *bodyTransport {
+	return &bodyTransport{next: next}
+}
+
+func (b *bodyTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	effort, ok := request.Context().Value(contextKeyReasoningEffort).(ReasoningEffort)
+	if !ok {
+		return b.next.RoundTrip(request)
+	}
+
+	if request.Body == nil || request.Body == http.NoBody {
+		return b.next.RoundTrip(request)
+	}
+
+	bodyBytes, err := io.ReadAll(request.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err = request.Body.Close(); err != nil {
+		return nil, err
+	}
+
+	bodyBytes_, err := sjson.SetBytes(bodyBytes, "reasoning_effort", string(effort))
+	if err != nil {
+		return nil, err
+	}
+
+	request.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewBuffer(bodyBytes_)), nil
+	}
+	request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes_))
+	request.ContentLength = int64(len(bodyBytes_))
+
+	return b.next.RoundTrip(request)
 }
