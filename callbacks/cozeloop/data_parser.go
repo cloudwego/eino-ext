@@ -23,6 +23,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
 	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -76,6 +77,7 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 		cbInput := model.ConvCallbackInput(input)
 		if cbInput != nil {
 			tags.set(tracespec.Input, convertModelInput(cbInput))
+			tags.set(consts.CustomSpanTagKeyExtra, cbInput.Extra)
 
 			if cbInput.Config != nil {
 				tags.set(tracespec.ModelName, cbInput.Config.Model)
@@ -162,11 +164,13 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 				}
 			}
 			tags.set(tracespec.Output, finalOutput)
+			tags.set(consts.CustomSpanTagKeyExtra, cbOutput.Extra)
 
 			if cbOutput.TokenUsage != nil {
 				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
 					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
-					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens)
+					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
+					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens)
 			}
 		}
 
@@ -371,7 +375,8 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 	if usage != nil {
 		tags.set(tracespec.Tokens, usage.TotalTokens).
 			set(tracespec.InputTokens, usage.PromptTokens).
-			set(tracespec.OutputTokens, usage.CompletionTokens)
+			set(tracespec.OutputTokens, usage.CompletionTokens).
+			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens)
 	}
 
 	return tags
