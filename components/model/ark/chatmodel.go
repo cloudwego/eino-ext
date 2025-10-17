@@ -141,6 +141,10 @@ type ChatModelConfig struct {
 	// ServiceTier specifies whether to use the TPM guarantee package. The effective target has purchased the inference access point for the guarantee package.
 	ServiceTier *string `json:"service_tier"`
 
+	// ReasoningEffort specifies the reasoning effort of the model.
+	// Optional.
+	ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
+
 	Cache *CacheConfig `json:"cache,omitempty"`
 }
 
@@ -230,6 +234,7 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		thinking:         config.Thinking,
 		cache:            config.Cache,
 		serviceTier:      config.ServiceTier,
+		reasoningEffort:  config.ReasoningEffort,
 	}
 
 	return cm

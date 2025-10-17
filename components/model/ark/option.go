@@ -23,7 +23,8 @@ import (
 )
 
 type arkOptions struct {
-	customHeaders map[string]string
+	customHeaders   map[string]string
+	reasoningEffort *arkModel.ReasoningEffort
 
 	thinking *arkModel.Thinking
 
@@ -58,6 +59,12 @@ func WithPrefixCache(contextID string) model.Option {
 	return WithCache(&CacheOption{
 		ContextID: &contextID,
 		APIType:   ContextAPI,
+	})
+}
+
+func WithReasoningEffort(effort arkModel.ReasoningEffort) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.reasoningEffort = &effort
 	})
 }
 

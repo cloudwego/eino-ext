@@ -56,6 +56,7 @@ type completionAPIChatModel struct {
 	thinking         *model.Thinking
 	cache            *CacheConfig
 	serviceTier      *string
+	reasoningEffort  *model.ReasoningEffort
 }
 
 type tool struct {
@@ -83,12 +84,13 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Tools:       nil,
 	}, opts...)
 
-	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders: cm.customHeader,
-		thinking:      cm.thinking,
+	specOptions := fmodel.GetImplSpecificOptions(&arkOptions{
+		customHeaders:   cm.customHeader,
+		thinking:        cm.thinking,
+		reasoningEffort: cm.reasoningEffort,
 	}, opts...)
 
-	req, err := cm.genRequest(in, options, arkOpts)
+	req, err := cm.genRequest(in, options, specOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +112,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Messages: in,
 		Tools:    tools, // join tool info from call options
 		Config:   reqConf,
-		Extra:    map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
+		Extra:    map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	defer func() {
@@ -120,11 +122,11 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	}()
 
 	var resp model.ChatCompletionResponse
-	if arkOpts.cache != nil && arkOpts.cache.ContextID != nil {
-		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(req, *arkOpts.cache.ContextID),
-			arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	if specOptions.cache != nil && specOptions.cache.ContextID != nil {
+		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(req, *specOptions.cache.ContextID),
+			arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	} else {
-		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
@@ -139,7 +141,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Message:    outMsg,
 		Config:     reqConf,
 		TokenUsage: cm.toModelCallbackUsage(outMsg.ResponseMeta),
-		Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
+		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	return outMsg, nil
@@ -285,6 +287,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		PresencePenalty:  cm.presencePenalty,
 		Thinking:         arkOpts.thinking,
 		ServiceTier:      cm.serviceTier,
+		ReasoningEffort:  arkOpts.reasoningEffort,
 	}
 
 	if cm.responseFormat != nil {

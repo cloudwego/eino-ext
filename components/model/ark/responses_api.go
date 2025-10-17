@@ -42,15 +42,16 @@ type responsesAPIChatModel struct {
 	tools    []responses.ToolUnionParam
 	rawTools []*schema.ToolInfo
 
-	model          string
-	maxTokens      *int
-	temperature    *float32
-	topP           *float32
-	customHeader   map[string]string
-	responseFormat *ResponseFormat
-	thinking       *arkModel.Thinking
-	cache          *CacheConfig
-	serviceTier    *string
+	model           string
+	maxTokens       *int
+	temperature     *float32
+	topP            *float32
+	customHeader    map[string]string
+	responseFormat  *ResponseFormat
+	thinking        *arkModel.Thinking
+	cache           *CacheConfig
+	serviceTier     *string
+	reasoningEffort *arkModel.ReasoningEffort
 }
 
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
@@ -509,6 +510,9 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 
 	if specOptions.thinking != nil {
 		reqParams.opts = append(reqParams.opts, option.WithJSONSet("thinking", specOptions.thinking))
+	}
+	if specOptions.reasoningEffort != nil {
+		reqParams.opts = append(reqParams.opts, option.WithJSONSet("reasoning_effort", string(*specOptions.reasoningEffort)))
 	}
 
 	return reqParams, nil
@@ -975,8 +979,9 @@ func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 	}, opts...)
 
 	arkOpts := model.GetImplSpecificOptions(&arkOptions{
-		customHeaders: cm.customHeader,
-		thinking:      cm.thinking,
+		customHeaders:   cm.customHeader,
+		thinking:        cm.thinking,
+		reasoningEffort: cm.reasoningEffort,
 	}, opts...)
 
 	if err := cm.checkOptions(options, arkOpts); err != nil {
