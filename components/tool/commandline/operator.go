@@ -27,4 +27,5 @@ type Operator interface {
 	IsDirectory(ctx context.Context, path string) (bool, error)
 	Exists(ctx context.Context, path string) (bool, error)
 	RunCommand(ctx context.Context, command string) (string, error)
+	RunCommandArgs(ctx context.Context, cmd []string) (string, string, int, error)
 }

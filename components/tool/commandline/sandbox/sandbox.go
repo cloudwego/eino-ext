@@ -163,6 +163,58 @@ func (s *DockerSandbox) Create(ctx context.Context) error {
 	return nil
 }
 
+// RunCommandArgs executes a command with explicit arguments (no shell involved)
+func (s *DockerSandbox) RunCommandArgs(ctx context.Context, cmd []string) (stdout, stderr string, exitCode int, err error) {
+	if s.containerID == "" {
+		return "", "", -1, fmt.Errorf("sandbox not initialized")
+	}
+
+	timeout := s.config.Timeout
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	execConfig := container.ExecOptions{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+		WorkingDir:   s.config.WorkDir,
+	}
+
+	execID, err := s.client.ContainerExecCreate(ctx, s.containerID, execConfig)
+	if err != nil {
+		return "", "", -1, fmt.Errorf("failed to create exec instance: %w", err)
+	}
+
+	resp, err := s.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{})
+	if err != nil {
+		return "", "", -1, fmt.Errorf("failed to attach to exec instance: %w", err)
+	}
+	defer resp.Close()
+
+	var outBuf, errBuf bytes.Buffer
+	outputDone := make(chan error)
+	go func() {
+		_, err := stdcopy.StdCopy(&outBuf, &errBuf, resp.Reader)
+		outputDone <- err
+	}()
+
+	select {
+	case err := <-outputDone:
+		if err != nil {
+			return "", "", -1, fmt.Errorf("failed to read output: %w", err)
+		}
+	case <-ctx.Done():
+		return "", "", -1, fmt.Errorf("command timed out after %v", timeout)
+	}
+
+	inspectResp, err := s.client.ContainerExecInspect(ctx, execID.ID)
+	if err != nil {
+		return "", "", -1, fmt.Errorf("failed to inspect exec: %w", err)
+	}
+
+	return outBuf.String(), errBuf.String(), inspectResp.ExitCode, nil
+}
+
 // RunCommand executes a command in the sandbox
 func (s *DockerSandbox) RunCommand(ctx context.Context, cmd string) (string, error) {
 	if s.containerID == "" {
