@@ -167,7 +167,8 @@ func Test_Generate(t *testing.T) {
 		}), convey.ShouldBeNil)
 
 		PatchConvey("test chat error", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			defer mocker.UnPatch()
 
 			outMsg, err := m.Generate(ctx, msgs)
 
@@ -176,7 +177,8 @@ func Test_Generate(t *testing.T) {
 		})
 
 		PatchConvey("test resolveChatResponse error", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatInvokeError).Build()
+			defer mocker.UnPatch()
 
 			outMsg, err := m.Generate(ctx, msgs)
 			convey.So(err, convey.ShouldNotBeNil)
@@ -184,8 +186,8 @@ func Test_Generate(t *testing.T) {
 		})
 
 		PatchConvey("test success", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatInvoke).Build()
-
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatInvoke).Build()
+			defer mocker.UnPatch()
 			outMsg, err := m.Generate(ctx, msgs,
 				model.WithTemperature(1),
 				model.WithMaxTokens(321),
@@ -229,7 +231,8 @@ func Test_Stream(t *testing.T) {
 		}
 
 		PatchConvey("test chan err", func() {
-			Mock(GetMethod(cli, "Chat")).To(MockChatStreamError).Build()
+			mocker := Mock(GetMethod(cli, "Chat")).To(MockChatStreamError).Build()
+			defer mocker.UnPatch()
 
 			outStream, err := m.Stream(ctx, msgs)
 			convey.So(err, convey.ShouldBeNil)
@@ -237,7 +240,8 @@ func Test_Stream(t *testing.T) {
 		})
 
 		PatchConvey("test chan success", func() {
-			Mock(GetMethod(cli, "Chat")).Return(MockChatStream).Build()
+			mocker := Mock(GetMethod(cli, "Chat")).Return(MockChatStream).Build()
+			defer mocker.UnPatch()
 
 			outStream, err := m.Stream(ctx, msgs)
 			convey.So(err, convey.ShouldBeNil)
@@ -301,4 +305,262 @@ func TestWithTools(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "test model", ncm.(*ChatModel).config.Model)
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).tools[0].Name)
+}
+
+func Test_toOllamaMessage(t *testing.T) {
+	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+	PatchConvey("test toOllamaMessage", t, func() {
+		PatchConvey("test simple message", func() {
+			msg := &schema.Message{
+				Role:    schema.User,
+				Content: "test content",
+			}
+			ollamaMsg, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ollamaMsg.Role, convey.ShouldEqual, string(schema.User))
+			convey.So(ollamaMsg.Content, convey.ShouldEqual, "test content")
+			convey.So(ollamaMsg.Images, convey.ShouldBeEmpty)
+		})
+
+		PatchConvey("test UserInputMultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "hello",
+					},
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{
+							MessagePartCommon: schema.MessagePartCommon{
+								Base64Data: &base64Data,
+							},
+						},
+					},
+				},
+			}
+			ollamaMsg, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ollamaMsg.Role, convey.ShouldEqual, string(schema.User))
+			convey.So(ollamaMsg.Content, convey.ShouldEqual, "hello")
+			convey.So(len(ollamaMsg.Images), convey.ShouldEqual, 1)
+			convey.So(string(ollamaMsg.Images[0]), convey.ShouldEqual, base64Data)
+		})
+
+		PatchConvey("test AssistantGenMultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "hello",
+					},
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageOutputImage{
+							MessagePartCommon: schema.MessagePartCommon{
+								Base64Data: &base64Data,
+							},
+						},
+					},
+				},
+			}
+			ollamaMsg, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ollamaMsg.Role, convey.ShouldEqual, string(schema.Assistant))
+			convey.So(ollamaMsg.Content, convey.ShouldEqual, "hello")
+			convey.So(len(ollamaMsg.Images), convey.ShouldEqual, 1)
+			convey.So(string(ollamaMsg.Images[0]), convey.ShouldEqual, base64Data)
+		})
+
+		PatchConvey("test AssistantGenMultiContent with correct role", func() {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "world",
+					},
+				},
+			}
+			ollamaMsg, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ollamaMsg.Role, convey.ShouldEqual, string(schema.Assistant))
+			convey.So(ollamaMsg.Content, convey.ShouldEqual, "world")
+		})
+
+		PatchConvey("test AssistantGenMultiContent with incorrect role", func() {
+			msg := &schema.Message{
+				Role: schema.User, // Incorrect role
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "world",
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "assistant gen multi content only support assistant role")
+		})
+
+		PatchConvey("test MultiContent compatibility", func() {
+			msg := &schema.Message{
+				Role: schema.User,
+				MultiContent: []schema.ChatMessagePart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "legacy content",
+					},
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						ImageURL: &schema.ChatMessageImageURL{
+							URL: base64Data,
+						},
+					},
+				},
+			}
+			ollamaMsg, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ollamaMsg.Content, convey.ShouldEqual, "legacy content")
+			convey.So(len(ollamaMsg.Images), convey.ShouldEqual, 1)
+			convey.So(string(ollamaMsg.Images[0]), convey.ShouldEqual, base64Data)
+		})
+
+		PatchConvey("test error on http URL in MultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.User,
+				MultiContent: []schema.ChatMessagePart{
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						ImageURL: &schema.ChatMessageImageURL{
+							URL: "http://example.com/image.png",
+						},
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "ollama model only supports base64-encoded strings")
+		})
+
+		PatchConvey("test error on nil image in UserInputMultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: nil, // Nil image
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "image is required in UserInputMultiContent, but got nil")
+		})
+
+		PatchConvey("test error on nil image in AssistantGenMultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: nil, // Nil image
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "image is required in AssistantGenMultiContent, but got nil")
+		})
+
+		PatchConvey("test error on nil ImageURL in MultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.User,
+				MultiContent: []schema.ChatMessagePart{
+					{
+						Type:     schema.ChatMessagePartTypeImageURL,
+						ImageURL: nil, // Nil ImageURL
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "image url is required")
+		})
+
+		PatchConvey("test error on URL in UserInputMultiContent", func() {
+			url := "http://example.com/image.png"
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &url}},
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "ollama model only supports base64-encoded strings")
+		})
+
+		PatchConvey("test error on nil Base64Data in UserInputMultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: nil}},
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "image is required in UserInputMultiContent, but got nil Base64Data")
+		})
+
+		PatchConvey("test error on URL in AssistantGenMultiContent", func() {
+			url := "http://example.com/image.png"
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{URL: &url}},
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "ollama model only supports base64-encoded strings")
+		})
+
+		PatchConvey("test error on nil Base64Data in AssistantGenMultiContent", func() {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: nil}},
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "image is required in AssistantGenMultiContent, but got nil Base64Data")
+		})
+
+		PatchConvey("test error on both UserInputMultiContent and AssistantGenMultiContent", func() {
+			msg := &schema.Message{
+				Role:                     schema.User,
+				UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "user"}},
+				AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "assistant"}},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+		})
+	})
 }

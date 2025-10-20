@@ -69,6 +69,9 @@ func main() {
 
 	fmt.Println("\n=== Image Processing ===")
 	imageProcessing(ctx, client)
+
+	fmt.Println("\n=== Image Generation ===")
+	generateImage(ctx, client)
 }
 
 func basicChat(ctx context.Context, cm model.ChatModel) {
@@ -238,4 +241,36 @@ func imageProcessing(ctx context.Context, client *genai.Client) {
 		return
 	}
 	fmt.Printf("Assistant: %s\n", resp.Content)
+}
+
+func generateImage(ctx context.Context, client *genai.Client) {
+	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
+		Client: client,
+		Model:  "gemini-2.5-flash-image-preview",
+		ResponseModalities: []gemini.GeminiResponseModality{
+			gemini.GeminiResponseModalityText,
+			gemini.GeminiResponseModalityImage,
+		},
+	})
+	if err != nil {
+		log.Printf("NewChatModel error: %v", err)
+		return
+	}
+
+	resp, err := cm.Generate(ctx, []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "Generate an image of a cat",
+				},
+			},
+		},
+	})
+	if err != nil {
+		log.Printf("Generate error: %v", err)
+		return
+	}
+	fmt.Printf("Assistant: %s\n", resp)
 }

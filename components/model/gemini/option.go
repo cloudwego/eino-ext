@@ -29,6 +29,7 @@ type options struct {
 	ResponseSchema     *openapi3.Schema
 	ResponseJSONSchema *jsonschema.Schema
 	ThinkingConfig     *genai.ThinkingConfig
+	ResponseModalities []GeminiResponseModality
 }
 
 func WithTopK(k int32) model.Option {
@@ -52,5 +53,11 @@ func WithResponseJSONSchema(s *jsonschema.Schema) model.Option {
 func WithThinkingConfig(t *genai.ThinkingConfig) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ThinkingConfig = t
+	})
+}
+
+func WithResponseModalities(m []GeminiResponseModality) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseModalities = m
 	})
 }

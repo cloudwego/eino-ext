@@ -521,7 +521,7 @@ func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*sc
 		TruncationStrategy: truncation,
 	}
 	for _, msg := range prefix {
-		content, err := cm.chatModel.toArkContent(msg.Content, msg.MultiContent)
+		content, err := cm.chatModel.toArkContent(msg)
 		if err != nil {
 			return nil, fmt.Errorf("convert message fail: %w", err)
 		}
