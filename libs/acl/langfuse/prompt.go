@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,6 +34,22 @@ const (
 	promptByNamePath = "/api/public/v2/prompts/"
 )
 
+// PromptType enumerates supported prompt formats.
+type PromptType = string
+
+const (
+	PromptTypeText PromptType = "text"
+	PromptTypeChat PromptType = "chat"
+)
+
+// ChatMessageType enumerates supported chat message kinds.
+type ChatMessageType = string
+
+const (
+	ChatMessageTypeChatMessage ChatMessageType = "chatmessage"
+	ChatMessageTypePlaceholder ChatMessageType = "placeholder"
+)
+
 type ListMetadata struct {
 	Page       int `json:"page"`
 	Limit      int `json:"limit"`
@@ -47,12 +63,15 @@ type ListMetadata struct {
 // The Role field specifies the message role (e.g., "system", "user", "assistant"),
 // Type specifies the content type, and Content contains the message text with optional placeholders.
 type ChatMessageWithPlaceHolder struct {
-	Role    string `json:"role"`
-	Type    string `json:"type"`
-	Content string `json:"content"`
+	Role    string          `json:"role"`
+	Type    ChatMessageType `json:"type"`
+	Content string          `json:"content"`
 }
 
 func (c *ChatMessageWithPlaceHolder) validate() error {
+	if c.Type != ChatMessageTypeChatMessage && c.Type != ChatMessageTypePlaceholder {
+		return fmt.Errorf("'type' must be either 'chatmessage' or 'placeholder'")
+	}
 	if c.Role == "" {
 		return errors.New("'role' is required")
 	}
@@ -65,17 +84,17 @@ func (c *ChatMessageWithPlaceHolder) validate() error {
 // PromptEntry represents a complete prompt template with its configuration and messages.
 //
 // A prompt entry contains the prompt name, which can be either a string (when Type is "text")
-// or an array of chat messages with placeholders (for other types).
-// The Type field determines the expected structure of the Prompt field.
+// or an array of chat messages with placeholders (when Type is "chat").
+// The Type field determines the expected structure of the Prompt field and must be either "text" or "chat".
 // The Config field can contain model-specific configuration parameters.
 type PromptEntry struct {
-	Name    string   `json:"name"`
-	Prompt  any      `json:"prompt"`
-	Type    string   `json:"type"`
-	Version int      `json:"version,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
-	Labels  []string `json:"labels,omitempty"`
-	Config  any      `json:"config,omitempty"`
+	Name    string     `json:"name"`
+	Prompt  any        `json:"prompt"`
+	Type    PromptType `json:"type"`
+	Version int        `json:"version,omitempty"`
+	Tags    []string   `json:"tags,omitempty"`
+	Labels  []string   `json:"labels,omitempty"`
+	Config  any        `json:"config,omitempty"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshalling for PromptEntry.
@@ -92,21 +111,24 @@ func (p *PromptEntry) UnmarshalJSON(data []byte) error {
 	}{
 		Alias: (*Alias)(p),
 	}
-
 	if err := json.Unmarshal(data, temp); err != nil {
 		return err
 	}
 
-	if p.Type == "text" {
+	if p.Type != PromptTypeText && p.Type != PromptTypeChat {
+		return fmt.Errorf("'type' must be either 'text' or 'chat'")
+	}
+
+	if p.Type == PromptTypeText {
 		var promptStr string
 		if err := json.Unmarshal(temp.Prompt, &promptStr); err != nil {
 			return fmt.Errorf("failed to unmarshal prompt as string for type 'text': %w", err)
 		}
 		p.Prompt = promptStr
-	} else {
+	} else { // p.Type == "chat"
 		var promptMessages []ChatMessageWithPlaceHolder
 		if err := json.Unmarshal(temp.Prompt, &promptMessages); err != nil {
-			return fmt.Errorf("failed to unmarshal prompt as []ChatMessageWithPlaceHolder for type '%s': %w", p.Type, err)
+			return fmt.Errorf("failed to unmarshal prompt as []ChatMessageWithPlaceHolder for type '%s': %w", string(p.Type), err)
 		}
 		p.Prompt = promptMessages
 	}
@@ -121,24 +143,30 @@ func (p *PromptEntry) validate() error {
 	if p.Prompt == nil {
 		return errors.New("'prompt' cannot be nil")
 	}
+	if p.Type == "" {
+		return errors.New("'type' is required")
+	}
+	if p.Type != PromptTypeText && p.Type != PromptTypeChat {
+		return errors.New("'type' must be either 'text' or 'chat'")
+	}
 
 	// Validate based on Type field
-	if p.Type == "text" {
+	if p.Type == PromptTypeText {
 		// For text type, prompt should be a string
 		if str, ok := p.Prompt.(string); !ok || str == "" {
 			return errors.New("'prompt' must be a non-empty string when type is 'text'")
 		}
-	} else {
-		// For other types, prompt should be []ChatMessageWithPlaceHolder
+	} else { // p.Type == PromptTypeChat
+		// For chat type, prompt should be []ChatMessageWithPlaceHolder
 		messages, ok := p.Prompt.([]ChatMessageWithPlaceHolder)
 		if !ok {
-			return errors.New("'prompt' must be []ChatMessageWithPlaceHolder when type is not 'text'")
+			return errors.New("'prompt' must be []ChatMessageWithPlaceHolder when type is 'chat'")
 		}
 		if len(messages) == 0 {
 			return errors.New("'prompt' cannot be empty")
 		}
-		for _, msg := range messages {
-			if err := msg.validate(); err != nil {
+		for i := range messages {
+			if err := messages[i].validate(); err != nil {
 				return fmt.Errorf("invalid prompts message: %w", err)
 			}
 		}

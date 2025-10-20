@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ func TestChatMessageWithPlaceHolder_validate(t *testing.T) {
 			name: "valid message",
 			message: ChatMessageWithPlaceHolder{
 				Role:    "user",
-				Type:    "text",
+				Type:    ChatMessageTypeChatMessage,
 				Content: "Hello world",
 			},
 			wantErr: false,
@@ -42,7 +42,7 @@ func TestChatMessageWithPlaceHolder_validate(t *testing.T) {
 		{
 			name: "missing role",
 			message: ChatMessageWithPlaceHolder{
-				Type:    "text",
+				Type:    ChatMessageTypeChatMessage,
 				Content: "Hello world",
 			},
 			wantErr: true,
@@ -51,7 +51,7 @@ func TestChatMessageWithPlaceHolder_validate(t *testing.T) {
 			name: "missing content",
 			message: ChatMessageWithPlaceHolder{
 				Role: "user",
-				Type: "text",
+				Type: ChatMessageTypeChatMessage,
 			},
 			wantErr: true,
 		},
@@ -59,7 +59,7 @@ func TestChatMessageWithPlaceHolder_validate(t *testing.T) {
 			name: "empty role",
 			message: ChatMessageWithPlaceHolder{
 				Role:    "",
-				Type:    "text",
+				Type:    ChatMessageTypeChatMessage,
 				Content: "Hello world",
 			},
 			wantErr: true,
@@ -68,10 +68,37 @@ func TestChatMessageWithPlaceHolder_validate(t *testing.T) {
 			name: "empty content",
 			message: ChatMessageWithPlaceHolder{
 				Role:    "user",
-				Type:    "text",
+				Type:    ChatMessageTypeChatMessage,
 				Content: "",
 			},
 			wantErr: true,
+		},
+		{
+			name: "invalid type",
+			message: ChatMessageWithPlaceHolder{
+				Role:    "user",
+				Type:    ChatMessageType("text"),
+				Content: "Hello world",
+			},
+			wantErr: true,
+		},
+		{
+			name: "uppercase type invalid",
+			message: ChatMessageWithPlaceHolder{
+				Role:    "user",
+				Type:    ChatMessageType("CHATMESSAGE"),
+				Content: "Hello world",
+			},
+			wantErr: true,
+		},
+		{
+			name: "valid placeholder",
+			message: ChatMessageWithPlaceHolder{
+				Role:    "assistant",
+				Type:    ChatMessageTypePlaceholder,
+				Content: "{{dynamic}}",
+			},
+			wantErr: false,
 		},
 	}
 
@@ -97,7 +124,7 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "valid text prompt",
 			prompt: PromptEntry{
 				Name:   "test-prompt",
-				Type:   "text",
+				Type:   PromptTypeText,
 				Prompt: "This is a test prompt",
 			},
 			wantErr: false,
@@ -106,16 +133,16 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "valid chat prompt",
 			prompt: PromptEntry{
 				Name: "test-chat-prompt",
-				Type: "chat",
+				Type: PromptTypeChat,
 				Prompt: []ChatMessageWithPlaceHolder{
 					{
 						Role:    "system",
-						Type:    "text",
+						Type:    ChatMessageTypeChatMessage,
 						Content: "You are a helpful assistant",
 					},
 					{
 						Role:    "user",
-						Type:    "text",
+						Type:    ChatMessageTypeChatMessage,
 						Content: "Hello {{name}}",
 					},
 				},
@@ -125,7 +152,33 @@ func TestPromptEntry_validate(t *testing.T) {
 		{
 			name: "missing name",
 			prompt: PromptEntry{
-				Type:   "text",
+				Type:   PromptTypeText,
+				Prompt: "This is a test prompt",
+			},
+			wantErr: true,
+		},
+		{
+			name: "missing type",
+			prompt: PromptEntry{
+				Name:   "test-prompt",
+				Prompt: "This is a test prompt",
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid type value",
+			prompt: PromptEntry{
+				Name:   "test-prompt",
+				Type:   PromptType("prompt"),
+				Prompt: "This is a test prompt",
+			},
+			wantErr: true,
+		},
+		{
+			name: "uppercase type invalid",
+			prompt: PromptEntry{
+				Name:   "test-prompt",
+				Type:   PromptType("TEXT"),
 				Prompt: "This is a test prompt",
 			},
 			wantErr: true,
@@ -134,7 +187,7 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "empty name",
 			prompt: PromptEntry{
 				Name:   "",
-				Type:   "text",
+				Type:   PromptTypeText,
 				Prompt: "This is a test prompt",
 			},
 			wantErr: true,
@@ -143,7 +196,7 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "nil prompt",
 			prompt: PromptEntry{
 				Name:   "test-prompt",
-				Type:   "text",
+				Type:   PromptTypeText,
 				Prompt: nil,
 			},
 			wantErr: true,
@@ -152,7 +205,7 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "empty string for text type",
 			prompt: PromptEntry{
 				Name:   "test-prompt",
-				Type:   "text",
+				Type:   PromptTypeText,
 				Prompt: "",
 			},
 			wantErr: true,
@@ -161,7 +214,7 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "wrong type for text prompt",
 			prompt: PromptEntry{
 				Name:   "test-prompt",
-				Type:   "text",
+				Type:   PromptTypeText,
 				Prompt: []ChatMessageWithPlaceHolder{},
 			},
 			wantErr: true,
@@ -170,7 +223,7 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "empty messages for chat prompt",
 			prompt: PromptEntry{
 				Name:   "test-prompt",
-				Type:   "chat",
+				Type:   PromptTypeChat,
 				Prompt: []ChatMessageWithPlaceHolder{},
 			},
 			wantErr: true,
@@ -179,7 +232,7 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "wrong type for chat prompt",
 			prompt: PromptEntry{
 				Name:   "test-prompt",
-				Type:   "chat",
+				Type:   PromptTypeChat,
 				Prompt: "This should be messages",
 			},
 			wantErr: true,
@@ -188,10 +241,11 @@ func TestPromptEntry_validate(t *testing.T) {
 			name: "invalid message in chat prompt",
 			prompt: PromptEntry{
 				Name: "test-prompt",
-				Type: "chat",
+				Type: PromptTypeChat,
 				Prompt: []ChatMessageWithPlaceHolder{
 					{
 						Role:    "",
+						Type:    ChatMessageTypeChatMessage,
 						Content: "Invalid message",
 					},
 				},
@@ -281,21 +335,21 @@ func TestPromptEntry_UnmarshalJSON(t *testing.T) {
 			input: `{"name":"test","type":"text","prompt":"Hello world"}`,
 			want: PromptEntry{
 				Name:   "test",
-				Type:   "text",
+				Type:   PromptTypeText,
 				Prompt: "Hello world",
 			},
 			wantErr: false,
 		},
 		{
 			name:  "chat type prompt",
-			input: `{"name":"test","type":"chat","prompt":[{"role":"user","type":"text","content":"Hello"}]}`,
+			input: `{"name":"test","type":"chat","prompt":[{"role":"user","type":"chatmessage","content":"Hello"}]}`,
 			want: PromptEntry{
 				Name: "test",
-				Type: "chat",
+				Type: PromptTypeChat,
 				Prompt: []ChatMessageWithPlaceHolder{
 					{
 						Role:    "user",
-						Type:    "text",
+						Type:    ChatMessageTypeChatMessage,
 						Content: "Hello",
 					},
 				},
@@ -307,7 +361,7 @@ func TestPromptEntry_UnmarshalJSON(t *testing.T) {
 			input: `{"name":"test","type":"text","prompt":"Hello","version":1,"tags":["tag1","tag2"],"labels":["label1"]}`,
 			want: PromptEntry{
 				Name:    "test",
-				Type:    "text",
+				Type:    PromptTypeText,
 				Prompt:  "Hello",
 				Version: 1,
 				Tags:    []string{"tag1", "tag2"},
@@ -330,6 +384,18 @@ func TestPromptEntry_UnmarshalJSON(t *testing.T) {
 		{
 			name:    "invalid prompt for chat type",
 			input:   `{"name":"test","type":"chat","prompt":"should be array"}`,
+			want:    PromptEntry{},
+			wantErr: true,
+		},
+		{
+			name:    "invalid type value",
+			input:   `{"name":"test","type":"prompt","prompt":"Hello world"}`,
+			want:    PromptEntry{},
+			wantErr: true,
+		},
+		{
+			name:    "uppercase type invalid",
+			input:   `{"name":"test","type":"TEXT","prompt":"Hello world"}`,
 			want:    PromptEntry{},
 			wantErr: true,
 		},
