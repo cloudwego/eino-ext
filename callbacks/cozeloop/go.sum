@@ -24,8 +24,8 @@ github.com/cloudwego/eino v0.4.7/go.mod h1:1TDlOmwGSsbCJaWB92w9YLZi2FL0WRZoRcD4e
 github.com/cloudwego/iasm v0.2.0/go.mod h1:8rXZaNYT2n95jn+zTI1sDr+IgcD2GVs0nlbbQPiEFhY=
 github.com/coze-dev/cozeloop-go v0.1.7 h1:Y9AbLFLJdYWGPJJecWScSeW8W4kY38CLzBx0/ha/lZ4=
 github.com/coze-dev/cozeloop-go v0.1.7/go.mod h1:rhHtKT9D8wdqd+X1heP2A7zNyTohuA16ESv+rhEClbE=
-github.com/coze-dev/cozeloop-go/spec v0.1.0 h1:4yWozo+wVWz/5NF+iPirGfT+3kZXj9br+D+raAZfqLo=
-github.com/coze-dev/cozeloop-go/spec v0.1.0/go.mod h1:/f3BrWehffwXIpd4b5rYIqktLd/v5dlLBw0h9F/LQIU=
+github.com/coze-dev/cozeloop-go/spec v0.1.5 h1:tEQ82qlz9/HZv8MqyZq+043SaHs5C44MWslyGm5UcNI=
+github.com/coze-dev/cozeloop-go/spec v0.1.5/go.mod h1:/f3BrWehffwXIpd4b5rYIqktLd/v5dlLBw0h9F/LQIU=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc h1:U9qPSI2PIWSS1VwoXQT9A3Wy9MM3WgvqSxFWenqJduM=

@@ -40,7 +40,7 @@ func main() {
 	}
 
 	multiModalMsg := schema.UserMessage("")
-	image, err := os.ReadFile("./examples/image/eino.png")
+	image, err := os.ReadFile("./examples/generate_with_image/eino.png")
 	if err != nil {
 		log.Fatalf("os.ReadFile failed, err=%v\n", err)
 	}
@@ -50,7 +50,7 @@ func main() {
 	multiModalMsg.UserInputMultiContent = []schema.MessageInputPart{
 		{
 			Type: schema.ChatMessagePartTypeText,
-			Text: "this picture is LangDChain's architecture, what's the picture's content",
+			Text: "What do you see in this image?",
 		},
 		{
 			Type: schema.ChatMessagePartTypeImageURL,
