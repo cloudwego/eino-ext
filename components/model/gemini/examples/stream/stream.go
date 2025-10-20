@@ -31,6 +31,7 @@ import (
 
 func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
+	modelName := os.Getenv("GEMINI_MODEL")
 
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
@@ -39,15 +40,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
-	defer func() {
-		if err != nil {
-			log.Printf("close client error: %v", err)
-		}
-	}()
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-2.5-flash",
+		Model:  modelName,
 		ThinkingConfig: &genai.ThinkingConfig{
 			IncludeThoughts: true,
 			ThinkingBudget:  nil,
@@ -63,8 +59,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Printf("Stream error: %v", err)
-		return
+		log.Fatalf("Stream error: %v", err)
 	}
 
 	fmt.Println("Assistant: ")
@@ -74,8 +69,7 @@ func main() {
 			break
 		}
 		if err != nil {
-			log.Printf("Stream receive error: %v", err)
-			return
+			log.Fatalf("Stream receive error: %v", err)
 		}
 
 		fmt.Println("frame: ")

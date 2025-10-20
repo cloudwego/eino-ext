@@ -31,6 +31,7 @@ import (
 
 func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
+	modelName := os.Getenv("GEMINI_MODEL")
 
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
@@ -39,19 +40,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
-	defer func() {
-		if err != nil {
-			log.Printf("close client error: %v", err)
-		}
-	}()
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-1.5-flash",
-		ThinkingConfig: &genai.ThinkingConfig{
-			IncludeThoughts: true,
-			ThinkingBudget:  nil,
-		},
+		Model:  modelName,
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
@@ -63,12 +55,6 @@ func main() {
 	}
 
 	imageStr := base64.StdEncoding.EncodeToString(image)
-	base64Str := "data:image/jpeg;base64," + imageStr
-	defer func() {
-		if err != nil {
-			log.Printf("Delete file error: %v", err)
-		}
-	}()
 
 	resp, err := cm.Generate(ctx, []*schema.Message{
 		{
@@ -82,7 +68,7 @@ func main() {
 					Type: schema.ChatMessagePartTypeImageURL,
 					Image: &schema.MessageInputImage{
 						MessagePartCommon: schema.MessagePartCommon{
-							Base64Data: &base64Str,
+							Base64Data: &imageStr,
 							MIMEType:   "image/jpeg",
 						},
 						Detail: schema.ImageURLDetailAuto,
@@ -92,8 +78,7 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Printf("Generate error: %v", err)
-		return
+		log.Fatalf("Generate error: %v", err)
 	}
 	fmt.Printf("Assistant: %s\n", resp.Content)
 }
