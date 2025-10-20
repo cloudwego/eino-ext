@@ -18,7 +18,7 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"encoding/json"
 	"log"
 	"os"
 
@@ -30,6 +30,7 @@ import (
 
 func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
+	modelName := os.Getenv("GEMINI_MODEL")
 
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
@@ -38,15 +39,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
-	defer func() {
-		if err != nil {
-			log.Printf("close client error: %v", err)
-		}
-	}()
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-2.5-flash-image-preview",
+		Model:  modelName,
 		ResponseModalities: []gemini.GeminiResponseModality{
 			gemini.GeminiResponseModalityText,
 			gemini.GeminiResponseModalityImage,
@@ -87,8 +83,9 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Printf("Generate error: %v", err)
-		return
+		log.Fatalf("Generate error: %v", err)
 	}
-	fmt.Printf("Assistant: %s\n", resp)
+	log.Printf("\ngenerate output: \n")
+	respBody, _ := json.MarshalIndent(resp, "  ", "  ")
+	log.Printf("  body: %s\n", string(respBody))
 }

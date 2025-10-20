@@ -35,8 +35,7 @@ func main() {
 		Model:  os.Getenv("ARK_MODEL_ID"),
 	})
 	if err != nil {
-		log.Printf("NewChatModel failed, err=%v", err)
-		return
+		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
 	multiModalMsg := schema.UserMessage("")
@@ -68,8 +67,7 @@ func main() {
 		multiModalMsg,
 	})
 	if err != nil {
-		log.Printf("Generate failed, err=%v", err)
-		return
+		log.Fatalf("Generate failed, err=%v", err)
 	}
 
 	log.Printf("Ark ChatModel output: \n%v", resp)
