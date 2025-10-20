@@ -242,19 +242,22 @@ func imageProcessing(ctx context.Context, cm model.BaseChatModel) {
 	if err != nil {
 		log.Fatalf("read file failed, err=%v", err)
 	}
+	base64Str := base64.StdEncoding.EncodeToString(imageBinary)
 	resp, err := cm.Generate(ctx, []*schema.Message{
 		{
 			Role: schema.User,
-			MultiContent: []schema.ChatMessagePart{
+			UserInputMultiContent: []schema.MessageInputPart{
 				{
 					Type: schema.ChatMessagePartTypeText,
 					Text: "What do you see in this image?",
 				},
 				{
 					Type: schema.ChatMessagePartTypeImageURL,
-					ImageURL: &schema.ChatMessageImageURL{
-						URL:      "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(imageBinary),
-						MIMEType: "image/jpeg",
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: &base64Str,
+							MIMEType:   "image/jpeg",
+						},
 					},
 				},
 			},

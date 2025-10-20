@@ -94,3 +94,41 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, "context id", contextID)
 
 }
+
+func TestFPSFunctions(t *testing.T) {
+	t.Run("TestSetFPS", func(t *testing.T) {
+		videoURL := &schema.ChatMessageVideoURL{}
+
+		// Success case
+		SetFPS(videoURL, 2.5)
+		assert.Equal(t, ptrOf(2.5), GetFPS(videoURL))
+
+		// Boundary case: nil input
+		SetFPS(nil, 2.5)
+		assert.Nil(t, GetFPS(nil))
+	})
+
+	t.Run("TestSetInputVideoFPS", func(t *testing.T) {
+		inputVideo := &schema.MessageInputVideo{}
+
+		// Success case
+		setInputVideoFPS(inputVideo, 3.0)
+		assert.Equal(t, ptrOf(3.0), GetInputVideoFPS(inputVideo))
+
+		// Boundary case: nil input
+		setInputVideoFPS(nil, 3.0)
+		assert.Nil(t, GetInputVideoFPS(nil))
+	})
+
+	t.Run("TestSetOutputVideoFPS", func(t *testing.T) {
+		outputVideo := &schema.MessageOutputVideo{}
+
+		// Success case
+		setOutputVideoFPS(outputVideo, 4.0)
+		assert.Equal(t, ptrOf(4.0), GetOutputVideoFPS(outputVideo))
+
+		// Boundary case: nil input
+		setOutputVideoFPS(nil, 4.0)
+		assert.Nil(t, GetOutputVideoFPS(nil))
+	})
+}

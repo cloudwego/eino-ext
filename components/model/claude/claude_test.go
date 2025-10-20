@@ -358,3 +358,224 @@ func TestPopulateContentBlockBreakPoint(t *testing.T) {
 	populateContentBlockBreakPoint(block)
 	assert.NotEmpty(t, block.OfToolUse.CacheControl.Type)
 }
+
+func Test_convSchemaMessage_MultiContent(t *testing.T) {
+	rawBase64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+	invalidDataURL := "data:image/png;base64," + rawBase64
+	httpURL := "https://example.com/image.png"
+
+	t.Run("UserInputMultiContent", func(t *testing.T) {
+		t.Run("success with base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeText, Text: "hello"},
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawBase64, MIMEType: "image/png"}}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 2)
+			assert.Equal(t, "hello", result.Content[0].OfText.Text)
+			assert.Equal(t, anthropic.Base64ImageSourceMediaType("image/png"), result.Content[1].OfImage.Source.OfBase64.MediaType)
+		})
+
+		t.Run("success with url", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 1)
+			assert.Equal(t, httpURL, result.Content[0].OfImage.Source.OfURL.URL)
+		})
+
+		t.Run("error with data url prefix", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidDataURL, MIMEType: "image/png"}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "Base64Data should be a raw base64 string")
+		})
+
+		t.Run("error with no mime type for base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawBase64}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have MIMEType when use Base64Data")
+		})
+
+		t.Run("error with no url or base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have either a URL or Base64Data")
+		})
+	})
+
+	t.Run("AssistantGenMultiContent", func(t *testing.T) {
+		t.Run("success with image", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageOutputImage{
+							MessagePartCommon: schema.MessagePartCommon{
+								Base64Data: &rawBase64,
+								MIMEType:   "image/png",
+							},
+						},
+					},
+					{Type: schema.ChatMessagePartTypeText, Text: "some text"},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 2)
+			assert.Equal(t, anthropic.Base64ImageSourceMediaType("image/png"), result.Content[0].OfImage.Source.OfBase64.MediaType)
+			assert.Equal(t, "some text", result.Content[1].OfText.Text)
+		})
+
+		t.Run("success with url", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 1)
+			assert.Equal(t, httpURL, result.Content[0].OfImage.Source.OfURL.URL)
+		})
+
+		t.Run("error with wrong role", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeText, Text: "some text"},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "assistant gen multi content only support assistant role")
+		})
+
+		t.Run("error with data url prefix", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidDataURL, MIMEType: "image/png"}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "Base64Data should be a raw base64 string")
+		})
+
+		t.Run("error with no mime type for base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawBase64}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have MIMEType when use Base64Data")
+		})
+
+		t.Run("error with no url or base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have either a URL or Base64Data")
+		})
+	})
+
+	t.Run("MultiContent backward compatibility", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.User,
+			MultiContent: []schema.ChatMessagePart{
+				{Type: schema.ChatMessagePartTypeText, Text: "legacy"},
+				{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: invalidDataURL}},
+			},
+		}
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+		assert.Len(t, result.Content, 2)
+		assert.Equal(t, "legacy", result.Content[0].OfText.Text)
+		assert.Equal(t, anthropic.Base64ImageSourceMediaType("image/png"), result.Content[1].OfImage.Source.OfBase64.MediaType)
+	})
+
+	t.Run("MultiContent backward compatibility with http url", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.User,
+			MultiContent: []schema.ChatMessagePart{
+				{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: httpURL}},
+			},
+		}
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+		assert.Len(t, result.Content, 1)
+		assert.Equal(t, httpURL, result.Content[0].OfImage.Source.OfURL.URL)
+	})
+
+	t.Run("error with both UserInputMultiContent and AssistantGenMultiContent", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:                     schema.User,
+			UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "user"}},
+			AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "assistant"}},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	})
+
+	t.Run("error with nil image in UserInputMultiContent", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
+			},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "image field must not be nil")
+	})
+
+	t.Run("error with nil image in AssistantGenMultiContent", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
+			},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "image field must not be nil")
+	})
+}
