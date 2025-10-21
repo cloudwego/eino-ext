@@ -93,6 +93,13 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "context id", contextID)
 
+	caching_, ok = getResponseCaching(&schema.Message{
+		Extra: map[string]any{
+			keyOfResponseCaching: string(cachingEnabled),
+		},
+	})
+	assert.Equal(t, true, ok)
+	assert.Equal(t, string(cachingEnabled), caching_)
 }
 
 func TestFPSFunctions(t *testing.T) {

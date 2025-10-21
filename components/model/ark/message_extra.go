@@ -173,10 +173,16 @@ func setResponseID(msg *schema.Message, responseID string) {
 
 func getResponseCaching(msg *schema.Message) (string, bool) {
 	caching_, ok := getMsgExtraValue[caching](msg, keyOfResponseCaching)
-	if !ok {
-		return "", false
+	if ok {
+		return string(caching_), true
 	}
-	return string(caching_), true
+	// When the user serializes and deserializes the message,
+	// the type will be lost and compatibility with the string type is required.
+	cachingStr, ok := getMsgExtraValue[string](msg, keyOfResponseCaching)
+	if ok {
+		return cachingStr, true
+	}
+	return "", false
 }
 
 // setResponseCaching sets the cached status of the response.
