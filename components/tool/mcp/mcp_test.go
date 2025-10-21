@@ -37,7 +37,11 @@ func TestTool(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "name", info.Name)
 
-	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "{\"input\": \"123\"}")
+	options := []tool.Option{
+		WithCustomHeaders(map[string]string{"key": "value"}),
+	}
+
+	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "{\"input\": \"123\"}", options...)
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}", result)
 }

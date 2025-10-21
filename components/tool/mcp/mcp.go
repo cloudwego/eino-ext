@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
@@ -41,10 +42,22 @@ type Config struct {
 	// It can be used for custom processing of tool call results
 	// If nil, no additional processing will be performed
 	ToolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
+
+	// CustomHeaders specifies the http headers passed to mcp server when requesting.
+	CustomHeaders map[string]string
 }
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
-	listResults, err := conf.Cli.ListTools(ctx, mcp.ListToolsRequest{})
+	header := http.Header{}
+	if conf.CustomHeaders != nil {
+		for k, v := range conf.CustomHeaders {
+			header.Set(k, v)
+		}
+	}
+
+	listResults, err := conf.Cli.ListTools(ctx, mcp.ListToolsRequest{
+		Header: header,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list mcp tools fail: %w", err)
 	}
@@ -89,6 +102,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 type toolHelper struct {
 	cli                   client.MCPClient
 	info                  *schema.ToolInfo
+	customHeaders         map[string]string
 	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
 
@@ -97,15 +111,23 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
+	specOptions := tool.GetImplSpecificOptions(&mcpOptions{
+		customHeaders: m.customHeaders,
+	}, opts...)
+
+	headers := http.Header{}
+	if specOptions.customHeaders != nil {
+		for k, v := range specOptions.customHeaders {
+			headers.Set(k, v)
+		}
+	}
+
 	result, err := m.cli.CallTool(ctx, mcp.CallToolRequest{
 		Request: mcp.Request{
 			Method: "tools/call",
 		},
-		Params: struct {
-			Name      string    `json:"name"`
-			Arguments any       `json:"arguments,omitempty"`
-			Meta      *mcp.Meta `json:"_meta,omitempty"`
-		}{
+		Header: headers,
+		Params: mcp.CallToolParams{
 			Name:      m.info.Name,
 			Arguments: json.RawMessage(argumentsInJSON),
 		},
@@ -128,5 +150,6 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 	if result.IsError {
 		return "", fmt.Errorf("failed to call mcp tool, mcp server return error: %s", marshaledResult)
 	}
+
 	return marshaledResult, nil
 }
