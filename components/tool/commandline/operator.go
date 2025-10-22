@@ -26,6 +26,5 @@ type Operator interface {
 	WriteFile(ctx context.Context, path string, content string) error
 	IsDirectory(ctx context.Context, path string) (bool, error)
 	Exists(ctx context.Context, path string) (bool, error)
-	RunCommand(ctx context.Context, command string) (string, error)
-	RunCommandArgs(ctx context.Context, cmd []string) (string, string, int, error)
+	RunCommand(ctx context.Context, command []string) (string, string, int, error)
 }

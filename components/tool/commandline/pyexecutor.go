@@ -96,7 +96,7 @@ func (p *PyExecutor) Execute(ctx context.Context, args *Input) (string, error) {
 		return "", fmt.Errorf("failed to create python file: %w", err)
 	}
 
-	result, err := p.operator.RunCommand(ctx, p.command+" "+fileName)
+	result, _, _, err := p.operator.RunCommand(ctx, []string{p.command, fileName})
 	if err != nil {
 		return "", fmt.Errorf("execute error: %w", err)
 	}

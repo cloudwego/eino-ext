@@ -163,8 +163,8 @@ func (s *DockerSandbox) Create(ctx context.Context) error {
 	return nil
 }
 
-// RunCommandArgs executes a command with explicit arguments (no shell involved)
-func (s *DockerSandbox) RunCommandArgs(ctx context.Context, cmd []string) (stdout, stderr string, exitCode int, err error) {
+// RunCommand executes a command with explicit arguments (no shell involved)
+func (s *DockerSandbox) RunCommand(ctx context.Context, cmd []string) (stdout, stderr string, exitCode int, err error) {
 	if s.containerID == "" {
 		return "", "", -1, fmt.Errorf("sandbox not initialized")
 	}
@@ -185,7 +185,11 @@ func (s *DockerSandbox) RunCommandArgs(ctx context.Context, cmd []string) (stdou
 		return "", "", -1, fmt.Errorf("failed to create exec instance: %w", err)
 	}
 
-	resp, err := s.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{})
+	resp, err := s.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{
+		Detach:      false,
+		Tty:         false,
+		ConsoleSize: nil,
+	})
 	if err != nil {
 		return "", "", -1, fmt.Errorf("failed to attach to exec instance: %w", err)
 	}
@@ -213,75 +217,6 @@ func (s *DockerSandbox) RunCommandArgs(ctx context.Context, cmd []string) (stdou
 	}
 
 	return outBuf.String(), errBuf.String(), inspectResp.ExitCode, nil
-}
-
-// RunCommand executes a command in the sandbox
-func (s *DockerSandbox) RunCommand(ctx context.Context, cmd string) (string, error) {
-	if s.containerID == "" {
-		return "", fmt.Errorf("sandbox not initialized")
-	}
-
-	timeout := s.config.Timeout
-
-	// Create execution context
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// Create execution config
-	execConfig := container.ExecOptions{
-		Cmd:          []string{"/bin/sh", "-c", cmd},
-		AttachStdout: true,
-		AttachStderr: true,
-		WorkingDir:   s.config.WorkDir,
-	}
-
-	// Create execution instance
-	execID, err := s.client.ContainerExecCreate(ctx, s.containerID, execConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to create exec instance: %w", err)
-	}
-
-	// Attach to execution instance
-	resp, err := s.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{
-		Detach:      false,
-		Tty:         false,
-		ConsoleSize: nil,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to attach to exec instance: %w", err)
-	}
-	defer resp.Close()
-
-	// Read output
-	var outBuf, errBuf bytes.Buffer
-	outputDone := make(chan error)
-
-	go func() {
-		_, err := stdcopy.StdCopy(&outBuf, &errBuf, resp.Reader)
-		outputDone <- err
-	}()
-
-	select {
-	case err := <-outputDone:
-		if err != nil {
-			return "", fmt.Errorf("failed to read command output: %w", err)
-		}
-	case <-ctx.Done():
-		return "", fmt.Errorf("command execution timedout after %v", timeout)
-	}
-
-	// Check execution status
-	inspectResp, err := s.client.ContainerExecInspect(ctx, execID.ID)
-	if err != nil {
-		return "", fmt.Errorf("failed to inspect exec status: %w", err)
-	}
-
-	if inspectResp.ExitCode != 0 {
-		return "", fmt.Errorf("command execution failed with exit code %d: %s",
-			inspectResp.ExitCode, errBuf.String())
-	}
-
-	return outBuf.String(), nil
 }
 
 // ReadFile reads a file from the container
@@ -327,7 +262,7 @@ func (s *DockerSandbox) WriteFile(ctx context.Context, path string, content stri
 	// Create parent directory
 	parentDir := filepath.Dir(resolvedPath)
 	if parentDir != "" && parentDir != "/" {
-		_, err := s.RunCommand(ctx, fmt.Sprintf("mkdir -p %s", parentDir))
+		_, _, _, err := s.RunCommand(ctx, []string{"mkdir", "-p", parentDir})
 		if err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
@@ -386,10 +321,10 @@ func (s *DockerSandbox) IsDirectory(ctx context.Context, path string) (bool, err
 	}
 
 	// Use stat command to check path type
-	cmd := fmt.Sprintf("test -d %s && echo 'true' || echo 'false'", resolvedPath)
-	output, err := s.RunCommand(ctx, cmd)
-	if err != nil {
-		return false, fmt.Errorf("failed to check path type: %w", err)
+	cmd := []string{"test", "-e", resolvedPath}
+	output, stderr, exitCode, err := s.RunCommand(ctx, cmd)
+	if err != nil || stderr != "" || exitCode != 0 {
+		return false, fmt.Errorf("failed to check path existence: %w", err)
 	}
 
 	return strings.TrimSpace(output) == "true", nil
@@ -408,9 +343,9 @@ func (s *DockerSandbox) Exists(ctx context.Context, path string) (bool, error) {
 	}
 
 	// Use stat command to check if path exists
-	cmd := fmt.Sprintf("test -e %s && echo 'true' || echo 'false'", resolvedPath)
-	output, err := s.RunCommand(ctx, cmd)
-	if err != nil {
+	cmd := []string{"test", "-e", resolvedPath}
+	output, stderr, exitCode, err := s.RunCommand(ctx, cmd)
+	if err != nil || stderr != "" || exitCode != 0 {
 		return false, fmt.Errorf("failed to check path existence: %w", err)
 	}
 

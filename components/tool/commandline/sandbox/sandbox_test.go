@@ -128,7 +128,7 @@ func TestDockerSandbox_RunCommand(t *testing.T) {
 	}
 
 	// 测试执行命令
-	output, err := sandbox.RunCommand(ctx, "echo 'hello world'")
+	output, _, _, err := sandbox.RunCommand(ctx, []string{"echo", "hello world"})
 	assert.NoError(t, err)
 	assert.Equal(t, "success", output)
 }

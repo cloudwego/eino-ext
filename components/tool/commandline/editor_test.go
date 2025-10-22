@@ -63,15 +63,8 @@ func (m *MockFileOperator) Exists(ctx context.Context, path string) (bool, error
 	args := m.Called(ctx, path)
 	return args.Bool(0), args.Error(1)
 }
-func (m *MockFileOperator) RunCommandArgs(ctx context.Context, command []string) (string, string, int, error) {
+func (m *MockFileOperator) RunCommand(ctx context.Context, command []string) (string, string, int, error) {
 	return "hello world\n", "", 0, nil
-}
-func (m *MockFileOperator) RunCommand(ctx context.Context, command string) (string, error) {
-	args := m.Called(ctx, command)
-	if args.Get(0) == nil {
-		return "", args.Error(1)
-	}
-	return args.String(0), args.Error(1)
 }
 
 // Helper function to set up mock file system
