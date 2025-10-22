@@ -22,15 +22,15 @@ import (
 )
 
 const (
-	keyOfRequestID        = "ark-request-id"
-	keyOfReasoningContent = "ark-reasoning-content"
-	keyOfModelName        = "ark-model-name"
-	videoURLFPS           = "ark-model-video-url-fps"
-	keyOfContextID        = "ark-context-id"
-	keyOfResponseID       = "ark-response-id"
-	keyOfResponseCaching  = "ark-response-caching"
-	keyOfServiceTier      = "ark-service-tier"
-	ImageSizeKey          = "seedream-image-size"
+	keyOfRequestID             = "ark-request-id"
+	keyOfReasoningContent      = "ark-reasoning-content"
+	keyOfModelName             = "ark-model-name"
+	videoURLFPS                = "ark-model-video-url-fps"
+	keyOfContextID             = "ark-context-id"
+	keyOfResponseID            = "ark-response-id"
+	keyOfResponseCacheExpireAt = "ark-response-cache-expire-at"
+	keyOfServiceTier           = "ark-service-tier"
+	ImageSizeKey               = "seedream-image-size"
 )
 
 type arkRequestID string
@@ -38,6 +38,7 @@ type arkModelName string
 type arkServiceTier string
 type arkResponseID string
 type arkContextID string
+type arkResponseCacheExpireAt int64
 
 func init() {
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkRequestID) (final arkRequestID, err error) {
@@ -63,14 +64,6 @@ func init() {
 		return chunks[len(chunks)-1], nil
 	})
 	schema.RegisterName[arkServiceTier]("_eino_ext_ark_service_tier")
-
-	compose.RegisterStreamChunkConcatFunc(func(chunks []caching) (final caching, err error) {
-		if len(chunks) == 0 {
-			return "", nil
-		}
-		return chunks[len(chunks)-1], nil
-	})
-	schema.RegisterName[caching]("_eino_ext_ark_response_caching")
 
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkContextID) (final arkContextID, err error) {
 		if len(chunks) == 0 {
@@ -99,6 +92,14 @@ func init() {
 		return "", nil
 	})
 	schema.RegisterName[arkResponseID]("_eino_ext_ark_response_id")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []arkResponseCacheExpireAt) (final arkResponseCacheExpireAt, err error) {
+		if len(chunks) == 0 {
+			return 0, nil
+		}
+		return chunks[len(chunks)-1], nil
+	})
+	schema.RegisterName[arkResponseCacheExpireAt]("_eino_ext_ark_response_cache_expire_at")
 }
 
 func GetArkRequestID(msg *schema.Message) string {
@@ -151,6 +152,28 @@ func setContextID(msg *schema.Message, contextID string) {
 	setMsgExtra(msg, keyOfContextID, arkContextID(contextID))
 }
 
+// InvalidateMessageCaches disables caching for the specified messages.
+// When a message is modified, ARK invalidates caches for that message and all subsequent ones.
+// Call this to mark those message caches as invalid.
+func InvalidateMessageCaches(messages []*schema.Message) error {
+	for _, msg := range messages {
+		expireAtSec, ok := getCacheExpiration(msg)
+		if !ok || expireAtSec <= 0 {
+			continue
+		}
+
+		// there may be concurrency
+		extra := make(map[string]any, len(msg.Extra))
+		for k, v := range msg.Extra {
+			extra[k] = v
+		}
+
+		delete(extra, keyOfResponseCacheExpireAt)
+		msg.Extra = extra
+	}
+	return nil
+}
+
 // GetResponseID returns the response ID from the message.
 // Available only for ResponsesAPI responses.
 func GetResponseID(msg *schema.Message) (string, bool) {
@@ -158,8 +181,8 @@ func GetResponseID(msg *schema.Message) (string, bool) {
 	if ok {
 		return string(responseID_), true
 	}
-	// Since registering the concat logic requires defining `arkResponseID` type,
-	// this fallback logic needs to be retained to be compatible with `string` type.
+	// When the user serializes and deserializes the message,
+	// the type will be lost and compatibility with the string type is required.
 	responseIDStr, ok := getMsgExtraValue[string](msg, keyOfResponseID)
 	if !ok {
 		return "", false
@@ -171,23 +194,22 @@ func setResponseID(msg *schema.Message, responseID string) {
 	setMsgExtra(msg, keyOfResponseID, arkResponseID(responseID))
 }
 
-func getResponseCaching(msg *schema.Message) (string, bool) {
-	caching_, ok := getMsgExtraValue[caching](msg, keyOfResponseCaching)
+// getCacheExpiration returns the cache expiration time in seconds.
+// Only available for ResponsesAPI responses.
+func getCacheExpiration(msg *schema.Message) (expireAtSec int64, ok bool) {
+	expireAtSec_, ok := getMsgExtraValue[arkResponseCacheExpireAt](msg, keyOfResponseCacheExpireAt)
 	if ok {
-		return string(caching_), true
+		return int64(expireAtSec_), true
 	}
-	// When the user serializes and deserializes the message,
-	// the type will be lost and compatibility with the string type is required.
-	cachingStr, ok := getMsgExtraValue[string](msg, keyOfResponseCaching)
+	expireAtSec, ok = getMsgExtraValue[int64](msg, keyOfResponseCacheExpireAt)
 	if ok {
-		return cachingStr, true
+		return expireAtSec, true
 	}
-	return "", false
+	return 0, false
 }
 
-// setResponseCaching sets the cached status of the response.
-func setResponseCaching(msg *schema.Message, caching caching) {
-	setMsgExtra(msg, keyOfResponseCaching, caching)
+func setResponseCacheExpireAt(msg *schema.Message, expireAt arkResponseCacheExpireAt) {
+	setMsgExtra(msg, keyOfResponseCacheExpireAt, expireAt)
 }
 
 func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {

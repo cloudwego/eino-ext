@@ -61,12 +61,12 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		return nil, err
 	}
 
-	req, reqOpts, err := cm.genRequestAndOptions(input, options, specOptions)
+	reqParams, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generate request: %w", err)
 	}
 
-	config := cm.toCallbackConfig(req)
+	config := cm.toCallbackConfig(reqParams.req)
 
 	tools := cm.rawTools
 	if options.Tools != nil {
@@ -86,12 +86,12 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		}
 	}()
 
-	resp, err := cm.client.New(ctx, req, reqOpts...)
+	resp, err := cm.client.New(ctx, *reqParams.req, reqParams.opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generate request: %w", err)
 	}
 
-	outMsg, err = cm.toOutputMessage(resp, req.Store.Value)
+	outMsg, err = cm.toOutputMessage(resp, reqParams.cache)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert output to schema.Message: %w", err)
 	}
@@ -114,12 +114,12 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		return nil, err
 	}
 
-	req, reqOpts, err := cm.genRequestAndOptions(input, options, specOptions)
+	reqParams, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream request: %w", err)
 	}
 
-	config := cm.toCallbackConfig(req)
+	config := cm.toCallbackConfig(reqParams.req)
 
 	tools := cm.rawTools
 	if options.Tools != nil {
@@ -139,7 +139,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		}
 	}()
 
-	streamResp := cm.client.NewStreaming(ctx, req, reqOpts...)
+	streamResp := cm.client.NewStreaming(ctx, *reqParams.req, reqParams.opts...)
 	if streamResp.Err() != nil {
 		return nil, fmt.Errorf("failed to create stream request: %w", streamResp.Err())
 	}
@@ -157,7 +157,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			sw.Close()
 		}()
 
-		cm.receivedStreamResponse(streamResp, config, req.Store.Value, sw)
+		cm.receivedStreamResponse(streamResp, config, reqParams.cache, sw)
 
 	}()
 
@@ -183,17 +183,24 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	return outStream, nil
 }
 
-func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message, response responses.Response, enableCache bool) {
-	if enableCache {
-		setResponseCaching(msg, cachingEnabled)
+func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message, response responses.Response,
+	cacheConfig *cacheConfig) {
+
+	if cacheConfig.Enabled {
+		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cacheConfig.ExpireAt)))
 	}
 	setContextID(msg, response.ID)
 	setResponseID(msg, response.ID)
 	setServiceTier(msg, string(response.ServiceTier))
 }
 
+type cacheConfig struct {
+	Enabled  bool
+	ExpireAt *int64
+}
+
 func (cm *responsesAPIChatModel) receivedStreamResponse(streamResp *ssestream.Stream[responses.ResponseStreamEventUnion],
-	config *model.Config, enableCache bool, sw *schema.StreamWriter[*model.CallbackOutput]) {
+	config *model.Config, cache *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
 
 	var toolCallMetaMsg *schema.Message
 
@@ -220,7 +227,7 @@ Outer:
 				Role: schema.Assistant,
 			}
 
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
 			continue
@@ -228,7 +235,7 @@ Outer:
 		case responses.ResponseCompletedEvent:
 			msg := cm.handleCompletedStreamEvent(asEvent)
 
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
 			break Outer
@@ -240,14 +247,14 @@ Outer:
 		case responses.ResponseIncompleteEvent:
 			msg := cm.handleIncompleteStreamEvent(asEvent)
 
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
 			break Outer
 
 		case responses.ResponseFailedEvent:
 			msg := cm.handleFailedStreamEvent(asEvent)
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, enableCache)
+			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
 			break Outer
@@ -433,8 +440,14 @@ func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.To
 	return tools, nil
 }
 
-func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options, specOptions *arkOptions) (req responses.ResponseNewParams,
-	reqOpts []option.RequestOption, err error) {
+type responsesAPIRequestParams struct {
+	req   *responses.ResponseNewParams
+	opts  []option.RequestOption
+	cache *cacheConfig
+}
+
+func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options,
+	specOptions *arkOptions) (reqParams *responsesAPIRequestParams, err error) {
 
 	var text *responses.ResponseTextConfigParam
 	if cm.responseFormat != nil {
@@ -450,37 +463,39 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		}
 	}
 
-	req = responses.ResponseNewParams{
-		Text:            ptrFromOrZero(text),
-		Model:           ptrFromOrZero(options.Model),
-		MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
-		Temperature:     newOpenaiFloatOpt(options.Temperature),
-		TopP:            newOpenaiFloatOpt(options.TopP),
-		ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceTier)),
+	reqParams = &responsesAPIRequestParams{
+		req: &responses.ResponseNewParams{
+			Text:            ptrFromOrZero(text),
+			Model:           ptrFromOrZero(options.Model),
+			MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
+			Temperature:     newOpenaiFloatOpt(options.Temperature),
+			TopP:            newOpenaiFloatOpt(options.TopP),
+			ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceTier)),
+		},
 	}
 
-	var in_ []*schema.Message
-	if in_, req, reqOpts, err = cm.populateCache(in, req, specOptions, reqOpts); err != nil {
-		return req, nil, err
+	in_ := in
+	if in_, reqParams, err = cm.populateCache(in, reqParams, specOptions); err != nil {
+		return nil, err
 	}
 
-	if err = cm.populateInput(&req, in_); err != nil {
-		return req, nil, err
+	if err = cm.populateInput(reqParams.req, in_); err != nil {
+		return nil, err
 	}
 
-	if err = cm.populateTools(&req, options.Tools); err != nil {
-		return req, nil, err
+	if err = cm.populateTools(reqParams.req, options.Tools); err != nil {
+		return nil, err
 	}
 
 	for k, v := range specOptions.customHeaders {
-		reqOpts = append(reqOpts, option.WithHeaderAdd(k, v))
+		reqParams.opts = append(reqParams.opts, option.WithHeaderAdd(k, v))
 	}
 
 	if specOptions.thinking != nil {
-		reqOpts = append(reqOpts, option.WithJSONSet("thinking", specOptions.thinking))
+		reqParams.opts = append(reqParams.opts, option.WithJSONSet("thinking", specOptions.thinking))
 	}
 
-	return req, reqOpts, nil
+	return reqParams, nil
 }
 
 func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOptions) error {
@@ -490,8 +505,8 @@ func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOption
 	return nil
 }
 
-func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, req responses.ResponseNewParams, arkOpts *arkOptions,
-	reqOpts []option.RequestOption) ([]*schema.Message, responses.ResponseNewParams, []option.RequestOption, error) {
+func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, reqParams *responsesAPIRequestParams, arkOpts *arkOptions,
+) ([]*schema.Message, *responsesAPIRequestParams, error) {
 
 	var (
 		store       = param.NewOpt(false)
@@ -534,6 +549,8 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, req respons
 		inputIdx  int
 	)
 
+	now := time.Now().Unix()
+
 	// If the user implements session caching with ContextID,
 	// ContextID and ResponseID will exist at the same time.
 	// Using ContextID is prioritized to maintain compatibility with the old logic.
@@ -542,7 +559,7 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, req respons
 		for i := len(in) - 1; i >= 0; i-- {
 			msg := in[i]
 			inputIdx = i
-			if caching_, _ := getResponseCaching(msg); caching_ != string(cachingEnabled) {
+			if expireAtSec, ok := getCacheExpiration(msg); !ok || expireAtSec < now {
 				continue
 			}
 			if id, ok := GetResponseID(msg); ok {
@@ -554,7 +571,7 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, req respons
 
 	if preRespID != nil {
 		if inputIdx+1 >= len(in) {
-			return in, req, reqOpts, fmt.Errorf("not found incremental input after ResponseID")
+			return in, nil, fmt.Errorf("not found incremental input after ResponseID")
 		}
 		in = in[inputIdx+1:]
 	}
@@ -567,18 +584,29 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, req respons
 		}
 	}
 
-	req.PreviousResponseID = newOpenaiStringOpt(preRespID)
-	req.Store = store
+	reqParams.req.PreviousResponseID = newOpenaiStringOpt(preRespID)
+	reqParams.req.Store = store
 
 	if cacheTTL != nil {
-		reqOpts = append(reqOpts, option.WithJSONSet("expire_at", time.Now().Unix()+int64(*cacheTTL)))
+		reqParams.opts = append(reqParams.opts, option.WithJSONSet("expire_at", now+int64(*cacheTTL)))
 	}
 
-	reqOpts = append(reqOpts, option.WithJSONSet("caching", map[string]any{
+	reqParams.opts = append(reqParams.opts, option.WithJSONSet("caching", map[string]any{
 		"type": cacheStatus,
 	}))
 
-	return in, req, reqOpts, nil
+	reqParams.cache = &cacheConfig{
+		Enabled: cacheStatus == cachingEnabled,
+		ExpireAt: func() *int64 {
+			// TODO: After changing to using ARK responses sdk, use the `expire_at` returned by the response
+			if cacheTTL == nil { // Default TTL is 3 days
+				return ptrOf(now + 259200)
+			}
+			return ptrOf(now + int64(*cacheTTL))
+		}(),
+	}
+
+	return in, reqParams, nil
 }
 
 func (cm *responsesAPIChatModel) populateInput(req *responses.ResponseNewParams, in []*schema.Message) error {
@@ -800,7 +828,7 @@ func (cm *responsesAPIChatModel) populateTools(req *responses.ResponseNewParams,
 	return nil
 }
 
-func (cm *responsesAPIChatModel) toCallbackConfig(req responses.ResponseNewParams) *model.Config {
+func (cm *responsesAPIChatModel) toCallbackConfig(req *responses.ResponseNewParams) *model.Config {
 	return &model.Config{
 		Model:       req.Model,
 		MaxTokens:   int(req.MaxOutputTokens.Value),
@@ -809,7 +837,7 @@ func (cm *responsesAPIChatModel) toCallbackConfig(req responses.ResponseNewParam
 	}
 }
 
-func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response, enableCache bool) (*schema.Message, error) {
+func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response, cache *cacheConfig) (*schema.Message, error) {
 	msg := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
@@ -818,8 +846,8 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response, enabl
 		},
 	}
 
-	if enableCache {
-		setResponseCaching(msg, cachingEnabled)
+	if cache != nil && cache.Enabled {
+		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cache.ExpireAt)))
 	}
 	setContextID(msg, resp.ID)
 	setResponseID(msg, resp.ID)
@@ -845,17 +873,41 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response, enabl
 	for _, item := range resp.Output {
 		switch asItem := item.AsAny().(type) {
 		case responses.ResponseOutputMessage:
-			if len(asItem.Content) == 0 {
-				return nil, fmt.Errorf("received empty message content from ARK")
+			isMultiContent := len(asItem.Content) > 1
+
+			for _, content := range asItem.Content {
+				text := ""
+
+				switch asContent := content.AsAny().(type) {
+				case responses.ResponseOutputText:
+					text = asContent.Text
+				case responses.ResponseOutputRefusal:
+					text = asContent.Refusal
+				default:
+					return nil, fmt.Errorf("unsupported content type: %T", asContent)
+				}
+
+				if !isMultiContent {
+					msg.Content = text
+				} else {
+					msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, schema.MessageOutputPart{
+						Type: schema.ChatMessagePartTypeText,
+						Text: text,
+					})
+				}
 			}
-			msg.Content = asItem.Content[0].Text
 
 		case responses.ResponseReasoningItem:
-			if len(asItem.Summary) == 0 {
-				continue
+			for _, s := range asItem.Summary {
+				if s.Text == "" {
+					continue
+				}
+				if msg.ReasoningContent == "" {
+					msg.ReasoningContent = s.Text
+					continue
+				}
+				msg.ReasoningContent = fmt.Sprintf("%s\n\n%s", msg.ReasoningContent, s.Text)
 			}
-			msg.ReasoningContent = asItem.Summary[0].Text
-			setReasoningContent(msg, msg.ReasoningContent)
 
 		case responses.ResponseFunctionToolCall:
 			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{

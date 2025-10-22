@@ -10,8 +10,7 @@ require (
 	github.com/openai/openai-go v1.10.1
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.11.1
-	github.com/volcengine/volcengine-go-sdk v1.1.37
-
+	github.com/volcengine/volcengine-go-sdk v1.1.41
 )
 
 require (

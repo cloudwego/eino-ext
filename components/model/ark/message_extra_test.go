@@ -38,8 +38,9 @@ func TestConcatMessages(t *testing.T) {
 	setModelName(msgs[1], "model name")
 	setServiceTier(msgs[0], "service tier")
 	setServiceTier(msgs[1], "service tier")
-	setResponseID(msgs[0], "resp id")
-	setResponseCaching(msgs[0], cachingEnabled)
+
+	setResponseCacheExpireAt(msgs[0], arkResponseCacheExpireAt(10))
+	setResponseCacheExpireAt(msgs[1], arkResponseCacheExpireAt(10))
 	setResponseID(msgs[0], "resp id")
 	setResponseID(msgs[1], "resp id")
 	setContextID(msgs[0], "context id")
@@ -65,9 +66,9 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "resp id", responseID)
 
-	caching_, ok := getResponseCaching(msg)
+	expireAt, ok := getCacheExpiration(msg)
 	assert.Equal(t, true, ok)
-	assert.Equal(t, string(cachingEnabled), caching_)
+	assert.Equal(t, int64(10), expireAt)
 
 	respID, ok := GetResponseID(msg)
 	assert.Equal(t, true, ok)
@@ -93,13 +94,13 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "context id", contextID)
 
-	caching_, ok = getResponseCaching(&schema.Message{
+	expireAt, ok = getCacheExpiration(&schema.Message{
 		Extra: map[string]any{
-			keyOfResponseCaching: string(cachingEnabled),
+			keyOfResponseCacheExpireAt: int64(10),
 		},
 	})
 	assert.Equal(t, true, ok)
-	assert.Equal(t, string(cachingEnabled), caching_)
+	assert.Equal(t, int64(10), expireAt)
 }
 
 func TestImageSizeFunctions(t *testing.T) {
@@ -203,4 +204,27 @@ func TestFPSFunctions(t *testing.T) {
 		setOutputVideoFPS(nil, 4.0)
 		assert.Nil(t, GetOutputVideoFPS(nil))
 	})
+}
+
+func TestInvalidateMessageCaches(t *testing.T) {
+	msgs := []*schema.Message{
+		{
+			Extra: map[string]any{
+				keyOfResponseID:            "1",
+				keyOfResponseCacheExpireAt: int64(10),
+			},
+		},
+		{
+			Extra: map[string]any{
+				keyOfResponseID:            "2",
+				keyOfResponseCacheExpireAt: int64(10),
+			},
+		},
+	}
+
+	err := InvalidateMessageCaches(msgs)
+	assert.Nil(t, err)
+	for _, msg := range msgs {
+		assert.Nil(t, msg.Extra[keyOfResponseCacheExpireAt])
+	}
 }
