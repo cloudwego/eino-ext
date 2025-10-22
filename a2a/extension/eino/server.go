@@ -390,11 +390,12 @@ func (d *defaultEventConvertor) messageVar2Status(ctx context.Context, messageVa
 	return nil
 }
 
-func (a *a2aHandlersBuilder) einoResponseEventConsolidator(_ context.Context, t *models.Task, events []models.ResponseEvent, _ error) *models.TaskContent {
+func (a *a2aHandlersBuilder) einoResponseEventConsolidator(_ context.Context, params *server.InputParams, events []models.ResponseEvent, _ error) *models.TaskContent {
+	t := params.Task
 	tc := &models.TaskContent{
 		Status:    t.Status,
 		Artifacts: t.Artifacts,
-		History:   t.History,
+		History:   append(t.History, params.Input),
 		Metadata:  t.Metadata,
 	}
 	if tc.Metadata == nil {
