@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino-ext/components/tool/commandline"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -164,9 +165,9 @@ func (s *DockerSandbox) Create(ctx context.Context) error {
 }
 
 // RunCommand executes a command with explicit arguments (no shell involved)
-func (s *DockerSandbox) RunCommand(ctx context.Context, cmd []string) (stdout, stderr string, exitCode int, err error) {
+func (s *DockerSandbox) RunCommand(ctx context.Context, cmd []string) (*commandline.CommandOutput, error) {
 	if s.containerID == "" {
-		return "", "", -1, fmt.Errorf("sandbox not initialized")
+		return nil, fmt.Errorf("sandbox not initialized")
 	}
 
 	timeout := s.config.Timeout
@@ -182,7 +183,7 @@ func (s *DockerSandbox) RunCommand(ctx context.Context, cmd []string) (stdout, s
 
 	execID, err := s.client.ContainerExecCreate(ctx, s.containerID, execConfig)
 	if err != nil {
-		return "", "", -1, fmt.Errorf("failed to create exec instance: %w", err)
+		return nil, fmt.Errorf("failed to create exec instance: %w", err)
 	}
 
 	resp, err := s.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{
@@ -191,7 +192,7 @@ func (s *DockerSandbox) RunCommand(ctx context.Context, cmd []string) (stdout, s
 		ConsoleSize: nil,
 	})
 	if err != nil {
-		return "", "", -1, fmt.Errorf("failed to attach to exec instance: %w", err)
+		return nil, fmt.Errorf("failed to attach to exec instance: %w", err)
 	}
 	defer resp.Close()
 
@@ -205,18 +206,18 @@ func (s *DockerSandbox) RunCommand(ctx context.Context, cmd []string) (stdout, s
 	select {
 	case err := <-outputDone:
 		if err != nil {
-			return "", "", -1, fmt.Errorf("failed to read output: %w", err)
+			return nil, fmt.Errorf("failed to read output: %w", err)
 		}
 	case <-ctx.Done():
-		return "", "", -1, fmt.Errorf("command timed out after %v", timeout)
+		return nil, fmt.Errorf("command timed out after %v", timeout)
 	}
 
 	inspectResp, err := s.client.ContainerExecInspect(ctx, execID.ID)
 	if err != nil {
-		return "", "", -1, fmt.Errorf("failed to inspect exec: %w", err)
+		return nil, fmt.Errorf("failed to inspect exec: %w", err)
 	}
 
-	return outBuf.String(), errBuf.String(), inspectResp.ExitCode, nil
+	return &commandline.CommandOutput{Stdout: outBuf.String(), Stderr: errBuf.String(), ExitCode: inspectResp.ExitCode}, nil
 }
 
 // ReadFile reads a file from the container
@@ -262,7 +263,7 @@ func (s *DockerSandbox) WriteFile(ctx context.Context, path string, content stri
 	// Create parent directory
 	parentDir := filepath.Dir(resolvedPath)
 	if parentDir != "" && parentDir != "/" {
-		_, _, _, err := s.RunCommand(ctx, []string{"mkdir", "-p", parentDir})
+		_, err := s.RunCommand(ctx, []string{"mkdir", "-p", parentDir})
 		if err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
@@ -322,12 +323,12 @@ func (s *DockerSandbox) IsDirectory(ctx context.Context, path string) (bool, err
 
 	// Use stat command to check path type
 	cmd := []string{"test", "-e", resolvedPath}
-	output, stderr, exitCode, err := s.RunCommand(ctx, cmd)
-	if err != nil || stderr != "" || exitCode != 0 {
+	cmdOutput, err := s.RunCommand(ctx, cmd)
+	if err != nil {
 		return false, fmt.Errorf("failed to check path existence: %w", err)
 	}
 
-	return strings.TrimSpace(output) == "true", nil
+	return cmdOutput.ExitCode == 0, nil
 }
 
 // Exists checks if a path exists in the container
@@ -344,12 +345,12 @@ func (s *DockerSandbox) Exists(ctx context.Context, path string) (bool, error) {
 
 	// Use stat command to check if path exists
 	cmd := []string{"test", "-e", resolvedPath}
-	output, stderr, exitCode, err := s.RunCommand(ctx, cmd)
-	if err != nil || stderr != "" || exitCode != 0 {
+	cmdOutput, err := s.RunCommand(ctx, cmd)
+	if err != nil {
 		return false, fmt.Errorf("failed to check path existence: %w", err)
 	}
 
-	return strings.TrimSpace(output) == "true", nil
+	return cmdOutput.ExitCode == 0, nil
 }
 
 // Cleanup cleans up sandbox resources

@@ -39,8 +39,8 @@ type pyOperator struct {
 	code string
 }
 
-func (pyOperator) RunCommand(ctx context.Context, command []string) (string, string, int, error) {
-	return "hello world\n", "", 0, nil
+func (pyOperator) RunCommand(ctx context.Context, command []string) (*CommandOutput, error) {
+	return &CommandOutput{Stdout: "hello world\n", Stderr: "", ExitCode: 0}, nil
 }
 func (pyOperator) ReadFile(ctx context.Context, path string) (string, error) {
 	panic("implement me")

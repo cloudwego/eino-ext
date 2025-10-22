@@ -128,9 +128,9 @@ func TestDockerSandbox_RunCommand(t *testing.T) {
 	}
 
 	// 测试执行命令
-	output, _, _, err := sandbox.RunCommand(ctx, []string{"echo", "hello world"})
+	output, err := sandbox.RunCommand(ctx, []string{"echo", "success"})
 	assert.NoError(t, err)
-	assert.Equal(t, "success", output)
+	assert.Equal(t, "success", output.Stdout)
 }
 
 func TestDockerSandbox_IsDirectory(t *testing.T) {

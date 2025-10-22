@@ -20,11 +20,17 @@ import (
 	"context"
 )
 
+type CommandOutput struct {
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
 // Operator defines the interface for file operations
 type Operator interface {
 	ReadFile(ctx context.Context, path string) (string, error)
 	WriteFile(ctx context.Context, path string, content string) error
 	IsDirectory(ctx context.Context, path string) (bool, error)
 	Exists(ctx context.Context, path string) (bool, error)
-	RunCommand(ctx context.Context, command []string) (string, string, int, error)
+	RunCommand(ctx context.Context, command []string) (*CommandOutput, error)
 }
