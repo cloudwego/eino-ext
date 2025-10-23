@@ -58,3 +58,16 @@ const (
 const (
 	callbackExtraKeyThinking = "thinking"
 )
+
+const (
+	contextKeyReasoningEffort = "_ark_reasoning_effort"
+)
+
+type ReasoningEffort string
+
+const (
+	ReasoningEffortLevelMinimal ReasoningEffort = "minimal"
+	ReasoningEffortLevelLow     ReasoningEffort = "low"
+	ReasoningEffortLevelMedium  ReasoningEffort = "medium"
+	ReasoningEffortLevelHigh    ReasoningEffort = "high"
+)
