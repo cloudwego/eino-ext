@@ -20,45 +20,40 @@ import (
 	"context"
 	"log"
 	"os"
-
+	
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
-	"github.com/milvus-io/milvus-sdk-go/v2/client"
-
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
+	
 	"github.com/cloudwego/eino-ext/components/indexer/milvus"
 )
 
 func main() {
-	// Get the environment variables
-	addr := os.Getenv("MILVUS_ADDR")
-	username := os.Getenv("MILVUS_USERNAME")
-	password := os.Getenv("MILVUS_PASSWORD")
-
-	// Create a client
+	// Create the milvus client
 	ctx := context.Background()
-	cli, err := client.NewClient(ctx, client.Config{
-		Address:  addr,
-		Username: username,
-		Password: password,
+	client, err := milvusclient.New(ctx, &milvusclient.ClientConfig{
+		Address: os.Getenv("MILVUS_ADDRESS"),
+		APIKey:  os.Getenv("MILVUS_API_KEY"),
 	})
 	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
+		log.Fatal(err)
 		return
 	}
-	defer cli.Close()
-
-	// Create an indexer
+	defer client.Close(ctx)
+	
+	// Create the indexer
 	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
-		Client:    cli,
+		Client:    client,
+		Dim:       2560,
 		Embedding: &mockEmbedding{},
 	})
 	if err != nil {
-		log.Fatalf("Failed to create indexer: %v", err)
+		log.Fatal(err)
 		return
 	}
-	log.Printf("Indexer created success")
-
+	log.Printf("Indexer created successfully: %v", indexer.GetType())
+	
 	// Store documents
 	docs := []*schema.Document{
 		{
