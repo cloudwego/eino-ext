@@ -19,9 +19,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/cloudwego/eino-ext/components/document/parser/docx"
 	"log"
 	"os"
+
+	"github.com/cloudwego/eino-ext/components/document/parser/docx"
 )
 
 func main() {

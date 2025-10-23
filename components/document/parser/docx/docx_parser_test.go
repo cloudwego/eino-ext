@@ -18,14 +18,16 @@ package docx
 
 import (
 	"context"
-	"github.com/cloudwego/eino/components/document/parser"
-	"github.com/stretchr/testify/assert"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/cloudwego/eino/components/document/parser"
 )
 
 func TestDocxParser_Parse(t *testing.T) {
-	t.Run("DocxParser_Parse", func(t *testing.T) {
+	t.Run("DocxParser_Parse_with_section", func(t *testing.T) {
 		ctx := context.Background()
 
 		f, err := os.Open("./examples/testdata/test_docx.docx")
@@ -42,11 +44,34 @@ func TestDocxParser_Parse(t *testing.T) {
 
 		docs, err := p.Parse(ctx, f, parser.WithExtraMeta(map[string]any{"test": "test"}))
 		assert.NoError(t, err)
-		assert.Equal(t, 5, len(docs))
+		assert.Equal(t, 4, len(docs))
 		for _, doc := range docs {
 			typ, _ := GetSectionType(doc)
 			assert.Equal(t, typ, doc.MetaData[SectionTypeKey])
 		}
+
+	})
+
+	t.Run("DocxParser_Parse_without_section", func(t *testing.T) {
+		ctx := context.Background()
+
+		f, err := os.Open("./examples/testdata/test_docx.docx")
+		assert.NoError(t, err)
+
+		p, err := NewDocxParser(ctx, &Config{
+			ToSections:      false,
+			IncludeComments: true,
+			IncludeHeaders:  true,
+			IncludeFooters:  true,
+			IncludeTables:   true,
+		})
+		assert.NoError(t, err)
+
+		docs, err := p.Parse(ctx, f, parser.WithExtraMeta(map[string]any{"test": "test"}))
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(docs))
+		typ, _ := GetSectionType(docs[0])
+		assert.Equal(t, typ, docs[0].MetaData[SectionTypeKey])
 
 	})
 }
