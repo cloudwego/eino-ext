@@ -39,8 +39,9 @@ import (
 type responsesAPIChatModel struct {
 	client responses.ResponseService
 
-	tools    []responses.ToolUnionParam
-	rawTools []*schema.ToolInfo
+	tools      []responses.ToolUnionParam
+	rawTools   []*schema.ToolInfo
+	toolChoice *schema.ToolChoice
 
 	model          string
 	maxTokens      *int
@@ -74,10 +75,11 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    tools,
-		Config:   config,
-		Extra:    map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Messages:   input,
+		Tools:      tools,
+		ToolChoice: options.ToolChoice,
+		Config:     config,
+		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	defer func() {
@@ -127,10 +129,11 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    tools,
-		Config:   config,
-		Extra:    map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Messages:   input,
+		Tools:      tools,
+		ToolChoice: options.ToolChoice,
+		Config:     config,
+		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	defer func() {
@@ -485,6 +488,23 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 
 	if err = cm.populateTools(reqParams.req, options.Tools); err != nil {
 		return nil, err
+	}
+
+	if options.ToolChoice != nil {
+		var tco responses.ToolChoiceOptions
+		switch *options.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			tco = responses.ToolChoiceOptionsNone
+		case schema.ToolChoiceAllowed:
+			tco = responses.ToolChoiceOptionsAuto
+		case schema.ToolChoiceForced:
+			tco = responses.ToolChoiceOptionsRequired
+		default:
+			tco = responses.ToolChoiceOptionsAuto
+		}
+		reqParams.req.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
+			OfToolChoiceMode: param.NewOpt(tco),
+		}
 	}
 
 	for k, v := range specOptions.customHeaders {
@@ -955,7 +975,7 @@ func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 		MaxTokens:   cm.maxTokens,
 		Model:       &cm.model,
 		TopP:        cm.topP,
-		ToolChoice:  ptrOf(schema.ToolChoiceAllowed),
+		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
 	arkOpts := model.GetImplSpecificOptions(&arkOptions{

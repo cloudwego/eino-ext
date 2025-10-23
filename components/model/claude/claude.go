@@ -601,12 +601,16 @@ func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOpt
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
+	co := model.GetCommonOptions(&model.Options{
+		Tools:      cm.origTools,
+		ToolChoice: cm.toolChoice,
+	}, opts...)
+
 	result := &model.CallbackInput{
-		Messages: input,
-		Tools: model.GetCommonOptions(&model.Options{
-			Tools: cm.origTools,
-		}, opts...).Tools,
-		Config: cm.getConfig(),
+		Messages:   input,
+		Tools:      co.Tools,
+		ToolChoice: co.ToolChoice,
+		Config:     cm.getConfig(),
 	}
 	return result
 }

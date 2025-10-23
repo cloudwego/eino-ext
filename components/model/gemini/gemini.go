@@ -144,10 +144,15 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 
 	modelName, nInput, genaiConf, cbConf, err := cm.genInputAndConf(input, opts...)
 
+	co := model.GetCommonOptions(&model.Options{
+		Tools:      cm.origTools,
+		ToolChoice: cm.toolChoice,
+	}, opts...)
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    model.GetCommonOptions(&model.Options{Tools: cm.origTools}, opts...).Tools,
-		Config:   cbConf,
+		Messages:   input,
+		Tools:      co.Tools,
+		ToolChoice: co.ToolChoice,
+		Config:     cbConf,
 	})
 	defer func() {
 		if err != nil {
@@ -185,10 +190,16 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 	if err != nil {
 		return nil, err
 	}
+
+	co := model.GetCommonOptions(&model.Options{
+		Tools:      cm.origTools,
+		ToolChoice: cm.toolChoice,
+	}, opts...)
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    model.GetCommonOptions(&model.Options{Tools: cm.origTools}, opts...).Tools,
-		Config:   cbConf,
+		Messages:   input,
+		Tools:      co.Tools,
+		ToolChoice: co.ToolChoice,
+		Config:     cbConf,
 	})
 	defer func() {
 		if err != nil {

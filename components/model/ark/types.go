@@ -58,3 +58,11 @@ const (
 const (
 	callbackExtraKeyThinking = "thinking"
 )
+
+type toolChoice string
+
+const (
+	toolChoiceNone     toolChoice = "none"
+	toolChoiceAuto     toolChoice = "auto"
+	toolChoiceRequired toolChoice = "required"
+)
