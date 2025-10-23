@@ -35,6 +35,7 @@ func TestEmbedStrings(t *testing.T) {
 		APIKey:     "{your-api-key}",
 		APIVersion: "2024-06-01",
 		Model:      "gpt-4o-2024-05-13",
+		BatchSize:  100,
 	})
 
 	assert.NoError(t, err)
