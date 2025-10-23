@@ -38,8 +38,9 @@ import (
 type completionAPIChatModel struct {
 	client *arkruntime.Client
 
-	tools    []tool
-	rawTools []*schema.ToolInfo
+	tools      []tool
+	rawTools   []*schema.ToolInfo
+	toolChoice *schema.ToolChoice
 
 	model            string
 	maxTokens        *int
@@ -81,6 +82,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		TopP:        cm.topP,
 		Stop:        cm.stop,
 		Tools:       nil,
+		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
 	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
@@ -107,10 +109,11 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	}
 
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages: in,
-		Tools:    tools, // join tool info from call options
-		Config:   reqConf,
-		Extra:    map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
+		Messages:   in,
+		Tools:      tools, // join tool info from call options
+		ToolChoice: options.ToolChoice,
+		Config:     reqConf,
+		Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 
 	defer func() {
@@ -157,6 +160,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 		TopP:        cm.topP,
 		Stop:        cm.stop,
 		Tools:       nil,
+		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
 	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
@@ -186,10 +190,11 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 	}
 
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages: in,
-		Tools:    tools,
-		Config:   reqConf,
-		Extra:    map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
+		Messages:   in,
+		Tools:      tools,
+		ToolChoice: options.ToolChoice,
+		Config:     reqConf,
+		Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
 	})
 	defer func() {
 		if err != nil {
@@ -341,6 +346,21 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 
 			req.Tools = append(req.Tools, arkTool)
 		}
+	}
+
+	if options.ToolChoice != nil {
+		var tc toolChoice
+		switch *options.ToolChoice {
+		case schema.ToolChoiceForbidden:
+			tc = toolChoiceNone
+		case schema.ToolChoiceAllowed:
+			tc = toolChoiceAuto
+		case schema.ToolChoiceForced:
+			tc = toolChoiceRequired
+		default:
+			tc = toolChoiceAuto
+		}
+		req.ToolChoice = tc
 	}
 
 	return req, nil

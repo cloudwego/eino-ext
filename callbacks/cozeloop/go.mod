@@ -4,8 +4,8 @@ go 1.23.0
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/bytedance/sonic v1.13.2
-	github.com/cloudwego/eino v0.4.7
+	github.com/bytedance/sonic v1.14.1
+	github.com/cloudwego/eino v0.5.10-0.20251023063927-78348d9948c8
 	github.com/coze-dev/cozeloop-go v0.1.7
 	github.com/coze-dev/cozeloop-go/spec v0.1.5
 	github.com/smartystreets/goconvey v1.8.1
@@ -15,11 +15,11 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/bluele/gcache v0.0.2 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
-	github.com/bytedance/sonic/loader v0.2.4 // indirect
-	github.com/cloudwego/base64x v0.1.5 // indirect
+	github.com/bytedance/sonic/loader v0.3.0 // indirect
+	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.0 // indirect
+	github.com/eino-contrib/jsonschema v1.0.1 // indirect
 	github.com/getkin/kin-openapi v0.118.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
