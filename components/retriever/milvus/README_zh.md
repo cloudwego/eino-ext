@@ -1,21 +1,17 @@
-# Milvus 搜索
+# Milvus 检索器
 
-[English](README.md) | [简体中文](README_zh.md)
-
-基于 Milvus 2.x 的向量搜索实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Retriever` 接口的存储方案。该组件可无缝集成
-Eino 的向量存储和检索系统，增强语义搜索能力。
+[English](README.md) | 简体中文
 
 ## 快速开始
 
 ### 安装
 
-它需要 milvus-sdk-go 客户端版本 2.4.x
-
 ```bash
-go get github.com/eino-project/eino/retriever/milvus@latest
+go get github.com/milvus-io/milvus/client/v2
+go get github.com/cloudwego/eino-ext/components/retriever/milvus
 ```
 
-### 创建 Milvus 搜索
+### 示例
 
 ```go
 package main
@@ -24,120 +20,108 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
-	
-	"github.com/cloudwego/eino-ext/components/embedding/ark"
-	"github.com/milvus-io/milvus-sdk-go/v2/client"
-	
+
 	"github.com/cloudwego/eino-ext/components/retriever/milvus"
+	"github.com/cloudwego/eino/components/embedding"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
 func main() {
-	// Get the environment variables
-	addr := os.Getenv("MILVUS_ADDR")
-	username := os.Getenv("MILVUS_USERNAME")
-	password := os.Getenv("MILVUS_PASSWORD")
-	arkApiKey := os.Getenv("ARK_API_KEY")
-	arkModel := os.Getenv("ARK_MODEL")
-	
-	// Create a client
-	ctx := context.Background()
-	cli, err := client.NewClient(ctx, client.Config{
-		Address:  addr,
-		Username: username,
-		Password: password,
+	// 创建 Milvus 客户端
+	client, err := milvusclient.New(context.Background(), &milvusclient.ClientConfig{
+		Address: "localhost:19530",
 	})
 	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-		return
+		log.Fatal(err)
 	}
-	defer cli.Close()
-	
-	// Create an embedding model
-	emb, err := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
-		APIKey: arkApiKey,
-		Model:  arkModel,
+	defer client.Close(context.Background())
+
+	// 创建嵌入模型（示例使用假设的嵌入服务）
+	embeddingModel := embedding.NewOpenAIEmbedding(&embedding.OpenAIConfig{
+		APIKey: "your-api-key",
+		Model:  "text-embedding-ada-002",
 	})
-	
-	// Create a retriever
-	retriever, err := milvus.NewRetriever(ctx, &milvus.RetrieverConfig{
-		Client:      cli,
-		Collection:  "",
-		Partition:   nil,
-		VectorField: "",
-		OutputFields: []string{
-			"id",
-			"content",
-			"metadata",
-		},
-		DocumentConverter: nil,
-		MetricType:        "",
-		TopK:              0,
-		ScoreThreshold:    5,
-		Sp:                nil,
-		Embedding:         emb,
+
+	// 创建 Milvus 检索器
+	retriever, err := milvus.NewRetriever(&milvus.RetrieverConfig{
+		Client:     client,
+		Collection: "my_documents",
+		TopK:       10,
+		Embedding:  embeddingModel,
 	})
 	if err != nil {
-		log.Fatalf("Failed to create retriever: %v", err)
-		return
+		log.Fatal(err)
 	}
-	
-	// Retrieve documents
-	documents, err := retriever.Retrieve(ctx, "milvus")
+
+	// 执行语义搜索
+	docs, err := retriever.Retrieve(context.Background(), "什么是机器学习？")
 	if err != nil {
-		log.Fatalf("Failed to retrieve: %v", err)
-		return
+		log.Fatal(err)
 	}
-	
-	// Print the documents
-	for i, doc := range documents {
-		fmt.Printf("Document %d:\n", i)
-		fmt.Printf("title: %s\n", doc.ID)
-		fmt.Printf("content: %s\n", doc.Content)
-		fmt.Printf("metadata: %v\n", doc.MetaData)
+
+	// 处理结果
+	for i, doc := range docs {
+		fmt.Printf("文档 %d: %s\n", i+1, doc.PageContent)
+		fmt.Printf("相似度分数: %v\n", doc.MetaData["score"])
+		fmt.Println("---")
 	}
 }
 ```
 
-## 配置
+## 配置说明
+
+### RetrieverConfig
+
+| 参数 | 类型 | 必填/可选 | 默认值 | 描述 |
+|------|------|-----------|--------|------|
+| `Client` | `*milvusclient.Client` | **必填** | - | 用于数据库操作的 Milvus 客户端实例 |
+| `Collection` | `string` | 可选 | `"eino_collection"` | 要搜索的 Milvus 集合名称 |
+| `TopK` | `int` | 可选 | `5` | 要检索的文档最大数量 |
+| `Embedding` | `embedding.Embedder` | 可选 | `nil` | 用于将文本查询转换为向量的嵌入器 |
+| `DocumentConverter` | `DocumentConverter` | 可选 | 默认转换器 | 将 Milvus 搜索结果转换为 schema.Document 对象 |
+| `VectorConverter` | `VectorConverter` | 可选 | 默认转换器 | 将 float64 向量转换为 Milvus entity.Vector 格式 |
+
+### 搜索选项
+
+检索器支持多种搜索选项，可以传递给 `Retrieve` 方法：
+
+#### WithLimit
 
 ```go
-type RetrieverConfig struct {
-    // Client 是要调用的 milvus 客户端
-    // 必需
-    Client client.Client
-
-    // Retriever 通用配置
-    // Collection 是 milvus 数据库中的集合名称
-    // 可选，默认值为 "eino_collection"
-    Collection string
-    // Partition 是集合的分区名称
-    // 可选，默认值为空
-    Partition []string
-    // VectorField 是集合中的向量字段名称
-    // 可选，默认值为 "vector"
-    VectorField string
-    // OutputFields 是要返回的字段
-    // 可选，默认值为空
-    OutputFields []string
-    // DocumentConverter 是将搜索结果转换为 s.Document 的函数
-    // 可选，默认值为 defaultDocumentConverter
-    DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*s.Document, error)
-    // MetricType 是向量的度量类型
-    // 可选，默认值为 "HAMMING"
-    MetricType entity.MetricType
-    // TopK 是要返回的前 k 个结果
-    // 可选，默认值为 5
-    TopK int
-    // ScoreThreshold 是搜索结果的阈值
-    // 可选，默认值为 0
-    ScoreThreshold float64
-    // SearchParams
-    // 可选，默认值为 entity.IndexAUTOINDEXSearchParam，级别为 1
-    Sp entity.SearchParam
-
-    // Embedding 是从 s.Document 的内容中嵌入需要嵌入的值的方法
-    // 必需的
-    Embedding embedding.Embedder
-}
+// 为特定搜索覆盖 TopK 值
+docs, err := retriever.Retrieve(ctx, "查询", milvus.WithLimit(20))
 ```
+
+#### WithHybridSearchOption
+
+```go
+// 使用混合搜索处理更复杂的场景
+hybridSearch := milvus.NewHybridSearchOption("vector_field", 10).
+	WithFilter("category == 'technology'").
+	WithOffset(5)
+
+docs, err := retriever.Retrieve(ctx, "查询", milvus.WithHybridSearchOption(hybridSearch))
+```
+
+### 混合搜索配置
+
+`HybridSearch` 类型提供高级搜索功能：
+
+| 方法 | 描述 | 必填/可选 |
+|------|------|----------|
+| `WithANNSField(field)` | 设置向量字段名称 | 可选 |
+| `WithFilter(expr)` | 添加布尔过滤表达式 | 可选 |
+| `WithGroupByField(field)` | 按字段分组结果 | 可选 |
+| `WithGroupSize(size)` | 设置分组大小 | 可选 |
+| `WithStrictGroupSize(strict)` | 强制严格分组大小 | 可选 |
+| `WithSearchParam(key, value)` | 添加搜索参数 | 可选 |
+| `WithAnnParam(param)` | 设置 ANN 参数 | 可选 |
+| `WithOffset(offset)` | 跳过结果 | 可选 |
+| `WithIgnoreGrowing(ignore)` | 忽略增长段 | 可选 |
+| `WithTemplateParam(key, val)` | 添加模板参数 | 可选 |
+
+## 向量维度计算
+
+使用 Milvus 时，需要确保向量维度与集合模式匹配。维度取决于您的嵌入模型。
+
+有关向量维度和集合设置的更多信息，请参考 [Milvus 官方文档](https://milvus.io/docs)。
