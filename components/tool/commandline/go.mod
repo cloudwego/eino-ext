@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/cloudwego/eino v0.4.7
 	github.com/docker/docker v28.0.4+incompatible
-	github.com/eino-contrib/jsonschema v1.0.0
+	github.com/eino-contrib/jsonschema v1.0.2
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.10.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8

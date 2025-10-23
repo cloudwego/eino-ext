@@ -24,7 +24,7 @@ import (
 )
 
 type GetRequest struct {
-	URL string `json:"url" jsonschema:"description=The URL to make the GET request"`
+	URL string `json:"url" jsonschema_description:"The URL to make the GET request"`
 }
 
 func (r *GetRequestTool) Get(ctx context.Context, req *GetRequest) (string, error) {

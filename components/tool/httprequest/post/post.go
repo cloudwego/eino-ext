@@ -25,8 +25,8 @@ import (
 )
 
 type PostRequest struct {
-	URL  string `json:"url" jsonschema:"description=The URL to make the POST request"`
-	Body string `json:"body" jsonschema:"description=The body to send in the POST request"`
+	URL  string `json:"url" jsonschema_description:"The URL to make the POST request"`
+	Body string `json:"body" jsonschema_description:"The body to send in the POST request"`
 }
 
 func (r *PostRequestTool) Post(ctx context.Context, req *PostRequest) (string, error) {

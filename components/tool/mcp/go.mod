@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/bytedance/sonic v1.13.2
 	github.com/cloudwego/eino v0.4.7
-	github.com/eino-contrib/jsonschema v1.0.0
+	github.com/eino-contrib/jsonschema v1.0.2
 	github.com/mark3labs/mcp-go v0.41.1
 	github.com/stretchr/testify v1.9.0
 )

@@ -9,7 +9,7 @@ require (
 	github.com/chromedp/chromedp v0.13.3
 	github.com/cloudwego/eino v0.4.7
 	github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2 v2.0.0-20250707031732-1bfb5847488c
-	github.com/eino-contrib/jsonschema v1.0.0
+	github.com/eino-contrib/jsonschema v1.0.2
 	github.com/stretchr/testify v1.9.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 )

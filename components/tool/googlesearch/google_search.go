@@ -214,10 +214,10 @@ func getDescFromPageMap(pageMap googleapi.RawMessage) (string, bool, error) {
 }
 
 type SearchRequest struct {
-	Query  string `json:"query" jsonschema:"description=queried string to the search engine"`
-	Num    int    `json:"num,omitempty" jsonschema:"description=number of search results to return, valid values are between 1 and 10, inclusive"`
-	Offset int    `json:"offset,omitempty" jsonschema:"description=the index of the first result to return."`
-	Lang   string `json:"lang,omitempty" jsonschema:"description=sets the user interface language, default english. usually represented by a 2-4 letter code in ISO 639-1. e.g. en, ja, zh-CN"`
+	Query  string `json:"query" jsonschema_description:"queried string to the search engine"`
+	Num    int    `json:"num,omitempty" jsonschema_description:"number of search results to return, valid values are between 1 and 10, inclusive"`
+	Offset int    `json:"offset,omitempty" jsonschema_description:"the index of the first result to return."`
+	Lang   string `json:"lang,omitempty" jsonschema_description:"sets the user interface language, default english. usually represented by a 2-4 letter code in ISO 639-1. e.g. en, ja, zh-CN"`
 }
 
 type SearchResult struct {

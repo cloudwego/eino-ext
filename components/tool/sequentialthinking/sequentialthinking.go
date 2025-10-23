@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	
+
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/components/tool/utils"
 )
@@ -90,26 +90,26 @@ You should:
 // ThoughtRequest represents a single step in the sequential thinking process.
 // It captures the thought content and metadata about the thinking process.
 type ThoughtRequest struct {
-	Thought           string `json:"thought" jsonschema:"required,description=Your current thinking step"`
-	ThoughtNumber     int    `json:"thought_number" jsonschema:"required,description=Current thought number"`
-	TotalThoughts     int    `json:"total_thoughts" jsonschema:"required,description=Estimated total thoughts needed"`
-	IsRevision        bool   `json:"is_revision,omitempty" jsonschema:"description=Whether this revises previous thinking"`
-	RevisesThought    int    `json:"revises_thought,omitempty" jsonschema:"description=Which thought is being reconsidered"`
-	BranchFromThought int    `json:"branch_from_thought,omitempty" jsonschema:"description=Branching point thought number"`
-	BranchID          string `json:"branch_id,omitempty" jsonschema:"description=Branch identifier"`
-	NeedsMoreThoughts bool   `json:"needs_more_thoughts,omitempty" jsonschema:"description=If more thoughts are needed"`
-	NextThoughtNeeded bool   `json:"next_thought_needed" jsonschema:"required,description=Whether another thought step is needed"`
+	Thought           string `json:"thought" jsonschema:"required" jsonschema_description:"Your current thinking step"`
+	ThoughtNumber     int    `json:"thought_number" jsonschema:"required" jsonschema_description:"Current thought number"`
+	TotalThoughts     int    `json:"total_thoughts" jsonschema:"required" jsonschema_description:"Estimated total thoughts needed"`
+	IsRevision        bool   `json:"is_revision,omitempty" jsonschema_description:"Whether this revises previous thinking"`
+	RevisesThought    int    `json:"revises_thought,omitempty" jsonschema_description:"Which thought is being reconsidered"`
+	BranchFromThought int    `json:"branch_from_thought,omitempty" jsonschema_description:"Branching point thought number"`
+	BranchID          string `json:"branch_id,omitempty" jsonschema_description:"Branch identifier"`
+	NeedsMoreThoughts bool   `json:"needs_more_thoughts,omitempty" jsonschema_description:"If more thoughts are needed"`
+	NextThoughtNeeded bool   `json:"next_thought_needed" jsonschema:"required" jsonschema_description:"Whether another thought step is needed"`
 }
 
 // ThoughtResult represents the formatted output of processing a thought.
 // It contains the content to display and metadata about the thinking state.
 type ThoughtResult struct {
-	Content              string   `json:"content" jsonschema:"required,description=Your current thinking step"`
-	ThoughtNumber        int      `json:"thought_number" jsonschema:"required,description=Current thought number"`
-	TotalThoughts        int      `json:"total_thoughts" jsonschema:"required,description=Estimated total thoughts needed"`
-	NextThoughtNeeded    bool     `json:"next_thought_needed" jsonschema:"required,description=Which thought is needed"`
-	Branches             []string `json:"branches" jsonschema:"description=Branch identifier"`
-	ThoughtHistoryLength int      `json:"thought_history_length" jsonschema:"description=Length of thoughts history needed"`
+	Content              string   `json:"content" jsonschema:"required" jsonschema_description:"Your current thinking step"`
+	ThoughtNumber        int      `json:"thought_number" jsonschema:"required" jsonschema_description:"Current thought number"`
+	TotalThoughts        int      `json:"total_thoughts" jsonschema:"required" jsonschema_description:"Estimated total thoughts needed"`
+	NextThoughtNeeded    bool     `json:"next_thought_needed" jsonschema:"required" jsonschema_description:"Which thought is needed"`
+	Branches             []string `json:"branches" jsonschema_description:"Branch identifier"`
+	ThoughtHistoryLength int      `json:"thought_history_length" jsonschema_description:"Length of thoughts history needed"`
 }
 
 // thinkingServer maintains the state of the sequential thinking process.
@@ -131,6 +131,7 @@ func newThinkingServer() *thinkingServer {
 // validate checks the ThoughtRequest for validity and consistency.
 // Parameters:
 //   - input: The thought request to validate
+//
 // Returns:
 //   - td: The unmarshalled ThoughtRequest, or nil if an error occurred
 //   - err: An error if validation fails, or nil if validation succeeds
@@ -161,6 +162,7 @@ func (t *thinkingServer) validate(req *ThoughtRequest) *ThoughtRequest {
 // formatThought creates a formatted string representation of a thought.
 // Parameters:
 //   - td: The ThoughtRequest to format
+//
 // Returns: A string with the formatted thought, including decorative borders and metadata
 func (t *thinkingServer) formatThought(td *ThoughtRequest) string {
 	var prefix, content string
@@ -174,10 +176,10 @@ func (t *thinkingServer) formatThought(td *ThoughtRequest) string {
 		prefix = "💭 Thought"
 		content = ""
 	}
-	
+
 	header := fmt.Sprintf("%s %d/%d%s", prefix, td.ThoughtNumber, td.TotalThoughts, content)
 	border := strings.Repeat("-", max(len(header), len(td.Thought))+4)
-	
+
 	return fmt.Sprintf(`
 ┌%s┐
 │ %s │
@@ -191,6 +193,7 @@ func (t *thinkingServer) formatThought(td *ThoughtRequest) string {
 // Parameters:
 //   - ctx: The context for the operation
 //   - td: The ThoughtRequest to process
+//
 // Returns:
 //   - result: The processed thought result
 //   - err: An error if processing fails
@@ -199,15 +202,15 @@ func (t *thinkingServer) processThought(_ context.Context, td *ThoughtRequest) (
 	if validated.ThoughtNumber > validated.TotalThoughts {
 		validated.TotalThoughts = validated.ThoughtNumber
 	}
-	
+
 	t.thoughtHistory = append(t.thoughtHistory, validated)
-	
+
 	if validated.BranchID != "" {
 		t.branches[validated.BranchID] = append(t.branches[validated.BranchID], validated)
 	}
-	
+
 	thought := t.formatThought(validated)
-	
+
 	return &ThoughtResult{
 		Content:              thought,
 		ThoughtNumber:        validated.ThoughtNumber,
@@ -227,11 +230,11 @@ func NewTool() (tool.InvokableTool, error) {
 	if thinking == nil {
 		return nil, errors.New("failed to create thinking server")
 	}
-	
+
 	thinkingTool, err := utils.InferTool(toolName, toolDesc, thinking.processThought)
 	if err != nil {
 		return nil, fmt.Errorf("failed to infer tool: %w", err)
 	}
-	
+
 	return thinkingTool, nil
 }
