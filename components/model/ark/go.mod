@@ -5,12 +5,13 @@ go 1.23.0
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.5.7
-	github.com/eino-contrib/jsonschema v1.0.1
+	github.com/cloudwego/eino v0.5.10
+	github.com/eino-contrib/jsonschema v1.0.2
 	github.com/openai/openai-go v1.10.1
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.11.1
 	github.com/volcengine/volcengine-go-sdk v1.1.44
+
 )
 
 require (

@@ -608,8 +608,9 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 	}
 
 	cbInput := &model.CallbackInput{
-		Messages: in,
-		Tools:    c.rawTools,
+		Messages:   in,
+		Tools:      c.rawTools,
+		ToolChoice: options.ToolChoice,
 		Config: &model.Config{
 			Model:       req.Model,
 			MaxTokens:   req.MaxTokens,
