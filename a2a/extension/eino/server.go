@@ -153,7 +153,7 @@ func RegisterServerHandlers(ctx context.Context, a adk.Agent, cfg *ServerConfig)
 		MessageStreamingHandler: builder.buildStreamHandler(),
 		TaskIDGenerator:         cfg.TaskIDGenerator,
 		CancelTaskHandler:       builder.buildTaskCanceler(),
-		TaskEventsConsolidator:  builder.einoResponseEventConcatenator,
+		TaskEventsConsolidator:  builder.einoResponseEventConsolidator,
 		Logger:                  cfg.Logger,
 		TaskStore:               cfg.TaskStore,
 		TaskLocker:              cfg.TaskLocker,
@@ -358,15 +358,15 @@ func (d *defaultEventConvertor) convAgentEvent(
 
 	// llm&tool output
 	if event.Output != nil && event.Output.MessageOutput != nil {
-		return false, d.messageVar2Status(ctx, event.AgentName, event.Output.MessageOutput, writer)
+		return false, d.messageVar2Status(ctx, event.Output.MessageOutput, writer)
 	}
 
 	// empty agent event
 	return false, nil
 }
 
-func (d *defaultEventConvertor) messageVar2Status(ctx context.Context, agentName string, messageVar *adk.MessageVariant, writer func(p models.ResponseEvent) (err error)) error {
-	artifactID, err := d.artifactIDGen(ctx)
+func (d *defaultEventConvertor) messageVar2Status(ctx context.Context, messageVar *adk.MessageVariant, writer func(p models.ResponseEvent) (err error)) error {
+	messageID, err := d.messageIDGen(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to generate message ID: %w", err)
 	}
@@ -380,24 +380,22 @@ func (d *defaultEventConvertor) messageVar2Status(ctx context.Context, agentName
 	}
 	if p != nil {
 		return writer(models.ResponseEvent{
-			TaskArtifactUpdateEventContent: &models.TaskArtifactUpdateEventContent{
-				Artifact: models.Artifact{
-					ArtifactID: artifactID,
-					Name:       agentName,
-					Parts:      p,
-				},
-				LastChunk: true,
+			Message: &models.Message{
+				Role:      models.RoleAgent,
+				MessageID: messageID,
+				Parts:     p,
 			},
 		})
 	}
 	return nil
 }
 
-func (a *a2aHandlersBuilder) einoResponseEventConcatenator(ctx context.Context, t *models.Task, events []models.ResponseEvent, _ error) *models.TaskContent {
+func (a *a2aHandlersBuilder) einoResponseEventConsolidator(_ context.Context, params *server.InputParams, events []models.ResponseEvent, _ error) *models.TaskContent {
+	t := params.Task
 	tc := &models.TaskContent{
 		Status:    t.Status,
 		Artifacts: t.Artifacts,
-		History:   t.History,
+		History:   append(t.History, params.Input),
 		Metadata:  t.Metadata,
 	}
 	if tc.Metadata == nil {

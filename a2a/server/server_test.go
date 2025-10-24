@@ -117,12 +117,13 @@ func TestStreamingMessageHandler(t *testing.T) {
 			}
 			return nil
 		},
-		TaskEventsConsolidator: func(ctx context.Context, t *models.Task, events []models.ResponseEvent, handlerErr error) *models.TaskContent {
+		TaskEventsConsolidator: func(ctx context.Context, params *InputParams, events []models.ResponseEvent, handlerErr error) *models.TaskContent {
+			ot := params.Task
 			tc := &models.TaskContent{
-				Status:    t.Status,
-				Artifacts: t.Artifacts,
-				History:   t.History,
-				Metadata:  t.Metadata,
+				Status:    ot.Status,
+				Artifacts: ot.Artifacts,
+				History:   append(ot.History, params.Input),
+				Metadata:  ot.Metadata,
 			}
 			for _, event := range events {
 				if event.Message != nil {

@@ -42,7 +42,7 @@ type InputParams struct {
 type MessageHandler func(ctx context.Context, params *InputParams) (*models.TaskContent, error)
 type MessageStreamingHandler func(ctx context.Context, params *InputParams, writer ResponseEventWriter) error
 type CancelTaskHandler func(ctx context.Context, params *InputParams) (*models.TaskContent, error)
-type TaskEventsConsolidator func(ctx context.Context, t *models.Task, events []models.ResponseEvent, handleErr error) *models.TaskContent
+type TaskEventsConsolidator func(ctx context.Context, params *InputParams, events []models.ResponseEvent, handleErr error) *models.TaskContent
 type Logger func(ctx context.Context, format string, v ...any)
 
 type ResponseEventWriter interface {
@@ -492,11 +492,12 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			ctx:       ctx,
 			s:         s,
 		}
-		err = s.messageStreamingHandler(ctx, &InputParams{
+		params := &InputParams{
 			Task:     t,
 			Input:    &input.Message,
 			Metadata: input.Metadata,
-		}, sr)
+		}
+		err = s.messageStreamingHandler(ctx, params, sr)
 		if err != nil {
 			pushErr := s.queue.Push(ctx, t.ID, nil, err)
 			if err != nil {
@@ -504,7 +505,7 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			}
 		}
 
-		tc := s.taskEventsConsolidator(ctx, t, sr.events, err)
+		tc := s.taskEventsConsolidator(ctx, params, sr.events, err)
 		nt := loadTaskContext(t, tc)
 
 		err = s.taskStore.Save(ctx, nt)
@@ -542,7 +543,7 @@ func buildMessageHandlerByStream(sh MessageStreamingHandler, tm TaskEventsConsol
 			events: make([]models.ResponseEvent, 0),
 		}
 		err := sh(ctx, params, localWriter)
-		return tm(ctx, params.Task, localWriter.events, err), nil
+		return tm(ctx, params, localWriter.events, err), nil
 	}
 }
 
