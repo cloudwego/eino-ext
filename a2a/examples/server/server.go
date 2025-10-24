@@ -158,15 +158,15 @@ func main() {
 	hz.Run()
 }
 
-func myTaskModifier(ctx context.Context, t *models.Task, events []models.ResponseEvent, _ error) *models.TaskContent {
+func myTaskModifier(ctx context.Context, params *server.InputParams, events []models.ResponseEvent, _ error) *models.TaskContent {
+	t := params.Task
 	result := &models.TaskContent{
 		Status:    t.Status,
 		Artifacts: make([]*models.Artifact, len(t.Artifacts)),
-		History:   make([]*models.Message, len(t.History)),
+		History:   append(t.History, params.Input),
 		Metadata:  t.Metadata,
 	}
 	copy(result.Artifacts, t.Artifacts)
-	copy(result.History, t.History)
 
 	for _, e := range events {
 		if e.TaskContent != nil {
