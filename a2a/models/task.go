@@ -35,8 +35,8 @@ const (
 	TaskStateCompleted     TaskState = "completed"      // Task finished successfully. (Terminal state)
 	TaskStateCanceled      TaskState = "canceled"       // Task was canceled by the client or potentially by the server. (Terminal state)
 	TaskStateFailed        TaskState = "failed"         // Task terminated due to an error during processing. (Terminal state)
-	TaskStateRejected      TaskState = "rejected"       //Task has be rejected by the remote agent (Terminal state)
-	TaskStateAuthRequired  TaskState = "auth-required"  //Authentication required from client/user to proceed. (Task is paused)
+	TaskStateRejected      TaskState = "rejected"       // Task has be rejected by the remote agent (Terminal state)
+	TaskStateAuthRequired  TaskState = "auth-required"  // Authentication required from client/user to proceed. (Task is paused)
 	TaskStateUnknown       TaskState = "unknown"        // The state of the task cannot be determined (e.g., task ID invalid or expired). (Effectively a terminal state from client's PoV for that ID)
 )
 
@@ -78,18 +78,8 @@ type Task struct {
 	// This can be used for application-specific data, tracing info, etc.
 	Metadata map[string]any `json:"metadata,omitempty"`
 
-	//Kind string = "task" todo
+	// Kind string = "task" todo
 }
-
-// todo: if add
-//func (t *Task) TaskContent() *TaskContent {
-//	return &TaskContent{
-//		Status:    t.Status,
-//		Artifacts: t.Artifacts,
-//		History:   t.History,
-//		Metadata:  t.Metadata,
-//	}
-//}
 
 func (t *Task) isSendResponse()                 {}
 func (t *Task) isSendStreamingMessageResponse() {}
@@ -193,7 +183,7 @@ type TaskArtifactUpdateEvent struct {
 	// Arbitrary metadata for this specific artifact update event.
 	Metadata map[string]any `json:"metadata,omitempty"`
 	// type discriminator, literal value
-	//Kind string = "artifact-update" todo
+	// Kind string = "artifact-update" todo
 }
 
 type TaskArtifactUpdateEventContent struct {
