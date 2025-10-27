@@ -623,6 +623,12 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 		customHeader: map[string]string{
 			"h1": "v1",
 		},
+		responseFormat: &ResponseFormat{
+			Type: arkModel.ResponseFormatJSONSchema,
+			JSONSchema: &arkModel.ResponseFormatJSONSchemaJSONSchemaParam{
+				Name: "json_schema",
+			},
+		},
 	}
 
 	PatchConvey("", t, func() {
@@ -688,6 +694,7 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 		assert.Len(t, reqParams.req.Tools, 1)
 		assert.Equal(t, "test tool", reqParams.req.Tools[0].OfFunction.Name)
 		assert.Len(t, reqParams.opts, 3)
+		assert.Equal(t, "json_schema", reqParams.req.Text.Format.OfJSONSchema.Name)
 	})
 }
 

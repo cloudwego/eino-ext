@@ -449,10 +449,8 @@ type responsesAPIRequestParams struct {
 func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options,
 	specOptions *arkOptions) (reqParams *responsesAPIRequestParams, err error) {
 
-	var text *responses.ResponseTextConfigParam
+	text := responses.ResponseTextConfigParam{}
 	if cm.responseFormat != nil {
-		text.Format = responses.ResponseFormatTextConfigUnionParam{}
-
 		switch cm.responseFormat.Type {
 		case arkModel.ResponseFormatText:
 			text.Format.OfText = ptrOf(shared.NewResponseFormatTextParam())
@@ -475,6 +473,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 				Schema:      paramsJSONSchema,
 				Strict:      param.NewOpt(cm.responseFormat.JSONSchema.Strict),
 			}
+
 		default:
 			return nil, fmt.Errorf("unsupported response format type: %s", cm.responseFormat.Type)
 		}
@@ -482,7 +481,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 
 	reqParams = &responsesAPIRequestParams{
 		req: &responses.ResponseNewParams{
-			Text:            ptrFromOrZero(text),
+			Text:            text,
 			Model:           ptrFromOrZero(options.Model),
 			MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
 			Temperature:     newOpenaiFloatOpt(options.Temperature),
