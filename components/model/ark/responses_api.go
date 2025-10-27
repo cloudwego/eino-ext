@@ -451,15 +451,32 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 
 	var text *responses.ResponseTextConfigParam
 	if cm.responseFormat != nil {
-		text = &responses.ResponseTextConfigParam{
-			Format: responses.ResponseFormatTextConfigUnionParam{
-				OfText: ptrOf(shared.NewResponseFormatTextParam()),
-			},
-		}
-		if cm.responseFormat.Type == arkModel.ResponseFormatJsonObject {
-			text.Format = responses.ResponseFormatTextConfigUnionParam{
-				OfJSONObject: ptrOf(shared.NewResponseFormatJSONObjectParam()),
+		text.Format = responses.ResponseFormatTextConfigUnionParam{}
+
+		switch cm.responseFormat.Type {
+		case arkModel.ResponseFormatText:
+			text.Format.OfText = ptrOf(shared.NewResponseFormatTextParam())
+		case arkModel.ResponseFormatJsonObject:
+			text.Format.OfJSONObject = ptrOf(shared.NewResponseFormatJSONObjectParam())
+		case arkModel.ResponseFormatJSONSchema:
+			b, err := sonic.Marshal(cm.responseFormat.JSONSchema)
+			if err != nil {
+				return nil, fmt.Errorf("marshal JSONSchema fail: %w", err)
 			}
+
+			var paramsJSONSchema map[string]any
+			if err = sonic.Unmarshal(b, &paramsJSONSchema); err != nil {
+				return nil, fmt.Errorf("unmarshal JSONSchema fail: %w", err)
+			}
+
+			text.Format.OfJSONSchema = &responses.ResponseFormatTextJSONSchemaConfigParam{
+				Name:        cm.responseFormat.JSONSchema.Name,
+				Description: param.NewOpt(cm.responseFormat.JSONSchema.Description),
+				Schema:      paramsJSONSchema,
+				Strict:      param.NewOpt(cm.responseFormat.JSONSchema.Strict),
+			}
+		default:
+			return nil, fmt.Errorf("unsupported response format type: %s", cm.responseFormat.Type)
 		}
 	}
 
