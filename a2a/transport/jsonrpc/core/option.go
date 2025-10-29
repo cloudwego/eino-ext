@@ -43,6 +43,8 @@ type Options struct {
 	tracer   tracer.Tracer
 	cliTrans ClientRounder
 	srvTrans ServerRounder
+
+	idGen IDGenerator
 }
 
 func defaultOptions() Options {
@@ -109,5 +111,11 @@ func WithCallMiddleware(mw CallMiddleware) Option {
 func WithHandleMiddleware(mw HandleMiddleware) Option {
 	return func(options *Options) {
 		options.hdlMWs = append(options.hdlMWs, mw)
+	}
+}
+
+func WithJSONRPCIDGenerator(gen IDGenerator) Option {
+	return func(options *Options) {
+		options.idGen = gen
 	}
 }

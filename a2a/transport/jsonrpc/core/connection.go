@@ -38,6 +38,11 @@ func NewConnection(ctx context.Context, opts ...Option) (context.Context, Connec
 	conn := &connection{
 		tracer:    options.tracer,
 		outbounds: make(map[string]*rpcCall),
+		idGen:     options.idGen,
+	}
+
+	if conn.idGen == nil {
+		conn.idGen = allocateId
 	}
 
 	if options.cliTrans != nil {
@@ -97,6 +102,8 @@ func ConvertError(rawErr error) *Error {
 	return NewError(InternalErrorCode, rawErr.Error(), nil)
 }
 
+type IDGenerator func(ctx context.Context) ID
+
 type connection struct {
 	hdls      map[string]requestHandlerFunc
 	notifHdls map[string]NotificationHandleEndpoint
@@ -108,6 +115,8 @@ type connection struct {
 	cliTrans  ClientRounder
 	srvTrans  ServerRounder
 	outbounds map[string]*rpcCall
+
+	idGen IDGenerator
 }
 
 func (conn *connection) Call(ctx context.Context, method string, req, res interface{}, opts ...CallOption) error {
@@ -136,7 +145,7 @@ func (conn *connection) AsyncCall(ctx context.Context, method string, req interf
 }
 
 func (conn *connection) asyncCall(ctx context.Context, method string, req interface{}) (*rpcCall, error) {
-	newId := allocateId()
+	newId := conn.idGen(ctx)
 	newCall := &rpcCall{
 		id:     newId,
 		ctx:    ctx,

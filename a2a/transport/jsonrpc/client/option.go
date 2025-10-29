@@ -17,13 +17,15 @@
 package client
 
 import (
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/transport"
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/transport/http"
 )
 
 type Options struct {
-	url string
-	hdl transport.ClientTransportHandler
+	url   string
+	hdl   transport.ClientTransportHandler
+	idGen core.IDGenerator
 }
 
 func defaultOptions() Options {
@@ -43,5 +45,11 @@ func WithURL(url string) Option {
 func WithTransportHandler(hdl transport.ClientTransportHandler) Option {
 	return func(options *Options) {
 		options.hdl = hdl
+	}
+}
+
+func WithJSONRPCIDGenerator(gen core.IDGenerator) Option {
+	return func(options *Options) {
+		options.idGen = gen
 	}
 }
