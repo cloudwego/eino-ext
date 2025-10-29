@@ -81,7 +81,7 @@ func (conn *connection) deleteOutBound(id ID) {
 	delete(conn.outbounds, id.String())
 }
 
-func allocateId() ID {
+func allocateId(_ context.Context) ID {
 	return NewIDFromString(uuid.New().String())
 }
 
