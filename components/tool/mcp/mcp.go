@@ -86,7 +86,8 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 		}
 
 		ret = append(ret, &toolHelper{
-			cli: conf.Cli,
+			cli:           conf.Cli,
+			customHeaders: conf.CustomHeaders,
 			info: &schema.ToolInfo{
 				Name:        t.Name,
 				Desc:        t.Description,
