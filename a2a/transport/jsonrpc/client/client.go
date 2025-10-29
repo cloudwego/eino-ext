@@ -34,6 +34,7 @@ var (
 type Client struct {
 	remotePeer conninfo.Peer
 	hdl        transport.ClientTransportHandler
+	idGen      core.IDGenerator
 }
 
 func NewClient(opts ...Option) (*Client, error) {
@@ -45,10 +46,11 @@ func NewClient(opts ...Option) (*Client, error) {
 	if options.url == "" {
 		return nil, errNoURL
 	}
-	cli := &Client{}
-	cli.remotePeer = conninfo.NewPeer(conninfo.PeerTypeURL, options.url)
-	cli.hdl = options.hdl
-	return cli, nil
+	return &Client{
+		remotePeer: conninfo.NewPeer(conninfo.PeerTypeURL, options.url),
+		hdl:        options.hdl,
+		idGen:      options.idGen,
+	}, nil
 }
 
 func (cli *Client) NewConnection(ctx context.Context) (core.Connection, error) {
@@ -64,6 +66,9 @@ func (cli *Client) NewConnection(ctx context.Context) (core.Connection, error) {
 	// server handling
 	if srvTrans, ok := st.ServerCapability(); ok {
 		opts = append(opts, core.WithServerRounder(srvTrans))
+	}
+	if cli.idGen != nil {
+		opts = append(opts, core.WithJSONRPCIDGenerator(cli.idGen))
 	}
 	ctx, conn, err := core.NewConnection(ctx, opts...)
 	if err != nil {
