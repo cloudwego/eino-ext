@@ -1,10 +1,12 @@
 module github.com/cloudwego/eino-ext/components/document/parser/docx
 
-go 1.23.0
+go 1.23.3
+
+toolchain go1.24.4
 
 require (
-	github.com/carmel/gooxml v0.0.0-20220216072414-40ff56130850
 	github.com/cloudwego/eino v0.3.46
+	github.com/eino-contrib/docx2md v0.0.1
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.9.0
 )
@@ -24,6 +26,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
@@ -32,6 +35,7 @@ require (
 	github.com/perimeterx/marshmallow v1.1.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
+	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect

@@ -19,6 +19,7 @@ package mcptool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/bytedance/sonic"
@@ -50,7 +51,7 @@ type Config struct {
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 	if conf.Sess == nil {
-		return nil, fmt.Errorf("mcp client session is nil")
+		return nil, errors.New("mcp client session is nil")
 	}
 
 	listResults, err := conf.Sess.ListTools(ctx, &mcp.ListToolsParams{
