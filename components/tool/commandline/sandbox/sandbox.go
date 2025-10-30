@@ -390,13 +390,26 @@ func (s *DockerSandbox) Cleanup(ctx context.Context) {
 func (s *DockerSandbox) prepareVolumeBindings() ([]string, error) {
 	binds := []string{}
 
-	// Create and add working directory mapping
-	workDir, err := s.ensureHostDir(s.config.WorkDir)
-	if err != nil {
-		return nil, fmt.Errorf("failed to ensure host directory exists: %w", err)
+	// If the user already provided a volume binding that maps to the
+	// configured WorkDir, skip creating an automatic temp host directory
+	// mapping to avoid duplicate mount points.
+	skipAuto := false
+	for _, containerPath := range s.config.VolumeBindings {
+		if containerPath == s.config.WorkDir {
+			skipAuto = true
+			break
+		}
 	}
 
-	binds = append(binds, fmt.Sprintf("%s:%s:rw", workDir, s.config.WorkDir))
+	// Create and add working directory mapping unless user already bound it
+	if !skipAuto {
+		workDir, err := s.ensureHostDir(s.config.WorkDir)
+		if err != nil {
+			return nil, fmt.Errorf("failed to ensure host directory exists: %w", err)
+		}
+
+		binds = append(binds, fmt.Sprintf("%s:%s:rw", workDir, s.config.WorkDir))
+	}
 
 	// Add custom volume bindings
 	for hostPath, containerPath := range s.config.VolumeBindings {
