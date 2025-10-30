@@ -26,10 +26,11 @@ import (
 	std_http "net/http"
 	"net/url"
 
-	"github.com/cloudwego/eino-ext/a2a/models"
-	"github.com/cloudwego/eino-ext/a2a/transport"
 	hertz_client "github.com/cloudwego/hertz/pkg/app/client"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+
+	"github.com/cloudwego/eino-ext/a2a/models"
+	"github.com/cloudwego/eino-ext/a2a/transport"
 
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/client"
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
@@ -37,11 +38,12 @@ import (
 )
 
 type ClientConfig struct {
-	BaseURL       string
-	HandlerPath   string
-	AgentCardPath *string
-	HertzClient   *hertz_client.Client
-	SSEBufferSize *int
+	BaseURL            string
+	HandlerPath        string
+	AgentCardPath      *string
+	HertzClient        *hertz_client.Client
+	SSEBufferSize      *int
+	JSONRPCIDGenerator core.IDGenerator
 }
 
 func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTransport, error) {
@@ -71,9 +73,12 @@ func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTr
 	} else {
 		handlerURL = config.BaseURL
 	}
-	cli, err := client.NewClient(
-		client.WithURL(handlerURL),
-		client.WithTransportHandler(http.NewClientTransportHandler(transOpts...)))
+
+	cliOpts := []client.Option{client.WithURL(handlerURL), client.WithTransportHandler(http.NewClientTransportHandler(transOpts...))}
+	if config.JSONRPCIDGenerator != nil {
+		cliOpts = append(cliOpts, client.WithJSONRPCIDGenerator(config.JSONRPCIDGenerator))
+	}
+	cli, err := client.NewClient(cliOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create jsonrpc client: %w", err)
 	}
