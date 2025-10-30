@@ -19,9 +19,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/cloudwego/eino-ext/components/document/parser/docx"
 	"log"
 	"os"
+
+	"github.com/cloudwego/eino-ext/components/document/parser/docx"
 )
 
 func main() {
@@ -36,11 +37,10 @@ func main() {
 
 	// 2. Configure the parser to include everything.
 	config := &docx.Config{
-		ToSections:      true, // Split content into sections
-		IncludeComments: true,
-		IncludeHeaders:  true,
-		IncludeFooters:  true,
-		IncludeTables:   true,
+		ToSections:     true, // Split content into sections
+		IncludeHeaders: true,
+		IncludeFooters: true,
+		IncludeTables:  true,
 	}
 
 	// 3. Create a new parser instance.
