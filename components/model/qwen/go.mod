@@ -4,8 +4,8 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.5.7
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.0
+	github.com/cloudwego/eino v0.5.10
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.1
 	github.com/smartystreets/goconvey v1.8.1
 )
 
@@ -17,7 +17,7 @@ require (
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.1 // indirect
+	github.com/eino-contrib/jsonschema v1.0.2 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
 	github.com/getkin/kin-openapi v0.118.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
