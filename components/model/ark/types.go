@@ -28,6 +28,7 @@ type SessionCacheConfig struct {
 	// For multi-turn conversations, the ARK ChatModel automatically identifies the most recent
 	// cached message from all inputs and passes its response ID to model to maintain context continuity.
 	// This message and all previous ones are trimmed before being sent to the model.
+	// When both HeadPreviousResponseID and cached message exist, the message's response ID takes precedence.
 	EnableCache bool `json:"enable_cache"`
 
 	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
