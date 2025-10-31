@@ -23,19 +23,33 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"time"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
+	omcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	mcpp "github.com/cloudwego/eino-ext/components/tool/mcp"
 )
 
 func main() {
+	isOfficial := flag.Bool("o", true, "true for official mcp sdk, false for non-official mcp sdk, default is true")
+	flag.Parse()
+	if isOfficial == nil || *isOfficial {
+		runByOfficialMCPSDK()
+	} else {
+		runByNonOfficialMCPSDK()
+	}
+}
+
+func runByNonOfficialMCPSDK() {
 	startMCPServer()
 	time.Sleep(1 * time.Second)
 	ctx := context.Background()
@@ -50,6 +64,41 @@ func main() {
 		}
 		fmt.Println("Name:", info.Name)
 		fmt.Println("Desc:", info.Desc)
+		result, err := mcpTool.(tool.InvokableTool).InvokableRun(ctx, `{"operation":"add", "x":1, "y":1}`)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Result:", result)
+		fmt.Println()
+	}
+}
+
+func runByOfficialMCPSDK() {
+	httpServer := startOfficialMCPServer()
+	time.Sleep(1 * time.Second)
+	ctx := context.Background()
+
+	sess := getMCPClientSession(ctx, httpServer.URL)
+	defer sess.Close()
+
+	mcpTools, err := mcpp.GetTools(ctx, &mcpp.Config{OfficialCli: sess})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for i, mcpTool := range mcpTools {
+		fmt.Println(i, ":")
+		info, err := mcpTool.Info(ctx)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Name:", info.Name)
+		fmt.Println("Desc:", info.Desc)
+		result, err := mcpTool.(tool.InvokableTool).InvokableRun(ctx, `{"x":1, "y":1}`)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Result:", result)
 		fmt.Println()
 	}
 }
@@ -102,9 +151,10 @@ func startMCPServer() {
 			mcp.Description("Second number"),
 		),
 	), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		op := request.Params.Arguments["operation"].(string)
-		x := request.Params.Arguments["x"].(float64)
-		y := request.Params.Arguments["y"].(float64)
+		arg := request.Params.Arguments.(map[string]any)
+		op := arg["operation"].(string)
+		x := arg["x"].(float64)
+		y := arg["y"].(float64)
 
 		var result float64
 		switch op {
@@ -138,6 +188,39 @@ func startMCPServer() {
 		}
 	}()
 }
+
+type AddParams struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+}
+
+func Add(ctx context.Context, req *omcp.CallToolRequest, args AddParams) (*omcp.CallToolResult, any, error) {
+	return &omcp.CallToolResult{
+		Content: []omcp.Content{
+			&omcp.TextContent{Text: fmt.Sprintf("%d", args.X+args.Y)},
+		},
+	}, nil, nil
+}
+
+func getMCPClientSession(ctx context.Context, addr string) *omcp.ClientSession {
+	transport := &omcp.SSEClientTransport{Endpoint: addr}
+	client := omcp.NewClient(&omcp.Implementation{Name: "test", Version: "v1.0.0"}, nil)
+	sess, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return sess
+}
+
+func startOfficialMCPServer() *httptest.Server {
+	server := omcp.NewServer(&omcp.Implementation{Name: "adder", Version: "v0.0.1"}, nil)
+	omcp.AddTool(server, &omcp.Tool{Name: "add", Description: "add two numbers"}, Add)
+
+	handler := omcp.NewSSEHandler(func(*http.Request) *omcp.Server { return server }, nil)
+
+	httpServer := httptest.NewServer(handler)
+	return httpServer
+}
 ```
 
 ## Configuration
@@ -146,9 +229,14 @@ The tool can be configured using the `mcp.Config` struct:
 
 ```go
 type Config struct {
-    // Cli is the MCP (Model Control Protocol) client, ref: https://github.com/mark3labs/mcp-go?tab=readme-ov-file#tools
-    // Notice: should Initialize with server before use
-    Cli client.MCPClient
+	// Cli is the non-official MCP (Model Control Protocol) client, ref: https://github.com/mark3labs/mcp-go?tab=readme-ov-file#tools
+	// Notice: should Initialize with server before use
+	Cli client.MCPClient
+
+	// OfficialCli is the session provided by the official MCP (Model Control Protocol) SDK, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Notice: should Initialize with server before use, use OfficialCli first, if OfficialCli is nil, use Cli
+	OfficialCli *omcp.ClientSession
+
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched
 	ToolNameList []string
@@ -160,3 +248,4 @@ type Config struct {
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [MCP Documentation](https://modelcontextprotocol.io/introduction)
 - [MCP SDK Documentation](https://github.com/mark3labs/mcp-go?tab=readme-ov-file#tools)
+- [Official MCP SDK Documentation](https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools)

@@ -19,6 +19,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -26,28 +27,87 @@ import (
 	"github.com/eino-contrib/jsonschema"
 	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
+	omcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 )
 
 type Config struct {
-	// Cli is the MCP (Model Control Protocol) client, ref: https://github.com/mark3labs/mcp-go?tab=readme-ov-file#tools
+	// Cli is the non-official MCP (Model Control Protocol) client, ref: https://github.com/mark3labs/mcp-go?tab=readme-ov-file#tools
 	// Notice: should Initialize with server before use
 	Cli client.MCPClient
+
+	// OfficialCli is the session provided by the official MCP (Model Control Protocol) SDK, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Notice: should Initialize with server before use, use OfficialCli first, if OfficialCli is nil, use Cli
+	OfficialCli *omcp.ClientSession
+
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched
 	ToolNameList []string
 	// ToolCallResultHandler is a function that processes the result after a tool call completes
 	// It can be used for custom processing of tool call results
 	// If nil, no additional processing will be performed
+	// Notice: when using OfficialCli, ToolCallResultHandler will be ignored
 	ToolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 
+	// MCPToolCallResultHandler is a function that processes the result after a tool call completes
+	// It can be used for custom processing of tool call results
+	// If nil, no additional processing will be performed
+	// Notice: when using Cli, MCPToolCallResultHandler will be ignored
+	MCPToolCallResultHandler func(ctx context.Context, name string, result *omcp.CallToolResult) (*omcp.CallToolResult, error)
+
 	// CustomHeaders specifies the http headers passed to mcp server when requesting.
+	// Notice: when using OfficialCli, CustomHeaders will be ignored
 	CustomHeaders map[string]string
 }
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
+	infoTools, err := getMCPTools(ctx, conf)
+	if err != nil {
+		return nil, fmt.Errorf("get mcp tools fail: %w", err)
+	}
+
+	nameSet := make(map[string]struct{})
+	for _, name := range conf.ToolNameList {
+		nameSet[name] = struct{}{}
+	}
+
+	ret := make([]tool.BaseTool, 0, len(infoTools))
+	for _, t := range infoTools {
+		if len(conf.ToolNameList) > 0 {
+			if _, ok := nameSet[t.Name]; !ok {
+				continue
+			}
+		}
+
+		ret = append(ret, &toolHelper{
+			cli:                           conf.Cli,
+			sess:                          conf.OfficialCli,
+			info:                          t,
+			customHeaders:                 conf.CustomHeaders,
+			toolCallResultHandler:         conf.ToolCallResultHandler,
+			officialToolCallResultHandler: conf.MCPToolCallResultHandler,
+		})
+	}
+
+	return ret, nil
+}
+
+func getMCPTools(ctx context.Context, conf *Config) ([]*schema.ToolInfo, error) {
+	var tools []*schema.ToolInfo
+	var err error
+	if conf.OfficialCli != nil {
+		tools, err = getOfficialMCPTools(ctx, conf)
+	} else if conf.Cli != nil {
+		tools, err = getNonOfficialMCPTools(ctx, conf)
+	} else {
+		err = errors.New("mcp config error: both OfficialCli and Cli are nil")
+	}
+	return tools, err
+}
+
+func getNonOfficialMCPTools(ctx context.Context, conf *Config) ([]*schema.ToolInfo, error) {
 	header := http.Header{}
 	if conf.CustomHeaders != nil {
 		for k, v := range conf.CustomHeaders {
@@ -62,19 +122,8 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 		return nil, fmt.Errorf("list mcp tools fail: %w", err)
 	}
 
-	nameSet := make(map[string]struct{})
-	for _, name := range conf.ToolNameList {
-		nameSet[name] = struct{}{}
-	}
-
-	ret := make([]tool.BaseTool, 0, len(listResults.Tools))
+	ret := make([]*schema.ToolInfo, 0, len(listResults.Tools))
 	for _, t := range listResults.Tools {
-		if len(conf.ToolNameList) > 0 {
-			if _, ok := nameSet[t.Name]; !ok {
-				continue
-			}
-		}
-
 		marshaledInputSchema, err := sonic.Marshal(t.InputSchema)
 		if err != nil {
 			return nil, fmt.Errorf("conv mcp tool input schema fail(marshal): %w, tool name: %s", err, t.Name)
@@ -84,15 +133,35 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 		if err != nil {
 			return nil, fmt.Errorf("conv mcp tool input schema fail(unmarshal): %w, tool name: %s", err, t.Name)
 		}
+		ret = append(ret, &schema.ToolInfo{
+			Name:        t.Name,
+			Desc:        t.Description,
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(inputSchema),
+		})
+	}
+	return ret, nil
+}
 
-		ret = append(ret, &toolHelper{
-			cli: conf.Cli,
-			info: &schema.ToolInfo{
-				Name:        t.Name,
-				Desc:        t.Description,
-				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(inputSchema),
-			},
-			toolCallResultHandler: conf.ToolCallResultHandler,
+func getOfficialMCPTools(ctx context.Context, conf *Config) ([]*schema.ToolInfo, error) {
+	listResults, err := conf.OfficialCli.ListTools(ctx, &omcp.ListToolsParams{})
+	if err != nil {
+		return nil, fmt.Errorf("list mcp tools fail: %w by official client", err)
+	}
+	ret := make([]*schema.ToolInfo, 0, len(listResults.Tools))
+	for _, t := range listResults.Tools {
+		marshaledInputSchema, err := sonic.Marshal(t.InputSchema)
+		if err != nil {
+			return nil, fmt.Errorf("conv mcp tool input schema fail(marshal): %w, tool name: %s by official client", err, t.Name)
+		}
+		inputSchema := &jsonschema.Schema{}
+		err = sonic.Unmarshal(marshaledInputSchema, inputSchema)
+		if err != nil {
+			return nil, fmt.Errorf("conv mcp tool input schema fail(unmarshal): %w, tool name: %s by official client", err, t.Name)
+		}
+		ret = append(ret, &schema.ToolInfo{
+			Name:        t.Name,
+			Desc:        t.Description,
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(inputSchema),
 		})
 	}
 
@@ -100,10 +169,12 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 }
 
 type toolHelper struct {
-	cli                   client.MCPClient
-	info                  *schema.ToolInfo
-	customHeaders         map[string]string
-	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
+	cli                           client.MCPClient
+	sess                          *omcp.ClientSession
+	info                          *schema.ToolInfo
+	customHeaders                 map[string]string
+	toolCallResultHandler         func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
+	officialToolCallResultHandler func(ctx context.Context, name string, result *omcp.CallToolResult) (*omcp.CallToolResult, error)
 }
 
 func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
@@ -111,6 +182,19 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
+	var result string
+	var err error
+	if m.sess != nil {
+		result, err = m.callOfficialMCPTool(ctx, argumentsInJSON, opts...)
+	} else if m.cli != nil {
+		result, err = m.callNonOfficialMCPTool(ctx, argumentsInJSON, opts...)
+	} else {
+		err = errors.New("mcp config error: both Sess and Cli are nil")
+	}
+	return result, err
+}
+
+func (m *toolHelper) callNonOfficialMCPTool(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 	specOptions := tool.GetImplSpecificOptions(&mcpOptions{
 		customHeaders: m.customHeaders,
 	}, opts...)
@@ -143,6 +227,9 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		}
 	}
 
+	if result == nil {
+		return "", fmt.Errorf("failed to call mcp tool, mcp server return nil result")
+	}
 	marshaledResult, err := sonic.MarshalString(result)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal mcp tool result: %w", err)
@@ -150,6 +237,34 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 	if result.IsError {
 		return "", fmt.Errorf("failed to call mcp tool, mcp server return error: %s", marshaledResult)
 	}
+	return marshaledResult, nil
+}
 
+func (m *toolHelper) callOfficialMCPTool(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+	result, err := m.sess.CallTool(ctx, &omcp.CallToolParams{
+		Name:      m.info.Name,
+		Arguments: json.RawMessage(argumentsInJSON),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to call mcp tool: %w by official client", err)
+	}
+
+	if m.officialToolCallResultHandler != nil {
+		result, err = m.officialToolCallResultHandler(ctx, m.info.Name, result)
+		if err != nil {
+			return "", fmt.Errorf("failed to execute mcp tool call result handler: %w by official client", err)
+		}
+	}
+
+	if result == nil {
+		return "", fmt.Errorf("failed to call mcp tool, mcp server return nil result by official client")
+	}
+	marshaledResult, err := sonic.MarshalString(result)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal mcp tool result: %w by official client", err)
+	}
+	if result.IsError {
+		return "", fmt.Errorf("failed to call mcp tool, mcp server return error: %s by official client", marshaledResult)
+	}
 	return marshaledResult, nil
 }
