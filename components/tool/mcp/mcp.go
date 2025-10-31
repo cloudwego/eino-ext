@@ -82,11 +82,11 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 		}
 
 		ret = append(ret, &toolHelper{
-			cli: conf.Cli,
-			sess: conf.MCPSess,
-			info: t,
-			customHeaders: conf.CustomHeaders,
-			toolCallResultHandler: conf.ToolCallResultHandler,
+			cli:                           conf.Cli,
+			sess:                          conf.MCPSess,
+			info:                          t,
+			customHeaders:                 conf.CustomHeaders,
+			toolCallResultHandler:         conf.ToolCallResultHandler,
 			officialToolCallResultHandler: conf.MCPToolCallResultHandler,
 		})
 	}
@@ -134,8 +134,8 @@ func getNonOfficialMCPTools(ctx context.Context, conf *Config) ([]*schema.ToolIn
 			return nil, fmt.Errorf("conv mcp tool input schema fail(unmarshal): %w, tool name: %s", err, t.Name)
 		}
 		ret = append(ret, &schema.ToolInfo{
-			Name: t.Name,
-			Desc: t.Description,
+			Name:        t.Name,
+			Desc:        t.Description,
 			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(inputSchema),
 		})
 	}
@@ -159,8 +159,8 @@ func getOfficialMCPTools(ctx context.Context, conf *Config) ([]*schema.ToolInfo,
 			return nil, fmt.Errorf("conv mcp tool input schema fail(unmarshal): %w, tool name: %s", err, t.Name)
 		}
 		ret = append(ret, &schema.ToolInfo{
-			Name: t.Name,
-			Desc: t.Description,
+			Name:        t.Name,
+			Desc:        t.Description,
 			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(inputSchema),
 		})
 	}
@@ -169,11 +169,11 @@ func getOfficialMCPTools(ctx context.Context, conf *Config) ([]*schema.ToolInfo,
 }
 
 type toolHelper struct {
-	cli                   client.MCPClient
-	sess                  *omcp.ClientSession
-	info                  *schema.ToolInfo
-	customHeaders         map[string]string
-	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
+	cli                           client.MCPClient
+	sess                          *omcp.ClientSession
+	info                          *schema.ToolInfo
+	customHeaders                 map[string]string
+	toolCallResultHandler         func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 	officialToolCallResultHandler func(ctx context.Context, name string, result *omcp.CallToolResult) (*omcp.CallToolResult, error)
 }
 
@@ -195,7 +195,7 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 }
 
 func (m *toolHelper) callNonOfficialMCPTool(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
-specOptions := tool.GetImplSpecificOptions(&mcpOptions{
+	specOptions := tool.GetImplSpecificOptions(&mcpOptions{
 		customHeaders: m.customHeaders,
 	}, opts...)
 
