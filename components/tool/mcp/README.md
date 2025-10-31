@@ -81,7 +81,7 @@ func runByOfficialMCPSDK() {
 	sess := getMCPClientSession(ctx, httpServer.URL)
 	defer sess.Close()
 
-	mcpTools, err := mcpp.GetTools(ctx, &mcpp.Config{MCPSess: sess})
+	mcpTools, err := mcpp.GetTools(ctx, &mcpp.Config{OfficialCli: sess})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -233,9 +233,9 @@ type Config struct {
 	// Notice: should Initialize with server before use
 	Cli client.MCPClient
 
-	// MCPSess is the session provided by the official MCP (Model Control Protocol) SDK, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
-	// Notice: should Initialize with server before use, use MCPSess first, if MCPSess is nil, use Cli
-	MCPSess *omcp.ClientSession
+	// OfficialCli is the session provided by the official MCP (Model Control Protocol) SDK, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Notice: should Initialize with server before use, use OfficialCli first, if OfficialCli is nil, use Cli
+	OfficialCli *omcp.ClientSession
 
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched

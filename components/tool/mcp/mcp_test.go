@@ -200,7 +200,7 @@ func TestOfficialMCPTool(t *testing.T) {
 	omcp.AddTool(server, &omcp.Tool{Name: "hello", Description: "say hello"}, SayHello)
 
 	// get tools from client, only greet tool
-	tools, err := GetTools(ctx, &Config{MCPSess: clientSession, ToolNameList: []string{"greet"}})
+	tools, err := GetTools(ctx, &Config{OfficialCli: clientSession, ToolNameList: []string{"greet"}})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(tools))
 	info, err := tools[0].Info(ctx)

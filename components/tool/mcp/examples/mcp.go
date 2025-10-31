@@ -76,7 +76,7 @@ func runByOfficialMCPSDK() {
 	sess := getMCPClientSession(ctx, httpServer.URL)
 	defer sess.Close()
 
-	mcpTools, err := mcpp.GetTools(ctx, &mcpp.Config{MCPSess: sess})
+	mcpTools, err := mcpp.GetTools(ctx, &mcpp.Config{OfficialCli: sess})
 	if err != nil {
 		log.Fatal(err)
 	}
