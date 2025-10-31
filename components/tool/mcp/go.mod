@@ -7,6 +7,7 @@ require (
 	github.com/cloudwego/eino v0.4.7
 	github.com/eino-contrib/jsonschema v1.0.2
 	github.com/mark3labs/mcp-go v0.41.1
+	github.com/modelcontextprotocol/go-sdk v1.0.0
 	github.com/stretchr/testify v1.9.0
 )
 
@@ -20,6 +21,7 @@ require (
 	github.com/getkin/kin-openapi v0.118.0 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/swag v0.19.5 // indirect
+	github.com/google/jsonschema-go v0.3.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/invopop/jsonschema v0.13.0 // indirect

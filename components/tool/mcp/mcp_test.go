@@ -18,10 +18,12 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/mark3labs/mcp-go/mcp"
+	omcp "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -152,4 +154,61 @@ func (m *mockMCPClient) Close() error {
 
 func (m *mockMCPClient) OnNotification(handler func(notification mcp.JSONRPCNotification)) {
 	panic("implement me")
+}
+
+var testImpl = &omcp.Implementation{Name: "test", Version: "v1.0.0"}
+
+type SayHiParams struct {
+	Name string `json:"name"`
+}
+
+func SayHi(ctx context.Context, req *omcp.CallToolRequest, args SayHiParams) (*omcp.CallToolResult, any, error) {
+	return &omcp.CallToolResult{
+		Content: []omcp.Content{
+			&omcp.TextContent{Text: "Hi " + args.Name},
+		},
+	}, nil, nil
+}
+
+func SayHello(ctx context.Context, req *omcp.CallToolRequest, args SayHiParams) (*omcp.CallToolResult, any, error) {
+	return &omcp.CallToolResult{
+		Content: []omcp.Content{
+			&omcp.TextContent{Text: "Hello " + args.Name},
+		},
+	}, nil, nil
+}
+
+func TestOfficialMCPTool(t *testing.T) {
+	ctx := context.Background()
+
+	server := omcp.NewServer(testImpl, nil)
+	client := omcp.NewClient(testImpl, nil)
+	serverTransport, clientTransport := omcp.NewInMemoryTransports()
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverSession.Close()
+	clientSession, err := client.Connect(ctx, clientTransport, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clientSession.Close()
+
+	// add tools to server
+	omcp.AddTool(server, &omcp.Tool{Name: "greet", Description: "say hi"}, SayHi)
+	omcp.AddTool(server, &omcp.Tool{Name: "hello", Description: "say hello"}, SayHello)
+
+	// get tools from client, only greet tool
+	tools, err := GetTools(ctx, &Config{MCPSess: clientSession, ToolNameList: []string{"greet"}})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(tools))
+	info, err := tools[0].Info(ctx)
+	assert.NoError(t, err)
+	assert.Equal(t, "greet", info.Name)
+
+	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "{\"name\": \"eino\"}")
+	assert.NoError(t, err)
+	fmt.Println(result)
+	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"Hi eino\"}]}", result)
 }
