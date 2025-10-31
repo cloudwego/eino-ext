@@ -34,8 +34,9 @@ const toolTypeFunction = "function"
 
 func convertModelInput(input *model.CallbackInput) *tracespec.ModelInput {
 	return &tracespec.ModelInput{
-		Messages: iterSlice(input.Messages, convertModelMessage),
-		Tools:    iterSlice(input.Tools, convertTool),
+		Messages:        iterSlice(input.Messages, convertModelMessage),
+		Tools:           iterSlice(input.Tools, convertTool),
+		ModelToolChoice: convertToolChoice(input.ToolChoice),
 	}
 }
 
@@ -155,6 +156,24 @@ func convertTool(tool *schema.ToolInfo) *tracespec.ModelTool {
 	}
 
 	return t
+}
+
+func convertToolChoice(tc *schema.ToolChoice) *tracespec.ModelToolChoice {
+	if tc == nil {
+		return nil
+	}
+	var v string
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		v = tracespec.VToolChoiceNone
+	case schema.ToolChoiceAllowed:
+		v = tracespec.VToolChoiceAuto
+	case schema.ToolChoiceForced:
+		v = tracespec.VToolChoiceRequired
+	default:
+		v = tracespec.VToolChoiceAuto
+	}
+	return &tracespec.ModelToolChoice{Type: v}
 }
 
 func convertModelCallOption(config *model.Config) *tracespec.ModelCallOption {
