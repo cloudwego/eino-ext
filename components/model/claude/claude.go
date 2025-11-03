@@ -989,7 +989,7 @@ func toolEvent(isStart bool, toolCallID, toolName string, input any, sc *streamC
 		if sc.toolIndex == nil {
 			sc.toolIndex = of(-1)
 		}
-		*sc.toolIndex++
+		sc.toolIndex = of(*sc.toolIndex + 1)
 	} else if sc.toolIndex == nil {
 		sc.toolIndex = of(0)
 	}
