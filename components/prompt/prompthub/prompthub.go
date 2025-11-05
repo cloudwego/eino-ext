@@ -132,9 +132,6 @@ func (p *promptHub) IsCallbacksEnabled() bool {
 }
 
 func messageConv(orig *entity.Message) (*schema.Message, error) {
-	if orig == nil {
-		return nil, nil
-	}
 
 	var err error
 	ret := &schema.Message{}

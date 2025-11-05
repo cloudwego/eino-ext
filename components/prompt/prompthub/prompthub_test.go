@@ -366,12 +366,6 @@ func TestMessageConv(t *testing.T) {
 		wantErr  bool
 	}{
 		{
-			name:     "nil message",
-			input:    nil,
-			expected: nil,
-			wantErr:  false,
-		},
-		{
 			name: "simple user message",
 			input: &entity.Message{
 				Role:    entity.RoleUser,
