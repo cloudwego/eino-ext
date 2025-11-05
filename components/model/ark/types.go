@@ -57,7 +57,8 @@ const (
 )
 
 const (
-	callbackExtraKeyThinking = "thinking"
+	callbackExtraKeyThinking      = "thinking"
+	callbackExtraKeyPreResponseID = "ark-previous-response-id"
 )
 
 type toolChoice string
