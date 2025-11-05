@@ -19,12 +19,14 @@ package prompthub
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/schema"
 	"github.com/coze-dev/cozeloop-go"
 	"github.com/coze-dev/cozeloop-go/entity"
+	"github.com/vincent-petithory/dataurl"
 )
 
 type Config struct {
@@ -39,6 +41,9 @@ func NewPromptHub(_ context.Context, conf *Config) (prompt.ChatTemplate, error) 
 	}
 	if conf.CozeLoopClient == nil {
 		return nil, fmt.Errorf("new prompt hub fail because cozeloop client in conf is empty")
+	}
+	if conf.Key == "" {
+		return nil, fmt.Errorf("new prompt hub fail because key in conf is empty")
 	}
 	return &promptHub{
 		cli:     conf.CozeLoopClient,
@@ -67,7 +72,6 @@ func (p *promptHub) Format(ctx context.Context, vs map[string]any, opts ...promp
 
 	ctx = callbacks.OnStart(ctx, &prompt.CallbackInput{
 		Variables: vs,
-		Templates: nil,
 		Extra:     extMap,
 	})
 	defer func() {
@@ -75,9 +79,8 @@ func (p *promptHub) Format(ctx context.Context, vs map[string]any, opts ...promp
 			callbacks.OnError(ctx, err)
 		} else {
 			callbacks.OnEnd(ctx, &prompt.CallbackOutput{
-				Result:    result,
-				Templates: nil,
-				Extra:     extMap,
+				Result: result,
+				Extra:  extMap,
 			})
 		}
 	}()
@@ -85,7 +88,9 @@ func (p *promptHub) Format(ctx context.Context, vs map[string]any, opts ...promp
 	// Get prompt from CozeLoop
 	param := cozeloop.GetPromptParam{
 		PromptKey: p.key,
-		Version:   p.version,
+	}
+	if p.version != "" {
+		param.Version = p.version
 	}
 	loopPrompt, err = p.cli.GetPrompt(ctx, param)
 	if err != nil {
@@ -130,6 +135,7 @@ func messageConv(orig *entity.Message) (*schema.Message, error) {
 	if orig == nil {
 		return nil, nil
 	}
+
 	var err error
 	ret := &schema.Message{}
 
@@ -207,9 +213,14 @@ func inputPartsConv(parts []*entity.ContentPart) ([]schema.MessageInputPart, err
 			}
 		case entity.ContentTypeBase64Data:
 			if part.Base64Data != nil {
+				mimeType, base64Data, err := parseBase64DataURL(*part.Base64Data)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse base64 data URL: %w", err)
+				}
 				inputPart.Image = &schema.MessageInputImage{
 					MessagePartCommon: schema.MessagePartCommon{
-						Base64Data: part.Base64Data,
+						Base64Data: &base64Data,
+						MIMEType:   mimeType,
 					},
 				}
 			}
@@ -251,9 +262,14 @@ func outputPartsConv(parts []*entity.ContentPart) ([]schema.MessageOutputPart, e
 			}
 		case entity.ContentTypeBase64Data:
 			if part.Base64Data != nil {
+				mimeType, base64Data, err := parseBase64DataURL(*part.Base64Data)
+				if err != nil {
+					return nil, fmt.Errorf("failed to parse base64 data URL: %w", err)
+				}
 				outputPart.Image = &schema.MessageOutputImage{
 					MessagePartCommon: schema.MessagePartCommon{
-						Base64Data: part.Base64Data,
+						Base64Data: &base64Data,
+						MIMEType:   mimeType,
 					},
 				}
 			}
@@ -273,4 +289,21 @@ func contentTypeConv(t entity.ContentType) (schema.ChatMessagePartType, error) {
 	default:
 		return "", fmt.Errorf("unknown chat message part type from cozeloop prompthub: %v", t)
 	}
+}
+
+// parseBase64DataURL parses a data URL (e.g., "data:image/png;base64,iVBORw0KGgo...")
+// and returns the MIME type and the base64 data separately
+func parseBase64DataURL(dataURLString string) (mimeType string, base64Data string, err error) {
+	dataURL, err := dataurl.DecodeString(dataURLString)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode data URL: %w", err)
+	}
+
+	// Extract base64 data from original string (after comma)
+	parts := strings.SplitN(dataURLString, ",", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid data URL format")
+	}
+
+	return dataURL.ContentType(), parts[1], nil
 }

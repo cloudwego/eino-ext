@@ -6,6 +6,7 @@ require (
 	github.com/cloudwego/eino v0.5.10
 	github.com/coze-dev/cozeloop-go v0.1.15
 	github.com/stretchr/testify v1.10.0
+	github.com/vincent-petithory/dataurl v1.0.0
 )
 
 require (

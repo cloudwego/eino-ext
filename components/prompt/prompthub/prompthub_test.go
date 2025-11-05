@@ -176,7 +176,7 @@ func TestInputPartsConv(t *testing.T) {
 			input: []*entity.ContentPart{
 				{
 					Type:       entity.ContentTypeBase64Data,
-					Base64Data: strPtr("base64encodeddata"),
+					Base64Data: strPtr("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="),
 				},
 			},
 			expected: []schema.MessageInputPart{
@@ -184,7 +184,8 @@ func TestInputPartsConv(t *testing.T) {
 					Type: schema.ChatMessagePartTypeImageURL,
 					Image: &schema.MessageInputImage{
 						MessagePartCommon: schema.MessagePartCommon{
-							Base64Data: strPtr("base64encodeddata"),
+							Base64Data: strPtr("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="),
+							MIMEType:   "image/png",
 						},
 					},
 				},
@@ -308,7 +309,7 @@ func TestOutputPartsConv(t *testing.T) {
 			input: []*entity.ContentPart{
 				{
 					Type:       entity.ContentTypeBase64Data,
-					Base64Data: strPtr("base64encodeddata"),
+					Base64Data: strPtr("data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA=="),
 				},
 			},
 			expected: []schema.MessageOutputPart{
@@ -316,7 +317,8 @@ func TestOutputPartsConv(t *testing.T) {
 					Type: schema.ChatMessagePartTypeImageURL,
 					Image: &schema.MessageOutputImage{
 						MessagePartCommon: schema.MessagePartCommon{
-							Base64Data: strPtr("base64encodeddata"),
+							Base64Data: strPtr("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA=="),
+							MIMEType:   "image/jpeg",
 						},
 					},
 				},
@@ -831,4 +833,85 @@ func (m *mockCozeLoopClient) GetWorkspaceID() string {
 }
 
 func (m *mockCozeLoopClient) Close(ctx context.Context) {
+}
+
+func TestParseBase64DataURL(t *testing.T) {
+	tests := []struct {
+		name           string
+		input          string
+		expectedMIME   string
+		expectedBase64 string
+		wantErr        bool
+		errContains    string
+	}{
+		{
+			name:           "valid PNG data URL",
+			input:          "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+			expectedMIME:   "image/png",
+			expectedBase64: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+			wantErr:        false,
+		},
+		{
+			name:           "valid JPEG data URL",
+			input:          "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA==",
+			expectedMIME:   "image/jpeg",
+			expectedBase64: "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA==",
+			wantErr:        false,
+		},
+		{
+			name:           "valid GIF data URL",
+			input:          "data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+			expectedMIME:   "image/gif",
+			expectedBase64: "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
+			wantErr:        false,
+		},
+		{
+			name:        "missing data prefix",
+			input:       "image/png;base64,iVBORw0KGgo=",
+			wantErr:     true,
+			errContains: "decode data URL",
+		},
+		{
+			name:        "missing comma separator",
+			input:       "data:image/png;base64",
+			wantErr:     true,
+			errContains: "decode data URL",
+		},
+		{
+			name:           "non-base64 encoding (URL encoded)",
+			input:          "data:text/plain,Hello%20World",
+			expectedMIME:   "text/plain",
+			expectedBase64: "Hello%20World",
+			wantErr:        false,
+		},
+		{
+			name:        "empty string",
+			input:       "",
+			wantErr:     true,
+			errContains: "decode data URL",
+		},
+		{
+			name:           "data URL with charset",
+			input:          "data:text/plain;charset=utf-8;base64,SGVsbG8gV29ybGQ=",
+			expectedMIME:   "text/plain", // ContentType() only returns the main MIME type
+			expectedBase64: "SGVsbG8gV29ybGQ=",
+			wantErr:        false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mimeType, base64Data, err := parseBase64DataURL(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+				if tt.errContains != "" {
+					assert.Contains(t, err.Error(), tt.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedMIME, mimeType)
+				assert.Equal(t, tt.expectedBase64, base64Data)
+			}
+		})
+	}
 }
