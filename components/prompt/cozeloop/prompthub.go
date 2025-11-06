@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package prompthub
+package cozeloop
 
 import (
 	"context"
@@ -175,7 +175,7 @@ func roleConv(r entity.Role) (schema.RoleType, error) {
 	case entity.RoleTool:
 		return schema.Tool, nil
 	default:
-		return "", fmt.Errorf("unknown role type from cozeloop prompthub: %v", r)
+		return "", fmt.Errorf("unknown role type from cozeloop: %v", r)
 	}
 }
 
@@ -284,7 +284,7 @@ func contentTypeConv(t entity.ContentType) (schema.ChatMessagePartType, error) {
 	case entity.ContentTypeImageURL, entity.ContentTypeBase64Data:
 		return schema.ChatMessagePartTypeImageURL, nil
 	default:
-		return "", fmt.Errorf("unknown chat message part type from cozeloop prompthub: %v", t)
+		return "", fmt.Errorf("unknown chat message part type from cozeloop: %v", t)
 	}
 }
 

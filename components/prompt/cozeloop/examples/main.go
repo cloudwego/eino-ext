@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/cloudwego/eino-ext/components/prompt/prompthub"
-	"github.com/coze-dev/cozeloop-go"
+	"github.com/cloudwego/eino-ext/components/prompt/cozeloop"
+	cozeloopgo "github.com/coze-dev/cozeloop-go"
 	"github.com/coze-dev/cozeloop-go/entity"
 )
 
@@ -38,14 +38,14 @@ func main() {
 	ctx := context.Background()
 
 	// Initialize CozeLoop client
-	client, err := cozeloop.NewClient()
+	client, err := cozeloopgo.NewClient()
 	if err != nil {
 		log.Fatalf("Failed to create CozeLoop client: %v", err)
 	}
 	defer client.Close(ctx)
 
 	// Create PromptHub component
-	ph, err := prompthub.NewPromptHub(ctx, &prompthub.Config{
+	ph, err := cozeloop.NewPromptHub(ctx, &cozeloop.Config{
 		Key:            "your.prompt.key", // Replace with your prompt key
 		Version:        "",                // Empty for latest version, or specify like "1.0.0"
 		CozeLoopClient: client,

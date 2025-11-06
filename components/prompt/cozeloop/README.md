@@ -1,6 +1,6 @@
-# PromptHub Component for Eino
+# CozeLoop Component for Eino
 
-This is a PromptHub component implementation for [Eino](https://github.com/cloudwego/eino) that integrates with [CozeLoop](https://github.com/coze-dev/cozeloop-go). The component implements the `ChatTemplate` interface and allows you to fetch and format prompts from CozeLoop's prompt management service.
+This is a CozeLoop component implementation for [Eino](https://github.com/cloudwego/eino) that integrates with [CozeLoop](https://github.com/coze-dev/cozeloop-go). The component implements the `ChatTemplate` interface and allows you to fetch and format prompts from CozeLoop's prompt management service.
 
 ## Features
 
@@ -13,7 +13,7 @@ This is a PromptHub component implementation for [Eino](https://github.com/cloud
 ## Installation
 
 ```bash
-go get github.com/cloudwego/eino-ext/components/prompt/prompthub
+go get github.com/cloudwego/eino-ext/components/prompt/cozeloop
 ```
 
 ## Prerequisites
@@ -51,22 +51,22 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/cloudwego/eino-ext/components/prompt/prompthub"
-	"github.com/coze-dev/cozeloop-go"
+	"github.com/cloudwego/eino-ext/components/prompt/cozeloop"
+	cozeloopgo "github.com/coze-dev/cozeloop-go"
 )
 
 func main() {
 	ctx := context.Background()
 
 	// Initialize CozeLoop client
-	client, err := cozeloop.NewClient()
+	client, err := cozeloopgo.NewClient()
 	if err != nil {
 		log.Fatalf("Failed to create CozeLoop client: %v", err)
 	}
 	defer client.Close(ctx)
 
 	// Create PromptHub component
-	ph, err := prompthub.NewPromptHub(ctx, &prompthub.Config{
+	ph, err := cozeloop.NewPromptHub(ctx, &cozeloop.Config{
 		Key:            "your.prompt.key", // Your prompt key from CozeLoop
 		Version:        "",                // Empty for latest version
 		CozeLoopClient: client,
@@ -186,7 +186,7 @@ This component can be seamlessly integrated into Eino workflows:
 ```go
 import (
 	"github.com/cloudwego/eino/compose"
-	"github.com/cloudwego/eino-ext/components/prompt/prompthub"
+	"github.com/cloudwego/eino-ext/components/prompt/cozeloop"
 )
 
 // Use in a chain

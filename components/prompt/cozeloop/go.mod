@@ -1,4 +1,4 @@
-module github.com/cloudwego/eino-ext/components/prompt/prompthub
+module github.com/cloudwego/eino-ext/components/prompt/cozeloop
 
 go 1.23.0
 
