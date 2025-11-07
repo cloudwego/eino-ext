@@ -64,6 +64,7 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		topP:                cfg.TopP,
 		topK:                cfg.TopK,
 		responseSchema:      cfg.ResponseSchema,
+		responseJSONSchema:  cfg.ResponseJSONSchema,
 		enableCodeExecution: cfg.EnableCodeExecution,
 		safetySettings:      cfg.SafetySettings,
 		thinkingConfig:      cfg.ThinkingConfig,
