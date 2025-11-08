@@ -64,6 +64,7 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		topP:                cfg.TopP,
 		topK:                cfg.TopK,
 		responseSchema:      cfg.ResponseSchema,
+		responseJSONSchema:  cfg.ResponseJSONSchema,
 		enableCodeExecution: cfg.EnableCodeExecution,
 		safetySettings:      cfg.SafetySettings,
 		thinkingConfig:      cfg.ThinkingConfig,
@@ -99,9 +100,14 @@ type Config struct {
 	// Optional. Example: topK := int32(40)
 	TopK *int32
 
+	// Deprecated: Use ResponseJSONSchema instead.
 	// ResponseSchema defines the structure for JSON responses
 	// Optional. Used when you want structured output in JSON format
 	ResponseSchema *openapi3.Schema
+
+	// ResponseJSONSchema defines the structure for JSON responses
+	// Optional. Used when you want structured output in JSON format
+	ResponseJSONSchema *jsonschema.Schema
 
 	// EnableCodeExecution allows the model to execute code
 	// Warning: Be cautious with code execution in production
@@ -129,6 +135,7 @@ type ChatModel struct {
 	temperature         *float32
 	topK                *int32
 	responseSchema      *openapi3.Schema
+	responseJSONSchema  *jsonschema.Schema
 	tools               []*genai.FunctionDeclaration
 	origTools           []*schema.ToolInfo
 	toolChoice          *schema.ToolChoice
@@ -310,6 +317,7 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	geminiOptions := model.GetImplSpecificOptions(&options{
 		TopK:               cm.topK,
 		ResponseSchema:     cm.responseSchema,
+		ResponseJSONSchema: cm.responseJSONSchema,
 		ResponseModalities: cm.responseModalities,
 	}, opts...)
 	conf := &model.Config{}
@@ -383,17 +391,22 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		topK := float32(*geminiOptions.TopK)
 		m.TopK = &topK
 	}
+
+	if geminiOptions.ResponseSchema != nil && geminiOptions.ResponseJSONSchema != nil {
+		return "", nil, nil, nil, fmt.Errorf("responseSchema and responseJsonSchema can not be set at the same time")
+	}
+
 	if geminiOptions.ResponseSchema != nil {
 		m.ResponseMIMEType = "application/json"
 		var err error
-		if geminiOptions.ResponseJSONSchema != nil {
-			m.ResponseJsonSchema = geminiOptions.ResponseJSONSchema
-		} else if geminiOptions.ResponseSchema != nil {
-			m.ResponseSchema, err = cm.convOpenAPIV3SchemaGeminiSchema(geminiOptions.ResponseSchema)
-		}
+		m.ResponseSchema, err = cm.convOpenAPIV3SchemaGeminiSchema(geminiOptions.ResponseSchema)
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf("convert response schema fail: %w", err)
 		}
+	}
+	if geminiOptions.ResponseJSONSchema != nil {
+		m.ResponseMIMEType = "application/json"
+		m.ResponseJsonSchema = geminiOptions.ResponseJSONSchema
 	}
 
 	if len(geminiOptions.ResponseModalities) > 0 {

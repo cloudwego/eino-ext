@@ -1,6 +1,6 @@
 module github.com/cloudwego/eino-ext/components/model/gemini
 
-go 1.23.0
+go 1.24
 
 require (
 	github.com/bytedance/mockey v1.2.13
@@ -10,7 +10,7 @@ require (
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/stretchr/testify v1.10.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
-	google.golang.org/genai v1.13.0
+	google.golang.org/genai v1.34.0
 )
 
 require (

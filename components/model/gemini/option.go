@@ -38,6 +38,7 @@ func WithTopK(k int32) model.Option {
 	})
 }
 
+// Deprecated: Use WithResponseJSONSchema instead.
 func WithResponseSchema(s *openapi3.Schema) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ResponseSchema = s
