@@ -193,23 +193,23 @@ func (e *eventBodyUnion) setMetadata(data any) {
 }
 
 type BaseEventBody struct {
-	ID       string `json:"id,omitempty"`
-	Name     string `json:"name,omitempty"`
-	MetaData any    `json:"metadata,omitempty"`
-	Version  string `json:"version,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	MetaData    any    `json:"metadata,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Environment string `json:"environment,omitempty"`
 }
 
 type TraceEventBody struct {
 	BaseEventBody
-	TimeStamp   time.Time `json:"timestamp,omitempty"`
-	UserID      string    `json:"userId,omitempty"`
-	Input       string    `json:"input,omitempty"`
-	Output      string    `json:"output,omitempty"`
-	SessionID   string    `json:"sessionId,omitempty"`
-	Release     string    `json:"release,omitempty"`
-	Tags        []string  `json:"tags,omitempty"`
-	Public      bool      `json:"public,omitempty"`
-	Environment string    `json:"environment,omitempty"`
+	TimeStamp time.Time `json:"timestamp,omitempty"`
+	UserID    string    `json:"userId,omitempty"`
+	Input     string    `json:"input,omitempty"`
+	Output    string    `json:"output,omitempty"`
+	SessionID string    `json:"sessionId,omitempty"`
+	Release   string    `json:"release,omitempty"`
+	Tags      []string  `json:"tags,omitempty"`
+	Public    bool      `json:"public,omitempty"`
 }
 
 type BaseObservationEventBody struct {

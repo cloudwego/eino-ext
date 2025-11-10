@@ -97,17 +97,17 @@ type traceOptions struct {
 func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) (*langfuseState, error) {
 	traceID, err := cli.CreateTrace(&langfuse.TraceEventBody{
 		BaseEventBody: langfuse.BaseEventBody{
-			ID:       options.ID,
-			Name:     options.Name,
-			MetaData: options.Metadata,
+			ID:          options.ID,
+			Name:        options.Name,
+			MetaData:    options.Metadata,
+			Environment: options.Environment,
 		},
-		TimeStamp:   time.Now(),
-		UserID:      options.UserID,
-		SessionID:   options.SessionID,
-		Release:     options.Release,
-		Tags:        options.Tags,
-		Public:      options.Public,
-		Environment: options.Environment,
+		TimeStamp: time.Now(),
+		UserID:    options.UserID,
+		SessionID: options.SessionID,
+		Release:   options.Release,
+		Tags:      options.Tags,
+		Public:    options.Public,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create trace error: %v", err)
