@@ -201,14 +201,15 @@ type BaseEventBody struct {
 
 type TraceEventBody struct {
 	BaseEventBody
-	TimeStamp time.Time `json:"timestamp,omitempty"`
-	UserID    string    `json:"userId,omitempty"`
-	Input     string    `json:"input,omitempty"`
-	Output    string    `json:"output,omitempty"`
-	SessionID string    `json:"sessionId,omitempty"`
-	Release   string    `json:"release,omitempty"`
-	Tags      []string  `json:"tags,omitempty"`
-	Public    bool      `json:"public,omitempty"`
+	TimeStamp   time.Time `json:"timestamp,omitempty"`
+	UserID      string    `json:"userId,omitempty"`
+	Input       string    `json:"input,omitempty"`
+	Output      string    `json:"output,omitempty"`
+	SessionID   string    `json:"sessionId,omitempty"`
+	Release     string    `json:"release,omitempty"`
+	Tags        []string  `json:"tags,omitempty"`
+	Public      bool      `json:"public,omitempty"`
+	Environment string    `json:"environment,omitempty"`
 }
 
 type BaseObservationEventBody struct {

@@ -76,16 +76,22 @@ func WithMetadata(metadata map[string]string) TraceOption {
 		o.Metadata = metadata
 	}
 }
+func WithEnvironment(environment string) TraceOption {
+	return func(o *traceOptions) {
+		o.Environment = environment
+	}
+}
 
 type traceOptions struct {
-	ID        string
-	Name      string
-	UserID    string
-	SessionID string
-	Release   string
-	Tags      []string
-	Public    bool
-	Metadata  map[string]string
+	ID          string
+	Name        string
+	UserID      string
+	SessionID   string
+	Release     string
+	Tags        []string
+	Public      bool
+	Metadata    map[string]string
+	Environment string
 }
 
 func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) (*langfuseState, error) {
@@ -95,12 +101,13 @@ func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) 
 			Name:     options.Name,
 			MetaData: options.Metadata,
 		},
-		TimeStamp: time.Now(),
-		UserID:    options.UserID,
-		SessionID: options.SessionID,
-		Release:   options.Release,
-		Tags:      options.Tags,
-		Public:    options.Public,
+		TimeStamp:   time.Now(),
+		UserID:      options.UserID,
+		SessionID:   options.SessionID,
+		Release:     options.Release,
+		Tags:        options.Tags,
+		Public:      options.Public,
+		Environment: options.Environment,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create trace error: %v", err)
