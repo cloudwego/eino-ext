@@ -450,6 +450,11 @@ func (s *DockerSandbox) safeResolvePath(path string) (string, error) {
 	return resolved, nil
 }
 
+// Inspect retrieves container inspection information
+func (s *DockerSandbox) Inspect() (container.InspectResponse, error) {
+	return s.client.ContainerInspect(context.Background(), s.containerID)
+}
+
 // readFromTar reads file content from tar stream
 func readFromTar(reader io.Reader) ([]byte, error) {
 	tr := tar.NewReader(reader)
