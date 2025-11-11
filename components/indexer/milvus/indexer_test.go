@@ -20,240 +20,140 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	
+
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
-	"github.com/milvus-io/milvus-sdk-go/v2/client"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"github.com/milvus-io/milvus/client/v2/column"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 )
 
-// 模拟Embedding实现
-type mockEmbedding struct{}
+// mockEmbedding mocks the embedding component
+type mockEmbedding struct {
+	err         error
+	cnt         int
+	sizeForCall []int
+	dims        int
+}
 
 func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
-	result := make([][]float64, len(texts))
-	for i := range texts {
-		result[i] = []float64{0.1, 0.2, 0.3}
+	if m.err != nil {
+		return nil, m.err
 	}
-	return result, nil
+
+	if m.cnt >= len(m.sizeForCall) {
+		return nil, fmt.Errorf("unexpected call count")
+	}
+
+	slice := make([]float64, m.dims)
+	for i := range slice {
+		slice[i] = 1.1
+	}
+
+	r := make([][]float64, m.sizeForCall[m.cnt])
+	m.cnt++
+	for i := range r {
+		r[i] = slice
+	}
+
+	return r, nil
 }
 
 func TestNewIndexer(t *testing.T) {
 	PatchConvey("test NewIndexer", t, func() {
 		ctx := context.Background()
-		Mock(client.NewClient).Return(&client.GrpcClient{}, nil).Build()
-		mockClient, _ := client.NewClient(ctx, client.Config{})
-		mockEmb := &mockEmbedding{}
-		
-		PatchConvey("test indexer config check", func() {
+		mockClient := &milvusclient.Client{}
+
+		PatchConvey("test indexer config validation", func() {
 			PatchConvey("test client not provided", func() {
-				i, err := NewIndexer(ctx, &IndexerConfig{
-					Client:     nil,
-					Collection: "",
-					Embedding:  mockEmb,
+				idx, err := NewIndexer(ctx, &IndexerConfig{
+					Client:            nil,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{},
 				})
-				convey.So(err, convey.ShouldBeError, fmt.Errorf("[NewIndexer] milvus client not provided"))
-				convey.So(i, convey.ShouldBeNil)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "client is nil")
+				convey.So(idx, convey.ShouldBeNil)
 			})
-			
-			PatchConvey("test embedding not provided", func() {
-				i, err := NewIndexer(ctx, &IndexerConfig{
-					Client:     mockClient,
-					Collection: "",
-					Embedding:  nil,
+
+			PatchConvey("test collection not provided", func() {
+				Mock((*milvusclient.Client).HasCollection).Return(true, nil).Build()
+				idx, err := NewIndexer(ctx, &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{},
 				})
-				convey.So(err, convey.ShouldBeError, fmt.Errorf("[NewIndexer] embedding not provided"))
-				convey.So(i, convey.ShouldBeNil)
+				// Should succeed because it will use the default collection name
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(idx, convey.ShouldNotBeNil)
 			})
-			
-			PatchConvey("test partition name set and partition num lager than 1", func() {
-				i, err := NewIndexer(ctx, &IndexerConfig{
-					Client:        mockClient,
-					Collection:    "",
-					PartitionNum:  2,
-					PartitionName: "_default",
-					Embedding:     mockEmb,
+
+			PatchConvey("test dim not provided", func() {
+				idx, err := NewIndexer(ctx, &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               0,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{},
 				})
-				convey.So(err, convey.ShouldEqual, fmt.Errorf("[NewIndexer] not support manually specifying the partition names if partition key mode is used"))
-				convey.So(i, convey.ShouldBeNil)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "dimension of the vector must be greater than 0")
+				convey.So(idx, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test document converter not provided", func() {
+				Mock((*milvusclient.Client).HasCollection).Return(true, nil).Build()
+				idx, err := NewIndexer(ctx, &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: nil,
+					Embedding:         &mockEmbedding{},
+				})
+				// Should succeed because it will use the default converter
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(idx, convey.ShouldNotBeNil)
 			})
 		})
-		
-		PatchConvey("test pre-check", func() {
-			Mock(GetMethod(mockClient, "HasCollection")).To(func(ctx context.Context, collName string) (bool, error) {
-				if collName != defaultCollection {
-					return false, nil
-				}
-				return true, nil
-			}).Build()
-			
-			PatchConvey("test collection not found", func() {
-				// 模拟创建集合
-				Mock(GetMethod(mockClient, "CreateCollection")).Return(nil).Build()
-				
-				// 模拟描述集合
-				Mock(GetMethod(mockClient, "DescribeCollection")).To(func(ctx context.Context, collName string) (*entity.Collection, error) {
-					if collName != defaultCollection {
-						return nil, fmt.Errorf("collection not found")
-					}
-					return &entity.Collection{
-						Schema: &entity.Schema{
-							Fields: getDefaultFields(),
-						},
-						Loaded: true,
-					}, nil
-				}).Build()
-				
-				i, err := NewIndexer(ctx, &IndexerConfig{
-					Client:     mockClient,
-					Collection: "test_collection",
-					Embedding:  mockEmb,
+
+		PatchConvey("test collection operations", func() {
+			PatchConvey("test has collection error", func() {
+				Mock((*milvusclient.Client).HasCollection).Return(false, fmt.Errorf("has collection error")).Build()
+				idx, err := NewIndexer(ctx, &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{},
 				})
-				convey.So(err, convey.ShouldBeError)
-				convey.So(i, convey.ShouldBeNil)
-				
-				PatchConvey("test collection schema check", func() {
-					// 模拟集合已存在但schema不匹配
-					Mock(GetMethod(mockClient, "DescribeCollection")).To(func(ctx context.Context, collName string) (*entity.Collection, error) {
-						return &entity.Collection{
-							Schema: &entity.Schema{
-								Fields: []*entity.Field{
-									{
-										Name:     "different_field",
-										DataType: entity.FieldTypeInt64,
-									},
-								},
-							},
-							Loaded: true,
-						}, nil
-					}).Build()
-					
-					i, err := NewIndexer(ctx, &IndexerConfig{
-						Client:     mockClient,
-						Collection: defaultCollection,
-						Fields:     getDefaultFields(),
-						Embedding:  mockEmb,
-					})
-					convey.So(err, convey.ShouldBeError, fmt.Errorf("[NewIndexer] collection schema not match"))
-					convey.So(i, convey.ShouldBeNil)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "failed to validate collection")
+				convey.So(idx, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test successful creation", func() {
+				Mock((*milvusclient.Client).HasCollection).Return(true, nil).Build()
+				idx, err := NewIndexer(ctx, &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{},
 				})
-				
-				PatchConvey("test collection not loaded", func() {
-					// 模拟集合未加载
-					Mock(GetMethod(mockClient, "DescribeCollection")).To(func(ctx context.Context, collName string) (*entity.Collection, error) {
-						return &entity.Collection{
-							Schema: &entity.Schema{
-								Fields: getDefaultFields(),
-							},
-							Loaded: false,
-						}, nil
-					}).Build()
-					
-					// 模拟获取加载状态
-					Mock(GetMethod(mockClient, "GetLoadState")).Return(entity.LoadStateNotLoad, nil).Build()
-					
-					// 模拟描述索引
-					Mock(GetMethod(mockClient, "DescribeIndex")).Return([]entity.Index{
-						entity.NewGenericIndex("vector", entity.AUTOINDEX, nil),
-					}, nil).Build()
-					
-					// 模拟创建索引
-					Mock(GetMethod(mockClient, "CreateIndex")).Return(nil).Build()
-					
-					// 模拟加载集合
-					Mock(GetMethod(mockClient, "LoadCollection")).Return(nil).Build()
-					
-					i, err := NewIndexer(ctx, &IndexerConfig{
-						Client:     mockClient,
-						Collection: defaultCollection,
-						Embedding:  mockEmb,
-					})
-					convey.So(err, convey.ShouldBeNil)
-					convey.So(i, convey.ShouldNotBeNil)
-				})
-				
-				PatchConvey("test create indexer with custom config", func() {
-					// 模拟集合已加载
-					Mock(GetMethod(mockClient, "DescribeCollection")).To(func(ctx context.Context, collName string) (*entity.Collection, error) {
-						return &entity.Collection{
-							Schema: &entity.Schema{
-								Fields: getDefaultFields(),
-							},
-							Loaded: true,
-						}, nil
-					}).Build()
-					
-					i, err := NewIndexer(ctx, &IndexerConfig{
-						Client:              mockClient,
-						Collection:          defaultCollection,
-						Description:         "custom description",
-						PartitionNum:        0,
-						Fields:              getDefaultFields(),
-						SharedNum:           1,
-						ConsistencyLevel:    defaultConsistencyLevel,
-						MetricType:          defaultMetricType,
-						Embedding:           mockEmb,
-						EnableDynamicSchema: true,
-					})
-					convey.So(err, convey.ShouldBeNil)
-					convey.So(i, convey.ShouldNotBeNil)
-				})
-				
-				PatchConvey("test partition pre-check", func() {
-					PatchConvey("test check partition is error", func() {
-						Mock(GetMethod(mockClient, "HasPartition")).Return(false, fmt.Errorf("collection not found")).Build()
-						i, err := NewIndexer(ctx, &IndexerConfig{
-							Client:        mockClient,
-							PartitionNum:  0,
-							PartitionName: "test",
-							Embedding:     mockEmb,
-						})
-						convey.So(err, convey.ShouldNotBeNil)
-						convey.So(i, convey.ShouldBeNil)
-					})
-					
-					PatchConvey("test partition not found", func() {
-						Mock(GetMethod(mockClient, "HasPartition")).Return(false, nil).Build()
-						PatchConvey("test create partition has error", func() {
-							Mock(GetMethod(mockClient, "CreatePartition")).Return(fmt.Errorf("create partition failed")).Build()
-							i, err := NewIndexer(ctx, &IndexerConfig{
-								Client:        mockClient,
-								PartitionNum:  0,
-								PartitionName: "test",
-								Embedding:     mockEmb,
-							})
-							convey.So(err, convey.ShouldNotBeNil)
-							convey.So(i, convey.ShouldBeNil)
-						})
-						PatchConvey("test partition loaded", func() {
-							Mock(GetMethod(mockClient, "CreatePartition")).Return(nil).Build()
-							PatchConvey("test create partition has error", func() {
-								Mock(GetMethod(mockClient, "LoadPartitions")).Return(fmt.Errorf("load partition failed")).Build()
-								i, err := NewIndexer(ctx, &IndexerConfig{
-									Client:        mockClient,
-									PartitionNum:  0,
-									PartitionName: "test",
-									Embedding:     mockEmb,
-								})
-								convey.So(err, convey.ShouldNotBeNil)
-								convey.So(i, convey.ShouldBeNil)
-							})
-							PatchConvey("test partition loaded success", func() {
-								Mock(GetMethod(mockClient, "LoadPartitions")).Return(nil).Build()
-								i, err := NewIndexer(ctx, &IndexerConfig{
-									Client:        mockClient,
-									PartitionNum:  0,
-									PartitionName: "test",
-									Embedding:     mockEmb,
-								})
-								convey.So(err, convey.ShouldBeNil)
-								convey.So(i, convey.ShouldNotBeNil)
-							})
-						})
-					})
-				})
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(idx, convey.ShouldNotBeNil)
+				convey.So(idx.GetType(), convey.ShouldEqual, typ)
 			})
 		})
 	})
@@ -262,150 +162,182 @@ func TestNewIndexer(t *testing.T) {
 func TestIndexer_Store(t *testing.T) {
 	PatchConvey("test Indexer.Store", t, func() {
 		ctx := context.Background()
-		Mock(client.NewClient).Return(&client.GrpcClient{}, nil).Build()
-		mockClient, _ := client.NewClient(ctx, client.Config{})
-		
-		// 模拟集合已加载
-		Mock(GetMethod(mockClient, "DescribeCollection")).To(func(ctx context.Context, collName string) (*entity.Collection, error) {
-			return &entity.Collection{
-				Schema: &entity.Schema{
-					Fields: getDefaultFields(),
-				},
-				Loaded: true,
-			}, nil
-		}).Build()
-		
-		// 模拟HasCollection
-		Mock(GetMethod(mockClient, "HasCollection")).Return(true, nil).Build()
-		
-		// 创建测试文档
-		docs := []*schema.Document{
+		mockClient := &milvusclient.Client{}
+
+		// Create test documents
+		testDocs := []*schema.Document{
 			{
-				ID:       "doc1",
-				Content:  "This is a test document",
-				MetaData: map[string]interface{}{"key": "value"},
+				ID:      "doc1",
+				Content: "test content 1",
+				MetaData: map[string]interface{}{
+					"key1": "value1",
+				},
 			},
 			{
-				ID:       "doc2",
-				Content:  "This is another test document",
-				MetaData: map[string]interface{}{"key2": "value2"},
+				ID:      "doc2",
+				Content: "test content 2",
+				MetaData: map[string]interface{}{
+					"key2": "value2",
+				},
 			},
 		}
-		
-		PatchConvey("test store with document converter error", func() {
-			// 创建带有错误的文档转换器的索引器
-			mockEmb := &mockEmbedding{}
-			indexer, err := NewIndexer(ctx, &IndexerConfig{
-				Client:     mockClient,
-				Collection: defaultCollection,
-				Embedding:  mockEmb,
-				DocumentConverter: func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error) {
-					return nil, fmt.Errorf("document converter error")
+
+		PatchConvey("test embedding not set", func() {
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         nil,
 				},
-			})
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(indexer, convey.ShouldNotBeNil)
-			
-			// 测试文档转换器错误的情况
-			ids, err := indexer.Store(ctx, docs)
-			convey.So(err, convey.ShouldBeError, fmt.Errorf("[Indexer.Store] failed to convert documents: document converter error"))
+			}
+
+			ids, err := idx.Store(ctx, testDocs)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "embedding is not set")
 			convey.So(ids, convey.ShouldBeNil)
 		})
-		
-		PatchConvey("test store with insert rows error", func() {
-			// 模拟InsertRows错误
-			Mock(GetMethod(mockClient, "InsertRows")).Return(nil, fmt.Errorf("insert rows error")).Build()
-			
-			// 创建索引器
-			mockEmb := &mockEmbedding{}
-			indexer, err := NewIndexer(ctx, &IndexerConfig{
-				Client:     mockClient,
-				Collection: defaultCollection,
-				Embedding:  mockEmb,
-			})
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(indexer, convey.ShouldNotBeNil)
-			
-			// 测试插入行错误的情况
-			ids, err := indexer.Store(ctx, docs)
-			convey.So(err, convey.ShouldBeError, fmt.Errorf("[Indexer.Store] failed to insert rows: insert rows error"))
+
+		PatchConvey("test embedding error", func() {
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{err: fmt.Errorf("embedding error")},
+				},
+			}
+
+			ids, err := idx.Store(ctx, testDocs)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "failed to embed documents")
 			convey.So(ids, convey.ShouldBeNil)
 		})
-		
-		PatchConvey("test store with flush error", func() {
-			// 模拟InsertRows成功
-			mockIDs := entity.NewColumnVarChar("id", []string{"doc1", "doc2"})
-			Mock(GetMethod(mockClient, "InsertRows")).Return(mockIDs, nil).Build()
-			
-			// 模拟Flush错误
-			Mock(GetMethod(mockClient, "Flush")).Return(fmt.Errorf("flush error")).Build()
-			
-			// 创建索引器
-			mockEmb := &mockEmbedding{}
-			indexer, err := NewIndexer(ctx, &IndexerConfig{
-				Client:     mockClient,
-				Collection: defaultCollection,
-				Embedding:  mockEmb,
-			})
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(indexer, convey.ShouldNotBeNil)
-			
-			// 测试刷新错误的情况
-			ids, err := indexer.Store(ctx, docs)
-			convey.So(err, convey.ShouldBeError, fmt.Errorf("[Indexer.Store] failed to flush collection: flush error"))
+
+		PatchConvey("test embedding vector count mismatch", func() {
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{sizeForCall: []int{1}, dims: 128}, // Returns 1 vector but has 2 documents
+				},
+			}
+
+			ids, err := idx.Store(ctx, testDocs)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "converter returned 1 rows, expected 2")
 			convey.So(ids, convey.ShouldBeNil)
 		})
-		
-		PatchConvey("test store success", func() {
-			// 模拟InsertRows成功
-			mockIDs := entity.NewColumnVarChar("id", []string{"doc1", "doc2"})
-			Mock(GetMethod(mockClient, "InsertRows")).Return(mockIDs, nil).Build()
-			
-			// 模拟Flush成功
-			Mock(GetMethod(mockClient, "Flush")).Return(nil).Build()
-			
-			// 创建索引器
-			mockEmb := &mockEmbedding{}
-			indexer, err := NewIndexer(ctx, &IndexerConfig{
-				Client:     mockClient,
-				Collection: defaultCollection,
-				Embedding:  mockEmb,
-			})
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(indexer, convey.ShouldNotBeNil)
-			
-			// 测试成功存储的情况
-			ids, err := indexer.Store(ctx, docs)
+
+		PatchConvey("test document converter error", func() {
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: func(docs []*schema.Document, dim int, vectors [][]float64) ([]column.Column, error) {
+						return nil, fmt.Errorf("converter error")
+					},
+					Embedding: &mockEmbedding{sizeForCall: []int{2}, dims: 128},
+				},
+			}
+
+			ids, err := idx.Store(ctx, testDocs)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "failed to convert documents")
+			convey.So(ids, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test insert error", func() {
+			Mock((*milvusclient.Client).Insert).Return(milvusclient.InsertResult{}, fmt.Errorf("insert error")).Build()
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{sizeForCall: []int{2}, dims: 128},
+				},
+			}
+
+			ids, err := idx.Store(ctx, testDocs)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "failed to insert documents")
+			convey.So(ids, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test upsert error", func() {
+			Mock((*milvusclient.Client).Upsert).Return(milvusclient.UpsertResult{}, fmt.Errorf("upsert error")).Build()
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{sizeForCall: []int{2}, dims: 128},
+				},
+			}
+
+			ids, err := idx.Store(ctx, testDocs, WithUpsert())
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "failed to upsert documents")
+			convey.So(ids, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test successful insert", func() {
+			Mock((*milvusclient.Client).Insert).Return(milvusclient.InsertResult{
+				IDs: column.NewColumnVarChar("id", []string{"1", "2"}),
+			}, nil).Build()
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{sizeForCall: []int{2}, dims: 128},
+				},
+			}
+
+			ids, err := idx.Store(ctx, testDocs)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(ids, convey.ShouldNotBeNil)
 			convey.So(len(ids), convey.ShouldEqual, 2)
 			convey.So(ids[0], convey.ShouldEqual, "doc1")
 			convey.So(ids[1], convey.ShouldEqual, "doc2")
 		})
-		
-		PatchConvey("test store with custom embedding", func() {
-			// 模拟InsertRows成功
-			mockIDs := entity.NewColumnVarChar("id", []string{"doc1", "doc2"})
-			Mock(GetMethod(mockClient, "InsertRows")).Return(mockIDs, nil).Build()
-			
-			// 模拟Flush成功
-			Mock(GetMethod(mockClient, "Flush")).Return(nil).Build()
-			
-			// 创建索引器
-			mockEmb := &mockEmbedding{}
-			indexer, err := NewIndexer(ctx, &IndexerConfig{
-				Client:     mockClient,
-				Collection: defaultCollection,
-				Embedding:  mockEmb,
-			})
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(indexer, convey.ShouldNotBeNil)
-			
-			// 测试使用自定义embedding的情况
-			ids, err := indexer.Store(ctx, docs)
+
+		PatchConvey("test successful upsert", func() {
+			Mock((*milvusclient.Client).Upsert).Return(milvusclient.UpsertResult{
+				IDs: column.NewColumnVarChar("id", []string{"1", "2"}),
+			}, nil).Build()
+			idx := &Indexer{
+				conf: &IndexerConfig{
+					Client:            mockClient,
+					Collection:        "test_collection",
+					Partition:         "test_partition",
+					Dim:               128,
+					DocumentConverter: defaultDocumentConverter,
+					Embedding:         &mockEmbedding{sizeForCall: []int{2}, dims: 128},
+				},
+			}
+
+			ids, err := idx.Store(ctx, testDocs, WithUpsert(), WithPartition("custom_partition"))
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(ids, convey.ShouldNotBeNil)
 			convey.So(len(ids), convey.ShouldEqual, 2)
+			convey.So(ids[0], convey.ShouldEqual, "doc1")
+			convey.So(ids[1], convey.ShouldEqual, "doc2")
 		})
 	})
 }
