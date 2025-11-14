@@ -437,7 +437,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCompletedEvent(t *t
 	streamResp := &ssestream.Stream[responses.ResponseStreamEventUnion]{}
 	PatchConvey("ResponseCompletedEvent", t, func() {
 		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
-			Return(true).Build()
+			Return(Sequence(true).Then(false)).Build()
 		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
 			Return(responses.ResponseStreamEventUnion{}).Build()
 		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
@@ -456,7 +456,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseErrorEvent(t *testi
 	streamResp := &ssestream.Stream[responses.ResponseStreamEventUnion]{}
 	PatchConvey("ResponseErrorEvent", t, func() {
 		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
-			Return(true).Build()
+			Return(Sequence(true).Then(false)).Build()
 		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
 			Return(responses.ResponseStreamEventUnion{}).Build()
 		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()
@@ -497,7 +497,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseFailedEvent(t *test
 	streamResp := &ssestream.Stream[responses.ResponseStreamEventUnion]{}
 	PatchConvey("ResponseFailedEvent", t, func() {
 		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Next).
-			Return(true).Build()
+			Return(Sequence(true).Then(false)).Build()
 		MockGeneric((*ssestream.Stream[responses.ResponseStreamEventUnion]).Current).
 			Return(responses.ResponseStreamEventUnion{}).Build()
 		Mock((*responsesAPIChatModel).isAddedToolCall).Return(nil, false).Build()

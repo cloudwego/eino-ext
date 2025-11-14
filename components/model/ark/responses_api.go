@@ -214,7 +214,6 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamResp *ssestream.St
 		}
 	}()
 
-Outer:
 	for streamResp.Next() {
 		cur := streamResp.Current()
 
@@ -242,11 +241,8 @@ Outer:
 			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
-			break Outer
-
 		case responses.ResponseErrorEvent:
 			sw.Send(nil, fmt.Errorf("received error: %s", asEvent.Message))
-			break Outer
 
 		case responses.ResponseIncompleteEvent:
 			msg := cm.handleIncompleteStreamEvent(asEvent)
@@ -254,14 +250,10 @@ Outer:
 			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
-			break Outer
-
 		case responses.ResponseFailedEvent:
 			msg := cm.handleFailedStreamEvent(asEvent)
 			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
-
-			break Outer
 
 		default:
 			msg := cm.handleDeltaStreamEvent(event)
