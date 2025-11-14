@@ -71,7 +71,7 @@ type ServerConfig struct {
 	DocumentationURL   string
 	Provider           *models.AgentProvider
 	SecuritySchemes    map[string]*spec.SecurityScheme
-	Security           map[string][]string
+	Security           []map[string][]string
 	DefaultInputModes  []string
 	DefaultOutputModes []string
 	Skills             []models.AgentSkill

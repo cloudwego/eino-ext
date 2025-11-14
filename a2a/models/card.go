@@ -114,7 +114,7 @@ type AgentCard struct {
 	/** Security scheme details used for authenticating with this agent. */
 	SecuritySchemes map[string]*spec.SecurityScheme `json:"securitySchemes,omitempty"`
 	/** Security requirements for contacting the agent. */
-	Security map[string][]string `json:"security,omitempty"`
+	Security []map[string][]string `json:"security,omitempty"`
 	/**
 	 * The set of interaction modes that the agent supports across all skills. This can be overridden per-skill.
 	 * Supported media types for input.
