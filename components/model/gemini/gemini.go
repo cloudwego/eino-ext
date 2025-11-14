@@ -582,8 +582,16 @@ func (cm *ChatModel) convOpenAPIV3SchemaGeminiSchema(schema *openapi3.Schema) (*
 		result.Nullable = &schema.Nullable
 	}
 
-	switch schema.Type {
-	case openapi3.TypeObject:
+	if schema.Type == nil || len(*schema.Type) == 0 {
+		return nil, fmt.Errorf("schema type is empty")
+	}
+
+	if len(*schema.Type) > 1 {
+		return nil, fmt.Errorf("schema type must be a single value")
+	}
+
+	switch true {
+	case schema.Type.Is(openapi3.TypeObject):
 		result.Type = genai.TypeObject
 		if schema.Properties != nil {
 			properties := make(map[string]*genai.Schema)
@@ -602,7 +610,7 @@ func (cm *ChatModel) convOpenAPIV3SchemaGeminiSchema(schema *openapi3.Schema) (*
 			result.Required = schema.Required
 		}
 
-	case openapi3.TypeArray:
+	case schema.Type.Is(openapi3.TypeArray):
 		result.Type = genai.TypeArray
 		if schema.Items != nil && schema.Items.Value != nil {
 			result.Items, err = cm.convOpenAPIV3SchemaGeminiSchema(schema.Items.Value)
@@ -611,7 +619,7 @@ func (cm *ChatModel) convOpenAPIV3SchemaGeminiSchema(schema *openapi3.Schema) (*
 			}
 		}
 
-	case openapi3.TypeString:
+	case schema.Type.Is(openapi3.TypeString):
 		result.Type = genai.TypeString
 		if schema.Enum != nil {
 			enums := make([]string, 0, len(schema.Enum))
@@ -625,11 +633,11 @@ func (cm *ChatModel) convOpenAPIV3SchemaGeminiSchema(schema *openapi3.Schema) (*
 			result.Enum = enums
 		}
 
-	case openapi3.TypeNumber:
+	case schema.Type.Is(openapi3.TypeNumber):
 		result.Type = genai.TypeNumber
-	case openapi3.TypeInteger:
+	case schema.Type.Is(openapi3.TypeInteger):
 		result.Type = genai.TypeInteger
-	case openapi3.TypeBoolean:
+	case schema.Type.Is(openapi3.TypeBoolean):
 		result.Type = genai.TypeBoolean
 	default:
 		result.Type = genai.TypeUnspecified

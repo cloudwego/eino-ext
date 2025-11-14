@@ -105,7 +105,7 @@ func TestGemini(t *testing.T) {
 				Content: "Hi",
 			},
 		}, WithTopK(0), WithResponseSchema(&openapi3.Schema{
-			Type: openapi3.TypeString,
+			Type: genai.Ptr(openapi3.Types{openapi3.TypeString}),
 			Enum: []any{"1", "2"},
 		}))
 		assert.NoError(t, err)
@@ -123,16 +123,16 @@ func TestGemini(t *testing.T) {
 
 	mockey.PatchConvey("structure", t, func() {
 		responseSchema := &openapi3.Schema{
-			Type: "object",
+			Type: genai.Ptr(openapi3.Types{openapi3.TypeObject}),
 			Properties: map[string]*openapi3.SchemaRef{
 				"name": {
 					Value: &openapi3.Schema{
-						Type: "string",
+						Type: genai.Ptr(openapi3.Types{openapi3.TypeString}),
 					},
 				},
 				"age": {
 					Value: &openapi3.Schema{
-						Type: "integer",
+						Type: genai.Ptr(openapi3.Types{openapi3.TypeInteger}),
 					},
 				},
 			},

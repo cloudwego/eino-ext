@@ -3,7 +3,7 @@
 # 依赖包名称
 DEPENDENCY="github.com/cloudwego/eino"
 # 指定的版本号或分支（如果未提供，则更新到最新版本）
-VERSION=${1:-latest}
+#VERSION=${feat\/jsonschema:-latest}
 
 # 红色加粗字体的
 RED_BOLD="\033[1;31m"
@@ -19,14 +19,14 @@ find_submodules() {
 update_dependency() {
   local mod_path=$1
   echo ""
-  echo -e "${RED_BOLD}Updating dependency ${DEPENDENCY}@${VERSION} in module $mod_path...${RESET}"
+  echo -e "${RED_BOLD}Updating dependency ${DEPENDENCY}@feat/jsonschema in module $mod_path...${RESET}"
   echo ""
 
   # 切换到子模块目录
   cd "$mod_path" || exit
 
   # 更新依赖到最新版本
-  go get -u "${DEPENDENCY}@${VERSION}"
+  go get -u "${DEPENDENCY}@feat/jsonschema"
 
   # 整理 go.mod 和 go.sum 文件
   go mod tidy
