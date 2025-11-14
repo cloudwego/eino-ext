@@ -81,6 +81,11 @@ func WithEnvironment(environment string) TraceOption {
 		o.Environment = environment
 	}
 }
+func WithVersion(version string) TraceOption {
+	return func(o *traceOptions) {
+		o.Version = version
+	}
+}
 
 type traceOptions struct {
 	ID          string
@@ -92,6 +97,7 @@ type traceOptions struct {
 	Public      bool
 	Metadata    map[string]string
 	Environment string
+	Version     string
 }
 
 func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) (*langfuseState, error) {
@@ -101,6 +107,7 @@ func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) 
 			Name:        options.Name,
 			MetaData:    options.Metadata,
 			Environment: options.Environment,
+			Version:     options.Version,
 		},
 		TimeStamp: time.Now(),
 		UserID:    options.UserID,
