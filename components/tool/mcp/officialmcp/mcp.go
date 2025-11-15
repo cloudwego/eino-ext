@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package mcptool
+package officialmcp
 
 import (
 	"context"
@@ -51,14 +51,14 @@ type Config struct {
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 	if conf.Sess == nil {
-		return nil, errors.New("mcp client session is nil")
+		return nil, errors.New("official mcp client session is nil")
 	}
 
 	listResults, err := conf.Sess.ListTools(ctx, &mcp.ListToolsParams{
 		Cursor: conf.Cursor,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list mcp tools fail: %w", err)
+		return nil, fmt.Errorf("list official mcp tools fail: %w", err)
 	}
 
 	nameSet := make(map[string]struct{})
@@ -76,12 +76,12 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 
 		marshaledInputSchema, err := sonic.Marshal(t.InputSchema)
 		if err != nil {
-			return nil, fmt.Errorf("conv mcp tool input schema fail(marshal): %w, tool name: %s", err, t.Name)
+			return nil, fmt.Errorf("conv official mcp tool input schema fail(marshal): %w, tool name: %s", err, t.Name)
 		}
 		inputSchema := &jsonschema.Schema{}
 		err = sonic.Unmarshal(marshaledInputSchema, inputSchema)
 		if err != nil {
-			return nil, fmt.Errorf("conv mcp tool input schema fail(unmarshal): %w, tool name: %s", err, t.Name)
+			return nil, fmt.Errorf("conv official mcp tool input schema fail(unmarshal): %w, tool name: %s", err, t.Name)
 		}
 
 		ret = append(ret, &toolHelper{
@@ -114,22 +114,22 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		Arguments: json.RawMessage(argumentsInJSON),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to call mcp tool: %w", err)
+		return "", fmt.Errorf("failed to call official mcp tool: %w", err)
 	}
 
 	if m.toolCallResultHandler != nil {
 		result, err = m.toolCallResultHandler(ctx, m.info.Name, result)
 		if err != nil {
-			return "", fmt.Errorf("failed to execute mcp tool call result handler: %w", err)
+			return "", fmt.Errorf("failed to execute official mcp tool call result handler: %w", err)
 		}
 	}
 
 	marshaledResult, err := sonic.MarshalString(result)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal mcp tool result: %w", err)
+		return "", fmt.Errorf("failed to marshal official mcp tool result: %w", err)
 	}
 	if result.IsError {
-		return "", fmt.Errorf("failed to call mcp tool, mcp server return error: %s", marshaledResult)
+		return "", fmt.Errorf("failed to call official mcp tool, mcp server return error: %s", marshaledResult)
 	}
 
 	return marshaledResult, nil

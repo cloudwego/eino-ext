@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package mcptool
+package officialmcp
 
 import (
 	"context"

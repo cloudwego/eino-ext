@@ -1,4 +1,4 @@
-module github.com/cloudwego/eino-ext/components/tool/mcp/mcptool
+module github.com/cloudwego/eino-ext/components/tool/mcp/officialmcp
 
 go 1.23.0
 

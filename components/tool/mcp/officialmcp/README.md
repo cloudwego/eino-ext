@@ -1,19 +1,24 @@
-/*
- * Copyright 2025 CloudWeGo Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
+# MCP Tool
 
+A MCP Tool implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Tool` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+
+## Features
+
+- Implements `github.com/cloudwego/eino/components/tool.BaseTool`
+- Easy integration with Eino's tool system
+- Support for get&call mcp tools
+
+## Installation
+
+```bash
+go get github.com/cloudwego/eino-ext/components/tool/mcp/officialmcp@latest
+```
+
+## Quick Start
+
+Here's a quick example of how to use the official mcp tool:
+
+```go
 package main
 
 import (
@@ -27,7 +32,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	mcpp "github.com/cloudwego/eino-ext/components/tool/mcp/mcptool"
+	omcp "github.com/cloudwego/eino-ext/components/tool/mcp/officialmcp"
 )
 
 type AddParams struct {
@@ -51,7 +56,7 @@ func main() {
 	sess := getMCPClientSession(ctx, httpServer.URL)
 	defer sess.Close()
 
-	mcpTools, err := mcpp.GetTools(ctx, &mcpp.Config{Sess: sess})
+	mcpTools, err := omcp.GetTools(ctx, &omcp.Config{Sess: sess})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -92,3 +97,25 @@ func startMCPServer() *httptest.Server {
 	httpServer := httptest.NewServer(handler)
 	return httpServer
 }
+```
+
+## Configuration
+
+The tool can be configured using the `mcp.Config` struct:
+
+```go
+type Config struct {
+	// Sess is the MCP (Model Control Protocol) session, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Notice: should Initialize with server before use
+	Sess *mcp.ClientSession
+	// ToolNameList specifies which tools to fetch from MCP server
+	// If empty, all available tools will be fetched
+	ToolNameList []string
+}
+```
+
+## For More Details
+
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
+- [MCP Documentation](https://modelcontextprotocol.io/introduction)
+- [Official MCP SDK Documentation](https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools)
