@@ -75,12 +75,19 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		tools = options.Tools
 	}
 
+	callbackExtra := map[string]any{
+		callbackExtraKeyThinking: specOptions.thinking,
+	}
+	if reqParams.req.PreviousResponseID.Valid() {
+		callbackExtra[callbackExtraKeyPreResponseID] = reqParams.req.PreviousResponseID.Value
+	}
+
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages:   input,
 		Tools:      tools,
 		ToolChoice: options.ToolChoice,
 		Config:     config,
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Extra:      callbackExtra,
 	})
 
 	defer func() {
@@ -103,7 +110,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		Message:    outMsg,
 		Config:     config,
 		TokenUsage: cm.toModelTokenUsage(resp.Usage),
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Extra:      callbackExtra,
 	})
 
 	return outMsg, nil
@@ -129,12 +136,19 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		tools = options.Tools
 	}
 
+	callbackExtra := map[string]any{
+		callbackExtraKeyThinking: specOptions.thinking,
+	}
+	if reqParams.req.PreviousResponseID.Valid() {
+		callbackExtra[callbackExtraKeyPreResponseID] = reqParams.req.PreviousResponseID.Value
+	}
+
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
 		Messages:   input,
 		Tools:      tools,
 		ToolChoice: options.ToolChoice,
 		Config:     config,
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Extra:      callbackExtra,
 	})
 
 	defer func() {
