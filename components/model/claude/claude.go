@@ -381,7 +381,7 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 	for _, tool := range tools {
 		s, err := tool.ToJSONSchema()
 		if err != nil {
-			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
+			return nil, fmt.Errorf("convert to json schema fail: %w", err)
 		}
 
 		var inputSchema anthropic.ToolInputSchemaParam
@@ -601,12 +601,16 @@ func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOpt
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
+	co := model.GetCommonOptions(&model.Options{
+		Tools:      cm.origTools,
+		ToolChoice: cm.toolChoice,
+	}, opts...)
+
 	result := &model.CallbackInput{
-		Messages: input,
-		Tools: model.GetCommonOptions(&model.Options{
-			Tools: cm.origTools,
-		}, opts...).Tools,
-		Config: cm.getConfig(),
+		Messages:   input,
+		Tools:      co.Tools,
+		ToolChoice: co.ToolChoice,
+		Config:     cm.getConfig(),
 	}
 	return result
 }
@@ -985,7 +989,7 @@ func toolEvent(isStart bool, toolCallID, toolName string, input any, sc *streamC
 		if sc.toolIndex == nil {
 			sc.toolIndex = of(-1)
 		}
-		*sc.toolIndex++
+		sc.toolIndex = of(*sc.toolIndex + 1)
 	} else if sc.toolIndex == nil {
 		sc.toolIndex = of(0)
 	}

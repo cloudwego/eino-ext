@@ -556,8 +556,9 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 	}
 
 	cbInput := &model.CallbackInput{
-		Messages: in,
-		Tools:    cm.rawTools,
+		Messages:   in,
+		Tools:      cm.rawTools,
+		ToolChoice: options.ToolChoice,
 		Config: &model.Config{
 			Model:       req.Model,
 			MaxTokens:   req.MaxTokens,

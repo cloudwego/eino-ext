@@ -335,8 +335,9 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 	}, opts...)
 
 	cbInput := &model.CallbackInput{
-		Messages: input,
-		Tools:    cm.rawTools,
+		Messages:   input,
+		Tools:      cm.rawTools,
+		ToolChoice: cm.toolChoice,
 		Config: &model.Config{
 			Model:       dereferenceOrZero(options.Model),
 			MaxTokens:   dereferenceOrZero(options.MaxTokens),

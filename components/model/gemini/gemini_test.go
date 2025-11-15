@@ -26,7 +26,6 @@ import (
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/genai"
@@ -104,8 +103,8 @@ func TestGemini(t *testing.T) {
 				Role:    schema.User,
 				Content: "Hi",
 			},
-		}, WithTopK(0), WithResponseSchema(&openapi3.Schema{
-			Type: openapi3.TypeString,
+		}, WithTopK(0), WithResponseJSONSchema(&jsonschema.Schema{
+			Type: "string",
 			Enum: []any{"1", "2"},
 		}))
 		assert.NoError(t, err)
@@ -122,22 +121,26 @@ func TestGemini(t *testing.T) {
 	})
 
 	mockey.PatchConvey("structure", t, func() {
-		responseSchema := &openapi3.Schema{
+		responseSchema := &jsonschema.Schema{
 			Type: "object",
-			Properties: map[string]*openapi3.SchemaRef{
-				"name": {
-					Value: &openapi3.Schema{
-						Type: "string",
+			Properties: orderedmap.New[string, *jsonschema.Schema](
+				orderedmap.WithInitialData[string, *jsonschema.Schema](
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "name",
+						Value: &jsonschema.Schema{
+							Type: string(schema.String),
+						},
 					},
-				},
-				"age": {
-					Value: &openapi3.Schema{
-						Type: "integer",
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "age",
+						Value: &jsonschema.Schema{
+							Type: string(schema.Integer),
+						},
 					},
-				},
-			},
+				),
+			),
 		}
-		model.responseSchema = responseSchema
+		model.responseJSONSchema = responseSchema
 
 		// Mock Gemini API 响应
 		defer mockey.Mock(genai.Models.GenerateContent).Return(&genai.GenerateContentResponse{
