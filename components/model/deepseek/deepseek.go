@@ -653,6 +653,15 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	if len(m.MultiContent) > 0 {
 		return nil, fmt.Errorf("multi content is not supported in deepseek")
 	}
+
+	if len(m.UserInputMultiContent) > 0 {
+		return nil, fmt.Errorf("user input multi content is not supported in deepseek")
+	}
+
+	if len(m.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("assistan gen multi content is not supported in deepseek")
+	}
+
 	var role string
 	switch m.Role {
 	case schema.Assistant:
