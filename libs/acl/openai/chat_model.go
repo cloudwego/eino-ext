@@ -18,7 +18,6 @@ package openai
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,7 +27,6 @@ import (
 	"sort"
 
 	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/meguminnnnnnnnn/go-openai"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -56,12 +54,10 @@ type ChatCompletionResponseFormat struct {
 }
 
 type ChatCompletionResponseFormatJSONSchema struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	// Deprecated: use JSONSchema instead.
-	Schema     *openapi3.Schema   `json:"-"`
-	JSONSchema *jsonschema.Schema `json:"-"`
-	Strict     bool               `json:"strict"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	JSONSchema  *jsonschema.Schema `json:"schema"`
+	Strict      bool               `json:"strict"`
 }
 
 // Modality defines allowed output modalities
@@ -722,16 +718,10 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
 			Type: openai.ChatCompletionResponseFormatType(c.config.ResponseFormat.Type),
 		}
-		if c.config.ResponseFormat.JSONSchema != nil {
-			js := c.config.ResponseFormat.JSONSchema
+		if js := c.config.ResponseFormat.JSONSchema; js != nil {
 			req.ResponseFormat.JSONSchema = &openai.ChatCompletionResponseFormatJSONSchema{
-				Name: js.Name,
-				Schema: func() json.Marshaler {
-					if js.JSONSchema != nil {
-						return js.JSONSchema
-					}
-					return js.Schema
-				}(),
+				Name:        js.Name,
+				Schema:      js.JSONSchema,
 				Description: js.Description,
 				Strict:      js.Strict,
 			}
