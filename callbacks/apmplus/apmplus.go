@@ -272,7 +272,7 @@ func (a *apmplusHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, i
 			}
 		}
 	}
-
+	span.SetAttributes(attribute.String("gen_ai.system", "eino"))
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
@@ -453,6 +453,7 @@ func (a *apmplusHandler) OnStartWithStreamInput(ctx context.Context, info *callb
 	} else {
 		span.SetAttributes(attribute.String("gen_ai.span.kind", strings.ToLower(string(info.Component))))
 	}
+	span.SetAttributes(attribute.String("gen_ai.system", "eino"))
 	span.SetAttributes(attribute.String("runinfo.name", info.Name))
 	span.SetAttributes(attribute.String("runinfo.type", info.Type))
 	span.SetAttributes(attribute.String("runinfo.component", string(info.Component)))
