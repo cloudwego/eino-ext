@@ -24,8 +24,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
@@ -246,32 +244,41 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 			return nil, err
 		}
 	}
+	var opts []arkruntime.ConfigOption
 
-	var opts []option.RequestOption
+	if config.Region == "" {
+		opts = append(opts, arkruntime.WithRegion(defaultRegion))
+	} else {
+		opts = append(opts, arkruntime.WithRegion(config.Region))
+	}
 
 	if config.Timeout != nil {
-		opts = append(opts, option.WithRequestTimeout(*config.Timeout))
+		opts = append(opts, arkruntime.WithTimeout(*config.Timeout))
 	} else {
-		opts = append(opts, option.WithRequestTimeout(defaultTimeout))
+		opts = append(opts, arkruntime.WithTimeout(defaultTimeout))
 	}
 	if config.HTTPClient != nil {
-		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
 	}
 	if config.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(config.BaseURL))
+		opts = append(opts, arkruntime.WithBaseUrl(config.BaseURL))
 	} else {
-		opts = append(opts, option.WithBaseURL(defaultBaseURL))
+		opts = append(opts, arkruntime.WithBaseUrl(defaultBaseURL))
 	}
 	if config.RetryTimes != nil {
-		opts = append(opts, option.WithMaxRetries(*config.RetryTimes))
+		opts = append(opts, arkruntime.WithRetryTimes(*config.RetryTimes))
 	} else {
-		opts = append(opts, option.WithMaxRetries(defaultRetryTimes))
-	}
-	if config.APIKey != "" {
-		opts = append(opts, option.WithAPIKey(config.APIKey))
+		opts = append(opts, arkruntime.WithRetryTimes(defaultRetryTimes))
 	}
 
-	client := responses.NewResponseService(opts...)
+	var client *arkruntime.Client
+	if len(config.APIKey) > 0 {
+		client = arkruntime.NewClientWithApiKey(config.APIKey, opts...)
+	} else if config.AccessKey != "" && config.SecretKey != "" {
+		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
+	} else {
+		return nil, fmt.Errorf("new client fail, missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
+	}
 
 	cm := &responsesAPIChatModel{
 		client:         client,
@@ -285,22 +292,15 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 		cache:          config.Cache,
 		serviceTier:    config.ServiceTier,
 	}
-
 	return cm, nil
 }
 
 func checkResponsesAPIConfig(config *ChatModelConfig) error {
-	if config.Region != "" {
-		return fmt.Errorf("'Region' is not supported by ResponsesAPI")
+
+	if config.APIKey == "" && (config.AccessKey == "" && config.SecretKey == "") {
+		return fmt.Errorf("missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
 	}
-	if config.APIKey == "" {
-		if config.AccessKey != "" {
-			return fmt.Errorf("'AccessKey' is not supported by ResponsesAPI")
-		}
-		if config.SecretKey != "" {
-			return fmt.Errorf("'SecretKey' is not supported by ResponsesAPI")
-		}
-	}
+
 	if len(config.Stop) > 0 {
 		return fmt.Errorf("'Stop' is not supported by ResponsesAPI")
 	}
@@ -505,10 +505,9 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 //
 // Note:
 //   - It is unavailable for doubao models of version 1.6 and above.
-//   - Currently, only supports calling by ContextAPI.
-func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
+func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int, opts ...fmodel.Option) (info *CacheInfo, err error) {
 	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
-		return nil, fmt.Errorf("CreatePrefixCache is not supported by ResponsesAPI")
+		return cm.respChatModel.createPrefixCacheByResponseAPI(ctx, prefix, ttl, opts...)
 	}
 	return cm.createContextByContextAPI(ctx, prefix, ttl, model.ContextModeCommonPrefix, nil)
 }
