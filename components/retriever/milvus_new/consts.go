@@ -24,7 +24,7 @@ const (
 	defaultVectorField = "vector"
 	defaultTopK        = 5
 
-	defaultMetricType = entity.HAMMING
+	defaultMetricType = entity.COSINE
 
 	typeParamDim = "dim"
 )

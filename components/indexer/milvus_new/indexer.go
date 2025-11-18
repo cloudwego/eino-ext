@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -28,6 +29,7 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
+	"github.com/gogf/gf/v2/frame/g"
 	"github.com/milvus-io/milvus/client/v2/column"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/index"
@@ -38,7 +40,7 @@ type IndexerConfig struct {
 	// Client is the milvus client to be called
 	// It uses the new milvus/client/v2/milvusclient
 	// Required
-	Client milvusclient.Client
+	Client *milvusclient.Client
 
 	// Default Collection config
 	// Collection is the collection name in milvus database
@@ -184,13 +186,37 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		return nil, fmt.Errorf("[Indexer.Store] embedding not provided")
 	}
 
-	// load documents content
+	// load documents content and filter empty content
 	texts := make([]string, 0, len(docs))
+	validDocs := make([]*schema.Document, 0, len(docs))
+	filteredCount := 0
+
 	for _, doc := range docs {
-		texts = append(texts, doc.Content)
+		// Filter out documents with empty or whitespace-only content
+		trimmedContent := strings.TrimSpace(doc.Content)
+		contentLen := len(trimmedContent)
+
+		if contentLen > 0 {
+			texts = append(texts, doc.Content)
+			validDocs = append(validDocs, doc)
+		} else {
+			filteredCount++
+		}
 	}
 
+	g.Log().Infof(ctx, "[Indexer.Store] Filter results: original=%d, valid=%d, filtered=%d",
+		len(docs), len(validDocs), filteredCount)
+
+	// If all documents were filtered out, return an error
+	if len(validDocs) == 0 {
+		return nil, fmt.Errorf("[Indexer.Store] all documents have empty content after filtering, original count: %d", len(docs))
+	}
+
+	// Use validDocs for subsequent processing
+	docs = validDocs
+
 	// embedding
+	g.Log().Infof(ctx, "[Indexer.Store] Calling EmbedStrings with %d texts", len(texts))
 	vectors, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), texts)
 	if err != nil {
 		return nil, err

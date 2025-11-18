@@ -35,7 +35,7 @@ type RetrieverConfig struct {
 	// Client is the milvus client to be called
 	// It uses the new milvus/client/v2/milvusclient
 	// Required
-	Client milvusclient.Client
+	Client *milvusclient.Client
 
 	// Default Retriever config
 	// Collection is the collection name in the milvus database
@@ -52,12 +52,12 @@ type RetrieverConfig struct {
 	OutputFields []string
 	// DocumentConverter is the function to convert the search result to schema.Document
 	// Optional, and the default value is defaultDocumentConverter
-	DocumentConverter func(ctx context.Context, columns []column.Column) ([]*schema.Document, error)
+	DocumentConverter func(ctx context.Context, columns []column.Column, scores []float32) ([]*schema.Document, error)
 	// VectorConverter is the function to convert the vectors to binary vector bytes
-	// Optional, and the default value is defaultVectorConverter
+	// Deprecated: This field is no longer used for float vectors. Float vectors are handled directly.
 	VectorConverter func(ctx context.Context, vectors [][]float64) ([][]byte, error)
 	// MetricType is the metric type for vector
-	// Optional, and the default value is "HAMMING"
+	// Optional, and the default value is "COSINE" for float vectors
 	MetricType MetricType
 	// TopK is the top k results to be returned
 	// Optional, and the default value is 5
@@ -155,21 +155,21 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if err != nil {
 		return nil, fmt.Errorf("[milvus retriever] embedding has error: %w", err)
 	}
-	// check the embedding result
+	// 检查 embedding result
 	if len(vectors) != 1 {
 		return nil, fmt.Errorf("[milvus retriever] invalid return length of vector, got=%d, expected=1", len(vectors))
 	}
 
-	// convert the embedding result to binary vector bytes
-	vecBytes, err := r.config.VectorConverter(ctx, vectors)
-	if err != nil {
-		return nil, fmt.Errorf("[milvus retriever] failed to convert vector: %w", err)
-	}
-
-	// Convert [][]byte to []entity.Vector
-	entityVectors := make([]entity.Vector, len(vecBytes))
-	for i, vb := range vecBytes {
-		entityVectors[i] = entity.BinaryVector(vb)
+	// Convert [][]float64 to []entity.Vector as FloatVector
+	// For float vectors, we use entity.FloatVector directly
+	entityVectors := make([]entity.Vector, len(vectors))
+	for i, vec := range vectors {
+		// Convert float64 to float32 for Milvus
+		float32Vec := make([]float32, len(vec))
+		for j, v := range vec {
+			float32Vec[j] = float32(v)
+		}
+		entityVectors[i] = entity.FloatVector(float32Vec)
 	}
 
 	// prepare partition
@@ -183,38 +183,40 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 
 	// prepare search options
-	var searchOpt milvusclient.SearchOption = milvusclient.NewSearchOption(r.config.Collection, *co.TopK, entityVectors).
+	searchOpt := milvusclient.NewSearchOption(r.config.Collection, *co.TopK, entityVectors).
 		WithANNSField(r.config.VectorField).
 		WithOutputFields(r.config.OutputFields...).
 		WithConsistencyLevel(entity.ClBounded)
 
+	// Add partitions if provided
 	if len(partitions) > 0 {
-		searchOpt = searchOpt.(interface {
-			WithPartitions(partitions ...string) milvusclient.SearchOption
-		}).WithPartitions(partitions...)
+		searchOpt = searchOpt.WithPartitions(partitions...)
 	}
 
+	// Add filter if provided
 	if io.Filter != "" {
-		searchOpt = searchOpt.(interface {
-			WithFilter(expr string) milvusclient.SearchOption
-		}).WithFilter(io.Filter)
+		searchOpt = searchOpt.WithFilter(io.Filter)
 	}
 
 	// Add score threshold if provided
 	if co.ScoreThreshold != nil && *co.ScoreThreshold > 0 {
 		// Note: Milvus 2.6 uses range filter for score threshold
-		searchOpt = searchOpt.(interface {
-			WithFilter(expr string) milvusclient.SearchOption
-		}).WithFilter(fmt.Sprintf("score >= %f", *co.ScoreThreshold))
+		filter := fmt.Sprintf("score >= %f", *co.ScoreThreshold)
+		if io.Filter != "" {
+			// Combine with existing filter using AND
+			filter = fmt.Sprintf("(%s) and (%s)", io.Filter, filter)
+		}
+		searchOpt = searchOpt.WithFilter(filter)
 	}
 
 	// Apply custom search options if provided
+	var searchOptInterface milvusclient.SearchOption = searchOpt
 	if io.SearchOptFn != nil {
-		searchOpt = io.SearchOptFn(searchOpt)
+		searchOptInterface = io.SearchOptFn(searchOptInterface)
 	}
 
 	// search the collection
-	results, err := r.config.Client.Search(ctx, searchOpt)
+	results, err := r.config.Client.Search(ctx, searchOptInterface)
 	if err != nil {
 		return nil, fmt.Errorf("[milvus retriever] search has error: %w", err)
 	}
@@ -225,7 +227,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 
 	// convert the search result to schema.Document
-	documents, err := r.config.DocumentConverter(ctx, results[0].Fields)
+	documents, err := r.config.DocumentConverter(ctx, results[0].Fields, results[0].Scores)
 	if err != nil {
 		return nil, fmt.Errorf("[milvus retriever] failed to convert search result to schema.Document: %w", err)
 	}
@@ -246,8 +248,15 @@ func (r *Retriever) IsCallbacksEnabled() bool {
 
 // check the retriever config and set the default value
 func (r *RetrieverConfig) check() error {
-	// Check if Client is nil using reflection since it's an interface
-	if reflect.ValueOf(r.Client).IsNil() {
+	// Check if Client is nil using reflection safely
+	clientVal := reflect.ValueOf(r.Client)
+	if !clientVal.IsValid() {
+		return fmt.Errorf("[NewRetriever] milvus client not provided")
+	}
+	// IsNil can only be called on certain kinds
+	kind := clientVal.Kind()
+	if (kind == reflect.Ptr || kind == reflect.Interface || kind == reflect.Slice ||
+		kind == reflect.Map || kind == reflect.Chan || kind == reflect.Func) && clientVal.IsNil() {
 		return fmt.Errorf("[NewRetriever] milvus client not provided")
 	}
 	if r.Embedding == nil {
