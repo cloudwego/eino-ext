@@ -381,7 +381,7 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 	for _, tool := range tools {
 		s, err := tool.ToJSONSchema()
 		if err != nil {
-			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
+			return nil, fmt.Errorf("convert to json schema fail: %w", err)
 		}
 
 		var inputSchema anthropic.ToolInputSchemaParam
