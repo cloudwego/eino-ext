@@ -50,3 +50,19 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "how are you", reasoningContent)
 }
+
+func TestSetGetModelName(t *testing.T) {
+	msg := &schema.Message{}
+	setModelName(msg, "gpt-4")
+	modelName, ok := GetModelName(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "gpt-4", modelName)
+}
+
+func TestSetGetRequestID(t *testing.T) {
+	msg := &schema.Message{}
+	setRequestID(msg, "req-123")
+	requestID, ok := GetRequestID(msg)
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "req-123", requestID)
+}

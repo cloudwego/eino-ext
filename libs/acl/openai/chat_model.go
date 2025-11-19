@@ -812,6 +812,9 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
+	setRequestID(outMsg, resp.ID)
+	setModelName(outMsg, resp.Model)
+
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     cbInput.Config,
@@ -1117,6 +1120,9 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 		}
 		found = true
 	}
+
+	setRequestID(msg, resp.ID)
+	setModelName(msg, resp.Model)
 
 	return msg, found, nil
 }

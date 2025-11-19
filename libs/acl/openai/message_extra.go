@@ -27,6 +27,8 @@ const (
 	keyOfReasoningContent     = "reasoning-content"
 	extraKeyOfAudioID         = "openai-audio-id"
 	extraKeyOfAudioTranscript = "openai_audio-transcript"
+	keyOfRequestID            = "openai-request-id"
+	keyOfModelName            = "openai-model-name"
 )
 
 func GetReasoningContent(msg *schema.Message) (string, bool) {
@@ -109,4 +111,46 @@ func GetMessageOutputAudioTranscript(audio *schema.MessageOutputAudio) (string, 
 		return "", false
 	}
 	return transcript, true
+}
+
+func setRequestID(msg *schema.Message, ID string) {
+	if msg == nil || len(ID) == 0 {
+		return
+	}
+	if msg.Extra == nil {
+		msg.Extra = make(map[string]interface{})
+	}
+	msg.Extra[keyOfRequestID] = ID
+}
+
+func GetRequestID(msg *schema.Message) (string, bool) {
+	if msg == nil {
+		return "", false
+	}
+	ID, ok := msg.Extra[keyOfRequestID].(string)
+	if !ok {
+		return "", false
+	}
+	return ID, true
+}
+
+func setModelName(msg *schema.Message, name string) {
+	if msg == nil || len(name) == 0 {
+		return
+	}
+	if msg.Extra == nil {
+		msg.Extra = make(map[string]interface{})
+	}
+	msg.Extra[keyOfModelName] = name
+}
+
+func GetModelName(msg *schema.Message) (string, bool) {
+	if msg == nil {
+		return "", false
+	}
+	name, ok := msg.Extra[keyOfModelName].(string)
+	if !ok {
+		return "", false
+	}
+	return name, true
 }
