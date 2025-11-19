@@ -212,8 +212,11 @@ func (k *knowledge) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if err != nil {
 		return nil, fmt.Errorf("do request fail: %w", err)
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to retrieve documents, code: %d, status: %s", resp.StatusCode, resp.Status)
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -271,6 +274,9 @@ type postProcessing struct {
 }
 
 func (r *response) toDocuments() []*schema.Document {
+	if r.Data == nil {
+		return nil
+	}
 	docs := make([]*schema.Document, 0, len(r.Data.ResultList))
 	for _, res := range r.Data.ResultList {
 		doc := &schema.Document{
