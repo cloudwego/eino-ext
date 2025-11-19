@@ -54,3 +54,35 @@ func TestVideoMetaDataFunctions(t *testing.T) {
 		assert.Nil(t, GetInputVideoMetaData(nil))
 	})
 }
+
+func TestThoughtSignatureFunctions(t *testing.T) {
+	t.Run("TestSetThoughtSignature", func(t *testing.T) {
+		toolCall := &schema.ToolCall{
+			ID: "test_tool",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: "{}",
+			},
+		}
+
+		// Success case
+		signature := []byte("test_signature_data")
+		setThoughtSignature(toolCall, signature)
+		retrieved := getThoughtSignature(toolCall)
+		assert.Equal(t, signature, retrieved)
+
+		// Boundary case: nil tool call
+		setThoughtSignature(nil, signature)
+		assert.Nil(t, getThoughtSignature(nil))
+
+		// Boundary case: empty signature
+		toolCall2 := &schema.ToolCall{ID: "test2"}
+		setThoughtSignature(toolCall2, []byte{})
+		// Empty signature should not be set
+		assert.Nil(t, getThoughtSignature(toolCall2))
+
+		// Boundary case: toolCall with nil Extra
+		toolCall3 := &schema.ToolCall{ID: "test3"}
+		assert.Nil(t, getThoughtSignature(toolCall3))
+	})
+}
