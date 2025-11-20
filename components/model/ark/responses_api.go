@@ -390,25 +390,25 @@ func (cm *responsesAPIChatModel) populateTools(responseReq *responses.ResponsesR
 		}
 	}
 
-	if toolChoice != nil {
-		var mode responses.ToolChoiceMode_Enum
-		switch *toolChoice {
-		case schema.ToolChoiceForbidden:
-			mode = responses.ToolChoiceMode_none
-		case schema.ToolChoiceAllowed:
-			mode = responses.ToolChoiceMode_auto
-		case schema.ToolChoiceForced:
-			mode = responses.ToolChoiceMode_required
-		default:
-			mode = responses.ToolChoiceMode_auto
-		}
-		responseReq.ToolChoice = &responses.ResponsesToolChoice{
-			Union: &responses.ResponsesToolChoice_Mode{
-				Mode: mode,
-			},
-		}
-
-	}
+	//if toolChoice != nil {
+	//	var mode responses.ToolChoiceMode_Enum
+	//	switch *toolChoice {
+	//	case schema.ToolChoiceForbidden:
+	//		mode = responses.ToolChoiceMode_none
+	//	case schema.ToolChoiceAllowed:
+	//		mode = responses.ToolChoiceMode_auto
+	//	case schema.ToolChoiceForced:
+	//		mode = responses.ToolChoiceMode_required
+	//	default:
+	//		mode = responses.ToolChoiceMode_auto
+	//	}
+	//	responseReq.ToolChoice = &responses.ResponsesToolChoice{
+	//		Union: &responses.ResponsesToolChoice_Mode{
+	//			Mode: mode,
+	//		},
+	//	}
+	//
+	//}
 
 	responseReq.Tools = tools
 	return nil
@@ -798,7 +798,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			sw.Close()
 		}()
 
-		var cacheCfg *cacheConfig
+		var cacheCfg = &cacheConfig{}
 		if responseReq.Caching != nil && responseReq.Caching.Type != nil {
 			cacheCfg.Enabled = *responseReq.Caching.Type == responses.CacheType_enabled
 			cacheCfg.ExpireAt = responseReq.ExpireAt
