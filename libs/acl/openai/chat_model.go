@@ -812,6 +812,8 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
+	outMsg.Extra["_eino_response_header"] = resp.Header()
+
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     cbInput.Config,
