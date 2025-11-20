@@ -239,18 +239,22 @@ func (s *A2AServer) getTask(ctx context.Context, input *models.TaskQueryParams) 
 
 func (s *A2AServer) cancelTask(ctx context.Context, input *models.TaskIDParams) (*models.Task, error) {
 	var err error
-	err = s.taskLocker.Lock(ctx, input.ID)
+
+	// Context cancellation should be scoped to business processing only and must not affect invocations of service lifecycle control components.
+	detachedCtx := context.WithoutCancel(ctx)
+
+	err = s.taskLocker.Lock(detachedCtx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire lock for new task[%s]: %w", input.ID, err)
 	}
 	defer func() {
-		unlockErr := s.taskLocker.Unlock(ctx, input.ID)
+		unlockErr := s.taskLocker.Unlock(detachedCtx, input.ID)
 		if unlockErr != nil {
-			s.logger(ctx, "failed to release lock for task[%s]: %s", input.ID, unlockErr.Error())
+			s.logger(detachedCtx, "failed to release lock for task[%s]: %s", input.ID, unlockErr.Error())
 		}
 	}()
 
-	t, ok, err := s.taskStore.Get(ctx, input.ID)
+	t, ok, err := s.taskStore.Get(detachedCtx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task[%s]: %w", input.ID, err)
 	}
@@ -271,7 +275,7 @@ func (s *A2AServer) cancelTask(ctx context.Context, input *models.TaskIDParams) 
 
 	t = loadTaskContext(t, resp)
 
-	err = s.taskStore.Save(ctx, t)
+	err = s.taskStore.Save(detachedCtx, t)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save canceled task: %w", err)
 	}
@@ -304,7 +308,7 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 			return nil, fmt.Errorf("task[%s] is nil", *input.Message.TaskID)
 		}
 	} else {
-		t, err = s.initTask(detachedCtx)
+		t, err = s.initTask(detachedCtx, input.Message.ContextID)
 		if err != nil {
 			return nil, err
 		}
@@ -443,7 +447,7 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			return fmt.Errorf("task[%s] is nil", *input.Message.TaskID)
 		}
 	} else {
-		t, err = s.initTask(detachedCtx)
+		t, err = s.initTask(detachedCtx, input.Message.ContextID)
 		if err != nil {
 			return err
 		}
@@ -649,15 +653,22 @@ func (s *A2AServer) getTasksPushNotificationConfig(ctx context.Context, input *m
 	}, nil
 }
 
-func (s *A2AServer) initTask(ctx context.Context) (*models.Task, error) {
+func (s *A2AServer) initTask(ctx context.Context, pContextID *string) (*models.Task, error) {
 	taskID, err := s.taskIDGenerator(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate task id: %w", err)
 	}
-	contextID, err := s.contextIDGenerator(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate context id: %w", err)
+
+	contextID := ""
+	if pContextID != nil {
+		contextID = *pContextID
+	} else {
+		contextID, err = s.contextIDGenerator(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate context id: %w", err)
+		}
 	}
+
 	return &models.Task{
 		ID:        taskID,
 		ContextID: contextID,
