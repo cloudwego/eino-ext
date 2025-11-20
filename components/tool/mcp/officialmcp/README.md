@@ -1,6 +1,6 @@
-# MCP Tool
+# Official MCP Tool
 
-A MCP Tool implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Tool` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+A MCP Tool implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Tool` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation. Implementation based on Official MCP SDK.
 
 ## Features
 
@@ -53,10 +53,10 @@ func main() {
 	time.Sleep(1 * time.Second)
 	ctx := context.Background()
 
-	sess := getMCPClientSession(ctx, httpServer.URL)
-	defer sess.Close()
+	cli := getMCPClient(ctx, httpServer.URL)
+	defer cli.Close()
 
-	mcpTools, err := omcp.GetTools(ctx, &omcp.Config{Sess: sess})
+	mcpTools, err := omcp.GetTools(ctx, &omcp.Config{Cli: cli})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func main() {
 	}
 }
 
-func getMCPClientSession(ctx context.Context, addr string) *mcp.ClientSession {
+func getMCPClient(ctx context.Context, addr string) *mcp.ClientSession {
 	transport := &mcp.SSEClientTransport{Endpoint: addr}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v1.0.0"}, nil)
 	sess, err := client.Connect(ctx, transport, nil)
@@ -105,9 +105,9 @@ The tool can be configured using the `mcp.Config` struct:
 
 ```go
 type Config struct {
-	// Sess is the MCP (Model Control Protocol) session, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Cli is the MCP (Model Control Protocol) client, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// Notice: should Initialize with server before use
-	Sess *mcp.ClientSession
+	Cli *mcp.ClientSession
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched
 	ToolNameList []string

@@ -31,9 +31,9 @@ import (
 )
 
 type Config struct {
-	// Sess is the MCP (Model Control Protocol) session, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Cli is the MCP (Model Control Protocol) client, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// Notice: should Initialize with server before use
-	Sess *mcp.ClientSession
+	Cli *mcp.ClientSession
 
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched
@@ -50,11 +50,11 @@ type Config struct {
 }
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
-	if conf.Sess == nil {
-		return nil, errors.New("official mcp client session is nil")
+	if conf.Cli == nil {
+		return nil, errors.New("official mcp client is nil")
 	}
 
-	listResults, err := conf.Sess.ListTools(ctx, &mcp.ListToolsParams{
+	listResults, err := conf.Cli.ListTools(ctx, &mcp.ListToolsParams{
 		Cursor: conf.Cursor,
 	})
 	if err != nil {
@@ -85,7 +85,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 		}
 
 		ret = append(ret, &toolHelper{
-			sess: conf.Sess,
+			cli: conf.Cli,
 			info: &schema.ToolInfo{
 				Name:        t.Name,
 				Desc:        t.Description,
@@ -99,7 +99,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 }
 
 type toolHelper struct {
-	sess                  *mcp.ClientSession
+	cli                   *mcp.ClientSession
 	info                  *schema.ToolInfo
 	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
@@ -109,7 +109,7 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
-	result, err := m.sess.CallTool(ctx, &mcp.CallToolParams{
+	result, err := m.cli.CallTool(ctx, &mcp.CallToolParams{
 		Name:      m.info.Name,
 		Arguments: json.RawMessage(argumentsInJSON),
 	})

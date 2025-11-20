@@ -48,10 +48,10 @@ func main() {
 	time.Sleep(1 * time.Second)
 	ctx := context.Background()
 
-	sess := getMCPClientSession(ctx, httpServer.URL)
-	defer sess.Close()
+	cli := getMCPClient(ctx, httpServer.URL)
+	defer cli.Close()
 
-	mcpTools, err := omcp.GetTools(ctx, &omcp.Config{Sess: sess})
+	mcpTools, err := omcp.GetTools(ctx, &omcp.Config{Cli: cli})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func main() {
 	}
 }
 
-func getMCPClientSession(ctx context.Context, addr string) *mcp.ClientSession {
+func getMCPClient(ctx context.Context, addr string) *mcp.ClientSession {
 	transport := &mcp.SSEClientTransport{Endpoint: addr}
 	client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "v1.0.0"}, nil)
 	sess, err := client.Connect(ctx, transport, nil)

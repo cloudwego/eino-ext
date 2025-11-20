@@ -70,7 +70,7 @@ func TestTool(t *testing.T) {
 	mcp.AddTool(server, &mcp.Tool{Name: "hello", Description: "say hello"}, SayHello)
 
 	// get tools from client, only greet tool
-	tools, err := GetTools(ctx, &Config{Sess: clientSession, ToolNameList: []string{"greet"}})
+	tools, err := GetTools(ctx, &Config{Cli: clientSession, ToolNameList: []string{"greet"}})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(tools))
 	info, err := tools[0].Info(ctx)
