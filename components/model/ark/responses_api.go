@@ -507,7 +507,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		reqParams.opts = append(reqParams.opts, option.WithJSONSet("thinking", specOptions.thinking))
 	}
 	if specOptions.reasoningEffort != nil {
-		reqParams.opts = append(reqParams.opts, option.WithJSONSet("reasoning_effort", string(*specOptions.reasoningEffort)))
+		reqParams.opts = append(reqParams.opts, option.WithJSONSet("reasoning.effort", string(*specOptions.reasoningEffort)))
 	}
 
 	return reqParams, nil
