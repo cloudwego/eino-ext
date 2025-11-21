@@ -117,6 +117,8 @@ type Config struct {
 	// ResponseModalities specifies the modalities the model can return.
 	// Optional.
 	ResponseModalities []GeminiResponseModality
+
+	MediaResolution genai.MediaResolution
 }
 
 type ChatModel struct {
@@ -135,6 +137,7 @@ type ChatModel struct {
 	safetySettings      []*genai.SafetySetting
 	thinkingConfig      *genai.ThinkingConfig
 	responseModalities  []GeminiResponseModality
+	mediaResolution     genai.MediaResolution
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -342,6 +345,8 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 			CodeExecution: &genai.ToolCodeExecution{},
 		})
 	}
+
+	m.MediaResolution = cm.mediaResolution
 
 	if commonOptions.MaxTokens != nil {
 		conf.MaxTokens = *commonOptions.MaxTokens
