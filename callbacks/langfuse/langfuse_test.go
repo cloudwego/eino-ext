@@ -273,11 +273,7 @@ func TestLangfuseCallback(t *testing.T) {
 			WithSessionID("sessionid"),
 			WithTags("tags"),
 			WithPublic(true),
-			WithEnvironment("development"),
-			WithVersion("version"),
 		)
 		assert.Equal(t, "traceid", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).ID)
-		assert.Equal(t, "development", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Environment)
-		assert.Equal(t, "version", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Version)
 	})
 }
