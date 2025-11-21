@@ -27,7 +27,6 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -63,7 +62,6 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		temperature:         cfg.Temperature,
 		topP:                cfg.TopP,
 		topK:                cfg.TopK,
-		responseSchema:      cfg.ResponseSchema,
 		responseJSONSchema:  cfg.ResponseJSONSchema,
 		enableCodeExecution: cfg.EnableCodeExecution,
 		safetySettings:      cfg.SafetySettings,
@@ -100,11 +98,6 @@ type Config struct {
 	// Optional. Example: topK := int32(40)
 	TopK *int32
 
-	// Deprecated: Use ResponseJSONSchema instead.
-	// ResponseSchema defines the structure for JSON responses
-	// Optional. Used when you want structured output in JSON format
-	ResponseSchema *openapi3.Schema
-
 	// ResponseJSONSchema defines the structure for JSON responses
 	// Optional. Used when you want structured output in JSON format
 	ResponseJSONSchema *jsonschema.Schema
@@ -134,7 +127,6 @@ type ChatModel struct {
 	topP                *float32
 	temperature         *float32
 	topK                *int32
-	responseSchema      *openapi3.Schema
 	responseJSONSchema  *jsonschema.Schema
 	tools               []*genai.FunctionDeclaration
 	origTools           []*schema.ToolInfo
@@ -316,7 +308,6 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	}, opts...)
 	geminiOptions := model.GetImplSpecificOptions(&options{
 		TopK:               cm.topK,
-		ResponseSchema:     cm.responseSchema,
 		ResponseJSONSchema: cm.responseJSONSchema,
 		ResponseModalities: cm.responseModalities,
 	}, opts...)
@@ -392,18 +383,6 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		m.TopK = &topK
 	}
 
-	if geminiOptions.ResponseSchema != nil && geminiOptions.ResponseJSONSchema != nil {
-		return "", nil, nil, nil, fmt.Errorf("responseSchema and responseJsonSchema can not be set at the same time")
-	}
-
-	if geminiOptions.ResponseSchema != nil {
-		m.ResponseMIMEType = "application/json"
-		var err error
-		m.ResponseSchema, err = cm.convOpenAPIV3SchemaGeminiSchema(geminiOptions.ResponseSchema)
-		if err != nil {
-			return "", nil, nil, nil, fmt.Errorf("convert response schema fail: %w", err)
-		}
-	}
 	if geminiOptions.ResponseJSONSchema != nil {
 		m.ResponseMIMEType = "application/json"
 		m.ResponseJsonSchema = geminiOptions.ResponseJSONSchema
@@ -442,200 +421,16 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 			Description: tool.Desc,
 		}
 
-		js, err := tool.ToJSONSchema()
+		var err error
+		funcDecl.ParametersJsonSchema, err = tool.ToJSONSchema()
 		if err != nil {
-			return nil, fmt.Errorf("get open schema fail: %w", err)
-		}
-		funcDecl.Parameters, err = cm.convJSONSchemaToGeminiSchema(js)
-		if err != nil {
-			return nil, fmt.Errorf("convert open schema fail: %w", err)
+			return nil, fmt.Errorf("convert to json schema fail: %w", err)
 		}
 
 		gTools[i] = funcDecl
 	}
 
 	return gTools, nil
-}
-
-func (cm *ChatModel) convJSONSchemaToGeminiSchema(js *jsonschema.Schema) (*genai.Schema, error) {
-	if js == nil {
-		return nil, nil
-	}
-
-	oType := genai.Type("")
-	switch js.Type {
-	case string(schema.String):
-		oType = genai.TypeString
-	case string(schema.Number):
-		oType = genai.TypeNumber
-	case string(schema.Integer):
-		oType = genai.TypeInteger
-	case string(schema.Boolean):
-		oType = genai.TypeBoolean
-	case string(schema.Object):
-		oType = genai.TypeObject
-	case string(schema.Array):
-		oType = genai.TypeArray
-	case string(schema.Null):
-		oType = genai.TypeNULL
-	}
-
-	sc := &genai.Schema{
-		Type:        oType,
-		Title:       js.Title,
-		Format:      js.Format,
-		Description: js.Description,
-		Default:     js.Default,
-		Pattern:     js.Pattern,
-	}
-
-	if js.MaxLength != nil {
-		sc.MaxLength = genai.Ptr(int64(*js.MaxLength))
-	}
-
-	if js.MinLength != nil {
-		sc.MinLength = genai.Ptr(int64(*js.MinLength))
-	}
-
-	if js.MaxItems != nil {
-		sc.MaxItems = genai.Ptr(int64(*js.MaxItems))
-	}
-
-	if js.MinItems != nil {
-		sc.MinItems = genai.Ptr(int64(*js.MinItems))
-	}
-
-	if js.MinProperties != nil {
-		sc.MinProperties = genai.Ptr(int64(*js.MinProperties))
-	}
-
-	if js.MaxProperties != nil {
-		sc.MaxProperties = genai.Ptr(int64(*js.MaxProperties))
-	}
-
-	if len(js.Examples) > 0 {
-		sc.Example = js.Examples[0]
-	}
-
-	if js.AnyOf != nil {
-		sc.AnyOf = make([]*genai.Schema, len(js.AnyOf))
-		for i, anyOf := range js.AnyOf {
-			v, err := cm.convJSONSchemaToGeminiSchema(anyOf)
-			if err != nil {
-				return nil, err
-			}
-			sc.AnyOf[i] = v
-		}
-	}
-
-	if js.Enum != nil {
-		sc.Enum = make([]string, len(js.Enum))
-		for i, enum := range js.Enum {
-			enum_, ok := enum.(string)
-			if !ok {
-				return nil, fmt.Errorf("enum must be string")
-			}
-			sc.Enum[i] = enum_
-		}
-	}
-
-	if js.Items != nil {
-		v, err := cm.convJSONSchemaToGeminiSchema(js.Items)
-		if err != nil {
-			return nil, err
-		}
-		sc.Items = v
-	}
-
-	if js.Properties != nil {
-		sc.Properties = make(map[string]*genai.Schema, js.Properties.Len())
-		for pair := js.Properties.Oldest(); pair != nil; pair = pair.Next() {
-			v, err := cm.convJSONSchemaToGeminiSchema(pair.Value)
-			if err != nil {
-				return nil, err
-			}
-			sc.Properties[pair.Key] = v
-		}
-	}
-
-	if js.Required != nil {
-		sc.Required = make([]string, len(js.Required))
-		for i, required := range js.Required {
-			sc.Required[i] = required
-		}
-	}
-
-	return sc, nil
-}
-
-func (cm *ChatModel) convOpenAPIV3SchemaGeminiSchema(schema *openapi3.Schema) (*genai.Schema, error) {
-	if schema == nil {
-		return nil, nil
-	}
-	var err error
-
-	result := &genai.Schema{
-		Format:      schema.Format,
-		Description: schema.Description,
-	}
-	if schema.Nullable {
-		result.Nullable = &schema.Nullable
-	}
-
-	switch schema.Type {
-	case openapi3.TypeObject:
-		result.Type = genai.TypeObject
-		if schema.Properties != nil {
-			properties := make(map[string]*genai.Schema)
-			for name, prop := range schema.Properties {
-				if prop == nil || prop.Value == nil {
-					continue
-				}
-				properties[name], err = cm.convOpenAPIV3SchemaGeminiSchema(prop.Value)
-				if err != nil {
-					return nil, err
-				}
-			}
-			result.Properties = properties
-		}
-		if schema.Required != nil {
-			result.Required = schema.Required
-		}
-
-	case openapi3.TypeArray:
-		result.Type = genai.TypeArray
-		if schema.Items != nil && schema.Items.Value != nil {
-			result.Items, err = cm.convOpenAPIV3SchemaGeminiSchema(schema.Items.Value)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-	case openapi3.TypeString:
-		result.Type = genai.TypeString
-		if schema.Enum != nil {
-			enums := make([]string, 0, len(schema.Enum))
-			for _, e := range schema.Enum {
-				if str, ok := e.(string); ok {
-					enums = append(enums, str)
-				} else {
-					return nil, fmt.Errorf("enum value must be a string, schema: %+v", schema)
-				}
-			}
-			result.Enum = enums
-		}
-
-	case openapi3.TypeNumber:
-		result.Type = genai.TypeNumber
-	case openapi3.TypeInteger:
-		result.Type = genai.TypeInteger
-	case openapi3.TypeBoolean:
-		result.Type = genai.TypeBoolean
-	default:
-		result.Type = genai.TypeUnspecified
-	}
-
-	return result, nil
 }
 
 func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
