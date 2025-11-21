@@ -31,14 +31,15 @@ import (
 func main() {
 	// Get the environment variables
 	addr := os.Getenv("MILVUS_ADDR")
-	if addr == "" {
-		addr = "localhost:19530"
-	}
+	username := os.Getenv("MILVUS_USERNAME")
+	password := os.Getenv("MILVUS_PASSWORD")
 
 	// Create a client
 	ctx := context.Background()
 	client, err := milvusclient.New(ctx, &milvusclient.ClientConfig{
-		Address: addr,
+		Address:  addr,
+		Username: username,
+		Password: password,
 	})
 	if err != nil {
 		log.Fatalf("Failed to create client: %v", err)
@@ -48,7 +49,7 @@ func main() {
 
 	// Create an indexer
 	indexer, err := milvus_new.NewIndexer(ctx, &milvus_new.IndexerConfig{
-		Client:    client, // 直接传递 client 指针
+		Client:    client,
 		Embedding: &mockEmbedding{},
 	})
 	if err != nil {

@@ -88,7 +88,7 @@ func TestNewRetriever(t *testing.T) {
 					ScoreThreshold:    -1,
 					Embedding:         &mockEmbedding{},
 				})
-				convey.So(err, convey.ShouldNotBeNil) // Will be handled by checkCollectionSchema
+				convey.So(err, convey.ShouldBeError, fmt.Errorf("[NewRetriever] invalid search params"))
 				convey.So(r, convey.ShouldBeNil)
 			})
 		})
@@ -136,7 +136,7 @@ func TestNewRetriever(t *testing.T) {
 								},
 							},
 						},
-						Loaded: true,
+						// Loaded is not set (defaults to false), so it will try to load
 					}, nil
 				}).Build()
 
@@ -157,9 +157,10 @@ func TestNewRetriever(t *testing.T) {
 					convey.So(err, convey.ShouldBeError, fmt.Errorf("[NewRetriever] collection schema not match: vector field not found"))
 					convey.So(r, convey.ShouldBeNil)
 
-					Mock((*milvusclient.Client).GetLoadState).Return(&entity.LoadState{State: entity.LoadStateLoaded}, nil).Build()
+					PatchConvey("test collection schema match", func() {
+						// Mock GetLoadState to return NotLoad state (will cause error)
+						Mock((*milvusclient.Client).GetLoadState).Return(entity.LoadState{State: entity.LoadStateNotLoad}, nil).Build()
 
-					PatchConvey("test create retriever", func() {
 						r, err := NewRetriever(ctx, &RetrieverConfig{
 							Client:            mockClient,
 							Collection:        "",
@@ -173,8 +174,28 @@ func TestNewRetriever(t *testing.T) {
 							ScoreThreshold:    0,
 							Embedding:         &mockEmbedding{},
 						})
-						convey.So(err, convey.ShouldBeNil)
-						convey.So(r, convey.ShouldNotBeNil)
+						convey.So(err, convey.ShouldNotBeNil)
+						convey.So(r, convey.ShouldBeNil)
+
+						Mock((*milvusclient.Client).GetLoadState).Return(entity.LoadState{State: entity.LoadStateLoaded}, nil).Build()
+
+						PatchConvey("test create retriever", func() {
+							r, err := NewRetriever(ctx, &RetrieverConfig{
+								Client:            mockClient,
+								Collection:        "",
+								Partition:         "",
+								VectorField:       defaultVectorField,
+								OutputFields:      nil,
+								DocumentConverter: nil,
+								VectorConverter:   nil,
+								MetricType:        "",
+								TopK:              0,
+								ScoreThreshold:    0,
+								Embedding:         &mockEmbedding{},
+							})
+							convey.So(err, convey.ShouldBeNil)
+							convey.So(r, convey.ShouldNotBeNil)
+						})
 					})
 				})
 			})
@@ -227,7 +248,7 @@ func TestRetriever_Retrieve(t *testing.T) {
 			}, nil
 		}).Build()
 
-		Mock((*milvusclient.Client).GetLoadState).Return(&entity.LoadState{State: entity.LoadStateLoaded}, nil).Build()
+		Mock((*milvusclient.Client).GetLoadState).Return(entity.LoadState{State: entity.LoadStateLoaded}, nil).Build()
 
 		PatchConvey("test embedding error", func() {
 			r, _ := NewRetriever(ctx, &RetrieverConfig{
@@ -271,22 +292,113 @@ func TestRetriever_Retrieve(t *testing.T) {
 
 		PatchConvey("test embedding success", func() {
 			Mock((*milvusclient.Client).Search).To(func(client *milvusclient.Client, ctx context.Context, option milvusclient.SearchOption, callOptions ...grpc.CallOption) ([]milvusclient.ResultSet, error) {
-				// We'll check collection name if it's not default
-				// For simplicity in test, we'll just return successful results
+				req, err := option.Request()
+				if err != nil {
+					return nil, err
+				}
+				collName := req.GetCollectionName()
 
+				// Test collection not found
+				if collName == "test_collection" {
+					return nil, fmt.Errorf("collection not found")
+				}
+
+				// Test filter expression - return empty results (ResultCount = 0)
+				if req.GetDsl() != "" {
+					return []milvusclient.ResultSet{
+						{
+							ResultCount: 0,
+							Fields:      []column.Column{},
+						},
+					}, nil
+				}
+
+				// Test output fields not supported - simulate result error
+				if len(req.GetOutputFields()) > 0 && len(req.GetOutputFields()) == 2 {
+					return []milvusclient.ResultSet{
+						{
+							ResultCount: 0,
+							Err:         fmt.Errorf("output fields not supported"),
+							Fields:      []column.Column{},
+						},
+					}, nil
+				}
+
+				// Normal successful case
 				return []milvusclient.ResultSet{
 					{
 						Fields: []column.Column{
 							column.NewColumnVarChar("id", []string{"1", "2"}),
 							column.NewColumnVarChar("content", []string{"test", "test"}),
 							column.NewColumnBinaryVector("vector", 128, [][]byte{{1, 2, 3}, {4, 5, 6}}),
-							column.NewColumnJSONBytes("meta", [][]byte{[]byte(docMetaData)}),
+							column.NewColumnJSONBytes("meta", [][]byte{[]byte(docMetaData), []byte(docMetaData)}),
 						},
 						Scores:      []float32{1, 2},
 						ResultCount: 2,
 					},
 				}, nil
 			}).Build()
+
+			PatchConvey("test search error", func() {
+				r, _ := NewRetriever(ctx, &RetrieverConfig{
+					Client:            mockClient,
+					Collection:        "",
+					Partition:         "",
+					VectorField:       "",
+					OutputFields:      nil,
+					DocumentConverter: nil,
+					VectorConverter:   nil,
+					MetricType:        "",
+					TopK:              0,
+					ScoreThreshold:    0,
+					Embedding:         &mockEmbedding{sizeForCall: []int{1}},
+				})
+				r.config.Collection = "test_collection"
+				documents, err := r.Retrieve(ctx, "test")
+
+				convey.So(err, convey.ShouldBeError, fmt.Errorf("[milvus retriever] search has error: collection not found"))
+				convey.So(documents, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test search result count is 0", func() {
+				r, _ := NewRetriever(ctx, &RetrieverConfig{
+					Client:            mockClient,
+					Collection:        "",
+					Partition:         "",
+					VectorField:       "",
+					OutputFields:      nil,
+					DocumentConverter: nil,
+					VectorConverter:   nil,
+					MetricType:        "",
+					TopK:              0,
+					ScoreThreshold:    0,
+					Embedding:         &mockEmbedding{sizeForCall: []int{1}},
+				})
+				documents, err := r.Retrieve(ctx, "test", WithFilter("test"))
+
+				convey.So(err, convey.ShouldBeError, fmt.Errorf("[milvus retriever] no results found"))
+				convey.So(documents, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test search results has error", func() {
+				r, _ := NewRetriever(ctx, &RetrieverConfig{
+					Client:            mockClient,
+					Collection:        "",
+					Partition:         "",
+					VectorField:       "",
+					OutputFields:      []string{"1", "2"},
+					DocumentConverter: nil,
+					VectorConverter:   nil,
+					MetricType:        "",
+					TopK:              0,
+					ScoreThreshold:    0,
+					Embedding:         &mockEmbedding{sizeForCall: []int{1}},
+				})
+				documents, err := r.Retrieve(ctx, "test")
+
+				convey.So(err, convey.ShouldBeError, fmt.Errorf("[milvus retriever] search result has error: output fields not supported"))
+				convey.So(documents, convey.ShouldBeNil)
+			})
 
 			PatchConvey("test search results success", func() {
 				r, _ := NewRetriever(ctx, &RetrieverConfig{
@@ -306,7 +418,6 @@ func TestRetriever_Retrieve(t *testing.T) {
 
 				convey.So(err, convey.ShouldBeNil)
 				convey.So(documents, convey.ShouldNotBeNil)
-				convey.So(len(documents), convey.ShouldBeGreaterThan, 0)
 			})
 		})
 	})

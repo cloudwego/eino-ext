@@ -29,7 +29,6 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
-	"github.com/gogf/gf/v2/frame/g"
 	"github.com/milvus-io/milvus/client/v2/column"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/index"
@@ -98,12 +97,12 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	}
 
 	// check the collection whether to be created
-	has, err := conf.Client.HasCollection(ctx, milvusclient.NewHasCollectionOption(conf.Collection))
+	ok, err := conf.Client.HasCollection(ctx, milvusclient.NewHasCollectionOption(conf.Collection))
 	if err != nil {
 		return nil, fmt.Errorf("[NewIndexer] failed to check collection: %w", err)
 	}
 
-	if !has {
+	if !ok {
 		// create the collection
 		createOpt := milvusclient.NewCreateCollectionOption(conf.Collection, conf.getSchema(conf.Collection, conf.Description, conf.Fields)).
 			WithShardNum(conf.SharedNum).
@@ -204,9 +203,6 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		}
 	}
 
-	g.Log().Infof(ctx, "[Indexer.Store] Filter results: original=%d, valid=%d, filtered=%d",
-		len(docs), len(validDocs), filteredCount)
-
 	// If all documents were filtered out, return an error
 	if len(validDocs) == 0 {
 		return nil, fmt.Errorf("[Indexer.Store] all documents have empty content after filtering, original count: %d", len(docs))
@@ -216,7 +212,6 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	docs = validDocs
 
 	// embedding
-	g.Log().Infof(ctx, "[Indexer.Store] Calling EmbedStrings with %d texts", len(texts))
 	vectors, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), texts)
 	if err != nil {
 		return nil, err

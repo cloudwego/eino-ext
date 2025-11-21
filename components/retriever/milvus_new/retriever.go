@@ -226,6 +226,16 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		return []*schema.Document{}, nil
 	}
 
+	// check if search result has error
+	if results[0].Err != nil {
+		return nil, fmt.Errorf("[milvus retriever] search result has error: %w", results[0].Err)
+	}
+
+	// check if search result count is 0
+	if results[0].ResultCount == 0 {
+		return nil, fmt.Errorf("[milvus retriever] no results found")
+	}
+
 	// convert the search result to schema.Document
 	documents, err := r.config.DocumentConverter(ctx, results[0].Fields, results[0].Scores)
 	if err != nil {
@@ -282,6 +292,10 @@ func (r *RetrieverConfig) check() error {
 	}
 	if r.MetricType == "" {
 		r.MetricType = MetricType(defaultMetricType)
+	}
+	// Check score threshold is valid (must be between 0 and 1)
+	if r.ScoreThreshold < 0 || r.ScoreThreshold > 1 {
+		return fmt.Errorf("[NewRetriever] invalid search params")
 	}
 	return nil
 }
