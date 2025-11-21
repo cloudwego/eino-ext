@@ -29,6 +29,7 @@ type SessionCacheConfig struct {
 	// cached message from all inputs and passes its response ID to model to maintain context continuity.
 	// This message and all previous ones are trimmed before being sent to the model.
 	// When both HeadPreviousResponseID and cached message exist, the message's response ID takes precedence.
+	// Use InvalidateMessageCaches to disables caching for the specified messages.
 	EnableCache bool `json:"enable_cache"`
 
 	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
