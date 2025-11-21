@@ -19,7 +19,7 @@ package http
 import "github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
 
 type httpClientTransport struct {
-	rounder *clientRounder
+	rounder rounder
 }
 
 func (h *httpClientTransport) ClientCapability() (core.ClientRounder, bool) {
