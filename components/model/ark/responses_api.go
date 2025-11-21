@@ -214,7 +214,6 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamResp *ssestream.St
 		}
 	}()
 
-Outer:
 	for streamResp.Next() {
 		cur := streamResp.Current()
 
@@ -242,11 +241,8 @@ Outer:
 			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
-			break Outer
-
 		case responses.ResponseErrorEvent:
 			sw.Send(nil, fmt.Errorf("received error: %s", asEvent.Message))
-			break Outer
 
 		case responses.ResponseIncompleteEvent:
 			msg := cm.handleIncompleteStreamEvent(asEvent)
@@ -254,14 +250,10 @@ Outer:
 			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
 
-			break Outer
-
 		case responses.ResponseFailedEvent:
 			msg := cm.handleFailedStreamEvent(asEvent)
 			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
 			cm.sendCallbackOutput(sw, config, msg)
-
-			break Outer
 
 		default:
 			msg := cm.handleDeltaStreamEvent(event)
@@ -503,25 +495,8 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		return nil, err
 	}
 
-	if err = cm.populateTools(reqParams.req, options.Tools); err != nil {
+	if err = cm.populateTools(reqParams.req, options.Tools, options.ToolChoice); err != nil {
 		return nil, err
-	}
-
-	if options.ToolChoice != nil {
-		var tco responses.ToolChoiceOptions
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			tco = responses.ToolChoiceOptionsNone
-		case schema.ToolChoiceAllowed:
-			tco = responses.ToolChoiceOptionsAuto
-		case schema.ToolChoiceForced:
-			tco = responses.ToolChoiceOptionsRequired
-		default:
-			tco = responses.ToolChoiceOptionsAuto
-		}
-		reqParams.req.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
-			OfToolChoiceMode: param.NewOpt(tco),
-		}
 	}
 
 	for k, v := range specOptions.customHeaders {
@@ -848,7 +823,7 @@ func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) 
 	return content, nil
 }
 
-func (cm *responsesAPIChatModel) populateTools(req *responses.ResponseNewParams, optTools []*schema.ToolInfo) error {
+func (cm *responsesAPIChatModel) populateTools(req *responses.ResponseNewParams, optTools []*schema.ToolInfo, toolChoice *schema.ToolChoice) error {
 	// When caching is enabled, the tool is only passed on the first request.
 	if req.PreviousResponseID.Valid() {
 		return nil
@@ -864,6 +839,23 @@ func (cm *responsesAPIChatModel) populateTools(req *responses.ResponseNewParams,
 	}
 
 	req.Tools = tools
+
+	if toolChoice != nil {
+		var tco responses.ToolChoiceOptions
+		switch *toolChoice {
+		case schema.ToolChoiceForbidden:
+			tco = responses.ToolChoiceOptionsNone
+		case schema.ToolChoiceAllowed:
+			tco = responses.ToolChoiceOptionsAuto
+		case schema.ToolChoiceForced:
+			tco = responses.ToolChoiceOptionsRequired
+		default:
+			tco = responses.ToolChoiceOptionsAuto
+		}
+		req.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
+			OfToolChoiceMode: param.NewOpt(tco),
+		}
+	}
 
 	return nil
 }
