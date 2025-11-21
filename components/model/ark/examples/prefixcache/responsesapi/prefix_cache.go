@@ -22,8 +22,6 @@ import (
 	"log"
 	"os"
 
-	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
@@ -36,44 +34,32 @@ func main() {
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Model:  os.Getenv("ARK_MODEL_ID"),
+		Cache: &ark.CacheConfig{
+			APIType: ptrOf(ark.ResponsesAPI),
+		},
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
-	chatModelWithTools, err := chatModel.WithTools([]*schema.ToolInfo{
-		{
-			Name: "get_weather",
-			Desc: "Get the current weather in a given location",
-			ParamsOneOf: schema.NewParamsOneOfByParams(
-				map[string]*schema.ParameterInfo{
-					"location": {
-						Type: "string",
-						Desc: "The city and state, e.g. San Francisco, CA",
-					},
-				},
-			),
-		},
-	})
+	// create response prefix cache, note: more than 1024 tokens are required, otherwise the prefix cache cannot be created
+	cacheInfo, err := chatModel.CreatePrefixCache(ctx, []*schema.Message{
+		schema.SystemMessage("If you are an expert in analyzing novels, please analyze the issues related to the Romance of the Three Kingdoms based on the following content: ......"),
+	}, 300)
 	if err != nil {
-		log.Fatalf("WithTools failed, err=%v", err)
+		log.Fatalf("CreatePrefixCache failed, err=%v", err)
 	}
 
-	thinking := &arkModel.Thinking{
-		Type: arkModel.ThinkingTypeDisabled,
-	}
+	// use cache information in subsequent requests
 	cacheOpt := &ark.CacheOption{
-		APIType: ark.ResponsesAPI,
-		SessionCache: &ark.SessionCacheConfig{
-			EnableCache: true,
-			TTL:         86400,
-		},
+		APIType:                ark.ResponsesAPI,
+		HeadPreviousResponseID: &cacheInfo.ResponseID,
 	}
 
-	outMsg, err := chatModelWithTools.Generate(ctx, []*schema.Message{
-		schema.UserMessage("my name is megumin"),
-	}, ark.WithThinking(thinking),
-		ark.WithCache(cacheOpt))
+	outMsg, err := chatModel.Generate(ctx, []*schema.Message{
+		schema.UserMessage("What is the main idea expressed above？"),
+	}, ark.WithCache(cacheOpt))
+
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
@@ -83,20 +69,12 @@ func main() {
 		log.Fatalf("not found response id in message")
 	}
 
-	msg, err := chatModelWithTools.Generate(ctx, []*schema.Message{
-		schema.UserMessage("what is my name?"),
-	}, ark.WithThinking(thinking),
-		ark.WithCache(&ark.CacheOption{
-			APIType:                ark.ResponsesAPI,
-			HeadPreviousResponseID: &respID,
-		}),
-	)
-	if err != nil {
-		log.Fatalf("Generate failed, err=%v", err)
-	}
-
 	log.Printf("\ngenerate output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
-	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  request_id: %s\n", respID)
+	respBody, _ := json.MarshalIndent(outMsg, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
+}
+func ptrOf[T any](v T) *T {
+	return &v
+
 }
