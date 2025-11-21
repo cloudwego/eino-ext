@@ -85,6 +85,10 @@ type EmbeddingConfig struct {
 	// User is a unique identifier representing your end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
+
+	// BatchSize specifies the number of texts to embed in a single request
+	// Optional.
+	BatchSize int `json:"batch_size,omitempty"`
 }
 
 var _ embedding.Embedder = (*Embedder)(nil)
@@ -114,6 +118,7 @@ func NewEmbedder(ctx context.Context, config *EmbeddingConfig) (*Embedder, error
 			EncodingFormat: config.EncodingFormat,
 			Dimensions:     config.Dimensions,
 			User:           config.User,
+			BatchSize:      config.BatchSize,
 		}
 	}
 	cli, err := openai.NewEmbeddingClient(ctx, nConf)
