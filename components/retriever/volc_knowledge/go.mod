@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.6.0
+	github.com/cloudwego/eino v0.6.1
 	github.com/stretchr/testify v1.10.0
 	github.com/volcengine/volc-sdk-golang v1.0.193
 )

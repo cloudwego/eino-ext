@@ -25,8 +25,9 @@ import (
 
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
-	"github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/ark"
 )
 
 func main() {
@@ -36,6 +37,12 @@ func main() {
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Model:  os.Getenv("ARK_MODEL_ID"),
+		Cache: &ark.CacheConfig{
+			SessionCache: &ark.SessionCacheConfig{
+				EnableCache: true,
+				TTL:         86400,
+			},
+		},
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
