@@ -18,28 +18,26 @@ package ark
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"runtime/debug"
 	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/packages/param"
-	"github.com/openai/openai-go/packages/ssestream"
-	"github.com/openai/openai-go/responses"
-	"github.com/openai/openai-go/shared"
-	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 type responsesAPIChatModel struct {
-	client responses.ResponseService
-
-	tools      []responses.ToolUnionParam
+	client     *arkruntime.Client
+	tools      []*responses.ResponsesTool
 	rawTools   []*schema.ToolInfo
 	toolChoice *schema.ToolChoice
 
@@ -54,25 +52,34 @@ type responsesAPIChatModel struct {
 	serviceTier     *string
 	reasoningEffort *arkModel.ReasoningEffort
 }
+type cacheConfig struct {
+	Enabled  bool
+	ExpireAt *int64
+}
 
 func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outMsg *schema.Message, err error) {
-
 	options, specOptions, err := cm.getOptions(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	reqParams, err := cm.genRequestAndOptions(input, options, specOptions)
+	responseReq, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create generate request: %w", err)
 	}
-
-	config := cm.toCallbackConfig(reqParams.req)
+	config := cm.toCallbackConfig(responseReq)
 
 	tools := cm.rawTools
 	if options.Tools != nil {
 		tools = options.Tools
+	}
+
+	callbackExtra := map[string]any{
+		callbackExtraKeyThinking: specOptions.thinking,
+	}
+	if responseReq.PreviousResponseId != nil {
+		callbackExtra[callbackExtraKeyPreResponseID] = *responseReq.PreviousResponseId
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
@@ -80,7 +87,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		Tools:      tools,
 		ToolChoice: options.ToolChoice,
 		Config:     config,
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Extra:      callbackExtra,
 	})
 
 	defer func() {
@@ -89,24 +96,29 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		}
 	}()
 
-	resp, err := cm.client.New(ctx, *reqParams.req, reqParams.opts...)
+	responseObject, err := cm.client.CreateResponses(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create generate request: %w", err)
+		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
 
-	outMsg, err = cm.toOutputMessage(resp, reqParams.cache)
+	cacheCfg := &cacheConfig{}
+	if responseReq.Caching != nil && responseReq.Caching.Type != nil {
+		cacheCfg.Enabled = *responseReq.Caching.Type == responses.CacheType_enabled
+		cacheCfg.ExpireAt = responseReq.ExpireAt
+	}
+
+	outMsg, err = cm.toOutputMessage(responseObject, cacheCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert output to schema.Message: %w", err)
 	}
-
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     config,
-		TokenUsage: cm.toModelTokenUsage(resp.Usage),
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		TokenUsage: cm.toModelTokenUsage(responseObject.Usage),
+		Extra:      callbackExtra,
 	})
-
 	return outMsg, nil
+
 }
 
 func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
@@ -117,16 +129,21 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		return nil, err
 	}
 
-	reqParams, err := cm.genRequestAndOptions(input, options, specOptions)
+	responseReq, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stream request: %w", err)
+		return nil, fmt.Errorf("failed to create generate request: %w", err)
 	}
-
-	config := cm.toCallbackConfig(reqParams.req)
-
+	config := cm.toCallbackConfig(responseReq)
 	tools := cm.rawTools
 	if options.Tools != nil {
 		tools = options.Tools
+	}
+
+	callbackExtra := map[string]any{
+		callbackExtraKeyThinking: specOptions.thinking,
+	}
+	if responseReq.PreviousResponseId != nil {
+		callbackExtra[callbackExtraKeyPreResponseID] = *responseReq.PreviousResponseId
 	}
 
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
@@ -134,7 +151,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		Tools:      tools,
 		ToolChoice: options.ToolChoice,
 		Config:     config,
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Extra:      callbackExtra,
 	})
 
 	defer func() {
@@ -143,9 +160,9 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		}
 	}()
 
-	streamResp := cm.client.NewStreaming(ctx, *reqParams.req, reqParams.opts...)
-	if streamResp.Err() != nil {
-		return nil, fmt.Errorf("failed to create stream request: %w", streamResp.Err())
+	responseStreamReader, err := cm.client.CreateResponsesStream(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
@@ -157,11 +174,17 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
 
-			_ = streamResp.Close()
+			_ = responseStreamReader.Close()
 			sw.Close()
 		}()
 
-		cm.receivedStreamResponse(streamResp, config, reqParams.cache, sw)
+		var cacheCfg = &cacheConfig{}
+		if responseReq.Caching != nil && responseReq.Caching.Type != nil {
+			cacheCfg.Enabled = *responseReq.Caching.Type == responses.CacheType_enabled
+			cacheCfg.ExpireAt = responseReq.ExpireAt
+		}
+
+		cm.receivedStreamResponse(responseStreamReader, config, cacheCfg, sw)
 
 	}()
 
@@ -184,364 +207,123 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		},
 	)
 
-	return outStream, nil
-}
-
-func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message, response responses.Response,
-	cacheConfig *cacheConfig) {
-
-	if cacheConfig.Enabled {
-		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cacheConfig.ExpireAt)))
-	}
-	setContextID(msg, response.ID)
-	setResponseID(msg, response.ID)
-	setServiceTier(msg, string(response.ServiceTier))
-}
-
-type cacheConfig struct {
-	Enabled  bool
-	ExpireAt *int64
-}
-
-func (cm *responsesAPIChatModel) receivedStreamResponse(streamResp *ssestream.Stream[responses.ResponseStreamEventUnion],
-	config *model.Config, cache *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
-
-	var toolCallMetaMsg *schema.Message
-
-	defer func() {
-		if toolCallMetaMsg != nil {
-			cm.sendCallbackOutput(sw, config, toolCallMetaMsg)
-		}
-	}()
-
-	for streamResp.Next() {
-		cur := streamResp.Current()
-
-		if msg, ok := cm.isAddedToolCall(cur); ok {
-			toolCallMetaMsg = msg
-			continue
-		}
-
-		event := cur.AsAny()
-
-		switch asEvent := event.(type) {
-		case responses.ResponseCreatedEvent:
-			msg := &schema.Message{
-				Role: schema.Assistant,
-			}
-
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
-			cm.sendCallbackOutput(sw, config, msg)
-
-			continue
-
-		case responses.ResponseCompletedEvent:
-			msg := cm.handleCompletedStreamEvent(asEvent)
-
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
-			cm.sendCallbackOutput(sw, config, msg)
-
-		case responses.ResponseErrorEvent:
-			sw.Send(nil, fmt.Errorf("received error: %s", asEvent.Message))
-
-		case responses.ResponseIncompleteEvent:
-			msg := cm.handleIncompleteStreamEvent(asEvent)
-
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
-			cm.sendCallbackOutput(sw, config, msg)
-
-		case responses.ResponseFailedEvent:
-			msg := cm.handleFailedStreamEvent(asEvent)
-			cm.setStreamChunkDefaultExtra(msg, asEvent.Response, cache)
-			cm.sendCallbackOutput(sw, config, msg)
-
-		default:
-			msg := cm.handleDeltaStreamEvent(event)
-			if msg == nil {
-				continue
-			}
-
-			if toolCallMetaMsg != nil && len(msg.ToolCalls) > 0 {
-				toolCallMeta := toolCallMetaMsg.ToolCalls[0]
-				toolCall := msg.ToolCalls[0]
-
-				toolCall.ID = toolCallMeta.ID
-				toolCall.Type = toolCallMeta.Type
-				toolCall.Function.Name = toolCallMeta.Function.Name
-				for k, v := range toolCallMeta.Extra {
-					_, ok := toolCall.Extra[k]
-					if !ok {
-						toolCall.Extra[k] = v
-					}
-				}
-
-				msg.ToolCalls[0] = toolCall
-				toolCallMetaMsg = nil
-			}
-
-			cm.sendCallbackOutput(sw, config, msg)
-		}
-	}
-
-	if streamResp.Err() != nil {
-		_ = sw.Send(nil, fmt.Errorf("failed to read stream: %w", streamResp.Err()))
-	}
-}
-
-func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
-	msg *schema.Message) {
-
-	var token *model.TokenUsage
-	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
-		token = &model.TokenUsage{
-			PromptTokens: msg.ResponseMeta.Usage.PromptTokens,
-			PromptTokenDetails: model.PromptTokenDetails{
-				CachedTokens: msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
-			},
-			CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
-			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
-		}
-	}
-
-	sw.Send(&model.CallbackOutput{
-		Message:    msg,
-		Config:     reqConf,
-		TokenUsage: token,
-	}, nil)
-}
-
-func (cm *responsesAPIChatModel) isAddedToolCall(event responses.ResponseStreamEventUnion) (*schema.Message, bool) {
-	asEvent, ok := event.AsAny().(responses.ResponseOutputItemAddedEvent)
-	if !ok {
-		return nil, false
-	}
-
-	asItem, ok := asEvent.Item.AsAny().(responses.ResponseFunctionToolCall)
-	if !ok {
-		return nil, false
-	}
-
-	msg := &schema.Message{
-		Role: schema.Assistant,
-		ToolCalls: []schema.ToolCall{
-			{
-				ID:   asItem.CallID,
-				Type: string(asItem.Type),
-				Function: schema.FunctionCall{
-					Name: asItem.Name,
-				},
-			},
-		},
-	}
-
-	return msg, true
-}
-
-func (cm *responsesAPIChatModel) handleCompletedStreamEvent(asChunk responses.ResponseCompletedEvent) *schema.Message {
-	return &schema.Message{
-		Role: schema.Assistant,
-		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(asChunk.Response.Status),
-			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
-		},
-	}
-}
-
-func (cm *responsesAPIChatModel) handleIncompleteStreamEvent(asChunk responses.ResponseIncompleteEvent) *schema.Message {
-	return &schema.Message{
-		Role: schema.Assistant,
-		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: asChunk.Response.IncompleteDetails.Reason,
-			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
-		},
-	}
-}
-
-func (cm *responsesAPIChatModel) handleFailedStreamEvent(asChunk responses.ResponseFailedEvent) *schema.Message {
-	return &schema.Message{
-		Role: schema.Assistant,
-		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: asChunk.Response.Error.Message,
-			Usage:        cm.toEinoTokenUsage(asChunk.Response.Usage),
-		},
-	}
-}
-
-func (cm *responsesAPIChatModel) handleDeltaStreamEvent(asChunk any) *schema.Message {
-	switch asEvent := asChunk.(type) {
-	case responses.ResponseTextDeltaEvent:
-		return &schema.Message{
-			Role:    schema.Assistant,
-			Content: asEvent.Delta,
-		}
-
-	case responses.ResponseFunctionCallArgumentsDeltaEvent:
-		return &schema.Message{
-			Role: schema.Assistant,
-			ToolCalls: []schema.ToolCall{
-				{
-					Index: ptrOf(int(asEvent.OutputIndex)),
-					Function: schema.FunctionCall{
-						Arguments: asEvent.Delta,
-					},
-				},
-			},
-		}
-
-	case responses.ResponseReasoningSummaryTextDeltaEvent:
-		msg := &schema.Message{
-			Role:             schema.Assistant,
-			ReasoningContent: asEvent.Delta,
-		}
-		setReasoningContent(msg, asEvent.Delta)
-
-		return msg
-	}
-
-	return nil
-}
-
-func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.ToolUnionParam, error) {
-	tools := make([]responses.ToolUnionParam, len(tis))
-	for i := range tis {
-		ti := tis[i]
-		if ti == nil {
-			return nil, fmt.Errorf("tool info cannot be nil in WithTools")
-		}
-
-		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
-		}
-
-		b, err := sonic.Marshal(paramsJSONSchema)
-		if err != nil {
-			return nil, fmt.Errorf("marshal paramsJSONSchema fail: %w", err)
-		}
-
-		params := map[string]any{}
-		if err = sonic.Unmarshal(b, &params); err != nil {
-			return nil, fmt.Errorf("unmarshal paramsJSONSchema fail: %w", err)
-		}
-
-		tools[i] = responses.ToolUnionParam{
-			OfFunction: &responses.FunctionToolParam{
-				Name:        ti.Name,
-				Description: newOpenaiStringOpt(&ti.Desc),
-				Parameters:  params,
-			},
-		}
-	}
-
-	return tools, nil
-}
-
-type responsesAPIRequestParams struct {
-	req   *responses.ResponseNewParams
-	opts  []option.RequestOption
-	cache *cacheConfig
+	return outStream, err
 }
 
 func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options,
-	specOptions *arkOptions) (reqParams *responsesAPIRequestParams, err error) {
+	specOptions *arkOptions) (responseReq *responses.ResponsesRequest, err error) {
+	responseReq = &responses.ResponsesRequest{}
 
-	text := responses.ResponseTextConfigParam{}
 	if cm.responseFormat != nil {
+		textFormat := &responses.ResponsesText{Format: &responses.TextFormat{}}
 		switch cm.responseFormat.Type {
 		case arkModel.ResponseFormatText:
-			text.Format.OfText = ptrOf(shared.NewResponseFormatTextParam())
+			textFormat.Format.Type = responses.TextType_text
 		case arkModel.ResponseFormatJsonObject:
-			text.Format.OfJSONObject = ptrOf(shared.NewResponseFormatJSONObjectParam())
+			textFormat.Format.Type = responses.TextType_json_object
 		case arkModel.ResponseFormatJSONSchema:
+			textFormat.Format.Type = responses.TextType_json_schema
 			b, err := sonic.Marshal(cm.responseFormat.JSONSchema)
 			if err != nil {
 				return nil, fmt.Errorf("marshal JSONSchema fail: %w", err)
 			}
-
-			var paramsJSONSchema map[string]any
-			if err = sonic.Unmarshal(b, &paramsJSONSchema); err != nil {
-				return nil, fmt.Errorf("unmarshal JSONSchema fail: %w", err)
-			}
-
-			text.Format.OfJSONSchema = &responses.ResponseFormatTextJSONSchemaConfigParam{
-				Name:        cm.responseFormat.JSONSchema.Name,
-				Description: param.NewOpt(cm.responseFormat.JSONSchema.Description),
-				Schema:      paramsJSONSchema,
-				Strict:      param.NewOpt(cm.responseFormat.JSONSchema.Strict),
-			}
-
+			textFormat.Format.Schema = &responses.Bytes{Value: b}
+			textFormat.Format.Name = cm.responseFormat.JSONSchema.Name
+			textFormat.Format.Description = &cm.responseFormat.JSONSchema.Description
+			textFormat.Format.Strict = &cm.responseFormat.JSONSchema.Strict
 		default:
 			return nil, fmt.Errorf("unsupported response format type: %s", cm.responseFormat.Type)
 		}
+		responseReq.Text = textFormat
 	}
-
-	reqParams = &responsesAPIRequestParams{
-		req: &responses.ResponseNewParams{
-			Text:            text,
-			Model:           ptrFromOrZero(options.Model),
-			MaxOutputTokens: newOpenaiIntOpt(options.MaxTokens),
-			Temperature:     newOpenaiFloatOpt(options.Temperature),
-			TopP:            newOpenaiFloatOpt(options.TopP),
-			ServiceTier:     responses.ResponseNewParamsServiceTier(ptrFromOrZero(cm.serviceTier)),
-		},
+	if options.Model != nil {
+		responseReq.Model = *options.Model
 	}
-
-	in_ := in
-	if in_, reqParams, err = cm.populateCache(in, reqParams, specOptions); err != nil {
-		return nil, err
+	if options.MaxTokens != nil {
+		responseReq.MaxOutputTokens = ptrOf(int64(*options.MaxTokens))
 	}
-
-	if err = cm.populateInput(reqParams.req, in_); err != nil {
-		return nil, err
+	if options.Temperature != nil {
+		responseReq.Temperature = ptrOf(float64(*options.Temperature))
 	}
-
-	if err = cm.populateTools(reqParams.req, options.Tools); err != nil {
-		return nil, err
+	if options.TopP != nil {
+		responseReq.TopP = ptrOf(float64(*options.TopP))
 	}
-
-	if options.ToolChoice != nil {
-		var tco responses.ToolChoiceOptions
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			tco = responses.ToolChoiceOptionsNone
-		case schema.ToolChoiceAllowed:
-			tco = responses.ToolChoiceOptionsAuto
-		case schema.ToolChoiceForced:
-			tco = responses.ToolChoiceOptionsRequired
-		default:
-			tco = responses.ToolChoiceOptionsAuto
-		}
-		reqParams.req.ToolChoice = responses.ResponseNewParamsToolChoiceUnion{
-			OfToolChoiceMode: param.NewOpt(tco),
+	if cm.serviceTier != nil {
+		switch *cm.serviceTier {
+		case "auto":
+			responseReq.ServiceTier = responses.ResponsesServiceTier_auto.Enum()
+		case "default":
+			responseReq.ServiceTier = responses.ResponsesServiceTier_default.Enum()
 		}
 	}
 
-	for k, v := range specOptions.customHeaders {
-		reqParams.opts = append(reqParams.opts, option.WithHeaderAdd(k, v))
+	in, err = cm.populateCache(in, responseReq, specOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cm.populateInput(in, responseReq)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
+	if err != nil {
+		return nil, err
 	}
 
 	if specOptions.thinking != nil {
-		reqParams.opts = append(reqParams.opts, option.WithJSONSet("thinking", specOptions.thinking))
+		var respThinking *responses.ResponsesThinking
+		switch specOptions.thinking.Type {
+		case arkModel.ThinkingTypeEnabled:
+			respThinking = &responses.ResponsesThinking{
+				Type: responses.ThinkingType_enabled.Enum(),
+			}
+		case arkModel.ThinkingTypeDisabled:
+			respThinking = &responses.ResponsesThinking{
+				Type: responses.ThinkingType_disabled.Enum(),
+			}
+		case arkModel.ThinkingTypeAuto:
+			respThinking = &responses.ResponsesThinking{
+				Type: responses.ThinkingType_auto.Enum(),
+			}
+		}
+		responseReq.Thinking = respThinking
 	}
+
 	if specOptions.reasoningEffort != nil {
-		reqParams.opts = append(reqParams.opts, option.WithJSONSet("reasoning_effort", string(*specOptions.reasoningEffort)))
+		var reasoning *responses.ResponsesReasoning
+		switch *specOptions.reasoningEffort {
+		case arkModel.ReasoningEffortMinimal:
+			reasoning = &responses.ResponsesReasoning{
+				Effort: responses.ReasoningEffort_minimal,
+			}
+		case arkModel.ReasoningEffortLow:
+			reasoning = &responses.ResponsesReasoning{
+				Effort: responses.ReasoningEffort_low,
+			}
+		case arkModel.ReasoningEffortMedium:
+			reasoning = &responses.ResponsesReasoning{
+				Effort: responses.ReasoningEffort_medium,
+			}
+		case arkModel.ReasoningEffortHigh:
+			reasoning = &responses.ResponsesReasoning{
+				Effort: responses.ReasoningEffort_high,
+			}
+		}
+		responseReq.Reasoning = reasoning
+
 	}
 
-	return reqParams, nil
+	return responseReq, nil
+
 }
 
-func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOptions) error {
-	if len(mOpts.Stop) > 0 {
-		return fmt.Errorf("'Stop' is not supported by responses API")
-	}
-	return nil
-}
-
-func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, reqParams *responsesAPIRequestParams, arkOpts *arkOptions,
-) ([]*schema.Message, *responsesAPIRequestParams, error) {
+func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq *responses.ResponsesRequest, arkOpts *arkOptions,
+) ([]*schema.Message, error) {
 
 	var (
-		store       = param.NewOpt(false)
+		store       = false
 		cacheStatus = cachingDisabled
 		cacheTTL    *int
 		headRespID  *string
@@ -551,7 +333,7 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, reqParams *
 	if cm.cache != nil {
 		if sCache := cm.cache.SessionCache; sCache != nil {
 			if sCache.EnableCache {
-				store = param.NewOpt(true)
+				store = true
 				cacheStatus = cachingEnabled
 			}
 			cacheTTL = &sCache.TTL
@@ -567,10 +349,10 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, reqParams *
 			cacheTTL = &sCacheOpt.TTL
 
 			if sCacheOpt.EnableCache {
-				store = param.NewOpt(true)
+				store = true
 				cacheStatus = cachingEnabled
 			} else {
-				store = param.NewOpt(false)
+				store = false
 				cacheStatus = cachingDisabled
 			}
 		}
@@ -603,7 +385,7 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, reqParams *
 
 	if preRespID != nil {
 		if inputIdx+1 >= len(in) {
-			return in, nil, fmt.Errorf("not found incremental input after ResponseID")
+			return in, fmt.Errorf("not found incremental input after ResponseID")
 		}
 		in = in[inputIdx+1:]
 	}
@@ -616,238 +398,85 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, reqParams *
 		}
 	}
 
-	reqParams.req.PreviousResponseID = newOpenaiStringOpt(preRespID)
-	reqParams.req.Store = store
+	responseReq.PreviousResponseId = preRespID
+	responseReq.Store = &store
 
 	if cacheTTL != nil {
-		reqParams.opts = append(reqParams.opts, option.WithJSONSet("expire_at", now+int64(*cacheTTL)))
+		responseReq.ExpireAt = ptrOf(now + int64(*cacheTTL))
 	}
 
-	reqParams.opts = append(reqParams.opts, option.WithJSONSet("caching", map[string]any{
-		"type": cacheStatus,
-	}))
-
-	reqParams.cache = &cacheConfig{
-		Enabled: cacheStatus == cachingEnabled,
-		ExpireAt: func() *int64 {
-			// TODO: After changing to using ARK responses sdk, use the `expire_at` returned by the response
-			if cacheTTL == nil { // Default TTL is 3 days
-				return ptrOf(now + 259200)
-			}
-			return ptrOf(now + int64(*cacheTTL))
-		}(),
+	var cacheType *responses.CacheType_Enum
+	if cacheStatus == cachingDisabled {
+		cacheType = responses.CacheType_disabled.Enum()
+	} else {
+		cacheType = responses.CacheType_enabled.Enum()
 	}
 
-	return in, reqParams, nil
+	responseReq.Caching = &responses.ResponsesCaching{
+		Type: cacheType,
+	}
+
+	return in, nil
 }
 
-func (cm *responsesAPIChatModel) populateInput(req *responses.ResponseNewParams, in []*schema.Message) error {
-	itemList := make([]responses.ResponseInputItemUnionParam, 0, len(in))
-
+func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq *responses.ResponsesRequest) error {
+	itemList := make([]*responses.InputItem, 0, len(in))
 	if len(in) == 0 {
 		return nil
 	}
-
 	for _, msg := range in {
-		content, err := cm.toOpenaiMultiModalContent(msg)
+		inputMessage, err := cm.toArkItemInputMessage(msg)
 		if err != nil {
 			return err
 		}
-
 		switch msg.Role {
 		case schema.User:
-			itemList = append(itemList, responses.ResponseInputItemUnionParam{
-				OfMessage: &responses.EasyInputMessageParam{
-					Role:    responses.EasyInputMessageRoleUser,
-					Content: content,
-				},
-			})
-
+			inputMessage.Role = responses.MessageRole_user
+			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
-			if content.OfString.Valid() || len(content.OfInputItemContentList) > 0 {
-				itemList = append(itemList, responses.ResponseInputItemUnionParam{
-					OfMessage: &responses.EasyInputMessageParam{
-						Role:    responses.EasyInputMessageRoleAssistant,
-						Content: content,
-					},
-				})
-			}
-
+			inputMessage.Role = responses.MessageRole_assistant
+			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 			for _, toolCall := range msg.ToolCalls {
-				itemList = append(itemList, responses.ResponseInputItemUnionParam{
-					OfFunctionCall: &responses.ResponseFunctionToolCallParam{
-						CallID:    toolCall.ID,
-						Name:      toolCall.Function.Name,
+				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{
+					FunctionToolCall: &responses.ItemFunctionToolCall{
+						Type:      responses.ItemType_function_call,
+						CallId:    toolCall.ID,
 						Arguments: toolCall.Function.Arguments,
+						Name:      toolCall.Function.Name,
 					},
-				})
+				}})
 			}
-
 		case schema.System:
-			itemList = append(itemList, responses.ResponseInputItemUnionParam{
-				OfMessage: &responses.EasyInputMessageParam{
-					Role:    responses.EasyInputMessageRoleSystem,
-					Content: content,
-				},
-			})
-
+			inputMessage.Role = responses.MessageRole_system
+			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Tool:
-			itemList = append(itemList, responses.ResponseInputItemUnionParam{
-				OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-					CallID: msg.ToolCallID,
+			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCallOutput{
+				FunctionToolCallOutput: &responses.ItemFunctionToolCallOutput{
+					Type:   responses.ItemType_function_call_output,
+					CallId: msg.ToolCallID,
 					Output: msg.Content,
 				},
-			})
+			}})
 
 		default:
 			return fmt.Errorf("unknown role: %s", msg.Role)
 		}
 	}
-
-	req.Input = responses.ResponseNewParamsInputUnion{
-		OfInputItemList: itemList,
+	responseReq.Input = &responses.ResponsesInput{
+		Union: &responses.ResponsesInput_ListValue{
+			ListValue: &responses.InputItemList{
+				ListValue: itemList,
+			},
+		},
 	}
-
 	return nil
 }
 
-func (cm *responsesAPIChatModel) toOpenaiMultiModalContent(msg *schema.Message) (responses.EasyInputMessageContentUnionParam, error) {
-	content := responses.EasyInputMessageContentUnionParam{}
-
-	if msg.Content != "" {
-		if len(msg.MultiContent) == 0 && len(msg.UserInputMultiContent) == 0 && len(msg.AssistantGenMultiContent) == 0 {
-			content.OfString = param.NewOpt(msg.Content)
-			return content, nil
-		}
-
-		content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-			OfInputText: &responses.ResponseInputTextParam{
-				Text: msg.Content,
-			},
-		})
-	}
-
-	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
-		return content, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
-	}
-
-	if len(msg.UserInputMultiContent) > 0 {
-		if msg.Role != schema.User {
-			return content, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
-		}
-		for _, part := range msg.UserInputMultiContent {
-			switch part.Type {
-			case schema.ChatMessagePartTypeText:
-				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-					OfInputText: &responses.ResponseInputTextParam{
-						Text: part.Text,
-					},
-				})
-			case schema.ChatMessagePartTypeImageURL:
-				if part.Image == nil {
-					return content, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
-				} else {
-					var imageURL string
-					var err error
-					if part.Image.URL != nil {
-						imageURL = *part.Image.URL
-					} else if part.Image.Base64Data != nil {
-						if part.Image.MIMEType == "" {
-							return content, fmt.Errorf("image part must have MIMEType when use Base64Data")
-						}
-						imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
-						if err != nil {
-							return content, err
-						}
-					}
-					content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-						OfInputImage: &responses.ResponseInputImageParam{
-							ImageURL: param.NewOpt(imageURL),
-						},
-					})
-				}
-			default:
-				return content, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
-			}
-		}
-		return content, nil
-	} else if len(msg.AssistantGenMultiContent) > 0 {
-		if msg.Role != schema.Assistant {
-			return content, fmt.Errorf("assistant gen multi content only support assistant role, got %s", msg.Role)
-		}
-		for _, part := range msg.AssistantGenMultiContent {
-			switch part.Type {
-			case schema.ChatMessagePartTypeText:
-				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-					OfInputText: &responses.ResponseInputTextParam{
-						Text: part.Text,
-					},
-				})
-			case schema.ChatMessagePartTypeImageURL:
-				if part.Image == nil {
-					return content, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
-				} else {
-					var imageURL string
-					var err error
-					if part.Image.URL != nil {
-						imageURL = *part.Image.URL
-					} else if part.Image.Base64Data != nil {
-						if part.Image.MIMEType == "" {
-							return content, fmt.Errorf("image part must have MIMEType when use Base64Data")
-						}
-						imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
-						if err != nil {
-							return content, err
-						}
-					}
-					content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-						OfInputImage: &responses.ResponseInputImageParam{
-							ImageURL: param.NewOpt(imageURL),
-						},
-					})
-				}
-			default:
-				return content, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", part.Type)
-			}
-		}
-		return content, nil
-	} else {
-		for _, c := range msg.MultiContent {
-			switch c.Type {
-			case schema.ChatMessagePartTypeText:
-				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-					OfInputText: &responses.ResponseInputTextParam{
-						Text: c.Text,
-					},
-				})
-
-			case schema.ChatMessagePartTypeImageURL:
-				if c.ImageURL == nil {
-					continue
-				}
-				content.OfInputItemContentList = append(content.OfInputItemContentList, responses.ResponseInputContentUnionParam{
-					OfInputImage: &responses.ResponseInputImageParam{
-						ImageURL: param.NewOpt(c.ImageURL.URL),
-					},
-				})
-
-			default:
-				return content, fmt.Errorf("unsupported content type: %s", c.Type)
-			}
-		}
-	}
-
-	return content, nil
-}
-
-func (cm *responsesAPIChatModel) populateTools(req *responses.ResponseNewParams, optTools []*schema.ToolInfo) error {
-	// When caching is enabled, the tool is only passed on the first request.
-	if req.PreviousResponseID.Valid() {
+func (cm *responsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, optTools []*schema.ToolInfo, toolChoice *schema.ToolChoice) error {
+	if responseReq.PreviousResponseId != nil {
 		return nil
 	}
-
 	tools := cm.tools
-
 	if optTools != nil {
 		var err error
 		if tools, err = cm.toTools(optTools); err != nil {
@@ -855,130 +484,244 @@ func (cm *responsesAPIChatModel) populateTools(req *responses.ResponseNewParams,
 		}
 	}
 
-	req.Tools = tools
+	if toolChoice != nil {
+		var mode responses.ToolChoiceMode_Enum
+		switch *toolChoice {
+		case schema.ToolChoiceForbidden:
+			mode = responses.ToolChoiceMode_none
+		case schema.ToolChoiceAllowed:
+			mode = responses.ToolChoiceMode_auto
+		case schema.ToolChoiceForced:
+			mode = responses.ToolChoiceMode_required
+		default:
+			mode = responses.ToolChoiceMode_auto
+		}
+		responseReq.ToolChoice = &responses.ResponsesToolChoice{
+			Union: &responses.ResponsesToolChoice_Mode{
+				Mode: mode,
+			},
+		}
 
+	}
+
+	responseReq.Tools = tools
 	return nil
 }
 
-func (cm *responsesAPIChatModel) toCallbackConfig(req *responses.ResponseNewParams) *model.Config {
-	return &model.Config{
-		Model:       req.Model,
-		MaxTokens:   int(req.MaxOutputTokens.Value),
-		Temperature: float32(req.Temperature.Value),
-		TopP:        float32(req.TopP.Value),
-	}
-}
+func (cm *responsesAPIChatModel) toArkItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
 
-func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.Response, cache *cacheConfig) (*schema.Message, error) {
-	msg := &schema.Message{
-		Role: schema.Assistant,
-		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(resp.Status),
-			Usage:        cm.toEinoTokenUsage(resp.Usage),
-		},
-	}
-
-	if cache != nil && cache.Enabled {
-		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cache.ExpireAt)))
-	}
-	setContextID(msg, resp.ID)
-	setResponseID(msg, resp.ID)
-
-	if len(resp.ServiceTier) > 0 {
-		setServiceTier(msg, string(resp.ServiceTier))
-	}
-
-	if resp.Status == responses.ResponseStatusFailed {
-		msg.ResponseMeta.FinishReason = resp.Error.Message
-		return msg, nil
-	}
-
-	if resp.Status == responses.ResponseStatusIncomplete {
-		msg.ResponseMeta.FinishReason = resp.IncompleteDetails.Reason
-		return msg, nil
-	}
-
-	if len(resp.Output) == 0 {
-		return nil, fmt.Errorf("received empty output from ARK")
-	}
-
-	for _, item := range resp.Output {
-		switch asItem := item.AsAny().(type) {
-		case responses.ResponseOutputMessage:
-			isMultiContent := len(asItem.Content) > 1
-
-			for _, content := range asItem.Content {
-				text := ""
-
-				switch asContent := content.AsAny().(type) {
-				case responses.ResponseOutputText:
-					text = asContent.Text
-				case responses.ResponseOutputRefusal:
-					text = asContent.Refusal
-				default:
-					return nil, fmt.Errorf("unsupported content type: %T", asContent)
-				}
-
-				if !isMultiContent {
-					msg.Content = text
-				} else {
-					msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, schema.MessageOutputPart{
-						Type: schema.ChatMessagePartTypeText,
-						Text: text,
-					})
-				}
-			}
-
-		case responses.ResponseReasoningItem:
-			for _, s := range asItem.Summary {
-				if s.Text == "" {
-					continue
-				}
-				if msg.ReasoningContent == "" {
-					msg.ReasoningContent = s.Text
-					continue
-				}
-				msg.ReasoningContent = fmt.Sprintf("%s\n\n%s", msg.ReasoningContent, s.Text)
-			}
-
-		case responses.ResponseFunctionToolCall:
-			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
-				ID:   asItem.CallID,
-				Type: string(asItem.Type),
-				Function: schema.FunctionCall{
-					Name:      asItem.Name,
-					Arguments: asItem.Arguments,
+	inputItemMessage := &responses.ItemInputMessage{}
+	if msg.Content != "" {
+		if len(msg.MultiContent) == 0 && len(msg.UserInputMultiContent) == 0 && len(msg.AssistantGenMultiContent) == 0 {
+			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+				Text: &responses.ContentItemText{
+					Type: responses.ContentItemType_input_text,
+					Text: msg.Content,
 				},
-			})
-
-		default:
-			continue
+			}})
+			return inputItemMessage, nil
 		}
 	}
 
-	return msg, nil
-}
-
-func (cm *responsesAPIChatModel) toEinoTokenUsage(usage responses.ResponseUsage) *schema.TokenUsage {
-	return &schema.TokenUsage{
-		PromptTokens: int(usage.InputTokens),
-		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
-		},
-		CompletionTokens: int(usage.OutputTokens),
-		TotalTokens:      int(usage.TotalTokens),
+	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 	}
-}
 
-func (cm *responsesAPIChatModel) toModelTokenUsage(usage responses.ResponseUsage) *model.TokenUsage {
-	return &model.TokenUsage{
-		PromptTokens: int(usage.InputTokens),
-		PromptTokenDetails: model.PromptTokenDetails{
-			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
-		},
-		CompletionTokens: int(usage.OutputTokens),
-		TotalTokens:      int(usage.TotalTokens),
+	toContentItemImageDetail := func(cImage *responses.ContentItemImage, detail schema.ImageURLDetail) {
+		switch detail {
+		case schema.ImageURLDetailHigh:
+			cImage.Detail = responses.ContentItemImageDetail_high.Enum()
+		case schema.ImageURLDetailLow:
+			cImage.Detail = responses.ContentItemImageDetail_low.Enum()
+		case schema.ImageURLDetailAuto:
+			cImage.Detail = responses.ContentItemImageDetail_auto.Enum()
+		}
 	}
+
+	if len(msg.UserInputMultiContent) > 0 {
+		if msg.Role != schema.User {
+			return nil, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
+		}
+		for _, part := range msg.UserInputMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+					Text: &responses.ContentItemText{
+						Type: responses.ContentItemType_input_text,
+						Text: part.Text,
+					},
+				}})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+				}
+				var imageURL string
+				var err error
+				if part.Image.URL != nil {
+					imageURL = *part.Image.URL
+				} else if part.Image.Base64Data != nil {
+					if part.Image.MIMEType == "" {
+						return nil, fmt.Errorf("image part must have MIMEType when use Base64Data")
+					}
+					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				}
+				contentItemImage := &responses.ContentItemImage{
+					Type:     responses.ContentItemType_input_image,
+					ImageUrl: &imageURL,
+				}
+				toContentItemImageDetail(contentItemImage, part.Image.Detail)
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
+					Union: &responses.ContentItem_Image{Image: contentItemImage}})
+
+			case schema.ChatMessagePartTypeVideoURL:
+				if part.Video == nil {
+					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL")
+				}
+				var videoURL string
+				var err error
+				if part.Video.URL != nil {
+					videoURL = *part.Video.URL
+				} else if part.Video.Base64Data != nil {
+					if part.Video.MIMEType == "" {
+						return nil, fmt.Errorf("image part must have MIMEType when use Base64Data")
+					}
+					videoURL, err = ensureDataURL(*part.Video.Base64Data, part.Video.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				}
+
+				var fps *float32
+				if GetInputVideoFPS(part.Video) != nil {
+					fps = ptrOf(float32(*GetInputVideoFPS(part.Video)))
+				}
+
+				contentItemVideo := &responses.ContentItemVideo{
+					Type:     responses.ContentItemType_input_video,
+					VideoUrl: videoURL,
+					Fps:      fps,
+				}
+
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
+					Union: &responses.ContentItem_Video{Video: contentItemVideo}})
+
+			default:
+				return nil, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
+			}
+		}
+		return inputItemMessage, nil
+	} else if len(msg.AssistantGenMultiContent) > 0 {
+		if msg.Role != schema.Assistant {
+			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", msg.Role)
+		}
+		for _, part := range msg.AssistantGenMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+					Text: &responses.ContentItemText{
+						Type: responses.ContentItemType_input_text,
+						Text: part.Text,
+					},
+				}})
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+				} else {
+					var imageURL string
+					var err error
+					if part.Image.URL != nil {
+						imageURL = *part.Image.URL
+					} else if part.Image.Base64Data != nil {
+						if part.Image.MIMEType == "" {
+							return nil, fmt.Errorf("image part must have MIMEType when use Base64Data")
+						}
+						imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
+						if err != nil {
+							return nil, err
+						}
+					}
+					contentItemImage := &responses.ContentItemImage{
+						Type:     responses.ContentItemType_input_image,
+						ImageUrl: &imageURL,
+					}
+					inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
+						Union: &responses.ContentItem_Image{Image: contentItemImage}})
+				}
+			case schema.ChatMessagePartTypeVideoURL:
+				if part.Video == nil {
+					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL")
+				}
+				var videoURL string
+				var err error
+				if part.Video.URL != nil {
+					videoURL = *part.Video.URL
+				} else if part.Video.Base64Data != nil {
+					if part.Video.MIMEType == "" {
+						return nil, fmt.Errorf("image part must have MIMEType when use Base64Data")
+					}
+					videoURL, err = ensureDataURL(*part.Video.Base64Data, part.Video.MIMEType)
+					if err != nil {
+						return nil, err
+					}
+				}
+
+				var fps *float32
+				if GetOutputVideoFPS(part.Video) != nil {
+					fps = ptrOf(float32(*GetOutputVideoFPS(part.Video)))
+				}
+
+				contentItemVideo := &responses.ContentItemVideo{
+					Type:     responses.ContentItemType_input_video,
+					VideoUrl: videoURL,
+					Fps:      fps,
+				}
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
+					Union: &responses.ContentItem_Video{Video: contentItemVideo}})
+			default:
+				return inputItemMessage, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", part.Type)
+			}
+		}
+		return inputItemMessage, nil
+	} else if len(msg.Content) > 0 {
+		inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+			Text: &responses.ContentItemText{
+				Type: responses.ContentItemType_input_text,
+				Text: msg.Content,
+			},
+		}})
+	} else {
+		for _, c := range msg.MultiContent {
+			switch c.Type {
+			case schema.ChatMessagePartTypeText:
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+					Text: &responses.ContentItemText{
+						Type: responses.ContentItemType_input_text,
+						Text: c.Text,
+					},
+				}})
+
+			case schema.ChatMessagePartTypeImageURL:
+				if c.ImageURL == nil {
+					continue
+				}
+				contentItemImage := &responses.ContentItemImage{
+					Type:     responses.ContentItemType_input_image,
+					ImageUrl: &c.ImageURL.URL,
+				}
+				toContentItemImageDetail(contentItemImage, c.ImageURL.Detail)
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
+					Union: &responses.ContentItem_Image{Image: contentItemImage}})
+
+			default:
+				return nil, fmt.Errorf("unsupported content type: %s", c.Type)
+			}
+		}
+	}
+
+	return inputItemMessage, nil
 }
 
 func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options, *arkOptions, error) {
@@ -999,8 +742,341 @@ func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 	if err := cm.checkOptions(options, arkOpts); err != nil {
 		return nil, nil, err
 	}
-
 	return options, arkOpts, nil
+}
+
+func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.ResponsesTool, error) {
+	tools := make([]*responses.ResponsesTool, len(tis))
+	for i := range tis {
+		ti := tis[i]
+		if ti == nil {
+			return nil, fmt.Errorf("tool info cannot be nil in WithTools")
+		}
+
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
+		}
+
+		b, err := sonic.Marshal(paramsJSONSchema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal paramsJSONSchema fail: %w", err)
+		}
+
+		tools[i] = &responses.ResponsesTool{
+			Union: &responses.ResponsesTool_ToolFunction{
+				ToolFunction: &responses.ToolFunction{
+					Name:        ti.Name,
+					Type:        responses.ToolType_function,
+					Description: &ti.Desc,
+					Parameters: &responses.Bytes{
+						Value: b,
+					},
+				},
+			},
+		}
+	}
+
+	return tools, nil
+}
+
+func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject, cache *cacheConfig) (*schema.Message, error) {
+	msg := &schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: string(resp.Status),
+			Usage:        cm.toEinoTokenUsage(resp.Usage),
+		},
+	}
+
+	if cache != nil && cache.Enabled {
+		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cache.ExpireAt)))
+	}
+	setContextID(msg, resp.Id)
+	setResponseID(msg, resp.Id)
+
+	if resp.ServiceTier != nil {
+		setServiceTier(msg, resp.ServiceTier.String())
+	}
+
+	if resp.Status == responses.ResponseStatus_failed {
+		msg.ResponseMeta.FinishReason = resp.Error.Message
+		return msg, nil
+	}
+
+	if resp.Status == responses.ResponseStatus_incomplete {
+		msg.ResponseMeta.FinishReason = resp.IncompleteDetails.Reason
+		return msg, nil
+	}
+
+	if len(resp.Output) == 0 {
+		return nil, fmt.Errorf("received empty output from ARK")
+	}
+
+	for _, item := range resp.Output {
+		switch asItem := item.GetUnion().(type) {
+		case *responses.OutputItem_OutputMessage:
+			if asItem.OutputMessage == nil {
+				continue
+			}
+			isMultiContent := len(asItem.OutputMessage.Content) > 1
+			for _, content := range asItem.OutputMessage.Content {
+				if content.GetText() == nil {
+					continue
+				}
+				if !isMultiContent {
+					msg.Content = content.GetText().GetText()
+				} else {
+					msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, schema.MessageOutputPart{
+						Type: schema.ChatMessagePartTypeText,
+						Text: content.GetText().GetText(),
+					})
+				}
+			}
+
+		case *responses.OutputItem_Reasoning:
+			if asItem.Reasoning == nil {
+				continue
+			}
+			for _, s := range asItem.Reasoning.GetSummary() {
+				if s.Text == "" {
+					continue
+				}
+				if msg.ReasoningContent == "" {
+					msg.ReasoningContent = s.Text
+					continue
+				}
+				msg.ReasoningContent = fmt.Sprintf("%s\n\n%s", msg.ReasoningContent, s.Text)
+			}
+
+		case *responses.OutputItem_FunctionToolCall:
+			if asItem.FunctionToolCall == nil {
+				continue
+			}
+			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
+				ID:   asItem.FunctionToolCall.CallId,
+				Type: string(asItem.FunctionToolCall.Type),
+				Function: schema.FunctionCall{
+					Name:      asItem.FunctionToolCall.Name,
+					Arguments: asItem.FunctionToolCall.Arguments,
+				},
+			})
+		}
+	}
+
+	return msg, nil
+}
+
+func (cm *responsesAPIChatModel) toEinoTokenUsage(usage *responses.Usage) *schema.TokenUsage {
+	return &schema.TokenUsage{
+		PromptTokens: int(usage.InputTokens),
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
+		},
+		CompletionTokens: int(usage.OutputTokens),
+		TotalTokens:      int(usage.TotalTokens),
+	}
+}
+
+func (cm *responsesAPIChatModel) toModelTokenUsage(usage *responses.Usage) *model.TokenUsage {
+	return &model.TokenUsage{
+		PromptTokens: int(usage.InputTokens),
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
+		},
+		CompletionTokens: int(usage.OutputTokens),
+		TotalTokens:      int(usage.TotalTokens),
+	}
+}
+
+func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOptions) error {
+	if len(mOpts.Stop) > 0 {
+		return fmt.Errorf("'Stop' is not supported by responses API")
+	}
+	return nil
+}
+
+func (cm *responsesAPIChatModel) toCallbackConfig(req *responses.ResponsesRequest) *model.Config {
+	return &model.Config{
+		Model:       req.Model,
+		MaxTokens:   int(ptrFromOrZero(req.MaxOutputTokens)),
+		Temperature: float32(ptrFromOrZero(req.Temperature)),
+		TopP:        float32(ptrFromOrZero(req.TopP)),
+	}
+}
+
+func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
+	config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
+	var itemFunctionToolCall *responses.ItemFunctionToolCall
+
+	for {
+		event, err := streamReader.Recv()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			_ = sw.Send(nil, fmt.Errorf("failed to read stream: %w", err))
+			return
+		}
+
+		switch ev := event.GetEvent().(type) {
+		case *responses.Event_Response:
+			if ev.Response == nil || ev.Response.Response == nil {
+				continue
+			}
+			msg := &schema.Message{Role: schema.Assistant}
+			cm.setStreamChunkDefaultExtra(msg, ev.Response.Response, cacheConfig)
+			cm.sendCallbackOutput(sw, config, msg)
+
+		case *responses.Event_ResponseCompleted:
+			if ev.ResponseCompleted == nil || ev.ResponseCompleted.Response == nil {
+				continue
+			}
+			msg := cm.handleCompletedStreamEvent(ev.ResponseCompleted.Response)
+			cm.setStreamChunkDefaultExtra(msg, ev.ResponseCompleted.Response, cacheConfig)
+			cm.sendCallbackOutput(sw, config, msg)
+
+		case *responses.Event_Error:
+			sw.Send(nil, fmt.Errorf("received error: %s", ev.Error.Message))
+
+		case *responses.Event_ResponseIncomplete:
+			if ev.ResponseIncomplete == nil || ev.ResponseIncomplete.Response == nil || ev.ResponseIncomplete.Response.IncompleteDetails == nil {
+				continue
+			}
+			detail := ev.ResponseIncomplete.Response.IncompleteDetails.Reason
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				ResponseMeta: &schema.ResponseMeta{
+					FinishReason: detail,
+					Usage:        cm.toEinoTokenUsage(ev.ResponseIncomplete.Response.Usage),
+				},
+			}
+			cm.setStreamChunkDefaultExtra(msg, ev.ResponseIncomplete.Response, cacheConfig)
+			cm.sendCallbackOutput(sw, config, msg)
+
+		case *responses.Event_ResponseFailed:
+			if ev.ResponseFailed == nil || ev.ResponseFailed.Response == nil {
+				continue
+			}
+			var errorMessage string
+			if ev.ResponseFailed.Response.Error != nil {
+				errorMessage = ev.ResponseFailed.Response.Error.Message
+			}
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				ResponseMeta: &schema.ResponseMeta{
+					FinishReason: errorMessage,
+					Usage:        cm.toEinoTokenUsage(ev.ResponseFailed.Response.Usage),
+				},
+			}
+			cm.setStreamChunkDefaultExtra(msg, ev.ResponseFailed.Response, cacheConfig)
+			cm.sendCallbackOutput(sw, config, msg)
+
+		case *responses.Event_Item:
+			if ev.Item == nil || ev.Item.GetItem() == nil || ev.Item.GetItem().GetUnion() == nil {
+				continue
+			}
+			if outputItemFuncCall, ok := ev.Item.GetItem().GetUnion().(*responses.OutputItem_FunctionToolCall); ok {
+				itemFunctionToolCall = outputItemFuncCall.FunctionToolCall
+			}
+
+		case *responses.Event_FunctionCallArguments:
+			if ev.FunctionCallArguments == nil {
+				continue
+			}
+
+			delta := *ev.FunctionCallArguments.Delta
+			outputIndex := ev.FunctionCallArguments.OutputIndex
+
+			if itemFunctionToolCall != nil && itemFunctionToolCall.Id != nil && *itemFunctionToolCall.Id == ev.FunctionCallArguments.ItemId {
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					ToolCalls: []schema.ToolCall{
+						{
+							Index: ptrOf(int(outputIndex)),
+							ID:    itemFunctionToolCall.CallId,
+							Type:  itemFunctionToolCall.Type.String(),
+							Function: schema.FunctionCall{
+								Name:      itemFunctionToolCall.Name,
+								Arguments: delta,
+							},
+						},
+					},
+				}
+				cm.sendCallbackOutput(sw, config, msg)
+			}
+
+		case *responses.Event_ReasoningText:
+			if ev.ReasoningText == nil || ev.ReasoningText.Delta == nil {
+				continue
+			}
+			delta := *ev.ReasoningText.Delta
+			msg := &schema.Message{
+				Role:             schema.Assistant,
+				ReasoningContent: delta,
+			}
+			setReasoningContent(msg, delta)
+			cm.sendCallbackOutput(sw, config, msg)
+
+		case *responses.Event_Text:
+			if ev.Text == nil || ev.Text.Delta == nil {
+				continue
+			}
+			msg := &schema.Message{
+				Role:    schema.Assistant,
+				Content: *ev.Text.Delta,
+			}
+			cm.sendCallbackOutput(sw, config, msg)
+
+		}
+
+	}
+
+}
+
+func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message, object *responses.ResponseObject,
+	cacheConfig *cacheConfig) {
+
+	if cacheConfig.Enabled {
+		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cacheConfig.ExpireAt)))
+	}
+	setContextID(msg, object.Id)
+	setResponseID(msg, object.Id)
+	if object.ServiceTier != nil {
+		setServiceTier(msg, object.ServiceTier.String())
+	}
+
+}
+
+func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
+	msg *schema.Message) {
+
+	var token *model.TokenUsage
+	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
+		token = &model.TokenUsage{
+			PromptTokens: msg.ResponseMeta.Usage.PromptTokens,
+			PromptTokenDetails: model.PromptTokenDetails{
+				CachedTokens: msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+			},
+			CompletionTokens: msg.ResponseMeta.Usage.CompletionTokens,
+			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
+		}
+	}
+	sw.Send(&model.CallbackOutput{
+		Message:    msg,
+		Config:     reqConf,
+		TokenUsage: token,
+	}, nil)
+}
+
+func (cm *responsesAPIChatModel) handleCompletedStreamEvent(RespObject *responses.ResponseObject) *schema.Message {
+	return &schema.Message{
+		Role: schema.Assistant,
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: string(RespObject.Status),
+			Usage:        cm.toEinoTokenUsage(RespObject.Usage),
+		},
+	}
 }
 
 func ensureDataURL(dataOfBase64, mimeType string) (string, error) {
@@ -1011,4 +1087,52 @@ func ensureDataURL(dataOfBase64, mimeType string) (string, error) {
 		return "", fmt.Errorf("mimeType field is required")
 	}
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, dataOfBase64), nil
+}
+
+func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Context, prefix []*schema.Message, ttl int, opts ...model.Option) (info *CacheInfo, err error) {
+	responseReq := &responses.ResponsesRequest{
+		Model:    cm.model,
+		ExpireAt: ptrOf(time.Now().Unix() + int64(ttl)),
+		Store:    ptrOf(true),
+		Caching: &responses.ResponsesCaching{
+			Type:   responses.CacheType_enabled.Enum(),
+			Prefix: ptrOf(true),
+		},
+	}
+
+	options, _, err := cm.getOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	if options.Model != nil {
+		responseReq.Model = *options.Model
+	}
+
+	tools := cm.rawTools
+	if options.Tools != nil {
+		tools = options.Tools
+	}
+
+	err = cm.populateInput(prefix, responseReq)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cm.populateTools(responseReq, tools, options.ToolChoice)
+	if err != nil {
+		return nil, err
+	}
+
+	responseObject, err := cm.client.CreateResponses(ctx, responseReq)
+	if err != nil {
+		return nil, err
+	}
+
+	info = &CacheInfo{
+		ContextID: responseObject.Id,
+		Usage:     *cm.toEinoTokenUsage(responseObject.Usage),
+	}
+
+	return info, nil
 }
