@@ -30,7 +30,7 @@ func TestBindTools(t *testing.T) {
 	t.Run("chat model force tool call", func(t *testing.T) {
 		ctx := context.Background()
 
-		chatModel, err := NewChatModel(ctx, &ChatModelConfig{Model: "gpt-3.5-turbo"})
+		chatModel, err := NewChatModel(ctx, &ChatModelConfig{Model: "gpt-3.5-turbo", APIKey: "test"})
 		assert.NoError(t, err)
 
 		doNothingParams := map[string]*schema.ParameterInfo{
@@ -193,7 +193,8 @@ func TestCallByResponsesAPI(t *testing.T) {
 func TestBuildResponsesAPIChatModel(t *testing.T) {
 	mockey.PatchConvey("invalid config", t, func() {
 		_, err := buildResponsesAPIChatModel(&ChatModelConfig{
-			Stop: []string{"test"},
+			Stop:   []string{"test"},
+			APIKey: "test",
 			Cache: &CacheConfig{
 				APIType: ptrOf(ResponsesAPI),
 			},
@@ -203,6 +204,7 @@ func TestBuildResponsesAPIChatModel(t *testing.T) {
 
 	mockey.PatchConvey("valid config", t, func() {
 		_, err := buildResponsesAPIChatModel(&ChatModelConfig{
+			APIKey: "test",
 			Cache: &CacheConfig{
 				APIType: ptrOf(ResponsesAPI),
 			},

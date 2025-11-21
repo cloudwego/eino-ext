@@ -67,6 +67,9 @@ func init() {
 
 		return chunks[len(chunks)-1], nil
 	})
+
+	schema.RegisterName[audioID]("_eino_ext_openai_audio_id")
+
 }
 
 func setMessageOutputAudioID(audio *schema.MessageOutputAudio, ID audioID) {

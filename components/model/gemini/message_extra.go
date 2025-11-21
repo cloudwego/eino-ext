@@ -21,7 +21,10 @@ import (
 	"google.golang.org/genai"
 )
 
-const videoMetaDataKey = "gemini_video_meta_data"
+const (
+	videoMetaDataKey    = "gemini_video_meta_data"
+	thoughtSignatureKey = "gemini_thought_signature"
+)
 
 // Deprecated: use SetInputVideoMetaData or SetOutputVideoMetaData instead.
 func SetVideoMetaData(part *schema.ChatMessageVideoURL, metaData *genai.VideoMetadata) {
@@ -72,4 +75,29 @@ func getVideoMetaData(extra map[string]any) *genai.VideoMetadata {
 		return nil
 	}
 	return videoMetaData
+}
+
+// setThoughtSignature stores the thought signature from a Gemini function call
+// in the ToolCall's Extra field. This is needed for gemini-3-pro-preview and later
+// models that require thought signatures when replaying tool calls in conversation history.
+func setThoughtSignature(toolCall *schema.ToolCall, signature []byte) {
+	if toolCall == nil || len(signature) == 0 {
+		return
+	}
+	if toolCall.Extra == nil {
+		toolCall.Extra = make(map[string]any)
+	}
+	toolCall.Extra[thoughtSignatureKey] = signature
+}
+
+// getThoughtSignature retrieves the thought signature from a ToolCall's Extra field.
+func getThoughtSignature(toolCall *schema.ToolCall) []byte {
+	if toolCall == nil || toolCall.Extra == nil {
+		return nil
+	}
+	signature, ok := toolCall.Extra[thoughtSignatureKey].([]byte)
+	if !ok {
+		return nil
+	}
+	return signature
 }
