@@ -461,7 +461,15 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			if err != nil {
 				return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
 			}
-			content.Parts = append(content.Parts, genai.NewPartFromFunctionCall(call.Function.Name, args))
+
+			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+
+			// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
+			if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
+				part.ThoughtSignature = thoughtSig
+			}
+
+			content.Parts = append(content.Parts, part)
 		}
 	}
 
@@ -804,7 +812,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 				})
 			}
 			if part.FunctionCall != nil {
-				fc, err := convFC(part.FunctionCall)
+				fc, err := convFC(part)
 				if err != nil {
 					return nil, err
 				}
@@ -873,18 +881,31 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 	return res, nil
 }
 
-func convFC(tp *genai.FunctionCall) (*schema.ToolCall, error) {
+func convFC(part *genai.Part) (*schema.ToolCall, error) {
+	if part == nil || part.FunctionCall == nil {
+		return nil, fmt.Errorf("part or function call is nil")
+	}
+
+	tp := part.FunctionCall
 	args, err := sonic.MarshalString(tp.Args)
 	if err != nil {
 		return nil, fmt.Errorf("marshal gemini tool call arguments fail: %w", err)
 	}
-	return &schema.ToolCall{
+
+	toolCall := &schema.ToolCall{
 		ID: tp.Name,
 		Function: schema.FunctionCall{
 			Name:      tp.Name,
 			Arguments: args,
 		},
-	}, nil
+	}
+
+	// Store thought signature if present (required for gemini-3-pro-preview and later)
+	if len(part.ThoughtSignature) > 0 {
+		setThoughtSignature(toolCall, part.ThoughtSignature)
+	}
+
+	return toolCall, nil
 }
 
 func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {
