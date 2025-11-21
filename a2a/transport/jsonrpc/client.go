@@ -38,10 +38,17 @@ import (
 )
 
 type ClientConfig struct {
-	BaseURL            string
-	HandlerPath        string
-	AgentCardPath      *string
-	HertzClient        *hertz_client.Client
+	BaseURL       string
+	HandlerPath   string
+	AgentCardPath *string
+	// HertzClient is the Hertz HTTP client to use for requests.
+	// If both HertzClient and HTTPClient are set, only HertzClient will be used.
+	// If neither is set, a default Hertz client will be created.
+	HertzClient *hertz_client.Client
+	// HTTPClient is the standard net/http client to use for requests.
+	// If both HertzClient and HTTPClient are set, only HertzClient will be used.
+	// If neither is set, a default Hertz client will be created.
+	HTTPClient         *std_http.Client
 	SSEBufferSize      *int
 	JSONRPCIDGenerator core.IDGenerator
 }
@@ -57,6 +64,9 @@ func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTr
 	transOpts := make([]http.ClientTransportBuilderOption, 0)
 	if config.HertzClient != nil {
 		transOpts = append(transOpts, http.WithHertzClient(config.HertzClient))
+	}
+	if config.HTTPClient != nil {
+		transOpts = append(transOpts, http.WithHTTPClient(config.HTTPClient))
 	}
 	if config.SSEBufferSize != nil {
 		transOpts = append(transOpts, http.WithSSEBufferSize(*config.SSEBufferSize))
