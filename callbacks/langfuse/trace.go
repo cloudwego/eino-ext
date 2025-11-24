@@ -78,14 +78,16 @@ func WithMetadata(metadata map[string]string) TraceOption {
 }
 
 type traceOptions struct {
-	ID        string
-	Name      string
-	UserID    string
-	SessionID string
-	Release   string
-	Tags      []string
-	Public    bool
-	Metadata  map[string]string
+	ID          string
+	Name        string
+	UserID      string
+	SessionID   string
+	Release     string
+	Tags        []string
+	Public      bool
+	Metadata    map[string]string
+	Environment string
+	Version     string
 }
 
 func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) (*langfuseState, error) {
