@@ -42,6 +42,25 @@ func main() {
 		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
+	err = chatModel.BindTools([]*schema.ToolInfo{
+		{
+			Name: "article_content_extractor",
+			Desc: "Extract key statements and chapter summaries from the provided article content",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"content": {
+						Type:     schema.String,
+						Desc:     "The full article content to analyze and extract key information from",
+						Required: true,
+					},
+				}),
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("BindTools failed, err=%v", err)
+	}
+
 	// create response prefix cache, note: more than 1024 tokens are required, otherwise the prefix cache cannot be created
 	cacheInfo, err := chatModel.CreatePrefixCache(ctx, []*schema.Message{
 		schema.SystemMessage("If you are an expert in analyzing novels, please analyze the issues related to the Romance of the Three Kingdoms based on the following content: ......"),
