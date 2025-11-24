@@ -79,9 +79,15 @@ func getVideoMetaData(extra map[string]any) *genai.VideoMetadata {
 	return videoMetaData
 }
 
-// setMessageThoughtSignature stores the thought signature for reasoning content
-// in the Message's Extra field. This is needed for gemini-3-pro-preview and later
-// models that require thought signatures when replaying thinking content in conversation history.
+// setMessageThoughtSignature stores the thought signature in the Message's Extra field.
+// This is used for non-functionCall responses where the signature appears on text/inlineData parts.
+//
+// Thought signatures are encrypted representations of the model's internal thought process
+// that preserve reasoning state during multi-turn conversations.
+//
+// For functionCall responses, use setToolCallThoughtSignature instead.
+//
+// See: https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
 func setMessageThoughtSignature(message *schema.Message, signature []byte) {
 	if message == nil || len(signature) == 0 {
 		return
@@ -130,4 +136,31 @@ func getThoughtSignatureFromExtra(extra map[string]any) []byte {
 	default:
 		return nil
 	}
+}
+
+// setToolCallThoughtSignature stores the thought signature for a specific tool call
+// in the ToolCall's Extra field.
+//
+// Per Gemini docs, thought signatures on functionCall parts are required for Gemini 3 Pro:
+//   - For parallel function calls: only the first functionCall part contains the signature
+//   - For sequential function calls: each functionCall part has its own signature
+//   - Omitting a required signature results in a 400 error
+//
+// See: https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
+func setToolCallThoughtSignature(toolCall *schema.ToolCall, signature []byte) {
+	if toolCall == nil || len(signature) == 0 {
+		return
+	}
+	if toolCall.Extra == nil {
+		toolCall.Extra = make(map[string]any)
+	}
+	toolCall.Extra[thoughtSignatureKey] = signature
+}
+
+// getToolCallThoughtSignature retrieves the thought signature from a ToolCall's Extra field.
+func getToolCallThoughtSignature(toolCall *schema.ToolCall) []byte {
+	if toolCall == nil || toolCall.Extra == nil {
+		return nil
+	}
+	return getThoughtSignatureFromExtra(toolCall.Extra)
 }

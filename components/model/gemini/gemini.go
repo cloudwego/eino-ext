@@ -517,15 +517,12 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			Text:    message.ReasoningContent,
 			Thought: true,
 		}
-		// Restore thought signature if it was stored
-		if thoughtSig := getMessageThoughtSignature(message); len(thoughtSig) > 0 {
-			thoughtPart.ThoughtSignature = thoughtSig
-		}
 		content.Parts = append(content.Parts, thoughtPart)
 	}
 
 	if message.ToolCalls != nil {
-		for _, call := range message.ToolCalls {
+		for i := range message.ToolCalls {
+			call := &message.ToolCalls[i]
 			args := make(map[string]any)
 			err := sonic.UnmarshalString(call.Function.Arguments, &args)
 			if err != nil {
@@ -533,6 +530,15 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			}
 
 			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+			// Restore thought signature on the functionCall part if present.
+			// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+			// - Signatures must be returned exactly as received on functionCall parts
+			// - For parallel calls: only first functionCall has signature
+			// - For sequential calls: each functionCall has its own signature
+			// - Omitting required signature causes 400 error on Gemini 3 Pro
+			if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
+				part.ThoughtSignature = sig
+			}
 			content.Parts = append(content.Parts, part)
 		}
 	}
@@ -562,7 +568,17 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		return content, nil
 	}
 	if message.Content != "" {
-		content.Parts = append(content.Parts, genai.NewPartFromText(message.Content))
+		textPart := genai.NewPartFromText(message.Content)
+		// For non-functionCall responses, restore thought signature on the final text part.
+		// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+		// - The final Part (text, inlineData, etc.) may contain a thought_signature
+		// - Returning this signature is recommended for best performance but not strictly required
+		if len(message.ToolCalls) == 0 {
+			if sig := getMessageThoughtSignature(message); len(sig) > 0 {
+				textPart.ThoughtSignature = sig
+			}
+		}
+		content.Parts = append(content.Parts, textPart)
 	}
 	if message.MultiContent != nil {
 		log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
@@ -855,9 +871,15 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 			outParts       []schema.MessageOutputPart
 			contentBuilder strings.Builder
 		)
+		// Process parts and extract thought signatures per Gemini docs:
+		// https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
+		//
+		// Signature placement rules:
+		// - functionCall parts: signature stored on ToolCall.Extra (required for Gemini 3 Pro)
+		// - non-functionCall parts (text, thought, inlineData): signature stored on Message.Extra
 		for _, part := range candidate.Content.Parts {
-			// Store thought signature if present on any part (required for gemini-3-pro-preview and later)
-			if len(part.ThoughtSignature) > 0 {
+			// Store thought signature at message level for non-functionCall parts
+			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil {
 				setMessageThoughtSignature(result, part.ThoughtSignature)
 			}
 
@@ -875,6 +897,12 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 				fc, err := convFC(part)
 				if err != nil {
 					return nil, err
+				}
+				// Store thought signature on the tool call if present
+				// Per Gemini docs: for parallel calls, only first functionCall has signature;
+				// for sequential calls, each functionCall has its own signature
+				if len(part.ThoughtSignature) > 0 {
+					setToolCallThoughtSignature(fc, part.ThoughtSignature)
 				}
 				result.ToolCalls = append(result.ToolCalls, *fc)
 			}

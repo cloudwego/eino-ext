@@ -618,7 +618,8 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 	})
 
 	// Test that reasoning content thought signature is preserved through the round-trip
-	t.Run("convSchemaMessage restores reasoning content with thought signature", func(t *testing.T) {
+	// Per Gemini docs, signature should be on the final part (text), not the thought part
+	t.Run("convSchemaMessage restores reasoning content with thought signature on final part", func(t *testing.T) {
 		signature := []byte("reasoning_thought_signature")
 		message := &schema.Message{
 			Role:             schema.Assistant,
@@ -633,15 +634,15 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		// Should have 2 parts: thought part + text part
 		assert.Len(t, content.Parts, 2)
 
-		// First part should be the thought
+		// First part should be the thought (without signature)
 		assert.True(t, content.Parts[0].Thought)
 		assert.Equal(t, "thinking process", content.Parts[0].Text)
-		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
 
-		// Second part should be the text content
+		// Second part should be the text content with signature (final part per Gemini docs)
 		assert.False(t, content.Parts[1].Thought)
 		assert.Equal(t, "final answer", content.Parts[1].Text)
-		assert.Nil(t, content.Parts[1].ThoughtSignature)
+		assert.Equal(t, signature, content.Parts[1].ThoughtSignature)
 	})
 
 	t.Run("convSchemaMessage restores reasoning content without thought signature", func(t *testing.T) {
@@ -663,23 +664,24 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Nil(t, content.Parts[0].ThoughtSignature)
 	})
 
-	t.Run("convSchemaMessage with reasoning content and tool calls", func(t *testing.T) {
-		signature := []byte("thought_signature")
+	t.Run("convSchemaMessage with reasoning content and tool calls with signature on functionCall", func(t *testing.T) {
+		fcSignature := []byte("function_call_signature")
 
-		toolCall := &schema.ToolCall{
+		toolCall := schema.ToolCall{
 			ID: "test_call",
 			Function: schema.FunctionCall{
 				Name:      "test_function",
 				Arguments: `{"param":"value"}`,
 			},
 		}
+		// Per Gemini docs, signature should be on the functionCall part
+		setToolCallThoughtSignature(&toolCall, fcSignature)
 
 		message := &schema.Message{
 			Role:             schema.Assistant,
 			ReasoningContent: "thinking before calling tool",
-			ToolCalls:        []schema.ToolCall{*toolCall},
+			ToolCalls:        []schema.ToolCall{toolCall},
 		}
-		setMessageThoughtSignature(message, signature)
 
 		content, err := cm.convSchemaMessage(message)
 		assert.NoError(t, err)
@@ -687,14 +689,216 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		// Should have 2 parts: thought part + function call part
 		assert.Len(t, content.Parts, 2)
 
-		// First part should be the thought with the signature
+		// First part should be the thought (without signature)
 		assert.True(t, content.Parts[0].Thought)
 		assert.Equal(t, "thinking before calling tool", content.Parts[0].Text)
-		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
 
-		// Second part should be the function call without signature (signature is only on thought part)
+		// Second part should be the function call with signature
 		assert.NotNil(t, content.Parts[1].FunctionCall)
 		assert.Equal(t, "test_function", content.Parts[1].FunctionCall.Name)
+		assert.Equal(t, fcSignature, content.Parts[1].ThoughtSignature)
+	})
+
+	// Test functionCall part with thought signature (per Gemini 3 Pro docs)
+	t.Run("convSchemaMessage with tool call signature on functionCall part", func(t *testing.T) {
+		signature := []byte("function_call_signature")
+
+		toolCall := schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "check_flight",
+				Arguments: `{"flight":"AA100"}`,
+			},
+		}
+		setToolCallThoughtSignature(&toolCall, signature)
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{toolCall},
+		}
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// The functionCall part should have the signature attached
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+		assert.Equal(t, "check_flight", content.Parts[0].FunctionCall.Name)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+	})
+
+	// Test parallel function calls - only first has signature
+	t.Run("convSchemaMessage with parallel tool calls (first has signature)", func(t *testing.T) {
+		signature := []byte("parallel_signature")
+
+		toolCall1 := schema.ToolCall{
+			ID: "call_1",
+			Function: schema.FunctionCall{
+				Name:      "get_weather",
+				Arguments: `{"location":"Paris"}`,
+			},
+		}
+		setToolCallThoughtSignature(&toolCall1, signature)
+
+		toolCall2 := schema.ToolCall{
+			ID: "call_2",
+			Function: schema.FunctionCall{
+				Name:      "get_weather",
+				Arguments: `{"location":"London"}`,
+			},
+		}
+		// Second tool call has no signature (per Gemini docs for parallel calls)
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{toolCall1, toolCall2},
+		}
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 2)
+
+		// First functionCall should have signature
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+		assert.Equal(t, "get_weather", content.Parts[0].FunctionCall.Name)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+
+		// Second functionCall should not have signature
+		assert.NotNil(t, content.Parts[1].FunctionCall)
+		assert.Equal(t, "get_weather", content.Parts[1].FunctionCall.Name)
 		assert.Nil(t, content.Parts[1].ThoughtSignature)
+	})
+
+	// Test text part with signature (non-function-call response)
+	t.Run("convSchemaMessage with text part signature", func(t *testing.T) {
+		signature := []byte("text_signature")
+
+		message := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "This is the response",
+		}
+		setMessageThoughtSignature(message, signature)
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// Text part should have signature for non-function-call response
+		assert.Equal(t, "This is the response", content.Parts[0].Text)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+	})
+
+	// Test convCandidate extracts signature from functionCall part
+	t.Run("convCandidate extracts signature from functionCall part", func(t *testing.T) {
+		signature := []byte("extracted_signature")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "check_flight",
+							Args: map[string]any{"flight": "AA100"},
+						},
+						ThoughtSignature: signature,
+					},
+				},
+			},
+		}
+
+		message, err := cm.convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 1)
+
+		// Signature should be stored on the tool call
+		assert.Equal(t, signature, getToolCallThoughtSignature(&message.ToolCalls[0]))
+		// Message-level signature should be nil (signature is on functionCall)
+		assert.Nil(t, getMessageThoughtSignature(message))
+	})
+
+	// Test convCandidate extracts signature from text part (non-function-call)
+	t.Run("convCandidate extracts signature from text part", func(t *testing.T) {
+		signature := []byte("text_part_signature")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						Text:             "Final response",
+						ThoughtSignature: signature,
+					},
+				},
+			},
+		}
+
+		message, err := cm.convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Equal(t, "Final response", message.Content)
+
+		// Signature should be stored at message level for non-functionCall parts
+		assert.Equal(t, signature, getMessageThoughtSignature(message))
+	})
+
+	// Test sequential function calls - each step has its own signature
+	t.Run("sequential function call signatures are preserved separately", func(t *testing.T) {
+		sigA := []byte("signature_A")
+		sigB := []byte("signature_B")
+
+		// Simulate step 1 response
+		candidate1 := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "check_flight",
+							Args: map[string]any{"flight": "AA100"},
+						},
+						ThoughtSignature: sigA,
+					},
+				},
+			},
+		}
+
+		msg1, err := cm.convCandidate(candidate1)
+		assert.NoError(t, err)
+		assert.Equal(t, sigA, getToolCallThoughtSignature(&msg1.ToolCalls[0]))
+
+		// Simulate step 2 response
+		candidate2 := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "book_taxi",
+							Args: map[string]any{"time": "10 AM"},
+						},
+						ThoughtSignature: sigB,
+					},
+				},
+			},
+		}
+
+		msg2, err := cm.convCandidate(candidate2)
+		assert.NoError(t, err)
+		assert.Equal(t, sigB, getToolCallThoughtSignature(&msg2.ToolCalls[0]))
+
+		// Verify both signatures can be restored correctly
+		content1, err := cm.convSchemaMessage(msg1)
+		assert.NoError(t, err)
+		assert.Equal(t, sigA, content1.Parts[0].ThoughtSignature)
+
+		content2, err := cm.convSchemaMessage(msg2)
+		assert.NoError(t, err)
+		assert.Equal(t, sigB, content2.Parts[0].ThoughtSignature)
 	})
 }
