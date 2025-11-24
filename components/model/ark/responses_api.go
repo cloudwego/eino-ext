@@ -66,7 +66,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 
 	responseReq, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create generate request: %w", err)
+		return nil, fmt.Errorf("genRequestAndOptions failed: %w", err)
 	}
 	config := cm.toCallbackConfig(responseReq)
 
@@ -131,7 +131,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 
 	responseReq, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create generate request: %w", err)
+		return nil, fmt.Errorf("genRequestAndOptions failed: %w", err)
 	}
 	config := cm.toCallbackConfig(responseReq)
 	tools := cm.rawTools
