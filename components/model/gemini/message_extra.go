@@ -17,6 +17,8 @@
 package gemini
 
 import (
+	"encoding/base64"
+
 	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 )
@@ -77,27 +79,55 @@ func getVideoMetaData(extra map[string]any) *genai.VideoMetadata {
 	return videoMetaData
 }
 
-// setThoughtSignature stores the thought signature from a Gemini function call
-// in the ToolCall's Extra field. This is needed for gemini-3-pro-preview and later
-// models that require thought signatures when replaying tool calls in conversation history.
-func setThoughtSignature(toolCall *schema.ToolCall, signature []byte) {
-	if toolCall == nil || len(signature) == 0 {
+// setMessageThoughtSignature stores the thought signature for reasoning content
+// in the Message's Extra field. This is needed for gemini-3-pro-preview and later
+// models that require thought signatures when replaying thinking content in conversation history.
+func setMessageThoughtSignature(message *schema.Message, signature []byte) {
+	if message == nil || len(signature) == 0 {
 		return
 	}
-	if toolCall.Extra == nil {
-		toolCall.Extra = make(map[string]any)
+	if message.Extra == nil {
+		message.Extra = make(map[string]any)
 	}
-	toolCall.Extra[thoughtSignatureKey] = signature
+	message.Extra[thoughtSignatureKey] = signature
 }
 
-// getThoughtSignature retrieves the thought signature from a ToolCall's Extra field.
-func getThoughtSignature(toolCall *schema.ToolCall) []byte {
-	if toolCall == nil || toolCall.Extra == nil {
+// getMessageThoughtSignature retrieves the thought signature from a Message's Extra field.
+func getMessageThoughtSignature(message *schema.Message) []byte {
+	if message == nil || message.Extra == nil {
 		return nil
 	}
-	signature, ok := toolCall.Extra[thoughtSignatureKey].([]byte)
-	if !ok {
+
+	return getThoughtSignatureFromExtra(message.Extra)
+}
+
+// getThoughtSignatureFromExtra is a helper function that extracts thought signature from an Extra map.
+func getThoughtSignatureFromExtra(extra map[string]any) []byte {
+	if extra == nil {
 		return nil
 	}
-	return signature
+
+	signature, exists := extra[thoughtSignatureKey]
+	if !exists {
+		return nil
+	}
+
+	switch sig := signature.(type) {
+	case []byte:
+		if len(sig) == 0 {
+			return nil
+		}
+		return sig
+	case string:
+		if sig == "" {
+			return nil
+		}
+		decoded, err := base64.StdEncoding.DecodeString(sig)
+		if err != nil {
+			return nil
+		}
+		return decoded
+	default:
+		return nil
+	}
 }

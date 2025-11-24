@@ -462,6 +462,7 @@ func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Co
 		if message.Role == schema.Tool {
 			var toolParts []*genai.Part
 
+			// Merge tool messages into a single message
 			for i < len(messages) && messages[i].Role == schema.Tool {
 				part, err := cm.convToolMessageToPart(messages[i])
 				if err != nil {
@@ -510,6 +511,19 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		Role: toGeminiRole(message.Role),
 	}
 
+	// Restore reasoning content as a thought part (required for gemini-3-pro-preview and later)
+	if message.ReasoningContent != "" {
+		thoughtPart := &genai.Part{
+			Text:    message.ReasoningContent,
+			Thought: true,
+		}
+		// Restore thought signature if it was stored
+		if thoughtSig := getMessageThoughtSignature(message); len(thoughtSig) > 0 {
+			thoughtPart.ThoughtSignature = thoughtSig
+		}
+		content.Parts = append(content.Parts, thoughtPart)
+	}
+
 	if message.ToolCalls != nil {
 		for _, call := range message.ToolCalls {
 			args := make(map[string]any)
@@ -519,12 +533,6 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			}
 
 			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
-
-			// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
-			if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
-				part.ThoughtSignature = thoughtSig
-			}
-
 			content.Parts = append(content.Parts, part)
 		}
 	}
@@ -848,6 +856,11 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 			contentBuilder strings.Builder
 		)
 		for _, part := range candidate.Content.Parts {
+			// Store thought signature if present on any part (required for gemini-3-pro-preview and later)
+			if len(part.ThoughtSignature) > 0 {
+				setMessageThoughtSignature(result, part.ThoughtSignature)
+			}
+
 			if part.Thought {
 				result.ReasoningContent = part.Text
 			} else if len(part.Text) > 0 {
@@ -945,11 +958,6 @@ func convFC(part *genai.Part) (*schema.ToolCall, error) {
 			Name:      tp.Name,
 			Arguments: args,
 		},
-	}
-
-	// Store thought signature if present (required for gemini-3-pro-preview and later)
-	if len(part.ThoughtSignature) > 0 {
-		setThoughtSignature(toolCall, part.ThoughtSignature)
 	}
 
 	return toolCall, nil
