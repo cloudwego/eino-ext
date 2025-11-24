@@ -433,14 +433,59 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 	return gTools, nil
 }
 
+// convToolMessageToPart converts a tool response message into a Gemini part.
+func (cm *ChatModel) convToolMessageToPart(message *schema.Message) (*genai.Part, error) {
+	if message.Role != schema.Tool {
+		return nil, fmt.Errorf("expected tool message, got %s", message.Role)
+	}
+
+	response := make(map[string]any)
+	err := sonic.UnmarshalString(message.Content, &response)
+	if err != nil {
+		response = map[string]any{"output": message.Content}
+	}
+
+	return genai.NewPartFromFunctionResponse(message.ToolCallID, response), nil
+}
+
 func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
-	result := make([]*genai.Content, len(messages))
-	for i, message := range messages {
+	var result []*genai.Content
+
+	for i := 0; i < len(messages); {
+		message := messages[i]
+
+		if message == nil {
+			i++
+			continue
+		}
+
+		if message.Role == schema.Tool {
+			var toolParts []*genai.Part
+
+			for i < len(messages) && messages[i].Role == schema.Tool {
+				part, err := cm.convToolMessageToPart(messages[i])
+				if err != nil {
+					return nil, fmt.Errorf("convert tool message part fail at index %d: %w", i, err)
+				}
+				toolParts = append(toolParts, part)
+				i++
+			}
+
+			result = append(result, &genai.Content{
+				Role:  roleUser,
+				Parts: toolParts,
+			})
+			continue
+		}
+
 		content, err := cm.convSchemaMessage(message)
 		if err != nil {
 			return nil, fmt.Errorf("convert schema message fail: %w", err)
 		}
-		result[i] = content
+		if content != nil {
+			result = append(result, content)
+		}
+		i++
 	}
 	return result, nil
 }
@@ -448,6 +493,17 @@ func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Co
 func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 	if message == nil {
 		return nil, nil
+	}
+
+	if message.Role == schema.Tool {
+		part, err := cm.convToolMessageToPart(message)
+		if err != nil {
+			return nil, err
+		}
+		return &genai.Content{
+			Role:  roleUser,
+			Parts: []*genai.Part{part},
+		}, nil
 	}
 
 	content := &genai.Content{
@@ -473,49 +529,40 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		}
 	}
 
-	if message.Role == schema.Tool {
-		response := make(map[string]any)
-		err := sonic.UnmarshalString(message.Content, &response)
+	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
+	if len(message.UserInputMultiContent) > 0 {
+		if message.Role != schema.User {
+			return nil, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
+		}
+		parts, err := cm.convInputMedia(message.UserInputMultiContent)
 		if err != nil {
-			response["output"] = message.Content
+			return nil, err
 		}
-		content.Parts = append(content.Parts, genai.NewPartFromFunctionResponse(message.ToolCallID, response))
-	} else {
-		if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
-			return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+		content.Parts = append(content.Parts, parts...)
+		return content, nil
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		if message.Role != schema.Assistant {
+			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
 		}
-		if len(message.UserInputMultiContent) > 0 {
-			if message.Role != schema.User {
-				return nil, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
-			}
-			parts, err := cm.convInputMedia(message.UserInputMultiContent)
-			if err != nil {
-				return nil, err
-			}
-			content.Parts = append(content.Parts, parts...)
-			return content, nil
-		} else if len(message.AssistantGenMultiContent) > 0 {
-			if message.Role != schema.Assistant {
-				return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
-			}
-			parts, err := cm.convOutputMedia(message.AssistantGenMultiContent)
-			if err != nil {
-				return nil, err
-			}
-			content.Parts = append(content.Parts, parts...)
-			return content, nil
+		parts, err := cm.convOutputMedia(message.AssistantGenMultiContent)
+		if err != nil {
+			return nil, err
 		}
-		if message.Content != "" {
-			content.Parts = append(content.Parts, genai.NewPartFromText(message.Content))
+		content.Parts = append(content.Parts, parts...)
+		return content, nil
+	}
+	if message.Content != "" {
+		content.Parts = append(content.Parts, genai.NewPartFromText(message.Content))
+	}
+	if message.MultiContent != nil {
+		log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		parts, err := cm.convMedia(message.MultiContent)
+		if err != nil {
+			return nil, err
 		}
-		if message.MultiContent != nil {
-			log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
-			parts, err := cm.convMedia(message.MultiContent)
-			if err != nil {
-				return nil, err
-			}
-			content.Parts = parts
-		}
+		content.Parts = parts
 	}
 	return content, nil
 }

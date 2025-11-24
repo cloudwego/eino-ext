@@ -531,6 +531,68 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 	cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{}})
 	assert.Nil(t, err)
 
+	t.Run("convToolMessageToPart", func(t *testing.T) {
+		part, err := cm.convToolMessageToPart(&schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "tool_1",
+			Content:    `{"result":"ok"}`,
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "tool_1", part.FunctionResponse.Name)
+		assert.Equal(t, "ok", part.FunctionResponse.Response["result"])
+	})
+
+	t.Run("convToolMessageToPart fallback to output", func(t *testing.T) {
+		part, err := cm.convToolMessageToPart(&schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "tool_2",
+			Content:    "raw-response",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "tool_2", part.FunctionResponse.Name)
+		assert.Equal(t, "raw-response", part.FunctionResponse.Response["output"])
+	})
+
+	t.Run("convSchemaMessages merges consecutive tool responses", func(t *testing.T) {
+		messages := []*schema.Message{
+			{
+				Role: schema.Assistant,
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_a",
+						Function: schema.FunctionCall{
+							Name:      "fn_a",
+							Arguments: `{"x":1}`,
+						},
+					},
+					{
+						ID: "call_b",
+						Function: schema.FunctionCall{
+							Name:      "fn_b",
+							Arguments: `{"y":2}`,
+						},
+					},
+				},
+			},
+			{Role: schema.Tool, ToolCallID: "call_a", Content: `{"res":"A"}`},
+			{Role: schema.Tool, ToolCallID: "call_b", Content: `{"res":"B"}`},
+		}
+
+		contents, err := cm.convSchemaMessages(messages)
+		assert.NoError(t, err)
+		assert.Len(t, contents, 2)
+		assert.Equal(t, roleModel, contents[0].Role)
+		assert.Equal(t, roleUser, contents[1].Role)
+		if assert.Len(t, contents[1].Parts, 2) {
+			assert.Equal(t, "call_a", contents[1].Parts[0].FunctionResponse.Name)
+			assert.Equal(t, "A", contents[1].Parts[0].FunctionResponse.Response["res"])
+			assert.Equal(t, "call_b", contents[1].Parts[1].FunctionResponse.Name)
+			assert.Equal(t, "B", contents[1].Parts[1].FunctionResponse.Response["res"])
+		}
+	})
+
 	// Test that thought signature is preserved through the round-trip
 	t.Run("convFC preserves thought signature", func(t *testing.T) {
 		signature := []byte("test_thought_signature_data")
