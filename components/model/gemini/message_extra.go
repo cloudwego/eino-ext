@@ -17,6 +17,8 @@
 package gemini
 
 import (
+	"encoding/base64"
+
 	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 )
@@ -95,9 +97,28 @@ func getThoughtSignature(toolCall *schema.ToolCall) []byte {
 	if toolCall == nil || toolCall.Extra == nil {
 		return nil
 	}
-	signature, ok := toolCall.Extra[thoughtSignatureKey].([]byte)
-	if !ok {
+
+	signature, exists := toolCall.Extra[thoughtSignatureKey]
+	if !exists {
 		return nil
 	}
-	return signature
+
+	switch sig := signature.(type) {
+	case []byte:
+		if len(sig) == 0 {
+			return nil
+		}
+		return sig
+	case string:
+		if sig == "" {
+			return nil
+		}
+		decoded, err := base64.StdEncoding.DecodeString(sig)
+		if err != nil {
+			return nil
+		}
+		return decoded
+	default:
+		return nil
+	}
 }

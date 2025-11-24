@@ -17,6 +17,7 @@
 package gemini
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -84,5 +85,22 @@ func TestThoughtSignatureFunctions(t *testing.T) {
 		// Boundary case: toolCall with nil Extra
 		toolCall3 := &schema.ToolCall{ID: "test3"}
 		assert.Nil(t, getThoughtSignature(toolCall3))
+	})
+
+	t.Run("ThoughtSignatureCanRoundTripJSON", func(t *testing.T) {
+		toolCall := &schema.ToolCall{ID: "json_test"}
+		signature := []byte("sig_json")
+
+		setThoughtSignature(toolCall, signature)
+
+		data, err := json.Marshal(toolCall)
+		assert.NoError(t, err)
+
+		var restored schema.ToolCall
+		err = json.Unmarshal(data, &restored)
+		assert.NoError(t, err)
+
+		retrieved := getThoughtSignature(&restored)
+		assert.Equal(t, signature, retrieved)
 	})
 }

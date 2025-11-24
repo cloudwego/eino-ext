@@ -462,6 +462,7 @@ func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Co
 		if message.Role == schema.Tool {
 			var toolParts []*genai.Part
 
+			// Merge tool messages into a single message
 			for i < len(messages) && messages[i].Role == schema.Tool {
 				part, err := cm.convToolMessageToPart(messages[i])
 				if err != nil {
