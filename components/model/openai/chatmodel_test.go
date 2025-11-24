@@ -124,6 +124,7 @@ func TestOpenAIGenerate(t *testing.T) {
 		ToolChoice: "required",
 	}
 	mockOpenAIResponse := openai.ChatCompletionResponse{
+		ID: "request id",
 		Choices: []openai.ChatCompletionChoice{
 			{
 				Index: 0,
@@ -172,6 +173,9 @@ func TestOpenAIGenerate(t *testing.T) {
 				CompletionTokens: 2,
 				TotalTokens:      3,
 			},
+		},
+		Extra: map[string]any{
+			"openai-request-id": "request id",
 		},
 	}
 	config := &ChatModelConfig{
@@ -259,6 +263,8 @@ func TestOpenAIGenerate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// 手动处理result中的openaiResultID类型
+		result.Extra["openai-request-id"] = protocol.GetRequestID(result)
 		if !reflect.DeepEqual(result, expectedMessages) {
 			resultData, _ := json.Marshal(result)
 			expectMsgData, _ := json.Marshal(expectedMessages)
