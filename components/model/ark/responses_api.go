@@ -66,7 +66,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 
 	responseReq, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create generate request: %w", err)
+		return nil, fmt.Errorf("genRequestAndOptions failed: %w", err)
 	}
 	config := cm.toCallbackConfig(responseReq)
 
@@ -131,7 +131,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 
 	responseReq, err := cm.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create generate request: %w", err)
+		return nil, fmt.Errorf("genRequestAndOptions failed: %w", err)
 	}
 	config := cm.toCallbackConfig(responseReq)
 	tools := cm.rawTools
@@ -210,9 +210,8 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	return outStream, err
 }
 
-func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options,
-	specOptions *arkOptions) (responseReq *responses.ResponsesRequest, err error) {
-	responseReq = &responses.ResponsesRequest{}
+func (cm *responsesAPIChatModel) populateConfig(responseReq *responses.ResponsesRequest, options *model.Options,
+	specOptions *arkOptions) error {
 
 	if cm.responseFormat != nil {
 		textFormat := &responses.ResponsesText{Format: &responses.TextFormat{}}
@@ -225,14 +224,14 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 			textFormat.Format.Type = responses.TextType_json_schema
 			b, err := sonic.Marshal(cm.responseFormat.JSONSchema)
 			if err != nil {
-				return nil, fmt.Errorf("marshal JSONSchema fail: %w", err)
+				return fmt.Errorf("marshal JSONSchema fail: %w", err)
 			}
 			textFormat.Format.Schema = &responses.Bytes{Value: b}
 			textFormat.Format.Name = cm.responseFormat.JSONSchema.Name
 			textFormat.Format.Description = &cm.responseFormat.JSONSchema.Description
 			textFormat.Format.Strict = &cm.responseFormat.JSONSchema.Strict
 		default:
-			return nil, fmt.Errorf("unsupported response format type: %s", cm.responseFormat.Type)
+			return fmt.Errorf("unsupported response format type: %s", cm.responseFormat.Type)
 		}
 		responseReq.Text = textFormat
 	}
@@ -255,21 +254,6 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		case "default":
 			responseReq.ServiceTier = responses.ResponsesServiceTier_default.Enum()
 		}
-	}
-
-	in, err = cm.populateCache(in, responseReq, specOptions)
-	if err != nil {
-		return nil, err
-	}
-
-	err = cm.populateInput(in, responseReq)
-	if err != nil {
-		return nil, err
-	}
-
-	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
-	if err != nil {
-		return nil, err
 	}
 
 	if specOptions.thinking != nil {
@@ -313,6 +297,32 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		}
 		responseReq.Reasoning = reasoning
 
+	}
+
+	return nil
+}
+
+func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options,
+	specOptions *arkOptions) (responseReq *responses.ResponsesRequest, err error) {
+	responseReq = &responses.ResponsesRequest{}
+
+	err = cm.populateConfig(responseReq, options, specOptions)
+	if err != nil {
+		return nil, err
+	}
+	in, err = cm.populateCache(in, responseReq, specOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cm.populateInput(in, responseReq)
+	if err != nil {
+		return nil, err
+	}
+
+	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
+	if err != nil {
+		return nil, err
 	}
 
 	return responseReq, nil
@@ -1100,26 +1110,21 @@ func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Cont
 		},
 	}
 
-	options, _, err := cm.getOptions(opts)
+	options, specOptions, err := cm.getOptions(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	if options.Model != nil {
-		responseReq.Model = *options.Model
+	err = cm.populateConfig(responseReq, options, specOptions)
+	if err != nil {
+		return nil, err
 	}
-
-	tools := cm.rawTools
-	if options.Tools != nil {
-		tools = options.Tools
-	}
-
 	err = cm.populateInput(prefix, responseReq)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cm.populateTools(responseReq, tools, options.ToolChoice)
+	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
 	if err != nil {
 		return nil, err
 	}
@@ -1130,8 +1135,8 @@ func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Cont
 	}
 
 	info = &CacheInfo{
-		ContextID: responseObject.Id,
-		Usage:     *cm.toEinoTokenUsage(responseObject.Usage),
+		ResponseID: responseObject.Id,
+		Usage:      *cm.toEinoTokenUsage(responseObject.Usage),
 	}
 
 	return info, nil
