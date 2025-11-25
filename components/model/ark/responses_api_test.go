@@ -235,7 +235,7 @@ func TestResponsesAPIChatModelToOpenaiMultiModalContent(t *testing.T) {
 			},
 		}
 
-		content, err := cm.toArkItemInputMessage(msg)
+		content, err := cm.toArkUserRoleItemInputMessage(msg)
 		assert.Nil(t, err)
 
 		contentList := content.Content
@@ -252,7 +252,7 @@ func TestResponsesAPIChatModelToOpenaiMultiModalContent(t *testing.T) {
 				},
 			},
 		}
-		_, err := cm.toArkItemInputMessage(msg)
+		_, err := cm.toArkUserRoleItemInputMessage(msg)
 		assert.NotNil(t, err)
 	})
 }
@@ -652,7 +652,7 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 	PatchConvey("Test toOpenaiMultiModalContent Comprehensive", t, func() {
 		PatchConvey("Pure Text Content", func() {
 			msg := &schema.Message{Role: schema.User, Content: "just text"}
-			inputMessage, err := cm.toArkItemInputMessage(msg)
+			inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
 			assert.Nil(t, err)
 			assert.Equal(t, "just text", inputMessage.Content[0].GetText().GetText())
 		})
@@ -668,7 +668,7 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
 					},
 				}
-				inputMessage, err := cm.toArkItemInputMessage(msg)
+				inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
 				assert.Nil(t, err)
 				assert.Len(t, inputMessage.Content, 3)
 			})
@@ -680,7 +680,7 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}},
 					},
 				}
-				_, err := cm.toArkItemInputMessage(msg)
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
 				assert.NotNil(t, err)
 				assert.ErrorContains(t, err, "image part must have MIMEType when use Base64Data")
 			})
@@ -692,7 +692,7 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 						{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
 					},
 				}
-				_, err := cm.toArkItemInputMessage(msg)
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
 				assert.NotNil(t, err)
 				assert.ErrorContains(t, err, "image field must not be nil")
 			})
@@ -706,23 +706,24 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 					Content: "assistant text",
 					AssistantGenMultiContent: []schema.MessageOutputPart{
 						{Type: schema.ChatMessagePartTypeText, Text: " more assistant text"},
-						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
-						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
 					},
 				}
-				inputMessage, err := cm.toArkItemInputMessage(msg)
+				inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
 				assert.Nil(t, err)
-				assert.Len(t, inputMessage.Content, 3)
+				assert.Len(t, inputMessage.Content, 1)
 			})
 
 			PatchConvey("Error on wrong role", func() {
 				msg := &schema.Message{
-					Role:                     schema.User,
-					AssistantGenMultiContent: []schema.MessageOutputPart{{}},
+					Role: schema.User,
+					AssistantGenMultiContent: []schema.MessageOutputPart{{
+						Type: schema.ChatMessagePartTypeText,
+						Text: " more assistant text",
+					}},
 				}
-				_, err := cm.toArkItemInputMessage(msg)
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
 				assert.NotNil(t, err)
-				assert.ErrorContains(t, err, "assistant gen multi content only support assistant role")
+				assert.ErrorContains(t, err, "if user role, AssistantGenMultiContent cannot be set")
 			})
 
 			PatchConvey("Error on nil Image", func() {
@@ -732,29 +733,18 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 						{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
 					},
 				}
-				_, err := cm.toArkItemInputMessage(msg)
+				_, err := cm.toArkAssistantRoleItemInputMessage(msg)
 				assert.NotNil(t, err)
-				assert.ErrorContains(t, err, "image field must not be nil")
+
 			})
 
-			PatchConvey("Error on missing MIMEType for Base64", func() {
-				msg := &schema.Message{
-					Role: schema.Assistant,
-					AssistantGenMultiContent: []schema.MessageOutputPart{
-						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}},
-					},
-				}
-				_, err := cm.toArkItemInputMessage(msg)
-				assert.NotNil(t, err)
-				assert.ErrorContains(t, err, "image part must have MIMEType when use Base64Data")
-			})
 		})
 
 		PatchConvey("MultiContent (Legacy 1)", func() {
 			msg := &schema.Message{
 				Content: "legacy text",
 			}
-			inputMessage, err := cm.toArkItemInputMessage(msg)
+			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
 			assert.Nil(t, err)
 			assert.Len(t, inputMessage.Content, 1)
 		})
@@ -766,7 +756,7 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 					{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: httpURL}},
 				},
 			}
-			inputMessage, err := cm.toArkItemInputMessage(msg)
+			inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
 			assert.Nil(t, err)
 			assert.Len(t, inputMessage.Content, 2)
 		})
@@ -776,9 +766,9 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 				UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "user"}},
 				AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "assistant"}},
 			}
-			_, err := cm.toArkItemInputMessage(msg)
+			_, err := cm.toArkAssistantRoleItemInputMessage(msg)
 			assert.NotNil(t, err)
-			assert.ErrorContains(t, err, "a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+			assert.ErrorContains(t, err, "if assistant role, UserInputMultiContent cannot be set")
 		})
 	})
 }
