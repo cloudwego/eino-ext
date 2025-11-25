@@ -115,10 +115,7 @@ func TestRetrieve(t *testing.T) {
 		PatchConvey("test vector range query", func() {
 			dis := 10.2
 			//origin := mockClient.FTSearchWithArgs
-			var (
-				//cmd     *redis.FTSearchCmd
-				mockCmd *redis.FTSearchCmd
-			)
+			mockCmd := &redis.FTSearchCmd{}
 
 			//Mock(GetMethod(mockClient, "FTSearchWithArgs")).To(
 			//	func(ctx context.Context, index string, query string, options *redis.FTSearchOptions) *redis.FTSearchCmd {
@@ -172,10 +169,7 @@ func TestRetrieve(t *testing.T) {
 
 		PatchConvey("test knn vector search", func() {
 			//origin := mockClient.FTSearchWithArgs
-			var (
-				//cmd     *redis.FTSearchCmd
-				mockCmd *redis.FTSearchCmd
-			)
+			mockCmd := &redis.FTSearchCmd{}
 
 			//Mock(GetMethod(mockClient, "FTSearchWithArgs")).To(
 			//	func(ctx context.Context, index string, query string, options *redis.FTSearchOptions) *redis.FTSearchCmd {
