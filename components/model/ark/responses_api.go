@@ -1130,8 +1130,8 @@ func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Cont
 	}
 
 	info = &CacheInfo{
-		ContextID: responseObject.Id,
-		Usage:     *cm.toEinoTokenUsage(responseObject.Usage),
+		ResponseID: responseObject.Id,
+		Usage:      *cm.toEinoTokenUsage(responseObject.Usage),
 	}
 
 	return info, nil
