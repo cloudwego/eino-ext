@@ -445,7 +445,9 @@ func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
 			inputMessage.Role = responses.MessageRole_assistant
-			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
+			if len(inputMessage.GetContent()) > 0 {
+				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
+			}
 			for _, toolCall := range msg.ToolCalls {
 				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{
 					FunctionToolCall: &responses.ItemFunctionToolCall{
