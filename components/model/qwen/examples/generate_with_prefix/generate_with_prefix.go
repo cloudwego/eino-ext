@@ -18,12 +18,10 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"github.com/cloudwego/eino-ext/components/model/qwen"
-	"github.com/cloudwego/eino-ext/libs/acl/openai"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"io"
 	"log"
 	"os"
 )
@@ -47,73 +45,71 @@ func main() {
 		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
-	resp, err := chatModel.Generate(ctx, []*schema.Message{
+	// make the message attribute partial=true
+	partialMessage := qwen.NewPartialMessage(schema.AssistantMessage("def calculate_fibonacci(n):\\n"+
+		"    if n <= 1:\\n        return n\\n    else:\\n", nil), true)
+	messages := []*schema.Message{
 		// give a user message
-		schema.UserMessage("Please write a short science fiction story."),
-		// give a prefix of the story
-		schema.AssistantMessage("In the year 2347 AD, Earth was no longer the only home for humanity.", nil),
-		// make the last message attribute partial=true
-	}, withLastPartialMessageOption())
+		schema.UserMessage("Please complete this Fibonacci function without adding any other content."),
+		// give a prefix of the function
+		partialMessage,
+	}
+	callGenerate(err, chatModel, ctx, messages)
+
+	callStream(err, chatModel, ctx, messages)
+}
+
+func callGenerate(err error, chatModel *qwen.ChatModel, ctx context.Context, messages []*schema.Message) {
+	resp, err := chatModel.Generate(ctx, messages)
+	// add partial=true in the target message
+	// {
+	//    "max_tokens": 2048,
+	//    "messages": [{
+	//            "role": "user",
+	//            "content": "Please complete this Fibonacci function without adding any other content."
+	//        }, {
+	//            "role": "assistant",
+	//            "content": "def calculate_fibonacci(n):\n    if n <= 1:\n        return n\n    else:\n",
+	//            "partial": true
+	//        }
+	//    ],
+	//    "model": "qwen-plus",
+	//    "temperature": 0.7,
+	//    "top_p": 0.7
+	//}
 	if err != nil {
 		log.Fatalf("Generate of qwen failed, err=%v", err)
 	}
 
-	fmt.Printf("output: \n%v", resp)
+	fmt.Printf("generate output: \n%v\n", resp)
 }
 
-func withLastPartialMessageOption() model.Option {
-	return openai.WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
-		var data map[string]interface{}
-		err := json.Unmarshal(rawBody, &data)
+func callStream(err error, chatModel *qwen.ChatModel, ctx context.Context, messages []*schema.Message) {
+	sr, err := chatModel.Stream(ctx, messages)
+	if err != nil {
+		log.Fatalf("Stream of qwen failed, err=%v", err)
+	}
+	var msgs []*schema.Message
+	for {
+		msg, err := sr.Recv()
 		if err != nil {
-			return nil, err
-		}
-
-		messages, ok := data[keyMessages].([]interface{})
-		if !ok {
-			return nil, fmt.Errorf("expected messages array, got=%v", messages)
-		}
-		modifiedMessages := make([]interface{}, 0, len(messages))
-		for i, msg := range messages {
-			if i == len(messages)-1 {
-				lastMsg, ok := msg.(map[string]interface{})
-				if !ok {
-					return nil, fmt.Errorf("expected messages array, got=%v", messages)
-				}
-				lastMsg[keyPartial] = true
-				modifiedMessages = append(modifiedMessages, lastMsg)
-			} else {
-				modifiedMessages = append(modifiedMessages, msg)
+			if err == io.EOF {
+				break
 			}
-		}
-		data[keyMessages] = modifiedMessages
 
-		modifiedBody, err := json.Marshal(&data)
-		// add partial=true in the last message
-		// {
-		//    "max_tokens": 2048,
-		//    "messages": [{
-		//            "content": "Please write a short science fiction story.",
-		//            "role": "user"
-		//        }, {
-		//            "content": "In the year 2347 AD, Earth was no longer the only home for humanity.",
-		//            "partial": true,
-		//            "role": "assistant"
-		//        }
-		//    ],
-		//    "model": "qwen-plus",
-		//    "temperature": 0.7,
-		//    "top_p": 0.7
-		//}
-		return modifiedBody, err
-	})
+			log.Fatalf("Stream of qwen failed, err=%v", err)
+		}
+		msgs = append(msgs, msg)
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+
+	fmt.Printf("stream output: \n%v\n", msg)
 }
 
 func of[T any](t T) *T {
 	return &t
 }
-
-const (
-	keyMessages = "messages"
-	keyPartial  = "partial"
-)

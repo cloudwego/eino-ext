@@ -18,7 +18,9 @@ package qwen
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -209,12 +211,14 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 	outMsg *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	opts = cm.parseCustomOptions(opts...)
+	opts = cm.appendBodyModifierOptions(in, opts...)
 	return cm.cli.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	opts = cm.parseCustomOptions(opts...)
+	opts = cm.appendBodyModifierOptions(in, opts...)
 	outStream, err = cm.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
@@ -284,6 +288,93 @@ func (cm *ChatModel) parseCustomOptions(opts ...model.Option) []model.Option {
 		opts = append(opts, openai.WithExtraFields(extraFields))
 	}
 	return opts
+}
+
+const (
+	// field name in request body indicate body.messages
+	fieldNameMessagesInReq = "messages"
+	// field name in request body indicate body.messages[i].role
+	fieldNameRoleInReq = "role"
+	// field name in request body indicate body.messages[i].content
+	fieldNameContentInReq = "content"
+	// field name in one single message indicate one prefix message
+	fieldNamePartialInMessage = "partial"
+	// field name in message.Extra indicate one prefix message
+	fieldNamePartialInExtraMsg = "_eino_qwen_partial"
+)
+
+func getKeyInMessage(message *schema.Message) string {
+	return string(message.Role) + message.Content
+}
+
+func isNeedModifyMessageInRequest(messageInRequest map[string]any, messageKeys map[string]struct{}) bool {
+	role := messageInRequest[fieldNameRoleInReq].(string)
+	content := messageInRequest[fieldNameContentInReq].(string)
+	key := role + content
+	_, exist := messageKeys[key]
+	return exist
+}
+
+func (cm *ChatModel) appendBodyModifierOptions(in []*schema.Message, opts ...model.Option) []model.Option {
+	messageKeys := make(map[string]struct{})
+	for _, message := range in {
+		if len(message.Extra) == 0 {
+			continue
+		}
+		if _, isPartialKeyExist := message.Extra[fieldNamePartialInExtraMsg]; isPartialKeyExist {
+			messageKey := getKeyInMessage(message)
+			messageKeys[messageKey] = struct{}{}
+		}
+	}
+	if len(messageKeys) > 0 {
+		opts = append(opts, withPartialMessageOption(messageKeys))
+	}
+	return opts
+}
+
+func withPartialMessageOption(messageKeys map[string]struct{}) model.Option {
+	return openai.WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
+		return modifyRequestBody(rawBody, messageKeys), nil
+	})
+}
+
+func modifyRequestBody(rawBody []byte, messageKeys map[string]struct{}) []byte {
+	var data map[string]interface{}
+	err := json.Unmarshal(rawBody, &data)
+	if err != nil {
+		log.Fatalf("invalid json body: error=%v", err)
+		return rawBody
+	}
+
+	messages, ok := data[fieldNameMessagesInReq].([]interface{})
+	if !ok {
+		log.Fatalf("not found field \"messages\"")
+		return rawBody
+	}
+	for _, msg := range messages {
+		unmarshalMessage, ok := msg.(map[string]interface{})
+		if !ok {
+			log.Fatalf("unexpected message: error=%v", err)
+			return rawBody
+		}
+		if isNeedModifyMessageInRequest(unmarshalMessage, messageKeys) {
+			unmarshalMessage[fieldNamePartialInMessage] = true
+		}
+	}
+	modifiedBody, err := json.Marshal(&data)
+	if err != nil {
+		log.Fatalf("invalid json data: error=%v", err)
+		return rawBody
+	}
+	return modifiedBody
+}
+
+func NewPartialMessage(in *schema.Message, isPartial bool) *schema.Message {
+	if in.Extra == nil {
+		in.Extra = make(map[string]any)
+	}
+	in.Extra[fieldNamePartialInExtraMsg] = isPartial
+	return in
 }
 
 const typ = "Qwen"
