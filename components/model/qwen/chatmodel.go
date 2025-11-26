@@ -342,19 +342,19 @@ func modifyRequestBody(rawBody []byte, messageKeys map[string]struct{}) []byte {
 	var data map[string]interface{}
 	err := json.Unmarshal(rawBody, &data)
 	if err != nil {
-		log.Fatalf("invalid json body: error=%v", err)
+		log.Printf("invalid json body: error=%v", err)
 		return rawBody
 	}
 
 	messages, ok := data[fieldNameMessagesInReq].([]interface{})
 	if !ok {
-		log.Fatalf("not found field \"messages\"")
+		log.Printf("not found field \"messages\"")
 		return rawBody
 	}
 	for _, msg := range messages {
 		unmarshalMessage, ok := msg.(map[string]interface{})
 		if !ok {
-			log.Fatalf("unexpected message: error=%v", err)
+			log.Printf("unexpected message")
 			return rawBody
 		}
 		if isNeedModifyMessageInRequest(unmarshalMessage, messageKeys) {
@@ -363,7 +363,7 @@ func modifyRequestBody(rawBody []byte, messageKeys map[string]struct{}) []byte {
 	}
 	modifiedBody, err := json.Marshal(&data)
 	if err != nil {
-		log.Fatalf("invalid json data: error=%v", err)
+		log.Printf("invalid json data: error=%v", err)
 		return rawBody
 	}
 	return modifiedBody
