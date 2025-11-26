@@ -95,7 +95,7 @@ always include the start_time and end_time of the transcript in the output`,
 				},
 			},
 		},
-	}, model.WithTools([]*schema.ToolInfo{info}))
+	}, model.WithTools([]*schema.ToolInfo{info}), model.WithToolChoice(schema.ToolChoiceForced))
 	if err != nil {
 		log.Fatalf("CreatePrefixCache failed: %v", err)
 	}
@@ -108,7 +108,9 @@ always include the start_time and end_time of the transcript in the output`,
 			Role:    schema.User,
 			Content: "give a very short summary about this transcript",
 		},
-	}, gemini.WithCachedContentName(cacheInfo.Name))
+	}, gemini.WithCachedContentName(cacheInfo.Name),
+		model.WithTools([]*schema.ToolInfo{info}),
+		model.WithToolChoice(schema.ToolChoiceForced))
 	if err != nil {
 		log.Fatalf("Generate failed: %v", err)
 	}
