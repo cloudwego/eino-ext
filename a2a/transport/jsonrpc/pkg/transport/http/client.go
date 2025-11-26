@@ -17,9 +17,11 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app/client"
@@ -35,12 +37,19 @@ import (
 )
 
 type ClientTransportBuilderOptions struct {
-	cli        *client.Client
+	hCli       *client.Client
+	cli        *http.Client
 	sseBufSize *int
 }
 type ClientTransportBuilderOption func(*ClientTransportBuilderOptions)
 
 func WithHertzClient(cli *client.Client) ClientTransportBuilderOption {
+	return func(o *ClientTransportBuilderOptions) {
+		o.hCli = cli
+	}
+}
+
+func WithHTTPClient(cli *http.Client) ClientTransportBuilderOption {
 	return func(o *ClientTransportBuilderOptions) {
 		o.cli = cli
 	}
@@ -55,7 +64,8 @@ func WithSSEBufferSize(size int) ClientTransportBuilderOption {
 }
 
 type clientTransportHandler struct {
-	cli        *client.Client
+	hCli       *client.Client
+	cli        *http.Client
 	sseBufSize *int
 }
 
@@ -64,38 +74,131 @@ func NewClientTransportHandler(opts ...ClientTransportBuilderOption) transport.C
 	for _, opt := range opts {
 		opt(o)
 	}
-
-	cli := o.cli
-	if cli == nil {
-		cli, _ = client.NewClient(client.WithDialTimeout(consts.DefaultDialTimeout))
-	}
-	return &clientTransportHandler{
-		cli:        cli,
+	h := &clientTransportHandler{
+		hCli:       o.hCli,
+		cli:        o.cli,
 		sseBufSize: o.sseBufSize,
 	}
+	if h.hCli == nil && h.cli == nil {
+		cli, _ := client.NewClient(client.WithDialTimeout(consts.DefaultDialTimeout))
+		h.hCli = cli
+	}
+	return h
 }
 
 func (c *clientTransportHandler) NewTransport(ctx context.Context, peer conninfo.Peer) (core.Transport, error) {
 	addr := peer.Address()
-	rounder := newClientRounder(addr, c.cli, c.sseBufSize)
-	return &httpClientTransport{rounder: rounder}, nil
+	var r rounder
+	if c.hCli != nil {
+		r = newHertzClientRounder(addr, c.hCli, c.sseBufSize)
+	} else {
+		r = newHTTPClientRounder(addr, c.cli, c.sseBufSize)
+	}
+	return &httpClientTransport{rounder: r}, nil
 }
 
-type clientRounder struct {
+type rounder interface {
+	Round(ctx context.Context, msg core.Message) (core.MessageReader, error)
+}
+
+type sseReaderInt interface {
+	ForEach(ctx context.Context, f func(e *sse.Event) error) error
+}
+
+type httpClientRounder struct {
+	cli        *http.Client
+	addr       string
+	sseBufSize *int
+}
+
+func newHTTPClientRounder(addr string, cli *http.Client, sseBufSize *int) *httpClientRounder {
+	return &httpClientRounder{
+		cli:        cli,
+		addr:       addr,
+		sseBufSize: sseBufSize,
+	}
+}
+
+func (c *httpClientRounder) Round(ctx context.Context, msg core.Message) (core.MessageReader, error) {
+	buf, err := core.EncodeMessage(msg)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.addr, bytes.NewBuffer(buf))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json,text/event-stream")
+	md, ok := metadata.GetAllValues(ctx)
+	if ok {
+		for k, v := range md {
+			req.Header.Set(k, v)
+		}
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.cli.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	status := resp.StatusCode
+	if status != consts.StatusOK {
+		// return specific error based on status code
+		switch status {
+		case consts.StatusNotFound:
+			resp.Body.Close()
+			return nil, fmt.Errorf("url path %s not found", c.addr)
+		default:
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("unexpected status code %d, body: %s", status, string(body))
+		}
+	}
+	ct := resp.Header.Get("content-type")
+	switch {
+	case strings.Contains(ct, "application/json"):
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read response body: %w", err)
+		}
+		return &pingPongReader{
+			resp: body,
+		}, nil
+	case strings.Contains(ct, "text/event-stream"):
+		// Don't close resp.Body here - it will be closed by sseReader
+		r := newSSEReader(resp.Body)
+		if c.sseBufSize != nil {
+			r.SetMaxBufferSize(*c.sseBufSize)
+		}
+		sr := &sseReader{
+			ctx:    ctx,
+			reader: r,
+			buf:    utils.NewUnboundBuffer[sseData](),
+		}
+		sr.run()
+		return sr, nil
+	default:
+		resp.Body.Close()
+		return nil, fmt.Errorf("non-expected content-type: %s, status-code: %d", ct, status)
+	}
+}
+
+type hertzClientRounder struct {
 	cli        *client.Client
 	addr       string
 	sseBufSize *int
 }
 
-func newClientRounder(addr string, cli *client.Client, sseBufSize *int) *clientRounder {
-	return &clientRounder{
+func newHertzClientRounder(addr string, cli *client.Client, sseBufSize *int) *hertzClientRounder {
+	return &hertzClientRounder{
 		addr:       addr,
 		cli:        cli,
 		sseBufSize: sseBufSize,
 	}
 }
 
-func (c *clientRounder) Round(ctx context.Context, msg core.Message) (core.MessageReader, error) {
+func (c *hertzClientRounder) Round(ctx context.Context, msg core.Message) (core.MessageReader, error) {
 	buf, err := core.EncodeMessage(msg)
 	if err != nil {
 		return nil, err
@@ -130,7 +233,7 @@ func (c *clientRounder) Round(ctx context.Context, msg core.Message) (core.Messa
 	switch {
 	case strings.Contains(ct, "application/json"):
 		return &pingPongReader{
-			resp: resp,
+			resp: resp.Body(),
 		}, nil
 	case strings.Contains(ct, "text/event-stream"):
 		r, _ := sse.NewReader(resp)
@@ -150,7 +253,7 @@ func (c *clientRounder) Round(ctx context.Context, msg core.Message) (core.Messa
 }
 
 type pingPongReader struct {
-	resp     *protocol.Response
+	resp     []byte
 	isFinish bool
 }
 
@@ -159,10 +262,11 @@ func (r *pingPongReader) Read(ctx context.Context) (core.Message, error) {
 		return nil, io.EOF
 	}
 	// todo: think about batch
-	msgs, _, err := core.DecodeMessages(r.resp.Body())
+	msgs, _, err := core.DecodeMessages(r.resp)
 	if err != nil {
 		return nil, err
 	}
+	r.isFinish = true
 	return msgs[0], nil
 }
 
@@ -177,7 +281,7 @@ func (r *pingPongReader) Close() error {
 
 type sseReader struct {
 	ctx        context.Context
-	reader     *sse.Reader
+	reader     sseReaderInt
 	buf        *utils.UnboundBuffer[sseData]
 	err        error
 	cancelFunc context.CancelFunc
@@ -231,7 +335,7 @@ func (s *sseReader) Close() error {
 	}
 	s.err = io.EOF
 	s.cancelFunc()
-	// todo: judge the side effect of sse.Reader Close when downstream sends data continue
-	// Here it looks like the cancel-triggered forced close waits until the sse.Reader's close releases the lock.
+	// Close the underlying reader to release the HTTP response body
+	//return s.reader.Close()
 	return nil
 }
