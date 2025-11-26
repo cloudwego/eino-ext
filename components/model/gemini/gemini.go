@@ -480,7 +480,6 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		// remove system instruction and tools when using cached content
 		m.SystemInstruction = nil
 		m.Tools = nil
-		m.ToolConfig = nil
 	}
 	return conf.Model, nInput, m, conf, nil
 }
