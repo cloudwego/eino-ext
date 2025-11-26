@@ -210,7 +210,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	return outStream, err
 }
 
-func (cm *responsesAPIChatModel) populateConfig(responseReq *responses.ResponsesRequest, options *model.Options,
+func (cm *responsesAPIChatModel) prePopulateConfig(responseReq *responses.ResponsesRequest, options *model.Options,
 	specOptions *arkOptions) error {
 
 	if cm.responseFormat != nil {
@@ -306,7 +306,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 	specOptions *arkOptions) (responseReq *responses.ResponsesRequest, err error) {
 	responseReq = &responses.ResponsesRequest{}
 
-	err = cm.populateConfig(responseReq, options, specOptions)
+	err = cm.prePopulateConfig(responseReq, options, specOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -435,17 +435,27 @@ func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 		return nil
 	}
 	for _, msg := range in {
-		inputMessage, err := cm.toArkItemInputMessage(msg)
-		if err != nil {
-			return err
-		}
 		switch msg.Role {
 		case schema.User:
-			inputMessage.Role = responses.MessageRole_user
+			inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
+			if err != nil {
+				return err
+			}
+
+			if len(inputMessage.GetContent()) == 0 {
+				return fmt.Errorf("user role message content is empty")
+			}
+
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
-			inputMessage.Role = responses.MessageRole_assistant
-			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
+			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
+			if err != nil {
+				return err
+			}
+			if len(inputMessage.GetContent()) > 0 {
+				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
+			}
+
 			for _, toolCall := range msg.ToolCalls {
 				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{
 					FunctionToolCall: &responses.ItemFunctionToolCall{
@@ -457,7 +467,13 @@ func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 				}})
 			}
 		case schema.System:
-			inputMessage.Role = responses.MessageRole_system
+			inputMessage, err := cm.toArkSystemRoleItemInputMessage(msg)
+			if err != nil {
+				return err
+			}
+			if len(inputMessage.GetContent()) == 0 {
+				return fmt.Errorf("system role message content is empty")
+			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Tool:
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCallOutput{
@@ -518,23 +534,10 @@ func (cm *responsesAPIChatModel) populateTools(responseReq *responses.ResponsesR
 	return nil
 }
 
-func (cm *responsesAPIChatModel) toArkItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
-
-	inputItemMessage := &responses.ItemInputMessage{}
-	if msg.Content != "" {
-		if len(msg.MultiContent) == 0 && len(msg.UserInputMultiContent) == 0 && len(msg.AssistantGenMultiContent) == 0 {
-			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
-				Text: &responses.ContentItemText{
-					Type: responses.ContentItemType_input_text,
-					Text: msg.Content,
-				},
-			}})
-			return inputItemMessage, nil
-		}
-	}
-
-	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
-		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+func (cm *responsesAPIChatModel) toArkUserRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
+	inputItemMessage := &responses.ItemInputMessage{
+		Type: responses.ItemType_message.Enum(),
+		Role: responses.MessageRole_user,
 	}
 
 	toContentItemImageDetail := func(cImage *responses.ContentItemImage, detail schema.ImageURLDetail) {
@@ -548,10 +551,11 @@ func (cm *responsesAPIChatModel) toArkItemInputMessage(msg *schema.Message) (*re
 		}
 	}
 
+	if len(msg.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("if user role, AssistantGenMultiContent cannot be set")
+	}
+
 	if len(msg.UserInputMultiContent) > 0 {
-		if msg.Role != schema.User {
-			return nil, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
-		}
 		for _, part := range msg.UserInputMultiContent {
 			switch part.Type {
 			case schema.ChatMessagePartTypeText:
@@ -585,7 +589,6 @@ func (cm *responsesAPIChatModel) toArkItemInputMessage(msg *schema.Message) (*re
 				toContentItemImageDetail(contentItemImage, part.Image.Detail)
 				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
 					Union: &responses.ContentItem_Image{Image: contentItemImage}})
-
 			case schema.ChatMessagePartTypeVideoURL:
 				if part.Video == nil {
 					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL")
@@ -617,17 +620,124 @@ func (cm *responsesAPIChatModel) toArkItemInputMessage(msg *schema.Message) (*re
 
 				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
 					Union: &responses.ContentItem_Video{Video: contentItemVideo}})
-
 			default:
 				return nil, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
 			}
 		}
 		return inputItemMessage, nil
-	} else if len(msg.AssistantGenMultiContent) > 0 {
-		if msg.Role != schema.Assistant {
-			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", msg.Role)
+	} else if msg.Content != "" {
+		inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+			Text: &responses.ContentItemText{
+				Type: responses.ContentItemType_input_text,
+				Text: msg.Content,
+			},
+		}})
+	} else {
+		for _, c := range msg.MultiContent {
+			switch c.Type {
+			case schema.ChatMessagePartTypeText:
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+					Text: &responses.ContentItemText{
+						Type: responses.ContentItemType_input_text,
+						Text: c.Text,
+					},
+				}})
+			case schema.ChatMessagePartTypeImageURL:
+				if c.ImageURL == nil {
+					continue
+				}
+				contentItemImage := &responses.ContentItemImage{
+					Type:     responses.ContentItemType_input_image,
+					ImageUrl: &c.ImageURL.URL,
+				}
+				toContentItemImageDetail(contentItemImage, c.ImageURL.Detail)
+				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
+					Union: &responses.ContentItem_Image{Image: contentItemImage}})
+
+			default:
+				return nil, fmt.Errorf("unsupported content type: %s", c.Type)
+			}
 		}
+	}
+	return inputItemMessage, nil
+
+}
+
+func (cm *responsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
+	inputItemMessage := &responses.ItemInputMessage{
+		Type: responses.ItemType_message.Enum(),
+		Role: responses.MessageRole_assistant,
+	}
+
+	if len(msg.UserInputMultiContent) > 0 {
+		return nil, fmt.Errorf("if assistant role, UserInputMultiContent cannot be set")
+	}
+
+	if len(msg.AssistantGenMultiContent) > 0 {
 		for _, part := range msg.AssistantGenMultiContent {
+			if part.Type != schema.ChatMessagePartTypeText {
+				return inputItemMessage, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", part.Type)
+			}
+			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+				Text: &responses.ContentItemText{
+					Type: responses.ContentItemType_input_text,
+					Text: part.Text,
+				},
+			}})
+		}
+	} else if msg.Content != "" {
+		inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+			Text: &responses.ContentItemText{
+				Type: responses.ContentItemType_input_text,
+				Text: msg.Content,
+			},
+		}})
+	} else {
+		for _, c := range msg.MultiContent {
+			if c.Type != schema.ChatMessagePartTypeText {
+				return inputItemMessage, fmt.Errorf("unsupported content type: %s", c.Type)
+			}
+			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+				Text: &responses.ContentItemText{
+					Type: responses.ContentItemType_input_text,
+					Text: c.Text,
+				},
+			}})
+
+		}
+	}
+
+	return inputItemMessage, nil
+
+}
+
+func (cm *responsesAPIChatModel) toArkSystemRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
+	inputItemMessage := &responses.ItemInputMessage{
+		Type: responses.ItemType_message.Enum(),
+		Role: responses.MessageRole_system,
+	}
+	toContentItemImageDetail := func(cImage *responses.ContentItemImage, detail schema.ImageURLDetail) {
+		switch detail {
+		case schema.ImageURLDetailHigh:
+			cImage.Detail = responses.ContentItemImageDetail_high.Enum()
+		case schema.ImageURLDetailLow:
+			cImage.Detail = responses.ContentItemImageDetail_low.Enum()
+		case schema.ImageURLDetailAuto:
+			cImage.Detail = responses.ContentItemImageDetail_auto.Enum()
+		}
+	}
+	if len(msg.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("if system role, AssistantGenMultiContent cannot be set")
+	}
+	if msg.Content != "" {
+		inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
+			Text: &responses.ContentItemText{
+				Type: responses.ContentItemType_input_text,
+				Text: msg.Content,
+			},
+		}})
+	} else if len(msg.UserInputMultiContent) > 0 {
+		for _, part := range msg.UserInputMultiContent {
 			switch part.Type {
 			case schema.ChatMessagePartTypeText:
 				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
@@ -639,69 +749,31 @@ func (cm *responsesAPIChatModel) toArkItemInputMessage(msg *schema.Message) (*re
 			case schema.ChatMessagePartTypeImageURL:
 				if part.Image == nil {
 					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
-				} else {
-					var imageURL string
-					var err error
-					if part.Image.URL != nil {
-						imageURL = *part.Image.URL
-					} else if part.Image.Base64Data != nil {
-						if part.Image.MIMEType == "" {
-							return nil, fmt.Errorf("image part must have MIMEType when use Base64Data")
-						}
-						imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
-						if err != nil {
-							return nil, err
-						}
-					}
-					contentItemImage := &responses.ContentItemImage{
-						Type:     responses.ContentItemType_input_image,
-						ImageUrl: &imageURL,
-					}
-					inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
-						Union: &responses.ContentItem_Image{Image: contentItemImage}})
 				}
-			case schema.ChatMessagePartTypeVideoURL:
-				if part.Video == nil {
-					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL")
-				}
-				var videoURL string
+				var imageURL string
 				var err error
-				if part.Video.URL != nil {
-					videoURL = *part.Video.URL
-				} else if part.Video.Base64Data != nil {
-					if part.Video.MIMEType == "" {
+				if part.Image.URL != nil {
+					imageURL = *part.Image.URL
+				} else if part.Image.Base64Data != nil {
+					if part.Image.MIMEType == "" {
 						return nil, fmt.Errorf("image part must have MIMEType when use Base64Data")
 					}
-					videoURL, err = ensureDataURL(*part.Video.Base64Data, part.Video.MIMEType)
+					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
 					if err != nil {
 						return nil, err
 					}
 				}
-
-				var fps *float32
-				if GetOutputVideoFPS(part.Video) != nil {
-					fps = ptrOf(float32(*GetOutputVideoFPS(part.Video)))
+				contentItemImage := &responses.ContentItemImage{
+					Type:     responses.ContentItemType_input_image,
+					ImageUrl: &imageURL,
 				}
-
-				contentItemVideo := &responses.ContentItemVideo{
-					Type:     responses.ContentItemType_input_video,
-					VideoUrl: videoURL,
-					Fps:      fps,
-				}
+				toContentItemImageDetail(contentItemImage, part.Image.Detail)
 				inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{
-					Union: &responses.ContentItem_Video{Video: contentItemVideo}})
+					Union: &responses.ContentItem_Image{Image: contentItemImage}})
 			default:
-				return inputItemMessage, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", part.Type)
+				return nil, fmt.Errorf("unsupported content type: %s", part.Type)
 			}
 		}
-		return inputItemMessage, nil
-	} else if len(msg.Content) > 0 {
-		inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
-			Text: &responses.ContentItemText{
-				Type: responses.ContentItemType_input_text,
-				Text: msg.Content,
-			},
-		}})
 	} else {
 		for _, c := range msg.MultiContent {
 			switch c.Type {
@@ -732,6 +804,7 @@ func (cm *responsesAPIChatModel) toArkItemInputMessage(msg *schema.Message) (*re
 	}
 
 	return inputItemMessage, nil
+
 }
 
 func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options, *arkOptions, error) {
@@ -1115,7 +1188,7 @@ func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Cont
 		return nil, err
 	}
 
-	err = cm.populateConfig(responseReq, options, specOptions)
+	err = cm.prePopulateConfig(responseReq, options, specOptions)
 	if err != nil {
 		return nil, err
 	}
