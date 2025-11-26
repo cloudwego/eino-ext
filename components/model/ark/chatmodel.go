@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/sirupsen/logrus"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
@@ -47,6 +48,12 @@ var (
 	ErrEmptyResponse = errors.New("empty response received from model")
 )
 
+type Logger interface {
+	Infof(msg string, args ...interface{})
+	Warnf(msg string, args ...interface{})
+	Errorf(msg string, args ...interface{})
+	Debugf(msg string, args ...interface{})
+}
 type ChatModelConfig struct {
 	// Timeout specifies the maximum duration to wait for API responses
 	// If HTTPClient is set, Timeout will not be used.
@@ -144,6 +151,8 @@ type ChatModelConfig struct {
 	ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
 
 	Cache *CacheConfig `json:"cache,omitempty"`
+
+	Logger Logger
 }
 
 type CacheConfig struct {
@@ -279,7 +288,9 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 	} else {
 		return nil, fmt.Errorf("new client fail, missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
 	}
-
+	if config.Logger == nil {
+		config.Logger = logrus.New()
+	}
 	cm := &responsesAPIChatModel{
 		client:         client,
 		model:          config.Model,
@@ -291,6 +302,7 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 		thinking:       config.Thinking,
 		cache:          config.Cache,
 		serviceTier:    config.ServiceTier,
+		logger:         config.Logger,
 	}
 	return cm, nil
 }

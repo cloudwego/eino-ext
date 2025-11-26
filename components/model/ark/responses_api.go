@@ -51,6 +51,7 @@ type responsesAPIChatModel struct {
 	cache           *CacheConfig
 	serviceTier     *string
 	reasoningEffort *arkModel.ReasoningEffort
+	logger          Logger
 }
 type cacheConfig struct {
 	Enabled  bool
@@ -123,7 +124,7 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 
 func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-
+	logger := cm.logger
 	options, specOptions, err := cm.getOptions(opts)
 	if err != nil {
 		return nil, err
@@ -173,7 +174,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			if pe != nil {
 				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
-
+			logger.Infof("[responsesAPIChatModel] received stream end")
 			_ = responseStreamReader.Close()
 			sw.Close()
 		}()
@@ -183,7 +184,7 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			cacheCfg.Enabled = *responseReq.Caching.Type == responses.CacheType_enabled
 			cacheCfg.ExpireAt = responseReq.ExpireAt
 		}
-
+		logger.Infof("[responsesAPIChatModel] start received stream")
 		cm.receivedStreamResponse(responseStreamReader, config, cacheCfg, sw)
 
 	}()
@@ -991,17 +992,18 @@ func (cm *responsesAPIChatModel) toCallbackConfig(req *responses.ResponsesReques
 func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 	config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
 	var itemFunctionToolCall *responses.ItemFunctionToolCall
-
+	logger := cm.logger
 	for {
 		event, err := streamReader.Recv()
 		if err != nil {
+			logger.Errorf("[receivedStreamResponse] fail err %v", err)
 			if errors.Is(err, io.EOF) {
 				return
 			}
 			_ = sw.Send(nil, fmt.Errorf("failed to read stream: %w", err))
 			return
 		}
-
+		logger.Infof("[receivedStreamResponse] event type %v; event %s", event, event.String())
 		switch ev := event.GetEvent().(type) {
 		case *responses.Event_Response:
 			if ev.Response == nil || ev.Response.Response == nil {
