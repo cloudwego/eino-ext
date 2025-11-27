@@ -506,14 +506,46 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 }
 
 func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
-	result := make([]*genai.Content, len(messages))
-	for i, message := range messages {
-		content, err := cm.convSchemaMessage(message)
-		if err != nil {
-			return nil, fmt.Errorf("convert schema message fail: %w", err)
+	var result []*genai.Content
+	var toolResponseContent *genai.Content // For merging consecutive tool responses
+
+	for _, message := range messages {
+		// Check if this is a tool response message
+		if message.Role == schema.Tool {
+			// Merge consecutive tool responses into one Content
+			if toolResponseContent == nil {
+				toolResponseContent = &genai.Content{
+					Role: toGeminiRole(message.Role),
+				}
+			}
+			// Add function response part to the merged content
+			response := make(map[string]any)
+			err := sonic.UnmarshalString(message.Content, &response)
+			if err != nil {
+				response["output"] = message.Content
+			}
+			toolResponseContent.Parts = append(toolResponseContent.Parts,
+				genai.NewPartFromFunctionResponse(message.ToolCallID, response))
+		} else {
+			// Flush any pending tool responses before adding non-tool message
+			if toolResponseContent != nil {
+				result = append(result, toolResponseContent)
+				toolResponseContent = nil
+			}
+			// Convert regular message
+			content, err := cm.convSchemaMessage(message)
+			if err != nil {
+				return nil, fmt.Errorf("convert schema message fail: %w", err)
+			}
+			result = append(result, content)
 		}
-		result[i] = content
 	}
+
+	// Don't forget to flush any remaining tool responses at the end
+	if toolResponseContent != nil {
+		result = append(result, toolResponseContent)
+	}
+
 	return result, nil
 }
 
