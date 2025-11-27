@@ -17,6 +17,7 @@
 package openai
 
 import (
+	"context"
 	"math/rand"
 	"testing"
 
@@ -163,28 +164,6 @@ func TestLogProbs(t *testing.T) {
 			},
 		},
 	}}))
-}
-
-func TestClientGetChatCompletionRequestOptions(t *testing.T) {
-	cli := &Client{
-		config: &Config{},
-	}
-
-	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
-		WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
-			return rawBody, nil
-		}),
-	}), 1)
-}
-
-func TestClientWithExtraHeader(t *testing.T) {
-	cli := &Client{
-		config: &Config{},
-	}
-
-	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
-		WithExtraHeader(map[string]string{"test": "test"}),
-	}), 1)
 }
 
 func TestToTools(t *testing.T) {
@@ -535,4 +514,117 @@ func Test_streamMessageBuilder_build(t *testing.T) {
 	assert.Equal(t, schema.Assistant, msg.Role)
 	assert.Equal(t, "hello", msg.Content)
 	assert.Len(t, msg.AssistantGenMultiContent, 1)
+}
+
+func Test_genRequest(t *testing.T) {
+	t.Run("basic request", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+
+		req, cbInput, reqOpts, spec, err := c.genRequest(t.Context(), in)
+		assert.NoError(t, err)
+		assert.NotNil(t, req)
+		assert.NotNil(t, cbInput)
+		assert.NotNil(t, spec)
+		assert.Equal(t, "test-model", req.Model)
+		assert.Equal(t, 1, len(req.Messages))
+		assert.Equal(t, "hello", req.Messages[0].Content)
+		assert.Equal(t, "test-model", cbInput.Config.Model)
+		assert.Equal(t, in, cbInput.Messages)
+		assert.Len(t, reqOpts, 0)
+	})
+
+	t.Run("multi-content conflict error", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{
+			Role:                     schema.User,
+			UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "hi"}},
+			AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "out"}},
+		}}
+
+		_, _, _, _, err := c.genRequest(t.Context(), in)
+		assert.Error(t, err)
+	})
+
+	t.Run("payload modifier and extra header options", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+
+		opts := []model.Option{
+			WithRequestPayloadModifier(func(ctx context.Context, msgs []*schema.Message, rawBody []byte) ([]byte, error) {
+				return rawBody, nil
+			}),
+			WithExtraHeader(map[string]string{"x-test": "y"}),
+		}
+
+		_, _, reqOpts, _, err := c.genRequest(t.Context(), in, opts...)
+		assert.NoError(t, err)
+		assert.Len(t, reqOpts, 2)
+	})
+
+	t.Run("forced tool choice without tools returns error", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		tc := schema.ToolChoiceForced
+		c.toolChoice = &tc
+
+		_, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.Error(t, err)
+	})
+
+	t.Run("forced tool choice with multiple tools becomes required", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		tools := []*schema.ToolInfo{
+			{
+				Name: "tool1",
+				Desc: "desc1",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"param": {Type: schema.String, Required: true},
+				}),
+			},
+			{
+				Name: "tool2",
+				Desc: "desc2",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"param": {Type: schema.String, Required: true},
+				}),
+			},
+		}
+		assert.NoError(t, c.BindForcedTools(tools))
+
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(req.Tools))
+		// tool choice should be "required" when multiple tools are bound and forced
+		if v, ok := any(req.ToolChoice).(string); ok {
+			assert.Equal(t, toolChoiceRequired, v)
+		} else {
+			t.Fatalf("expected toolChoice to be string 'required', got %T", req.ToolChoice)
+		}
+	})
+
+	t.Run("modalities audio requires audio config", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model", Modalities: []Modality{AudioModality}}}
+		_, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.Error(t, err)
+	})
+
+	t.Run("modalities audio with config populates extra fields", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model", Modalities: []Modality{AudioModality}, Audio: &Audio{Format: "mp3", Voice: "alloy"}}}
+		_, _, _, spec, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.NoError(t, err)
+		assert.NotNil(t, spec.ExtraFields)
+		// Expect modalities and audio to be present in ExtraFields
+		_, okMod := spec.ExtraFields["modalities"]
+		_, okAudio := spec.ExtraFields["audio"]
+		assert.True(t, okMod)
+		assert.True(t, okAudio)
+	})
+
+	t.Run("response format mapping", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model", ResponseFormat: &ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText}}}
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.NoError(t, err)
+		assert.NotNil(t, req.ResponseFormat)
+		assert.Equal(t, ChatCompletionResponseFormatTypeText, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
+	})
 }

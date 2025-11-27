@@ -546,7 +546,8 @@ func buildMessageFromMultiContent(inMsg *schema.Message) (openai.ChatCompletionM
 	}, nil
 }
 
-func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionRequest, *model.CallbackInput, error) {
+func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...model.Option) (
+	*openai.ChatCompletionRequest, *model.CallbackInput, []openai.ChatCompletionRequestOption, *openaiOptions, error) {
 
 	options := model.GetCommonOptions(&model.Options{
 		Temperature: c.config.Temperature,
@@ -557,11 +558,24 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		Tools:       nil,
 		ToolChoice:  c.toolChoice,
 	}, opts...)
+
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:         c.config.ExtraFields,
-		ReasoningEffort:     c.config.ReasoningEffort,
-		MaxCompletionTokens: c.config.MaxCompletionTokens,
+		ExtraFields:                  c.config.ExtraFields,
+		ReasoningEffort:              c.config.ReasoningEffort,
+		MaxCompletionTokens:          c.config.MaxCompletionTokens,
+		RequestBodyModifier:          nil,
+		RequestPayloadModifier:       nil,
+		ResponseMessageModifier:      nil,
+		ResponseChunkMessageModifier: nil,
 	}, opts...)
+	// convert RequestBodyModifier to RequestPayloadModifier
+	if specOptions.RequestPayloadModifier != nil && specOptions.RequestBodyModifier != nil {
+		reqBodyModifier := specOptions.RequestBodyModifier
+		specOptions.RequestPayloadModifier = func(ctx context.Context, msg []*schema.Message, rawBody []byte) ([]byte, error) {
+			return reqBodyModifier(rawBody)
+		}
+		specOptions.RequestBodyModifier = nil
+	}
 
 	req := &openai.ChatCompletionRequest{
 		Model:               *options.Model,
@@ -590,7 +604,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		}
 		specOptions.ExtraFields[modalities] = c.config.Modalities
 		if slices.Contains(c.config.Modalities, AudioModality) && c.config.Audio == nil {
-			return nil, nil, errors.New("audio configuration is mandatory when 'audio' modality is specified")
+			return nil, nil, nil, nil, errors.New("audio configuration is mandatory when 'audio' modality is specified")
 		}
 
 		if c.config.Audio != nil {
@@ -620,7 +634,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 	if options.Tools != nil {
 		var err error
 		if tools, err = toTools(options.Tools); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		cbInput.Tools = options.Tools
 	}
@@ -662,7 +676,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 			req.ToolChoice = toolChoiceAuto
 		case schema.ToolChoiceForced:
 			if len(req.Tools) == 0 {
-				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
+				return nil, nil, nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
 			} else if len(req.Tools) > 1 {
 				req.ToolChoice = toolChoiceRequired
 			} else {
@@ -674,7 +688,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 				}
 			}
 		default:
-			return nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
+			return nil, nil, nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
 		}
 	}
 
@@ -686,7 +700,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 			err error
 		)
 		if len(inMsg.UserInputMultiContent) > 0 && len(inMsg.AssistantGenMultiContent) > 0 {
-			return nil, nil, errors.New("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+			return nil, nil, nil, nil, errors.New("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 		}
 
 		if len(inMsg.UserInputMultiContent) > 0 {
@@ -707,7 +721,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		}
 
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		msgs = append(msgs, msg)
 	}
@@ -728,13 +742,25 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		}
 	}
 
-	return req, cbInput, nil
+	var reqOpts []openai.ChatCompletionRequestOption
+
+	if specOptions.RequestPayloadModifier != nil {
+		reqOpts = append(reqOpts, openai.WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
+			return specOptions.RequestPayloadModifier(ctx, in, rawBody)
+		}))
+	}
+
+	if specOptions.ExtraHeader != nil {
+		reqOpts = append(reqOpts, openai.WithExtraHeader(specOptions.ExtraHeader))
+	}
+
+	return req, cbInput, reqOpts, specOptions, nil
 }
 
 func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
-	req, cbInput, err := c.genRequest(in, opts...)
+	req, cbInput, reqOpts, specOptions, err := c.genRequest(ctx, in, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
 	}
@@ -745,8 +771,6 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
-	reqOpts := c.getChatCompletionRequestOptions(opts)
 
 	resp, err := c.cli.CreateChatCompletion(ctx, *req, reqOpts...)
 	if err != nil {
@@ -814,6 +838,13 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 
 	setRequestID(outMsg, resp.ID)
 
+	if specOptions.ResponseMessageModifier != nil {
+		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to modify response message: %w", err)
+		}
+	}
+
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     cbInput.Config,
@@ -831,7 +862,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 		}
 	}()
 
-	req, cbInput, err := c.genRequest(in, opts...)
+	req, cbInput, reqOpts, specOptions, err := c.genRequest(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -841,8 +872,6 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	reqOpts := c.getChatCompletionRequestOptions(opts)
-
 	stream, err := c.cli.CreateChatCompletionStream(ctx, *req, reqOpts...)
 	if err != nil {
 		return nil, err
@@ -851,6 +880,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 
 	builder := newStreamMessageBuilder(c.config.Audio)
+
 	go func() {
 		defer func() {
 			panicErr := recover()
@@ -868,6 +898,13 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 		for {
 			chunk, chunkErr := stream.Recv()
 			if errors.Is(chunkErr, io.EOF) {
+				if specOptions.ResponseChunkMessageModifier != nil {
+					lastEmptyMsg, err = specOptions.ResponseChunkMessageModifier(ctx, lastEmptyMsg, chunk.RawBody, true)
+					if err != nil {
+						sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
+						return
+					}
+				}
 				if lastEmptyMsg != nil {
 					sw.Send(&model.CallbackOutput{
 						Message:    lastEmptyMsg,
@@ -916,6 +953,14 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 
 			lastEmptyMsg = nil
 
+			if specOptions.ResponseChunkMessageModifier != nil {
+				msg, err = specOptions.ResponseChunkMessageModifier(ctx, msg, chunk.RawBody, false)
+				if err != nil {
+					sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
+					return
+				}
+			}
+
 			closed := sw.Send(&model.CallbackOutput{
 				Message:    msg,
 				Config:     cbInput.Config,
@@ -946,25 +991,6 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	)
 
 	return outStream, nil
-}
-
-func (c *Client) getChatCompletionRequestOptions(opts []model.Option) []openai.ChatCompletionRequestOption {
-	specOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:     c.config.ExtraFields,
-		ReasoningEffort: c.config.ReasoningEffort,
-	}, opts...)
-
-	var options []openai.ChatCompletionRequestOption
-
-	if specOptions.RequestBodyModifier != nil {
-		options = append(options, openai.WithRequestBodyModifier(specOptions.RequestBodyModifier))
-	}
-
-	if specOptions.ExtraHeader != nil {
-		options = append(options, openai.WithExtraHeader(specOptions.ExtraHeader))
-	}
-
-	return options
 }
 
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {

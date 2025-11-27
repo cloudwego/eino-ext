@@ -17,6 +17,7 @@
 package openai
 
 import (
+	"context"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -24,25 +25,27 @@ import (
 )
 
 func TestDefaultOpenAIImplSpecificOptions(t *testing.T) {
+	ctx := context.Background()
 	cm := &Client{config: &Config{Model: "test model"}}
 	msg := schema.Message{
 		Role:    schema.System,
 		Content: "test",
 	}
 	msgs := []*schema.Message{&msg}
-	req, _, err := cm.genRequest(msgs)
+	req, _, _, _, err := cm.genRequest(ctx, msgs)
 	assert.NoError(t, err)
 	assert.Equal(t, req.ReasoningEffort, "")
 }
 
 func TestHighReasoningEffortOpenAIImplSpecificOptions(t *testing.T) {
+	ctx := context.Background()
 	cm := &Client{config: &Config{Model: "test model"}}
 	msg := schema.Message{
 		Role:    schema.System,
 		Content: "test",
 	}
 	msgs := []*schema.Message{&msg}
-	req, _, err := cm.genRequest(msgs,
+	req, _, _, _, err := cm.genRequest(ctx, msgs,
 		WithReasoningEffort(ReasoningEffortLevelHigh))
 	assert.NoError(t, err)
 	assert.Equal(t, req.ReasoningEffort, string(ReasoningEffortLevelHigh))
