@@ -45,6 +45,9 @@ type Config struct {
 
 	// CustomHeaders specifies the http headers passed to mcp server when requesting.
 	CustomHeaders map[string]string
+
+	// Meta specifies the metadata passed to mcp server when requesting.
+	Meta *mcp.Meta
 }
 
 func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
@@ -94,20 +97,11 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(inputSchema),
 			},
 			toolCallResultHandler: conf.ToolCallResultHandler,
+			meta:                  conf.Meta,
 		})
 	}
 
 	return ret, nil
-}
-
-type Options struct {
-	meta *mcp.Meta
-}
-
-func WithMeta(meta *mcp.Meta) tool.Option {
-	return tool.WrapImplSpecificOptFn(func(o *Options) {
-		o.meta = meta
-	})
 }
 
 type toolHelper struct {
@@ -115,7 +109,7 @@ type toolHelper struct {
 	info                  *schema.ToolInfo
 	customHeaders         map[string]string
 	toolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
-	options               Options
+	meta                  *mcp.Meta
 }
 
 func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
@@ -125,6 +119,7 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
 	specOptions := tool.GetImplSpecificOptions(&mcpOptions{
 		customHeaders: m.customHeaders,
+		meta:          m.meta,
 	}, opts...)
 
 	headers := http.Header{}
@@ -133,7 +128,7 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 			headers.Set(k, v)
 		}
 	}
- 
+
 	result, err := m.cli.CallTool(ctx, mcp.CallToolRequest{
 		Request: mcp.Request{
 			Method: "tools/call",
@@ -142,7 +137,7 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		Params: mcp.CallToolParams{
 			Name:      m.info.Name,
 			Arguments: json.RawMessage(argumentsInJSON),
-			Meta:      options.meta,
+			Meta:      specOptions.meta,
 		},
 	})
 	if err != nil {
