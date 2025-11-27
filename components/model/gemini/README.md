@@ -11,6 +11,7 @@ A Google Gemini implementation for [Eino](https://github.com/cloudwego/eino) tha
 - Support for streaming responses
 - Custom response parsing support
 - Flexible model configuration
+- Caching support for generated responses
 
 ## Installation
 
@@ -160,10 +161,60 @@ type Config struct {
 
 	// ResponseModalities specifies the modalities the model can return.
 	// Optional.
-	ResponseModalities []GeminiResponseModality
+	ResponseModalities []
+	
+	MediaResolution genai.MediaResolution
+
+	// Cache controls prefix cache settings for the model.
+	// Optional. used to CreatePrefixCache for reused inputs.
+	Cache *CacheConfig
+}
+
+// CacheConfig controls prefix cache settings for the model.
+type CacheConfig struct {
+	// TTL specifies how long cached resources remain valid (now + TTL).
+	TTL time.Duration `json:"ttl,omitempty"`
+	// ExpireTime sets the absolute expiration timestamp for cached resources.
+	ExpireTime time.Time `json:"expireTime,omitempty"`
 }
 ```
 
+## Caching
+
+This component supports two caching strategies to improve latency and reduce API calls:
+
+- Explicit caching (prefix cache): Build a reusable context from the system instruction, tools, and messages. Use `CreatePrefixCache` to create the cache and pass its name with `gemini.WithCachedContentName(...)` in subsequent requests. Configure TTL and absolute expiry via `CacheConfig` (`TTL`, `ExpireTime`). When a cached content is used, the request omits system instruction and tools and relies on the cached prefix.
+- Implicit caching: Managed by Gemini itself. The service may reuse prior requests or responses automatically. Expiry and reuse are controlled by Gemini and cannot be configured.
+
+```
+toolInfoList := []*schema.ToolInfo{
+	{
+		Name:        "tool_a",
+		Desc:        "desc",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+	},
+}
+cacheInfo, _ := cm.CreatePrefixCache(ctx, []*schema.Message{
+		{
+			Role: schema.System,
+			Content: `aaa`,
+		},
+		{
+			Role: schema.User,
+			Content: `bbb`,
+		},
+	}, model.WithTools(toolInfoList))
+
+
+msg, err := cm.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "give a very short summary about this transcript",
+		},
+	}, gemini.WithCachedContentName(cacheInfo.Name))
+```
+
+The example above shows how to create a prefix cache and reuse it in a follow-up call.
 
 ## examples
 
