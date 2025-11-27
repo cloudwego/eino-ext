@@ -336,6 +336,8 @@ func toMessageRole(role string) schema.RoleType {
 	}
 }
 
+const hasPopulatedIndex = "_eino_ext_openai_has_populated_index"
+
 func toMessageToolCalls(toolCalls []openai.ToolCall) []schema.ToolCall {
 	if len(toolCalls) == 0 {
 		return nil
@@ -344,7 +346,7 @@ func toMessageToolCalls(toolCalls []openai.ToolCall) []schema.ToolCall {
 	ret := make([]schema.ToolCall, len(toolCalls))
 	for i := range toolCalls {
 		toolCall := toolCalls[i]
-		ret[i] = schema.ToolCall{
+		tc := schema.ToolCall{
 			Index: toolCall.Index,
 			ID:    toolCall.ID,
 			Type:  string(toolCall.Type),
@@ -353,6 +355,14 @@ func toMessageToolCalls(toolCalls []openai.ToolCall) []schema.ToolCall {
 				Arguments: toolCall.Function.Arguments,
 			},
 		}
+		if tc.Index == nil {
+			tc.Index = ptrOf(i)
+			if tc.Extra == nil {
+				tc.Extra = map[string]interface{}{}
+			}
+			tc.Extra[hasPopulatedIndex] = true
+		}
+		ret[i] = tc
 	}
 
 	return ret
@@ -366,7 +376,7 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 	ret := make([]openai.ToolCall, len(toolCalls))
 	for i := range toolCalls {
 		toolCall := toolCalls[i]
-		ret[i] = openai.ToolCall{
+		tc := openai.ToolCall{
 			Index: toolCall.Index,
 			ID:    toolCall.ID,
 			Type:  openai.ToolTypeFunction,
@@ -375,6 +385,12 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 				Arguments: toolCall.Function.Arguments,
 			},
 		}
+		if toolCall.Extra != nil {
+			if b, ok := toolCall.Extra[hasPopulatedIndex].(bool); ok && b {
+				tc.Index = nil
+			}
+		}
+		ret[i] = tc
 	}
 
 	return ret
@@ -1288,4 +1304,8 @@ func newPanicErr(info any, stack []byte) error {
 		info:  info,
 		stack: stack,
 	}
+}
+
+func ptrOf[T any](v T) *T {
+	return &v
 }
