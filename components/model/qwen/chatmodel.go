@@ -31,6 +31,31 @@ import (
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 
+type Modality = openai.Modality
+
+type AudioFormat string
+
+const (
+	AudioFormatWav AudioFormat = "wav"
+)
+
+type AudioVoice string
+
+const (
+	AudioVoiceCherry  AudioVoice = "Cherry"
+	AudioVoiceSerena  AudioVoice = "Serena"
+	AudioVoiceEthan   AudioVoice = "Ethan"
+	AudioVoiceChelsie AudioVoice = "Chelsie"
+)
+
+// Audio specifies the audio output settings
+type Audio struct {
+	// Format specifies the output audio format.
+	Format AudioFormat `json:"format"`
+	// Voice specifies the voice the model uses to respond.
+	Voice AudioVoice `json:"voice"`
+}
+
 // ChatModelConfig parameters detail see:
 // https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api?spm=a2c4g.11186623.help-menu-2400256.d_3_3_0.c3b24823WzuCqJ&scm=20140722.H_2712576._.OR_help-T_cn-DAS-zh-V_1
 // https://help.aliyun.com/zh/model-studio/developer-reference/compatibility-of-openai-with-dashscope?spm=a2c4g.11186623.0.i49
@@ -112,6 +137,18 @@ type ChatModelConfig struct {
 	// https://help.aliyun.com/zh/model-studio/deep-thinking
 	// Optional. Default: base on the Model
 	EnableThinking *bool `json:"enable_thinking,omitempty"`
+
+	// Modalities specifies the output data modalities and is only supported by the Qwen-Omni model.
+	// Possible values are:
+	// - ["text", "audio"]: Output text and audio.
+	// - ["text"]: Output text (default).
+	Modalities []Modality `json:"modalities,omitempty"`
+
+	// Audio parameters for audio output. Required when modalities includes "audio".
+	// To generate audio, include "audio". Audio generation is only supported by the Qwen-Omni model.
+	// Voice options: Cherry, Serena, Ethan, Chelsie.
+	// Format: currently only "wav" is supported.
+	Audio *Audio `json:"audio,omitempty"`
 }
 
 type ChatModel struct {
@@ -132,8 +169,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 	} else {
 		httpClient = &http.Client{Timeout: config.Timeout}
 	}
-
-	cli, err := openai.NewClient(ctx, &openai.Config{
+	nConfig := &openai.Config{
 		BaseURL:          config.BaseURL,
 		APIKey:           config.APIKey,
 		HTTPClient:       httpClient,
@@ -148,7 +184,14 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		FrequencyPenalty: config.FrequencyPenalty,
 		LogitBias:        config.LogitBias,
 		User:             config.User,
-	})
+		Modalities:       config.Modalities,
+		Audio:            &openai.Audio{},
+	}
+	if config.Audio != nil {
+		nConfig.Audio = &openai.Audio{Format: string(config.Audio.Format), Voice: string(config.Audio.Voice)}
+	}
+	cli, err := openai.NewClient(ctx, nConfig)
+
 	if err != nil {
 		return nil, err
 	}
@@ -165,13 +208,13 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opts = cm.parseCustomOpetions(opts...)
+	opts = cm.parseCustomOptions(opts...)
 	return cm.cli.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opts = cm.parseCustomOpetions(opts...)
+	opts = cm.parseCustomOptions(opts...)
 	outStream, err = cm.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
@@ -218,7 +261,7 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return cm.cli.BindForcedTools(tools)
 }
 
-func (cm *ChatModel) parseCustomOpetions(opts ...model.Option) []model.Option {
+func (cm *ChatModel) parseCustomOptions(opts ...model.Option) []model.Option {
 	qwenOpts := model.GetImplSpecificOptions(&options{
 		EnableThinking: cm.extraOptions.EnableThinking,
 	}, opts...)

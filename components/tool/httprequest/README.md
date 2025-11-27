@@ -154,7 +154,7 @@ For the GET tool, the request schema is defined as:
 
 ```go
 type GetRequest struct {
-	URL string `json:"url" jsonschema:"description=The URL to perform the GET request"`
+	URL string `json:"url" jsonschema_description:"The URL to perform the GET request"`
 }
 ```
 
@@ -162,8 +162,8 @@ And for the POST tool, the request schema is:
 
 ```go
 type PostRequest struct {
-	URL  string `json:"url" jsonschema:"description=The URL to perform the POST request"`
-	Body string `json:"body" jsonschema:"description=The request body to be sent in the POST request"`
+	URL  string `json:"url" jsonschema_description:"The URL to perform the POST request"`
+	Body string `json:"body" jsonschema_description:"The request body to be sent in the POST request"`
 }
 ```
 
@@ -358,6 +358,6 @@ Here is documentation on the API:
 ```
 
 ## For More Details
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [InvokableTool Interface Reference](https://pkg.go.dev/github.com/cloudwego/eino/components/tool)
 - [langchain_community Reference](https://python.langchain.com/docs/integrations/tools/requests/)

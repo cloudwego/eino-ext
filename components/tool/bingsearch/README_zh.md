@@ -81,21 +81,21 @@ type Config struct {
 ### 请求 Schema
 ```go
 type SearchRequest struct {
-    Query  string `json:"query" jsonschema:"description=The query to search the web for"`
-    Offset int    `json:"page" jsonschema:"description=The index of the first result to return, default is 0"`
+    Query  string `json:"query" jsonschema_description:"The query to search the web for"`
+    Offset int    `json:"page" jsonschema_description:"The index of the first result to return, default is 0"`
 }
 ```
 
 ### 响应 Schema
 ```go
 type SearchResponse struct {
-    Results []*searchResult `json:"results" jsonschema:"description=The results of the search"`
+    Results []*searchResult `json:"results" jsonschema_description:"The results of the search"`
 }
 
 type searchResult struct {
-    Title       string `json:"title" jsonschema:"description=The title of the search result"`
-    URL         string `json:"url" jsonschema:"description=The link of the search result"`
-    Description string `json:"description" jsonschema:"description=The description of the search result"`
+    Title       string `json:"title" jsonschema_description:"The title of the search result"`
+    URL         string `json:"url" jsonschema_description:"The link of the search result"`
+    Description string `json:"description" jsonschema_description:"The description of the search result"`
 }
 ```
 

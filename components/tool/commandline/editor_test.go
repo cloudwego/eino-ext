@@ -30,14 +30,18 @@ type MockFileOperator struct {
 	mock.Mock
 	files      map[string]string
 	dirs       map[string]bool
-	cmdOutputs map[string]string
+	cmdOutputs []CmdOutputMap
+}
+type CmdOutputMap struct {
+	Cmd    []string
+	Output string
 }
 
 func NewMockFileOperator() *MockFileOperator {
 	return &MockFileOperator{
 		files:      make(map[string]string),
 		dirs:       make(map[string]bool),
-		cmdOutputs: make(map[string]string),
+		cmdOutputs: make([]CmdOutputMap, 0),
 	}
 }
 
@@ -63,13 +67,12 @@ func (m *MockFileOperator) Exists(ctx context.Context, path string) (bool, error
 	args := m.Called(ctx, path)
 	return args.Bool(0), args.Error(1)
 }
-
-func (m *MockFileOperator) RunCommand(ctx context.Context, command string) (string, error) {
+func (m *MockFileOperator) RunCommand(ctx context.Context, command []string) (*CommandOutput, error) {
 	args := m.Called(ctx, command)
 	if args.Get(0) == nil {
-		return "", args.Error(1)
+		return nil, args.Error(1)
 	}
-	return args.String(0), args.Error(1)
+	return &CommandOutput{Stdout: args.String(0)}, args.Error(1)
 }
 
 // Helper function to set up mock file system
@@ -79,7 +82,7 @@ func (m *MockFileOperator) SetupFiles(files map[string]string, dirs map[string]b
 }
 
 // Helper function to set up command outputs
-func (m *MockFileOperator) SetupCommandOutputs(outputs map[string]string) {
+func (m *MockFileOperator) SetupCommandOutputs(outputs []CmdOutputMap) {
 	m.cmdOutputs = outputs
 }
 
@@ -98,8 +101,8 @@ func (m *MockFileOperator) SetupExpectations() {
 	}
 
 	// Setup RunCommand expectations
-	for cmd, output := range m.cmdOutputs {
-		m.On("RunCommand", mock.Anything, cmd).Return(output, nil)
+	for _, cmdOutput := range m.cmdOutputs {
+		m.On("RunCommand", mock.Anything, cmdOutput.Cmd).Return(cmdOutput.Output, nil)
 	}
 
 	// Setup WriteFile expectations
@@ -184,8 +187,11 @@ func TestStrReplaceEditor_View(t *testing.T) {
 	})
 
 	// Setup command outputs
-	mockOperator.SetupCommandOutputs(map[string]string{
-		"find /test/dir -maxdepth 2 -not -path '*/\\.*'": "/test/dir\n/test/dir/file1.txt\n/test/dir/file2.txt",
+	mockOperator.SetupCommandOutputs([]CmdOutputMap{
+		{
+			Cmd:    []string{"find", "/test/dir", "-maxdepth", "2", "-not", "-path", "*/\\.*"},
+			Output: "/test/dir\n/test/dir/file1.txt\n/test/dir/file2.txt",
+		},
 	})
 
 	mockOperator.SetupExpectations()

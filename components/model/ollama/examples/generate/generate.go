@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/cloudwego/eino/schema"
 
@@ -27,10 +28,10 @@ import (
 
 func main() {
 	ctx := context.Background()
-
+	modelName := os.Getenv("MODEL_NAME")
 	chatModel, err := ollama.NewChatModel(ctx, &ollama.ChatModelConfig{
 		BaseURL: "http://localhost:11434",
-		Model:   "deepseek-r1:1.5b",
+		Model:   modelName,
 	})
 	if err != nil {
 		log.Printf("NewChatModel failed, err=%v\n", err)

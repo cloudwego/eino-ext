@@ -101,7 +101,7 @@ type Config struct {
 ```go
 type SearchRequest struct {
     // Query is the query to search the web for.
-    Query string `json:"query" jsonschema:"description=The query to search the web for"`
+    Query string `json:"query" jsonschema_description:"The query to search the web for"`
 }
 ```
 
@@ -109,21 +109,21 @@ type SearchRequest struct {
 ```go
 type SearchResponse struct {
     // Results is the list of search results.
-    Results []*Result `json:"results" jsonschema:"description=The results of the search"`
+    Results []*Result `json:"results" jsonschema_description:"The results of the search"`
 }
 
 type SearchResult struct {
     // Title is the title of the search result.
-    Title   string `json:"title" jsonschema:"description=The title of the search result"`
+    Title   string `json:"title" jsonschema_description:"The title of the search result"`
     // URL is the URL of the search result.
-    URL     string `json:"url" jsonschema:"description=The url of the search result"`
+    URL     string `json:"url" jsonschema_description:"The url of the search result"`
     // Extract is the summary of the search result.
-    Extract string `json:"extract" jsonschema:"description=The extract of the search result"`
+    Extract string `json:"extract" jsonschema_description:"The extract of the search result"`
     // Snippet is the snippet of the search result.
-    Snippet string `json:"snippet" jsonschema:"description=The snippet of the search result"`
+    Snippet string `json:"snippet" jsonschema_description:"The snippet of the search result"`
 }
 ```
 
 ## For More Details
 
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

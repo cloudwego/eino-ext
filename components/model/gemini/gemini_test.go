@@ -18,13 +18,15 @@ package gemini
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/genai"
@@ -102,8 +104,8 @@ func TestGemini(t *testing.T) {
 				Role:    schema.User,
 				Content: "Hi",
 			},
-		}, WithTopK(0), WithResponseSchema(&openapi3.Schema{
-			Type: openapi3.TypeString,
+		}, WithTopK(0), WithResponseJSONSchema(&jsonschema.Schema{
+			Type: "string",
 			Enum: []any{"1", "2"},
 		}))
 		assert.NoError(t, err)
@@ -120,22 +122,26 @@ func TestGemini(t *testing.T) {
 	})
 
 	mockey.PatchConvey("structure", t, func() {
-		responseSchema := &openapi3.Schema{
+		responseSchema := &jsonschema.Schema{
 			Type: "object",
-			Properties: map[string]*openapi3.SchemaRef{
-				"name": {
-					Value: &openapi3.Schema{
-						Type: "string",
+			Properties: orderedmap.New[string, *jsonschema.Schema](
+				orderedmap.WithInitialData[string, *jsonschema.Schema](
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "name",
+						Value: &jsonschema.Schema{
+							Type: string(schema.String),
+						},
 					},
-				},
-				"age": {
-					Value: &openapi3.Schema{
-						Type: "integer",
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "age",
+						Value: &jsonschema.Schema{
+							Type: string(schema.Integer),
+						},
 					},
-				},
-			},
+				),
+			),
 		}
-		model.responseSchema = responseSchema
+		model.responseJSONSchema = responseSchema
 
 		// Mock Gemini API 响应
 		defer mockey.Mock(genai.Models.GenerateContent).Return(&genai.GenerateContentResponse{
@@ -269,49 +275,469 @@ func TestWithTools(t *testing.T) {
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
 }
 
-func TestChatModelConvMedia(t *testing.T) {
+func Test_toMultiOutPart(t *testing.T) {
+	t.Run("nil part", func(t *testing.T) {
+		part, err := toMultiOutPart(nil)
+		assert.NoError(t, err)
+		assert.Empty(t, part)
+	})
+
+	t.Run("nil inline data", func(t *testing.T) {
+		part, err := toMultiOutPart(&genai.Part{InlineData: nil})
+		assert.NoError(t, err)
+		assert.Empty(t, part)
+	})
+
+	t.Run("image part", func(t *testing.T) {
+		data := []byte("fake-image-data")
+		encoded := base64.StdEncoding.EncodeToString(data)
+		part, err := toMultiOutPart(&genai.Part{
+			InlineData: &genai.Blob{
+				MIMEType: "image/png",
+				Data:     data,
+			},
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, schema.ChatMessagePartTypeImageURL, part.Type)
+		assert.NotNil(t, part.Image)
+		assert.Equal(t, "image/png", part.Image.MIMEType)
+		assert.Equal(t, encoded, *part.Image.Base64Data)
+	})
+
+	t.Run("unsupported type", func(t *testing.T) {
+		part, err := toMultiOutPart(&genai.Part{
+			InlineData: &genai.Blob{
+				MIMEType: "application/pdf",
+				Data:     []byte("fake-pdf-data"),
+			},
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported media type")
+		assert.Empty(t, part)
+	})
+}
+
+func TestChatModel_convMedia(t *testing.T) {
+	t.Run("convMedia", func(t *testing.T) {
+		cm := &ChatModel{model: "test model"}
+		base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+		dataURL := "data:image/png;base64," + base64Data
+		t.Run("success", func(t *testing.T) {
+			contents := []schema.ChatMessagePart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "test text",
+				},
+				{
+					Type:     schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{URL: dataURL, MIMEType: "image/png"},
+				},
+				{
+					Type:    schema.ChatMessagePartTypeFileURL,
+					FileURL: &schema.ChatMessageFileURL{URL: dataURL, MIMEType: "application/pdf"},
+				},
+				{
+					Type:     schema.ChatMessagePartTypeAudioURL,
+					AudioURL: &schema.ChatMessageAudioURL{URL: dataURL, MIMEType: "audio/mp3"},
+				},
+				{
+					Type:     schema.ChatMessagePartTypeVideoURL,
+					VideoURL: &schema.ChatMessageVideoURL{URL: dataURL, MIMEType: "video/mp4"},
+				},
+			}
+
+			parts, err := cm.convMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 5)
+			assert.Equal(t, "test text", parts[0].Text)
+
+			decodedData, err := base64.StdEncoding.DecodeString(base64Data)
+			assert.NoError(t, err)
+
+			assert.Equal(t, "image/png", parts[1].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[1].InlineData.Data)
+			assert.Equal(t, "application/pdf", parts[2].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[2].InlineData.Data)
+			assert.Equal(t, "audio/mp3", parts[3].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[3].InlineData.Data)
+			assert.Equal(t, "video/mp4", parts[4].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[4].InlineData.Data)
+		})
+
+		t.Run("with video metadata", func(t *testing.T) {
+			videoPart := &schema.ChatMessageVideoURL{URL: dataURL, MIMEType: "video/mp4"}
+			SetVideoMetaData(videoPart, &genai.VideoMetadata{
+				StartOffset: time.Second,
+				EndOffset:   time.Second * 5,
+			})
+			contents := []schema.ChatMessagePart{
+				{
+					Type:     schema.ChatMessagePartTypeVideoURL,
+					VideoURL: videoPart,
+				},
+			}
+			parts, err := cm.convMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 2)
+			assert.NotNil(t, parts[0].VideoMetadata)
+			assert.Equal(t, time.Second, parts[0].VideoMetadata.StartOffset)
+			assert.Equal(t, time.Second*5, parts[0].VideoMetadata.EndOffset)
+		})
+
+		t.Run("with invalid data url", func(t *testing.T) {
+			contents := []schema.ChatMessagePart{
+				{
+					Type:     schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{URL: "data:image/png;base64,invalid"},
+				},
+			}
+			_, err := cm.convMedia(contents)
+			assert.Error(t, err)
+		})
+	})
 	cm := &ChatModel{model: "test model"}
-	contents := []schema.ChatMessagePart{
-		{
-			Type: schema.ChatMessagePartTypeText,
-			Text: "test text",
-		},
-		{
-			Type: schema.ChatMessagePartTypeImageURL,
-			ImageURL: &schema.ChatMessageImageURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
-			},
-		},
-		{
-			Type: schema.ChatMessagePartTypeFileURL,
-			FileURL: &schema.ChatMessageFileURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
-			},
-		},
-		{
-			Type: schema.ChatMessagePartTypeAudioURL,
-			AudioURL: &schema.ChatMessageAudioURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
-			},
-		},
-		{
-			Type: schema.ChatMessagePartTypeVideoURL,
-			VideoURL: &schema.ChatMessageVideoURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
-			},
-		},
-	}
+	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
-	parts := cm.convMedia(contents)
-	assert.Equal(t, 5, len(parts))
-	assert.Equal(t, "test text", parts[0].Text)
+	t.Run("convInputMedia", func(t *testing.T) {
+		t.Run("success", func(t *testing.T) {
+			contents := []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "hello"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+				{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "audio/mp3"}}},
+				{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}},
+				{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "application/pdf"}}},
+			}
+			parts, err := cm.convInputMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 5)
+			assert.Equal(t, "hello", parts[0].Text)
+			assert.Equal(t, "image/png", parts[1].InlineData.MIMEType)
+			assert.Equal(t, "audio/mp3", parts[2].InlineData.MIMEType)
+			assert.Equal(t, "video/mp4", parts[3].InlineData.MIMEType)
+			assert.Equal(t, "application/pdf", parts[4].InlineData.MIMEType)
+			// check data
+			decodedData, err := base64.StdEncoding.DecodeString(base64Data)
+			assert.NoError(t, err)
+			assert.Equal(t, decodedData, parts[1].InlineData.Data)
+		})
 
-	for i := 1; i < len(parts); i++ {
-		assert.Equal(t, "test uri", parts[i].FileData.FileURI)
-		assert.Equal(t, "test mime type", parts[i].FileData.MIMEType)
-	}
+		t.Run("with video metadata", func(t *testing.T) {
+			videoPart := &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}
+			setInputVideoMetaData(videoPart, &genai.VideoMetadata{
+				StartOffset: time.Second,
+				EndOffset:   time.Second * 5,
+			})
+			contents := []schema.MessageInputPart{
+				{
+					Type:  schema.ChatMessagePartTypeVideoURL,
+					Video: videoPart,
+				},
+			}
+			parts, err := cm.convInputMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 2)
+			assert.NotNil(t, parts[0].VideoMetadata)
+			assert.Equal(t, time.Second, parts[0].VideoMetadata.StartOffset)
+			assert.Equal(t, time.Second*5, parts[0].VideoMetadata.EndOffset)
+		})
+
+		t.Run("error cases", func(t *testing.T) {
+			url := "https://example.com/image.png"
+			invalidBase64 := "invalid-base64"
+			testCases := []struct {
+				name    string
+				content schema.MessageInputPart
+			}{
+				{name: "Image with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
+				{name: "Audio with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
+				{name: "Video with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
+				{name: "File with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
+				{name: "Image with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Image without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
+				{name: "Audio with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Audio without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
+				{name: "Video with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Video without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
+				{name: "File with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "File without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
+				{name: "Image with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: nil}},
+				{name: "Audio with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}},
+				{name: "Video with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}},
+				{name: "File with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: nil}},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					_, err := cm.convInputMedia([]schema.MessageInputPart{tc.content})
+					assert.Error(t, err)
+				})
+			}
+		})
+	})
+
+	t.Run("convOutputMedia", func(t *testing.T) {
+		t.Run("success", func(t *testing.T) {
+			contents := []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "hello"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+				{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "audio/mp3"}}},
+				{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}},
+			}
+			parts, err := cm.convOutputMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 4)
+			assert.Equal(t, "hello", parts[0].Text)
+			assert.Equal(t, "image/png", parts[1].InlineData.MIMEType)
+			assert.Equal(t, "audio/mp3", parts[2].InlineData.MIMEType)
+			assert.Equal(t, "video/mp4", parts[3].InlineData.MIMEType)
+			// check data
+			decodedData, err := base64.StdEncoding.DecodeString(base64Data)
+			assert.NoError(t, err)
+			assert.Equal(t, decodedData, parts[1].InlineData.Data)
+		})
+
+		t.Run("error cases", func(t *testing.T) {
+			url := "https://example.com/image.png"
+			invalidBase64 := "invalid-base64"
+			testCases := []struct {
+				name    string
+				content schema.MessageOutputPart
+			}{
+				{name: "Image with URL", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
+				{name: "Audio with URL", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
+				{name: "Video with URL", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
+				{name: "Image with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Image without MIMEType", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
+				{name: "Audio with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Audio without MIMEType", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
+				{name: "Video with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Video without MIMEType", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
+				{name: "Image with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: nil}},
+				{name: "Audio with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}},
+				{name: "Video with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					_, err := cm.convOutputMedia([]schema.MessageOutputPart{tc.content})
+					assert.Error(t, err)
+				})
+			}
+		})
+	})
+}
+
+func TestThoughtSignatureRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{}})
+	assert.Nil(t, err)
+
+	// Test that thought signature is preserved through the round-trip
+	t.Run("convFC preserves thought signature", func(t *testing.T) {
+		signature := []byte("test_thought_signature_data")
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "test_function",
+				Args: map[string]any{"param": "value"},
+			},
+			ThoughtSignature: signature,
+		}
+
+		toolCall, err := convFC(part)
+		assert.NoError(t, err)
+		assert.NotNil(t, toolCall)
+		assert.Equal(t, "test_function", toolCall.Function.Name)
+
+		// Verify thought signature was stored
+		retrievedSig := getThoughtSignature(toolCall)
+		assert.Equal(t, signature, retrievedSig)
+	})
+
+	t.Run("convFC without thought signature", func(t *testing.T) {
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "test_function",
+				Args: map[string]any{"param": "value"},
+			},
+		}
+
+		toolCall, err := convFC(part)
+		assert.NoError(t, err)
+		assert.NotNil(t, toolCall)
+
+		// Verify no thought signature was stored
+		retrievedSig := getThoughtSignature(toolCall)
+		assert.Nil(t, retrievedSig)
+	})
+
+	t.Run("convSchemaMessage restores thought signature", func(t *testing.T) {
+		signature := []byte("restored_signature")
+		toolCall := &schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: `{"param":"value"}`,
+			},
+		}
+		setThoughtSignature(toolCall, signature)
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{*toolCall},
+		}
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// Verify thought signature was restored in the Part
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+		assert.Equal(t, "test_function", content.Parts[0].FunctionCall.Name)
+	})
+
+	t.Run("convSchemaMessage without thought signature", func(t *testing.T) {
+		toolCall := &schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: `{"param":"value"}`,
+			},
+		}
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{*toolCall},
+		}
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// Verify no thought signature in the Part when none was stored
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+	})
+}
+
+func TestCreatePrefixCache(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		defer mockey.Mock(genai.Caches.Create).Return(&genai.CachedContent{Name: "cached/basic"}, nil).Build().UnPatch()
+
+		prefixMsgs := []*schema.Message{{Role: schema.User, Content: "Hello"}}
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs)
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+	})
+
+	t.Run("cache_instruction_tools_messages", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		cm.cache = &CacheConfig{TTL: time.Minute}
+		cm.enableCodeExecution = true
+
+		var cacheConfig *genai.CreateCachedContentConfig
+		defer mockey.Mock(genai.Caches.Create).
+			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
+				cacheConfig = config
+				return &genai.CachedContent{Name: "cached/cache_instruction_tools_messages"}, nil
+			}).Build().Patch().UnPatch()
+
+		prefixMsgs := []*schema.Message{
+			{Role: schema.System, Content: "sys"},
+			{Role: schema.User, Content: "hello"},
+		}
+
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs,
+			model.WithTools([]*schema.ToolInfo{
+				{
+					Name:        "tool_a",
+					Desc:        "desc",
+					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+				},
+			}))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+		assert.Equal(t, "cached/cache_instruction_tools_messages", cache.Name)
+		assert.Equal(t, time.Minute, cacheConfig.TTL)
+
+		assert.Equal(t, "hello", cacheConfig.Contents[0].Parts[0].Text)
+
+		assert.NotNil(t, cacheConfig.SystemInstruction)
+		assert.Equal(t, "sys", cacheConfig.SystemInstruction.Parts[0].Text)
+
+		assert.NotNil(t, cacheConfig.Tools)
+		assert.Len(t, cacheConfig.Tools, 2)
+		assert.Equal(t, "tool_a", cacheConfig.Tools[0].FunctionDeclarations[0].Name)
+		assert.NotNil(t, cacheConfig.Tools[1].CodeExecution)
+
+	})
+
+	t.Run("cache_and_generate", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{
+			Models: &genai.Models{},
+			Caches: &genai.Caches{}},
+			Model: "test-model"})
+		assert.Nil(t, err)
+
+		cm.cache = &CacheConfig{TTL: time.Minute}
+		cm.enableCodeExecution = true
+
+		defer mockey.Mock(genai.Caches.Create).
+			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
+				return &genai.CachedContent{Name: "cached/cache_and_generate"}, nil
+			}).Build().Patch().UnPatch()
+
+		var generateConf *genai.GenerateContentConfig
+		defer mockey.Mock(genai.Models.GenerateContent).
+			To(func(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (
+				*genai.GenerateContentResponse, error) {
+				generateConf = config
+				return &genai.GenerateContentResponse{
+					Candidates: []*genai.Candidate{
+						{
+							Content: &genai.Content{
+								Role: "model",
+								Parts: []*genai.Part{
+									genai.NewPartFromText("bye too"),
+								},
+							},
+						},
+					},
+				}, nil
+			}).Build().Patch().UnPatch()
+
+		prefixMsgs := []*schema.Message{
+			{Role: schema.System, Content: "sys"},
+			{Role: schema.User, Content: "hello"},
+		}
+
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs,
+			model.WithTools([]*schema.ToolInfo{
+				{
+					Name:        "tool_a",
+					Desc:        "desc",
+					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+				},
+			}))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+
+		_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("bye")},
+			WithCachedContentName(cache.Name))
+		assert.NoError(t, err)
+
+		assert.Equal(t, "cached/cache_and_generate", generateConf.CachedContent)
+		assert.Nil(t, generateConf.SystemInstruction)
+		assert.Len(t, generateConf.Tools, 0)
+	})
 }

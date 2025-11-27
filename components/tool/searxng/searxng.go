@@ -107,8 +107,8 @@ const (
 )
 
 type SearchRequest struct {
-	Query  string `json:"query" jsonschema:"required,description=The search query. This is the main input for the web search"`
-	PageNo *int   `json:"pageno" jsonschema:"description=The page number of the search results. Default is 1"`
+	Query  string `json:"query" jsonschema:"required" jsonschema_description:"The search query. This is the main input for the web search"`
+	PageNo *int   `json:"pageno" jsonschema_description:"The page number of the search results. Default is 1"`
 }
 
 func (s *SearchRequest) validate() error {
@@ -228,16 +228,16 @@ func validateEngines(engines []Engine) error {
 }
 
 type SearchResult struct {
-	Title   string `json:"title" jsonschema:"description=The title of the search result"`
-	Content string `json:"content" jsonschema:"description=The content of the search result"`
-	URL     string `json:"url" jsonschema:"description=The URL of the search result"`
-	Engine  string `json:"engine" jsonschema:"description=The engine of the search result"`
+	Title   string `json:"title" jsonschema_description:"The title of the search result"`
+	Content string `json:"content" jsonschema_description:"The content of the search result"`
+	URL     string `json:"url" jsonschema_description:"The URL of the search result"`
+	Engine  string `json:"engine" jsonschema_description:"The engine of the search result"`
 }
 
 type SearchResponse struct {
-	Query           string          `json:"query" jsonschema:"description=The query of the search"`
-	NumberOfResults int             `json:"number_of_results" jsonschema:"description=The number of results of the search"`
-	Results         []*SearchResult `json:"results"  jsonschema:"description=The results of the search"`
+	Query           string          `json:"query" jsonschema_description:"The query of the search"`
+	NumberOfResults int             `json:"number_of_results" jsonschema_description:"The number of results of the search"`
+	Results         []*SearchResult `json:"results"  jsonschema_description:"The results of the search"`
 }
 
 type SearxngClient struct {

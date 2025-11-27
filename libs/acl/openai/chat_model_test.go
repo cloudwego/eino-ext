@@ -21,11 +21,10 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
-	goopenai "github.com/meguminnnnnnnnn/go-openai"
-	"github.com/stretchr/testify/assert"
-
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	openai "github.com/meguminnnnnnnnn/go-openai"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestToXXXUtils(t *testing.T) {
@@ -61,29 +60,29 @@ func TestToXXXUtils(t *testing.T) {
 		mc, err := toOpenAIMultiContent(multiContents)
 		assert.NoError(t, err)
 		assert.Len(t, mc, 4)
-		assert.Equal(t, mc[0], goopenai.ChatMessagePart{
-			Type: goopenai.ChatMessagePartTypeText,
+		assert.Equal(t, mc[0], openai.ChatMessagePart{
+			Type: openai.ChatMessagePartTypeText,
 			Text: "image_desc",
 		})
 
-		assert.Equal(t, mc[1], goopenai.ChatMessagePart{
-			Type: goopenai.ChatMessagePartTypeImageURL,
-			ImageURL: &goopenai.ChatMessageImageURL{
+		assert.Equal(t, mc[1], openai.ChatMessagePart{
+			Type: openai.ChatMessagePartTypeImageURL,
+			ImageURL: &openai.ChatMessageImageURL{
 				URL:    "test_url",
-				Detail: goopenai.ImageURLDetailAuto,
+				Detail: openai.ImageURLDetailAuto,
 			},
 		})
 
-		assert.Equal(t, mc[2], goopenai.ChatMessagePart{
-			Type: goopenai.ChatMessagePartTypeInputAudio,
-			InputAudio: &goopenai.ChatMessageInputAudio{
+		assert.Equal(t, mc[2], openai.ChatMessagePart{
+			Type: openai.ChatMessagePartTypeInputAudio,
+			InputAudio: &openai.ChatMessageInputAudio{
 				Data:   "test_url",
 				Format: "mp3",
 			},
 		})
-		assert.Equal(t, mc[3], goopenai.ChatMessagePart{
-			Type: goopenai.ChatMessagePartTypeVideoURL,
-			VideoURL: &goopenai.ChatMessageVideoURL{
+		assert.Equal(t, mc[3], openai.ChatMessagePart{
+			Type: openai.ChatMessagePartTypeVideoURL,
+			VideoURL: &openai.ChatMessageVideoURL{
 				URL: "test_url",
 			},
 		})
@@ -150,12 +149,12 @@ func TestLogProbs(t *testing.T) {
 				},
 			},
 		},
-	}}, toLogProbs(&goopenai.LogProbs{Content: []goopenai.LogProb{
+	}}, toLogProbs(&openai.LogProbs{Content: []openai.LogProb{
 		{
 			Token:   "1",
 			LogProb: 1,
 			Bytes:   []byte{'a'},
-			TopLogProbs: []goopenai.TopLogProbs{
+			TopLogProbs: []openai.TopLogProbs{
 				{
 					Token:   "2",
 					LogProb: 2,
@@ -239,4 +238,301 @@ func TestToTools(t *testing.T) {
 		assert.True(t, ok)
 		assert.Equal(t, []string{"457", "458", "459"}, props.Items.Required)
 	})
+}
+
+func TestBuildMessages(t *testing.T) {
+	t.Run("buildMessageFromAssistantGenMultiContent", func(t *testing.T) {
+		t.Run("success with audio", func(t *testing.T) {
+			mockey.PatchConvey("mock GetMessageOutputAudioID", t, func() {
+				mockey.Mock(getMessageOutputAudioID).Return("audio-id-123", true).Build()
+				inMsg := &schema.Message{
+					Role: schema.Assistant,
+					Name: "test-assistant",
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: "some text",
+						},
+						{
+							Type:  schema.ChatMessagePartTypeAudioURL,
+							Audio: &schema.MessageOutputAudio{},
+						},
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: "this should be ignored",
+						},
+					},
+				}
+				msg, err := buildMessageFromAssistantGenMultiContent(inMsg)
+				assert.NoError(t, err)
+				assert.Equal(t, openai.ChatMessageRoleAssistant, msg.Role)
+				assert.Equal(t, "test-assistant", msg.Name)
+				assert.NotNil(t, msg.Audio)
+				assert.Equal(t, "audio-id-123", msg.Audio.ID)
+				assert.Empty(t, msg.MultiContent, "MultiContent should be empty when audio is present")
+			})
+		})
+
+		t.Run("success with text only", func(t *testing.T) {
+			inMsg := &schema.Message{
+				Role: schema.Assistant,
+				Name: "test-assistant",
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "some text",
+					},
+				},
+			}
+			msg, err := buildMessageFromAssistantGenMultiContent(inMsg)
+			assert.NoError(t, err)
+			assert.Equal(t, openai.ChatMessageRoleAssistant, msg.Role)
+			assert.Nil(t, msg.Audio)
+			assert.Len(t, msg.MultiContent, 1)
+			assert.Equal(t, "some text", msg.MultiContent[0].Text)
+		})
+
+		t.Run("error on getting audio id", func(t *testing.T) {
+			mockey.PatchConvey("mock GetMessageOutputAudioID failure", t, func() {
+				mockey.Mock(getMessageOutputAudioID).Return("", false).Build()
+				inMsg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{
+							Type:  schema.ChatMessagePartTypeAudioURL,
+							Audio: &schema.MessageOutputAudio{},
+						},
+					},
+				}
+				_, err := buildMessageFromAssistantGenMultiContent(inMsg)
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), "failed to get audio ID")
+			})
+		})
+
+		t.Run("error on unsupported part type", func(t *testing.T) {
+			inMsg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type: "unsupported-type",
+					},
+				},
+			}
+			_, err := buildMessageFromAssistantGenMultiContent(inMsg)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported chat message part type")
+		})
+	})
+
+	t.Run("buildMessageFromMultiContent", func(t *testing.T) {
+		t.Run("success", func(t *testing.T) {
+			inMsg := &schema.Message{
+				Role:    schema.System,
+				Content: "system prompt",
+				MultiContent: []schema.ChatMessagePart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "hello world",
+					},
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						ImageURL: &schema.ChatMessageImageURL{
+							URL: "http://example.com/image.png",
+						},
+					},
+				},
+				Name: "test-system",
+			}
+			msg, err := buildMessageFromMultiContent(inMsg)
+			assert.NoError(t, err)
+			assert.Equal(t, openai.ChatMessageRoleSystem, msg.Role)
+			assert.Equal(t, "system prompt", msg.Content)
+			assert.Equal(t, "test-system", msg.Name)
+			assert.Len(t, msg.MultiContent, 2)
+			assert.Equal(t, openai.ChatMessagePartTypeText, msg.MultiContent[0].Type)
+			assert.Equal(t, "hello world", msg.MultiContent[0].Text)
+			assert.Equal(t, openai.ChatMessagePartTypeImageURL, msg.MultiContent[1].Type)
+			assert.Equal(t, "http://example.com/image.png", msg.MultiContent[1].ImageURL.URL)
+		})
+
+		t.Run("error from toOpenAIMultiContent", func(t *testing.T) {
+			inMsg := &schema.Message{
+				Role: schema.User,
+				MultiContent: []schema.ChatMessagePart{
+					{
+						Type: "invalid-type", // This will cause toOpenAIMultiContent to fail
+					},
+				},
+			}
+			_, err := buildMessageFromMultiContent(inMsg)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported chat message part type")
+		})
+	})
+}
+
+func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
+	mockey.PatchConvey("TestBuildMessageFromUserInputMultiContent", t, func() {
+		base64Data := "base64data"
+		text := "hello"
+
+		tests := []struct {
+			name    string
+			inMsg   *schema.Message
+			want    openai.ChatCompletionMessage
+			wantErr bool
+		}{
+			{
+				name: "success",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: text,
+						},
+						{
+							Type: schema.ChatMessagePartTypeImageURL,
+							Image: &schema.MessageInputImage{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: &base64Data,
+									MIMEType:   "image/png",
+								},
+								Detail: schema.ImageURLDetailHigh,
+							},
+						},
+						{
+							Type: schema.ChatMessagePartTypeAudioURL,
+							Audio: &schema.MessageInputAudio{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: &base64Data,
+									MIMEType:   "audio/wav",
+								},
+							},
+						},
+						{
+							Type: schema.ChatMessagePartTypeVideoURL,
+							Video: &schema.MessageInputVideo{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: &base64Data,
+									MIMEType:   "video/mp4",
+								},
+							},
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleUser,
+					MultiContent: []openai.ChatMessagePart{
+						{
+							Type: openai.ChatMessagePartTypeText,
+							Text: text,
+						},
+						{
+							Type: openai.ChatMessagePartTypeImageURL,
+							ImageURL: &openai.ChatMessageImageURL{
+								URL:    "data:image/png;base64,base64data",
+								Detail: openai.ImageURLDetailHigh,
+							},
+						},
+						{
+							Type: openai.ChatMessagePartTypeInputAudio,
+							InputAudio: &openai.ChatMessageInputAudio{
+								Data:   base64Data,
+								Format: "wav",
+							},
+						},
+						{
+							Type: openai.ChatMessagePartTypeVideoURL,
+							VideoURL: &openai.ChatMessageVideoURL{
+								URL: "data:video/mp4;base64,base64data",
+							},
+						},
+					},
+				},
+			},
+			{
+				name: "unsupported type",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: "unsupported",
+						},
+					},
+				},
+				wantErr: true,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				got, err := buildMessageFromUserInputMultiContent(tt.inMsg)
+				if tt.wantErr {
+					assert.Error(t, err)
+				} else {
+					assert.NoError(t, err)
+				}
+				assert.Equal(t, tt.want, got)
+			})
+		}
+	})
+}
+
+func Test_newStreamMessageBuilder(t *testing.T) {
+	audio := &Audio{Format: "mp3"}
+	builder := newStreamMessageBuilder(audio)
+	assert.Equal(t, audio, builder.audioCfg)
+}
+
+func Test_streamMessageBuilder_setOutputMessageAudio(t *testing.T) {
+	builder := newStreamMessageBuilder(&Audio{Format: "mp3"})
+	msg := &schema.Message{}
+	audio := &openai.Audio{
+		ID:         "audio-id",
+		Data:       "audio-data",
+		Transcript: "audio-transcript",
+	}
+
+	err := builder.setOutputMessageAudio(msg, audio)
+	assert.NoError(t, err)
+	assert.Equal(t, "audio-id", builder.audioID)
+	assert.Len(t, msg.AssistantGenMultiContent, 1)
+	assert.Equal(t, schema.ChatMessagePartTypeAudioURL, msg.AssistantGenMultiContent[0].Type)
+	assert.NotNil(t, msg.AssistantGenMultiContent[0].Audio)
+	aID, ok := getMessageOutputAudioID(msg.AssistantGenMultiContent[0].Audio)
+	assert.True(t, ok)
+	assert.Equal(t, audioID("audio-id"), aID)
+	assert.Equal(t, "audio-data", *msg.AssistantGenMultiContent[0].Audio.Base64Data)
+	assert.Equal(t, "audio/mpeg", msg.AssistantGenMultiContent[0].Audio.MIMEType)
+	transcript, ok := GetMessageOutputAudioTranscript(msg.AssistantGenMultiContent[0].Audio)
+	assert.True(t, ok)
+	assert.Equal(t, "audio-transcript", transcript)
+}
+
+func Test_streamMessageBuilder_build(t *testing.T) {
+	builder := newStreamMessageBuilder(&Audio{Format: "mp3"})
+	resp := openai.ChatCompletionStreamResponse{
+		Choices: []openai.ChatCompletionStreamChoice{
+			{
+				Index: 0,
+				Delta: openai.ChatCompletionStreamChoiceDelta{
+					Role:    "assistant",
+					Content: "hello",
+					Audio: &openai.Audio{
+						ID:   "audio-id",
+						Data: "audio-data",
+					},
+				},
+			},
+		},
+	}
+
+	msg, found, err := builder.build(resp)
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.NotNil(t, msg)
+	assert.Equal(t, schema.Assistant, msg.Role)
+	assert.Equal(t, "hello", msg.Content)
+	assert.Len(t, msg.AssistantGenMultiContent, 1)
 }

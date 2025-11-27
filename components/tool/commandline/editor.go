@@ -295,15 +295,15 @@ func (e *StrReplaceEditor) view(ctx context.Context, path string, viewRange []in
 
 // Display directory content
 func (e *StrReplaceEditor) viewDirectory(ctx context.Context, path string) (string, error) {
-	findCmd := fmt.Sprintf("find %s -maxdepth 2 -not -path '*/\\.*'", path)
+	findCmd := []string{"find", path, "-maxdepth", "2", "-not", "-path", "*/\\.*"}
 
 	// Use operator to execute command
-	stdout, err := e.operator.RunCommand(ctx, findCmd)
+	cmdOutput, err := e.operator.RunCommand(ctx, findCmd)
 	if err != nil {
 		return "", err
 	}
 
-	return stdout, nil
+	return cmdOutput.Stdout, nil
 }
 
 // Display file content, optionally specifying line range

@@ -37,9 +37,23 @@ func TestTool(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "name", info.Name)
 
-	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "{\"input\": \"123\"}")
+	options := []tool.Option{
+		WithCustomHeaders(map[string]string{"key": "value"}),
+	}
+
+	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "{\"input\": \"123\"}", options...)
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}", result)
+
+	tools, err = GetTools(ctx, &Config{
+		Cli:           cli,
+		ToolNameList:  []string{"name"},
+		CustomHeaders: map[string]string{"key": "value"},
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, len(tools))
+	helper := tools[0].(*toolHelper)
+	assert.Equal(t, map[string]string{"key": "value"}, helper.customHeaders)
 }
 
 type mockMCPClient struct{}

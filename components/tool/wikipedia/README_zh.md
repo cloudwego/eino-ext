@@ -108,7 +108,7 @@ type Config struct {
 ```go
 type SearchRequest struct {
     // Query 是搜索的查询字符串。
-    Query string `json:"query" jsonschema:"description=The query to search the web for"`
+    Query string `json:"query" jsonschema_description:"The query to search the web for"`
 }
 ```
 
@@ -117,17 +117,17 @@ type SearchRequest struct {
 ```go
 type SearchResponse struct {
     // Results 是搜索结果的列表。
-    Results []*Result `json:"results" jsonschema:"description=The results of the search"`
+    Results []*Result `json:"results" jsonschema_description:"The results of the search"`
 }
 type SearchResult struct {
     // Title 是搜索结果的标题。 
-    Title   string `json:"title" jsonschema:"description=The title of the search result"`
+    Title   string `json:"title" jsonschema_description:"The title of the search result"`
     // URL 是搜索结果的 URL。 
-    URL     string `json:"url" jsonschema:"description=The url of the search result"`
+    URL     string `json:"url" jsonschema_description:"The url of the search result"`
     // Extract 是搜索结果的摘要。
-    Extract string `json:"extract" jsonschema:"description=The extract of the search result"`
+    Extract string `json:"extract" jsonschema_description:"The extract of the search result"`
     // Snippet 是搜索结果的片段。
-    Snippet string `json:"snippet" jsonschema:"description=The snippet of the search result"`
+    Snippet string `json:"snippet" jsonschema_description:"The snippet of the search result"`
 }
 ```
 

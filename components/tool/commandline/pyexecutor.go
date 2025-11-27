@@ -89,19 +89,19 @@ type Input struct {
 	Code string `json:"code"`
 }
 
-func (p *PyExecutor) Execute(ctx context.Context, args *Input) (string, error) {
+func (p *PyExecutor) Execute(ctx context.Context, args *Input) (*CommandOutput, error) {
 	fileName := uuid.New().String() + ".py"
 	err := p.operator.WriteFile(ctx, fileName, args.Code)
 	if err != nil {
-		return "", fmt.Errorf("failed to create python file: %w", err)
+		return nil, fmt.Errorf("failed to create python file: %w", err)
 	}
 
-	result, err := p.operator.RunCommand(ctx, p.command+" "+fileName)
+	cmdOutput, err := p.operator.RunCommand(ctx, []string{p.command, fileName})
 	if err != nil {
-		return "", fmt.Errorf("execute error: %w", err)
+		return nil, fmt.Errorf("execute error: %w", err)
 	}
 
-	return result, nil
+	return cmdOutput, nil
 }
 
 func (p *PyExecutor) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
@@ -114,8 +114,8 @@ func (p *PyExecutor) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	if err != nil {
 		return "", fmt.Errorf("execute error: %w", err)
 	}
-	if len(result) == 0 {
+	if len(result.Stdout) == 0 {
 		return "", errors.New("execute result is empty")
 	}
-	return result, nil
+	return result.Stdout, nil
 }

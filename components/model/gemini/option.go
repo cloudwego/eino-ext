@@ -18,7 +18,6 @@ package gemini
 
 import (
 	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino/components/model"
@@ -26,20 +25,16 @@ import (
 
 type options struct {
 	TopK               *int32
-	ResponseSchema     *openapi3.Schema
 	ResponseJSONSchema *jsonschema.Schema
 	ThinkingConfig     *genai.ThinkingConfig
+	ResponseModalities []GeminiResponseModality
+
+	CachedContentName string
 }
 
 func WithTopK(k int32) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.TopK = &k
-	})
-}
-
-func WithResponseSchema(s *openapi3.Schema) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.ResponseSchema = s
 	})
 }
 
@@ -52,5 +47,19 @@ func WithResponseJSONSchema(s *jsonschema.Schema) model.Option {
 func WithThinkingConfig(t *genai.ThinkingConfig) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ThinkingConfig = t
+	})
+}
+
+func WithResponseModalities(m []GeminiResponseModality) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseModalities = m
+	})
+}
+
+// WithCachedContentName the name of the content cached to use as context to serve the prediction.
+// Format: cachedContents/{cachedContent}
+func WithCachedContentName(name string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.CachedContentName = name
 	})
 }

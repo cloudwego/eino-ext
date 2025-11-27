@@ -76,21 +76,21 @@ type Config struct {
 ### 请求 Schema
 ```go
 type SearchRequest struct {
-    Query string `json:"query" jsonschema:"description=要搜索的查询内容"`
-    Page  int    `json:"page" jsonschema:"description=要搜索的页码，默认：1"`
+    Query string `json:"query" jsonschema_description:"the query content to search for"`
+    Page  int    `json:"page" jsonschema_description:"Page number to search, default: 1"`
 }
 ```
 
 ### 响应 Schema
 ```go
 type SearchResponse struct {
-    Results []SearchResult `json:"results" jsonschema:"description=搜索结果列��"`
+    Results []SearchResult `json:"results" jsonschema_description:"Search results list"`
 }
 
 type SearchResult struct {
-    Title       string `json:"title" jsonschema:"description=搜索结果的标题"`
-    Description string `json:"description" jsonschema:"description=搜索结果的描述"`
-    Link        string `json:"link" jsonschema:"description=搜索结果的链接"`
+    Title       string `json:"title" jsonschema_description:"The title of the search result"`
+    Description string `json:"description" jsonschema_description:"Description of the search results"`
+    Link        string `json:"link" jsonschema_description:"Links to search results"`
 }
 ```
 

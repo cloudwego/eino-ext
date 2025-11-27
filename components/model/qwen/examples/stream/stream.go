@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -31,11 +31,12 @@ func main() {
 	ctx := context.Background()
 	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
 	apiKey := os.Getenv("DASHSCOPE_API_KEY")
+	modelName := os.Getenv("MODEL_NAME")
 	cm, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
 		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
 		APIKey:      apiKey,
 		Timeout:     0,
-		Model:       "qwen-max",
+		Model:       modelName,
 		MaxTokens:   of(2048),
 		Temperature: of(float32(0.7)),
 		TopP:        of(float32(0.7)),

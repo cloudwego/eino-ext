@@ -125,18 +125,18 @@ type ddgs struct {
 }
 
 type SearchRequest struct {
-	Query string `json:"query" jsonschema:"description=The query to search the web for"`
-	Page  int    `json:"page" jsonschema:"description=The page number to search for, default: 1"`
+	Query string `json:"query" jsonschema_description:"The query to search the web for"`
+	Page  int    `json:"page" jsonschema_description:"The page number to search for, default: 1"`
 }
 
 type SearchResult struct {
-	Title       string `json:"title" jsonschema:"description=The title of the search result"`
-	Description string `json:"description" jsonschema:"description=The description of the search result"`
-	Link        string `json:"link" jsonschema:"description=The link of the search result"`
+	Title       string `json:"title" jsonschema_description:"The title of the search result"`
+	Description string `json:"description" jsonschema_description:"The description of the search result"`
+	Link        string `json:"link" jsonschema_description:"The link of the search result"`
 }
 
 type SearchResponse struct {
-	Results []*SearchResult `json:"results" jsonschema:"description=The results of the search"`
+	Results []*SearchResult `json:"results" jsonschema_description:"The results of the search"`
 }
 
 func (d *ddgs) Search(ctx context.Context, request *SearchRequest) (*SearchResponse, error) {

@@ -24,8 +24,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/openai/openai-go/option"
-	"github.com/openai/openai-go/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
@@ -141,6 +139,10 @@ type ChatModelConfig struct {
 	// ServiceTier specifies whether to use the TPM guarantee package. The effective target has purchased the inference access point for the guarantee package.
 	ServiceTier *string `json:"service_tier"`
 
+	// ReasoningEffort specifies the reasoning effort of the model.
+	// Optional.
+	ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
+
 	Cache *CacheConfig `json:"cache,omitempty"`
 }
 
@@ -159,36 +161,6 @@ type CacheConfig struct {
 	// Optional.
 	SessionCache *SessionCacheConfig `json:"session_cache,omitempty"`
 }
-
-type SessionCacheConfig struct {
-	// EnableCache specifies whether to enable session cache.
-	// If enabled, the model will cache each conversation and reuse it for subsequent requests.
-	EnableCache bool `json:"enable_cache"`
-
-	// TTL specifies the survival time of cached data in seconds, with a maximum of 3 * 86400(3 days).
-	TTL int `json:"ttl"`
-}
-
-type APIType string
-
-const (
-	// To learn more about ContextAPI, see https://www.volcengine.com/docs/82379/1528789
-	ContextAPI APIType = "context_api"
-	// To learn more about ResponsesAPI, see https://www.volcengine.com/docs/82379/1569618
-	ResponsesAPI APIType = "responses_api"
-)
-
-type ResponseFormat struct {
-	Type       model.ResponseFormatType                       `json:"type"`
-	JSONSchema *model.ResponseFormatJSONSchemaJSONSchemaParam `json:"json_schema,omitempty"`
-}
-
-type caching string
-
-const (
-	cachingEnabled  caching = "enabled"
-	cachingDisabled caching = "disabled"
-)
 
 func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
 	if config == nil {
@@ -260,6 +232,7 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		thinking:         config.Thinking,
 		cache:            config.Cache,
 		serviceTier:      config.ServiceTier,
+		reasoningEffort:  config.ReasoningEffort,
 	}
 
 	return cm
@@ -271,32 +244,41 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 			return nil, err
 		}
 	}
+	var opts []arkruntime.ConfigOption
 
-	var opts []option.RequestOption
+	if config.Region == "" {
+		opts = append(opts, arkruntime.WithRegion(defaultRegion))
+	} else {
+		opts = append(opts, arkruntime.WithRegion(config.Region))
+	}
 
 	if config.Timeout != nil {
-		opts = append(opts, option.WithRequestTimeout(*config.Timeout))
+		opts = append(opts, arkruntime.WithTimeout(*config.Timeout))
 	} else {
-		opts = append(opts, option.WithRequestTimeout(defaultTimeout))
+		opts = append(opts, arkruntime.WithTimeout(defaultTimeout))
 	}
 	if config.HTTPClient != nil {
-		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
 	}
 	if config.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(config.BaseURL))
+		opts = append(opts, arkruntime.WithBaseUrl(config.BaseURL))
 	} else {
-		opts = append(opts, option.WithBaseURL(defaultBaseURL))
+		opts = append(opts, arkruntime.WithBaseUrl(defaultBaseURL))
 	}
 	if config.RetryTimes != nil {
-		opts = append(opts, option.WithMaxRetries(*config.RetryTimes))
+		opts = append(opts, arkruntime.WithRetryTimes(*config.RetryTimes))
 	} else {
-		opts = append(opts, option.WithMaxRetries(defaultRetryTimes))
-	}
-	if config.APIKey != "" {
-		opts = append(opts, option.WithAPIKey(config.APIKey))
+		opts = append(opts, arkruntime.WithRetryTimes(defaultRetryTimes))
 	}
 
-	client := responses.NewResponseService(opts...)
+	var client *arkruntime.Client
+	if len(config.APIKey) > 0 {
+		client = arkruntime.NewClientWithApiKey(config.APIKey, opts...)
+	} else if config.AccessKey != "" && config.SecretKey != "" {
+		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
+	} else {
+		return nil, fmt.Errorf("new client fail, missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
+	}
 
 	cm := &responsesAPIChatModel{
 		client:         client,
@@ -310,22 +292,15 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 		cache:          config.Cache,
 		serviceTier:    config.ServiceTier,
 	}
-
 	return cm, nil
 }
 
 func checkResponsesAPIConfig(config *ChatModelConfig) error {
-	if config.Region != "" {
-		return fmt.Errorf("'Region' is not supported by ResponsesAPI")
+
+	if config.APIKey == "" && (config.AccessKey == "" && config.SecretKey == "") {
+		return fmt.Errorf("missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
 	}
-	if config.APIKey == "" {
-		if config.AccessKey != "" {
-			return fmt.Errorf("'AccessKey' is not supported by ResponsesAPI")
-		}
-		if config.SecretKey != "" {
-			return fmt.Errorf("'SecretKey' is not supported by ResponsesAPI")
-		}
-	}
+
 	if len(config.Stop) > 0 {
 		return fmt.Errorf("'Stop' is not supported by ResponsesAPI")
 	}
@@ -356,8 +331,10 @@ type ChatModel struct {
 }
 
 type CacheInfo struct {
-	// ContextID specifies the id of prefix that can be used with [WithCache] option.
+	// ContextID return by ContextAPI, it's specifies the id of prefix that can be used with [WithCache.ContextID] option.
 	ContextID string
+	// ResponseID return by ResponsesAPI, it's specifies the id of prefix that can be used with [WithCache.HeadPreviousResponseID] option.
+	ResponseID string
 	// Usage specifies the token usage of prefix
 	Usage schema.TokenUsage
 }
@@ -441,13 +418,17 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 		return nil, fmt.Errorf("failed to convert to ark responsesAPI tools: %w", err)
 	}
 
+	tc := schema.ToolChoiceAllowed
+
 	ncm := *cm.chatModel
 	ncm.rawTools = tools
 	ncm.tools = arkTools
+	ncm.toolChoice = &tc
 
 	nrcm := *cm.respChatModel
 	nrcm.rawTools = tools
 	nrcm.tools = respTools
+	nrcm.toolChoice = &tc
 
 	return &ChatModel{
 		chatModel:     &ncm,
@@ -456,6 +437,30 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) (err error) {
+	if err = cm.tryBindTools(tools); err != nil {
+		return err
+	}
+
+	tc := schema.ToolChoiceAllowed
+	cm.chatModel.toolChoice = &tc
+	cm.respChatModel.toolChoice = &tc
+
+	return nil
+}
+
+func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) (err error) {
+	if err = cm.tryBindTools(tools); err != nil {
+		return err
+	}
+
+	tc := schema.ToolChoiceForced
+	cm.chatModel.toolChoice = &tc
+	cm.respChatModel.toolChoice = &tc
+
+	return nil
+}
+
+func (cm *ChatModel) tryBindTools(tools []*schema.ToolInfo) (err error) {
 	if len(tools) == 0 {
 		return errors.New("no tools to bind")
 	}
@@ -502,10 +507,9 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 //
 // Note:
 //   - It is unavailable for doubao models of version 1.6 and above.
-//   - Currently, only supports calling by ContextAPI.
-func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int) (info *CacheInfo, err error) {
+func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int, opts ...fmodel.Option) (info *CacheInfo, err error) {
 	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
-		return nil, fmt.Errorf("CreatePrefixCache is not supported by ResponsesAPI")
+		return cm.respChatModel.createPrefixCacheByResponseAPI(ctx, prefix, ttl, opts...)
 	}
 	return cm.createContextByContextAPI(ctx, prefix, ttl, model.ContextModeCommonPrefix, nil)
 }
@@ -551,7 +555,7 @@ func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*sc
 		TruncationStrategy: truncation,
 	}
 	for _, msg := range prefix {
-		content, err := cm.chatModel.toArkContent(msg.Content, msg.MultiContent)
+		content, err := cm.chatModel.toArkContent(msg)
 		if err != nil {
 			return nil, fmt.Errorf("convert message fail: %w", err)
 		}

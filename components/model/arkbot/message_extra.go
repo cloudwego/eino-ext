@@ -17,20 +17,26 @@
 package arkbot
 
 import (
-	"encoding/gob"
-
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 const (
-	keyOfRequestID           = "ark-request-id"
+	// Deprecated: use keyOfBotRequestID instead
+	keyOfRequestID    = "ark-request-id"
+	keyOfBotRequestID = "ark-bot-request-id"
+
+	// Deprecated: use keyOfBotReasoningContent instead
 	keyOfReasoningContent    = "ark-reasoning-content"
-	keyOfBotUsage            = "ark-bot-usage"
-	keyOfReferences          = "ark-references"
-	keyOfGroupChatConfig     = "ark-group-chat-config"
-	keyOfTargetCharacterName = "ark-target-character-name"
+	keyOfBotReasoningContent = "ark-bot-reasoning-content"
+
+	keyOfBotUsage = "ark-bot-usage"
+
+	// Deprecated: use keyOfBotReferences instead
+	keyOfReferences    = "ark-references"
+	keyOfBotReferences = "ark-bot-references"
 )
 
 type arkRequestID string
@@ -62,85 +68,73 @@ func init() {
 		return ret, nil
 	})
 
-	_ = compose.RegisterSerializableType[arkRequestID]("_eino_ext_ark_request_id")
-	gob.RegisterName("_eino_ext_ark_request_id", arkRequestID(""))
-	_ = compose.RegisterSerializableType[model.BotUsage]("_eino_ext_ark_bot_usage")
-	gob.RegisterName("_eino_ext_ark_bot_usage", &model.BotUsage{})
-	_ = compose.RegisterSerializableType[model.BotChatResultReference]("_eino_ext_ark_bot_chat_result_reference")
-	gob.RegisterName("_eino_ext_ark_bot_chat_result_reference", &model.BotChatResultReference{})
-	_ = compose.RegisterSerializableType[model.BotCoverImage]("_eino_ext_ark_bot_cover_image")
-	gob.RegisterName("_eino_ext_ark_bot_cover_image", &model.BotCoverImage{})
+	schema.RegisterName[arkRequestID]("_eino_ext_ark_bot_request_id")
+	schema.RegisterName[*model.BotUsage]("_eino_ext_ark_bot_usage")
+	schema.RegisterName[*model.BotChatResultReference]("_eino_ext_ark_bot_chat_result_reference")
+	schema.RegisterName[*model.BotCoverImage]("_eino_ext_ark_bot_cover_image")
 }
 
 func setArkRequestID(msg *schema.Message, id string) {
-	if msg == nil {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = map[string]interface{}{}
-	}
-	msg.Extra[keyOfRequestID] = arkRequestID(id)
+	setMsgExtra(msg, keyOfBotRequestID, arkRequestID(id))
 }
 
 func GetArkRequestID(msg *schema.Message) string {
-	reqID, ok := msg.Extra[keyOfRequestID].(arkRequestID)
-	if !ok {
-		return ""
+	reqID, ok := getMsgExtraValue[arkRequestID](msg, keyOfBotRequestID)
+	if ok {
+		return string(reqID)
 	}
+	reqID, _ = getMsgExtraValue[arkRequestID](msg, keyOfRequestID)
 	return string(reqID)
 }
 
 func setReasoningContent(msg *schema.Message, rc string) {
-	if msg == nil {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
-	}
-	msg.Extra[keyOfReasoningContent] = rc
+	setMsgExtra(msg, keyOfBotReasoningContent, rc)
 }
 
 func GetReasoningContent(msg *schema.Message) (string, bool) {
-	reasoningContent, ok := msg.Extra[keyOfReasoningContent].(string)
-	if !ok {
-		return "", false
+	reason, ok := getMsgExtraValue[string](msg, keyOfBotReasoningContent)
+	if ok {
+		return reason, true
 	}
-
-	return reasoningContent, true
+	return getMsgExtraValue[string](msg, keyOfReasoningContent)
 }
 
 func setBotUsage(msg *schema.Message, bu *model.BotUsage) {
-	if msg == nil {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
-	}
-	msg.Extra[keyOfBotUsage] = bu
+	setMsgExtra(msg, keyOfBotUsage, bu)
 }
 
 func GetBotUsage(msg *schema.Message) (*model.BotUsage, bool) {
-	if msg == nil {
-		return nil, false
-	}
-	bu, ok := msg.Extra[keyOfBotUsage].(*model.BotUsage)
-	return bu, ok
+	return getMsgExtraValue[*model.BotUsage](msg, keyOfBotUsage)
 }
 
 func setBotChatResultReference(msg *schema.Message, rc []*model.BotChatResultReference) {
+	setMsgExtra(msg, keyOfBotReferences, rc)
+}
+
+func GetBotChatResultReference(msg *schema.Message) ([]*model.BotChatResultReference, bool) {
+	ref, ok := getMsgExtraValue[[]*model.BotChatResultReference](msg, keyOfBotReferences)
+	if ok {
+		return ref, ok
+	}
+	// compatible with historical logic
+	return getMsgExtraValue[[]*model.BotChatResultReference](msg, keyOfReferences)
+}
+
+func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {
+	if msg == nil {
+		var t T
+		return t, false
+	}
+	val, ok := msg.Extra[key].(T)
+	return val, ok
+}
+
+func setMsgExtra(msg *schema.Message, key string, value any) {
 	if msg == nil {
 		return
 	}
 	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
+		msg.Extra = make(map[string]any)
 	}
-	msg.Extra[keyOfReferences] = rc
-}
-
-func GetBotChatResultReference(msg *schema.Message) ([]*model.BotChatResultReference, bool) {
-	if msg == nil {
-		return nil, false
-	}
-	ref, ok := msg.Extra[keyOfReferences].([]*model.BotChatResultReference)
-	return ref, ok
+	msg.Extra[key] = value
 }
