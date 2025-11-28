@@ -881,7 +881,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 
 	builder := newStreamMessageBuilder(c.config.Audio)
 
-	go func() {
+	go func(ctx_ context.Context) {
 		defer func() {
 			panicErr := recover()
 			_ = stream.Close()
@@ -899,7 +899,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			chunk, chunkErr := stream.Recv()
 			if errors.Is(chunkErr, io.EOF) {
 				if specOptions.ResponseChunkMessageModifier != nil {
-					lastEmptyMsg, err = specOptions.ResponseChunkMessageModifier(ctx, lastEmptyMsg, nil, true)
+					lastEmptyMsg, err = specOptions.ResponseChunkMessageModifier(ctx_, lastEmptyMsg, nil, true)
 					if err != nil {
 						sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
 						return
@@ -954,7 +954,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			lastEmptyMsg = nil
 
 			if specOptions.ResponseChunkMessageModifier != nil {
-				msg, err = specOptions.ResponseChunkMessageModifier(ctx, msg, chunk.RawBody, false)
+				msg, err = specOptions.ResponseChunkMessageModifier(ctx_, msg, chunk.RawBody, false)
 				if err != nil {
 					sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
 					return
@@ -972,7 +972,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			}
 		}
 
-	}()
+	}(ctx)
 
 	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
 		func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
