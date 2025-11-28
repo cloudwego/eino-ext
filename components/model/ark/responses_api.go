@@ -383,7 +383,7 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 		for i := len(in) - 1; i >= 0; i-- {
 			msg := in[i]
 			inputIdx = i
-			if expireAtSec, ok := getCacheExpiration(msg); !ok || expireAtSec < now {
+			if expireAtSec, ok := GetCacheExpiration(msg); !ok || expireAtSec < now {
 				continue
 			}
 			if id, ok := GetResponseID(msg); ok {
