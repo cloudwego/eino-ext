@@ -45,7 +45,9 @@ func main() {
 		}
 		fmt.Println("Name:", info.Name)
 		fmt.Println("Desc:", info.Desc)
-		result, err := mcpTool.(tool.InvokableTool).InvokableRun(ctx, `{"operation":"add", "x":1, "y":1}`)
+		result, err := mcpTool.(tool.InvokableTool).InvokableRun(ctx, `{"operation":"add", "x":1, "y":1}`, mcpp.WithMeta(&mcp.Meta{
+			AdditionalFields: map[string]any{"metadata2": "metadata2"},
+		}))
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -76,7 +78,9 @@ func getMCPTool(ctx context.Context) []tool.BaseTool {
 		log.Fatal(err)
 	}
 
-	tools, err := mcpp.GetTools(ctx, &mcpp.Config{Cli: cli})
+	tools, err := mcpp.GetTools(ctx, &mcpp.Config{Cli: cli, Meta: &mcp.Meta{
+		AdditionalFields: map[string]any{"metadata1": "metadata1"},
+	}})
 	if err != nil {
 		log.Fatal(err)
 	}

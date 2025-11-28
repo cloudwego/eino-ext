@@ -577,7 +577,7 @@ func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*sc
 	}
 
 	return &CacheInfo{
-		ResponseID: resp.ID,
+		ContextID: resp.ID,
 		Usage: schema.TokenUsage{
 			PromptTokens: resp.Usage.PromptTokens,
 			PromptTokenDetails: schema.PromptTokenDetails{
