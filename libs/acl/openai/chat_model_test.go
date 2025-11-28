@@ -620,11 +620,54 @@ func Test_genRequest(t *testing.T) {
 		assert.True(t, okAudio)
 	})
 
-	t.Run("response format mapping", func(t *testing.T) {
-		c := &Client{config: &Config{Model: "test-model", ResponseFormat: &ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText}}}
-		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
-		assert.NoError(t, err)
-		assert.NotNil(t, req.ResponseFormat)
-		assert.Equal(t, ChatCompletionResponseFormatTypeText, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
-	})
+    t.Run("response format mapping", func(t *testing.T) {
+        c := &Client{config: &Config{Model: "test-model", ResponseFormat: &ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText}}}
+        req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+        assert.NoError(t, err)
+        assert.NotNil(t, req.ResponseFormat)
+        assert.Equal(t, ChatCompletionResponseFormatTypeText, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
+    })
+
+    t.Run("request payload modifier wiring", func(t *testing.T) {
+        c := &Client{config: &Config{Model: "test-model"}}
+        in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+        opts := []model.Option{
+            WithRequestPayloadModifier(func(ctx context.Context, msgs []*schema.Message, rawBody []byte) ([]byte, error) {
+                return append(rawBody, []byte("x")...), nil
+            }),
+        }
+        _, _, reqOpts, spec, err := c.genRequest(t.Context(), in, opts...)
+        assert.NoError(t, err)
+        assert.Len(t, reqOpts, 1)
+        if assert.NotNil(t, spec.RequestPayloadModifier) {
+            out, mErr := spec.RequestPayloadModifier(t.Context(), in, []byte("body"))
+            assert.NoError(t, mErr)
+            assert.Equal(t, []byte("bodyx"), out)
+        }
+    })
+
+    t.Run("response message modifier wiring", func(t *testing.T) {
+        c := &Client{config: &Config{Model: "test-model"}}
+        in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+        opts := []model.Option{
+            WithResponseMessageModifier(func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error) {
+                return &schema.Message{
+                    Role:        msg.Role,
+                    Name:        msg.Name,
+                    Content:     msg.Content + "|mod",
+                    ToolCallID:  msg.ToolCallID,
+                    ToolCalls:   msg.ToolCalls,
+                    ResponseMeta: msg.ResponseMeta,
+                }, nil
+            }),
+        }
+        _, _, _, spec, err := c.genRequest(t.Context(), in, opts...)
+        assert.NoError(t, err)
+        if assert.NotNil(t, spec.ResponseMessageModifier) {
+            outMsg, mErr := spec.ResponseMessageModifier(t.Context(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"))
+            assert.NoError(t, mErr)
+            assert.Equal(t, "resp|mod", outMsg.Content)
+            assert.Equal(t, schema.Assistant, outMsg.Role)
+        }
+    })
 }

@@ -569,7 +569,7 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 		ResponseChunkMessageModifier: nil,
 	}, opts...)
 	// convert RequestBodyModifier to RequestPayloadModifier
-	if specOptions.RequestPayloadModifier != nil && specOptions.RequestBodyModifier != nil {
+	if specOptions.RequestPayloadModifier == nil && specOptions.RequestBodyModifier != nil {
 		reqBodyModifier := specOptions.RequestBodyModifier
 		specOptions.RequestPayloadModifier = func(ctx context.Context, msg []*schema.Message, rawBody []byte) ([]byte, error) {
 			return reqBodyModifier(rawBody)
