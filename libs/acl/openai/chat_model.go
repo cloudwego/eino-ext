@@ -899,8 +899,9 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			chunk, chunkErr := stream.Recv()
 			if errors.Is(chunkErr, io.EOF) {
 				if specOptions.ResponseChunkMessageModifier != nil {
-					lastEmptyMsg, err = specOptions.ResponseChunkMessageModifier(ctx_, lastEmptyMsg, nil, true)
-					if err != nil {
+					var err_ error
+					lastEmptyMsg, err_ = specOptions.ResponseChunkMessageModifier(ctx_, lastEmptyMsg, nil, true)
+					if err_ != nil {
 						sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
 						return
 					}
@@ -954,9 +955,10 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			lastEmptyMsg = nil
 
 			if specOptions.ResponseChunkMessageModifier != nil {
-				msg, err = specOptions.ResponseChunkMessageModifier(ctx_, msg, chunk.RawBody, false)
-				if err != nil {
-					sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
+				var err_ error
+				msg, err_ = specOptions.ResponseChunkMessageModifier(ctx_, msg, chunk.RawBody, false)
+				if err_ != nil {
+					sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err_))
 					return
 				}
 			}
