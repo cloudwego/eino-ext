@@ -47,7 +47,7 @@ func Test_OpenAIOptions_Setters(t *testing.T) {
 		opts := []model.Option{WithRequestPayloadModifier(mod)}
 		spec := model.GetImplSpecificOptions(&openaiOptions{}, opts...)
 		if assert.NotNil(t, spec.RequestPayloadModifier) {
-			out, err := spec.RequestPayloadModifier(context.Background(), []*schema.Message{{Role: schema.User}}, []byte("body"))
+			out, err := spec.RequestPayloadModifier(t.Context(), []*schema.Message{{Role: schema.User}}, []byte("body"))
 			assert.NoError(t, err)
 			assert.Equal(t, []byte("bodyx"), out)
 		}
@@ -60,7 +60,7 @@ func Test_OpenAIOptions_Setters(t *testing.T) {
 		opts := []model.Option{WithResponseMessageModifier(mod)}
 		spec := model.GetImplSpecificOptions(&openaiOptions{}, opts...)
 		if assert.NotNil(t, spec.ResponseMessageModifier) {
-			outMsg, err := spec.ResponseMessageModifier(context.Background(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"))
+			outMsg, err := spec.ResponseMessageModifier(t.Context(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"))
 			assert.NoError(t, err)
 			assert.Equal(t, "resp|m", outMsg.Content)
 			assert.Equal(t, schema.Assistant, outMsg.Role)
@@ -77,10 +77,10 @@ func Test_OpenAIOptions_Setters(t *testing.T) {
 		opts := []model.Option{WithResponseChunkMessageModifier(mod)}
 		spec := model.GetImplSpecificOptions(&openaiOptions{}, opts...)
 		if assert.NotNil(t, spec.ResponseChunkMessageModifier) {
-			outMsg, err := spec.ResponseChunkMessageModifier(context.Background(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"), false)
+			outMsg, err := spec.ResponseChunkMessageModifier(t.Context(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"), false)
 			assert.NoError(t, err)
 			assert.Equal(t, "resp|chunk", outMsg.Content)
-			outMsg2, err2 := spec.ResponseChunkMessageModifier(context.Background(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"), true)
+			outMsg2, err2 := spec.ResponseChunkMessageModifier(t.Context(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"), true)
 			assert.NoError(t, err2)
 			assert.Equal(t, "resp", outMsg2.Content)
 		}
