@@ -526,25 +526,6 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		Role: toGeminiRole(message.Role),
 	}
 
-	if message.ToolCalls != nil {
-		for _, call := range message.ToolCalls {
-			args := make(map[string]any)
-			err := sonic.UnmarshalString(call.Function.Arguments, &args)
-			if err != nil {
-				return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
-			}
-
-			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
-
-			// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
-			if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
-				part.ThoughtSignature = thoughtSig
-			}
-
-			content.Parts = append(content.Parts, part)
-		}
-	}
-
 	if message.Role == schema.Tool {
 		response := make(map[string]any)
 		err := sonic.UnmarshalString(message.Content, &response)
@@ -589,6 +570,26 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			content.Parts = parts
 		}
 	}
+	
+	if message.ToolCalls != nil {
+		for _, call := range message.ToolCalls {
+			args := make(map[string]any)
+			err := sonic.UnmarshalString(call.Function.Arguments, &args)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
+			}
+
+			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+
+			// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
+			if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
+				part.ThoughtSignature = thoughtSig
+			}
+
+			content.Parts = append(content.Parts, part)
+		}
+	}
+
 	return content, nil
 }
 
