@@ -532,69 +532,66 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 	cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{}})
 	assert.Nil(t, err)
 
-	// Test that thought signature is preserved through the round-trip
-	t.Run("convFC preserves thought signature", func(t *testing.T) {
-		signature := []byte("test_thought_signature_data")
-		part := &genai.Part{
-			FunctionCall: &genai.FunctionCall{
-				Name: "test_function",
-				Args: map[string]any{"param": "value"},
-			},
-			ThoughtSignature: signature,
-		}
-
-		toolCall, err := convFC(part)
+	t.Run("convToolMessageToPart", func(t *testing.T) {
+		part, err := cm.convToolMessageToPart(&schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "tool_1",
+			Content:    `{"result":"ok"}`,
+		})
 		assert.NoError(t, err)
-		assert.NotNil(t, toolCall)
-		assert.Equal(t, "test_function", toolCall.Function.Name)
-
-		// Verify thought signature was stored
-		retrievedSig := getThoughtSignature(toolCall)
-		assert.Equal(t, signature, retrievedSig)
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "tool_1", part.FunctionResponse.Name)
+		assert.Equal(t, "ok", part.FunctionResponse.Response["result"])
 	})
 
-	t.Run("convFC without thought signature", func(t *testing.T) {
-		part := &genai.Part{
-			FunctionCall: &genai.FunctionCall{
-				Name: "test_function",
-				Args: map[string]any{"param": "value"},
-			},
-		}
-
-		toolCall, err := convFC(part)
+	t.Run("convToolMessageToPart fallback to output", func(t *testing.T) {
+		part, err := cm.convToolMessageToPart(&schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "tool_2",
+			Content:    "raw-response",
+		})
 		assert.NoError(t, err)
-		assert.NotNil(t, toolCall)
-
-		// Verify no thought signature was stored
-		retrievedSig := getThoughtSignature(toolCall)
-		assert.Nil(t, retrievedSig)
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "tool_2", part.FunctionResponse.Name)
+		assert.Equal(t, "raw-response", part.FunctionResponse.Response["output"])
 	})
 
-	t.Run("convSchemaMessage restores thought signature", func(t *testing.T) {
-		signature := []byte("restored_signature")
-		toolCall := &schema.ToolCall{
-			ID: "test_call",
-			Function: schema.FunctionCall{
-				Name:      "test_function",
-				Arguments: `{"param":"value"}`,
+	t.Run("convSchemaMessages merges consecutive tool responses", func(t *testing.T) {
+		messages := []*schema.Message{
+			{
+				Role: schema.Assistant,
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_a",
+						Function: schema.FunctionCall{
+							Name:      "fn_a",
+							Arguments: `{"x":1}`,
+						},
+					},
+					{
+						ID: "call_b",
+						Function: schema.FunctionCall{
+							Name:      "fn_b",
+							Arguments: `{"y":2}`,
+						},
+					},
+				},
 			},
-		}
-		setThoughtSignature(toolCall, signature)
-
-		message := &schema.Message{
-			Role:      schema.Assistant,
-			ToolCalls: []schema.ToolCall{*toolCall},
+			{Role: schema.Tool, ToolCallID: "call_a", Content: `{"res":"A"}`},
+			{Role: schema.Tool, ToolCallID: "call_b", Content: `{"res":"B"}`},
 		}
 
-		content, err := cm.convSchemaMessage(message)
+		contents, err := cm.convSchemaMessages(messages)
 		assert.NoError(t, err)
-		assert.NotNil(t, content)
-		assert.Len(t, content.Parts, 1)
-
-		// Verify thought signature was restored in the Part
-		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
-		assert.NotNil(t, content.Parts[0].FunctionCall)
-		assert.Equal(t, "test_function", content.Parts[0].FunctionCall.Name)
+		assert.Len(t, contents, 2)
+		assert.Equal(t, roleModel, contents[0].Role)
+		assert.Equal(t, roleUser, contents[1].Role)
+		if assert.Len(t, contents[1].Parts, 2) {
+			assert.Equal(t, "call_a", contents[1].Parts[0].FunctionResponse.Name)
+			assert.Equal(t, "A", contents[1].Parts[0].FunctionResponse.Response["res"])
+			assert.Equal(t, "call_b", contents[1].Parts[1].FunctionResponse.Name)
+			assert.Equal(t, "B", contents[1].Parts[1].FunctionResponse.Response["res"])
+		}
 	})
 
 	t.Run("convSchemaMessage without thought signature", func(t *testing.T) {
@@ -619,6 +616,87 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		// Verify no thought signature in the Part when none was stored
 		assert.Nil(t, content.Parts[0].ThoughtSignature)
 		assert.NotNil(t, content.Parts[0].FunctionCall)
+	})
+
+	// Test that reasoning content thought signature is preserved through the round-trip
+	t.Run("convSchemaMessage restores reasoning content with thought signature", func(t *testing.T) {
+		signature := []byte("reasoning_thought_signature")
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "final answer",
+			ReasoningContent: "thinking process",
+		}
+		setMessageThoughtSignature(message, signature)
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		// Should have 2 parts: thought part + text part
+		assert.Len(t, content.Parts, 2)
+
+		// First part should be the thought
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "thinking process", content.Parts[0].Text)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+
+		// Second part should be the text content
+		assert.False(t, content.Parts[1].Thought)
+		assert.Equal(t, "final answer", content.Parts[1].Text)
+		assert.Nil(t, content.Parts[1].ThoughtSignature)
+	})
+
+	t.Run("convSchemaMessage restores reasoning content without thought signature", func(t *testing.T) {
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "final answer",
+			ReasoningContent: "thinking process",
+		}
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		// Should have 2 parts: thought part + text part
+		assert.Len(t, content.Parts, 2)
+
+		// First part should be the thought without signature
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "thinking process", content.Parts[0].Text)
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
+	})
+
+	t.Run("convSchemaMessage with reasoning content and tool calls", func(t *testing.T) {
+		signature := []byte("thought_signature")
+
+		toolCall := &schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: `{"param":"value"}`,
+			},
+		}
+
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			ReasoningContent: "thinking before calling tool",
+			ToolCalls:        []schema.ToolCall{*toolCall},
+		}
+		setMessageThoughtSignature(message, signature)
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		// Should have 2 parts: thought part + function call part
+		assert.Len(t, content.Parts, 2)
+
+		// First part should be the thought with the signature
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "thinking before calling tool", content.Parts[0].Text)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+
+		// Second part should be the function call without signature (signature is only on thought part)
+		assert.NotNil(t, content.Parts[1].FunctionCall)
+		assert.Equal(t, "test_function", content.Parts[1].FunctionCall.Name)
+		assert.Nil(t, content.Parts[1].ThoughtSignature)
 	})
 }
 
