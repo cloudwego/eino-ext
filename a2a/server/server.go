@@ -239,18 +239,22 @@ func (s *A2AServer) getTask(ctx context.Context, input *models.TaskQueryParams) 
 
 func (s *A2AServer) cancelTask(ctx context.Context, input *models.TaskIDParams) (*models.Task, error) {
 	var err error
-	err = s.taskLocker.Lock(ctx, input.ID)
+
+	// Context cancellation should be scoped to business processing only and must not affect invocations of service lifecycle control components.
+	detachedCtx := context.WithoutCancel(ctx)
+
+	err = s.taskLocker.Lock(detachedCtx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire lock for new task[%s]: %w", input.ID, err)
 	}
 	defer func() {
-		unlockErr := s.taskLocker.Unlock(ctx, input.ID)
+		unlockErr := s.taskLocker.Unlock(detachedCtx, input.ID)
 		if unlockErr != nil {
-			s.logger(ctx, "failed to release lock for task[%s]: %s", input.ID, unlockErr.Error())
+			s.logger(detachedCtx, "failed to release lock for task[%s]: %s", input.ID, unlockErr.Error())
 		}
 	}()
 
-	t, ok, err := s.taskStore.Get(ctx, input.ID)
+	t, ok, err := s.taskStore.Get(detachedCtx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task[%s]: %w", input.ID, err)
 	}
@@ -271,7 +275,7 @@ func (s *A2AServer) cancelTask(ctx context.Context, input *models.TaskIDParams) 
 
 	t = loadTaskContext(t, resp)
 
-	err = s.taskStore.Save(ctx, t)
+	err = s.taskStore.Save(detachedCtx, t)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save canceled task: %w", err)
 	}
@@ -282,14 +286,18 @@ func (s *A2AServer) cancelTask(ctx context.Context, input *models.TaskIDParams) 
 func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendParams) (*models.SendMessageResponseUnion, error) {
 	var err error
 	var t *models.Task
+
+	// Context cancellation should be scoped to business processing only and must not affect invocations of service lifecycle control components.
+	detachedCtx := context.WithoutCancel(ctx)
+
 	if input.Message.TaskID != nil {
-		err = s.taskLocker.Lock(ctx, *input.Message.TaskID)
+		err = s.taskLocker.Lock(detachedCtx, *input.Message.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to acquire lock for task[%s]: %s", *input.Message.TaskID, err)
 		}
 
 		var ok bool
-		t, ok, err = s.taskStore.Get(ctx, *input.Message.TaskID)
+		t, ok, err = s.taskStore.Get(detachedCtx, *input.Message.TaskID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get task[%s]: %s", *input.Message.TaskID, err)
 		}
@@ -300,12 +308,12 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 			return nil, fmt.Errorf("task[%s] is nil", *input.Message.TaskID)
 		}
 	} else {
-		t, err = s.initTask(ctx)
+		t, err = s.initTask(detachedCtx, input.Message.ContextID)
 		if err != nil {
 			return nil, err
 		}
 
-		err = s.taskLocker.Lock(ctx, t.ID)
+		err = s.taskLocker.Lock(detachedCtx, t.ID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to acquire lock for new task[%s]: %s", t.ID, err)
 		}
@@ -313,7 +321,7 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 
 	// register notification
 	if input.Configuration != nil && input.Configuration.PushNotificationConfig != nil && s.pushNotifier != nil {
-		err = s.pushNotifier.Set(ctx, &models.TaskPushNotificationConfig{
+		err = s.pushNotifier.Set(detachedCtx, &models.TaskPushNotificationConfig{
 			TaskID:                 t.ID,
 			PushNotificationConfig: *input.Configuration.PushNotificationConfig,
 		})
@@ -325,12 +333,12 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 	if input.Configuration == nil || input.Configuration.Blocking == nil || *input.Configuration.Blocking {
 		// blocking
 		defer func() {
-			unLockErr := s.taskLocker.Unlock(ctx, t.ID)
+			unLockErr := s.taskLocker.Unlock(detachedCtx, t.ID)
 			if unLockErr != nil {
 				s.logger(ctx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
 			}
 		}()
-		frame, err := s.executeHandler(ctx, t, input)
+		frame, err := s.executeHandler(ctx, detachedCtx, t, input)
 		if err != nil {
 			return nil, err
 		}
@@ -344,16 +352,16 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 	go func() {
 		defer func() {
 			if e := recover(); e != nil {
-				s.logger(ctx, "recovered panic while sending message: %s", utils.NewPanicErr(e, debug.Stack()))
+				s.logger(detachedCtx, "recovered panic while sending message: %s", utils.NewPanicErr(e, debug.Stack()))
 			}
-			unLockErr := s.taskLocker.Unlock(ctx, t.ID)
+			unLockErr := s.taskLocker.Unlock(detachedCtx, t.ID)
 			if unLockErr != nil {
-				s.logger(ctx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
+				s.logger(detachedCtx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
 			}
 		}()
-		_, err = s.executeHandler(ctx, t, input)
+		_, err = s.executeHandler(ctx, detachedCtx, t, input)
 		if err != nil {
-			s.logger(ctx, err.Error())
+			s.logger(detachedCtx, err.Error())
 		}
 	}()
 	return &models.SendMessageResponseUnion{
@@ -361,7 +369,7 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 	}, nil
 }
 
-func (s *A2AServer) executeHandler(ctx context.Context, t *models.Task, input *models.MessageSendParams) (*models.SendMessageStreamingResponseUnion, error) {
+func (s *A2AServer) executeHandler(ctx context.Context, detachedCtx context.Context, t *models.Task, input *models.MessageSendParams) (*models.SendMessageStreamingResponseUnion, error) {
 	resp, err := s.messageHandler(ctx, &InputParams{
 		Task:     t,
 		Input:    &input.Message,
@@ -373,7 +381,7 @@ func (s *A2AServer) executeHandler(ctx context.Context, t *models.Task, input *m
 	resp.EnsureRequiredFields()
 
 	t = loadTaskContext(t, resp)
-	err = s.taskStore.Save(ctx, t)
+	err = s.taskStore.Save(detachedCtx, t)
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
@@ -384,12 +392,12 @@ func (s *A2AServer) executeHandler(ctx context.Context, t *models.Task, input *m
 			defer func() {
 				e := recover()
 				if e != nil {
-					s.logger(ctx, "panic when send notification of task[%s]: %v", t.ID, utils.NewPanicErr(e, debug.Stack()))
+					s.logger(detachedCtx, "panic when send notification of task[%s]: %v", t.ID, utils.NewPanicErr(e, debug.Stack()))
 				}
 			}()
-			err = s.pushNotifier.SendNotification(ctx, frame)
+			err = s.pushNotifier.SendNotification(detachedCtx, frame)
 			if err != nil {
-				s.logger(ctx, "failed to push notification to notifier: %s", err)
+				s.logger(detachedCtx, "failed to push notification to notifier: %s", err)
 			}
 		}()
 	}
@@ -400,6 +408,9 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 	var err error
 	var t *models.Task
 
+	// Context cancellation should be scoped to business processing only and must not affect invocations of service lifecycle control components.
+	detachedCtx := context.WithoutCancel(ctx)
+
 	needReleaseLock := false // need release lock after acquire and before start async execute
 	defer func() {
 		if needReleaseLock {
@@ -409,23 +420,23 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			} else {
 				tid = t.ID
 			}
-			unlockErr := s.taskLocker.Unlock(ctx, tid)
+			unlockErr := s.taskLocker.Unlock(detachedCtx, tid)
 			if unlockErr != nil {
-				s.logger(ctx, "failed to release lock for task[%s]: %s", tid, unlockErr.Error())
+				s.logger(detachedCtx, "failed to release lock for task[%s]: %s", tid, unlockErr.Error())
 			}
 		}
 		writer.Close()
 	}()
 
 	if input.Message.TaskID != nil {
-		err = s.taskLocker.Lock(ctx, *input.Message.TaskID)
+		err = s.taskLocker.Lock(detachedCtx, *input.Message.TaskID)
 		if err != nil {
 			return fmt.Errorf("failed to acquire lock for task[%s]: %w", *input.Message.TaskID, err)
 		}
 		needReleaseLock = true
 
 		var ok bool
-		t, ok, err = s.taskStore.Get(ctx, *input.Message.TaskID)
+		t, ok, err = s.taskStore.Get(detachedCtx, *input.Message.TaskID)
 		if err != nil {
 			return fmt.Errorf("failed to get task[%s]: %w", *input.Message.TaskID, err)
 		}
@@ -436,26 +447,26 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			return fmt.Errorf("task[%s] is nil", *input.Message.TaskID)
 		}
 	} else {
-		t, err = s.initTask(ctx)
+		t, err = s.initTask(detachedCtx, input.Message.ContextID)
 		if err != nil {
 			return err
 		}
 
-		err = s.taskLocker.Lock(ctx, t.ID)
+		err = s.taskLocker.Lock(detachedCtx, t.ID)
 		if err != nil {
 			return fmt.Errorf("failed to acquire lock for new task[%s]: %s", t.ID, err)
 		}
 		needReleaseLock = true
 	}
 
-	err = s.queue.Reset(ctx, t.ID)
+	err = s.queue.Reset(detachedCtx, t.ID)
 	if err != nil {
 		return fmt.Errorf("failed to reset queue for new task[%s]: %w", t.ID, err)
 	}
 
 	// register notification
 	if input.Configuration != nil && input.Configuration.PushNotificationConfig != nil && s.pushNotifier != nil {
-		err = s.pushNotifier.Set(ctx, &models.TaskPushNotificationConfig{
+		err = s.pushNotifier.Set(detachedCtx, &models.TaskPushNotificationConfig{
 			TaskID:                 t.ID,
 			PushNotificationConfig: *input.Configuration.PushNotificationConfig,
 		})
@@ -471,19 +482,19 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			e := recover()
 			if e != nil {
 				panicErr := utils.NewPanicErr(e, debug.Stack())
-				err = s.queue.Push(ctx, t.ID, nil, panicErr)
+				err = s.queue.Push(detachedCtx, t.ID, nil, panicErr)
 				if err != nil {
-					s.logger(ctx, "failed to push panic event, task: %s, push error: %v, panic: %v", t.ID, err, panicErr)
+					s.logger(detachedCtx, "failed to push panic event, task: %s, push error: %v, panic: %v", t.ID, err, panicErr)
 				}
 			}
 
-			err = s.queue.Close(ctx, t.ID)
+			err = s.queue.Close(detachedCtx, t.ID)
 			if err != nil {
-				s.logger(ctx, "failed to close queue for task[%s]: %s", t.ID, err.Error())
+				s.logger(detachedCtx, "failed to close queue for task[%s]: %s", t.ID, err.Error())
 			}
-			err = s.taskLocker.Unlock(ctx, t.ID)
+			err = s.taskLocker.Unlock(detachedCtx, t.ID)
 			if err != nil {
-				s.logger(ctx, "failed to release lock for task[%s]: %s", t.ID, err.Error())
+				s.logger(detachedCtx, "failed to release lock for task[%s]: %s", t.ID, err.Error())
 			}
 		}()
 		sr := &streamResponseWriter{
@@ -508,18 +519,18 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 		tc := s.taskEventsConsolidator(ctx, params, sr.events, err)
 		nt := loadTaskContext(t, tc)
 
-		err = s.taskStore.Save(ctx, nt)
+		err = s.taskStore.Save(detachedCtx, nt)
 		if err != nil {
-			pushErr := s.queue.Push(ctx, nt.ID, nil, err)
+			pushErr := s.queue.Push(detachedCtx, nt.ID, nil, err)
 			if err != nil {
-				s.logger(ctx, "failed to save task: %v, and failed to push task[%s] to queue: %v", err, nt.ID, pushErr)
+				s.logger(detachedCtx, "failed to save task: %v, and failed to push task[%s] to queue: %v", err, nt.ID, pushErr)
 			}
 			return
 		}
 	}()
 
 	for {
-		resp, taskErr, closed, err := s.queue.Pop(ctx, t.ID)
+		resp, taskErr, closed, err := s.queue.Pop(detachedCtx, t.ID)
 		if err != nil {
 			return fmt.Errorf("failed to pop task[%s]: %w", t.ID, err)
 		}
@@ -529,7 +540,7 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 		if taskErr != nil {
 			return taskErr // agent execute error
 		}
-		err = writer.Write(ctx, resp)
+		err = writer.Write(detachedCtx, resp)
 		if err != nil {
 			return fmt.Errorf("failed to send response of task[%s]: %w", t.ID, err)
 		}
@@ -642,15 +653,22 @@ func (s *A2AServer) getTasksPushNotificationConfig(ctx context.Context, input *m
 	}, nil
 }
 
-func (s *A2AServer) initTask(ctx context.Context) (*models.Task, error) {
+func (s *A2AServer) initTask(ctx context.Context, pContextID *string) (*models.Task, error) {
 	taskID, err := s.taskIDGenerator(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate task id: %w", err)
 	}
-	contextID, err := s.contextIDGenerator(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate context id: %w", err)
+
+	contextID := ""
+	if pContextID != nil {
+		contextID = *pContextID
+	} else {
+		contextID, err = s.contextIDGenerator(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate context id: %w", err)
+		}
 	}
+
 	return &models.Task{
 		ID:        taskID,
 		ContextID: contextID,
