@@ -238,9 +238,10 @@ func NewClient(ctx context.Context, config *Config) (*Client, error) {
 		}
 	}
 
-	clientConf.HTTPClient = config.HTTPClient
-	if clientConf.HTTPClient == nil {
+	if config.HTTPClient == nil {
 		clientConf.HTTPClient = http.DefaultClient
+	} else {
+		clientConf.HTTPClient = config.HTTPClient
 	}
 
 	return &Client{
