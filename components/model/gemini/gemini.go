@@ -526,6 +526,28 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		Role: toGeminiRole(message.Role),
 	}
 
+	addToolCallPart := func() error {
+		if message.ToolCalls != nil {
+			for _, call := range message.ToolCalls {
+				args := make(map[string]any)
+				err := sonic.UnmarshalString(call.Function.Arguments, &args)
+				if err != nil {
+					return fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
+				}
+
+				part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+
+				// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
+				if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
+					part.ThoughtSignature = thoughtSig
+				}
+
+				content.Parts = append(content.Parts, part)
+			}
+		}
+		return nil
+	}
+
 	if message.Role == schema.Tool {
 		response := make(map[string]any)
 		err := sonic.UnmarshalString(message.Content, &response)
@@ -556,6 +578,9 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 				return nil, err
 			}
 			content.Parts = append(content.Parts, parts...)
+			if err = addToolCallPart(); err != nil {
+				return nil, err
+			}
 			return content, nil
 		}
 		if message.Content != "" {
@@ -570,24 +595,9 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			content.Parts = parts
 		}
 	}
-	
-	if message.ToolCalls != nil {
-		for _, call := range message.ToolCalls {
-			args := make(map[string]any)
-			err := sonic.UnmarshalString(call.Function.Arguments, &args)
-			if err != nil {
-				return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
-			}
 
-			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
-
-			// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
-			if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
-				part.ThoughtSignature = thoughtSig
-			}
-
-			content.Parts = append(content.Parts, part)
-		}
+	if err := addToolCallPart(); err != nil {
+		return nil, err
 	}
 
 	return content, nil
