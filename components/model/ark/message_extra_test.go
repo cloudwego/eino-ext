@@ -66,7 +66,7 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "resp id", responseID)
 
-	expireAt, ok := getCacheExpiration(msg)
+	expireAt, ok := GetCacheExpiration(msg)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, int64(10), expireAt)
 
@@ -94,7 +94,7 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "context id", contextID)
 
-	expireAt, ok = getCacheExpiration(&schema.Message{
+	expireAt, ok = GetCacheExpiration(&schema.Message{
 		Extra: map[string]any{
 			keyOfResponseCacheExpireAt: int64(10),
 		},

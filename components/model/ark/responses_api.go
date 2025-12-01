@@ -383,7 +383,7 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 		for i := len(in) - 1; i >= 0; i-- {
 			msg := in[i]
 			inputIdx = i
-			if expireAtSec, ok := getCacheExpiration(msg); !ok || expireAtSec < now {
+			if expireAtSec, ok := GetCacheExpiration(msg); !ok || expireAtSec < now {
 				continue
 			}
 			if id, ok := GetResponseID(msg); ok {
@@ -867,7 +867,7 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 	msg := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(resp.Status),
+			FinishReason: resp.Status.String(),
 			Usage:        cm.toEinoTokenUsage(resp.Usage),
 		},
 	}
@@ -938,7 +938,7 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 			}
 			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
 				ID:   asItem.FunctionToolCall.CallId,
-				Type: string(asItem.FunctionToolCall.Type),
+				Type: asItem.FunctionToolCall.Type.String(),
 				Function: schema.FunctionCall{
 					Name:      asItem.FunctionToolCall.Name,
 					Arguments: asItem.FunctionToolCall.Arguments,
@@ -1156,7 +1156,7 @@ func (cm *responsesAPIChatModel) handleCompletedStreamEvent(RespObject *response
 	return &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
-			FinishReason: string(RespObject.Status),
+			FinishReason: RespObject.Status.String(),
 			Usage:        cm.toEinoTokenUsage(RespObject.Usage),
 		},
 	}
