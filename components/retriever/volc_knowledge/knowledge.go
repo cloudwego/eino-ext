@@ -169,14 +169,11 @@ type knowledge struct {
 
 func (k *knowledge) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	origReq := &request{
-		Name:       k.cfg.Name,
-		Project:    k.cfg.Project,
-		ResourceID: k.cfg.ResourceID,
-		Query:      query,
-		Limit:      k.cfg.Limit,
-		QueryParam: queryParam{
-			DocFilter: k.cfg.DocFilter,
-		},
+		Name:        k.cfg.Name,
+		Project:     k.cfg.Project,
+		ResourceID:  k.cfg.ResourceID,
+		Query:       query,
+		Limit:       k.cfg.Limit,
 		DenseWeight: k.cfg.DenseWeight,
 		PreProcessing: preProcessing{
 			NeedInstruction:  k.cfg.NeedInstruction,
@@ -194,11 +191,14 @@ func (k *knowledge) Retrieve(ctx context.Context, query string, opts ...retrieve
 			GetAttachmentLink:   k.cfg.GetAttachmentLink,
 		},
 	}
+	if k.cfg.DocFilter != nil {
+		origReq.QueryParam = &queryParam{DocFilter: k.cfg.DocFilter}
+	}
+
 	body, err := sonic.Marshal(origReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request fail: %w", err)
 	}
-
 	req, err := http.NewRequest(http.MethodPost, (&url.URL{
 		Scheme: "https",
 		Host:   k.cfg.BaseURL,
@@ -246,7 +246,7 @@ type request struct {
 	ResourceID     string         `json:"resource_id,omitempty"`
 	Query          string         `json:"query"`
 	Limit          int32          `json:"limit,omitempty"`
-	QueryParam     queryParam     `json:"query_param,omitempty"`
+	QueryParam     *queryParam    `json:"query_param,omitempty"`
 	DenseWeight    float64        `json:"dense_weight,omitempty"`
 	PreProcessing  preProcessing  `json:"pre_processing,omitempty"`
 	PostProcessing postProcessing `json:"post_processing,omitempty"`
