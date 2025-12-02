@@ -523,44 +523,53 @@ func (cm *ChatModel) convToolMessageToPart(message *schema.Message) (*genai.Part
 func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
 	var result []*genai.Content
 
-	for i := 0; i < len(messages); {
+	for i := 0; i < len(messages); i++ {
 		message := messages[i]
-
 		if message == nil {
-			i++
-			continue
-		}
-
-		if message.Role == schema.Tool {
-			var toolParts []*genai.Part
-
-			// Merge tool messages into a single message
-			for i < len(messages) && messages[i].Role == schema.Tool {
-				part, err := cm.convToolMessageToPart(messages[i])
-				if err != nil {
-					return nil, fmt.Errorf("convert tool message part fail at index %d: %w", i, err)
-				}
-				toolParts = append(toolParts, part)
-				i++
-			}
-
-			result = append(result, &genai.Content{
-				Role:  roleUser,
-				Parts: toolParts,
-			})
 			continue
 		}
 
 		content, err := cm.convSchemaMessage(message)
 		if err != nil {
-			return nil, fmt.Errorf("convert schema message fail: %w", err)
+			return nil, fmt.Errorf("convert schema message fail at index %d: %w", i, err)
 		}
 		if content != nil {
 			result = append(result, content)
 		}
-		i++
 	}
-	return result, nil
+
+	return mergeAdjacentToolContents(result), nil
+}
+
+// mergeAdjacentToolContents merges adjacent tool response contents into a single content.
+// Gemini requires all tool responses to be in a single message when responding to parallel tool calls.
+func mergeAdjacentToolContents(contents []*genai.Content) []*genai.Content {
+	if len(contents) <= 1 {
+		return contents
+	}
+
+	result := make([]*genai.Content, 0, len(contents))
+
+	for _, content := range contents {
+		// Check if current content is a tool response (has FunctionResponse parts)
+		if len(result) > 0 && isToolResponseContent(content) && isToolResponseContent(result[len(result)-1]) {
+			// Merge into the previous content
+			result[len(result)-1].Parts = append(result[len(result)-1].Parts, content.Parts...)
+		} else {
+			result = append(result, content)
+		}
+	}
+
+	return result
+}
+
+// isToolResponseContent checks if a content contains tool response parts.
+func isToolResponseContent(content *genai.Content) bool {
+	if content == nil || len(content.Parts) == 0 {
+		return false
+	}
+	// Check if the first part is a FunctionResponse
+	return content.Parts[0].FunctionResponse != nil
 }
 
 func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content, error) {
