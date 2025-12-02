@@ -17,12 +17,14 @@
 package openai
 
 import (
-	"github.com/meguminnnnnnnnn/go-openai"
+	"context"
 
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	"github.com/meguminnnnnnnnn/go-openai"
 )
 
-// https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort
+// ReasoningEffortLevel see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort
 type ReasoningEffortLevel string
 
 const (
@@ -31,12 +33,27 @@ const (
 	ReasoningEffortLevelHigh   ReasoningEffortLevel = "high"
 )
 
+// RequestPayloadModifier transforms the serialized request payload
+// with access to input messages and the raw payload.
+type RequestPayloadModifier func(ctx context.Context, msg []*schema.Message, rawBody []byte) ([]byte, error)
+
+// ResponseMessageModifier transforms the generated message using the raw response body.
+// It must return the final message.
+type ResponseMessageModifier func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error)
+
+// ResponseChunkMessageModifier transforms the generated message chunk using the raw response body.
+// When end is true, msg and rawBody may be nil.
+type ResponseChunkMessageModifier func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error)
+
 type openaiOptions struct {
-	ExtraFields         map[string]any
-	ReasoningEffort     ReasoningEffortLevel
-	ExtraHeader         map[string]string
-	RequestBodyModifier openai.RequestBodyModifier
-	MaxCompletionTokens *int
+	ExtraFields                  map[string]any
+	ReasoningEffort              ReasoningEffortLevel
+	ExtraHeader                  map[string]string
+	RequestBodyModifier          openai.RequestBodyModifier
+	RequestPayloadModifier       RequestPayloadModifier
+	ResponseMessageModifier      ResponseMessageModifier
+	ResponseChunkMessageModifier ResponseChunkMessageModifier
+	MaxCompletionTokens          *int
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
@@ -51,8 +68,32 @@ func WithReasoningEffort(re ReasoningEffortLevel) model.Option {
 	})
 }
 
-// WithRequestBodyModifier is used to modify the request body before sending request.
-// Useful for compatibility with custom fields when calling other models using OpenAI API.
+// WithRequestPayloadModifier registers a payload modifier to customize
+// the serialized request based on input messages.
+func WithRequestPayloadModifier(modifier RequestPayloadModifier) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.RequestPayloadModifier = modifier
+	})
+}
+
+// WithResponseMessageModifier registers a message modifier to transform
+// the output message using the raw response body.
+func WithResponseMessageModifier(m ResponseMessageModifier) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ResponseMessageModifier = m
+	})
+}
+
+// WithResponseChunkMessageModifier registers a message modifier to transform
+// the output message chunk using the raw response body.
+func WithResponseChunkMessageModifier(m ResponseChunkMessageModifier) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ResponseChunkMessageModifier = m
+	})
+}
+
+// WithRequestBodyModifier modifies the request body before sending the request.
+// Deprecated: Use WithRequestPayloadModifier.
 func WithRequestBodyModifier(modifier openai.RequestBodyModifier) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.RequestBodyModifier = modifier
