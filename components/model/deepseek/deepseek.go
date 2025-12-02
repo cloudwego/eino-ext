@@ -684,11 +684,15 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	if ret.Role != roleAssistant && ret.Prefix {
 		return nil, fmt.Errorf("prefix only supported for assistant message")
 	}
-	if ret.Prefix {
-		if reasoning, ok := GetReasoningContent(m); ok {
-			ret.ReasoningContent = reasoning
-		}
+
+	if m.ReasoningContent != "" {
+		ret.ReasoningContent = m.ReasoningContent
+
+	} else if reasoning, ok := GetReasoningContent(m); ok {
+		// Backward compatibility: support `reasoning_content` in message.Extra when `ReasoningContent` is missing.
+		ret.ReasoningContent = reasoning
 	}
+
 	if ret.Role == roleTool && m.ToolCallID != "" {
 		ret.ToolCallID = m.ToolCallID
 	}
