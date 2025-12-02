@@ -18,14 +18,22 @@ package mcp
 
 import (
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/mark3labs/mcp-go/mcp"
 )
 
 type mcpOptions struct {
 	customHeaders map[string]string
+	meta          *mcp.Meta
 }
 
 func WithCustomHeaders(m map[string]string) tool.Option {
 	return tool.WrapImplSpecificOptFn(func(o *mcpOptions) {
 		o.customHeaders = m
+	})
+}
+
+func WithMeta(meta *mcp.Meta) tool.Option {
+	return tool.WrapImplSpecificOptFn(func(o *mcpOptions) {
+		o.meta = meta
 	})
 }
