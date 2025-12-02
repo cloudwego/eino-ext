@@ -375,7 +375,10 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	}, opts...)
 	conf := &model.Config{}
 
-	m := &genai.GenerateContentConfig{}
+	httpOpts := cm.cli.ClientConfig().HTTPOptions
+	m := &genai.GenerateContentConfig{
+		HTTPOptions: &httpOpts,
+	}
 	if commonOptions.Model != nil {
 		conf.Model = *commonOptions.Model
 	} else {
