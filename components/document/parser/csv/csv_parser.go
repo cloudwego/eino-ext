@@ -6,9 +6,10 @@ import (
 	"io"
 	"strings"
 
+	"context"
+
 	"github.com/cloudwego/eino/components/document/parser"
 	"github.com/cloudwego/eino/schema"
-	"golang.org/x/net/context"
 )
 
 const (
@@ -16,8 +17,8 @@ const (
 	MetaDataExt = "_ext"
 )
 
-// CsvParser parses CSV content from io.Reader.
-type CsvParser struct {
+// CSVParser parses CSV content from io.Reader.
+type CSVParser struct {
 	Config *Config
 }
 
@@ -33,8 +34,8 @@ type Config struct {
 	Comment rune
 }
 
-// NewCsvParser creates a new CsvParser
-func NewCsvParser(ctx context.Context, config *Config) (cp *CsvParser, err error) {
+// NewCSVParser creates a new CSVParser
+func NewCSVParser(ctx context.Context, config *Config) (cp *CSVParser, err error) {
 	if config == nil {
 		config = &Config{}
 
@@ -46,19 +47,19 @@ func NewCsvParser(ctx context.Context, config *Config) (cp *CsvParser, err error
 		config.Comment = rune('#')
 	}
 
-	cp = &CsvParser{Config: config}
+	cp = &CSVParser{Config: config}
 	return cp, nil
 }
 
 // generateID generates document ID based on configuration
-func (cp *CsvParser) generateID(i int) string {
+func (cp *CSVParser) generateID(i int) string {
 	if cp.Config.IDPrefix == "" {
 		return fmt.Sprintf("%d", i)
 	}
 	return fmt.Sprintf("%s%d", cp.Config.IDPrefix, i)
 }
 
-func (cp *CsvParser) buildRowMetaData(row []string, headers []string) map[string]any {
+func (cp *CSVParser) buildRowMetaData(row []string, headers []string) map[string]any {
 	metaData := make(map[string]any)
 	if !cp.Config.NoHeader {
 		for j, header := range headers {
@@ -70,7 +71,7 @@ func (cp *CsvParser) buildRowMetaData(row []string, headers []string) map[string
 	return metaData
 }
 
-func (cp *CsvParser) Parse(ctx context.Context, reader io.Reader, opts ...parser.Option) ([]*schema.Document, error) {
+func (cp *CSVParser) Parse(ctx context.Context, reader io.Reader, opts ...parser.Option) ([]*schema.Document, error) {
 	option := parser.GetCommonOptions(&parser.Options{}, opts...)
 
 	csvFile := csv.NewReader(reader)

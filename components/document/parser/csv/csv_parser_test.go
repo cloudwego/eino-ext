@@ -1,14 +1,14 @@
 package csv
 
 import (
+	"context"
 	"os"
 	"testing"
 
 	"github.com/cloudwego/eino/components/document/parser"
-	"golang.org/x/net/context"
 )
 
-func TestCsvParser(t *testing.T) {
+func TestCSVParser(t *testing.T) {
 	f, err := os.Open("./test.csv")
 	if err != nil {
 		t.Error(err)
@@ -17,7 +17,7 @@ func TestCsvParser(t *testing.T) {
 	defer f.Close()
 
 	ctx := context.Background()
-	cp, err := NewCsvParser(ctx, &Config{})
+	cp, err := NewCSVParser(ctx, &Config{})
 	if err != nil {
 		t.Error(err)
 		return
