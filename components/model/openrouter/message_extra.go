@@ -18,6 +18,7 @@ package openrouter
 
 import (
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -25,6 +26,29 @@ const (
 	openrouterTerminatedErrorKey  = "openrouter_terminated_error"
 	openrouterReasoningDetailsKey = "openrouter_reasoning_details"
 )
+
+func init() {
+	compose.RegisterStreamChunkConcatFunc(func(chunks [][]*reasoningDetails) (final []*reasoningDetails, err error) {
+		if len(chunks) == 0 {
+			return []*reasoningDetails{}, nil
+		}
+		for _, details := range chunks {
+			final = append(final, details...)
+		}
+		return final, nil
+	})
+	schema.RegisterName[*reasoningDetails]("_eino_ext_openrouter_reasoning_details")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []*StreamTerminatedError) (final *StreamTerminatedError, err error) {
+		if len(chunks) == 0 {
+			return &StreamTerminatedError{}, nil
+		}
+		return chunks[len(chunks)-1], nil
+	})
+
+	schema.RegisterName[*StreamTerminatedError]("_eino_ext_openrouter_stream_terminated_error")
+
+}
 
 type StreamTerminatedError struct {
 	Code    string `json:"code,omitempty"`

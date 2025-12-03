@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -38,7 +39,7 @@ const (
 
 type Config struct {
 	APIKey string
-	// Timeout specifies the maximum duration to wait for API responses
+	// Timeout specifies the maximum duration to wait for API responses.
 	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default: no timeout
 	Timeout time.Duration `json:"timeout"`
@@ -64,14 +65,14 @@ type Config struct {
 	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
 	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
 
-	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
+	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion.
 	MaxTokens *int `json:"max_tokens,omitempty"`
 
-	// Seed enables deterministic sampling for consistent outputs
+	// Seed enables deterministic sampling for consistent outputs.
 	// Optional. Set for reproducible results
 	Seed *int `json:"seed,omitempty"`
 
-	// Stop sequences where the API will stop generating further tokens
+	// Stop sequences where the API will stop generating further tokens.
 	// Optional. Example: []string{"\n", "User:"}
 	Stop []string `json:"stop,omitempty"`
 
@@ -81,27 +82,27 @@ type Config struct {
 	// Optional. Default: 1.0
 	TopP *float32 `json:"top_p,omitempty"`
 
-	// Temperature specifies what sampling temperature to use
+	// Temperature specifies what sampling temperature to use.
 	// Generally recommend altering this or TopP but not both.
-	// Range: 0.0 to 2.0. Higher values make output more random
+	// Range: 0.0 to 2.0. Higher values make output more random.
 	// Optional. Default: 1.0
 	Temperature *float32 `json:"temperature,omitempty"`
 
-	// ResponseFormat specifies the format of the model's response
+	// ResponseFormat specifies the format of the model's response.
 	// Optional. Use for structured outputs
 	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
 
-	// PresencePenalty prevents repetition by penalizing tokens based on presence
-	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics
+	// PresencePenalty prevents repetition by penalizing tokens based on presence.
+	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics.
 	// Optional. Default: 0
 	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
 
-	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
+	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency.
 	// Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
 	// Optional. Default: 0
 	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
 
-	// LogitBias modifies likelihood of specific tokens appearing in completion
+	// LogitBias modifies likelihood of specific tokens appearing in completion.
 	// Optional. Map token IDs to bias values from -100 to 100
 	LogitBias map[string]int `json:"logit_bias,omitempty"`
 
@@ -136,27 +137,6 @@ type ChatModel struct {
 	reasoning      *Reasoning
 	responseFormat *ChatCompletionResponseFormat
 	metadata       map[string]string
-}
-
-func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
-	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opt := cm.buildOptions(ctx, false, opts...)
-
-	out, err := cm.cli.Generate(ctx, in, opt...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opts = cm.buildOptions(ctx, true, opts...)
-	out, err := cm.cli.Stream(ctx, in, opts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
@@ -212,17 +192,39 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 	return chatModel, nil
 }
 
+func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+	opt := cm.buildOptions(ctx, false, opts...)
+	out, err := cm.cli.Generate(ctx, in, opt...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+	opts = cm.buildOptions(ctx, true, opts...)
+	out, err := cm.cli.Stream(ctx, in, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.RequestPayloadModifier {
 	return func(ctx context.Context, in []*schema.Message, rawBody []byte) ([]byte, error) {
-		models := option.models
-		reasoning := option.reasoning
-		metadata := option.metadata
+
 		var (
-			modifiedRawBody []byte
 			err             error
+			models          = option.models
+			reasoning       = option.reasoning
+			metadata        = option.metadata
+			modifiedRawBody = make([]byte, len(rawBody))
 		)
 
-		modifiedRawBody = rawBody
+		_ = copy(modifiedRawBody, rawBody)
+
 		if len(models) > 0 {
 			modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, "models", models)
 			if err != nil {
@@ -283,10 +285,7 @@ func (cm *ChatModel) buildResponseMessageModifier() openai.ResponseMessageModifi
 			}
 
 			if firstChoice.Message != nil {
-				msg.ReasoningContent = firstChoice.Message.Reasoning
-				if len(firstChoice.Message.ReasoningDetails) > 0 {
-					setReasoningDetails(msg, firstChoice.Message.ReasoningDetails)
-				}
+				populateSchemaMessageFields(msg, firstChoice.Message)
 			}
 
 		}
@@ -327,10 +326,7 @@ func (cm *ChatModel) buildResponseChunkMessageModifier() openai.ResponseChunkMes
 			}
 
 			if firstChoice.Delta != nil {
-				msg.ReasoningContent = firstChoice.Delta.Reasoning
-				if len(firstChoice.Delta.ReasoningDetails) > 0 {
-					setReasoningDetails(msg, firstChoice.Delta.ReasoningDetails)
-				}
+				populateSchemaMessageFields(msg, firstChoice.Delta)
 			}
 
 		}
@@ -409,4 +405,70 @@ func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
 
 func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return cm.cli.BindForcedTools(tools)
+}
+
+func populateSchemaMessageFields(msg *schema.Message, message *message) {
+	if message.ReasoningDetails != nil && len(message.ReasoningDetails) > 0 {
+		setReasoningDetails(msg, message.ReasoningDetails)
+	}
+	if message.Images != nil && len(message.Images) > 0 {
+		extractImages(msg, message.Images)
+	}
+}
+
+func extractDataBase64Schema(url string) (string, string, bool) {
+	if strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://") {
+		return "", "", false
+	}
+	if !strings.HasPrefix(url, "data:") {
+		return "", "", false
+	}
+
+	const separator = ";base64,"
+	sepIndex := strings.Index(url, separator)
+	if sepIndex == -1 {
+		return "", "", false
+	}
+
+	mimetype := url[len("data:"):sepIndex]
+
+	data := url[sepIndex+len(separator):]
+
+	return mimetype, data, true
+}
+
+func extractImages(msg *schema.Message, images []*image) {
+	parts := make([]schema.MessageOutputPart, 0, len(images))
+	if msg.Content != "" {
+		parts = append(parts, schema.MessageOutputPart{
+			Type: schema.ChatMessagePartTypeText,
+			Text: msg.Content,
+		})
+	}
+	for _, img := range images {
+		if img.ImageURL.URL == "" {
+			continue
+		}
+		mimetype, data, ok := extractDataBase64Schema(img.ImageURL.URL)
+		if !ok {
+			parts = append(parts, schema.MessageOutputPart{
+				Image: &schema.MessageOutputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						URL: &img.ImageURL.URL,
+					},
+				},
+			})
+		} else {
+			parts = append(parts, schema.MessageOutputPart{
+				Image: &schema.MessageOutputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						MIMEType:   mimetype,
+						Base64Data: &data,
+					},
+				},
+			})
+		}
+
+	}
+	msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, parts...)
 }

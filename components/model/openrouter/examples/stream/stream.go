@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -28,9 +29,10 @@ import (
 )
 
 func main() {
+
 	ctx := context.Background()
 
-	chatModel, err := openrouter.NewChatModel(ctx, &openrouter.Config{
+	cm, err := openrouter.NewChatModel(ctx, &openrouter.Config{
 		APIKey:  os.Getenv("API_KEY"),
 		Model:   os.Getenv("MODEL"),
 		BaseURL: os.Getenv("BASE_URL"),
@@ -39,18 +41,35 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Fatalf("NewChatModel failed, err=%v", err)
+		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
 	}
-
-	resp, err := chatModel.Generate(ctx, []*schema.Message{
+	stream, err := cm.Stream(ctx, []*schema.Message{
 		{
 			Role:    schema.User,
-			Content: "as a machine, how do you answer user's question?",
+			Content: "Write a short poem about spring.",
 		},
 	})
 	if err != nil {
-		log.Fatalf("Generate failed, err=%v", err)
+		log.Fatalf("Stream error: %v", err)
 	}
-	fmt.Printf("output: \n%v", resp)
 
+	fmt.Println("Assistant: ")
+	for {
+		resp, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Stream receive error: %v", err)
+		}
+
+		fmt.Println("frame: ")
+		if len(resp.Content) > 0 {
+			fmt.Println("content: ", resp.Content)
+		}
+		if len(resp.ReasoningContent) > 0 {
+			fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
+		}
+	}
+	fmt.Println()
 }

@@ -1,27 +1,26 @@
-# OpenRouter 
+# OpenRouter
 
-A OpenRouter implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+[Eino](https://github.com/cloudwego/eino) 的 OpenRouter 实现，实现了 `ToolCallingChatModel` 接口。这使得与 Eino 的 LLM 功能无缝集成，以增强自然语言处理和生成能力。
 
-## Features
+## 功能
 
-- Implements `github.com/cloudwego/eino/components/model.Model`
-- Easy integration with Eino's model system
-- Configurable model parameters
-- Support for chat completion
-- Support for streaming responses
-- Custom response parsing support
-- Flexible model configuration
+- 实现 `github.com/cloudwego/eino/components/model.Model`
+- 轻松与 Eino 的模型系统集成
+- 可配置的模型参数
+- 支持聊天补全
+- 支持流式响应
+- 支持自定义响应解析
+- 灵活的模型配置
 
-
-## Installation
+## 安装
 
 ```bash
 go get github.com/cloudwego/eino-ext/components/model/openrouter@latest
 ```
 
-## Quick start
+## 快速开始
 
-Here's a quick example of how to use the OpenRouter model:
+以下是如何使用 OpenRouter 模型的快速示例：
 
 ```go
 package main
@@ -60,7 +59,8 @@ func main() {
 	/*
 		image, err := os.ReadFile("./path/to/your/image.jpg")
 		if err != nil {
-			log.Fatalf("os.ReadFile failed, err=%v\n", err)
+			log.Fatalf("os.ReadFile failed, err=%v
+", err)
 		}
 
 		imageStr := base64.StdEncoding.EncodeToString(image)
@@ -98,17 +98,16 @@ func main() {
 		log.Fatalf("Generate error: %v", err)
 	}
 
-	fmt.Printf("Assistant: %s\n", resp.Content)
+	fmt.Printf("Assistant: %s \n", resp.Content)
 	if len(resp.ReasoningContent) > 0 {
-		fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
+		fmt.Printf("ReasoningContent: %s \n", resp.ReasoningContent)
 	}
 }
 ```
 
-## Configuration
+## 配置
 
-The model can be configured using the `openrouter.Config` struct:
-
+可以使用 `openrouter.Config` 结构体配置模型：
 ```go
 type Config struct {
     APIKey string
@@ -263,8 +262,9 @@ type Reasoning struct {
 }
 
 ```
-## examples
-### generate
+
+## 示例
+### 文本生成
 
 ```go
 
@@ -305,13 +305,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
-	fmt.Printf("output: \n%v", resp)
+	fmt.Printf("output: 
+%v", resp)
 
 }
 
 ```
 
-### generate_with_image
+### 带图片生成
 
 ```go
 
@@ -370,7 +371,8 @@ func main() {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	fmt.Printf("output: \n%v", resp)
+	fmt.Printf("output: 
+%v", resp)
 }
 
 func of[T any](a T) *T {
@@ -379,7 +381,7 @@ func of[T any](a T) *T {
 
 ```
 
-### stream
+### 流式生成
 
 ```go
 
@@ -437,7 +439,8 @@ func main() {
 			fmt.Println("content: ", resp.Content)
 		}
 		if len(resp.ReasoningContent) > 0 {
-			fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
+			fmt.Printf("ReasoningContent: %s
+", resp.ReasoningContent)
 		}
 	}
 	fmt.Println()
@@ -445,7 +448,7 @@ func main() {
 
 ```
 
-### intent_tool
+### 工具调用
 
 ```go
 
@@ -486,7 +489,8 @@ func main() {
 					"email": {Type: "string", Desc: "user's email"}}),
 		}, {
 			Name: "user_salary",
-			Desc: "Retrieve the user's salary based on their name and email.\n",
+			Desc: "Retrieve the user's salary based on their name and email.
+",
 			ParamsOneOf: schema.NewParamsOneOfByParams(
 				map[string]*schema.ParameterInfo{
 					"name":  {Type: "string", Desc: "user's name"},
@@ -506,7 +510,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Generate of openai failed, err=%v", err)
 	}
-	fmt.Printf("output: \n%v", resp)
+	fmt.Printf("output: 
+%v", resp)
 
 	streamResp, err := chatModel.Stream(ctx, []*schema.Message{
 		{
@@ -535,12 +540,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("ConcatMessages of openai failed, err=%v", err)
 	}
-	fmt.Printf("stream output: \n%v", resp)
+	fmt.Printf("stream output: 
+%v", resp)
 }
 
 ```
 
-### image_generate
+### 图片生成
 
 ```go
 
@@ -604,17 +610,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Generate error: %v", err)
 	}
-	log.Printf("\ngenerate output: \n")
+	log.Printf("
+generate output: 
+")
 	respBody, _ := json.MarshalIndent(resp, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("  body: %s
+", string(respBody))
 
 }
 
 ```
 
+## 更多详情
 
-
-## For More Details
-
-- [Eino Documentation](https://github.com/cloudwego/eino)
-- [OpenRouter API Documentation](https://openrouter.ai/docs/api/reference/overview)
+- [Eino 文档](https://github.com/cloudwego/eino)
+- [OpenRouter API 文档](https://openrouter.ai/docs/api/reference/overview)

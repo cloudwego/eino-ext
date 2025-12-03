@@ -43,6 +43,8 @@ func TestNewChatModel(t *testing.T) {
 			LogitBias: map[string]int{"test": 1},
 		}
 		chatModel, err := NewChatModel(context.Background(), config)
+		assert.Equal(t, chatModel.GetType(), typ)
+		assert.Equal(t, chatModel.IsCallbacksEnabled(), true)
 		assert.NoError(t, err)
 		assert.NotNil(t, chatModel)
 		assert.NotNil(t, chatModel.cli)
@@ -199,20 +201,11 @@ func TestChatModel_buildResponseMessageModifier(t *testing.T) {
 	modifier := cm.buildResponseMessageModifier()
 	ctx := context.Background()
 
-	t.Run("success", func(t *testing.T) {
-		msg := &schema.Message{}
-		rawBody := []byte(`{"choices":[{"index":0,"message":{"reasoning":"test reasoning"}}]}`)
-		modifiedMsg, err := modifier(ctx, msg, rawBody)
-		assert.NoError(t, err)
-		assert.Equal(t, "test reasoning", modifiedMsg.ReasoningContent)
-	})
-
 	t.Run("success with reasoning details", func(t *testing.T) {
 		msg := &schema.Message{}
 		rawBody := []byte(`{"choices":[{"index":0,"message":{"reasoning":"test reasoning","reasoning_details":[{"format":"text","text":"detail"}]}}]}`)
 		modifiedMsg, err := modifier(ctx, msg, rawBody)
 		assert.NoError(t, err)
-		assert.Equal(t, "test reasoning", modifiedMsg.ReasoningContent)
 		details, ok := getReasoningDetails(modifiedMsg)
 		assert.True(t, ok)
 		assert.Len(t, details, 1)
@@ -220,12 +213,39 @@ func TestChatModel_buildResponseMessageModifier(t *testing.T) {
 		assert.Equal(t, "detail", details[0].Text)
 	})
 
-	t.Run("success with message", func(t *testing.T) {
+	t.Run("success with images", func(t *testing.T) {
 		msg := &schema.Message{}
-		rawBody := []byte(`{"choices":[{"index":0,"message":{"reasoning":"test reasoning"}}]}`)
+		rawBody := []byte(`{
+		  "choices": [
+			{
+			  "index": 0,
+			  "message": {
+				"reasoning": "test reasoning",
+				"reasoning_details": [
+				  {
+					"format": "text",
+					"text": "detail"
+				  }
+				],
+				"images": [
+				  {
+					"type": "image_url",
+					"image_url": {
+					  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQACA"
+					}
+				  }
+				]
+			  }
+			}
+		  ]
+		}`)
 		modifiedMsg, err := modifier(ctx, msg, rawBody)
 		assert.NoError(t, err)
-		assert.Equal(t, "test reasoning", modifiedMsg.ReasoningContent)
+		details, ok := getReasoningDetails(modifiedMsg)
+		assert.True(t, ok)
+		assert.Len(t, details, 1)
+		assert.Len(t, msg.AssistantGenMultiContent, 1)
+
 	})
 
 	t.Run("no choices", func(t *testing.T) {
@@ -251,20 +271,52 @@ func TestChatModel_buildResponseChunkMessageModifier(t *testing.T) {
 	modifier := cm.buildResponseChunkMessageModifier()
 	ctx := context.Background()
 
-	t.Run("success", func(t *testing.T) {
+	t.Run("success with reasoning details", func(t *testing.T) {
 		msg := &schema.Message{}
-		rawBody := []byte(`{"choices":[{"index":0,"delta":{"reasoning":"test reasoning"}}]}`)
+		rawBody := []byte(`{
+		  "choices": [
+			{
+			  "index": 0,
+			  "delta": {
+				"reasoning": "test reasoning",
+				"reasoning_details": [
+				  {
+					"format": "text",
+					"text": "detail"
+				  }
+				],
+				"images": [
+				  {
+					"type": "image_url",
+					"image_url": {
+					  "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQACA"
+					}
+				  }
+				]
+			  }
+			}
+		  ]
+		}`)
 		modifiedMsg, err := modifier(ctx, msg, rawBody, false)
 		assert.NoError(t, err)
-		assert.Equal(t, "test reasoning", modifiedMsg.ReasoningContent)
+		details, ok := getReasoningDetails(modifiedMsg)
+		assert.True(t, ok)
+		assert.Len(t, details, 1)
+		assert.Equal(t, "text", details[0].Format)
+		assert.Equal(t, "detail", details[0].Text)
+		assert.Len(t, msg.AssistantGenMultiContent, 1)
 	})
 
-	t.Run("success with reasoning details", func(t *testing.T) {
+	t.Run("success with images", func(t *testing.T) {
 		msg := &schema.Message{}
 		rawBody := []byte(`{"choices":[{"index":0,"delta":{"reasoning":"test reasoning","reasoning_details":[{"format":"text","text":"detail"}]}}]}`)
 		modifiedMsg, err := modifier(ctx, msg, rawBody, false)
 		assert.NoError(t, err)
-		assert.Equal(t, "test reasoning", modifiedMsg.ReasoningContent)
+		details, ok := getReasoningDetails(modifiedMsg)
+		assert.True(t, ok)
+		assert.Len(t, details, 1)
+		assert.Equal(t, "text", details[0].Format)
+		assert.Equal(t, "detail", details[0].Text)
 	})
 
 	t.Run("error finish reason", func(t *testing.T) {
@@ -304,4 +356,33 @@ func TestChatModel_buildResponseChunkMessageModifier(t *testing.T) {
 		_, err := modifier(ctx, msg, rawBody, false)
 		assert.Error(t, err)
 	})
+}
+
+func TestChatModel_Tools(t *testing.T) {
+	config := &Config{
+		APIKey:    "test-api-key",
+		Timeout:   30 * time.Second,
+		Model:     "test-model",
+		BaseURL:   "https://example.com",
+		User:      new(string),
+		LogitBias: map[string]int{"test": 1},
+	}
+	chatModel, err := NewChatModel(context.Background(), config)
+	assert.NoError(t, err)
+
+	_, err = chatModel.WithTools([]*schema.ToolInfo{
+		{Name: "test-tool", Desc: "test tool description", ParamsOneOf: &schema.ParamsOneOf{}},
+	})
+
+	assert.NoError(t, err)
+
+	err = chatModel.BindTools([]*schema.ToolInfo{
+		{Name: "test-tool", Desc: "test tool description", ParamsOneOf: &schema.ParamsOneOf{}},
+	})
+	assert.NoError(t, err)
+
+	err = chatModel.BindForcedTools([]*schema.ToolInfo{
+		{Name: "test-tool", Desc: "test tool description", ParamsOneOf: &schema.ParamsOneOf{}},
+	})
+	assert.NoError(t, err)
 }

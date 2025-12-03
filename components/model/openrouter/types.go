@@ -85,11 +85,20 @@ type Reasoning struct {
 	Enabled *bool `json:"enabled,omitempty"`
 }
 
+type image struct {
+	Type     string `json:"type"`
+	ImageURL struct {
+		URL string `json:"url"`
+	} `json:"image_url"`
+	Index int64 `json:"index"`
+}
+
 type message struct {
 	Role             string              `json:"role,omitempty"`
 	Content          string              `json:"content,omitempty"`
 	Reasoning        string              `json:"reasoning,omitempty"`
 	ReasoningDetails []*reasoningDetails `json:"reasoning_details,omitempty"`
+	Images           []*image            `json:"images,omitempty"`
 }
 
 type responseChoice struct {
