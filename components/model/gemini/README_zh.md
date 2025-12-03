@@ -1,27 +1,27 @@
 # Google Gemini
 
-A Google Gemini implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+一个针对 [Eino](https://github.com/cloudwego/eino) 的 Google Gemini 实现，实现了 `ToolCallingChatModel` 接口。这使得能够与 Eino 的 LLM 功能无缝集成，以增强自然语言处理和生成能力。
 
-## Features
+## 特性
 
-- Implements `github.com/cloudwego/eino/components/model.Model`
-- Easy integration with Eino's model system
-- Configurable model parameters
-- Support for chat completion
-- Support for streaming responses
-- Custom response parsing support
-- Flexible model configuration
-- Caching support for generated responses
+- 实现了 `github.com/cloudwego/eino/components/model.Model`
+- 轻松与 Eino 的模型系统集成
+- 可配置的模型参数
+- 支持聊天补全
+- 支持流式响应
+- 支持自定义响应解析
+- 灵活的模型配置
+- 支持对生成的响应进行缓存
 
-## Installation
+## 安装
 
 ```bash
 go get github.com/cloudwego/eino-ext/components/model/gemini@latest
 ```
 
-## Quick start
+## 快速开始
 
-Here's a quick example of how to use the Gemini model:
+以下是如何使用 Gemini 模型的快速示例：
 
 ```go
 package main
@@ -51,7 +51,7 @@ func main() {
 
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
-		Model:  "gemini-2.5-flash",
+		Model:  "gemini-1.5-flash",
 		ThinkingConfig: &genai.ThinkingConfig{
 			IncludeThoughts: true,
 			ThinkingBudget:  nil,
@@ -61,7 +61,7 @@ func main() {
 		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
 	}
 
-	// If you are using a model that supports image understanding (e.g., gemini-2.5-flash-image-preview),
+	// If you are using a model that supports image understanding (e.g., gemini-1.5-flash-image-preview),
 	// you can provide both image and text input like this:
 	/*
 		image, err := os.ReadFile("./path/to/your/image.jpg")
@@ -111,9 +111,9 @@ func main() {
 }
 ```
 
-## Configuration
+## 配置
 
-The model can be configured using the `gemini.Config` struct:
+可以使用 `gemini.Config` 结构体配置模型：
 
 ```go
 type Config struct {
@@ -179,14 +179,15 @@ type CacheConfig struct {
 }
 ```
 
-## Caching
+## 缓存
 
-This component supports two caching strategies to improve latency and reduce API calls:
+该组件支持两种缓存策略以提高延迟并减少 API 调用：
 
-- Explicit caching (prefix cache): Build a reusable context from the system instruction, tools, and messages. Use `CreatePrefixCache` to create the cache and pass its name with `gemini.WithCachedContentName(...)` in subsequent requests. Configure TTL and absolute expiry via `CacheConfig` (`TTL`, `ExpireTime`). When a cached content is used, the request omits system instruction and tools and relies on the cached prefix.
-- Implicit caching: Managed by Gemini itself. The service may reuse prior requests or responses automatically. Expiry and reuse are controlled by Gemini and cannot be configured.
+- 显式缓存（前缀缓存）：从系统指令、工具和消息中构建可重用的上下文。使用 `CreatePrefixCache` 创建缓存，并在后续请求中使用 `gemini.WithCachedContentName(...)` 传递其名称。通过 `CacheConfig`（`TTL`、`ExpireTime`）配置 TTL 和绝对到期时间。当使用缓存内容时，请求会省略系统指令和工具，并依赖于缓存的前缀。
+- 隐式缓存：由 Gemini 自身管理。服务可能会自动重用先前的请求或响应。到期和重用由 Gemini 控制，无法配置。
 
-```
+下面的示例展示了如何创建前缀缓存并在后续调用中重用它。
+```go
 toolInfoList := []*schema.ToolInfo{
 	{
 		Name:        "tool_a",
@@ -214,11 +215,10 @@ msg, err := cm.Generate(ctx, []*schema.Message{
 	}, gemini.WithCachedContentName(cacheInfo.Name))
 ```
 
-The example above shows how to create a prefix cache and reuse it in a follow-up call.
 
-## examples
+## 示例
 
-### generate
+### 文本生成
 
 ```go
 
@@ -278,7 +278,7 @@ func main() {
 
 ```
 
-### generate_with_image
+### 多模态支持(图片理解)
 
 ```go
 
@@ -353,7 +353,7 @@ func main() {
 
 ```
 
-### generate_with_prefix_cache
+### 携带前缀缓存文本生成
 
 ```go
 
@@ -463,7 +463,7 @@ always include the start_time and end_time of the transcript in the output`,
 
 ```
 
-### stream
+### 流式生成
 
 ```go
 
@@ -538,7 +538,7 @@ func main() {
 
 ```
 
-### intent_tool
+### 工具调用
 
 ```go
 
@@ -645,7 +645,7 @@ func main() {
 
 ```
 
-### image_generate
+### 图片生成
 
 ```go
 
@@ -727,7 +727,7 @@ func main() {
 
 ```
 
-### react
+### React Agent 模式示例
 
 ```go
 
@@ -832,7 +832,7 @@ func main() {
 
 
 
-## For More Details
+## 更多信息
 
 - [Eino Documentation](https://github.com/cloudwego/eino)
 - [Gemini API Documentation](https://ai.google.dev/api/generate-content?hl=zh-cn#v1beta.GenerateContentResponse)

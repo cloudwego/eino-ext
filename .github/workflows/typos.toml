@@ -3,3 +3,6 @@ ot = "ot"
 OT = "OT"
 typ = "typ"
 Typ = "Typ"
+
+[files]
+extend-exclude = ["**/*.test.txt"]

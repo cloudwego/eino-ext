@@ -50,3 +50,18 @@ func TestConcatMessages(t *testing.T) {
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "how are you", reasoningContent)
 }
+
+func TestSetGetRequestID(t *testing.T) {
+	msg := &schema.Message{}
+	setRequestID(msg, "req-123")
+	requestID := GetRequestID(msg)
+	assert.Equal(t, "req-123", requestID)
+}
+
+func TestSetMsgExtra(t *testing.T) {
+	msg := &schema.Message{}
+	setMsgExtra(msg, "key", "val")
+	extraVal, ok := getMsgExtraValue[string](msg, "key")
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "val", extraVal)
+}
