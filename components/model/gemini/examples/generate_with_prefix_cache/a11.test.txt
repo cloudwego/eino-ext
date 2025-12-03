@@ -1,0 +1,989 @@
+INTRODUCTION
+
+This is the transcription of the Technical Air-to-Ground Voice Transmission (GOSS NET 1) from the Apollo 11 mission.
+
+Communicators in the text may be identified according to the following list.
+
+Spacecraft:
+CDR	Commander	Neil A. Armstrong
+CMP	Command module pilot   	Michael Collins
+LMP	Lunar module pilot	Edwin E. ALdrin, Jr.
+SC	Unidentifiable crewmember
+MS	Multiple (simultaneous) speakers
+LCC	Launch Control Center
+Mission Control Center:
+CC	Capsule Communicator (CAP COMM)
+F	Flight Director
+Remote Sites:
+CT	Communications Technician (COMM TECH)
+Recovery Forces:
+HORNET   	USS Hornet
+R	Recovery helicopter
+AB	Air Boss
+
+
+A series of three dots (...) is used to designate those portions of the communications that could not be transcribed because of garbling. One dash (-) is used to indicate a speaker's pause or a self-interruption and subsequent completion of a thought. Two dashes (- -) are used to indicate an interruption by another speaker or a point at which a recording was terminated abruptly.
+
+
+
+APOLLO 11 AIR-TO-GROUND VOICE TRANSCRIPTION
+
+(GOSS NET 1) Tape 1/1 Page 1
+
+MILA (REV 1)
+
+00 00 00 04 CDR
+Roger. Clock.
+
+00 00 00 13 CDR
+Roger. We got a roll program.
+
+00 00 00 15 CMP
+Roger. Roll.
+
+00 00 00 34 CDR
+Roll's complete and the pitch is programed.
+
+00 00 00 44 CDR
+One Bravo.
+
+00 00 01 02 CC
+Apollo 11, Houston. You're good at 1 minute.
+
+00 00 01 06 CDR
+Roger.
+
+00 00 01 54 CC
+Stand by for mode 1 Charlie.
+
+00 00 01 57 CC
+MARK.
+
+00 00 01 58 CC
+Mode 1 Charlie.
+
+00 00 01 59 CDR
+One Charlie.
+
+00 00 02 03 CC
+Apollo 11, this is Houston. You are GO for staging.
+
+00 00 02 17 CDR
+Inboard cut-off.
+
+00 00 02 19 CC
+We confirm inboard cut-off.
+
+00 00 02 44 CDR
+Staging.
+
+00 00 02 46 CDR
+And ignition.
+
+00 00 02 55 CC
+11, Houston. Thrust is GO, all engines. You're looking good.
+
+00 00 02 59 CDR
+Roger. You're loud and clear, Houston.
+
+00 00 03 13 CDR
+We've got skirt SEP.
+
+00 00 03 15 CC
+Roger. We confirm. Skirt SEP.
+
+00 00 03 17 CDR
+Tower's gone.
+
+00 00 03 19 CC
+Roger. Tower.
+
+00 00 03 28 CDR
+Houston, be advised the visual is GO today.
+
+00 00 03 32 CC
+This is Houston. Roger. Out.
+
+
+
+(GOSS NET 1) Tape 1/2 Page 2
+
+00 00 03 36 CDR
+Yes. They finally gave me a window to look out.
+
+00 00 03 44 CC
+11, Houston. Your guidance has converged; you're looking good.
+
+00 00 03 52 CDR
+Roger.
+
+00 00 04 01 CC
+11, Houston. YOU are GO at 4 minutes.
+
+00 00 04 04 CDR
+Roger.
+
+00 00 05 03 CC
+11, Houston. You are GO at 5 minutes.
+
+00 00 05 06 CDR
+Roger. It'll - Apollo 11. Go.
+
+00 00 05 21 CC
+Stand by the S-IVB to COI capability.
+
+00 00 05 25 CDR
+Okay.
+
+00 00 05 27 CC
+MARK.
+
+00 00 05 28 CC
+S-IVB to COI capability.
+
+00 00 05 30 CDR
+Roger.
+
+00 00 05 35 CDR
+You sure sound clear down there, Bruce. Sounds like you're sitting in your living room.
+
+00 00 05 39 CC
+Oh, thank you. You all are coming through beautifully, too.
+
+00 00 06 00 CDR
+We're doing 6 minutes. Starting the gimbal motors.
+
+00 00 06 03 CC
+Roger, 11. You're GO from the ground at 6 minutes.
+
+00 00 06 20 CC
+Apollo 11, this is Houston. Level sense arm at 8 plus 17; outboard cut-off at 9 plus 11.
+
+00 00 07 01 CDR
+Apollo 11's GO at 7 minutes.
+
+00 00 07 04 CC
+11, this is Houston. Roger. You're GO from the ground at 7 minutes. Level sense arm at 8 plus 17; outboard cut-off at 9 plus 11.
+
+00 00 07 09 CDR
+Roger.
+
+00 00 07 42 CDR
+Inboard cut-off.
+
+00 00 07 45 CC
+Roger. We confirmed.
+
+00 O0 08 19 CC
+Apollo 11, Houston. You are GO at 8 minutes.
+
+
+
+(GOSS NET 1) Tape 1/3 Page 3
+
+00 00 08 22 CDR
+AGS just got the mixture ratio shift.
+
+00 00 08 24 CC
+Roger. We got PU shift down here, too.
+
+00 00 08 34 CDR
+Well, it looks like a nice day for it. These thunderstorms down range is about all.
+
+GRAND BAHAMA ISLANDS (REV 1)
+
+00 00 08 52 CC
+11, this is Houston. You are GO for staging. Over.
+
+00 00 08 56 CDR
+Understand, GO for staging. And - -
+
+00 00 08 57 CC
+Stand by for mode IV capability.
+
+00 00 08 59 CDR
+Okay. Mode IV.
+
+00 00 09 00 CC
+MARK.
+
+00 00 09 01 CC
+Mode IV capability.
+
+00 00 09 15 CDR
+Staging -
+
+00 00 09 16 CDR
+- And ignition.
+
+00 00 09 19 CC
+Ignition confirmed; thrust is GO, 11.
+
+00 00 10 01 CC
+Apollo 11, this is Houston. At 10 minutes, you are GO.
+
+00 00 10 06 CDR
+Roger. 11's GO.
+
+00 00 10 24 CC
+Apollo 11, this is Houston. Predicted cut-off at 11 plus 42. Over.
+
+00 00 10 29 CDR
+11 42. Roger.
+
+00 00 11 03 CC
+Apollo 11, this is Houston. You are GO at 11.
+
+00 00 11 08 CDR
+Good deal.
+
+00 00 11 42 CDR
+Shutdown.
+
+00 00 11 45 CMP
+SECO. We are showing 101.4 by 103.6.
+
+00 00 11 51 CC
+Roger. Shutdown. We copy 101.4 by 103.6.
+
+00 00 12 06 CC
+Apollo 11, this is Houston. You are confirmed GO for orbit.
+
+
+
+(GOSS NET 1) Tape 1/4 Page 4
+
+00 00 12 12 CDR
+Roger.
+
+00 00 12 24 CC
+Apollo 11, this is Houston. The booster is safe.
+
+00 00 12 29 CDR
+Roger.
+
+VANGUARD (REV 1)
+
+00 00 13 27 CC
+Apollo 11, this is Houston. The booster has been configured for orbital coast. Both spacecraft are looking good. Over.
+
+00 00 13 35 CDR
+Roger.
+
+00 00 14 33 CC
+Apollo 11, this is Houston. Vanguard LOS at 15 35; AOS Canaries at 16 30. Over.
+
+00 00 14 43 CDR
+Okay. Thank you.
+
+CANARY (REV 1)
+
+00 00 17 38 CT ... Houston COMM TECH. Canary COMM TECH.
+
+00 00 18 18 CC
+Apollo 11, this is Houston through Canary. Over.
+
+00 00 18 23 CDR
+Roger. Reading you loud and clear. Our insertion checklist is complete, and we have no abnormalities.
+
+00 00 18 30 CC
+Roger. And I'd like to pass up your Delta azimuth correction at this time if you're ready to copy.
+
+00 00 18 36 CDR
+Stand by.
+
+00 00 18 40 CDR
+Roger. Go ahead. Ready to copy.
+
+00 00 18 42 CC
+Okay. Delta azimuth correction is plus 0.22, that is plus 0.22, and we do recommend the P52 alignment. Over.
+
+00 00 18 54 CDR
+Okay. We'll go ahead with the P52, and detecting angle plus 0.22.
+
+00 00 19 O1 CC
+Roger. And your LOS time at Canary is 23 37. Over.
+
+00 00 19 09 CDR
+23 37.
+
+
+
+(GOSS NET 1) Tape 1/5 Page 5
+
+00 00 19 11 CC
+Houston. Roger. Out.
+
+00 00 22 41 CC
+Apollo 11, this is Houston. One minute to LOS Canary; A0S at Tananarive 37 04 in VHF Simplex Alfa. Over.
+
+00 00 23 08 CC
+Apollo 11, this is Houston. Coming up on LOS Canary; AOS Tananarive at 37 04, Simplex Alfa. Houston. Out.
+
+00 00 23 23 CDR
+Apollo. Roger.
+
+TANANARIVE (REV 1)
+
+00 00 38 37 CC
+Apollo 11, this is Houston through Tananarive. Over.
+
+00 00 38 50 CC
+Apollo 11, Apollo 11, this is Houston through Tananarive. Over.
+
+00 00 39 04 CDR
+Houston, Apollo 11. Read you on VHF A Simplex. How do you read? Over.
+
+00 00 39 10 CC
+Roger, 11. This is Houston. We're reading you loud and fairly clearly. For your information, Canary radar shows you in a 103.0 by 103.0 orbit. Over.
+
+00 00 39 25 CDR
+Beautiful.
+
+00 00 39 27 CC
+Roger. We concur.
+
+00 00 39 31 CDR
+... We're just coming into the terminator here.
+
+00 00 41 44 CC
+Apollo 11, this is Houston. One minute to LOS Tananarive; AOS Carnarvon is at 52 15. Over.
+
+00 00 41 54 CDR
+All alone. Roger.
+
+00 00 43 13 CT TAN LOS.
+
+CARNARVON (REV 1)
+
+00 00 53 03 CC
+Apollo 11, this is Houston through Carnarvon. Over.
+
+00 00 53 08 LMP
+Houston, Apollo 11. Loud and clear. Over.
+
+
+
+(GOSS NET 1) Tape 1/6 Page 6
+
+00 00 53 11 CC
+Roger, 11. We're reading you the same. Both the booster and the spacecraft are looking good to us. Over.
+
+00 00 53 26 LMP
+Houston, Apollo 11. Would you like to copy the alignment results?
+
+00 00 53 31 CC
+That's affirmative.
+
+00 00 53 35 LMP
+Okay. NOUN 71: we used 30 and 37, four balls 1; NOUN 93: plus 00016, plus 00033, plus 00152; GET 00 48 15; check star 34. Over.
+
+00 00 54 02 CC
+Roger. Say again check star.
+
+00 00 54 06 LMP
+Check star 34.
+
+00 00 54 09 CC
+Roger. We copy. And the angles look good.
+
+00 00 54 13 CMP
+And tell Glenn Parker down at the Cape that he lucked out.
+
+00 00 54 17 CC
+Understand. Tell Glenn Parker he lucked out.
+
+00 00 54 22 CMP
+Yes. He lucked out. He doesn't owe me a cup of coffee.
+
+00 00 54 26 CC
+This is Houston. Roger. We'll pass it on.
+
+00 00 57 27 CC
+Apollo 11, this is Houston. One minute to LOS Carnarvon; AOS at Honeysuckle 59 33. Over.
+
+00 00 57 37 CDR
+Apollo 11. Roger.
+
+00 00 57 40 CC
+Roger. And we request you turn up S-band volume for the Honeysuckle pass.
+
+HONEYSUCKLE (REV 1)
+
+00 01 02 48 CC
+Apollo 11, Apollo 11, this is Houston on S-band. Radio check. Over.
+
+00 01 02 55 CDR
+Roger, Houston. Apollo 11 reads you loud and clear.
+
+00 01 02 58 CC
+This is Houston. Roger. Reading you the same. Out.
+
+00 01 04 24 CC
+Apollo 11, this is Houston. A little over 1 minute to LOS at Honeysuckle. You'll be AOS at Goldstone at 1 29 02; LOS at Goldstone 1 33 55. Over.
+
+
+
+(GOSS NET 1) Tape 1/7 Page 7
+
+00 01 04 47 CMP
+Roger, Bruce. Thank you. We expect TV. We've got it all hooked up. We have not yet turned it on. We're ready to do that now.
+
+00 01 04 55 CC
+Roger. We copy. We'll be configured and waiting for whatever you want to send down. GUAYMAS (REV 1)
+
+00 01 29 09 CC
+Apollo 11, this is Houston through Guaymas. Over.
+
+00 01 29 14 CDR
+Roger, Houston. Reading you loud and clear.
+
+00 01 29 17 CC
+Roger. Reading you the same. Coming up on AOS Goldstone.
+
+00 01 29 20 CDR
+Roger.
+
+
+END OF TAPE
+
+
+(GOSS NET 1) Tape 1/8 Page 8
+
+NOTE
+
+Subsequent to TLI, there is continuous acquisition among Goldstone (GDS), Madrid (MAD), and Honeysuckle (HSK).
+
+
+
+
+APOLLO 11 AIR-TO-GROUND VOICE TRANSCRIPTION
+
+(GOSS NET 1) Tape 2/1 Page 9
+
+GUAYMAS (REV 1)
+
+00 01 29 27 LMP
+Cecil B. deAldrin is standing by for instructions.
+
+00 01 29 32 CC
+Houston. Roger.
+
+00 01 31 15 CC
+Apollo 11, this is Houston. We are not receiving your FM downlink yet. We are standing by.
+
+00 01 31 56 CC
+Apollo 11, this is Houston. We are receiving your FM downlink now. We are standing by for TV modulations on the signal.
+
+00 01 32 23 CC
+Apollo 11, Apollo 11, this is Houston. Radio check. Over.
+
+GOLDSTONE (REV 1)
+
+00 01 32 27 CDR
+Roger. Loud and clear. We think we are transmitting to you.
+
+00 01 32 31 CC
+Okay. We are not receiving it yet, 11, although we have confirmed presence of your FM downlink carrier.
+
+00 01 32 39 CDR
+Which switches do you want us to confirm?
+
+00 01 32 42 CC
+Stand by.
+
+TEXAS (REV 1)
+
+00 01 33 11 CC
+Apollo 11, this is Houston. You were just on the fringes of coverage from Goldstone. We have just had LOS at Goldstone, and we'd like to push on and get the PAD messages read up to you here shortly.
+
+00 01 33 26 CDR
+Roger. We are ready to copy.
+
+00 01 34 33 CC
+Apollo 11, this is Houston. I am ready with your TLI-plus-90-minute abort PAD.
+
+00 01 34 55 CC
+Apollo 11, this is Houston. I am ready with your TLI-plus-90-minute abort PAD.
+
+
+
+(GOSS NET 1) Tape 2/2 Page 10
+
+00 01 35 00 CDR
+Roger. Apollo 11 is ready to copy TLI plus 90.
+
+00 01 35 03 CMP
+Go.
+
+00 01 35 05 CC
+Roger. TLI plus 90, SPS G&N: 63481, minus 153, plus 132; GETI 004 10 25 38; NOUN 81, minus 04761, plus 00001, plus 53361; roll 180 193 000; HA is NA; plus 00203 53573 633 53349, sextant star 33 1578 122. The boresight star is not available. Latitude minus 0252, minus 02580 11887 34345 016 03 50. GDC align Vega and Deneb. Roll 071 291 341. No ullage, undocked. I have your P37 for TLI plus 5 hours. Over.
+
+00 01 37 08 CMP
+Go ahead, TLI plus 5.
+
+00 01 37 11 CC
+Roger. P37 format, TLI plus 5: 00744 6485, minus 165, 02506. Read back. Over.
+
+00 01 37 31 CMP
+Roger. TLI plus 90, SPS G&N: 63481, minus 153, plus 132, 004 l0 25 38, minus 04761, plus 00001, plus 53361, 180 193 000, not applicable, plus 00203 53573 633 53349, 33 1578 122, not available, minus 0252, minus 02580 11887 34345 016 03 50. Vega and Deneb, 071 291 341. No ullage, undocked. P37, TLI plus 5: 00744 6485, minus 165 02506. Over.
+
+00 01 39 04 CC
+Apollo 11, this is Houston. Readback correct. For your information, Goldstone reports receiving approximately 1 minute of FM downlink carrier. We were getting ready to request you confirm on the S-band AUX switches, the S-band AUX tape switch to OFF and the S-band AUX TV switch to TV. Over.
+
+00 01 39 29 CDR
+I confirm that that is the configuration we're in.
+
+00 01 39 33 CC
+Roger. Let us do a little more detective work here and we'll see if we can come up with something.
+
+00 01 39 38 CDR
+Okay.
+
+00 01 39 54 CDR
+Houston, Apollo 11 is ready to go ahead with the - extend the docking probe, and ready to go with the RCS hot fire when you're ready to monitor. Over.
+
+00 01 40 06 CC
+Roger. Go ahead with the probe, now.
+
+
+
+(GOSS NET 1) Tape 2/3 Page 11
+
+00 01 40 13 CDR
+Roger.
+
+00 01 41 33 CDR
+Okay. We're ready to - for the hot fire check when you're ready.
+
+00 01 41 39 CC
+Roger. We're ready 11. Go ahead.
+
+00 01 41 48 CDR
+Roger. Here's the pitch.
+
+00 01 42 13 CC
+Apollo 11, this is Houston. We are seeing the pitch hot firing and it looks good.
+
+00 01 42 18 CDR
+Roger. Be advised that we are unable to hear them.
+
+00 01 42 22 CC
+Roger. We copy.
+
+00 01 42 24 CDR
+Have you seen all three axes fire?
+
+00 01 42 31 CC
+We've seen pitch and yaw; we've not seen roll to date.
+
+00 01 42 36 CDR
+Okay. I'll put in a couple more rolls.
+
+00 01 42 42 CC
+Okay. We've got the roll impulses, and you're looking good here.
+
+00 01 42 48 CDR
+Roger. Houston, Apollo 11. We're standing by for a GO for sequence logic ON.
+
+00 01 43 03 CC
+Apollo 11, this is Houston. Go ahead and we'll watch you on TM.
+
+00 01 43 07 CDR
+Okay. Sequence logic, two of them. Sequence logic 1 and 2 coming up and ON.
+
+GRAND BAHAMA ISLANDS (REV 2)
+
+00 01 43 36 CC
+Apollo 11, this Houston. You are GO for RYRO ARM.
+
+00 01 43 40 CDR
+Roger. Thank you.
+
+00 01 43 57 CC
+Apollo 11, this is Houston. If you will give us P00 in ACC
+EPT, we have a state vector update for you.
+
+00 01 44 04 CDR
+Roger.
+
+00 01 44 17 CDR
+You have P00 in ACCEPT.
+
+
+
+(GOSS NET 1) Tape 2/4 Page 12
+
+00 01 44 19 CC
+Roger. It will probably be another 10 or 15 seconds. We're going to go up through the Vanguard. When you are ready to copy, I have your TLI PAD.
+
+00 01 44 26 CMP
+Roger. Ready to copy TLI PAD.
+
+00 01 44 30 CC
+Roger. TLI: 23514 179 071 001, burn time 547 104356 35575. Roll for SEP 357 107 041, 301 287 319. TLI 10-minute abort pitch, 223. Read back. Over.
+
+VANGUARD (REV2)
+
+00 01 45 23 CMP
+Roger. TLI PAD: 23514 179 071 001 547 104356 35575 357 107 041 301 287 319. TLI 1O-minute abort pitch, 223. Over.
+
+00 01 46 03 CC
+Apollo 11, this is Houston. Roger. Would you read back DELTA-VC prime again? You were cut out by some noise.
+
+00 01 46 09 CMP
+Okay. Roger. I'm picking up the squeal here, also. DELTA-VC 104356. Over.
+
+00 01 46 25 CC
+Apollo 11, this is Houston. Readback correct. Out.
+
+00 01 47 06 CC
+Apollo 11, this is Houston. We've completed the uplink; the computer is yours. You can go back to BLOCK. Would you verify that you have extended the probe? Over.
+
+00 01 47 16 CDR
+Roger. That's verified; the probe is extended.
+
+00 01 47 19 CC
+Roger. About 2 minutes to LOS on this stateside pass. AOS Canaries at 1 50 13. Over.
+
+00 01 47 28 CDR
+Roger. 1 50.
+
+CANARY (REV 2)
+
+00 01 50 42 CC
+Apollo 11, this is Houston. Over.
+
+00 01 50 45 CDR
+Roger. Houston, Apollo 11. Loud and clear.
+
+
+
+(GOSS NET 1) Tape 2/5 Page 13
+
+00 01 50 49 CC
+Okay. On your service module RCS quad Bravo package temperature, we're showing it running a little low. Looks like about 20 degrees low - lower than the rest of the quads. Would you confirm that your RCS heater switch for quad Bravo is in PRIMARY? Over.
+
+00 01 51 09 CDR
+You're correct. It was not in PRIMARY. It was off. It's on now. Thank you.
+
+00 01 51 16 CC
+Roger. Thank you.
+
+00 01 53 50 CC
+Apollo 11, this is Houston. Over.
+
+00 01 53 54 CMP
+Houston, Apollo 11. Go ahead.
+
+00 01 53 56 CC
+Roger. We've checked over the spacecraft and the launch vehicle guidance. They're both looking to be in good shape. We estimate you have better than a 99-percent probability of a guidance cut-off on the launch vehicle, so things are apparently holding in very well. For your information, MILA received approximately 1 minute of a usable TV picture, so apparently the system is working. And you're a little over a minute from LOS at Canary; AOS Tananarive is 2 hours 9 minutes and 18 seconds. Over.
+
+00 01 54 34 CMP
+Roger. We like those 99 numbers. Thank you.
+
+00 01 54 38 CC
+Roger. 0ut.
+
+TANANARIVE (REV 2)
+
+00 02 09 17 CC
+Apollo 11, this is Houston through Tananarive. How do you read?
+
+00 02 09 45 CC
+Apollo 11, this is Houston standing by through Tananarive.
+
+00 02 10 03 CT
+Tananarive, Houston COMM TECH NET 1.
+
+00 02 10 12 CT
+Tananarive, Houston COMM TECH NET 1.
+
+00 02 10 23 CT
+Goddard voice, Houston COMM TECH NET 1.
+
+00 02 10 27 MSFN
+Goddard voice, reading you loud and clear.
+
+
+
+(GOSS NET 1) Tape 2/6 Page 14
+
+00 02 10 29 CT
+Roger. We cannot raise Tananarive.
+
+00 02 10 31 CT
+Houston COMM TECH, Tananarive.
+
+00 02 10 34 CT
+Roger, Tananarive. Are you receiving CAP COMM's voice, and are you uplinking it?
+
+00 02 10 39 CT
+Negative.
+
+00 02 10 41 CT
+Roger. Monitor again and I'll tell CAP C0MM to make one more transmission.
+
+00 02 10 51 CT
+Roger.
+
+00 02 10 56 CC
+Apollo 11, Apollo 11, this is Houston standing by through Tananarive. Over.
+
+00 02 11 04 CDR
+Houston, Apollo 11 ...
+
+00 02 11 06 CC
+Roger. Reading you loud and clear.
+
+00 02 12 35 CDR
+Houston, Apollo 11. We have the PYRO's armed.
+
+00 02 12 39 CC
+This is Houston. Roger. Out.
+
+00 02 15 23 CC
+Apollo 11, this is Houston. One minute to LOS Tananarive; AOS at Carnarvon 02 25 30.
+
+00 02 15 35 CDR
+Roger.
+
+CARNARVON (REV 2)
+
+00 02 25 44 CC
+Apollo 11, this is Houston through Carnarvon. Radio check. Over.
+
+00 02 25 49 CDR
+Roger, Houston through Carnarvon. Apollo 11. Loud and clear.
+
+00 02 25 53 CC
+Roger. You're coming in very loud and very clear, here. Out.
+
+00 02 26 38 CC
+Apollo 11, this is Houston. You are GO for TLI. Over.
+
+00 02 26 45 CMP
+Apollo 11. Thank you.
+
+00 02 26 48 CC
+Roger. Out.
+
+00 02 30 11 CC
+Apollo 11, this is Houston. Over.
+
+00 02 30 16 CDR
+Houston, 11.
+
+
+
+(GOSS NET 1) Tape 2/7 Page 15
+
+00 02 30 18 CC
+Roger. We'll be coming within range of the ARIA aircraft coverage, here, in about 1 minute. They're going to try uplinking both on S-band and on VHF this time. So if you turn your - make sure your S-band volume is turned up, we'd appreciate it. And we believe that we'll have continuous coverage from now on through the TLI burn. Over.
+
+00 02 30 42 CDR
+Very good.
+
+ARIA (REV 2)
+
+00 02 32 20 CC
+Apollo 11, Apollo 11, this is Houston through ARIA 4. Radio check. Over.
+
+00 02 32 28 LMP
+Houston, we read you strength 4 and a little scratchy.
+
+00 02 32 34 CC
+Roger. We're reading you strength 5, readability about 3. Should be quite adequate.
+
+00 02 32 42 CC
+Apollo 11, Apollo 11, this is Houston. We're reading you readability about 3, strength 5. Sounds pretty good. Over.
+
+00 02 32 54 CDR
+Roger. We've got a little static in the background now.
+
+00 02 37 21 CC
+Apollo 11, this is Houston through ARIA 3. Radio cheek. Over.
+
+00 02 37 26 CDR
+Roger, Houston, Apollo 11. You are much clearer and adequately loud. Over.
+
+00 02 37 32 CC
+Roger, 11, You are coming in five-by-five here. Beautiful signal.
+
+00 02 37 38 CDR
+This is a lot better than this static we had previously.
+
+00 02 37 4l CC
+Okay.
+
+00 02 37 48 CMP
+And we got the time base fix indication on time.
+
+00 02 37 50 CC
+This is Houston. Roger. Out.
+
+00 02 40 20 CC
+Apollo 11, this is Houston. We just got telemetry back down on your booster, and it is looking good.
+
+
+
+(GOSS NET 1) Tape 2/8 Page 16
+
+00 02 40 30 CDR
+Roger. Everything looks good here.
+
+00 02 40 34 CC
+Houston, Roger. Out.
+
+00 02 43 18 CC
+Apollo 11, this is Houston. Slightly less than 1 minute to ignition, and everthing is GO.
+
+00 02 43 25 CMP
+Roger.
+
+00 02 44 19 CMP
+Ignition.
+
+00 02 44 27 CC
+We confirm ignition, and the thrust is GO.
+
+00 02 45 14 CC
+Apollo 11, this is Houston at 1 minute. Trajectory and guidance look good, and the stage is good. Over.
+
+00 02 45 23 CDR
+Apollo 11. Roger.
+
+00 02 46 26 CC
+Apollo 11, this is Houston. Thrust is good. Everything's still looking good.
+
+00 02 46 32 CDR
+Roger.
+
+00 02 47 54 CC
+Apollo 11, this is Houston. Around 3-1/2 minutes. You're still looking good. Your predicted cut-off is right on the nominal.
+
+00 02 48 04 CDR
+Roger. Apollo 11 is GO.
+
+00 02 49 18 CC
+Apollo 11, this is Houston. You are GO at 5 minutes.
+
+00 02 49 22 CDR
+Roger. We're GO.
+
+00 02 50 36 CC
+Apollo 11, this is Houston. We show cut-off and we copy the numbers in NOUN 62.
+
+00 02 50 54 CC
+Apollo 11, Houston. Do you read?
+
+00 02 51 28 CC
+Apollo 11, this is Houston. Do you read? Over.
+
+00 02 51 21 LMP
+Roger, Houston. Apollo 11. We're reading a VI of 35579 and the EMS was plus 3.3. Over.
+
+00 02 51 31 CC
+Roger. Plus 3.3 on the EMS. And we copy the VI.
+
+00 02 53 03 CDR
+Hey, Houston, Apollo 11. That Saturn gave us a magnificent ride.
+
+00 02 53 0,7 CC
+Roger, 11. We'll pass that on. And, it certainly looks like you are well on your way now.
+
+
+
+(GOSS NET 1) Tape 2/9 Page 17
+
+00 02 53 30 CDR
+We have no complaints with any of the three stages on that ride. It was beautiful.
+
+00 02 53 38 CC
+Roger. We copy. No transients at staging of any significance. Over.
+
+00 02 53 44 CDR
+That's right. It was all - all a good ride.
+
+00 02 53 47 CC
+Houston. Roger. Out.
+
+00 02 54 09 CC
+Apollo 11, this is Houston. For your information, we expect the maneuver to separation attitude to begin at 3 plus 05 plus 03, and to be completed at plus 09 plus 20. Separation at 3 plus 15 plus 00.
+
+00 02 54 33 CDR
+Roger. Time to begin maneuver is 3 05 03, complete 3 09 20. Separation 3 plus 15 00.
+
+00 02 54 46 CC
+Roger. That separation should be 3 plus 15 03. My error in reading up.
+
+00 02 54 55 CDR
+Roger.
+
+00 02 55 18 CC
+Apollo 11, this is Houston. All the booster functions are proceeding normally. The sequencing is in good shape, and it doesn't look like they are having any problems at all. Over.
+
+00 02 55 28 CDR
+Roger.
+
+
+END OF TAPE
+
+
+APOLLO 11 AIR-TO-GROUND VOICE TRANSCRIPTION
+
+(GOSS NET 1) Tape 3/1 Page 18
+
+00 03 05 28 CC
+Apollo 11, this is Houston. Our preliminary data indicates a good cut-off on the S-IVB. We'll have some more trajectory data for you in about half an hour. Over.
+
+00 03 09 01 CC
+Apollo 11, Apollo 11, this is Houston. Over.
+
+00 03 09 16 CC
+Apollo 11, Apollo 11, this is Houston. Over.
+
+00 03 09 31 CDR
+Hello, Houston. Hello, Houston. This is Apollo 11. I'm reading you loud and clear. Go ahead. Over.
+
+00 03 09 37 CC
+Roger, 11. This is Houston. We had to shift stations. We weren't reading you through Goldstone. We show PYR0 bus A armed and PYRO bus B not armed at the present time. Over.
+
+00 03 09 50 CDR
+That's affirmative, Houston. That's affirmative.
+
+00 03 09 54 CC
+Roger.
+
+00 03 14 08 CC
+Apollo 11, this is Houston. You're GO for separation. Our systems recommendation is arm both PYRO buses. Over.
+
+00 03 14 19 CDR
+Okay. PYRO B coming armed. My intent is to use bottle primary 1, as per the checklist; therefore, I just turned A on.
+
+00 03 14 26 CC
+Roger. We concur with the logic.
+
+00 03 16 59 CDR
+Houston, we're about to SEP.
+
+00 03 17 02 CC
+This is Houston. We copy.
+
+00 03 17 09 CDR
+SEP is complete.
+
+00 03 17 12 CC
+Roger.
+
+00 03 17 32 CDR
+... and primary and secondary propellant B went ... SEP.
+
+00 03 17 40 CC
+That was secondary propellant on quad Bravo?
+
+00 03 17 45 CDR
+Quad Bravo, yes. Both the primary and secondary ...
+
+00 03 17 52 CC
+Roger. We copy.

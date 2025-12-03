@@ -24,6 +24,7 @@ import (
 	"log"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
@@ -67,6 +68,8 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		safetySettings:      cfg.SafetySettings,
 		thinkingConfig:      cfg.ThinkingConfig,
 		responseModalities:  cfg.ResponseModalities,
+		mediaResolution:     cfg.MediaResolution,
+		cache:               cfg.Cache,
 	}, nil
 }
 
@@ -117,6 +120,20 @@ type Config struct {
 	// ResponseModalities specifies the modalities the model can return.
 	// Optional.
 	ResponseModalities []GeminiResponseModality
+
+	MediaResolution genai.MediaResolution
+
+	// Cache controls prefix cache settings for the model.
+	// Optional. used to CreatePrefixCache for reused inputs.
+	Cache *CacheConfig
+}
+
+// CacheConfig controls prefix cache settings for the model.
+type CacheConfig struct {
+	// TTL specifies how long cached resources remain valid (now + TTL).
+	TTL time.Duration `json:"ttl,omitempty"`
+	// ExpireTime sets the absolute expiration timestamp for cached resources.
+	ExpireTime time.Time `json:"expireTime,omitempty"`
 }
 
 type ChatModel struct {
@@ -135,6 +152,8 @@ type ChatModel struct {
 	safetySettings      []*genai.SafetySetting
 	thinkingConfig      *genai.ThinkingConfig
 	responseModalities  []GeminiResponseModality
+	mediaResolution     genai.MediaResolution
+	cache               *CacheConfig
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -142,6 +161,9 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	modelName, nInput, genaiConf, cbConf, err := cm.genInputAndConf(input, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("genInputAndConf for Generate failed: %w", err)
+	}
 
 	co := model.GetCommonOptions(&model.Options{
 		Tools:      cm.origTools,
@@ -187,7 +209,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 
 	modelName, nInput, genaiConf, cbConf, err := cm.genInputAndConf(input, opts...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("genInputAndConf for Stream failed: %w", err)
 	}
 
 	co := model.GetCommonOptions(&model.Options{
@@ -298,6 +320,46 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return nil
 }
 
+// CreatePrefixCache assembles inputs the same as Generate/Stream and writes
+// the final system instruction, tools, and messages into a reusable prefix cache.
+func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema.Message, opts ...model.Option) (
+	*genai.CachedContent, error) {
+
+	modelName, inputMsgs, genaiConf, _, err := cm.genInputAndConf(prefixMsgs, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("genInputAndConf for CreatePrefixCache failed: %w", err)
+	}
+
+	contents, err := cm.convSchemaMessages(inputMsgs)
+	if err != nil {
+		return nil, err
+	}
+
+	cachedContent, err := cm.cli.Caches.Create(ctx, modelName, &genai.CreateCachedContentConfig{
+		Contents:          contents,
+		SystemInstruction: genaiConf.SystemInstruction,
+		Tools:             genaiConf.Tools,
+		ToolConfig:        genaiConf.ToolConfig,
+		TTL: func() time.Duration {
+			if cm.cache != nil {
+				return cm.cache.TTL
+			}
+			return 0
+		}(),
+		ExpireTime: func() time.Time {
+			if cm.cache != nil {
+				return cm.cache.ExpireTime
+			}
+			return time.Time{}
+		}(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create cache failed: %w", err)
+	}
+
+	return cachedContent, nil
+}
+
 func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Option) (string, []*schema.Message, *genai.GenerateContentConfig, *model.Config, error) {
 	commonOptions := model.GetCommonOptions(&model.Options{
 		Temperature: cm.temperature,
@@ -342,6 +404,8 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 			CodeExecution: &genai.ToolCodeExecution{},
 		})
 	}
+
+	m.MediaResolution = cm.mediaResolution
 
 	if commonOptions.MaxTokens != nil {
 		conf.MaxTokens = *commonOptions.MaxTokens
@@ -410,6 +474,14 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	if geminiOptions.ThinkingConfig != nil {
 		m.ThinkingConfig = geminiOptions.ThinkingConfig
 	}
+
+	if len(geminiOptions.CachedContentName) > 0 {
+		m.CachedContent = geminiOptions.CachedContentName
+		// remove system instruction and tools when using cached content
+		m.SystemInstruction = nil
+		m.Tools = nil
+		m.ToolConfig = nil
+	}
 	return conf.Model, nInput, m, conf, nil
 }
 
@@ -461,7 +533,15 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			if err != nil {
 				return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
 			}
-			content.Parts = append(content.Parts, genai.NewPartFromFunctionCall(call.Function.Name, args))
+
+			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+
+			// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
+			if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
+				part.ThoughtSignature = thoughtSig
+			}
+
+			content.Parts = append(content.Parts, part)
 		}
 	}
 
@@ -804,7 +884,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 				})
 			}
 			if part.FunctionCall != nil {
-				fc, err := convFC(part.FunctionCall)
+				fc, err := convFC(part)
 				if err != nil {
 					return nil, err
 				}
@@ -873,18 +953,31 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 	return res, nil
 }
 
-func convFC(tp *genai.FunctionCall) (*schema.ToolCall, error) {
+func convFC(part *genai.Part) (*schema.ToolCall, error) {
+	if part == nil || part.FunctionCall == nil {
+		return nil, fmt.Errorf("part or function call is nil")
+	}
+
+	tp := part.FunctionCall
 	args, err := sonic.MarshalString(tp.Args)
 	if err != nil {
 		return nil, fmt.Errorf("marshal gemini tool call arguments fail: %w", err)
 	}
-	return &schema.ToolCall{
+
+	toolCall := &schema.ToolCall{
 		ID: tp.Name,
 		Function: schema.FunctionCall{
 			Name:      tp.Name,
 			Arguments: args,
 		},
-	}, nil
+	}
+
+	// Store thought signature if present (required for gemini-3-pro-preview and later)
+	if len(part.ThoughtSignature) > 0 {
+		setThoughtSignature(toolCall, part.ThoughtSignature)
+	}
+
+	return toolCall, nil
 }
 
 func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {

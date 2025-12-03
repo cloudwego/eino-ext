@@ -25,6 +25,7 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -523,5 +524,220 @@ func TestChatModel_convMedia(t *testing.T) {
 				})
 			}
 		})
+	})
+}
+
+func TestThoughtSignatureRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{}})
+	assert.Nil(t, err)
+
+	// Test that thought signature is preserved through the round-trip
+	t.Run("convFC preserves thought signature", func(t *testing.T) {
+		signature := []byte("test_thought_signature_data")
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "test_function",
+				Args: map[string]any{"param": "value"},
+			},
+			ThoughtSignature: signature,
+		}
+
+		toolCall, err := convFC(part)
+		assert.NoError(t, err)
+		assert.NotNil(t, toolCall)
+		assert.Equal(t, "test_function", toolCall.Function.Name)
+
+		// Verify thought signature was stored
+		retrievedSig := getThoughtSignature(toolCall)
+		assert.Equal(t, signature, retrievedSig)
+	})
+
+	t.Run("convFC without thought signature", func(t *testing.T) {
+		part := &genai.Part{
+			FunctionCall: &genai.FunctionCall{
+				Name: "test_function",
+				Args: map[string]any{"param": "value"},
+			},
+		}
+
+		toolCall, err := convFC(part)
+		assert.NoError(t, err)
+		assert.NotNil(t, toolCall)
+
+		// Verify no thought signature was stored
+		retrievedSig := getThoughtSignature(toolCall)
+		assert.Nil(t, retrievedSig)
+	})
+
+	t.Run("convSchemaMessage restores thought signature", func(t *testing.T) {
+		signature := []byte("restored_signature")
+		toolCall := &schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: `{"param":"value"}`,
+			},
+		}
+		setThoughtSignature(toolCall, signature)
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{*toolCall},
+		}
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// Verify thought signature was restored in the Part
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+		assert.Equal(t, "test_function", content.Parts[0].FunctionCall.Name)
+	})
+
+	t.Run("convSchemaMessage without thought signature", func(t *testing.T) {
+		toolCall := &schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: `{"param":"value"}`,
+			},
+		}
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{*toolCall},
+		}
+
+		content, err := cm.convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// Verify no thought signature in the Part when none was stored
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+	})
+}
+
+func TestCreatePrefixCache(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		defer mockey.Mock(genai.Caches.Create).Return(&genai.CachedContent{Name: "cached/basic"}, nil).Build().UnPatch()
+
+		prefixMsgs := []*schema.Message{{Role: schema.User, Content: "Hello"}}
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs)
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+	})
+
+	t.Run("cache_instruction_tools_messages", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		cm.cache = &CacheConfig{TTL: time.Minute}
+		cm.enableCodeExecution = true
+
+		var cacheConfig *genai.CreateCachedContentConfig
+		defer mockey.Mock(genai.Caches.Create).
+			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
+				cacheConfig = config
+				return &genai.CachedContent{Name: "cached/cache_instruction_tools_messages"}, nil
+			}).Build().Patch().UnPatch()
+
+		prefixMsgs := []*schema.Message{
+			{Role: schema.System, Content: "sys"},
+			{Role: schema.User, Content: "hello"},
+		}
+
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs,
+			model.WithTools([]*schema.ToolInfo{
+				{
+					Name:        "tool_a",
+					Desc:        "desc",
+					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+				},
+			}))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+		assert.Equal(t, "cached/cache_instruction_tools_messages", cache.Name)
+		assert.Equal(t, time.Minute, cacheConfig.TTL)
+
+		assert.Equal(t, "hello", cacheConfig.Contents[0].Parts[0].Text)
+
+		assert.NotNil(t, cacheConfig.SystemInstruction)
+		assert.Equal(t, "sys", cacheConfig.SystemInstruction.Parts[0].Text)
+
+		assert.NotNil(t, cacheConfig.Tools)
+		assert.Len(t, cacheConfig.Tools, 2)
+		assert.Equal(t, "tool_a", cacheConfig.Tools[0].FunctionDeclarations[0].Name)
+		assert.NotNil(t, cacheConfig.Tools[1].CodeExecution)
+
+	})
+
+	t.Run("cache_and_generate", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{
+			Models: &genai.Models{},
+			Caches: &genai.Caches{}},
+			Model: "test-model"})
+		assert.Nil(t, err)
+
+		cm.cache = &CacheConfig{TTL: time.Minute}
+		cm.enableCodeExecution = true
+
+		defer mockey.Mock(genai.Caches.Create).
+			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
+				return &genai.CachedContent{Name: "cached/cache_and_generate"}, nil
+			}).Build().Patch().UnPatch()
+
+		var generateConf *genai.GenerateContentConfig
+		defer mockey.Mock(genai.Models.GenerateContent).
+			To(func(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (
+				*genai.GenerateContentResponse, error) {
+				generateConf = config
+				return &genai.GenerateContentResponse{
+					Candidates: []*genai.Candidate{
+						{
+							Content: &genai.Content{
+								Role: "model",
+								Parts: []*genai.Part{
+									genai.NewPartFromText("bye too"),
+								},
+							},
+						},
+					},
+				}, nil
+			}).Build().Patch().UnPatch()
+
+		prefixMsgs := []*schema.Message{
+			{Role: schema.System, Content: "sys"},
+			{Role: schema.User, Content: "hello"},
+		}
+
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs,
+			model.WithTools([]*schema.ToolInfo{
+				{
+					Name:        "tool_a",
+					Desc:        "desc",
+					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+				},
+			}))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+
+		_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("bye")},
+			WithCachedContentName(cache.Name))
+		assert.NoError(t, err)
+
+		assert.Equal(t, "cached/cache_and_generate", generateConf.CachedContent)
+		assert.Nil(t, generateConf.SystemInstruction)
+		assert.Len(t, generateConf.Tools, 0)
 	})
 }

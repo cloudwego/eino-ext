@@ -5,11 +5,11 @@ go 1.24
 require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.6.0
+	github.com/cloudwego/eino v0.6.1
 	github.com/eino-contrib/jsonschema v1.0.2
 	github.com/stretchr/testify v1.10.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
-	google.golang.org/genai v1.34.0
+	google.golang.org/genai v1.36.0
 )
 
 require (
@@ -26,6 +26,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/s2a-go v0.1.8 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
