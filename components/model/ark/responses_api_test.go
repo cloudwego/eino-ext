@@ -772,3 +772,13 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 		})
 	})
 }
+
+func Test_responsesAPIChatModel_handleCompletedStreamEvent(t *testing.T) {
+	cm := &responsesAPIChatModel{}
+	msg := cm.handleCompletedStreamEvent(&responses.ResponseObject{
+		Status: responses.ResponseStatus_completed,
+		Usage:  &responses.Usage{InputTokensDetails: &responses.InputTokensDetails{}},
+	})
+	assert.Equal(t, responses.ResponseStatus_completed.String(), msg.ResponseMeta.FinishReason)
+
+}

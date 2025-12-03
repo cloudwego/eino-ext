@@ -1,23 +1,23 @@
-# Volcengine Ark Model
+# Volcengine Ark 模型
 
-A Volcengine Ark model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
+一个 [Eino](https://github.com/cloudwego/eino) 的 Volcengine Ark 模型实现，实现了 `ToolCallingChatModel` 接口。这使得与 Eino 的 LLM 功能无缝集成，以增强自然语言处理和生成能力。
 
-This package provides two distinct models:
-- **ChatModel**: For text-based and multi-modal chat completions.
-- **ImageGenerationModel**: For generating images from text prompts or image.
-- **ResponseAPI**: Contains methods and other services that help with interacting with the openai API.
+该软件包提供了两种不同的模型：
+- **ChatModel**：用于基于文本和多模态的聊天补全。
+- **ImageGenerationModel**：用于从文本提示或图像生成图像。
+- **ResponseAPI**：包含有助于与 openai API 交互的方法和其他服务。
 
-## Features
+## 特性
 
-- Implements `github.com/cloudwego/eino/components/model.Model`
-- Easy integration with Eino's model system
-- Configurable model parameters
-- Support for both chat completion, image generation and response api
-- Support for streaming responses
-- Custom response parsing support
-- Flexible model configuration
+- 实现了 `github.com/cloudwego/eino/components/model.Model`
+- 轻松与 Eino 的模型系统集成
+- 可配置的模型参数
+- 支持聊天补全、图像生成和响应 API
+- 支持流式响应
+- 支持自定义响应解析
+- 灵活的模型配置
 
-## Installation
+## 快速安装
 
 ```bash
 go get github.com/cloudwego/eino-ext/components/model/ark@latest
@@ -25,13 +25,13 @@ go get github.com/cloudwego/eino-ext/components/model/ark@latest
 
 ---
 
-## Chat Completion
+## 聊天
 
-This model is used for standard chat and text generation tasks.
+该模型用于标准聊天和文本生成任务。
 
-### Quick Start
+### 快速开始
 
-Here's a quick example of how to use the `ChatModel`:
+以下是如何使用 `ChatModel` 的快速示例：
 
 ```go
 package main
@@ -74,9 +74,8 @@ func main() {
 	}
 
 	log.Printf("generate output: \n")
-	log.Printf("  request_id: %s\n")
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("  body: %s \n", string(respBody))
 
 	sr, err := chatModel.Stream(ctx, inMsgs)
 	if err != nil {
@@ -102,15 +101,15 @@ func main() {
 	}
 
 	log.Printf("stream final output: \n")
-	log.Printf("  request_id: %s\n")
+	log.Printf("  request_id: %s \n")
 	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("body: %s \n", string(respBody))
 }
 ```
 
-### Configuration
+### 配置
 
-The `ChatModel` can be configured using the `ark.ChatModelConfig` struct:
+`ChatModel` 可以使用 `ark.ChatModelConfig` 结构进行配置：
 
 ```go
 type ChatModelConfig struct {
@@ -182,25 +181,15 @@ type ChatModelConfig struct {
 }
 ```
 
-### Request Options
-
-The `ChatModel` supports various request options to customize the behavior of API calls. Here are the available options:
-
-```go
-// WithCustomHeader sets custom headers for a single request
-// the headers will override all the headers given in ChatModelConfig.CustomHeader
-func WithCustomHeader(m map[string]string) model.Option {}
-```
-
 ---
 
-## Image Generation
+## 图像生成
 
-This model is used specifically for generating images from text prompts.
+该模型专门用于从文本提示生成图像。
 
-### Quick Start
+### 快速开始
 
-Here's a quick example of how to use the `ImageGenerationModel`:
+以下是如何使用 `ImageGenerationModel` 的快速示例：
 
 ```go
 package main
@@ -240,16 +229,17 @@ func main() {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	log.Printf("\ngenerate output: \n")
+	log.Printf("generate output:")
+	log.Printf("  request_id: %s", ark.GetArkRequestID(msg))
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("  body: %s", string(respBody))
 
 	sr, err := imageGenerationModel.Stream(ctx, inMsgs)
 	if err != nil {
 		log.Fatalf("Stream failed, err=%v", err)
 	}
 
-	log.Printf("stream output: \n")
+	log.Printf("stream output:")
 	index := 0
 	for {
 		msgChunk, err := sr.Recv()
@@ -261,15 +251,15 @@ func main() {
 		}
 
 		respBody, _ = json.MarshalIndent(msgChunk, "  ", "  ")
-		log.Printf("stream chunk %d: body: %s\n", index, string(respBody))
+		log.Printf("stream chunk %d: body: %s \n", index, string(respBody))
 		index++
 	}
 }
 ```
 
-### Configuration
+### 配置
 
-The `ImageGenerationModel` can be configured using the `ark.ImageGenerationConfig` struct:
+`ImageGenerationModel` 可以使用 `ark.ImageGenerationConfig` 结构进行配置：
 
 ```go
 
@@ -344,9 +334,9 @@ type ImageGenerationConfig struct {
 ```
 
 
-## examples
+## 示例
 
-### generate
+### 文本生成
 
 ```go
 
@@ -390,10 +380,10 @@ func main() {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	log.Printf("\ngenerate output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	log.Printf("generate output:")
+	log.Printf("  request_id: %s", ark.GetArkRequestID(msg))
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("  body: %s", string(respBody))
 
 	sr, err := chatModel.Stream(ctx, inMsgs)
 	if err != nil {
@@ -418,15 +408,15 @@ func main() {
 		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
 
-	log.Printf("stream final output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	log.Printf("stream final output:")
+	log.Printf("  request_id: %s", ark.GetArkRequestID(msg))
 	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("  body: %s \n", string(respBody))
 }
 
 ```
 
-### generate_with_image
+### 多模态支持(图片理解)
 
 ```go
 
@@ -460,7 +450,7 @@ func main() {
 	multiModalMsg := schema.UserMessage("")
 	image, err := os.ReadFile("./examples/generate_with_image/eino.png")
 	if err != nil {
-		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+		log.Fatalf("os.ReadFile failed, err=%v \n", err)
 	}
 
 	imageStr := base64.StdEncoding.EncodeToString(image)
@@ -489,7 +479,7 @@ func main() {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	log.Printf("Ark ChatModel output: \n%v", resp)
+	log.Printf("Ark ChatModel output:%v \n", resp)
 
 	// demonstrate how to use ChatTemplate to generate with image
 	imgPlaceholder := "{img}"
@@ -528,12 +518,12 @@ func main() {
 		log.Fatalf("Run failed, err=%v", err)
 	}
 
-	log.Printf("Ark ChatModel output with ChatTemplate: \n%v", resp)
+	log.Printf("Ark ChatModel output with ChatTemplate:%v \n", resp)
 }
 
 ```
 
-### stream
+### 流式生成
 
 ```go
 
@@ -588,7 +578,7 @@ func main() {
 		}
 		msgs = append(msgs, msg)
 		if err != nil {
-			log.Printf("\nstream.Recv failed, err=%v", err)
+			log.Printf("stream.Recv failed, err=%v", err)
 			return
 		}
 		fmt.Print(msg.Content)
@@ -600,12 +590,12 @@ func main() {
 		return
 	}
 
-	log.Printf("output: %s\n", msg.Content)
+	log.Printf("output: %s \n", msg.Content)
 }
 
 ```
 
-### intent_tool
+### 工具调用
 
 ```go
 
@@ -686,12 +676,12 @@ func main() {
 		return
 	}
 
-	log.Printf("output: \n%v", resp)
+	log.Printf("output:%v \n", resp)
 }
 
 ```
 
-### image_generate
+### 图像生成
 
 ```go
 
@@ -758,16 +748,16 @@ func main() {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 
-	log.Printf("\ngenerate output: \n")
+	log.Printf("generate output:")
 	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("  body: %s \n", string(respBody))
 
 	sr, err := imageGenerationModel.Stream(ctx, inMsgs)
 	if err != nil {
 		log.Fatalf("Stream failed, err=%v", err)
 	}
 
-	log.Printf("stream output: \n")
+	log.Printf("stream output:")
 	index := 0
 	chunks := make([]*schema.Message, 0, 1024)
 	for {
@@ -790,15 +780,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("ConcatMessages failed, err=%v", err)
 	}
-	log.Printf("stream final output: \n")
-	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	log.Printf("stream final output:")
+	log.Printf("  request_id: %s \n", ark.GetArkRequestID(msg))
 	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("  body: %s \n", string(respBody))
 }
 
 ```
 
-### prefixcache-contextapi
+### ContextAPI 前缀缓存
 
 ```go
 
@@ -887,7 +877,7 @@ func main() {
 
 ```
 
-### prefixcache-responsesapi
+### Response API 前缀缓存
 
 ```go
 
@@ -1037,7 +1027,7 @@ func ptrOf[T any](v T) *T {
 
 ```
 
-### sessioncache-contextapi
+### ContextAPI Session 缓存
 
 ```go
 
@@ -1157,8 +1147,8 @@ func main() {
 
 ```
 
-### sessioncache-responsesapi
 
+### ResponseAPI Session缓存
 ```go
 
 package main
@@ -1250,7 +1240,7 @@ func main() {
 
 
 
-## For More Details
+## 更多信息
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [Volcengine Ark Model Documentation](https://www.volcengine.com/docs/82379/1263272)
