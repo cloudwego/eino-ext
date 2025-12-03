@@ -381,7 +381,7 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 	for _, tool := range tools {
 		s, err := tool.ToJSONSchema()
 		if err != nil {
-			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
+			return nil, fmt.Errorf("convert to json schema fail: %w", err)
 		}
 
 		var inputSchema anthropic.ToolInputSchemaParam
@@ -673,13 +673,7 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		return mp, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 	}
 
-	if len(message.Content) > 0 {
-		if len(message.ToolCallID) > 0 {
-			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
-		} else {
-			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
-		}
-	} else if len(message.UserInputMultiContent) > 0 {
+	if len(message.UserInputMultiContent) > 0 {
 		if message.Role != schema.User {
 			return mp, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
 		}
@@ -742,6 +736,13 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 			default:
 				return mp, fmt.Errorf("anthropic message type not supported: %s", message.AssistantGenMultiContent[i].Type)
 			}
+		}
+
+	} else if len(message.Content) > 0 {
+		if len(message.ToolCallID) > 0 {
+			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
+		} else {
+			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
 		}
 	} else {
 		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`

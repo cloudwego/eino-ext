@@ -169,14 +169,11 @@ type knowledge struct {
 
 func (k *knowledge) Retrieve(ctx context.Context, query string, opts ...retriever.Option) ([]*schema.Document, error) {
 	origReq := &request{
-		Name:       k.cfg.Name,
-		Project:    k.cfg.Project,
-		ResourceID: k.cfg.ResourceID,
-		Query:      query,
-		Limit:      k.cfg.Limit,
-		QueryParam: queryParam{
-			DocFilter: k.cfg.DocFilter,
-		},
+		Name:        k.cfg.Name,
+		Project:     k.cfg.Project,
+		ResourceID:  k.cfg.ResourceID,
+		Query:       query,
+		Limit:       k.cfg.Limit,
 		DenseWeight: k.cfg.DenseWeight,
 		PreProcessing: preProcessing{
 			NeedInstruction:  k.cfg.NeedInstruction,
@@ -194,11 +191,14 @@ func (k *knowledge) Retrieve(ctx context.Context, query string, opts ...retrieve
 			GetAttachmentLink:   k.cfg.GetAttachmentLink,
 		},
 	}
+	if k.cfg.DocFilter != nil {
+		origReq.QueryParam = &queryParam{DocFilter: k.cfg.DocFilter}
+	}
+
 	body, err := sonic.Marshal(origReq)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request fail: %w", err)
 	}
-
 	req, err := http.NewRequest(http.MethodPost, (&url.URL{
 		Scheme: "https",
 		Host:   k.cfg.BaseURL,
@@ -212,8 +212,11 @@ func (k *knowledge) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if err != nil {
 		return nil, fmt.Errorf("do request fail: %w", err)
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to retrieve documents, code: %d, status: %s", resp.StatusCode, resp.Status)
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -243,7 +246,7 @@ type request struct {
 	ResourceID     string         `json:"resource_id,omitempty"`
 	Query          string         `json:"query"`
 	Limit          int32          `json:"limit,omitempty"`
-	QueryParam     queryParam     `json:"query_param,omitempty"`
+	QueryParam     *queryParam    `json:"query_param,omitempty"`
 	DenseWeight    float64        `json:"dense_weight,omitempty"`
 	PreProcessing  preProcessing  `json:"pre_processing,omitempty"`
 	PostProcessing postProcessing `json:"post_processing,omitempty"`
@@ -271,6 +274,9 @@ type postProcessing struct {
 }
 
 func (r *response) toDocuments() []*schema.Document {
+	if r.Data == nil {
+		return nil
+	}
 	docs := make([]*schema.Document, 0, len(r.Data.ResultList))
 	for _, res := range r.Data.ResultList {
 		doc := &schema.Document{

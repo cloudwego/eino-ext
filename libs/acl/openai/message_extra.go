@@ -27,31 +27,11 @@ const (
 	keyOfReasoningContent     = "reasoning-content"
 	extraKeyOfAudioID         = "openai-audio-id"
 	extraKeyOfAudioTranscript = "openai_audio-transcript"
+	keyOfRequestID            = "openai-request-id"
 )
 
-func GetReasoningContent(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	reasoningContent, ok := msg.Extra[keyOfReasoningContent].(string)
-	if !ok {
-		return "", false
-	}
-
-	return reasoningContent, true
-}
-
-func setReasoningContent(msg *schema.Message, reasoningContent string) {
-	if msg == nil {
-		return
-	}
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]interface{})
-	}
-	msg.Extra[keyOfReasoningContent] = reasoningContent
-}
-
 type audioID string
+type openaiRequestID string
 
 func init() {
 	compose.RegisterStreamChunkConcatFunc(func(chunks []audioID) (final audioID, err error) {
@@ -67,6 +47,24 @@ func init() {
 
 		return chunks[len(chunks)-1], nil
 	})
+
+	schema.RegisterName[audioID]("_eino_ext_openai_audio_id")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []openaiRequestID) (final openaiRequestID, err error) {
+		if len(chunks) == 0 {
+			return "", nil
+		}
+		return chunks[len(chunks)-1], nil
+	})
+	schema.RegisterName[openaiRequestID]("_eino_ext_openai_request_id")
+}
+
+func GetReasoningContent(msg *schema.Message) (string, bool) {
+	return getMsgExtraValue[string](msg, keyOfReasoningContent)
+}
+
+func setReasoningContent(msg *schema.Message, reasoningContent string) {
+	setMsgExtra(msg, keyOfReasoningContent, reasoningContent)
 }
 
 func setMessageOutputAudioID(audio *schema.MessageOutputAudio, ID audioID) {
@@ -109,4 +107,32 @@ func GetMessageOutputAudioTranscript(audio *schema.MessageOutputAudio) (string, 
 		return "", false
 	}
 	return transcript, true
+}
+
+func setRequestID(msg *schema.Message, ID string) {
+	setMsgExtra(msg, keyOfRequestID, openaiRequestID(ID))
+}
+
+func GetRequestID(msg *schema.Message) string {
+	reqID, _ := getMsgExtraValue[openaiRequestID](msg, keyOfRequestID)
+	return string(reqID)
+}
+
+func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {
+	if msg == nil {
+		var t T
+		return t, false
+	}
+	val, ok := msg.Extra[key].(T)
+	return val, ok
+}
+
+func setMsgExtra(msg *schema.Message, key string, value any) {
+	if msg == nil {
+		return
+	}
+	if msg.Extra == nil {
+		msg.Extra = make(map[string]any)
+	}
+	msg.Extra[key] = value
 }
