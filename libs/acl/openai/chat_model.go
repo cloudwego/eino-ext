@@ -218,7 +218,7 @@ var audioFormat2MimeTypes = map[string]string{
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
 	if config == nil {
-		return nil, fmt.Errorf("OpenAI client config cannot be nil")
+		return nil, fmt.Errorf("client config cannot be nil")
 	}
 
 	var clientConf openai.ClientConfig
@@ -918,7 +918,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			}
 
 			if chunkErr != nil {
-				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk from OpenAI: %w", chunkErr))
+				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk: %w", chunkErr))
 				return
 			}
 
@@ -1105,6 +1105,8 @@ func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, au
 
 }
 
+var otherReasoningKeys = []string{"reasoning"}
+
 func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
@@ -1128,6 +1130,16 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 		if len(choice.Delta.ReasoningContent) > 0 {
 			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
+		} else if choice.Delta.ExtraFields != nil {
+			for _, key := range otherReasoningKeys {
+				if reasoningRawMessage, ok := choice.Delta.ExtraFields[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
+					msg.ReasoningContent = string(reasoningRawMessage)
+					setReasoningContent(msg, string(reasoningRawMessage))
+					break
+
+				}
+			}
+
 		}
 
 		if choice.Delta.Audio != nil {
