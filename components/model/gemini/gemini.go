@@ -505,16 +505,71 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 	return gTools, nil
 }
 
+// convToolMessageToPart converts a tool response message into a Gemini part.
+func (cm *ChatModel) convToolMessageToPart(message *schema.Message) (*genai.Part, error) {
+	if message.Role != schema.Tool {
+		return nil, fmt.Errorf("expected tool message, got %s", message.Role)
+	}
+
+	response := make(map[string]any)
+	err := sonic.UnmarshalString(message.Content, &response)
+	if err != nil {
+		response = map[string]any{"output": message.Content}
+	}
+
+	return genai.NewPartFromFunctionResponse(message.ToolCallID, response), nil
+}
+
 func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
-	result := make([]*genai.Content, len(messages))
-	for i, message := range messages {
+	var result []*genai.Content
+
+	for i := 0; i < len(messages); i++ {
+		message := messages[i]
+		if message == nil {
+			continue
+		}
+
 		content, err := cm.convSchemaMessage(message)
 		if err != nil {
-			return nil, fmt.Errorf("convert schema message fail: %w", err)
+			return nil, fmt.Errorf("convert schema message fail at index %d: %w", i, err)
 		}
-		result[i] = content
+		if content != nil {
+			result = append(result, content)
+		}
 	}
-	return result, nil
+
+	return mergeAdjacentToolContents(result), nil
+}
+
+// mergeAdjacentToolContents merges adjacent tool response contents into a single content.
+// Gemini requires all tool responses to be in a single message when responding to parallel tool calls.
+func mergeAdjacentToolContents(contents []*genai.Content) []*genai.Content {
+	if len(contents) <= 1 {
+		return contents
+	}
+
+	result := make([]*genai.Content, 0, len(contents))
+
+	for _, content := range contents {
+		// Check if current content is a tool response (has FunctionResponse parts)
+		if len(result) > 0 && isToolResponseContent(content) && isToolResponseContent(result[len(result)-1]) {
+			// Merge into the previous content
+			result[len(result)-1].Parts = append(result[len(result)-1].Parts, content.Parts...)
+		} else {
+			result = append(result, content)
+		}
+	}
+
+	return result
+}
+
+// isToolResponseContent checks if a content contains tool response parts.
+func isToolResponseContent(content *genai.Content) bool {
+	if content == nil || len(content.Parts) == 0 {
+		return false
+	}
+	// Check if the first part is a FunctionResponse
+	return content.Parts[0].FunctionResponse != nil
 }
 
 func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content, error) {
@@ -522,12 +577,33 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		return nil, nil
 	}
 
+	if message.Role == schema.Tool {
+		part, err := cm.convToolMessageToPart(message)
+		if err != nil {
+			return nil, err
+		}
+		return &genai.Content{
+			Role:  roleUser,
+			Parts: []*genai.Part{part},
+		}, nil
+	}
+
 	content := &genai.Content{
 		Role: toGeminiRole(message.Role),
 	}
 
+	// Restore reasoning content as a thought part (required for gemini-3-pro-preview and later)
+	if message.ReasoningContent != "" {
+		thoughtPart := &genai.Part{
+			Text:    message.ReasoningContent,
+			Thought: true,
+		}
+		content.Parts = append(content.Parts, thoughtPart)
+	}
+
 	if message.ToolCalls != nil {
-		for _, call := range message.ToolCalls {
+		for i := range message.ToolCalls {
+			call := &message.ToolCalls[i]
 			args := make(map[string]any)
 			err := sonic.UnmarshalString(call.Function.Arguments, &args)
 			if err != nil {
@@ -535,59 +611,63 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			}
 
 			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
-
-			// Restore thought signature if it was stored (required for gemini-3-pro-preview and later)
-			if thoughtSig := getThoughtSignature(&call); len(thoughtSig) > 0 {
-				part.ThoughtSignature = thoughtSig
+			// Restore thought signature on the functionCall part if present.
+			// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+			// - Signatures must be returned exactly as received on functionCall parts
+			// - For parallel calls: only first functionCall has signature
+			// - For sequential calls: each functionCall has its own signature
+			// - Omitting required signature causes 400 error on Gemini 3 Pro
+			if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
+				part.ThoughtSignature = sig
 			}
-
 			content.Parts = append(content.Parts, part)
 		}
 	}
 
-	if message.Role == schema.Tool {
-		response := make(map[string]any)
-		err := sonic.UnmarshalString(message.Content, &response)
+	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
+	if len(message.UserInputMultiContent) > 0 {
+		if message.Role != schema.User {
+			return nil, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
+		}
+		parts, err := cm.convInputMedia(message.UserInputMultiContent)
 		if err != nil {
-			response["output"] = message.Content
+			return nil, err
 		}
-		content.Parts = append(content.Parts, genai.NewPartFromFunctionResponse(message.ToolCallID, response))
-	} else {
-		if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
-			return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+		content.Parts = append(content.Parts, parts...)
+		return content, nil
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		if message.Role != schema.Assistant {
+			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
 		}
-		if len(message.UserInputMultiContent) > 0 {
-			if message.Role != schema.User {
-				return nil, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
-			}
-			parts, err := cm.convInputMedia(message.UserInputMultiContent)
-			if err != nil {
-				return nil, err
-			}
-			content.Parts = append(content.Parts, parts...)
-			return content, nil
-		} else if len(message.AssistantGenMultiContent) > 0 {
-			if message.Role != schema.Assistant {
-				return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
-			}
-			parts, err := cm.convOutputMedia(message.AssistantGenMultiContent)
-			if err != nil {
-				return nil, err
-			}
-			content.Parts = append(content.Parts, parts...)
-			return content, nil
+		parts, err := cm.convOutputMedia(message.AssistantGenMultiContent)
+		if err != nil {
+			return nil, err
 		}
-		if message.Content != "" {
-			content.Parts = append(content.Parts, genai.NewPartFromText(message.Content))
-		}
-		if message.MultiContent != nil {
-			log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
-			parts, err := cm.convMedia(message.MultiContent)
-			if err != nil {
-				return nil, err
+		content.Parts = append(content.Parts, parts...)
+		return content, nil
+	}
+	if message.Content != "" {
+		textPart := genai.NewPartFromText(message.Content)
+		// For non-functionCall responses, restore thought signature on the final text part.
+		// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+		// - The final Part (text, inlineData, etc.) may contain a thought_signature
+		// - Returning this signature is recommended for best performance but not strictly required
+		if len(message.ToolCalls) == 0 {
+			if sig := getMessageThoughtSignature(message); len(sig) > 0 {
+				textPart.ThoughtSignature = sig
 			}
-			content.Parts = parts
 		}
+		content.Parts = append(content.Parts, textPart)
+	}
+	if message.MultiContent != nil {
+		log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		parts, err := cm.convMedia(message.MultiContent)
+		if err != nil {
+			return nil, err
+		}
+		content.Parts = parts
 	}
 	return content, nil
 }
@@ -872,7 +952,18 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 			outParts       []schema.MessageOutputPart
 			contentBuilder strings.Builder
 		)
+		// Process parts and extract thought signatures per Gemini docs:
+		// https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
+		//
+		// Signature placement rules:
+		// - functionCall parts: signature stored on ToolCall.Extra (required for Gemini 3 Pro)
+		// - non-functionCall parts (text, thought, inlineData): signature stored on Message.Extra
 		for _, part := range candidate.Content.Parts {
+			// Store thought signature at message level for non-functionCall parts
+			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil {
+				setMessageThoughtSignature(result, part.ThoughtSignature)
+			}
+
 			if part.Thought {
 				result.ReasoningContent = part.Text
 			} else if len(part.Text) > 0 {
@@ -887,6 +978,12 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 				fc, err := convFC(part)
 				if err != nil {
 					return nil, err
+				}
+				// Store thought signature on the tool call if present
+				// Per Gemini docs: for parallel calls, only first functionCall has signature;
+				// for sequential calls, each functionCall has its own signature
+				if len(part.ThoughtSignature) > 0 {
+					setToolCallThoughtSignature(fc, part.ThoughtSignature)
 				}
 				result.ToolCalls = append(result.ToolCalls, *fc)
 			}
@@ -970,11 +1067,6 @@ func convFC(part *genai.Part) (*schema.ToolCall, error) {
 			Name:      tp.Name,
 			Arguments: args,
 		},
-	}
-
-	// Store thought signature if present (required for gemini-3-pro-preview and later)
-	if len(part.ThoughtSignature) > 0 {
-		setThoughtSignature(toolCall, part.ThoughtSignature)
 	}
 
 	return toolCall, nil
