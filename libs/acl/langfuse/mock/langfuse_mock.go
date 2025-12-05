@@ -149,3 +149,17 @@ func (mr *MockLangfuseMockRecorder) Flush() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Flush", reflect.TypeOf((*MockLangfuse)(nil).Flush))
 }
+
+// Prompt mocks base method.
+func (m *MockLangfuse) Prompt() *langfuse.PromptClient {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Prompt")
+	ret0, _ := ret[0].(*langfuse.PromptClient)
+	return ret0
+}
+
+// Prompt indicates an expected call of Prompt.
+func (mr *MockLangfuseMockRecorder) Prompt() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Prompt", reflect.TypeOf((*MockLangfuse)(nil).Prompt))
+}
