@@ -19,7 +19,12 @@ package model
 import (
 	"context"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/matoous/go-nanoid"
 
@@ -493,9 +498,17 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 				var fieldJsonSchema *devmodel.JsonSchema
 				if ts, ok := structFieldsJsonSchemaCache[field.Type]; ok {
-					fieldJsonSchema = ts
+					fieldJsonSchema = &devmodel.JsonSchema{
+						Type:                 ts.Type,
+						Title:                ts.Title,
+						Properties:           ts.Properties,
+						Items:                ts.Items,
+						AdditionalProperties: ts.AdditionalProperties,
+						Description:          field.Name,
+					}
 				} else {
 					fieldJsonSchema = recursionParseReflectTypeToJsonSchema(field.Type, 0, visited)
+					fieldJsonSchema.Description = field.Name
 					structFieldsJsonSchemaCache[field.Type] = fieldJsonSchema
 				}
 
@@ -549,6 +562,7 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 		case reflect.Interface:
 			jsc.Type = devmodel.JsonTypeOfInterface
+			jsc.Title = string(devmodel.JsonTypeOfInterface)
 			return jsc
 
 		default:
@@ -561,4 +575,506 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 
 func canvasEdgeName(source, target string) string {
 	return fmt.Sprintf("%v_to_%v", source, target)
+}
+
+type FieldInfo struct {
+	JSONKey string
+	Schema  *devmodel.JsonSchema
+}
+
+func ConvertCodeToValue(code string, schema *devmodel.JsonSchema, inputType reflect.Type) (reflect.Value, error) {
+	fullCode := `package main
+	` + code
+
+	node, err := parser.ParseFile(token.NewFileSet(), "", fullCode, parser.ParseComments)
+	if err != nil {
+		return reflect.Value{}, err
+	}
+
+	var result interface{}
+	var structTypeName string
+	var ptrNum int
+	ast.Inspect(node, func(n ast.Node) bool {
+		vs, ok := n.(*ast.ValueSpec)
+		if !ok {
+			return true
+		}
+
+		// Try to extract struct type name from value spec
+		if len(vs.Values) > 0 {
+			structTypeName, ptrNum = extractStructTypeName(vs.Values[0])
+		}
+
+		for _, value := range vs.Values {
+			var cl *ast.CompositeLit
+			switch v := value.(type) {
+			case *ast.UnaryExpr:
+				cl, ok = v.X.(*ast.CompositeLit)
+				if !ok {
+					continue
+				}
+				result = parseCompositeLit(cl, schema, structTypeName)
+			case *ast.CompositeLit:
+				if schema.Type == devmodel.JsonTypeOfArray {
+					result = parseArrayLit(v, schema)
+				} else if schema.Type == devmodel.JsonTypeOfObject && schema.AdditionalProperties != nil {
+					result = parseMapLit(v, schema)
+				} else {
+					result = parseCompositeLit(v, schema, structTypeName)
+				}
+			case *ast.BasicLit:
+				result = parseBasicLit(v)
+			case *ast.Ident:
+				switch v.Name {
+				case "true":
+					result = true
+				case "false":
+					result = false
+				case "nil":
+					result = nil
+				default:
+					result = v.Name
+				}
+			case *ast.CallExpr:
+				result = parseCallExpr(v)
+			default:
+				continue
+			}
+		}
+		return false
+	})
+
+	val := reflect.New(inputType)
+	if schema.Type == "interface" && structTypeName != "" {
+		implType, ok := GetRegisteredType(structTypeName)
+		if ok {
+			// create a type with the correct pointer depth.
+			valType := implType.Type
+			for i := 0; i < ptrNum; i++ {
+				valType = reflect.PointerTo(valType)
+			}
+			val = reflect.New(valType)
+		}
+	}
+
+	if err := convertToValue(result, val.Elem()); err != nil {
+		return reflect.Value{}, err
+	}
+
+	return val.Elem(), nil
+}
+
+// extractStructTypeName extracts struct type name and pointer depth from an expression
+func extractStructTypeName(expr ast.Expr) (string, int) {
+	switch v := expr.(type) {
+	case *ast.CompositeLit:
+		// Handle direct struct initialization: schema.Message{...}
+		switch t := v.Type.(type) {
+		case *ast.SelectorExpr:
+			if x, ok := t.X.(*ast.Ident); ok {
+				return x.Name + "." + t.Sel.Name, 0
+			}
+		case *ast.Ident:
+			return t.Name, 0
+		}
+	case *ast.UnaryExpr:
+		// Handle pointer expressions: &schema.Message{...}
+		if v.Op == token.AND {
+			typeName, ptrCount := extractStructTypeName(v.X)
+			return typeName, ptrCount + 1
+		}
+	case *ast.CallExpr:
+		// Check if this is a ToPtr call
+		if fun, ok := v.Fun.(*ast.Ident); ok && fun.Name == "ToPtr" && len(v.Args) > 0 {
+			// Handle ToPtr(schema.Message{...}) calls
+			typeName, ptrCount := extractStructTypeName(v.Args[0])
+			return typeName, ptrCount + 1
+		} else if _, ok := v.Fun.(*ast.SelectorExpr); ok {
+			// Handle other function calls that might return a struct
+			return "", 0
+		} else {
+			// Handle nested ToPtr calls: ToPtr(ToPtr(...))
+			typeName, ptrCount := extractStructTypeName(v.Fun)
+			if typeName != "" && len(v.Args) > 0 {
+				innerTypeName, innerPtrCount := extractStructTypeName(v.Args[0])
+				if innerTypeName != "" {
+					return innerTypeName, ptrCount + innerPtrCount
+				}
+			}
+		}
+	}
+	return "", 0
+}
+
+func parseCallExpr(call *ast.CallExpr) interface{} {
+	if fun, ok := call.Fun.(*ast.Ident); ok && fun.Name == "ToPtr" {
+		if len(call.Args) != 1 {
+			return nil
+		}
+
+		return parseExpr(call.Args[0], &devmodel.JsonSchema{})
+	}
+
+	return nil
+}
+
+func parseCompositeLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema, identifier string) map[string]interface{} {
+	data := make(map[string]interface{})
+	fieldTagMap := buildFieldTagMap(schema, identifier)
+
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		keyIdent, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		fieldName := keyIdent.Name
+
+		fieldInfo, ok := fieldTagMap[fieldName]
+		if !ok {
+			continue
+		}
+
+		jsonKey := fieldInfo.Schema.Description
+		fieldSchema := fieldInfo.Schema
+		value := parseExpr(kv.Value, fieldSchema)
+		data[jsonKey] = value
+	}
+	return data
+}
+
+func parseExpr(expr ast.Expr, schema *devmodel.JsonSchema) interface{} {
+	switch v := expr.(type) {
+	case *ast.Ident:
+		switch v.Name {
+		case "true":
+			return true
+		case "false":
+			return false
+		case "nil":
+			return nil
+		default:
+			return v.Name
+		}
+	case *ast.BasicLit:
+		return parseBasicLit(v)
+	case *ast.CompositeLit:
+		switch schema.Type {
+		case devmodel.JsonTypeOfObject:
+			if schema.AdditionalProperties != nil {
+				return parseMapLit(v, schema)
+			}
+			structName, _ := extractStructTypeName(v)
+			return parseCompositeLit(v, schema, structName)
+		case devmodel.JsonTypeOfArray:
+			return parseArrayLit(v, schema)
+		case devmodel.JsonTypeOfInterface:
+			structName, _ := extractStructTypeName(v)
+			return parseCompositeLit(v, schema, structName)
+		default:
+			return nil
+		}
+	case *ast.SelectorExpr:
+		return parseSelectorExpr(v)
+	case *ast.UnaryExpr:
+		if v.Op == token.AND {
+			return parseExpr(v.X, schema)
+		}
+		return nil
+	case *ast.CallExpr:
+		if fun, ok := v.Fun.(*ast.Ident); ok && fun.Name == "ToPtr" && len(v.Args) > 0 {
+			// Parse the argument of ToPtr and return its value
+			return parseExpr(v.Args[0], schema)
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func parseMapLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) map[string]interface{} {
+	m := make(map[string]interface{})
+	valueSchema := schema.AdditionalProperties
+
+	for _, elt := range cl.Elts {
+		kv, ok := elt.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+
+		// parse key
+		var key string
+		switch k := kv.Key.(type) {
+		case *ast.BasicLit:
+			if k.Kind == token.STRING {
+				key, _ = strconv.Unquote(k.Value)
+			} else {
+				key = k.Value
+			}
+		case *ast.Ident:
+			key = k.Name
+		default:
+			continue
+		}
+
+		// parse value
+		var value interface{}
+		switch v := kv.Value.(type) {
+		case *ast.CompositeLit:
+			if valueSchema.Type == devmodel.JsonTypeOfObject && valueSchema.AdditionalProperties != nil {
+				value = parseMapLit(v, valueSchema)
+			} else if valueSchema.Type == devmodel.JsonTypeOfArray {
+				value = parseArrayLit(v, valueSchema)
+			} else {
+				value = parseCompositeLit(v, valueSchema, "")
+			}
+		default:
+			value = parseExpr(kv.Value, valueSchema)
+		}
+		m[key] = value
+	}
+	return m
+}
+
+func buildFieldTagMap(schema *devmodel.JsonSchema, identifier string) map[string]*FieldInfo {
+	if schema.Type == "interface" {
+		implType, ok := GetRegisteredType(identifier)
+		if !ok {
+			return nil
+		}
+		return buildFieldTagMap(implType.Schema, identifier)
+	}
+
+	fieldTagMap := make(map[string]*FieldInfo)
+	for jsonKey, propSchema := range schema.Properties {
+		if propSchema.Description == "" {
+			continue
+		}
+
+		fieldName := propSchema.Description
+		fieldTagMap[fieldName] = &FieldInfo{
+			JSONKey: jsonKey,
+			Schema:  propSchema,
+		}
+	}
+	return fieldTagMap
+}
+
+func parseArrayLit(cl *ast.CompositeLit, schema *devmodel.JsonSchema) []interface{} {
+	var arr []interface{}
+	itemSchema := schema.Items
+	for _, elt := range cl.Elts {
+		value := parseExpr(elt, itemSchema)
+		arr = append(arr, value)
+	}
+	return arr
+}
+
+func parseBasicLit(bl *ast.BasicLit) interface{} {
+	switch bl.Kind {
+	case token.STRING:
+		str, _ := strconv.Unquote(bl.Value)
+		return str
+	case token.INT:
+		i, _ := strconv.Atoi(bl.Value)
+		return i
+	case token.FLOAT:
+		f, _ := strconv.ParseFloat(bl.Value, 64)
+		return f
+	case token.CHAR:
+		// convert a character to its Unicode code point value.
+		str, _ := strconv.Unquote(strings.Replace(bl.Value, "'", "\"", -1))
+		if len(str) > 0 {
+			return int(str[0])
+		}
+		return 0
+	default:
+		return bl.Value
+	}
+}
+
+func parseSelectorExpr(se *ast.SelectorExpr) string {
+	x, ok := se.X.(*ast.Ident)
+	if !ok {
+		return se.Sel.Name
+	}
+	return x.Name + "." + se.Sel.Name
+}
+
+func convertToValue(src interface{}, dst reflect.Value) error {
+	if src == nil {
+		return nil
+	}
+
+	switch dst.Kind() {
+	case reflect.Struct:
+		srcMap, ok := src.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("expected map for struct, got %T", src)
+		}
+		for k, v := range srcMap {
+			field := dst.FieldByName(k)
+			if !field.IsValid() {
+				continue
+			}
+			if err := convertToValue(v, field); err != nil {
+				return err
+			}
+		}
+	case reflect.Map:
+		srcMap, ok := src.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("expected map, got %T", src)
+		}
+		if dst.IsNil() {
+			dst.Set(reflect.MakeMap(dst.Type()))
+		}
+		for k, v := range srcMap {
+			newVal := reflect.New(dst.Type().Elem()).Elem()
+			if err := convertToValue(v, newVal); err != nil {
+				return err
+			}
+			dst.SetMapIndex(reflect.ValueOf(k), newVal)
+		}
+	case reflect.Ptr:
+		if dst.IsNil() {
+			dst.Set(reflect.New(dst.Type().Elem()))
+		}
+		return convertToValue(src, dst.Elem())
+
+	case reflect.Slice, reflect.Array:
+		srcSlice, ok := src.([]interface{})
+		if !ok {
+			return fmt.Errorf("expected slice, got %T", src)
+		}
+		slice := reflect.MakeSlice(dst.Type(), len(srcSlice), len(srcSlice))
+		for i, v := range srcSlice {
+			if slice.Index(i).Kind() == reflect.Ptr {
+				elem := reflect.New(slice.Index(i).Type().Elem())
+				if err := convertToValue(v, elem.Elem()); err != nil {
+					return err
+				}
+				slice.Index(i).Set(elem)
+			} else {
+				if err := convertToValue(v, slice.Index(i)); err != nil {
+					return err
+				}
+			}
+		}
+		dst.Set(slice)
+	case reflect.String:
+		str, ok := src.(string)
+		if !ok {
+			return fmt.Errorf("expected string, got %T", src)
+		}
+		dst.SetString(str)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		num, ok := src.(int)
+		if !ok {
+			return fmt.Errorf("expected int, got %T", src)
+		}
+		dst.SetInt(int64(num))
+	case reflect.Float32, reflect.Float64:
+		floatVal, ok := src.(float64)
+		if !ok {
+			return fmt.Errorf("expected float, got %T", src)
+		}
+		dst.SetFloat(floatVal)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		intVal, ok := src.(int)
+		if !ok {
+			return fmt.Errorf("expected uint, got %T", src)
+		}
+		dst.SetUint(uint64(intVal))
+
+	case reflect.Bool:
+		b, ok := src.(bool)
+		if !ok {
+			return fmt.Errorf("expected bool, got %T", src)
+		}
+		dst.SetBool(b)
+	case reflect.Interface:
+		switch srcVal := src.(type) {
+		case map[string]interface{}:
+			// This could be a struct wrapped in an interface
+			// Attempt to determine the actual type
+			structName, _ := "", 0
+			var implType *RegisteredType
+
+			// Check if we have a registered type for this struct
+			if len(srcVal) > 0 {
+				for fieldName := range srcVal {
+					for _, regType := range registeredTypes {
+						// Look for field name in the registered type's schema
+						if regType.Schema != nil && regType.Schema.Properties != nil {
+							for _, propSchema := range regType.Schema.Properties {
+								if propSchema.Description == fieldName {
+									implType = &regType
+									structName = regType.Identifier
+									break
+								}
+							}
+							if implType != nil {
+								break
+							}
+						}
+					}
+					if implType != nil {
+						break
+					}
+				}
+			}
+
+			if implType != nil && structName != "" {
+				// Create new instance of the inferred type
+				newValue := reflect.New(implType.Type).Elem()
+				if err := convertToValue(srcVal, newValue); err != nil {
+					return err
+				}
+
+				if newValue.Type().AssignableTo(dst.Type()) {
+					dst.Set(newValue)
+				} else {
+					return fmt.Errorf("inferred type %s not assignable to interface %v", structName, dst.Type())
+				}
+			} else {
+				// Just pass through as a map if we can't determine the type
+				mapValue := reflect.MakeMap(reflect.TypeOf(map[string]interface{}{}))
+				for k, v := range srcVal {
+					mapValue.SetMapIndex(reflect.ValueOf(k), reflect.ValueOf(v))
+				}
+
+				if mapValue.Type().AssignableTo(dst.Type()) {
+					dst.Set(mapValue)
+				} else {
+					return fmt.Errorf("map type not assignable to interface %v", dst.Type())
+				}
+			}
+
+		default:
+			// For primitive types or other values
+			srcValue := reflect.ValueOf(src)
+
+			// If source value can be directly assigned to target interface
+			if srcValue.Type().AssignableTo(dst.Type()) {
+				dst.Set(srcValue)
+				return nil
+			}
+
+			// If source value can be converted to target interface type
+			if srcValue.Type().ConvertibleTo(dst.Type()) {
+				dst.Set(srcValue.Convert(dst.Type()))
+				return nil
+			}
+
+			return fmt.Errorf("cannot convert %T to interface type %v", src, dst.Type())
+		}
+
+	default:
+		return fmt.Errorf("unhandled case, src is %T, interface type %v", src, dst.Type())
+	}
+	return nil
 }
