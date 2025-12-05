@@ -23,8 +23,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 	"github.com/cloudwego/eino/compose"
+
+	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 )
 
 const (
@@ -55,7 +56,7 @@ func NewGlobalDevGraphCompileCallback() compose.GraphCompileCallback {
 
 		_, err := ContainerSVC.AddGraphInfo(graphName, graphInfo)
 		if err != nil {
-			log.Errorf(err.Error())
+			log.Errorf("%v", err.Error())
 		}
 	}
 
