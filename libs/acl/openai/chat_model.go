@@ -18,6 +18,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -806,14 +807,7 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
 		} else if msg.ExtraFields != nil {
-			for _, key := range otherReasoningKeys {
-				if reasoningRawMessage, ok := msg.ExtraFields[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
-					msg.ReasoningContent = string(reasoningRawMessage)
-					setReasoningContent(outMsg, string(reasoningRawMessage))
-					break
-
-				}
-			}
+			populateRCFromExtra(msg.ExtraFields, outMsg)
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
@@ -1116,6 +1110,19 @@ func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, au
 
 }
 
+func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) {
+	if extra == nil {
+		return
+	}
+	for _, key := range otherReasoningKeys {
+		if reasoningRawMessage, ok := extra[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
+			msg.ReasoningContent = string(reasoningRawMessage)
+			setReasoningContent(msg, string(reasoningRawMessage))
+			break
+		}
+	}
+}
+
 func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
@@ -1140,17 +1147,8 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		} else if choice.Delta.ExtraFields != nil {
-			for _, key := range otherReasoningKeys {
-				if reasoningRawMessage, ok := choice.Delta.ExtraFields[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
-					msg.ReasoningContent = string(reasoningRawMessage)
-					setReasoningContent(msg, string(reasoningRawMessage))
-					break
-
-				}
-			}
-
+			populateRCFromExtra(choice.Delta.ExtraFields, msg)
 		}
-
 		if choice.Delta.Audio != nil {
 			err = b.setOutputMessageAudio(msg, choice.Delta.Audio)
 			if err != nil {
