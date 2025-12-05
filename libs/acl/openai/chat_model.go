@@ -218,7 +218,7 @@ var audioFormat2MimeTypes = map[string]string{
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
 	if config == nil {
-		return nil, fmt.Errorf("OpenAI client config cannot be nil")
+		return nil, fmt.Errorf("client config cannot be nil")
 	}
 
 	var clientConf openai.ClientConfig
@@ -918,7 +918,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			}
 
 			if chunkErr != nil {
-				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk from OpenAI: %w", chunkErr))
+				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk: %w", chunkErr))
 				return
 			}
 
