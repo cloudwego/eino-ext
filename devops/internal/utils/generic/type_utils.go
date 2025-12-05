@@ -126,3 +126,7 @@ func ValidateInputReflectTypeSupported(typ reflect.Type) (supported bool) {
 func TypeOf[T any]() reflect.Type {
 	return reflect.TypeOf((*T)(nil)).Elem()
 }
+
+func ToPtr[T any](x T) *T {
+	return &x
+}
