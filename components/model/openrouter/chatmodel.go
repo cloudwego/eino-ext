@@ -24,13 +24,14 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/sjson"
+
+	"github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
 const (
@@ -259,6 +260,45 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 					return nil, err
 				}
 			}
+
+			if len(msg.UserInputMultiContent) > 0 {
+				for cIdx, part := range msg.UserInputMultiContent {
+					if part.Type == schema.ChatMessagePartTypeText {
+						if ctrl, ok := getMessageInputPartCacheControl(&part); ok {
+							modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, fmt.Sprintf("messages.%d.content.%d.cache_control", index, cIdx), ctrl)
+							if err != nil {
+								return nil, err
+							}
+						}
+					} else {
+						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageInputPart', but got part type '%s'", part.Type)
+					}
+				}
+
+			} else if len(msg.AssistantGenMultiContent) > 0 {
+				for cIdx, part := range msg.AssistantGenMultiContent {
+					if part.Type == schema.ChatMessagePartTypeText {
+						if ctrl, ok := getMessageOutputPartCacheControl(&part); ok {
+							modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, fmt.Sprintf("messages.%d.content.%d.cache_control", index, cIdx), ctrl)
+							if err != nil {
+								return nil, err
+							}
+						}
+					} else {
+						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageOutputPart', but got part type '%s'", part.Type)
+
+					}
+				}
+			} else if msg.Content != "" {
+				if ctrl, ok := getMessageContentCacheControl(msg); ok {
+					modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, fmt.Sprintf("messages.%d.cache_control", index), ctrl)
+					if err != nil {
+						return nil, err
+					}
+
+				}
+			}
+
 		}
 
 		return modifiedRawBody, err
@@ -342,7 +382,7 @@ func (cm *ChatModel) buildOptions(_ context.Context, isStream bool, opts ...mode
 		metadata:  cm.metadata,
 	}, opts...)
 
-	modelOption := model.GetImplSpecificOptions(&model.Options{}, opts...)
+	modelOption := model.GetCommonOptions(&model.Options{}, opts...)
 
 	options := make([]model.Option, 0, len(opts))
 
@@ -397,14 +437,6 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatM
 		return nil, err
 	}
 	return &ChatModel{cli: cli}, nil
-}
-
-func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {
-	return cm.cli.BindTools(tools)
-}
-
-func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
-	return cm.cli.BindForcedTools(tools)
 }
 
 func populateSchemaMessageFields(msg *schema.Message, message *message) {

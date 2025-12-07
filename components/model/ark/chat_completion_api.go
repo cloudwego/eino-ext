@@ -111,11 +111,11 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	}
 
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages: in,
-		Tools:    tools, // join tool info from call options
+		Messages:   in,
+		Tools:      tools, // join tool info from call options
 		ToolChoice: options.ToolChoice,
-		Config:   reqConf,
-		Extra:    map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Config:     reqConf,
+		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	defer func() {
@@ -280,6 +280,18 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 	return outStream, nil
 }
 
+func populateChatMsgReasoningContent(in *schema.Message, msg *model.ChatCompletionMessage) {
+	reasoningContent := in.ReasoningContent
+	if reasoningContent == "" {
+		reasoningContent, _ = GetReasoningContent(in)
+	}
+
+	if reasoningContent != "" {
+		msg.ReasoningContent = &reasoningContent
+	}
+	return
+}
+
 func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *model.CreateChatCompletionRequest, err error) {
 	req = &model.CreateChatCompletionRequest{
 		MaxTokens:        options.MaxTokens,
@@ -321,6 +333,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  cm.toArkToolCalls(msg.ToolCalls),
 		}
+		populateChatMsgReasoningContent(msg, nMsg)
 		if len(msg.Name) > 0 {
 			nMsg.Name = &msg.Name
 		}

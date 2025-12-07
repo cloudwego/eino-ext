@@ -376,13 +376,4 @@ func TestChatModel_Tools(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	err = chatModel.BindTools([]*schema.ToolInfo{
-		{Name: "test-tool", Desc: "test tool description", ParamsOneOf: &schema.ParamsOneOf{}},
-	})
-	assert.NoError(t, err)
-
-	err = chatModel.BindForcedTools([]*schema.ToolInfo{
-		{Name: "test-tool", Desc: "test tool description", ParamsOneOf: &schema.ParamsOneOf{}},
-	})
-	assert.NoError(t, err)
 }

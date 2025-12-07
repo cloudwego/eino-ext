@@ -5,8 +5,8 @@ go 1.23.0
 require (
 	github.com/bytedance/mockey v1.3.0
 	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.6.0
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.6
+	github.com/cloudwego/eino v0.7.8
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.9
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/json-iterator/go v1.1.12
 	github.com/stretchr/testify v1.11.1
@@ -22,6 +22,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/jtolds/gls v4.20.0+incompatible // indirect

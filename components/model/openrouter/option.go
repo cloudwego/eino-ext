@@ -40,13 +40,14 @@ func WithReasoning(r *Reasoning) model.Option {
 	})
 }
 
-// WithMetadata Set of 16 key-value pairs that can be attached to an object.
-// This can be useful for storing additional information about the object in a structured format,
-// and querying for objects via API or the dashboard.
-// Keys are strings with a maximum length of 64 characters.
-// Values are strings with a maximum length of 512 characters.
+// WithMetadata attaches a set of up to 16 key-value pairs to an object, which can be useful for
+// storing additional information in a structured format. The metadata is queryable via the API and dashboard.
+// Keys have a maximum length of 64 characters, and values have a maximum length of 512 characters.
 func WithMetadata(m map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openrouterOption) {
-		o.metadata = m
+		o.metadata = make(map[string]string, len(m))
+		for k, v := range m {
+			o.metadata[k] = v
+		}
 	})
 }
