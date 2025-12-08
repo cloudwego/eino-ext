@@ -39,7 +39,3 @@ Example:
 **Note**: The `_row` field has a value only if the first row is the header.
 
 You can also directly access `doc.Content` to get the content of the document line.
-
-## License
-
-This project is licensed under the [Apache-2.0 License](LICENSE.txt).
