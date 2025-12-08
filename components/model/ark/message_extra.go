@@ -248,7 +248,7 @@ func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 	return getFPS(part.Extra)
 }
 
-func setInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
+func SetInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
 	if part == nil {
 		return
 	}
