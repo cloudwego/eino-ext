@@ -18,6 +18,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -194,6 +195,8 @@ type Client struct {
 	rawTools   []*schema.ToolInfo
 	toolChoice *schema.ToolChoice
 }
+
+var otherReasoningKeys = []string{"reasoning"}
 
 var mimeType2AudioFormat = map[string]string{
 	"audio/wav":      "wav",
@@ -803,6 +806,8 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		if len(msg.ReasoningContent) > 0 {
 			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
+		} else if msg.ExtraFields != nil {
+			populateRCFromExtra(msg.ExtraFields, outMsg)
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
@@ -1105,7 +1110,18 @@ func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, au
 
 }
 
-var otherReasoningKeys = []string{"reasoning"}
+func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) {
+	if extra == nil {
+		return
+	}
+	for _, key := range otherReasoningKeys {
+		if reasoningRawMessage, ok := extra[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
+			msg.ReasoningContent = string(reasoningRawMessage)
+			setReasoningContent(msg, string(reasoningRawMessage))
+			break
+		}
+	}
+}
 
 func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
@@ -1131,17 +1147,8 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
 		} else if choice.Delta.ExtraFields != nil {
-			for _, key := range otherReasoningKeys {
-				if reasoningRawMessage, ok := choice.Delta.ExtraFields[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
-					msg.ReasoningContent = string(reasoningRawMessage)
-					setReasoningContent(msg, string(reasoningRawMessage))
-					break
-
-				}
-			}
-
+			populateRCFromExtra(choice.Delta.ExtraFields, msg)
 		}
-
 		if choice.Delta.Audio != nil {
 			err = b.setOutputMessageAudio(msg, choice.Delta.Audio)
 			if err != nil {

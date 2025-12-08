@@ -486,3 +486,21 @@ func TestCompletionAPIChatModel_toArkContent(t *testing.T) {
 		})
 	})
 }
+
+func Test_completionAPIChatModel_genRequest(t *testing.T) {
+	chatModel := &completionAPIChatModel{
+		frequencyPenalty: ptrOf(float32(1)),
+	}
+	req, err := chatModel.genRequest([]*schema.Message{
+		{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: "ok"},
+		}, Extra: map[string]any{
+			keyOfReasoningContent: "keyOfReasoningContent",
+		}},
+	}, &fmodel.Options{
+		Temperature: ptrOf(float32(1)),
+	}, &arkOptions{})
+	assert.Nil(t, err)
+	assert.Len(t, req.Messages, 1)
+	assert.Equal(t, *req.Messages[0].ReasoningContent, "keyOfReasoningContent")
+}
