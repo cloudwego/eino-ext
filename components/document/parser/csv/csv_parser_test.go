@@ -9,7 +9,7 @@ import (
 )
 
 func TestCSVParser(t *testing.T) {
-	f, err := os.Open("./test.csv")
+	f, err := os.Open("./examples/testdata/test.csv")
 	if err != nil {
 		t.Error(err)
 		return
@@ -23,7 +23,7 @@ func TestCSVParser(t *testing.T) {
 		return
 	}
 
-	docs, err := cp.Parse(ctx, f, parser.WithURI("local"), parser.WithExtraMeta(map[string]any{
+	docs, err := cp.Parse(ctx, f, parser.WithURI("./examples/testdata/test.csv"), parser.WithExtraMeta(map[string]any{
 		"_extension": ".csv",
 		"_file_name": "test.csv",
 		"_source":    "local",
