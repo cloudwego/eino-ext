@@ -195,6 +195,8 @@ type Client struct {
 	toolChoice *schema.ToolChoice
 }
 
+var otherReasoningKeys = []string{"reasoning"}
+
 var mimeType2AudioFormat = map[string]string{
 	"audio/wav":      "wav",
 	"audio/vnd.wav":  "wav",
@@ -218,7 +220,7 @@ var audioFormat2MimeTypes = map[string]string{
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
 	if config == nil {
-		return nil, fmt.Errorf("OpenAI client config cannot be nil")
+		return nil, fmt.Errorf("client config cannot be nil")
 	}
 
 	var clientConf openai.ClientConfig
@@ -803,6 +805,15 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		if len(msg.ReasoningContent) > 0 {
 			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
+		} else if msg.ExtraFields != nil {
+			for _, key := range otherReasoningKeys {
+				if reasoningRawMessage, ok := msg.ExtraFields[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
+					msg.ReasoningContent = string(reasoningRawMessage)
+					setReasoningContent(outMsg, string(reasoningRawMessage))
+					break
+
+				}
+			}
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
@@ -918,7 +929,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			}
 
 			if chunkErr != nil {
-				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk from OpenAI: %w", chunkErr))
+				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk: %w", chunkErr))
 				return
 			}
 
@@ -1104,8 +1115,6 @@ func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, au
 	return nil
 
 }
-
-var otherReasoningKeys = []string{"reasoning"}
 
 func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
