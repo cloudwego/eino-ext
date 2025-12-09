@@ -144,6 +144,7 @@ type ChatModelConfig struct {
 	ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
 
 	// UseBatchChat specifies whether to use the batch chat completion API. Only applies to non-streaming scenarios and suggest setting a longer timeout period.
+	// For authentication details, see: https://www.volcengine.com/docs/82379/1399517?lang=zh#01826852
 	// Optional. Default: false
 	UseBatchChat *bool `json:"use_batch_chat,omitempty"`
 
