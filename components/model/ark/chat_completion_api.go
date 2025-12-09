@@ -38,27 +38,27 @@ import (
 type completionAPIChatModel struct {
 	client *arkruntime.Client
 
-	tools      []tool
-	rawTools   []*schema.ToolInfo
-	toolChoice *schema.ToolChoice
-
-	model            string
-	maxTokens        *int
-	temperature      *float32
-	topP             *float32
-	stop             []string
-	frequencyPenalty *float32
-	logitBias        map[string]int
-	presencePenalty  *float32
-	customHeader     map[string]string
-	logProbs         bool
-	topLogProbs      int
-	responseFormat   *ResponseFormat
-	thinking         *model.Thinking
-	cache            *CacheConfig
-	serviceTier      *string
-	reasoningEffort  *model.ReasoningEffort
-	batchChat        *BatchChatConfig
+	tools               []tool
+	rawTools            []*schema.ToolInfo
+	toolChoice          *schema.ToolChoice
+	model               string
+	maxTokens           *int
+	temperature         *float32
+	topP                *float32
+	stop                []string
+	frequencyPenalty    *float32
+	logitBias           map[string]int
+	presencePenalty     *float32
+	customHeader        map[string]string
+	logProbs            bool
+	topLogProbs         int
+	responseFormat      *ResponseFormat
+	thinking            *model.Thinking
+	cache               *CacheConfig
+	serviceTier         *string
+	reasoningEffort     *model.ReasoningEffort
+	batchChat           *BatchChatConfig
+	maxCompletionTokens *int
 }
 
 type tool struct {
@@ -88,9 +88,10 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	}, opts...)
 
 	specOptions := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders:   cm.customHeader,
-		thinking:        cm.thinking,
-		reasoningEffort: cm.reasoningEffort,
+		customHeaders:       cm.customHeader,
+		thinking:            cm.thinking,
+		reasoningEffort:     cm.reasoningEffort,
+		maxCompletionTokens: cm.maxCompletionTokens,
 	}, opts...)
 
 	req, err := cm.genRequest(in, options, specOptions)
@@ -173,8 +174,10 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 	}, opts...)
 
 	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders: cm.customHeader,
-		thinking:      cm.thinking,
+		customHeaders:       cm.customHeader,
+		thinking:            cm.thinking,
+		reasoningEffort:     cm.reasoningEffort,
+		maxCompletionTokens: cm.maxCompletionTokens,
 	}, opts...)
 
 	req, err := cm.genRequest(in, options, arkOpts)
@@ -303,17 +306,18 @@ func populateChatMsgReasoningContent(in *schema.Message, msg *model.ChatCompleti
 
 func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *model.CreateChatCompletionRequest, err error) {
 	req = &model.CreateChatCompletionRequest{
-		MaxTokens:        options.MaxTokens,
-		Temperature:      options.Temperature,
-		TopP:             options.TopP,
-		Model:            dereferenceOrZero(options.Model),
-		Stop:             options.Stop,
-		FrequencyPenalty: cm.frequencyPenalty,
-		LogitBias:        cm.logitBias,
-		PresencePenalty:  cm.presencePenalty,
-		Thinking:         arkOpts.thinking,
-		ServiceTier:      cm.serviceTier,
-		ReasoningEffort:  arkOpts.reasoningEffort,
+		MaxTokens:           options.MaxTokens,
+		Temperature:         options.Temperature,
+		TopP:                options.TopP,
+		Model:               dereferenceOrZero(options.Model),
+		Stop:                options.Stop,
+		FrequencyPenalty:    cm.frequencyPenalty,
+		LogitBias:           cm.logitBias,
+		PresencePenalty:     cm.presencePenalty,
+		Thinking:            arkOpts.thinking,
+		ServiceTier:         cm.serviceTier,
+		ReasoningEffort:     arkOpts.reasoningEffort,
+		MaxCompletionTokens: arkOpts.maxCompletionTokens,
 	}
 
 	if cm.responseFormat != nil {

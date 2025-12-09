@@ -23,8 +23,9 @@ import (
 )
 
 type arkOptions struct {
-	customHeaders   map[string]string
-	reasoningEffort *arkModel.ReasoningEffort
+	customHeaders       map[string]string
+	reasoningEffort     *arkModel.ReasoningEffort
+	maxCompletionTokens *int
 
 	thinking *arkModel.Thinking
 
@@ -98,5 +99,12 @@ type CacheOption struct {
 func WithCache(cache *CacheOption) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.cache = cache
+	})
+}
+
+// WithMaxCompletionTokens is used to set the max completion tokens for the request.
+func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.maxCompletionTokens = &maxCompletionTokens
 	})
 }
