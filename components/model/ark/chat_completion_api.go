@@ -23,6 +23,7 @@ import (
 	"io"
 	"log"
 	"runtime/debug"
+	"time"
 
 	"github.com/eino-contrib/jsonschema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
@@ -58,6 +59,8 @@ type completionAPIChatModel struct {
 	cache            *CacheConfig
 	serviceTier      *string
 	reasoningEffort  *model.ReasoningEffort
+	useBatchChat     *bool
+	timeout          time.Duration
 }
 
 type tool struct {
@@ -128,6 +131,11 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	if specOptions.cache != nil && specOptions.cache.ContextID != nil {
 		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(req, *specOptions.cache.ContextID),
 			arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	} else if cm.useBatchChat != nil && *cm.useBatchChat {
+		// batch chat need set context timeout
+		_ctx, cancel := context.WithTimeout(ctx, cm.timeout)
+		defer cancel()
+		resp, err = cm.client.CreateBatchChatCompletion(_ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	} else {
 		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	}
