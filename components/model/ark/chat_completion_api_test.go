@@ -293,10 +293,14 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 					},
 				}, nil).Build()
 			bm, err := NewChatModel(ctx, &ChatModelConfig{
-				APIKey:       "asd",
-				Model:        "asd",
-				UseBatchChat: ptrOf(true),
-				Timeout:      ptrOf(10 * time.Second),
+				APIKey: "asd",
+				Model:  "asd",
+				BatchChat: &BatchChatConfig{
+					EnableBatchChat:  true,
+					BatchChatTimeout: 2 * time.Hour,
+				},
+				Timeout:          ptrOf(10 * time.Second),
+				BatchMaxParallel: ptrOf(3000),
 			})
 			outMsg, err := bm.Generate(ctx, msgs,
 				fmodel.WithTemperature(1),

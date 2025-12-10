@@ -37,10 +37,11 @@ var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
 
 var (
 	// all default values are from github.com/volcengine/volcengine-go-sdk/service/arkruntime/config.go
-	defaultBaseURL    = "https://ark.cn-beijing.volces.com/api/v3"
-	defaultRegion     = "cn-beijing"
-	defaultRetryTimes = 2
-	defaultTimeout    = 10 * time.Minute
+	defaultBaseURL          = "https://ark.cn-beijing.volces.com/api/v3"
+	defaultRegion           = "cn-beijing"
+	defaultRetryTimes       = 2
+	defaultTimeout          = 10 * time.Minute
+	defaultBatchMaxParallel = 3000
 )
 
 var (
@@ -143,12 +144,25 @@ type ChatModelConfig struct {
 	// Optional.
 	ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
 
-	// UseBatchChat specifies whether to use the batch chat completion API. Only applies to non-streaming scenarios and suggest setting a longer timeout period.
-	// For authentication details, see: https://www.volcengine.com/docs/82379/1399517?lang=zh#01826852
-	// Optional. Default: false
-	UseBatchChat *bool `json:"use_batch_chat,omitempty"`
+	// BatchMaxParallel specifies the maximum number of parallel requests to send to the chat completion API.
+	// Optional. Default: 3000.
+	BatchMaxParallel *int `json:"batch_max_parallel,omitempty"`
+
+	// BatchChat ark batch chat config
+	// Optional.
+	BatchChat *BatchChatConfig `json:"batch_chat,omitempty"`
 
 	Cache *CacheConfig `json:"cache,omitempty"`
+}
+
+type BatchChatConfig struct {
+	// EnableBatchChat specifies whether to use the batch chat completion API. Only applies to non-streaming scenarios.
+	// For authentication details, see: https://www.volcengine.com/docs/82379/1399517?lang=en#01826852
+	EnableBatchChat bool `json:"enable_batch_chat,omitempty"`
+
+	// BatchChatTimeout specifies the timeout for the batch chat completion API. When using batch chat model must set a timeout period.
+	// Required. Model will keep retrying until a timeout occurs or the execution succeeds. Recommend to set a longer timeout period.
+	BatchChatTimeout time.Duration `json:"batch_chat_timeout,omitempty"`
 }
 
 type CacheConfig struct {
@@ -202,12 +216,17 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 	if config.RetryTimes != nil {
 		retryTimes = *config.RetryTimes
 	}
+	batchMaxParallel := defaultBatchMaxParallel
+	if config.BatchMaxParallel != nil {
+		batchMaxParallel = *config.BatchMaxParallel
+	}
 
 	opts := []arkruntime.ConfigOption{
 		arkruntime.WithRetryTimes(retryTimes),
 		arkruntime.WithBaseUrl(baseURL),
 		arkruntime.WithRegion(region),
 		arkruntime.WithTimeout(timeout),
+		arkruntime.WithBatchMaxParallel(batchMaxParallel),
 	}
 
 	if config.HTTPClient != nil {
@@ -239,7 +258,7 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		cache:            config.Cache,
 		serviceTier:      config.ServiceTier,
 		reasoningEffort:  config.ReasoningEffort,
-		useBatchChat:     config.UseBatchChat,
+		BatchChat:        config.BatchChat,
 		timeout:          timeout,
 	}
 

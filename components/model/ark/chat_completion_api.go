@@ -59,7 +59,7 @@ type completionAPIChatModel struct {
 	cache            *CacheConfig
 	serviceTier      *string
 	reasoningEffort  *model.ReasoningEffort
-	useBatchChat     *bool
+	BatchChat        *BatchChatConfig
 	timeout          time.Duration
 }
 
@@ -131,11 +131,15 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	if specOptions.cache != nil && specOptions.cache.ContextID != nil {
 		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(req, *specOptions.cache.ContextID),
 			arkruntime.WithCustomHeaders(specOptions.customHeaders))
-	} else if cm.useBatchChat != nil && *cm.useBatchChat {
+	} else if cm.BatchChat != nil && cm.BatchChat.EnableBatchChat {
+		if cm.BatchChat.BatchChatTimeout == 0 {
+			return nil, fmt.Errorf("batch chat timeout must be set")
+		}
 		// batch chat need set context timeout
-		_ctx, cancel := context.WithTimeout(ctx, cm.timeout)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cm.BatchChat.BatchChatTimeout)
 		defer cancel()
-		resp, err = cm.client.CreateBatchChatCompletion(_ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+		resp, err = cm.client.CreateBatchChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	} else {
 		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	}
@@ -216,6 +220,8 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 	if arkOpts.cache != nil && arkOpts.cache.ContextID != nil {
 		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *cm.convCompletionRequest(req, *arkOpts.cache.ContextID),
 			arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	} else if cm.BatchChat != nil && cm.BatchChat.EnableBatchChat {
+		return nil, fmt.Errorf("batch chat not support stream")
 	} else {
 		stream, err = cm.client.CreateChatCompletionStream(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
 	}
