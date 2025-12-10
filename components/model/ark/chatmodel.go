@@ -186,7 +186,10 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 		config = &ChatModelConfig{}
 	}
 
-	chatModel := buildChatCompletionAPIChatModel(config)
+	chatModel, err := buildChatCompletionAPIChatModel(config)
+	if err != nil {
+		return nil, err
+	}
 
 	respChatModel, err := buildResponsesAPIChatModel(config)
 	if err != nil {
@@ -199,7 +202,7 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	}, nil
 }
 
-func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChatModel {
+func buildChatCompletionAPIChatModel(config *ChatModelConfig) (*completionAPIChatModel, error) {
 	baseURL := defaultBaseURL
 	if config.BaseURL != "" {
 		baseURL = config.BaseURL
@@ -240,6 +243,10 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
 	}
 
+	if config.BatchChat != nil && config.BatchChat.EnableBatchChat && config.BatchChat.BatchChatTimeout == 0 {
+		return nil, errors.New("batch chat timeout must be set when enable batch chat")
+	}
+
 	cm := &completionAPIChatModel{
 		client:           client,
 		model:            config.Model,
@@ -258,11 +265,10 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		cache:            config.Cache,
 		serviceTier:      config.ServiceTier,
 		reasoningEffort:  config.ReasoningEffort,
-		BatchChat:        config.BatchChat,
-		timeout:          timeout,
+		batchChat:        config.BatchChat,
 	}
 
-	return cm
+	return cm, nil
 }
 
 func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel, error) {

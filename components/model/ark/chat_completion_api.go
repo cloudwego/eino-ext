@@ -23,7 +23,6 @@ import (
 	"io"
 	"log"
 	"runtime/debug"
-	"time"
 
 	"github.com/eino-contrib/jsonschema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
@@ -59,8 +58,7 @@ type completionAPIChatModel struct {
 	cache            *CacheConfig
 	serviceTier      *string
 	reasoningEffort  *model.ReasoningEffort
-	BatchChat        *BatchChatConfig
-	timeout          time.Duration
+	batchChat        *BatchChatConfig
 }
 
 type tool struct {
@@ -131,13 +129,10 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	if specOptions.cache != nil && specOptions.cache.ContextID != nil {
 		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(req, *specOptions.cache.ContextID),
 			arkruntime.WithCustomHeaders(specOptions.customHeaders))
-	} else if cm.BatchChat != nil && cm.BatchChat.EnableBatchChat {
-		if cm.BatchChat.BatchChatTimeout == 0 {
-			return nil, fmt.Errorf("batch chat timeout must be set")
-		}
+	} else if cm.batchChat != nil && cm.batchChat.EnableBatchChat {
 		// batch chat need set context timeout
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cm.BatchChat.BatchChatTimeout)
+		ctx, cancel = context.WithTimeout(ctx, cm.batchChat.BatchChatTimeout)
 		defer cancel()
 		resp, err = cm.client.CreateBatchChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	} else {
@@ -220,7 +215,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 	if arkOpts.cache != nil && arkOpts.cache.ContextID != nil {
 		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *cm.convCompletionRequest(req, *arkOpts.cache.ContextID),
 			arkruntime.WithCustomHeaders(arkOpts.customHeaders))
-	} else if cm.BatchChat != nil && cm.BatchChat.EnableBatchChat {
+	} else if cm.batchChat != nil && cm.batchChat.EnableBatchChat {
 		return nil, fmt.Errorf("batch chat not support stream")
 	} else {
 		stream, err = cm.client.CreateChatCompletionStream(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
