@@ -1257,113 +1257,69 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"log"
 	"os"
+	"sync"
 	"time"
 
-	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
-	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
 	ctx := context.Background()
+	var batchMaxParallel = 3000
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Model:  os.Getenv("ARK_MODEL_ID"),
+		// Control the maximum number of parallel requests to send to the chat completion API.
+		BatchMaxParallel: &batchMaxParallel,
+		BatchChat: &ark.BatchChatConfig{
+			// Control whether to use the batch chat completion API. Only applies to non-streaming scenarios.
+			EnableBatchChat: true,
+			// Control the timeout for the batch chat completion API. model will keep retrying until a timeout occurs or the execution succeeds.
+			BatchChatTimeout: 2 * time.Hour,
+		},
 	})
+
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
 
-	instructions := []*schema.Message{
-		schema.SystemMessage("Your name is superman"),
-	}
-
-	cacheInfo, err := chatModel.CreateSessionCache(ctx, instructions, 86400, nil)
-	if err != nil {
-		log.Fatalf("CreateSessionCache failed, err=%v", err)
-	}
-
-	thinking := &arkModel.Thinking{
-		Type: arkModel.ThinkingTypeDisabled,
-	}
-
-	cacheOpt := &ark.CacheOption{
-		APIType:   ark.ContextAPI,
-		ContextID: &cacheInfo.ContextID,
-		SessionCache: &ark.SessionCacheConfig{
-			EnableCache: true,
-			TTL:         86400,
-		},
-	}
-
-	msg, err := chatModel.Generate(ctx, instructions,
-		ark.WithThinking(thinking),
-		ark.WithCache(cacheOpt))
-	if err != nil {
-		log.Fatalf("Generate failed, err=%v", err)
-	}
-
-	<-time.After(500 * time.Millisecond)
-
-	msg, err = chatModel.Generate(ctx, []*schema.Message{
-		{
-			Role:    schema.User,
-			Content: "What's your name?",
-		},
-	},
-		ark.WithThinking(thinking),
-		ark.WithCache(cacheOpt))
-	if err != nil {
-		log.Fatalf("Generate failed, err=%v", err)
-	}
-
-	fmt.Printf("\ngenerate output: \n")
-	fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
-	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-	fmt.Printf("  body: %s\n", string(respBody))
-
-	outStreamReader, err := chatModel.Stream(ctx, []*schema.Message{
-		{
-			Role:    schema.User,
-			Content: "What do I ask you last time?",
-		},
-	},
-		ark.WithThinking(thinking),
-		ark.WithCache(cacheOpt))
-	if err != nil {
-		log.Fatalf("Stream failed, err=%v", err)
-	}
-
-	fmt.Println("\ntypewriter output:")
-	var msgs []*schema.Message
-	for {
-		item, e := outStreamReader.Recv()
-		if e == io.EOF {
-			break
+	// Generate 10000 requests.
+	inMsgList := make([][]*schema.Message, 0, 10000)
+	for i := 0; i < 10000; i++ {
+		inMsgs := []*schema.Message{
+			{
+				Role:    schema.User,
+				Content: "how do you generate answer for user question as a machine, please answer in short?",
+			},
 		}
-		if e != nil {
-			log.Fatal(e)
-		}
-
-		fmt.Print(item.Content)
-		msgs = append(msgs, item)
+		inMsgList = append(inMsgList, inMsgs)
 	}
 
-	msg, err = schema.ConcatMessages(msgs)
-	if err != nil {
-		log.Fatalf("ConcatMessages failed, err=%v", err)
+	wg := sync.WaitGroup{}
+	// Send 10000 requests in parallel.
+	for _, inMsgs := range inMsgList {
+		wg.Add(1)
+		_inMsgs := inMsgs
+		go func() {
+			defer wg.Done()
+			// Batch chat only applies to non-streaming scenarios
+			msg, err := chatModel.Generate(ctx, _inMsgs)
+			if err != nil {
+				log.Fatalf("Generate failed, err=%v", err)
+			}
+			log.Printf("\ngenerate output: \n")
+			log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+			respBody, _ := json.MarshalIndent(msg, "  ", "  ")
+			log.Printf("  body: %s\n", string(respBody))
+		}()
 	}
-	fmt.Print("\n\nstream output: \n")
-	fmt.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
-	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
-	fmt.Printf("  body: %s\n", string(respBody))
+	wg.Wait()
 }
 
 ```
