@@ -31,7 +31,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	var batchMaxParallel = 3000
+	var batchMaxParallel = 10000
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
@@ -43,7 +43,7 @@ func main() {
 			// Control whether to use the batch chat completion API. Only applies to non-streaming scenarios.
 			EnableBatchChat: true,
 			// Control the timeout for the batch chat completion API. model will keep retrying until a timeout occurs or the execution succeeds.
-			BatchChatTimeout: 2 * time.Hour,
+			BatchChatTimeout: 30 * time.Minute,
 		},
 	})
 
@@ -65,20 +65,22 @@ func main() {
 
 	wg := sync.WaitGroup{}
 	// Send 10000 requests in parallel.
-	for _, inMsgs := range inMsgList {
+	for index, inMsgs := range inMsgList {
 		wg.Add(1)
 		_inMsgs := inMsgs
+		_index := index
 		go func() {
 			defer wg.Done()
 			// Batch chat only applies to non-streaming scenarios
 			msg, err := chatModel.Generate(ctx, _inMsgs)
 			if err != nil {
-				log.Fatalf("Generate failed, err=%v", err)
+				log.Printf("Generate failed,index=%d err=%v", _index, err)
+				return
 			}
-			log.Printf("\ngenerate output: \n")
-			log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+			log.Printf("\nindex:%d generate output,: \n", _index)
+			log.Printf("index:%d request_id: %s\n", _index, ark.GetArkRequestID(msg))
 			respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-			log.Printf("  body: %s\n", string(respBody))
+			log.Printf("index:%d body: %s\n", _index, string(respBody))
 		}()
 	}
 	wg.Wait()
