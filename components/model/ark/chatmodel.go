@@ -144,10 +144,6 @@ type ChatModelConfig struct {
 	// Optional.
 	ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
 
-	// BatchMaxParallel specifies the maximum number of parallel requests to send to the chat completion API.
-	// Optional. Default: 3000.
-	BatchMaxParallel *int `json:"batch_max_parallel,omitempty"`
-
 	// BatchChat ark batch chat config
 	// Optional.
 	BatchChat *BatchChatConfig `json:"batch_chat,omitempty"`
@@ -161,8 +157,14 @@ type BatchChatConfig struct {
 	EnableBatchChat bool `json:"enable_batch_chat,omitempty"`
 
 	// BatchChatTimeout specifies the timeout for the batch chat completion API. When using batch chat model must set a timeout period.
-	// Required. Model will keep retrying until a timeout occurs or the execution succeeds. Recommend to set a longer timeout period.
-	BatchChatTimeout time.Duration `json:"batch_chat_timeout,omitempty"`
+	// Model will keep retrying until the timeout or the execution succeeds. It is using context timeout to implement the retry time limit.
+	// Attention: BatchChatAsyncRetryTimeout is different from the http client timeout which controls the timeout for a single HTTP request.
+	// Required. Recommend to set a longer timeout period.
+	BatchChatAsyncRetryTimeout time.Duration `json:"batch_chat_async_retry_timeout,omitempty"`
+
+	// BatchMaxParallel specifies the maximum number of parallel requests to send to the chat completion API.
+	// Optional. Default: 3000.
+	BatchMaxParallel *int `json:"batch_max_parallel,omitempty"`
 }
 
 type CacheConfig struct {
@@ -219,17 +221,12 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) (*completionAPICha
 	if config.RetryTimes != nil {
 		retryTimes = *config.RetryTimes
 	}
-	batchMaxParallel := defaultBatchMaxParallel
-	if config.BatchMaxParallel != nil {
-		batchMaxParallel = *config.BatchMaxParallel
-	}
 
 	opts := []arkruntime.ConfigOption{
 		arkruntime.WithRetryTimes(retryTimes),
 		arkruntime.WithBaseUrl(baseURL),
 		arkruntime.WithRegion(region),
 		arkruntime.WithTimeout(timeout),
-		arkruntime.WithBatchMaxParallel(batchMaxParallel),
 	}
 
 	if config.HTTPClient != nil {
@@ -243,8 +240,15 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) (*completionAPICha
 		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
 	}
 
-	if config.BatchChat != nil && config.BatchChat.EnableBatchChat && config.BatchChat.BatchChatTimeout == 0 {
-		return nil, errors.New("batch chat timeout must be set when enable batch chat")
+	if config.BatchChat != nil && config.BatchChat.EnableBatchChat {
+		if config.BatchChat.BatchChatAsyncRetryTimeout == 0 {
+			return nil, errors.New("batch chat timeout must be set when enable batch chat")
+		}
+		batchMaxParallel := defaultBatchMaxParallel
+		if config.BatchChat.BatchMaxParallel != nil {
+			batchMaxParallel = *config.BatchChat.BatchMaxParallel
+		}
+		opts = append(opts, arkruntime.WithBatchMaxParallel(batchMaxParallel))
 	}
 
 	cm := &completionAPIChatModel{

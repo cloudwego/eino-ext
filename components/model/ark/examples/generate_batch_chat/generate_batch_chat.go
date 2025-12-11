@@ -37,13 +37,13 @@ func main() {
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Model:  os.Getenv("ARK_MODEL_ID"),
-		// Control the maximum number of parallel requests to send to the chat completion API.
-		BatchMaxParallel: &batchMaxParallel,
 		BatchChat: &ark.BatchChatConfig{
 			// Control whether to use the batch chat completion API. Only applies to non-streaming scenarios.
 			EnableBatchChat: true,
 			// Control the timeout for the batch chat completion API. model will keep retrying until a timeout occurs or the execution succeeds.
-			BatchChatTimeout: 30 * time.Minute,
+			BatchChatAsyncRetryTimeout: 30 * time.Minute,
+			// Control the maximum number of parallel requests to send to the chat completion API.
+			BatchMaxParallel: &batchMaxParallel,
 		},
 	})
 
