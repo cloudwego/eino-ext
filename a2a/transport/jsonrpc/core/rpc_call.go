@@ -56,8 +56,6 @@ func (conn *connection) roundLoop() error {
 }
 
 func (conn *connection) sendRequest(ctx context.Context, msg Message) (MessageReader, error) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
 	reader, err := conn.cliTrans.Round(ctx, msg)
 	if err != nil {
 		return nil, err
@@ -66,8 +64,6 @@ func (conn *connection) sendRequest(ctx context.Context, msg Message) (MessageRe
 }
 
 func (conn *connection) sendNotification(ctx context.Context, msg Message) error {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
 	// there is no need to care about reader
 	if _, err := conn.cliTrans.Round(ctx, msg); err != nil {
 		return err
