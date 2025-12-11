@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
@@ -253,6 +254,55 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 				}, nil).Build()
 
 			outMsg, err := m.Generate(ctx, msgs,
+				fmodel.WithTemperature(1),
+				fmodel.WithMaxTokens(321),
+				fmodel.WithModel("asd"),
+				fmodel.WithTopP(123))
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(outMsg, convey.ShouldNotBeNil)
+			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
+			convey.So(len(outMsg.ToolCalls), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("test use batch success", func() {
+			Mock(GetMethod(cli, "CreateBatchChatCompletion")).Return(
+				model.ChatCompletionResponse{
+					Usage: model.Usage{
+						CompletionTokens: 1,
+						PromptTokens:     2,
+						TotalTokens:      3,
+					},
+					Choices: []*model.ChatCompletionChoice{
+						{
+							Message: model.ChatCompletionMessage{
+								Content:    &model.ChatCompletionMessageContent{StringValue: ptrOf("test_content")},
+								Role:       model.ChatMessageRoleAssistant,
+								ToolCallID: "",
+								ToolCalls: []*model.ToolCall{
+									{
+										Function: model.FunctionCall{
+											Arguments: "ccc",
+											Name:      "qqq",
+										},
+										ID:   "123",
+										Type: model.ToolTypeFunction,
+									},
+								},
+							},
+						},
+					},
+				}, nil).Build()
+			bm, err := NewChatModel(ctx, &ChatModelConfig{
+				APIKey: "asd",
+				Model:  "asd",
+				BatchChat: &BatchChatConfig{
+					EnableBatchChat:            true,
+					BatchChatAsyncRetryTimeout: 2 * time.Hour,
+					BatchMaxParallel:           ptrOf(3000),
+				},
+				Timeout: ptrOf(10 * time.Second),
+			})
+			outMsg, err := bm.Generate(ctx, msgs,
 				fmodel.WithTemperature(1),
 				fmodel.WithMaxTokens(321),
 				fmodel.WithModel("asd"),
