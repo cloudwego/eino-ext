@@ -114,8 +114,14 @@ func main() {
 ```go
 type ChatModelConfig struct {
     // Timeout specifies the maximum duration to wait for API responses
+    // If HTTPClient is set, Timeout will not be used.
     // Optional. Default: 10 minutes
     Timeout *time.Duration `json:"timeout"`
+    
+    // HTTPClient specifies the client to send HTTP requests.
+    // If HTTPClient is set, Timeout will not be used.
+    // Optional. Default &http.Client{Timeout: Timeout}
+    HTTPClient *http.Client `json:"http_client"`
     
     // RetryTimes specifies the number of retry attempts for failed API calls
     // Optional. Default: 2
@@ -124,6 +130,7 @@ type ChatModelConfig struct {
     // BaseURL specifies the base URL for Ark service
     // Optional. Default: "https://ark.cn-beijing.volces.com/api/v3"
     BaseURL string `json:"base_url"`
+    
     // Region specifies the region where Ark service is located
     // Optional. Default: "cn-beijing"
     Region string `json:"region"`
@@ -131,8 +138,10 @@ type ChatModelConfig struct {
     // The following three fields are about authentication - either APIKey or AccessKey/SecretKey pair is required
     // For authentication details, see: https://www.volcengine.com/docs/82379/1298459
     // APIKey takes precedence if both are provided
-    APIKey    string `json:"api_key"`
+    APIKey string `json:"api_key"`
+    
     AccessKey string `json:"access_key"`
+    
     SecretKey string `json:"secret_key"`
     
     // The following fields correspond to Ark's chat completion API parameters
@@ -142,7 +151,7 @@ type ChatModelConfig struct {
     // Required
     Model string `json:"model"`
     
-    // MaxTokens limits the maximum number of tokens that can be generated in the chat completion and the range of values is [0, 4096]
+    // MaxTokens limits the maximum number of tokens that can be generated in the chat completion.
     // Optional. Default: 4096
     MaxTokens *int `json:"max_tokens,omitempty"`
     
@@ -178,6 +187,32 @@ type ChatModelConfig struct {
     
     // CustomHeader the http header passed to model when requesting model
     CustomHeader map[string]string `json:"custom_header"`
+    
+    // LogProbs specifies whether to return log probabilities of the output tokens.
+    LogProbs bool `json:"log_probs"`
+    
+    // TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+    TopLogProbs int `json:"top_log_probs"`
+    
+    // ResponseFormat specifies the format that the model must output.
+    ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+    
+    // Thinking controls whether the model is set to activate the deep thinking mode.
+    // It is set to be enabled by default.
+    Thinking *model.Thinking `json:"thinking,omitempty"`
+    
+    // ServiceTier specifies whether to use the TPM guarantee package. The effective target has purchased the inference access point for the guarantee package.
+    ServiceTier *string `json:"service_tier"`
+    
+    // ReasoningEffort specifies the reasoning effort of the model.
+    // Optional.
+    ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
+    
+    // BatchChat ark batch chat config
+    // Optional.
+    BatchChat *BatchChatConfig `json:"batch_chat,omitempty"`
+    
+    Cache *CacheConfig `json:"cache,omitempty"`
 }
 ```
 
@@ -1275,13 +1310,13 @@ func main() {
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Model:  os.Getenv("ARK_MODEL_ID"),
-		// Control the maximum number of parallel requests to send to the chat completion API.
-		BatchMaxParallel: &batchMaxParallel,
 		BatchChat: &ark.BatchChatConfig{
 			// Control whether to use the batch chat completion API. Only applies to non-streaming scenarios.
 			EnableBatchChat: true,
 			// Control the timeout for the batch chat completion API. model will keep retrying until a timeout occurs or the execution succeeds.
-			BatchChatTimeout: 30 * time.Minute,
+			BatchChatAsyncRetryTimeout: 30 * time.Minute,
+			// Control the maximum number of parallel requests to send to the chat completion API.
+			BatchMaxParallel: &batchMaxParallel,
 		},
 	})
 
@@ -1312,13 +1347,13 @@ func main() {
 			// Batch chat only applies to non-streaming scenarios
 			msg, err := chatModel.Generate(ctx, _inMsgs)
 			if err != nil {
-				log.Printf("Generate failed,_index=%d err=%v", _index, err)
+				log.Printf("Generate failed,index=%d err=%v", _index, err)
 				return
 			}
-			log.Printf("\n_index:%d generate output,: \n", _index)
-			log.Printf("_index:%d request_id: %s\n", _index, ark.GetArkRequestID(msg))
+			log.Printf("\nindex:%d generate output,: \n", _index)
+			log.Printf("index:%d request_id: %s\n", _index, ark.GetArkRequestID(msg))
 			respBody, _ := json.MarshalIndent(msg, "  ", "  ")
-			log.Printf("_index:%d body: %s\n", _index, string(respBody))
+			log.Printf("index:%d body: %s\n", _index, string(respBody))
 		}()
 	}
 	wg.Wait()
