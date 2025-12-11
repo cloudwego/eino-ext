@@ -51,7 +51,7 @@ type Config struct {
 	HTTPClient *http.Client `json:"http_client"`
 
 	// BaseURL specifies the OpenRouter endpoint URL
-	// Required. Example: https://openrouter.ai/api/v1
+	// Optional. Default: https://openrouter.ai/api/v1
 	BaseURL string `json:"base_url"`
 
 	// Model specifies the ID of the model to use.
@@ -63,10 +63,10 @@ type Config struct {
 	// Optional.
 	Models []string `json:"models,omitempty"`
 
-	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+	// MaxCompletionTokens represents the total number of tokens in the model's output, including both the final output and any tokens generated during the thinking process.
 	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
 
-	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion.
+	// MaxTokens represents only the final output of the model, excluding any tokens from the thinking process.
 	MaxTokens *int `json:"max_tokens,omitempty"`
 
 	// Seed enables deterministic sampling for consistent outputs.
@@ -119,7 +119,7 @@ type Config struct {
 	Reasoning *Reasoning `json:"reasoning,omitempty"`
 
 	// User unique identifier representing end-user
-	// Optional. Helps OpenAI monitor and detect abuse
+	// Optional.
 	User *string `json:"user,omitempty"`
 
 	// Metadata Set of 16 key-value pairs that can be attached to an object.

@@ -41,7 +41,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewChatModel of openai failed, err=%v", err)
 	}
-	err = chatModel.BindForcedTools([]*schema.ToolInfo{
+	cm, err := chatModel.WithTools([]*schema.ToolInfo{
 		{
 			Name: "user_company",
 			Desc: "Retrieve the user's company and position based on their name and email.",
@@ -61,7 +61,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("BindForcedTools of openai failed, err=%v", err)
 	}
-	resp, err := chatModel.Generate(ctx, []*schema.Message{{
+	resp, err := cm.Generate(ctx, []*schema.Message{{
 		Role:    schema.System,
 		Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
 	}, {
@@ -73,7 +73,7 @@ func main() {
 	}
 	fmt.Printf("output: \n%v", resp)
 
-	streamResp, err := chatModel.Stream(ctx, []*schema.Message{
+	streamResp, err := cm.Stream(ctx, []*schema.Message{
 		{
 			Role:    schema.System,
 			Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",

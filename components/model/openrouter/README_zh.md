@@ -109,9 +109,10 @@ func main() {
 
 可以使用 `openrouter.Config` 结构体配置模型：
 ```go
+
 type Config struct {
     APIKey string
-    // Timeout specifies the maximum duration to wait for API responses
+    // Timeout specifies the maximum duration to wait for API responses.
     // If HTTPClient is set, Timeout will not be used.
     // Optional. Default: no timeout
     Timeout time.Duration `json:"timeout"`
@@ -122,29 +123,29 @@ type Config struct {
     HTTPClient *http.Client `json:"http_client"`
     
     // BaseURL specifies the OpenRouter endpoint URL
-    // Required. Example: https://openrouter.ai/api/v1
+    // Optional. Default: https://openrouter.ai/api/v1
     BaseURL string `json:"base_url"`
     
-    // Model specifies the ID of the model to use
-    // Required if models is empty
+    // Model specifies the ID of the model to use.
+    // Optional.
     Model string `json:"model,omitempty"`
     
-    // Models an array of model IDs in priority order.
-    // If the first model returns an error, OpenRouter will automatically try the next model in the list
-    // Required if model not set
+    // Models parameter lets you automatically try other models if the primary model’s providers are down,
+    // rate-limited, or refuse to reply due to content moderation.
+    // Optional.
     Models []string `json:"models,omitempty"`
-    
-    // MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+
+    // MaxCompletionTokens represents the total number of tokens in the model's output, including both the final output and any tokens generated during the thinking process.
     MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
     
-    // MaxTokens limits the maximum number of tokens that can be generated in the chat completion
+    // MaxTokens represents only the final output of the model, excluding any tokens from the thinking process.
     MaxTokens *int `json:"max_tokens,omitempty"`
     
-    // Seed enables deterministic sampling for consistent outputs
+    // Seed enables deterministic sampling for consistent outputs.
     // Optional. Set for reproducible results
     Seed *int `json:"seed,omitempty"`
     
-    // Stop sequences where the API will stop generating further tokens
+    // Stop sequences where the API will stop generating further tokens.
     // Optional. Example: []string{"\n", "User:"}
     Stop []string `json:"stop,omitempty"`
     
@@ -154,27 +155,27 @@ type Config struct {
     // Optional. Default: 1.0
     TopP *float32 `json:"top_p,omitempty"`
     
-    // Temperature specifies what sampling temperature to use
+    // Temperature specifies what sampling temperature to use.
     // Generally recommend altering this or TopP but not both.
-    // Range: 0.0 to 2.0. Higher values make output more random
+    // Range: 0.0 to 2.0. Higher values make output more random.
     // Optional. Default: 1.0
     Temperature *float32 `json:"temperature,omitempty"`
     
-    // ResponseFormat specifies the format of the model's response
+    // ResponseFormat specifies the format of the model's response.
     // Optional. Use for structured outputs
     ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
     
-    // PresencePenalty prevents repetition by penalizing tokens based on presence
-    // Range: -2.0 to 2.0. Positive values increase likelihood of new topics
+    // PresencePenalty prevents repetition by penalizing tokens based on presence.
+    // Range: -2.0 to 2.0. Positive values increase likelihood of new topics.
     // Optional. Default: 0
     PresencePenalty *float32 `json:"presence_penalty,omitempty"`
     
-    // FrequencyPenalty prevents repetition by penalizing tokens based on frequency
+    // FrequencyPenalty prevents repetition by penalizing tokens based on frequency.
     // Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
     // Optional. Default: 0
     FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
     
-    // LogitBias modifies likelihood of specific tokens appearing in completion
+    // LogitBias modifies likelihood of specific tokens appearing in completion.
     // Optional. Map token IDs to bias values from -100 to 100
     LogitBias map[string]int `json:"logit_bias,omitempty"`
     
@@ -190,7 +191,7 @@ type Config struct {
     Reasoning *Reasoning `json:"reasoning,omitempty"`
     
     // User unique identifier representing end-user
-    // Optional. Helps OpenAI monitor and detect abuse
+    // Optional.
     User *string `json:"user,omitempty"`
     
     // Metadata Set of 16 key-value pairs that can be attached to an object.
@@ -203,33 +204,30 @@ type Config struct {
     ExtraFields map[string]any `json:"extra_fields,omitempty"`
 }
 
-    
+
+
 type ChatCompletionResponseFormatType string
-    
+
 const (
     ChatCompletionResponseFormatTypeJSONObject ChatCompletionResponseFormatType = "json_object"
     ChatCompletionResponseFormatTypeJSONSchema ChatCompletionResponseFormatType = "json_schema"
     ChatCompletionResponseFormatTypeText       ChatCompletionResponseFormatType = "text"
-    ChatCompletionResponseFormatTypePython     ChatCompletionResponseFormatType = "python"
-    ChatCompletionResponseFormatTypeGrammar    ChatCompletionResponseFormatType = "grammar"
 )
-    
+
 type ChatCompletionResponseFormat struct {
     Type       ChatCompletionResponseFormatType        `json:"type,omitempty"`
     JSONSchema *ChatCompletionResponseFormatJSONSchema `json:"json_schema,omitempty"`
-    
-    Grammar *string `json:"grammar,omitempty"`
 }
-    
+
 type ChatCompletionResponseFormatJSONSchema struct {
     Name        string             `json:"name"`
     Description string             `json:"description,omitempty"`
     JSONSchema  *jsonschema.Schema `json:"schema"`
     Strict      bool               `json:"strict"`
 }
-    
+
 type Effort string
-    
+
 const (
     EffortOfNone    Effort = "none"
     EffortOfMinimal Effort = "minimal"
@@ -237,27 +235,36 @@ const (
     EffortOfMedium  Effort = "medium"
     EffortOfHigh    Effort = "high"
 )
-    
+
 type Summary string
-    
+
 const (
     SummaryOfAuto     Summary = "auto"
     SummaryOfConcise  Summary = "concise"
     SummaryOfDetailed Summary = "detailed"
 )
-    
-    // Reasoning config object consolidates settings for controlling reasoning strength across different models.
-    // See the Note for each option below to see which models are supported and how other models will behave.
-    // Refs: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+
+
+// Reasoning configures reasoning capabilities across different models.
+// See documentation for each field to understand model support and behavior differences.
+// Reference: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
 type Reasoning struct {
-    Effort    Effort  `json:"effort,omitempty"`
-    Summary   Summary `json:"summary,omitempty"`
-    MaxTokens int     `json:"maxTokens,omitempty"`
+    // Effort controls the reasoning strength level.
+    Effort Effort `json:"effort,omitempty"`
+    // Summary specifies whether and how reasoning should be summarized.
+    Summary Summary `json:"summary,omitempty"`
     
-    // Exclude you want the model to use reasoning internally but not include it in the response.
-    // reasoning tokens will appear in the reasoning field of each message.
+    // MaxTokens directly specifies the maximum tokens to allocate for reasoning.
+    // For models that only support effort-based reasoning, this value determines
+    // the appropriate effort level. See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
+    MaxTokens int `json:"maxTokens,omitempty"`
+    
+    // Exclude indicates whether reasoning should occur internally but not appear
+    // in the response. When true, reasoning tokens appear in the "reasoning"
+    // field of each message.
     Exclude bool `json:"exclude,omitempty"`
     
+    // Enabled explicitly enables or disables reasoning capabilities.
     Enabled *bool `json:"enabled,omitempty"`
 }
 
@@ -479,7 +486,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewChatModel of openai failed, err=%v", err)
 	}
-	err = chatModel.BindForcedTools([]*schema.ToolInfo{
+	cm, err := chatModel.WithTools([]*schema.ToolInfo{
 		{
 			Name: "user_company",
 			Desc: "Retrieve the user's company and position based on their name and email.",
@@ -489,8 +496,7 @@ func main() {
 					"email": {Type: "string", Desc: "user's email"}}),
 		}, {
 			Name: "user_salary",
-			Desc: "Retrieve the user's salary based on their name and email.
-",
+			Desc: "Retrieve the user's salary based on their name and email.\n",
 			ParamsOneOf: schema.NewParamsOneOfByParams(
 				map[string]*schema.ParameterInfo{
 					"name":  {Type: "string", Desc: "user's name"},
@@ -500,7 +506,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("BindForcedTools of openai failed, err=%v", err)
 	}
-	resp, err := chatModel.Generate(ctx, []*schema.Message{{
+	resp, err := cm.Generate(ctx, []*schema.Message{{
 		Role:    schema.System,
 		Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
 	}, {
@@ -510,10 +516,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("Generate of openai failed, err=%v", err)
 	}
-	fmt.Printf("output: 
-%v", resp)
+	fmt.Printf("output: \n%v", resp)
 
-	streamResp, err := chatModel.Stream(ctx, []*schema.Message{
+	streamResp, err := cm.Stream(ctx, []*schema.Message{
 		{
 			Role:    schema.System,
 			Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
@@ -540,9 +545,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("ConcatMessages of openai failed, err=%v", err)
 	}
-	fmt.Printf("stream output: 
-%v", resp)
+	fmt.Printf("stream output: \n%v", resp)
 }
+
 
 ```
 

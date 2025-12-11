@@ -139,7 +139,7 @@ func TestEnableMessageInputPartCacheControl(t *testing.T) {
 		ctrl, ok := getMessageInputPartCacheControl(part)
 		assert.True(t, ok)
 		assert.NotNil(t, ctrl)
-		assert.Equal(t, CacheControlEphemeralType, ctrl.Type)
+		assert.Equal(t, cacheControlEphemeralType, ctrl.Type)
 		assert.Equal(t, CacheControlTTL5Minutes, ctrl.TTL)
 	})
 
@@ -149,13 +149,42 @@ func TestEnableMessageInputPartCacheControl(t *testing.T) {
 		ctrl, ok := getMessageInputPartCacheControl(part)
 		assert.True(t, ok)
 		assert.NotNil(t, ctrl)
-		assert.Equal(t, CacheControlEphemeralType, ctrl.Type)
+		assert.Equal(t, cacheControlEphemeralType, ctrl.Type)
 		assert.Equal(t, CacheControlTTL1Hour, ctrl.TTL)
 	})
 
 	t.Run("no extra present", func(t *testing.T) {
 		part := &schema.MessageInputPart{}
 		ctrl, ok := getMessageInputPartCacheControl(part)
+		assert.False(t, ok)
+		assert.Nil(t, ctrl)
+	})
+}
+
+func TestEnableMessageOutputPartCacheControl(t *testing.T) {
+	t.Run("default ttl", func(t *testing.T) {
+		part := &schema.MessageOutputPart{}
+		EnableMessageOutputPartCacheControl(part)
+		ctrl, ok := getMessageOutputPartCacheControl(part)
+		assert.True(t, ok)
+		assert.NotNil(t, ctrl)
+		assert.Equal(t, cacheControlEphemeralType, ctrl.Type)
+		assert.Equal(t, CacheControlTTL5Minutes, ctrl.TTL)
+	})
+
+	t.Run("override ttl to 1h", func(t *testing.T) {
+		part := &schema.MessageOutputPart{}
+		EnableMessageOutputPartCacheControl(part, WithCacheControlTTL(CacheControlTTL1Hour))
+		ctrl, ok := getMessageOutputPartCacheControl(part)
+		assert.True(t, ok)
+		assert.NotNil(t, ctrl)
+		assert.Equal(t, cacheControlEphemeralType, ctrl.Type)
+		assert.Equal(t, CacheControlTTL1Hour, ctrl.TTL)
+	})
+
+	t.Run("no extra present", func(t *testing.T) {
+		part := &schema.MessageOutputPart{}
+		ctrl, ok := getMessageOutputPartCacheControl(part)
 		assert.False(t, ok)
 		assert.Nil(t, ctrl)
 	})
@@ -168,7 +197,7 @@ func TestEnableMessageContentCacheControl(t *testing.T) {
 		ctrl, ok := getMessageContentCacheControl(msg)
 		assert.True(t, ok)
 		assert.NotNil(t, ctrl)
-		assert.Equal(t, CacheControlEphemeralType, ctrl.Type)
+		assert.Equal(t, cacheControlEphemeralType, ctrl.Type)
 		assert.Equal(t, CacheControlTTL5Minutes, ctrl.TTL)
 	})
 
@@ -178,7 +207,7 @@ func TestEnableMessageContentCacheControl(t *testing.T) {
 		ctrl, ok := getMessageContentCacheControl(msg)
 		assert.True(t, ok)
 		assert.NotNil(t, ctrl)
-		assert.Equal(t, CacheControlEphemeralType, ctrl.Type)
+		assert.Equal(t, cacheControlEphemeralType, ctrl.Type)
 		assert.Equal(t, CacheControlTTL1Hour, ctrl.TTL)
 	})
 

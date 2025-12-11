@@ -123,7 +123,7 @@ func getReasoningDetails(msg *schema.Message) (details []*reasoningDetails, b bo
 type CacheControlTTL string
 
 const (
-	CacheControlEphemeralType                 = "ephemeral"
+	cacheControlEphemeralType                 = "ephemeral"
 	CacheControlTTL5Minutes   CacheControlTTL = "5m"
 	CacheControlTTL1Hour      CacheControlTTL = "1h"
 )
@@ -153,7 +153,7 @@ func EnableMessageInputPartCacheControl(part *schema.MessageInputPart, opts ...C
 	if part.Extra == nil {
 		part.Extra = map[string]any{}
 	}
-	ctrl := &cacheControl{Type: CacheControlEphemeralType, TTL: CacheControlTTL5Minutes}
+	ctrl := &cacheControl{Type: cacheControlEphemeralType, TTL: CacheControlTTL5Minutes}
 	for _, opt := range opts {
 		opt(ctrl)
 	}
@@ -172,7 +172,7 @@ func EnableMessageOutputPartCacheControl(part *schema.MessageOutputPart, opts ..
 	if part.Extra == nil {
 		part.Extra = map[string]any{}
 	}
-	ctrl := &cacheControl{Type: CacheControlEphemeralType, TTL: CacheControlTTL5Minutes}
+	ctrl := &cacheControl{Type: cacheControlEphemeralType, TTL: CacheControlTTL5Minutes}
 	for _, opt := range opts {
 		opt(ctrl)
 	}
@@ -190,7 +190,7 @@ func EnableMessageContentCacheControl(part *schema.Message, opts ...CacheControl
 	if part.Extra == nil {
 		part.Extra = map[string]any{}
 	}
-	ctrl := &cacheControl{Type: CacheControlEphemeralType, TTL: CacheControlTTL5Minutes}
+	ctrl := &cacheControl{Type: cacheControlEphemeralType, TTL: CacheControlTTL5Minutes}
 	for _, opt := range opts {
 		opt(ctrl)
 	}
