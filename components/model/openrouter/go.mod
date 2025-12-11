@@ -1,6 +1,6 @@
 module github.com/cloudwego/eino-ext/components/model/openrouter
 
-go 1.23.0
+go 1.18
 
 require (
 	github.com/bytedance/mockey v1.3.0
