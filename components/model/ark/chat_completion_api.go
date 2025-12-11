@@ -132,7 +132,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	} else if cm.batchChat != nil && cm.batchChat.EnableBatchChat {
 		// batch chat need set context timeout
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cm.batchChat.BatchChatTimeout)
+		ctx, cancel = context.WithTimeout(ctx, cm.batchChat.BatchChatAsyncRetryTimeout)
 		defer cancel()
 		resp, err = cm.client.CreateBatchChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	} else {
