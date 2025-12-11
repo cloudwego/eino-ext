@@ -18,6 +18,7 @@ package es8
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/cloudwego/eino/components"
@@ -76,7 +77,7 @@ func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) 
 	}
 
 	if conf.ResultParser == nil {
-		return nil, fmt.Errorf("[NewRetriever] result parser not provided")
+		conf.ResultParser = defaultResultParser
 	}
 
 	if conf.Client == nil {
@@ -132,6 +133,9 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 }
 
 func (r *Retriever) parseSearchResult(ctx context.Context, resp *search.Response) (docs []*schema.Document, err error) {
+	if len(resp.Hits.Hits) == 0 {
+		return []*schema.Document{}, nil
+	}
 	docs = make([]*schema.Document, 0, len(resp.Hits.Hits))
 
 	for _, hit := range resp.Hits.Hits {
@@ -152,4 +156,46 @@ func (r *Retriever) GetType() string {
 
 func (r *Retriever) IsCallbacksEnabled() bool {
 	return true
+}
+
+func defaultResultParser(ctx context.Context, hit types.Hit) (*schema.Document, error) {
+	id := ""
+	if hit.Id_ != nil {
+		id = *hit.Id_
+	}
+
+	score := 0.0
+	if hit.Score_ != nil {
+		score = float64(*hit.Score_)
+	}
+
+	if hit.Source_ == nil {
+		return &schema.Document{
+			ID:       id,
+			MetaData: map[string]interface{}{"score": score},
+		}, nil
+	}
+
+	var source map[string]interface{}
+	if err := json.Unmarshal(hit.Source_, &source); err != nil {
+		return nil, fmt.Errorf("unmarshal document content failed: %v", err)
+	}
+
+	content, _ := source["content"].(string)
+
+	// Remove content from metadata to avoid duplication if it's large
+	meta := make(map[string]interface{}, len(source)+1)
+	for k, v := range source {
+		if k != "content" {
+			meta[k] = v
+		}
+	}
+	meta["score"] = score
+
+	doc := &schema.Document{
+		ID:       id,
+		Content:  content,
+		MetaData: meta,
+	}
+	return doc.WithScore(score), nil
 }

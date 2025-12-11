@@ -81,6 +81,8 @@ func main() {
 			RRF:             false,
 			RRFRankConstant: nil,
 			RRFWindowSize:   nil,
+			K:               of(10),
+			NumCandidates:   of(100),
 		}),
 		ResultParser: func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error) {
 			doc = &schema.Document{
@@ -136,11 +138,11 @@ func main() {
 		// fmt.Println(doc.DenseVector())
 	}
 	// Without Filters
-	// id:1, score=0.53, location:France, content:1. Eiffel Tower: Located in Paris, France, it is one of the most famous landmarks in the world, designed by Gustave Eiffel and built in 1889.
-	// id:2, score=0.51, location:China, content:2. The Great Wall: Located in China, it is one of the Seven Wonders of the World, built from the Qin Dynasty to the Ming Dynasty, with a total length of over 20000 kilometers.
-	// id:5, score=0.51, location:India, content:5. Taj Mahal: Located in Agra, India, it was completed by Mughal Emperor Shah Jahan in 1653 to commemorate his wife and is one of the New Seven Wonders of the World.
-	// id:7, score=0.51, location:France, content:7. Louvre Museum: Located in Paris, France, it is one of the largest museums in the world with a rich collection, including Leonardo da Vinci's Mona Lisa and Greece's Venus de Milo.
-	// id:6, score=0.51, location:Australia, content:6. Sydney Opera House: Located in Sydney Harbour, Australia, it is one of the most iconic buildings of the 20th century, renowned for its unique sailboat design.
+	// id:1, score=1.05, location:France, content:1. Eiffel Tower: Located in Paris, France, it is one of the most famous landmarks in the world, designed by Gustave Eiffel and built in 1889.
+	// id:2, score=1.03, location:China, content:2. The Great Wall: Located in China, it is one of the Seven Wonders of the World, built from the Qin Dynasty to the Ming Dynasty, with a total length of over 20000 kilometers.
+	// id:5, score=1.02, location:India, content:5. Taj Mahal: Located in Agra, India, it was completed by Mughal Emperor Shah Jahan in 1653 to commemorate his wife and is one of the New Seven Wonders of the World.
+	// id:7, score=1.02, location:France, content:7. Louvre Museum: Located in Paris, France, it is one of the largest museums in the world with a rich collection, including Leonardo da Vinci's Mona Lisa and Greece's Venus de Milo.
+	// id:6, score=1.02, location:Australia, content:6. Sydney Opera House: Located in Sydney Harbour, Australia, it is one of the most iconic buildings of the 20th century, renowned for its unique sailboat design.
 
 	// search with filter
 	docs, err = r.Retrieve(ctx, "tourist attraction",

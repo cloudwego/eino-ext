@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -156,6 +157,13 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 				Action:     "index",
 				DocumentID: t.id,
 				Body:       bytes.NewReader(b),
+				OnFailure: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem, err error) {
+					if err != nil {
+						log.Printf("ERROR: %s", err)
+					} else {
+						log.Printf("ERROR: %s: %s", res.Error.Type, res.Error.Reason)
+					}
+				},
 			}); err != nil {
 				return err
 			}

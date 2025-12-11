@@ -1,28 +1,28 @@
 # ES8 Retriever
 
-English | [中文](README_zh.md)
+[English](README.md)
 
-An Elasticsearch 8.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration with Eino's vector retrieval system for enhanced semantic search capabilities.
+为 [Eino](https://github.com/cloudwego/eino) 实现的 Elasticsearch 8.x 检索器，实现了 `Retriever` 接口。这使得可以与 Eino 的向量检索系统无缝集成，从而增强语义搜索能力。
 
-## Features
+## 功能特性
 
-- Implements `github.com/cloudwego/eino/components/retriever.Retriever`
-- Easy integration with Eino's retrieval system
-- Configurable Elasticsearch parameters
-- Support for vector similarity search
-- Multiple search modes including approximate search
-- Custom result parsing support
-- Flexible document filtering
+- 实现 `github.com/cloudwego/eino/components/retriever.Retriever`
+- 易于集成 Eino 的检索系统
+- 可配置 Elasticsearch 参数
+- 支持向量相似度搜索
+- 多种搜索模式（包括近似搜索）
+- 自定义结果解析支持
+- 灵活的文档过滤
 
-## Installation
+## 安装
 
 ```bash
 go get github.com/cloudwego/eino-ext/components/retriever/es8@latest
 ```
 
-## Quick Start
+## 快速开始
 
-Here's a quick example of how to use the retriever with approximate search mode, you could read components/retriever/es8/examples/approximate/approximate.go for more details:
+这里是使用近似搜索模式的快速示例，更多细节请阅读 components/retriever/es8/examples/approximate/approximate.go：
 
 ```go
 import (
@@ -46,7 +46,7 @@ const (
 func main() {
 	ctx := context.Background()
 
-	// es supports multiple ways to connect
+	// es 支持多种连接方式
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
@@ -63,7 +63,7 @@ func main() {
 		CACert:    cert,
 	})
 
-	// create retriever component
+	// 创建 retriever 组件
 	retriever, _ := es8.NewRetriever(ctx, &es8.RetrieverConfig{
 		Client: client,
 		Index:  indexName,
@@ -72,8 +72,8 @@ func main() {
 			QueryFieldName:  fieldContent,
 			VectorFieldName: fieldContentVector,
 			Hybrid:          true,
-			// RRF only available with specific licenses
-			// see: https://www.elastic.co/subscriptions
+			// RRF 仅在特定许可证下可用
+			// 参见: https://www.elastic.co/subscriptions
 			RRF:             false,
 			RRFRankConstant: nil,
 			RRFWindowSize:   nil,
@@ -111,13 +111,13 @@ func main() {
 
 			return doc, nil
 		},
-		Embedding: emb, // your embedding component
+		// Embedding: emb, // 你的 embedding 组件
 	})
 
-	// search without filter
+	// 不带过滤器的搜索
 	docs, _ := retriever.Retrieve(ctx, "tourist attraction")
 
-	// search with filter
+	// 带过滤器的搜索
 	docs, _ = retriever.Retrieve(ctx, "tourist attraction",
 		es8.WithFilters([]types.Query{{
 			Term: map[string]types.TermQuery{
@@ -131,28 +131,28 @@ func main() {
 }
 ```
 
-## Configuration
+## 配置
 
-The retriever can be configured using the `RetrieverConfig` struct:
+可以使用 `RetrieverConfig` 结构体配置检索器：
 
 ```go
 type RetrieverConfig struct {
-    Client *elasticsearch.Client // Required: Elasticsearch client instance
-    Index  string               // Required: Index name to retrieve documents from
-    TopK   int                  // Required: Number of results to return
+    Client *elasticsearch.Client // 必填: Elasticsearch 客户端实例
+    Index  string               // 必填: 检索文档的索引名称
+    TopK   int                  // 必填: 返回的结果数量
     
-    // Required: Search mode configuration
+    // 必填: 搜索模式配置
     SearchMode search_mode.SearchMode
     
-    // Required: Function to parse Elasticsearch hits into Documents
+    // 必填: 将 Elasticsearch hits 解析为 Document 的函数
     ResultParser func(ctx context.Context, hit types.Hit) (*schema.Document, error)
     
-    // Optional: Required only if query vectorization is needed
+    // 选填: 仅在需要查询向量化时必填
     Embedding embedding.Embedder
 }
 ```
 
-## For More Details
+## 更多详情
 
-- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
-- [Elasticsearch Go Client Documentation](https://github.com/elastic/go-elasticsearch)
+- [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
+- [Elasticsearch Go Client 文档](https://github.com/elastic/go-elasticsearch)
