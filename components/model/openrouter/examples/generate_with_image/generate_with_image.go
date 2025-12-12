@@ -24,22 +24,18 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino-ext/components/model/openrouter"
 )
 
 func main() {
 	ctx := context.Background()
-
-	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Model:   os.Getenv("OPENAI_MODEL"),
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		ByAzure: func() bool {
-			if os.Getenv("OPENAI_BY_AZURE") == "true" {
-				return true
-			}
-			return false
-		}(),
+	chatModel, err := openrouter.NewChatModel(ctx, &openrouter.Config{
+		APIKey:  os.Getenv("API_KEY"),
+		Model:   os.Getenv("MODEL"), // model support image generate example: google/gemini-2.5-flash-image
+		BaseURL: os.Getenv("BASE_URL"),
+		Reasoning: &openrouter.Reasoning{
+			Effort: openrouter.EffortOfMedium,
+		},
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
@@ -49,6 +45,7 @@ func main() {
 	multiModalMsg := &schema.Message{
 		Role: schema.User,
 		UserInputMultiContent: []schema.MessageInputPart{
+
 			{
 				Type: schema.ChatMessagePartTypeText,
 				Text: "this picture is a landscape photo, what's the picture's content",
