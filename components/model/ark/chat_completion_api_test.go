@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
@@ -263,6 +264,55 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 			convey.So(len(outMsg.ToolCalls), convey.ShouldEqual, 1)
 		})
 
+		PatchConvey("test use batch success", func() {
+			Mock(GetMethod(cli, "CreateBatchChatCompletion")).Return(
+				model.ChatCompletionResponse{
+					Usage: model.Usage{
+						CompletionTokens: 1,
+						PromptTokens:     2,
+						TotalTokens:      3,
+					},
+					Choices: []*model.ChatCompletionChoice{
+						{
+							Message: model.ChatCompletionMessage{
+								Content:    &model.ChatCompletionMessageContent{StringValue: ptrOf("test_content")},
+								Role:       model.ChatMessageRoleAssistant,
+								ToolCallID: "",
+								ToolCalls: []*model.ToolCall{
+									{
+										Function: model.FunctionCall{
+											Arguments: "ccc",
+											Name:      "qqq",
+										},
+										ID:   "123",
+										Type: model.ToolTypeFunction,
+									},
+								},
+							},
+						},
+					},
+				}, nil).Build()
+			bm, err := NewChatModel(ctx, &ChatModelConfig{
+				APIKey: "asd",
+				Model:  "asd",
+				BatchChat: &BatchChatConfig{
+					EnableBatchChat:            true,
+					BatchChatAsyncRetryTimeout: 2 * time.Hour,
+					BatchMaxParallel:           ptrOf(3000),
+				},
+				Timeout: ptrOf(10 * time.Second),
+			})
+			outMsg, err := bm.Generate(ctx, msgs,
+				fmodel.WithTemperature(1),
+				fmodel.WithMaxTokens(321),
+				fmodel.WithModel("asd"),
+				fmodel.WithTopP(123))
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(outMsg, convey.ShouldNotBeNil)
+			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
+			convey.So(len(outMsg.ToolCalls), convey.ShouldEqual, 1)
+		})
+
 		PatchConvey("generate_with_image_success", func() {
 
 			multiModalMsg := schema.UserMessage("")
@@ -485,4 +535,22 @@ func TestCompletionAPIChatModel_toArkContent(t *testing.T) {
 			convey.So(err, convey.ShouldNotBeNil)
 		})
 	})
+}
+
+func Test_completionAPIChatModel_genRequest(t *testing.T) {
+	chatModel := &completionAPIChatModel{
+		frequencyPenalty: ptrOf(float32(1)),
+	}
+	req, err := chatModel.genRequest([]*schema.Message{
+		{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: "ok"},
+		}, Extra: map[string]any{
+			keyOfReasoningContent: "keyOfReasoningContent",
+		}},
+	}, &fmodel.Options{
+		Temperature: ptrOf(float32(1)),
+	}, &arkOptions{})
+	assert.Nil(t, err)
+	assert.Len(t, req.Messages, 1)
+	assert.Equal(t, *req.Messages[0].ReasoningContent, "keyOfReasoningContent")
 }

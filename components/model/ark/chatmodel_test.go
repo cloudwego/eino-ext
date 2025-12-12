@@ -215,12 +215,13 @@ func TestBuildResponsesAPIChatModel(t *testing.T) {
 
 func TestBuildChatCompletionAPIChatModel(t *testing.T) {
 	mockey.PatchConvey("invalid config", t, func() {
-		cli := buildChatCompletionAPIChatModel(&ChatModelConfig{
+		cli, err := buildChatCompletionAPIChatModel(&ChatModelConfig{
 			Stop: []string{"test"},
 			Cache: &CacheConfig{
 				APIType: ptrOf(ContextAPI),
 			},
 		})
 		assert.NotNil(t, cli)
+		assert.Nil(t, err)
 	})
 }

@@ -58,6 +58,7 @@ type completionAPIChatModel struct {
 	cache            *CacheConfig
 	serviceTier      *string
 	reasoningEffort  *model.ReasoningEffort
+	batchChat        *BatchChatConfig
 }
 
 type tool struct {
@@ -111,11 +112,11 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	}
 
 	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages: in,
-		Tools:    tools, // join tool info from call options
+		Messages:   in,
+		Tools:      tools, // join tool info from call options
 		ToolChoice: options.ToolChoice,
-		Config:   reqConf,
-		Extra:    map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Config:     reqConf,
+		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
 	})
 
 	defer func() {
@@ -128,6 +129,12 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 	if specOptions.cache != nil && specOptions.cache.ContextID != nil {
 		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(req, *specOptions.cache.ContextID),
 			arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	} else if cm.batchChat != nil && cm.batchChat.EnableBatchChat {
+		// batch chat need set context timeout
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, cm.batchChat.BatchChatAsyncRetryTimeout)
+		defer cancel()
+		resp, err = cm.client.CreateBatchChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	} else {
 		resp, err = cm.client.CreateChatCompletion(ctx, *req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	}
@@ -208,6 +215,8 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 	if arkOpts.cache != nil && arkOpts.cache.ContextID != nil {
 		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *cm.convCompletionRequest(req, *arkOpts.cache.ContextID),
 			arkruntime.WithCustomHeaders(arkOpts.customHeaders))
+	} else if cm.batchChat != nil && cm.batchChat.EnableBatchChat {
+		return nil, fmt.Errorf("batch chat not support stream")
 	} else {
 		stream, err = cm.client.CreateChatCompletionStream(ctx, *req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
 	}
@@ -280,6 +289,18 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 	return outStream, nil
 }
 
+func populateChatMsgReasoningContent(in *schema.Message, msg *model.ChatCompletionMessage) {
+	reasoningContent := in.ReasoningContent
+	if reasoningContent == "" {
+		reasoningContent, _ = GetReasoningContent(in)
+	}
+
+	if reasoningContent != "" {
+		msg.ReasoningContent = &reasoningContent
+	}
+	return
+}
+
 func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *model.CreateChatCompletionRequest, err error) {
 	req = &model.CreateChatCompletionRequest{
 		MaxTokens:        options.MaxTokens,
@@ -321,6 +342,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  cm.toArkToolCalls(msg.ToolCalls),
 		}
+		populateChatMsgReasoningContent(msg, nMsg)
 		if len(msg.Name) > 0 {
 			nMsg.Name = &msg.Name
 		}
