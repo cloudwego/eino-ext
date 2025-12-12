@@ -144,7 +144,10 @@ type RetrieverConfig struct {
     // Required: Search mode configuration
     SearchMode search_mode.SearchMode
     
-    // Required: Function to parse Elasticsearch hits into Documents
+    // Optional: Function to parse Elasticsearch hits into Documents
+    // If not provided, default parser will be used which:
+    // 1. Extracts "content" field from source as Document.Content
+    // 2. Used other source fields as Document.MetaData
     ResultParser func(ctx context.Context, hit types.Hit) (*schema.Document, error)
     
     // Optional: Required only if query vectorization is needed
