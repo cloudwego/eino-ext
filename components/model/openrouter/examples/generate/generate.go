@@ -24,57 +24,33 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino-ext/components/model/openrouter"
 )
 
 func main() {
 	ctx := context.Background()
 
-	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Model:   os.Getenv("OPENAI_MODEL"),
-		BaseURL: os.Getenv("OPENAI_BASE_URL"),
-		ByAzure: func() bool {
-			if os.Getenv("OPENAI_BY_AZURE") == "true" {
-				return true
-			}
-			return false
-		}(),
+	chatModel, err := openrouter.NewChatModel(ctx, &openrouter.Config{
+		APIKey:  os.Getenv("API_KEY"),
+		Model:   os.Getenv("MODEL"),
+		BaseURL: os.Getenv("BASE_URL"),
+		Reasoning: &openrouter.Reasoning{
+			Effort: openrouter.EffortOfMedium,
+		},
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
-
-	}
-
-	multiModalMsg := &schema.Message{
-		Role: schema.User,
-		UserInputMultiContent: []schema.MessageInputPart{
-			{
-				Type: schema.ChatMessagePartTypeText,
-				Text: "this picture is a landscape photo, what's the picture's content",
-			},
-			{
-				Type: schema.ChatMessagePartTypeImageURL,
-				Image: &schema.MessageInputImage{
-					MessagePartCommon: schema.MessagePartCommon{
-						URL: of("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT11qEDxU4X_MVKYQVU5qiAVFidA58f8GG0bQ&s"),
-					},
-					Detail: schema.ImageURLDetailAuto,
-				},
-			},
-		},
 	}
 
 	resp, err := chatModel.Generate(ctx, []*schema.Message{
-		multiModalMsg,
+		{
+			Role:    schema.User,
+			Content: "as a machine, how do you answer user's question?",
+		},
 	})
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
-
 	fmt.Printf("output: \n%v", resp)
-}
 
-func of[T any](a T) *T {
-	return &a
 }

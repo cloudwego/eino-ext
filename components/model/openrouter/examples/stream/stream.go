@@ -23,31 +23,21 @@ import (
 	"log"
 	"os"
 
-	"google.golang.org/genai"
-
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-ext/components/model/gemini"
+	"github.com/cloudwego/eino-ext/components/model/openrouter"
 )
 
 func main() {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	modelName := os.Getenv("GEMINI_MODEL")
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: apiKey,
-	})
-	if err != nil {
-		log.Fatalf("NewClient of gemini failed, err=%v", err)
-	}
 
-	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
-		Client: client,
-		Model:  modelName,
-		ThinkingConfig: &genai.ThinkingConfig{
-			IncludeThoughts: true,
-			ThinkingBudget:  nil,
+	cm, err := openrouter.NewChatModel(ctx, &openrouter.Config{
+		APIKey:  os.Getenv("API_KEY"),
+		Model:   os.Getenv("MODEL"),
+		BaseURL: os.Getenv("BASE_URL"),
+		Reasoning: &openrouter.Reasoning{
+			Effort: openrouter.EffortOfMedium,
 		},
 	})
 	if err != nil {
