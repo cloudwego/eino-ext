@@ -228,7 +228,7 @@ func TestRetriever_Retrieve(t *testing.T) {
 			})
 			_, err := retriever.Retrieve(ctx, "query")
 			So(err, ShouldNotBeNil)
-			So(err.Error(), ShouldContainSubstring, "cannot retrieve informations from Elasticsearch")
+			So(err.Error(), ShouldContainSubstring, "cannot retrieve information")
 		})
 
 		Convey("parse response error", func() {
