@@ -1,6 +1,6 @@
 # ES8 Indexer
 
-English
+English | [中文](README_zh.md)
 
 An Elasticsearch 8.x indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer` interface. This enables seamless integration with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 

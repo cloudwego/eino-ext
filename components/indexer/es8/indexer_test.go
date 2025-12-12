@@ -210,6 +210,7 @@ func TestBulkAdd(t *testing.T) {
 				convey.So(mp["k3"], convey.ShouldEqual, 123)
 				convey.So(mp["vk1"], convey.ShouldEqual, []any{2.1})
 				convey.So(mp["vk2"], convey.ShouldEqual, []any{2.1})
+				convey.So(item.OnFailure, convey.ShouldNotBeNil)
 			}
 		})
 	})

@@ -81,6 +81,8 @@ func main() {
 			RRF:             false,
 			RRFRankConstant: nil,
 			RRFWindowSize:   nil,
+			K:               of(10),
+			NumCandidates:   of(100),
 		}),
 		ResultParser: func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error) {
 			doc = &schema.Document{
