@@ -107,7 +107,7 @@ const (
 var denseVectorScriptMap = map[DenseVectorSimilarityType]string{
 	DenseVectorSimilarityTypeCosineSimilarity: `cosineSimilarity(params.embedding, '%s') + 1.0`,
 	DenseVectorSimilarityTypeDotProduct: `
-    double value = dotProduct(params.query_vector, '%s');
+    double value = dotProduct(params.embedding, '%s');
     return sigmoid(1, Math.E, -value);
     `,
 	DenseVectorSimilarityTypeL1Norm: `1 / (1 + l1norm(params.embedding, '%s'))`,
