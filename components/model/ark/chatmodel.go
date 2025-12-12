@@ -87,9 +87,17 @@ type ChatModelConfig struct {
 	// Required
 	Model string `json:"model"`
 
-	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion.
-	// Optional. Default: 4096
+	// MaxTokens limits the maximum number of output tokens in the Chat Completion API. See https://www.volcengine.com/docs/82379/1494384.
+	// In Responses API, corresponds to `max_output_tokens`, representing both the model output and reasoning output. See https://www.volcengine.com/docs/82379/1569618.
+	// Optional. In chat completion, default: 4096, in Responses API, no default.
 	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// MaxCompletionTokens specifies the maximum tokens in the Chat Completion API,
+	// representing both the model output and reasoning output. See https://www.volcengine.com/docs/82379/1569618.
+	// Range: 0 to 65,536 tokens. Exceeding the maximum threshold will result in an error.
+	// Note: In chat completion, MaxCompletionTokens and MaxTokens cannot both be set, in Responses API, this field is ignored; use MaxTokens.
+	// Optional.
+	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
 
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both
@@ -252,24 +260,25 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) (*completionAPICha
 	}
 
 	cm := &completionAPIChatModel{
-		client:           client,
-		model:            config.Model,
-		maxTokens:        config.MaxTokens,
-		temperature:      config.Temperature,
-		topP:             config.TopP,
-		stop:             config.Stop,
-		frequencyPenalty: config.FrequencyPenalty,
-		logitBias:        config.LogitBias,
-		presencePenalty:  config.PresencePenalty,
-		customHeader:     config.CustomHeader,
-		logProbs:         config.LogProbs,
-		topLogProbs:      config.TopLogProbs,
-		responseFormat:   config.ResponseFormat,
-		thinking:         config.Thinking,
-		cache:            config.Cache,
-		serviceTier:      config.ServiceTier,
-		reasoningEffort:  config.ReasoningEffort,
-		batchChat:        config.BatchChat,
+		client:              client,
+		model:               config.Model,
+		maxTokens:           config.MaxTokens,
+		maxCompletionTokens: config.MaxCompletionTokens,
+		temperature:         config.Temperature,
+		topP:                config.TopP,
+		stop:                config.Stop,
+		frequencyPenalty:    config.FrequencyPenalty,
+		logitBias:           config.LogitBias,
+		presencePenalty:     config.PresencePenalty,
+		customHeader:        config.CustomHeader,
+		logProbs:            config.LogProbs,
+		topLogProbs:         config.TopLogProbs,
+		responseFormat:      config.ResponseFormat,
+		thinking:            config.Thinking,
+		cache:               config.Cache,
+		serviceTier:         config.ServiceTier,
+		reasoningEffort:     config.ReasoningEffort,
+		batchChat:           config.BatchChat,
 	}
 
 	return cm, nil
