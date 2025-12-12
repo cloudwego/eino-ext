@@ -941,10 +941,10 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 		FinishReason: string(candidate.FinishReason),
 	}
 	if candidate.Content != nil {
-		if candidate.Content.Role == roleModel {
-			result.Role = schema.Assistant
-		} else {
+		if candidate.Content.Role == roleUser {
 			result.Role = schema.User
+		} else {
+			result.Role = schema.Assistant
 		}
 
 		var (
