@@ -185,11 +185,11 @@ func TestFPSFunctions(t *testing.T) {
 		inputVideo := &schema.MessageInputVideo{}
 
 		// Success case
-		setInputVideoFPS(inputVideo, 3.0)
+		SetInputVideoFPS(inputVideo, 3.0)
 		assert.Equal(t, ptrOf(3.0), GetInputVideoFPS(inputVideo))
 
 		// Boundary case: nil input
-		setInputVideoFPS(nil, 3.0)
+		SetInputVideoFPS(nil, 3.0)
 		assert.Nil(t, GetInputVideoFPS(nil))
 	})
 
