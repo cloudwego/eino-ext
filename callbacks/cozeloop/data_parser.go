@@ -219,6 +219,13 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			tags.set(tracespec.Output, convertRetrieverOutput(cbOutput))
 		}
 
+	case components.ComponentOfTool:
+		toolCallID := compose.GetToolCallID(ctx)
+		if toolCallID != "" {
+			tags.set(tracespec.ToolCallID, toolCallID)
+		}
+		tags.set(tracespec.Output, parseAny(ctx, output, false))
+
 	case compose.ComponentOfLambda:
 		messages, ok := output.([]*schema.Message)
 		if ok && level == 2 {
@@ -544,6 +551,9 @@ func parseSpanTypeFromComponent(c components.Component) string {
 
 	case components.ComponentOfTool:
 		return "tool"
+
+	case compose.ComponentOfGraph:
+		return "graph"
 
 	default:
 		return string(c)
