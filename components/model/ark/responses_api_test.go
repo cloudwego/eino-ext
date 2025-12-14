@@ -665,12 +665,14 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 					UserInputMultiContent: []schema.MessageInputPart{
 						{Type: schema.ChatMessagePartTypeText, Text: " more text"},
 						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+						{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
 						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+						{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "application/pdf"}}},
 					},
 				}
 				inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
 				assert.Nil(t, err)
-				assert.Len(t, inputMessage.Content, 3)
+				assert.Len(t, inputMessage.Content, 5)
 			})
 
 			PatchConvey("Error on missing MIMEType for Base64", func() {
@@ -682,7 +684,7 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 				}
 				_, err := cm.toArkUserRoleItemInputMessage(msg)
 				assert.NotNil(t, err)
-				assert.ErrorContains(t, err, "image part must have MIMEType when use Base64Data")
+				assert.ErrorContains(t, err, "message part must have MIMEType when use Base64Data")
 			})
 
 			PatchConvey("Error on nil Image", func() {
@@ -754,11 +756,12 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 				MultiContent: []schema.ChatMessagePart{
 					{Type: schema.ChatMessagePartTypeText, Text: " more legacy text"},
 					{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: httpURL}},
+					{Type: schema.ChatMessagePartTypeFileURL, FileURL: &schema.ChatMessageFileURL{URL: httpURL}},
 				},
 			}
 			inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
 			assert.Nil(t, err)
-			assert.Len(t, inputMessage.Content, 2)
+			assert.Len(t, inputMessage.Content, 3)
 		})
 
 		PatchConvey("Error on both UserInputMultiContent and AssistantGenMultiContent", func() {
