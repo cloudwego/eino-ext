@@ -322,9 +322,9 @@ func TestDefaultResultParser(t *testing.T) {
 				"_score": 0.95,
 			}
 			doc, err := defaultResultParser(ctx, hit)
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(doc.ID, convey.ShouldEqual, "doc1")
-			convey.So(doc.MetaData["score"], convey.ShouldEqual, 0.95)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "field '_source' not found in document doc1")
+			convey.So(doc, convey.ShouldBeNil)
 		})
 
 		PatchConvey("test with source content", func() {
@@ -350,8 +350,9 @@ func TestDefaultResultParser(t *testing.T) {
 		PatchConvey("test with empty hit", func() {
 			hit := map[string]interface{}{}
 			doc, err := defaultResultParser(ctx, hit)
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(doc.ID, convey.ShouldEqual, "")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "field '_id' not found in hit")
+			convey.So(doc, convey.ShouldBeNil)
 		})
 	})
 }
