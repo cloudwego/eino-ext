@@ -46,9 +46,10 @@ type IndexerConfig struct {
 	// It allows customization of how documents are stored and vectored.
 	DocumentToFields func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error)
 	// Embedding is the embedding model used for vectorization.
-	// It is required if vector fields are present.
-	// 1. VectorFields contains fields except doc Content
-	// 2. VectorFields contains doc Content and vector not provided in doc extra (see [schema.Document.Vector]).
+	// It is required if any field provided by DocumentToFields requires vectorization (specifically, if FieldValue.EmbedKey is not empty).
+	// This typically applies when:
+	// 1. The document content itself needs to be vectorized and does not have a pre-computed vector (see [schema.Document.Vector]).
+	// 2. Additional fields (other than content) need to be vectorized.
 	Embedding embedding.Embedder
 }
 
