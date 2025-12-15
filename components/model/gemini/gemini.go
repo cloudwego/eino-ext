@@ -1088,6 +1088,9 @@ func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Con
 			},
 			CompletionTokens: message.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      message.ResponseMeta.Usage.TotalTokens,
+			CompletionTokensDetails: model.CompletionTokensDetails{
+				ReasoningTokens: message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens,
+			},
 		}
 	}
 	return callbackOutput
