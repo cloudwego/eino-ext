@@ -24,7 +24,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 )
 
-// DenseVectorSimilarityType type of dense vector similarity
+// DenseVectorSimilarityType represents the type of dense vector similarity.
 type DenseVectorSimilarityType string
 
 const (
@@ -44,7 +44,7 @@ var denseVectorScriptMap = map[DenseVectorSimilarityType]string{
 	DenseVectorSimilarityTypeL2Norm: `1 / (1 + l2norm(params.embedding, doc['%s']))`,
 }
 
-// DenseVectorSimilarity calculate embedding similarity between dense_vector field and query using script_score
+// DenseVectorSimilarity calculates embedding similarity between a dense_vector field and the query using script_score.
 // This is used for Exact KNN or when you need more control than standard KNN.
 func DenseVectorSimilarity(typ DenseVectorSimilarityType, vectorFieldName string) opensearch.SearchMode {
 	// Note: OpenSearch uses "doc['field']" to access field values in painless scripts.

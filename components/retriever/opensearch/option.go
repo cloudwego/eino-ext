@@ -20,13 +20,13 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 )
 
-// ImplOptions opensearch specified options
+// ImplOptions contains OpenSearch-specific options.
 // Use retriever.GetImplSpecificOptions[ImplOptions] to get ImplOptions from options.
 type ImplOptions struct {
 	Filters []interface{} `json:"filters,omitempty"`
 }
 
-// WithFilters set filters for retrieve query.
+// WithFilters sets filters for the retrieve query.
 // This may take effect in search modes.
 func WithFilters(filters []interface{}) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {

@@ -32,39 +32,46 @@ import (
 	opensearchutil "github.com/opensearch-project/opensearch-go/v2/opensearchutil"
 )
 
+// IndexerConfig contains configuration for the OpenSearch indexer.
 type IndexerConfig struct {
+	// Client is the OpenSearch client used for indexing operations.
 	Client *opensearch.Client `json:"client"`
 
+	// Index is the name of the OpenSearch index.
 	Index string `json:"index"`
-	// BatchSize controls max texts size for embedding.
+	// BatchSize specifies the maximum number of documents to embed in a single batch.
 	// Default is 5.
 	BatchSize int `json:"batch_size"`
-	// FieldMapping supports customize opensearch fields from eino document.
-	// Each key - FieldValue.Value from field2Value will be saved, and
-	// vector of FieldValue.Value will be saved if FieldValue.EmbedKey is not empty.
+	// DocumentToFields maps an Eino document to OpenSearch fields.
+	// It allows customization of how documents are stored and vectored.
 	DocumentToFields func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error)
-	// Embedding vectorization method, must provide in two cases
+	// Embedding is the embedding model used for vectorization.
+	// It is required if vector fields are present.
 	// 1. VectorFields contains fields except doc Content
-	// 2. VectorFields contains doc Content and vector not provided in doc extra (see Document.Vector method)
+	// 2. VectorFields contains doc Content and vector not provided in doc extra (see [schema.Document.Vector]).
 	Embedding embedding.Embedder
 }
 
+// FieldValue represents a single field value in OpenSearch.
 type FieldValue struct {
-	// Value original Value
+	// Value is the actual data to be stored.
 	Value any
-	// EmbedKey if set, Value will be vectorized and saved to opensearch.
+	// EmbedKey, if set, causes the Value to be vectorized and stored under this key.
 	// If Stringify method is provided, Embedding input text will be Stringify(Value).
 	// If Stringify method not set, retriever will try to assert Value as string.
 	EmbedKey string
-	// Stringify converts Value to string
+	// Stringify converts the Value to a string for embedding.
 	Stringify func(val any) (string, error)
 }
 
+// Indexer implements the [indexer.Indexer] interface for OpenSearch.
 type Indexer struct {
 	client *opensearch.Client
 	config *IndexerConfig
 }
 
+// NewIndexer creates a new OpenSearch indexer with the provided configuration.
+// It returns an error if the client or DocumentToFields mapping is missing.
 func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
 	if conf.Client == nil {
 		return nil, fmt.Errorf("[NewIndexer] opensearch client not provided")
@@ -84,6 +91,8 @@ func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
 	}, nil
 }
 
+// Store adds the provided documents to the OpenSearch index.
+// It returns the list of IDs for the stored documents or an error.
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{Docs: docs})
@@ -262,10 +271,12 @@ func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) 
 	return callbacks.ReuseHandlers(ctx, runInfo)
 }
 
+// GetType returns the type of the indexer.
 func (i *Indexer) GetType() string {
 	return typ
 }
 
+// IsCallbacksEnabled checks if callbacks are enabled for this indexer.
 func (i *Indexer) IsCallbacksEnabled() bool {
 	return true
 }

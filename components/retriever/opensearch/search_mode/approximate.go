@@ -24,7 +24,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 )
 
-// ApproximateConfig configuration for Approximate search mode (KNN + Hybrid + RRF)
+// ApproximateConfig contains configuration for Approximate search mode (KNN + Hybrid + RRF).
 type ApproximateConfig struct {
 	// VectorField is the name of the vector field to search against
 	VectorField string
@@ -54,7 +54,7 @@ type ApproximateConfig struct {
 }
 
 // Approximate implements KNN search with optional Hybrid and RRF support.
-// Replaces the previous KNN search mode.
+// It replaces the previous KNN search mode.
 func Approximate(config *ApproximateConfig) opensearch.SearchMode {
 	return &approximate{config: config}
 }

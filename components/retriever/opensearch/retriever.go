@@ -31,34 +31,42 @@ import (
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
 )
 
+// RetrieverConfig contains configuration for the OpenSearch retriever.
 type RetrieverConfig struct {
+	// Client is the OpenSearch client used for retrieval.
 	Client *opensearch.Client `json:"client"`
 
+	// Index is the name of the OpenSearch index.
 	Index string `json:"index"`
-	// TopK number of result to return as top hits.
-	// Default is 10
-	TopK           int      `json:"top_k"`
+	// TopK specifies the number of results to return.
+	// Default is 10.
+	TopK int `json:"top_k"`
+	// ScoreThreshold filters results with a similarity score below this value.
 	ScoreThreshold *float64 `json:"score_threshold"`
 
-	// SearchMode retrieve strategy.
+	// SearchMode defines the strategy for retrieval (e.g., dense vector, keyword).
 	SearchMode SearchMode `json:"search_mode"`
-	// ResultParser parse document from opensearch search hits.
-	// If ResultParser not provided, defaultResultParser will be used as default
+	// ResultParser parses OpenSearch hits into Eino documents.
+	// If ResultParser not provided, defaultResultParser will be used as default.
 	ResultParser func(ctx context.Context, hit map[string]interface{}) (doc *schema.Document, err error)
-	// Embedding vectorization method, must provide when SearchMode needed
+	// Embedding is the embedding model used for vectorization.
+	// It is required when SearchMode needs it.
 	Embedding embedding.Embedder
 }
 
+// SearchMode defines the interface for building OpenSearch search requests.
 type SearchMode interface {
-	// BuildRequest generate search request body from config, query and options.
+	// BuildRequest generates the search request body based on the configuration and query.
 	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]interface{}, error)
 }
 
+// Retriever implements the [retriever.Retriever] interface for OpenSearch.
 type Retriever struct {
 	client *opensearch.Client
 	config *RetrieverConfig
 }
 
+// NewRetriever creates a new OpenSearch retriever with the provided configuration.
 func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) {
 	if conf.SearchMode == nil {
 		return nil, fmt.Errorf("[NewRetriever] search mode not provided")
@@ -81,6 +89,7 @@ func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) 
 	}, nil
 }
 
+// Retrieve searches for documents in OpenSearch matching the given query.
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
 	options := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &r.config.Index,
@@ -179,10 +188,12 @@ func (r *Retriever) parseSearchResult(ctx context.Context, body io.Reader) (docs
 	return docs, nil
 }
 
+// GetType returns the type of the retriever.
 func (r *Retriever) GetType() string {
 	return typ
 }
 
+// IsCallbacksEnabled checks if callbacks are enabled for this retriever.
 func (r *Retriever) IsCallbacksEnabled() bool {
 	return true
 }

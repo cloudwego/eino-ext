@@ -23,7 +23,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 )
 
-// NeuralSparseConfig configuration for NeuralSparse search mode
+// NeuralSparseConfig contains configuration for NeuralSparse search mode.
 type NeuralSparseConfig struct {
 	// ModelID is optional. If not provided, the default model configured in the index will be used (if any).
 	// In many cases for bi-encoders or sparse encoding, the model is implicit in the ingestion pipeline or default settings.

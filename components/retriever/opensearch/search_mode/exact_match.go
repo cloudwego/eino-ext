@@ -23,7 +23,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 )
 
-// ExactMatch match query by field
+// ExactMatch creates a match query by field.
 func ExactMatch(queryFieldName string) opensearch.SearchMode {
 	return &exactMatch{queryFieldName}
 }
