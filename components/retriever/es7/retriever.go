@@ -185,18 +185,31 @@ func (r *Retriever) IsCallbacksEnabled() bool {
 }
 
 func defaultResultParser(ctx context.Context, hit map[string]interface{}) (*schema.Document, error) {
-	id, _ := hit["_id"].(string)
+	idVal, ok := hit["_id"]
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field '_id' not found in hit")
+	}
+	id, ok := idVal.(string)
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field '_id' is not a string in hit")
+	}
+
 	score, _ := hit["_score"].(float64)
 
 	source, ok := hit["_source"].(map[string]interface{})
 	if !ok {
-		return &schema.Document{
-			ID:       id,
-			MetaData: map[string]interface{}{"score": score},
-		}, nil
+		return nil, fmt.Errorf("defaultResultParser: field '_source' not found in document %s", id)
 	}
 
-	content, _ := source["content"].(string)
+	val, ok := source["content"]
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field 'content' not found in document %s; please use a custom ResultParser or ensure index mapping has 'content' field", id)
+	}
+
+	content, ok := val.(string)
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field 'content' in document %s is not a string", id)
+	}
 
 	// Remove content from metadata to avoid duplication if it's large
 	meta := make(map[string]interface{}, len(source)+1)

@@ -156,16 +156,53 @@ func TestDefaultResultParser(t *testing.T) {
 			So(doc.MetaData["content"], ShouldBeNil) // content should be excluded from metadata
 		})
 
-		Convey("parse hit without source", func() {
+		Convey("missing _id", func() {
+			hit := map[string]interface{}{
+				"_score": 0.8,
+			}
+			doc, err := defaultResultParser(ctx, hit)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "field '_id' not found")
+			So(doc, ShouldBeNil)
+		})
+
+		Convey("missing _source", func() {
 			hit := map[string]interface{}{
 				"_id":    "doc2",
 				"_score": 0.8,
 			}
 			doc, err := defaultResultParser(ctx, hit)
-			So(err, ShouldBeNil)
-			So(doc.ID, ShouldEqual, "doc2")
-			So(doc.Content, ShouldEqual, "")
-			So(doc.MetaData["score"], ShouldEqual, 0.8)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "field '_source' not found")
+			So(doc, ShouldBeNil)
+		})
+
+		Convey("missing content", func() {
+			hit := map[string]interface{}{
+				"_id":    "doc3",
+				"_score": 0.8,
+				"_source": map[string]interface{}{
+					"other": "val",
+				},
+			}
+			doc, err := defaultResultParser(ctx, hit)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "field 'content' not found")
+			So(doc, ShouldBeNil)
+		})
+
+		Convey("invalid content type", func() {
+			hit := map[string]interface{}{
+				"_id":    "doc4",
+				"_score": 0.8,
+				"_source": map[string]interface{}{
+					"content": 123,
+				},
+			}
+			doc, err := defaultResultParser(ctx, hit)
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "field 'content' in document doc4 is not a string")
+			So(doc, ShouldBeNil)
 		})
 	})
 }
