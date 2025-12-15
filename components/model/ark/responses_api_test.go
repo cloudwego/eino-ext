@@ -44,14 +44,21 @@ func TestResponsesAPIChatModelGenerate(t *testing.T) {
 
 		Mock((*arkruntime.Client).CreateResponses).
 			Return(&responses.ResponseObject{
-				Usage: &responses.Usage{InputTokensDetails: &responses.InputTokensDetails{}},
+				Usage: &responses.Usage{InputTokensDetails: &responses.InputTokensDetails{},
+					OutputTokensDetails: &responses.OutputTokensDetails{ReasoningTokens: 100}},
 			}, nil).Build()
 
-		Mock((*responsesAPIChatModel).toOutputMessage).
-			Return(&schema.Message{
+		Mock((*responsesAPIChatModel).toOutputMessage).To(func(resp *responses.ResponseObject, cache *cacheConfig) (*schema.Message, error) {
+			cm := &responsesAPIChatModel{}
+			return &schema.Message{
 				Role:    schema.Assistant,
 				Content: "assistant",
-			}, nil).Build()
+				ResponseMeta: &schema.ResponseMeta{
+					Usage: cm.toEinoTokenUsage(resp.Usage),
+				},
+			}, nil
+		}).Build()
+
 		MockGeneric(callbacks.OnEnd[*callbacks.CallbackOutput]).Return(context.Background()).Build()
 
 		cm := &responsesAPIChatModel{}
@@ -62,6 +69,7 @@ func TestResponsesAPIChatModelGenerate(t *testing.T) {
 			},
 		})
 		assert.Nil(t, err)
+		assert.Equal(t, 100, msg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 		assert.Equal(t, "assistant", msg.Content)
 	})
 }
