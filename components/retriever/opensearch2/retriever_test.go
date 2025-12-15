@@ -316,7 +316,25 @@ func TestDefaultResultParser(t *testing.T) {
 	PatchConvey("test defaultResultParser", t, func() {
 		ctx := context.Background()
 
-		PatchConvey("test with id and score only", func() {
+		PatchConvey("test missing _id", func() {
+			hit := map[string]interface{}{}
+			doc, err := defaultResultParser(ctx, hit)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "field '_id' not found in hit")
+			convey.So(doc, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test invalid _id type", func() {
+			hit := map[string]interface{}{
+				"_id": 123,
+			}
+			doc, err := defaultResultParser(ctx, hit)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "field '_id' is not a string")
+			convey.So(doc, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test missing _source", func() {
 			hit := map[string]interface{}{
 				"_id":    "doc1",
 				"_score": 0.95,
@@ -327,7 +345,33 @@ func TestDefaultResultParser(t *testing.T) {
 			convey.So(doc, convey.ShouldBeNil)
 		})
 
-		PatchConvey("test with source content", func() {
+		PatchConvey("test missing content in _source", func() {
+			hit := map[string]interface{}{
+				"_id": "doc1",
+				"_source": map[string]interface{}{
+					"title": "foo",
+				},
+			}
+			doc, err := defaultResultParser(ctx, hit)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "field 'content' not found in document doc1")
+			convey.So(doc, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test invalid content type in _source", func() {
+			hit := map[string]interface{}{
+				"_id": "doc1",
+				"_source": map[string]interface{}{
+					"content": 12345,
+				},
+			}
+			doc, err := defaultResultParser(ctx, hit)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "field 'content' in document doc1 is not a string")
+			convey.So(doc, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test success with source content", func() {
 			hit := map[string]interface{}{
 				"_id":    "doc2",
 				"_score": 0.85,
@@ -345,14 +389,6 @@ func TestDefaultResultParser(t *testing.T) {
 			// content should not be in metadata
 			_, hasContent := doc.MetaData["content"]
 			convey.So(hasContent, convey.ShouldBeFalse)
-		})
-
-		PatchConvey("test with empty hit", func() {
-			hit := map[string]interface{}{}
-			doc, err := defaultResultParser(ctx, hit)
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "field '_id' not found in hit")
-			convey.So(doc, convey.ShouldBeNil)
 		})
 	})
 }
