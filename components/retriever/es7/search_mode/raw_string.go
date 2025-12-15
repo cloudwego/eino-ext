@@ -25,7 +25,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 )
 
-// RawStringRequest use the query string as the request body directly.
+// RawStringRequest uses the query string as the request body directly.
 // The query string must be a valid JSON string representing the search request body.
 func RawStringRequest() es7.SearchMode {
 	return &rawString{}

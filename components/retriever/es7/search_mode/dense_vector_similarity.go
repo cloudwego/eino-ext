@@ -24,7 +24,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 )
 
-// DenseVectorSimilarityType type of dense vector similarity
+// DenseVectorSimilarityType represents the type of dense vector similarity.
 type DenseVectorSimilarityType string
 
 const (
@@ -44,8 +44,8 @@ var denseVectorScriptMap = map[DenseVectorSimilarityType]string{
 	DenseVectorSimilarityTypeL2Norm: `1 / (1 + l2norm(params.query_vector, '%s'))`,
 }
 
-// DenseVectorSimilarity calculate embedding similarity between dense_vector field and query using script_score.
-// see: https://www.elastic.co/guide/en/elasticsearch/reference/7.10/query-dsl-script-score-query.html#vector-functions
+// DenseVectorSimilarity calculates the embedding similarity between a dense_vector field and the query using script_score.
+// See: https://www.elastic.co/guide/en/elasticsearch/reference/7.10/query-dsl-script-score-query.html#vector-functions
 func DenseVectorSimilarity(typ DenseVectorSimilarityType, vectorFieldName string) es7.SearchMode {
 	return &denseVectorSimilarity{
 		script: fmt.Sprintf(denseVectorScriptMap[typ], vectorFieldName),
