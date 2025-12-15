@@ -159,10 +159,10 @@ func (r *Retriever) IsCallbacksEnabled() bool {
 }
 
 func defaultResultParser(ctx context.Context, hit types.Hit) (*schema.Document, error) {
-	id := ""
-	if hit.Id_ != nil {
-		id = *hit.Id_
+	if hit.Id_ == nil {
+		return nil, fmt.Errorf("defaultResultParser: field '_id' not found in hit")
 	}
+	id := *hit.Id_
 
 	score := 0.0
 	if hit.Score_ != nil {
@@ -170,18 +170,23 @@ func defaultResultParser(ctx context.Context, hit types.Hit) (*schema.Document, 
 	}
 
 	if hit.Source_ == nil {
-		return &schema.Document{
-			ID:       id,
-			MetaData: map[string]interface{}{"score": score},
-		}, nil
+		return nil, fmt.Errorf("defaultResultParser: field '_source' not found in document %s", id)
 	}
 
 	var source map[string]interface{}
 	if err := json.Unmarshal(hit.Source_, &source); err != nil {
-		return nil, fmt.Errorf("unmarshal document content failed: %v", err)
+		return nil, fmt.Errorf("defaultResultParser: unmarshal document content failed: %v", err)
 	}
 
-	content, _ := source["content"].(string)
+	val, ok := source["content"]
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field 'content' not found in document %s; please use a custom ResultParser or ensure index mapping has 'content' field", id)
+	}
+
+	content, ok := val.(string)
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field 'content' in document %s is not a string", id)
+	}
 
 	// Remove content from metadata to avoid duplication if it's large
 	meta := make(map[string]interface{}, len(source)+1)
