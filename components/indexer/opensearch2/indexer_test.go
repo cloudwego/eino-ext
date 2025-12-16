@@ -26,7 +26,7 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
-	opensearchutil "github.com/opensearch-project/opensearch-go/v2/opensearchutil"
+	"github.com/opensearch-project/opensearch-go/v2/opensearchutil"
 	"github.com/smartystreets/goconvey/convey"
 )
 
