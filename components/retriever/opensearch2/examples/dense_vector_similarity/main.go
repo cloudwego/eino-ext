@@ -18,11 +18,9 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log"
 	"math"
-	"net/http"
 	"os"
 	"strings"
 
@@ -58,9 +56,6 @@ func main() {
 		Addresses: []string{addr},
 		Username:  username,
 		Password:  password,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
 	})
 	if err != nil {
 		log.Fatalf("Error creating the client: %s", err)
