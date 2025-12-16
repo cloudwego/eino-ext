@@ -51,13 +51,29 @@ func (e *exactMatch) BuildRequest(ctx context.Context, conf *opensearch3.Retriev
 	//    }
 	// }
 
-	return map[string]any{
-		"query": map[string]any{
-			"match": map[string]any{
-				e.name: map[string]any{
-					"query": query,
-				},
+	queryMap := map[string]any{
+		"match": map[string]any{
+			e.name: map[string]any{
+				"query": query,
 			},
 		},
+	}
+
+	io := retriever.GetImplSpecificOptions[opensearch3.ImplOptions](nil, opts...)
+	if len(io.Filters) > 0 {
+		return map[string]any{
+			"query": map[string]any{
+				"bool": map[string]any{
+					"must": []map[string]any{
+						queryMap,
+					},
+					"filter": io.Filters,
+				},
+			},
+		}, nil
+	}
+
+	return map[string]any{
+		"query": queryMap,
 	}, nil
 }
