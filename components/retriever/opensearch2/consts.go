@@ -16,7 +16,7 @@
 
 package opensearch2
 
-const typ = "OpenSearch"
+const typ = "OpenSearch2"
 
 const (
 	defaultTopK = 10
