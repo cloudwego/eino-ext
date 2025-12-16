@@ -16,7 +16,7 @@
 
 package opensearch3
 
-const typ = "OpenSearch"
+const typ = "OpenSearch3"
 
 const (
 	defaultBatchSize = 5
