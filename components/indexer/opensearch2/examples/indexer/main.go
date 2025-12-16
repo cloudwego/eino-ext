@@ -102,7 +102,7 @@ func main() {
 		docs = append(docs, &schema.Document{
 			ID:      fmt.Sprintf("doc_%d", i+1),
 			Content: content,
-			MetaData: map[string]interface{}{
+			MetaData: map[string]any{
 				"author": "CloudWeGo",
 			},
 		})

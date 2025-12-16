@@ -60,11 +60,11 @@ func TestSearchModeRawStringRequest(t *testing.T) {
 			convey.So(r, convey.ShouldNotBeNil)
 
 			// Verify structure
-			qm, ok := r["query"].(map[string]interface{})
+			qm, ok := r["query"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			match, ok := qm["match"].(map[string]interface{})
+			match, ok := qm["match"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			field, ok := match["test_field"].(map[string]interface{})
+			field, ok := match["test_field"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
 			convey.So(field["query"], convey.ShouldEqual, "test_query")
 		})
@@ -85,11 +85,11 @@ func TestDenseVectorSimilarity(t *testing.T) {
 			convey.So(req, convey.ShouldNotBeNil)
 
 			// Verify structure: query -> script_score -> script -> source
-			q, ok := req["query"].(map[string]interface{})
+			q, ok := req["query"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			ss, ok := q["script_score"].(map[string]interface{})
+			ss, ok := q["script_score"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			script, ok := ss["script"].(map[string]interface{})
+			script, ok := ss["script"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
 			source, ok := script["source"].(string)
 			convey.So(ok, convey.ShouldBeTrue)
@@ -120,9 +120,9 @@ func TestApproximate(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req, convey.ShouldNotBeNil)
 
-			q, ok := req["query"].(map[string]interface{})
+			q, ok := req["query"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			_, ok = q["knn"].(map[string]interface{})
+			_, ok = q["knn"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
 
 			// Additional checks for Approximate logic if needed
@@ -142,10 +142,10 @@ func TestNeuralSparse(t *testing.T) {
 			req, err := searchMode.BuildRequest(ctx, conf, "test_query")
 			convey.So(err, convey.ShouldBeNil)
 
-			q, ok := req["query"].(map[string]interface{})
+			q, ok := req["query"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			ns := q["neural_sparse"].(map[string]interface{})
-			field := ns["sparse_vector_field"].(map[string]interface{})
+			ns := q["neural_sparse"].(map[string]any)
+			field := ns["sparse_vector_field"].(map[string]any)
 			convey.So(field["query_text"], convey.ShouldEqual, "test_query")
 		})
 
@@ -156,10 +156,10 @@ func TestNeuralSparse(t *testing.T) {
 			req, err := searchMode.BuildRequest(ctx, conf, "test_query")
 			convey.So(err, convey.ShouldBeNil)
 
-			q, ok := req["query"].(map[string]interface{})
+			q, ok := req["query"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			ns := q["neural_sparse"].(map[string]interface{})
-			field := ns["sparse_vector_field"].(map[string]interface{})
+			ns := q["neural_sparse"].(map[string]any)
+			field := ns["sparse_vector_field"].(map[string]any)
 			tokens := field["query_tokens"].(map[string]float32)
 			convey.So(tokens["term1"], convey.ShouldEqual, 1.0)
 		})

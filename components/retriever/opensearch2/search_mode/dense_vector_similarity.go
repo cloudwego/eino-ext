@@ -59,7 +59,7 @@ type denseVectorSimilarity struct {
 }
 
 func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *opensearch2.RetrieverConfig, query string,
-	opts ...retriever.Option) (map[string]interface{}, error) {
+	opts ...retriever.Option) (map[string]any, error) {
 
 	co := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &conf.Index,
@@ -87,10 +87,10 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *opensear
 	// Construct script_score query
 	// https://opensearch2.org/docs/latest/query-dsl/specialized/script-score/
 
-	scriptScore := map[string]interface{}{
-		"script": map[string]interface{}{
+	scriptScore := map[string]any{
+		"script": map[string]any{
 			"source": d.script,
-			"params": map[string]interface{}{
+			"params": map[string]any{
 				"embedding": vector[0],
 			},
 		},
@@ -98,22 +98,22 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *opensear
 
 	// Add query filter if exists, otherwise match_all
 	if len(io.Filters) > 0 {
-		scriptScore["query"] = map[string]interface{}{
-			"bool": map[string]interface{}{
+		scriptScore["query"] = map[string]any{
+			"bool": map[string]any{
 				"filter": io.Filters,
 			},
 		}
 	} else {
-		scriptScore["query"] = map[string]interface{}{
-			"match_all": map[string]interface{}{},
+		scriptScore["query"] = map[string]any{
+			"match_all": map[string]any{},
 		}
 	}
 
 	// OpenSearch retriever puts "size" (TopK) at root level in `Retrieve` method logic (or `BuildRequest` returns root).
 	// We return the request body map.
 
-	reqBody := map[string]interface{}{
-		"query": map[string]interface{}{
+	reqBody := map[string]any{
+		"query": map[string]any{
 			"script_score": scriptScore,
 		},
 	}

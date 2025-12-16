@@ -34,9 +34,9 @@ func RawStringRequest() opensearch2.SearchMode {
 type rawString struct{}
 
 func (r *rawString) BuildRequest(ctx context.Context, conf *opensearch2.RetrieverConfig, query string,
-	opts ...retriever.Option) (map[string]interface{}, error) {
+	opts ...retriever.Option) (map[string]any, error) {
 
-	var req map[string]interface{}
+	var req map[string]any
 	if err := json.Unmarshal([]byte(query), &req); err != nil {
 		return nil, fmt.Errorf("[BuildRequest][RawStringRequest] unmarshal query failed: %w", err)
 	}

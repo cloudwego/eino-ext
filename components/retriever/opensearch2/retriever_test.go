@@ -67,7 +67,7 @@ func TestNewRetriever(t *testing.T) {
 		})
 
 		PatchConvey("test success with custom values", func() {
-			customParser := func(ctx context.Context, hit map[string]interface{}) (*schema.Document, error) {
+			customParser := func(ctx context.Context, hit map[string]any) (*schema.Document, error) {
 				return &schema.Document{ID: "custom"}, nil
 			}
 			r, err := NewRetriever(ctx, &RetrieverConfig{
@@ -85,8 +85,8 @@ func TestNewRetriever(t *testing.T) {
 
 func TestWithFilters(t *testing.T) {
 	PatchConvey("test WithFilters", t, func() {
-		filters := []interface{}{
-			map[string]interface{}{"term": map[string]string{"status": "active"}},
+		filters := []any{
+			map[string]any{"term": map[string]string{"status": "active"}},
 		}
 		opt := WithFilters(filters)
 		convey.So(opt, convey.ShouldNotBeNil)
@@ -117,7 +117,7 @@ func TestRetrieve(t *testing.T) {
 					Index:      "test_index",
 					TopK:       10,
 					SearchMode: &mockSearchMode{err: mockErr},
-					ResultParser: func(ctx context.Context, hit map[string]interface{}) (*schema.Document, error) {
+					ResultParser: func(ctx context.Context, hit map[string]any) (*schema.Document, error) {
 						return nil, nil
 					},
 				},
@@ -300,7 +300,7 @@ func TestParseSearchResult(t *testing.T) {
 
 		PatchConvey("test ResultParser error", func() {
 			mockErr := fmt.Errorf("parser error")
-			r.config.ResultParser = func(ctx context.Context, hit map[string]interface{}) (*schema.Document, error) {
+			r.config.ResultParser = func(ctx context.Context, hit map[string]any) (*schema.Document, error) {
 				return nil, mockErr
 			}
 			jsonResp := `{"hits": {"hits": [{"_id": "1"}]}}`
@@ -317,7 +317,7 @@ func TestDefaultResultParser(t *testing.T) {
 		ctx := context.Background()
 
 		PatchConvey("test missing _id", func() {
-			hit := map[string]interface{}{}
+			hit := map[string]any{}
 			doc, err := defaultResultParser(ctx, hit)
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(err.Error(), convey.ShouldContainSubstring, "field '_id' not found in hit")
@@ -325,7 +325,7 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		PatchConvey("test invalid _id type", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id": 123,
 			}
 			doc, err := defaultResultParser(ctx, hit)
@@ -335,7 +335,7 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		PatchConvey("test missing _source", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id":    "doc1",
 				"_score": 0.95,
 			}
@@ -346,9 +346,9 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		PatchConvey("test missing content in _source", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id": "doc1",
-				"_source": map[string]interface{}{
+				"_source": map[string]any{
 					"title": "foo",
 				},
 			}
@@ -359,9 +359,9 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		PatchConvey("test invalid content type in _source", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id": "doc1",
-				"_source": map[string]interface{}{
+				"_source": map[string]any{
 					"content": 12345,
 				},
 			}
@@ -372,10 +372,10 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		PatchConvey("test success with source content", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id":    "doc2",
 				"_score": 0.85,
-				"_source": map[string]interface{}{
+				"_source": map[string]any{
 					"content": "test content",
 					"title":   "test title",
 				},
@@ -418,13 +418,13 @@ type mockSearchMode struct {
 	err error
 }
 
-func (m *mockSearchMode) BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]interface{}, error) {
+func (m *mockSearchMode) BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
-	return map[string]interface{}{
-		"query": map[string]interface{}{
-			"match": map[string]interface{}{
+	return map[string]any{
+		"query": map[string]any{
+			"match": map[string]any{
 				"content": query,
 			},
 		},

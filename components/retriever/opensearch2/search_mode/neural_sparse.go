@@ -52,7 +52,7 @@ type neuralSparse struct {
 }
 
 func (n *neuralSparse) BuildRequest(ctx context.Context, conf *opensearch2.RetrieverConfig, query string,
-	opts ...retriever.Option) (map[string]interface{}, error) {
+	opts ...retriever.Option) (map[string]any, error) {
 
 	// For neural_sparse, we usually don't need 'Embedding' component from Eino side
 	// because the query text is passed directly to OpenSearch, which handles the embedding/tokenization via its model.
@@ -62,25 +62,25 @@ func (n *neuralSparse) BuildRequest(ctx context.Context, conf *opensearch2.Retri
 
 	io := retriever.GetImplSpecificOptions[opensearch2.ImplOptions](nil, opts...)
 
-	var neuralSparseQuery map[string]interface{}
+	var neuralSparseQuery map[string]any
 
 	if n.config != nil && len(n.config.TokenWeights) > 0 {
 		// Explicit token weights (Sparse Vector Query)
-		neuralSparseQuery = map[string]interface{}{
-			n.vectorField: map[string]interface{}{
+		neuralSparseQuery = map[string]any{
+			n.vectorField: map[string]any{
 				"query_tokens": n.config.TokenWeights,
 			},
 		}
 	} else {
 		// Text expansion query
-		neuralSparseQuery = map[string]interface{}{
-			n.vectorField: map[string]interface{}{
+		neuralSparseQuery = map[string]any{
+			n.vectorField: map[string]any{
 				"query_text": query,
 			},
 		}
 	}
 
-	inner := neuralSparseQuery[n.vectorField].(map[string]interface{})
+	inner := neuralSparseQuery[n.vectorField].(map[string]any)
 
 	if n.config != nil {
 		if n.config.ModelID != "" {
@@ -91,17 +91,17 @@ func (n *neuralSparse) BuildRequest(ctx context.Context, conf *opensearch2.Retri
 		}
 	}
 
-	reqBody := map[string]interface{}{
-		"query": map[string]interface{}{
+	reqBody := map[string]any{
+		"query": map[string]any{
 			"neural_sparse": neuralSparseQuery,
 		},
 	}
 
 	// Add filters if any
 	if len(io.Filters) > 0 {
-		reqBody["query"] = map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
+		reqBody["query"] = map[string]any{
+			"bool": map[string]any{
+				"must": []map[string]any{
 					{"neural_sparse": neuralSparseQuery},
 				},
 				"filter": io.Filters,

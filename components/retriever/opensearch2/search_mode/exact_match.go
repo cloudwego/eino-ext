@@ -33,7 +33,7 @@ type exactMatch struct {
 }
 
 func (e *exactMatch) BuildRequest(ctx context.Context, conf *opensearch2.RetrieverConfig, query string,
-	opts ...retriever.Option) (map[string]interface{}, error) {
+	opts ...retriever.Option) (map[string]any, error) {
 	// Options like TopK, ScoreThreshold are handled by the caller (Retriever) generally merging them,
 	// BUT `Retriever` in `opensearch/retriever.go` only blindly adds "size" and "min_score" to the top level.
 	// So we just return the query part here?
@@ -51,10 +51,10 @@ func (e *exactMatch) BuildRequest(ctx context.Context, conf *opensearch2.Retriev
 	//    }
 	// }
 
-	return map[string]interface{}{
-		"query": map[string]interface{}{
-			"match": map[string]interface{}{
-				e.name: map[string]interface{}{
+	return map[string]any{
+		"query": map[string]any{
+			"match": map[string]any{
+				e.name: map[string]any{
 					"query": query,
 				},
 			},

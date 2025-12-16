@@ -23,12 +23,12 @@ import (
 // ImplOptions contains OpenSearch-specific options.
 // Use retriever.GetImplSpecificOptions[ImplOptions] to get ImplOptions from options.
 type ImplOptions struct {
-	Filters []interface{} `json:"filters,omitempty"`
+	Filters []any `json:"filters,omitempty"`
 }
 
 // WithFilters sets filters for the retrieve query.
 // This may take effect in search modes.
-func WithFilters(filters []interface{}) retriever.Option {
+func WithFilters(filters []any) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
 		o.Filters = filters
 	})

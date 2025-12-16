@@ -64,7 +64,7 @@ type approximate struct {
 }
 
 func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.RetrieverConfig, query string,
-	opts ...retriever.Option) (map[string]interface{}, error) {
+	opts ...retriever.Option) (map[string]any, error) {
 
 	co := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &conf.Index,
@@ -90,7 +90,7 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 	}
 
 	// 1. Construct KNN Query
-	knnParams := map[string]interface{}{
+	knnParams := map[string]any{
 		"vector": vector[0],
 		"k":      a.config.K,
 	}
@@ -98,14 +98,14 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 		knnParams["filter"] = io.Filters
 	}
 
-	knnQuery := map[string]interface{}{
-		"knn": map[string]interface{}{
+	knnQuery := map[string]any{
+		"knn": map[string]any{
 			a.config.VectorField: knnParams,
 		},
 	}
 
 	// 2. Construct final query
-	var finalQuery map[string]interface{}
+	var finalQuery map[string]any
 
 	if a.config.Hybrid {
 		if a.config.QueryFieldName == "" {
@@ -115,9 +115,9 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 		// Hybrid: Bool query with Should clauses (KNN + Match)
 		// This simulates a basic hybrid search suitable for RRF processing downstream
 
-		matchQuery := map[string]interface{}{
-			"match": map[string]interface{}{
-				a.config.QueryFieldName: map[string]interface{}{
+		matchQuery := map[string]any{
+			"match": map[string]any{
+				a.config.QueryFieldName: map[string]any{
 					"query": query,
 				},
 			},
@@ -128,8 +128,8 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 		// In OpenSearch 'knn' query handles its own filter for pre-filtering.
 		// For the match query, we should put it in the bool query alongside filters?
 
-		boolQuery := map[string]interface{}{
-			"should": []map[string]interface{}{
+		boolQuery := map[string]any{
+			"should": []map[string]any{
 				knnQuery,
 				matchQuery,
 			},
@@ -140,7 +140,7 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 		// might be specific to what the user provided.
 		// Usually io.Filters is []interface{}.
 
-		finalQuery = map[string]interface{}{
+		finalQuery = map[string]any{
 			"bool": boolQuery,
 		}
 
@@ -149,7 +149,7 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 		finalQuery = knnQuery
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"query": finalQuery,
 	}
 
@@ -158,8 +158,8 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 		// OpenSearch 2.9+ RRF syntax
 		// "ext": { "rrf": { ... } } or top level "rank": { "rrf": {} } depending on version.
 		// We'll use the 'ext' method which is common for the RRF plugin.
-		reqBody["ext"] = map[string]interface{}{
-			"rrf": map[string]interface{}{},
+		reqBody["ext"] = map[string]any{
+			"rrf": map[string]any{},
 		}
 	}
 
