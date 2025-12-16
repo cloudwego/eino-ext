@@ -145,7 +145,7 @@ func ensureIndex(ctx context.Context, client *opensearchapi.Client, indexName st
 					"method": {
 						"name": "hnsw",
 						"engine": "faiss",
-						"space_type": "cosinesimil"
+						"space_type": "innerproduct"
 					}
 				},
 				"author": { "type": "keyword" }
