@@ -810,25 +810,36 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 }
 
 func (cm *responsesAPIChatModel) toEinoTokenUsage(usage *responses.Usage) *schema.TokenUsage {
-	return &schema.TokenUsage{
-		PromptTokens: int(usage.InputTokens),
-		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
-		},
+	tokenUsage := &schema.TokenUsage{
+		PromptTokens:     int(usage.InputTokens),
 		CompletionTokens: int(usage.OutputTokens),
 		TotalTokens:      int(usage.TotalTokens),
 	}
+	if usage.InputTokensDetails != nil {
+		tokenUsage.PromptTokenDetails.CachedTokens = int(usage.InputTokensDetails.CachedTokens)
+	}
+
+	if usage.OutputTokensDetails != nil {
+		tokenUsage.CompletionTokensDetails.ReasoningTokens = int(usage.OutputTokensDetails.ReasoningTokens)
+	}
+	return tokenUsage
 }
 
 func (cm *responsesAPIChatModel) toModelTokenUsage(usage *responses.Usage) *model.TokenUsage {
-	return &model.TokenUsage{
-		PromptTokens: int(usage.InputTokens),
-		PromptTokenDetails: model.PromptTokenDetails{
-			CachedTokens: int(usage.InputTokensDetails.CachedTokens),
-		},
+	tokenUsage := &model.TokenUsage{
+		PromptTokens:     int(usage.InputTokens),
 		CompletionTokens: int(usage.OutputTokens),
 		TotalTokens:      int(usage.TotalTokens),
 	}
+	if usage.InputTokensDetails != nil {
+		tokenUsage.PromptTokenDetails.CachedTokens = int(usage.InputTokensDetails.CachedTokens)
+	}
+
+	if usage.OutputTokensDetails != nil {
+		tokenUsage.CompletionTokensDetails.ReasoningTokens = int(usage.OutputTokensDetails.ReasoningTokens)
+	}
+
+	return tokenUsage
 }
 
 func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOptions) error {
