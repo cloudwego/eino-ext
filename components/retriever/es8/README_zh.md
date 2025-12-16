@@ -140,16 +140,16 @@ type RetrieverConfig struct {
     Client *elasticsearch.Client // 必填: Elasticsearch 客户端实例
     Index  string               // 必填: 检索文档的索引名称
     TopK   int                  // 必填: 返回的结果数量
-    
+
     // 必填: 搜索模式配置
     SearchMode search_mode.SearchMode
-    
+
     // 选填: 将 Elasticsearch hits 解析为 Document 的函数
     // 如果未提供，将使用默认解析器：
     // 1. 从 source 中提取 "content" 字段作为 Document.Content
     // 2. 将其他 source 字段作为 Document.MetaData
     ResultParser func(ctx context.Context, hit types.Hit) (*schema.Document, error)
-    
+
     // 选填: 仅在需要查询向量化时必填
     Embedding embedding.Embedder
 }
