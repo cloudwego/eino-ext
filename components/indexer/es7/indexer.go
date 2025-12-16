@@ -190,7 +190,7 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 			return fmt.Errorf("[bulkAdd] FieldMapping failed, %w", err)
 		}
 
-		rawFields := make(map[string]any)
+		rawFields := make(map[string]any, len(fields))
 		embSize := 0
 		for k, v := range fields {
 			rawFields[k] = v.Value
