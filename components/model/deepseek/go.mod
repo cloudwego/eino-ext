@@ -7,9 +7,9 @@ toolchain go1.24.1
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.6.1
+	github.com/cloudwego/eino v0.7.11
 	github.com/cohesion-org/deepseek-go v1.3.2
-	github.com/eino-contrib/jsonschema v1.0.2
+	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/stretchr/testify v1.10.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 )
