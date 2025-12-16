@@ -86,10 +86,10 @@ type IndexerConfig struct {
     Client *opensearch.Client // Required: OpenSearch client instance
     Index  string             // Required: Index name to store documents
     BatchSize int             // Optional: Max texts size for embedding (default: 5)
-    
+
     // Required: Function to map Document fields to OpenSearch fields
     DocumentToFields func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error)
-    
+
     // Optional: Required only if vectorization is needed
     Embedding embedding.Embedder
 }

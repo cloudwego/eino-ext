@@ -98,7 +98,7 @@ type RetrieverConfig struct {
     Client *opensearch.Client // 必填：OpenSearch 客户端实例
     Index  string             // 必填：从中检索文档的索引名称
     TopK   int                // 必填：返回的结果数量
-    
+
     // 必填：搜索模式配置
     // search_mode 包中提供了预置实现：
     // - search_mode.Approximate(&ApproximateConfig{...})
@@ -107,11 +107,11 @@ type RetrieverConfig struct {
     // - search_mode.DenseVectorSimilarity(type, vectorField)
     // - search_mode.NeuralSparse(vectorField, &NeuralSparseConfig{...})
     SearchMode SearchMode
-    
+
     // 选填：将 OpenSearch hits (map[string]interface{}) 解析为 Document 的函数
     // 如果未提供，将使用默认解析器。
     ResultParser func(ctx context.Context, hit map[string]interface{}) (doc *schema.Document, err error)
-    
+
     // 选填：仅当需要查询向量化时必填
     Embedding embedding.Embedder
 }

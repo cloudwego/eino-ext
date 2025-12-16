@@ -98,7 +98,7 @@ type RetrieverConfig struct {
     Client *opensearch.Client // Required: OpenSearch client instance
     Index  string             // Required: Index name to retrieve documents from
     TopK   int                // Required: Number of results to return
-    
+
     // Required: Search mode configuration
     // Prepared implementations in search_mode package:
     // - search_mode.Approximate(&ApproximateConfig{...})
@@ -107,11 +107,11 @@ type RetrieverConfig struct {
     // - search_mode.DenseVectorSimilarity(type, vectorField)
     // - search_mode.NeuralSparse(vectorField, &NeuralSparseConfig{...})
     SearchMode SearchMode
-    
+
     // Optional: Function to parse OpenSearch hits (map[string]interface{}) into Documents
     // If not provided, a default parser is used.
     ResultParser func(ctx context.Context, hit map[string]interface{}) (doc *schema.Document, err error)
-    
+
     // Optional: Required only if query vectorization is needed
     Embedding embedding.Embedder
 }
