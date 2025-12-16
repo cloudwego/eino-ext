@@ -101,10 +101,10 @@ type IndexerConfig struct {
     Client *elasticsearch.Client // 必填：Elasticsearch 客户端实例
     Index  string                // 必填：存储文档的索引名称
     BatchSize int                // 选填：最大文本嵌入批次大小（默认：5）
-    
+
     // 必填：将 Document 字段映射到 Elasticsearch 字段的函数
     DocumentToFields func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error)
-    
+
     // 选填：仅在需要向量化时必填
     Embedding embedding.Embedder
 }
