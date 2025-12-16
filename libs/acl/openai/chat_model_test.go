@@ -146,6 +146,12 @@ func TestGenerate(t *testing.T) {
 					},
 				},
 				RawBody: []byte(`{"role":"assistant","content":"hello"}`),
+				Usage: openai.Usage{
+					PromptTokens: 10,
+					CompletionTokensDetails: &openai.CompletionTokensDetails{
+						ReasoningTokens: 10,
+					},
+				},
 			}, nil
 		}).Build().UnPatch()
 
@@ -171,6 +177,7 @@ func TestGenerate(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, outMsg)
 		assert.Equal(t, schema.Assistant, outMsg.Role)
+		assert.Equal(t, 10, outMsg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 		assert.Equal(t, "hello|mod|{\"role\":\"assistant\",\"content\":\"hello\"}", outMsg.Content)
 	})
 }

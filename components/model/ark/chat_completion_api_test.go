@@ -231,6 +231,9 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 						CompletionTokens: 1,
 						PromptTokens:     2,
 						TotalTokens:      3,
+						CompletionTokensDetails: model.CompletionTokensDetails{
+							ReasoningTokens: 10,
+						},
 					},
 					Choices: []*model.ChatCompletionChoice{
 						{
@@ -260,6 +263,8 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 				fmodel.WithTopP(123))
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(outMsg, convey.ShouldNotBeNil)
+			convey.So(outMsg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens, convey.ShouldEqual, 10)
+			convey.So(outMsg.ResponseMeta.Usage.PromptTokens, convey.ShouldEqual, 2)
 			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
 			convey.So(len(outMsg.ToolCalls), convey.ShouldEqual, 1)
 		})

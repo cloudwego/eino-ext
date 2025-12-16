@@ -930,6 +930,9 @@ func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.
 			},
 			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
 			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
+			CompletionTokensDetails: schema.CompletionTokensDetails{
+				ReasoningTokens: int(resp.UsageMetadata.ThoughtsTokenCount),
+			},
 		}
 	}
 	return message, nil
@@ -1085,6 +1088,9 @@ func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Con
 			},
 			CompletionTokens: message.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      message.ResponseMeta.Usage.TotalTokens,
+			CompletionTokensDetails: model.CompletionTokensDetails{
+				ReasoningTokens: message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens,
+			},
 		}
 	}
 	return callbackOutput

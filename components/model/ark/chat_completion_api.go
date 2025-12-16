@@ -824,6 +824,9 @@ func (cm *completionAPIChatModel) toEinoTokenUsage(usage *model.Usage) *schema.T
 			CachedTokens: usage.PromptTokensDetails.CachedTokens,
 		},
 		TotalTokens: usage.TotalTokens,
+		CompletionTokensDetails: schema.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
 	}
 }
 

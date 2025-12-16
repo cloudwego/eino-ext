@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.6.0
+	github.com/cloudwego/eino v0.7.11
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.10.0
 )
@@ -22,7 +22,7 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.2 // indirect
+	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
