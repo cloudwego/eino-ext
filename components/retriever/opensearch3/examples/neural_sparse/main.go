@@ -18,10 +18,8 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 
 	opensearch "github.com/opensearch-project/opensearch-go/v4"
@@ -57,9 +55,6 @@ func main() {
 			Addresses: []string{addr},
 			Username:  username,
 			Password:  password,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			},
 		},
 	})
 	if err != nil {
