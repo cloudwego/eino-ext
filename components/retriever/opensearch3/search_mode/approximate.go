@@ -95,7 +95,11 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch3.Retrie
 		"k":      a.config.K,
 	}
 	if len(io.Filters) > 0 {
-		knnParams["filter"] = io.Filters
+		knnParams["filter"] = map[string]any{
+			"bool": map[string]any{
+				"filter": io.Filters,
+			},
+		}
 	}
 
 	knnQuery := map[string]any{
@@ -163,5 +167,6 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch3.Retrie
 		}
 	}
 
+	// fmt.Printf("DEBUG Request Body: %v\n", reqBody)
 	return reqBody, nil
 }
