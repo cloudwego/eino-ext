@@ -170,6 +170,8 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 				OnFailure: func(ctx context.Context, item opensearchutil.BulkIndexerItem, res opensearchapi.BulkRespItem, err error) {
 					if err != nil {
 						log.Printf("ERROR: %s", err)
+					} else if res.Error != nil {
+						log.Printf("ERROR: %s: %s", res.Error.Type, res.Error.Reason)
 					} else {
 						log.Printf("ERROR: %s: %s", res.Type, res.Result)
 					}
