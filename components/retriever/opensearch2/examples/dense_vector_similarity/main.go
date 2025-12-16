@@ -27,7 +27,7 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/components/embedding"
-	opensearchgo "github.com/opensearch-project/opensearch-go/v2"
+	opensearch "github.com/opensearch-project/opensearch-go/v2"
 
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2"
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2/search_mode"
@@ -54,7 +54,7 @@ func main() {
 		password = "admin"
 	}
 
-	client, err := opensearchgo.NewClient(opensearchgo.Config{
+	client, err := opensearch.NewClient(opensearch.Config{
 		Addresses: []string{addr},
 		Username:  username,
 		Password:  password,

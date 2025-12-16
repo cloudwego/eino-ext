@@ -28,7 +28,7 @@ import (
 
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
-	opensearchgo "github.com/opensearch-project/opensearch-go/v2"
+	opensearch "github.com/opensearch-project/opensearch-go/v2"
 
 	"github.com/cloudwego/eino-ext/components/indexer/opensearch2"
 )
@@ -55,7 +55,7 @@ func main() {
 		password = "admin"
 	}
 
-	client, err := opensearchgo.NewClient(opensearchgo.Config{
+	client, err := opensearch.NewClient(opensearch.Config{
 		Addresses: []string{addr},
 		Username:  username,
 		Password:  password,
@@ -115,7 +115,7 @@ func main() {
 	fmt.Printf("Stored documents: %v\n", ids)
 }
 
-func ensureIndex(ctx context.Context, client *opensearchgo.Client, indexName string) error {
+func ensureIndex(ctx context.Context, client *opensearch.Client, indexName string) error {
 	res, err := client.Indices.Exists([]string{indexName})
 	if err != nil {
 		return err

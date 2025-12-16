@@ -33,7 +33,7 @@ import (
 	"log"
 	
 	"github.com/cloudwego/eino/schema"
-	opensearchgo "github.com/opensearch-project/opensearch-go/v2"
+	opensearch "github.com/opensearch-project/opensearch-go/v2"
 
 	"github.com/cloudwego/eino-ext/components/indexer/opensearch2"
 )
@@ -41,7 +41,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	client, err := opensearchgo.NewClient(opensearchgo.Config{
+	client, err := opensearch.NewClient(opensearch.Config{
 		Addresses: []string{"http://localhost:9200"},
 		// ... auth config
 	})

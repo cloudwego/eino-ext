@@ -49,7 +49,7 @@ import (
 	"log"
 	
 	"github.com/cloudwego/eino/schema"
-	opensearchgo "github.com/opensearch-project/opensearch-go/v2"
+	opensearch "github.com/opensearch-project/opensearch-go/v2"
 
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2"
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2/search_mode"
@@ -58,7 +58,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	client, err := opensearchgo.NewClient(opensearchgo.Config{
+	client, err := opensearch.NewClient(opensearch.Config{
 		Addresses: []string{"http://localhost:9200"},
 	})
 	if err != nil {
