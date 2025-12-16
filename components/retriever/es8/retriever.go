@@ -184,7 +184,7 @@ func defaultResultParser(ctx context.Context, hit types.Hit) (*schema.Document, 
 		return nil, fmt.Errorf("defaultResultParser: field '_source' not found in document %s", id)
 	}
 
-	var source map[string]interface{}
+	var source map[string]any
 	if err := json.Unmarshal(hit.Source_, &source); err != nil {
 		return nil, fmt.Errorf("defaultResultParser: unmarshal document content failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func defaultResultParser(ctx context.Context, hit types.Hit) (*schema.Document, 
 	}
 
 	// Remove content from metadata to avoid duplication if it's large
-	meta := make(map[string]interface{}, len(source)+1)
+	meta := make(map[string]any, len(source)+1)
 	for k, v := range source {
 		if k != "content" {
 			meta[k] = v
