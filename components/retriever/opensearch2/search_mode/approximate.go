@@ -94,9 +94,8 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 		"vector": vector[0],
 		"k":      a.config.K,
 	}
-	if len(io.Filters) > 0 {
-		knnParams["filter"] = io.Filters
-	}
+	// Note: NMSLIB engine does not support "filter" parameter inside "knn" query.
+	// We handle filters in the outer boolean query.
 
 	knnQuery := map[string]any{
 		"knn": map[string]any{
@@ -107,14 +106,27 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 	// 2. Construct final query
 	var finalQuery map[string]any
 
+	// Helper to wrap query with filters if present
+	wrapWithFilters := func(q map[string]any) map[string]any {
+		if len(io.Filters) == 0 {
+			return q
+		}
+		return map[string]any{
+			"bool": map[string]any{
+				"must": []map[string]any{
+					q,
+				},
+				"filter": io.Filters,
+			},
+		}
+	}
+
 	if a.config.Hybrid {
 		if a.config.QueryFieldName == "" {
 			return nil, fmt.Errorf("[BuildRequest][Approximate] QueryFieldName required for Hybrid search")
 		}
 
 		// Hybrid: Bool query with Should clauses (KNN + Match)
-		// This simulates a basic hybrid search suitable for RRF processing downstream
-
 		matchQuery := map[string]any{
 			"match": map[string]any{
 				a.config.QueryFieldName: map[string]any{
@@ -123,11 +135,6 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 			},
 		}
 
-		// Apply filters to the match query as well?
-		// ES8 usually applies filters globally.
-		// In OpenSearch 'knn' query handles its own filter for pre-filtering.
-		// For the match query, we should put it in the bool query alongside filters?
-
 		boolQuery := map[string]any{
 			"should": []map[string]any{
 				knnQuery,
@@ -135,18 +142,12 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *opensearch2.Retrie
 			},
 		}
 
-		// If explicit filters are provided (and not just inside KNN),
-		// we might want to add them here too, but IO.Filters format (opensearch DSL)
-		// might be specific to what the user provided.
-		// Usually io.Filters is []interface{}.
-
-		finalQuery = map[string]any{
-			"bool": boolQuery,
-		}
+		// Apply filters to the hybrid boolean query
+		finalQuery = wrapWithFilters(map[string]any{"bool": boolQuery})
 
 	} else {
-		// Just KNN
-		finalQuery = knnQuery
+		// Just KNN, wrapped with filters
+		finalQuery = wrapWithFilters(knnQuery)
 	}
 
 	reqBody := map[string]any{
