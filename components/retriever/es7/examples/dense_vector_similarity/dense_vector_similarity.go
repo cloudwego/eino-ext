@@ -68,15 +68,15 @@ func main() {
 			search_mode.DenseVectorSimilarityTypeCosineSimilarity,
 			fieldContentVector,
 		),
-		ResultParser: func(ctx context.Context, hit map[string]interface{}) (doc *schema.Document, err error) {
+		ResultParser: func(ctx context.Context, hit map[string]any) (doc *schema.Document, err error) {
 			id, _ := hit["_id"].(string)
 			score, _ := hit["_score"].(float64)
 
-			source, ok := hit["_source"].(map[string]interface{})
+			source, ok := hit["_source"].(map[string]any)
 			if !ok {
 				return &schema.Document{
 					ID:       id,
-					MetaData: map[string]interface{}{"score": score},
+					MetaData: map[string]any{"score": score},
 				}, nil
 			}
 
@@ -86,7 +86,7 @@ func main() {
 			doc = &schema.Document{
 				ID:      id,
 				Content: content,
-				MetaData: map[string]interface{}{
+				MetaData: map[string]any{
 					docExtraLocation: location,
 				},
 			}
@@ -116,9 +116,9 @@ func main() {
 
 	// search with filter
 	docs, err = r.Retrieve(ctx, "tourist attraction",
-		es7.WithFilters([]interface{}{
-			map[string]interface{}{
-				"term": map[string]interface{}{
+		es7.WithFilters([]any{
+			map[string]any{
+				"term": map[string]any{
 					fieldExtraLocation: "China",
 				},
 			},

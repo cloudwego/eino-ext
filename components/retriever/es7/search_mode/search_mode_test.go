@@ -66,11 +66,11 @@ func TestSearchModeRawStringRequest(t *testing.T) {
 			convey.So(r, convey.ShouldNotBeNil)
 
 			// Verify structure
-			qm, ok := r["query"].(map[string]interface{})
+			qm, ok := r["query"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			match, ok := qm["match"].(map[string]interface{})
+			match, ok := qm["match"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
-			field, ok := match["test_field"].(map[string]interface{})
+			field, ok := match["test_field"].(map[string]any)
 			convey.So(ok, convey.ShouldBeTrue)
 			convey.So(field["query"], convey.ShouldEqual, "test_query")
 		})
@@ -90,9 +90,9 @@ func TestDenseVectorSimilarity(t *testing.T) {
 			convey.So(req, convey.ShouldNotBeNil)
 
 			// Verify query -> script_score -> script -> source
-			q := req["query"].(map[string]interface{})
-			ss := q["script_score"].(map[string]interface{})
-			script := ss["script"].(map[string]interface{})
+			q := req["query"].(map[string]any)
+			ss := q["script_score"].(map[string]any)
+			script := ss["script"].(map[string]any)
 			source := script["source"].(string)
 
 			// Verify script contains string literal for field name, not doc access
@@ -105,9 +105,9 @@ func TestDenseVectorSimilarity(t *testing.T) {
 			req, err := searchMode.BuildRequest(ctx, conf, "test_query")
 			convey.So(err, convey.ShouldBeNil)
 
-			q := req["query"].(map[string]interface{})
-			ss := q["script_score"].(map[string]interface{})
-			script := ss["script"].(map[string]interface{})
+			q := req["query"].(map[string]any)
+			ss := q["script_score"].(map[string]any)
+			script := ss["script"].(map[string]any)
 			source := script["source"].(string)
 
 			convey.So(source, convey.ShouldContainSubstring, "dotProduct(params.query_vector, 'vector_field')")
@@ -118,9 +118,9 @@ func TestDenseVectorSimilarity(t *testing.T) {
 			req, err := searchMode.BuildRequest(ctx, conf, "test_query")
 			convey.So(err, convey.ShouldBeNil)
 
-			q := req["query"].(map[string]interface{})
-			ss := q["script_score"].(map[string]interface{})
-			script := ss["script"].(map[string]interface{})
+			q := req["query"].(map[string]any)
+			ss := q["script_score"].(map[string]any)
+			script := ss["script"].(map[string]any)
 			source := script["source"].(string)
 
 			convey.So(source, convey.ShouldContainSubstring, "l1norm(params.query_vector, 'vector_field')")
@@ -131,9 +131,9 @@ func TestDenseVectorSimilarity(t *testing.T) {
 			req, err := searchMode.BuildRequest(ctx, conf, "test_query")
 			convey.So(err, convey.ShouldBeNil)
 
-			q := req["query"].(map[string]interface{})
-			ss := q["script_score"].(map[string]interface{})
-			script := ss["script"].(map[string]interface{})
+			q := req["query"].(map[string]any)
+			ss := q["script_score"].(map[string]any)
+			script := ss["script"].(map[string]any)
 			source := script["source"].(string)
 
 			convey.So(source, convey.ShouldContainSubstring, "l2norm(params.query_vector, 'vector_field')")

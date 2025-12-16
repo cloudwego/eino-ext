@@ -57,7 +57,7 @@ type denseVectorSimilarity struct {
 }
 
 func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es7.RetrieverConfig, query string,
-	opts ...retriever.Option) (map[string]interface{}, error) {
+	opts ...retriever.Option) (map[string]any, error) {
 
 	co := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &conf.Index,
@@ -85,10 +85,10 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es7.Retr
 	// Construct script_score query
 	// https://www.elastic.co/guide/en/elasticsearch/reference/7.10/query-dsl-script-score-query.html
 
-	scriptScore := map[string]interface{}{
-		"script": map[string]interface{}{
+	scriptScore := map[string]any{
+		"script": map[string]any{
 			"source": d.script,
-			"params": map[string]interface{}{
+			"params": map[string]any{
 				"query_vector": vector[0],
 			},
 		},
@@ -96,19 +96,19 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es7.Retr
 
 	// Add query filter if exists, otherwise match_all
 	if len(io.Filters) > 0 {
-		scriptScore["query"] = map[string]interface{}{
-			"bool": map[string]interface{}{
+		scriptScore["query"] = map[string]any{
+			"bool": map[string]any{
 				"filter": io.Filters,
 			},
 		}
 	} else {
-		scriptScore["query"] = map[string]interface{}{
-			"match_all": map[string]interface{}{},
+		scriptScore["query"] = map[string]any{
+			"match_all": map[string]any{},
 		}
 	}
 
-	reqBody := map[string]interface{}{
-		"query": map[string]interface{}{
+	reqBody := map[string]any{
+		"query": map[string]any{
 			"script_score": scriptScore,
 		},
 	}

@@ -44,16 +44,16 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 type mockSearchMode struct {
-	buildRequestFn func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]interface{}, error)
+	buildRequestFn func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error)
 }
 
-func (m *mockSearchMode) BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]interface{}, error) {
+func (m *mockSearchMode) BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
 	if m.buildRequestFn != nil {
 		return m.buildRequestFn(ctx, conf, query, opts...)
 	}
-	return map[string]interface{}{
-		"query": map[string]interface{}{
-			"match_all": map[string]interface{}{},
+	return map[string]any{
+		"query": map[string]any{
+			"match_all": map[string]any{},
 		},
 	}, nil
 }
@@ -139,10 +139,10 @@ func TestDefaultResultParser(t *testing.T) {
 		ctx := context.Background()
 
 		Convey("parse hit with full source", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id":    "doc1",
 				"_score": 0.95,
-				"_source": map[string]interface{}{
+				"_source": map[string]any{
 					"content":  "test content",
 					"metadata": "some metadata",
 				},
@@ -157,7 +157,7 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		Convey("missing _id", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_score": 0.8,
 			}
 			doc, err := defaultResultParser(ctx, hit)
@@ -167,7 +167,7 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		Convey("missing _source", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id":    "doc2",
 				"_score": 0.8,
 			}
@@ -178,10 +178,10 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		Convey("missing content", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id":    "doc3",
 				"_score": 0.8,
-				"_source": map[string]interface{}{
+				"_source": map[string]any{
 					"other": "val",
 				},
 			}
@@ -192,10 +192,10 @@ func TestDefaultResultParser(t *testing.T) {
 		})
 
 		Convey("invalid content type", func() {
-			hit := map[string]interface{}{
+			hit := map[string]any{
 				"_id":    "doc4",
 				"_score": 0.8,
-				"_source": map[string]interface{}{
+				"_source": map[string]any{
 					"content": 123,
 				},
 			}
@@ -221,7 +221,7 @@ func TestRetriever_Retrieve(t *testing.T) {
 			retriever, _ := NewRetriever(ctx, &RetrieverConfig{
 				Client: client,
 				SearchMode: &mockSearchMode{
-					buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]interface{}, error) {
+					buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
 						return nil, fmt.Errorf("build request error")
 					},
 				},
@@ -289,13 +289,13 @@ func TestRetriever_Retrieve(t *testing.T) {
 		})
 
 		Convey("success", func() {
-			respBody := map[string]interface{}{
-				"hits": map[string]interface{}{
-					"hits": []interface{}{
-						map[string]interface{}{
+			respBody := map[string]any{
+				"hits": map[string]any{
+					"hits": []any{
+						map[string]any{
 							"_id":    "doc1",
 							"_score": 1.0,
-							"_source": map[string]interface{}{
+							"_source": map[string]any{
 								"content": "test content",
 							},
 						},

@@ -33,17 +33,17 @@ type exactMatch struct {
 }
 
 func (e *exactMatch) BuildRequest(ctx context.Context, conf *es7.RetrieverConfig, query string,
-	opts ...retriever.Option) (map[string]interface{}, error) {
+	opts ...retriever.Option) (map[string]any, error) {
 
-	matchQuery := map[string]interface{}{
-		"match": map[string]interface{}{
-			e.name: map[string]interface{}{
+	matchQuery := map[string]any{
+		"match": map[string]any{
+			e.name: map[string]any{
 				"query": query,
 			},
 		},
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"query": matchQuery,
 	}
 

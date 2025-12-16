@@ -48,7 +48,7 @@ type RetrieverConfig struct {
 	SearchMode SearchMode `json:"search_mode"`
 	// ResultParser parses Elasticsearch hits into Eino documents.
 	// If ResultParser not provided, defaultResultParser will be used as default.
-	ResultParser func(ctx context.Context, hit map[string]interface{}) (doc *schema.Document, err error)
+	ResultParser func(ctx context.Context, hit map[string]any) (doc *schema.Document, err error)
 	// Embedding is the embedding model used for vectorization.
 	// It is required when SearchMode needs it.
 	Embedding embedding.Embedder
@@ -57,7 +57,7 @@ type RetrieverConfig struct {
 // SearchMode defines the interface for building Elasticsearch search requests.
 type SearchMode interface {
 	// BuildRequest generates the search request from configuration, query, and options.
-	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]interface{}, error)
+	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error)
 }
 
 // Retriever implements the [retriever.Retriever] interface for Elasticsearch 7.x.
@@ -151,17 +151,17 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 }
 
 func (r *Retriever) parseSearchResult(ctx context.Context, body io.Reader) (docs []*schema.Document, err error) {
-	var response map[string]interface{}
+	var response map[string]any
 	if err := json.NewDecoder(body).Decode(&response); err != nil {
 		return nil, fmt.Errorf("[parseSearchResult] decode response failed: %w", err)
 	}
 
-	hitsWrapper, ok := response["hits"].(map[string]interface{})
+	hitsWrapper, ok := response["hits"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("[parseSearchResult] response hits field missing or invalid")
 	}
 
-	hits, ok := hitsWrapper["hits"].([]interface{})
+	hits, ok := hitsWrapper["hits"].([]any)
 	if !ok {
 		// Empty hits or invalid format
 		return []*schema.Document{}, nil
@@ -170,7 +170,7 @@ func (r *Retriever) parseSearchResult(ctx context.Context, body io.Reader) (docs
 	docs = make([]*schema.Document, 0, len(hits))
 
 	for _, h := range hits {
-		hit, ok := h.(map[string]interface{})
+		hit, ok := h.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -195,7 +195,7 @@ func (r *Retriever) IsCallbacksEnabled() bool {
 	return true
 }
 
-func defaultResultParser(ctx context.Context, hit map[string]interface{}) (*schema.Document, error) {
+func defaultResultParser(ctx context.Context, hit map[string]any) (*schema.Document, error) {
 	idVal, ok := hit["_id"]
 	if !ok {
 		return nil, fmt.Errorf("defaultResultParser: field '_id' not found in hit")
@@ -207,7 +207,7 @@ func defaultResultParser(ctx context.Context, hit map[string]interface{}) (*sche
 
 	score, _ := hit["_score"].(float64)
 
-	source, ok := hit["_source"].(map[string]interface{})
+	source, ok := hit["_source"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("defaultResultParser: field '_source' not found in document %s", id)
 	}
@@ -223,7 +223,7 @@ func defaultResultParser(ctx context.Context, hit map[string]interface{}) (*sche
 	}
 
 	// Remove content from metadata to avoid duplication if it's large
-	meta := make(map[string]interface{}, len(source)+1)
+	meta := make(map[string]any, len(source)+1)
 	for k, v := range source {
 		if k != "content" {
 			meta[k] = v

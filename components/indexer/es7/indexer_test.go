@@ -293,13 +293,13 @@ func TestIndexer_Store(t *testing.T) {
 		})
 
 		Convey("bulk response with errors in items", func() {
-			respBody := map[string]interface{}{
+			respBody := map[string]any{
 				"errors": true,
-				"items": []interface{}{
-					map[string]interface{}{
-						"index": map[string]interface{}{
+				"items": []any{
+					map[string]any{
+						"index": map[string]any{
 							"_id": "1",
-							"error": map[string]interface{}{
+							"error": map[string]any{
 								"type":   "mapper_parsing_exception",
 								"reason": "failed to parse",
 							},
@@ -330,11 +330,11 @@ func TestIndexer_Store(t *testing.T) {
 		})
 
 		Convey("success", func() {
-			respBody := map[string]interface{}{
+			respBody := map[string]any{
 				"errors": false,
-				"items": []interface{}{
-					map[string]interface{}{
-						"index": map[string]interface{}{
+				"items": []any{
+					map[string]any{
+						"index": map[string]any{
 							"_id": "1",
 						},
 					},
