@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+// Package main demonstrates how to use IVF_FLAT search mode with Milvus retriever.
+// IVF_FLAT divides vectors into clusters and searches only relevant clusters,
+// providing a good balance between speed and accuracy for large datasets.
+// This example uses a FloatVector collection created by the ivf_flat_index example.
 package main
 
 import (
@@ -25,13 +29,18 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
+	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 
 	"github.com/cloudwego/eino-ext/components/retriever/milvus"
+	"github.com/cloudwego/eino-ext/components/retriever/milvus/search_mode"
 )
 
 func main() {
 	// Get the environment variables
 	addr := os.Getenv("MILVUS_ADDR")
+	if addr == "" {
+		addr = "localhost:19530"
+	}
 	username := os.Getenv("MILVUS_USERNAME")
 	password := os.Getenv("MILVUS_PASSWORD")
 
@@ -48,23 +57,30 @@ func main() {
 	}
 	defer cli.Close()
 
-	// Create a retriever
+	// Create IVF_FLAT search mode with COSINE similarity
+	// nprobe=16 searches 16 clusters, good balance for most datasets
+	ivfMode, err := search_mode.SearchModeIvfFlat(&search_mode.IvfFlatConfig{
+		NProbe: 16,            // Number of clusters to search
+		Metric: entity.COSINE, // Cosine similarity (must match index metric)
+	})
+	if err != nil {
+		log.Fatalf("Failed to create IVF_FLAT search mode: %v", err)
+		return
+	}
+
+	// Create a retriever with IVF_FLAT search mode
+	// Note: This requires the "ivf_flat_collection" to exist (run ivf_flat_index example first)
 	retriever, err := milvus.NewRetriever(ctx, &milvus.RetrieverConfig{
-		Client:      cli,
-		Collection:  "",
-		Partition:   nil,
-		VectorField: "",
+		Client:     cli,
+		Collection: "ivf_flat_collection",
 		OutputFields: []string{
 			"id",
 			"content",
-			"metadata",
 		},
-		DocumentConverter: nil,
-		MetricType:        "",
-		TopK:              0,
-		ScoreThreshold:    5,
-		Sp:                nil,
-		Embedding:         &mockEmbedding{},
+		TopK:            10,
+		SearchMode:      ivfMode,
+		VectorConverter: floatVectorConverter,
+		Embedding:       &mockEmbedding{},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create retriever: %v", err)
@@ -72,7 +88,7 @@ func main() {
 	}
 
 	// Retrieve documents
-	documents, err := retriever.Retrieve(ctx, "milvus")
+	documents, err := retriever.Retrieve(ctx, "similarity search")
 	if err != nil {
 		log.Fatalf("Failed to retrieve: %v", err)
 		return
@@ -81,10 +97,22 @@ func main() {
 	// Print the documents
 	for i, doc := range documents {
 		fmt.Printf("Document %d:\n", i)
-		fmt.Printf("title: %s\n", doc.ID)
-		fmt.Printf("content: %s\n", doc.Content)
-		fmt.Printf("metadata: %v\n", doc.MetaData)
+		fmt.Printf("  ID: %s\n", doc.ID)
+		fmt.Printf("  Content: %s\n", doc.Content)
 	}
+}
+
+// floatVectorConverter converts float64 vectors to FloatVector
+func floatVectorConverter(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
+	vec := make([]entity.Vector, 0, len(vectors))
+	for _, vector := range vectors {
+		vec32 := make([]float32, len(vector))
+		for i, v := range vector {
+			vec32[i] = float32(v)
+		}
+		vec = append(vec, entity.FloatVector(vec32))
+	}
+	return vec, nil
 }
 
 type vector struct {

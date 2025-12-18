@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	
+
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -37,7 +37,7 @@ type IndexerConfig struct {
 	// It requires the milvus-sdk-go client of version 2.4.x
 	// Required
 	Client client.Client
-	
+
 	// Default Collection config
 	// Collection is the collection name in milvus database
 	// Optional, and the default value is "eino_collection"
@@ -67,16 +67,27 @@ type IndexerConfig struct {
 	// Optional, and the default value is false
 	// Enable to dynamic schema it could affect milvus performance
 	EnableDynamicSchema bool
-	
+
 	// DocumentConverter is the function to convert the schema.Document to the row data
 	// Optional, and the default value is defaultDocumentConverter
 	DocumentConverter func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error)
-	
+
 	// Index config to the vector column
-	// MetricType the metric type for vector
-	// Optional and default type is HAMMING
+	// MetricType is the metric type for vector similarity calculation.
+	// Optional; defaults to COSINE.
+	// Common values: L2 (Euclidean), IP (Inner Product), COSINE.
 	MetricType MetricType
-	
+
+	// IndexBuilder defines the index type and parameters for the vector field.
+	// Optional; if nil, AUTOINDEX will be used (recommended for most use cases).
+	// Use NewHNSWIndexBuilder, NewIvfFlatIndexBuilder, NewFlatIndexBuilder, or
+	// NewAutoIndexBuilder to create an IndexBuilder.
+	IndexBuilder IndexBuilder
+
+	// VectorFieldName is the name of the vector field to create index on.
+	// Optional; defaults to "vector".
+	VectorFieldName string
+
 	// Embedding vectorization method for values needs to be embedded from schema.Document's content.
 	// Required
 	Embedding embedding.Embedder
@@ -92,7 +103,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	if err := conf.check(); err != nil {
 		return nil, err
 	}
-	
+
 	// check the collection whether to be created
 	ok, err := conf.Client.HasCollection(ctx, conf.Collection)
 	if err != nil {
@@ -119,7 +130,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 			return nil, fmt.Errorf("[NewIndexer] failed to create collection: %w", errToCreate)
 		}
 	}
-	
+
 	// load collection info
 	collection, err := conf.Client.DescribeCollection(ctx, conf.Collection)
 	if err != nil {
@@ -136,7 +147,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 			return nil, err
 		}
 	}
-	
+
 	if conf.PartitionNum == 0 && conf.PartitionName != "" {
 		ok, err = conf.Client.HasPartition(ctx, conf.Collection, conf.PartitionName)
 		if err != nil {
@@ -152,7 +163,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 			return nil, fmt.Errorf("[NewIndexer] failed to load partition: %w", err)
 		}
 	}
-	
+
 	// create indexer
 	return &Indexer{
 		config: *conf,
@@ -170,7 +181,7 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	if io.Partition == "" {
 		io.Partition = i.config.PartitionName
 	}
-	
+
 	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	// callback info on start
 	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{
@@ -181,45 +192,45 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	
+
 	emb := co.Embedding
 	if emb == nil {
 		return nil, fmt.Errorf("[Indexer.Store] embedding not provided")
 	}
-	
+
 	// load documents content
 	texts := make([]string, 0, len(docs))
 	for _, doc := range docs {
 		texts = append(texts, doc.Content)
 	}
-	
+
 	// embedding
 	vectors, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), texts)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if len(vectors) != len(docs) {
 		return nil, fmt.Errorf("[Indexer.Store] embedding result length not match need: %d, got: %d", len(docs), len(vectors))
 	}
-	
+
 	// load documents content
 	rows, err := i.config.DocumentConverter(ctx, docs, vectors)
 	if err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
 	}
-	
+
 	// store documents into milvus
 	results, err := i.config.Client.InsertRows(ctx, i.config.Collection, io.Partition, rows)
 	if err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to insert rows: %w", err)
 	}
-	
+
 	// flush collection to make sure the data is visible
 	if err := i.config.Client.Flush(ctx, i.config.Collection, false); err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to flush collection: %w", err)
 	}
-	
+
 	// callback info on end
 	ids = make([]string, results.Len())
 	for idx := 0; idx < results.Len(); idx++ {
@@ -228,7 +239,7 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 			return nil, fmt.Errorf("[Indexer.Store] failed to get id: %w", err)
 		}
 	}
-	
+
 	callbacks.OnEnd(ctx, &indexer.CallbackOutput{
 		IDs: ids,
 	})
@@ -259,7 +270,7 @@ func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, do
 		em := make([]defaultSchema, 0, len(docs))
 		texts := make([]string, 0, len(docs))
 		rows := make([]interface{}, 0, len(docs))
-		
+
 		for _, doc := range docs {
 			metadata, err := sonic.Marshal(doc.MetaData)
 			if err != nil {
@@ -273,7 +284,7 @@ func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, do
 			})
 			texts = append(texts, doc.Content)
 		}
-		
+
 		// build embedding documents for storing
 		for idx, vec := range vectors {
 			em[idx].Vector = vector2Bytes(vec)
@@ -283,13 +294,31 @@ func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, do
 	}
 }
 
-// createdDefaultIndex creates the default index
-func (i *IndexerConfig) createdDefaultIndex(ctx context.Context, async bool) error {
-	index, err := entity.NewIndexAUTOINDEX(i.MetricType.getMetricType())
-	if err != nil {
-		return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
+// createIndex creates an index for the vector field using the configured IndexBuilder.
+// If no IndexBuilder is configured, AUTOINDEX will be used.
+func (i *IndexerConfig) createIndex(ctx context.Context, async bool) error {
+	var index entity.Index
+	var err error
+
+	if i.IndexBuilder != nil {
+		index, err = i.IndexBuilder.Build(i.MetricType)
+		if err != nil {
+			return fmt.Errorf("[NewIndexer] failed to build index: %w", err)
+		}
+	} else {
+		// Default to AUTOINDEX
+		index, err = entity.NewIndexAUTOINDEX(i.MetricType.getMetricType())
+		if err != nil {
+			return fmt.Errorf("[NewIndexer] failed to create autoindex: %w", err)
+		}
 	}
-	if err := i.Client.CreateIndex(ctx, i.Collection, defaultIndexField, index, async); err != nil {
+
+	fieldName := i.VectorFieldName
+	if fieldName == "" {
+		fieldName = defaultIndexField
+	}
+
+	if err := i.Client.CreateIndex(ctx, i.Collection, fieldName, index, async); err != nil {
 		return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
 	}
 	return nil
@@ -329,7 +358,7 @@ func (i *IndexerConfig) loadCollection(ctx context.Context) error {
 			return fmt.Errorf("[NewIndexer] milvus client not ready: %w", err)
 		}
 		if len(index) == 0 {
-			if err := i.createdDefaultIndex(ctx, false); err != nil {
+			if err := i.createIndex(ctx, false); err != nil {
 				return err
 			}
 		}

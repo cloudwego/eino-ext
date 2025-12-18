@@ -31,16 +31,43 @@ type ImplOptions struct {
 	// Optional, and the default value is nil
 	// It's means the milvus search extra search options, and refer to client.SearchQueryOptionFunc
 	SearchQueryOptFn func(option *client.SearchQueryOption)
+
+	// Radius is the radius for range search.
+	// Optional, used in conjunction with RangeFilter for range queries.
+	Radius *float64
+
+	// RangeFilter is the minimum similarity threshold for range search.
+	// Optional, used to filter results below this similarity score.
+	RangeFilter *float64
 }
 
+// WithFilter sets the boolean filter expression for the search.
+// See: https://milvus.io/docs/boolean.md
 func WithFilter(filter string) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
 		o.Filter = filter
 	})
 }
 
+// WithSearchQueryOptFn sets the search query options function.
 func WithSearchQueryOptFn(f func(option *client.SearchQueryOption)) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
 		o.SearchQueryOptFn = f
+	})
+}
+
+// WithRadius sets the radius for range search.
+// Radius defines the outer boundary of the search area.
+func WithRadius(radius float64) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
+		o.Radius = &radius
+	})
+}
+
+// WithRangeFilter sets the minimum similarity threshold for range search.
+// Results with similarity below this value will be filtered out.
+func WithRangeFilter(rangeFilter float64) retriever.Option {
+	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
+		o.RangeFilter = &rangeFilter
 	})
 }

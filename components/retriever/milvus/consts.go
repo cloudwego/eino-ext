@@ -26,7 +26,7 @@ const (
 	defaultAutoIndexLevel = 1
 	defaultLoadedProgress = 100
 
-	defaultMetricType = entity.HAMMING
+	defaultMetricType = entity.COSINE
 
 	typeParamDim = "dim"
 )

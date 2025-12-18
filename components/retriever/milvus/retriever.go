@@ -20,7 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
@@ -28,14 +28,21 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+
+	"github.com/cloudwego/eino-ext/components/retriever/milvus/search_mode"
 )
+
+// SearchMode is an alias for search_mode.SearchMode for convenience.
+// Use search_mode.SearchModeHNSW, SearchModeIvfFlat, SearchModeAuto, or SearchModeFlat
+// to create a SearchMode instance.
+type SearchMode = search_mode.SearchMode
 
 type RetrieverConfig struct {
 	// Client is the milvus client to be called
 	// It requires the milvus-sdk-go client of version 2.4.x
 	// Required
 	Client client.Client
-	
+
 	// Default Retriever config
 	// Collection is the collection name in the milvus database
 	// Optional, and the default value is "eino_collection"
@@ -54,19 +61,26 @@ type RetrieverConfig struct {
 	DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error)
 	// VectorConverter is the function to convert the vectors to entity.Vector
 	VectorConverter func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error)
-	// MetricType is the metric type for vector
-	// Optional, and the default value is "HAMMING"
-	MetricType entity.MetricType
 	// TopK is the top k results to be returned
 	// Optional, and the default value is 5
 	TopK int
 	// ScoreThreshold is the threshold for the search result
 	// Optional, and the default value is 0
 	ScoreThreshold float64
-	// SearchParams
-	// Optional, and the default value is entity.IndexAUTOINDEXSearchParam, and the level is 1
+
+	// SearchMode defines the search strategy and parameters.
+	// Use search_mode.SearchModeHNSW, SearchModeIvfFlat, SearchModeAuto, or SearchModeFlat.
+	// Optional; if nil, SearchModeAuto will be used as default.
+	// When SearchMode is set, MetricType and Sp are ignored.
+	SearchMode SearchMode
+
+	// Deprecated: MetricType is deprecated; set metric type in SearchMode config instead.
+	// If SearchMode is not set, this field will be used.
+	MetricType entity.MetricType
+	// Deprecated: Sp is deprecated; use SearchMode instead.
+	// If SearchMode is not set, this field will be used.
 	Sp entity.SearchParam
-	
+
 	// Embedding is the embedding vectorization method for values needs to be embedded from schema.Document's content.
 	// Required
 	Embedding embedding.Embedder
@@ -80,7 +94,7 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 	if err := config.check(); err != nil {
 		return nil, err
 	}
-	
+
 	// pre-check for the milvus search config
 	// check the collection is existed
 	ok, err := config.Client.HasCollection(ctx, config.Collection)
@@ -96,7 +110,7 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 	if !ok {
 		return nil, fmt.Errorf("[NewRetriever] collection not found")
 	}
-	
+
 	// load collection info
 	collection, err := config.Client.DescribeCollection(ctx, config.Collection)
 	if err != nil {
@@ -106,7 +120,7 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 	if err := checkCollectionSchema(config.VectorField, collection.Schema); err != nil {
 		return nil, fmt.Errorf("[NewRetriever] collection schema not match: %w", err)
 	}
-	
+
 	// check the collection load state
 	if !collection.Loaded {
 		// load collection
@@ -114,23 +128,26 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 			return nil, fmt.Errorf("[NewRetriever] failed to load collection: %w", err)
 		}
 	}
-	
-	if config.Sp == nil {
-		dim, err := getCollectionDim(config.VectorField, collection.Schema)
-		if err != nil {
-			return nil, fmt.Errorf("[NewRetriever] failed to get collection dim: %w", err)
+
+	// If SearchMode is not set, use legacy Sp field or create default
+	if config.SearchMode == nil {
+		if config.Sp == nil {
+			dim, err := getCollectionDim(config.VectorField, collection.Schema)
+			if err != nil {
+				return nil, fmt.Errorf("[NewRetriever] failed to get collection dim: %w", err)
+			}
+			config.Sp = defaultSearchParam(config.ScoreThreshold, dim)
 		}
-		config.Sp = defaultSearchParam(config.ScoreThreshold, dim)
+
+		// get the score threshold from legacy Sp
+		scoreThreshold, ok := config.Sp.Params()["range_filter"]
+		if !ok {
+			config.ScoreThreshold = 0
+		} else {
+			config.ScoreThreshold = scoreThreshold.(float64)
+		}
 	}
-	
-	// get the score threshold
-	scoreThreshold, ok := config.Sp.Params()["range_filter"]
-	if !ok {
-		config.ScoreThreshold = 0
-	} else {
-		config.ScoreThreshold = scoreThreshold.(float64)
-	}
-	
+
 	// build the retriever
 	return &Retriever{
 		config: RetrieverConfig{
@@ -141,9 +158,10 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 			OutputFields:      config.OutputFields,
 			DocumentConverter: config.DocumentConverter,
 			VectorConverter:   config.VectorConverter,
-			MetricType:        config.MetricType,
 			TopK:              config.TopK,
 			ScoreThreshold:    config.ScoreThreshold,
+			SearchMode:        config.SearchMode,
+			MetricType:        config.MetricType,
 			Sp:                config.Sp,
 			Embedding:         config.Embedding,
 		},
@@ -160,7 +178,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}, opts...)
 	// get impl specific options
 	io := retriever.GetImplSpecificOptions(&ImplOptions{}, opts...)
-	
+
 	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	// callback info on start
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
@@ -177,13 +195,13 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	
+
 	// get the embedding vector
 	emb := co.Embedding
 	if emb == nil {
 		return nil, fmt.Errorf("[milvus retriever] embedding not provided")
 	}
-	
+
 	// embedding the query
 	vectors, err := emb.EmbedStrings(r.makeEmbeddingCtx(ctx, emb), []string{query})
 	if err != nil {
@@ -199,14 +217,31 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if err != nil {
 		return nil, fmt.Errorf("[milvus retriever] failed to convert vector: %w", err)
 	}
-	
+
+	// Build search parameters from SearchMode or use legacy Sp
+	var sp entity.SearchParam
+	var metricType entity.MetricType
+
+	if r.config.SearchMode != nil {
+		// Use new SearchMode interface
+		sp, err = r.config.SearchMode.BuildSearchParam(ctx, opts...)
+		if err != nil {
+			return nil, fmt.Errorf("[milvus retriever] failed to build search param: %w", err)
+		}
+		metricType = r.config.SearchMode.MetricType()
+	} else {
+		// Fallback to legacy Sp and MetricType for backward compatibility
+		sp = r.config.Sp
+		metricType = r.config.MetricType
+	}
+
 	// search the collection
 	var results []client.SearchResult
 	var searchParams []client.SearchQueryOptionFunc
 	if io.SearchQueryOptFn != nil {
 		searchParams = append(searchParams, io.SearchQueryOptFn)
 	}
-	
+
 	results, err = r.config.Client.Search(
 		ctx,
 		r.config.Collection,
@@ -215,9 +250,9 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		r.config.OutputFields,
 		vec,
 		r.config.VectorField,
-		r.config.MetricType,
+		metricType,
 		*co.TopK,
-		r.config.Sp,
+		sp,
 		searchParams...,
 	)
 	if err != nil {
@@ -227,7 +262,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if len(results) == 0 {
 		return nil, fmt.Errorf("[milvus retriever] no results found")
 	}
-	
+
 	// convert the search result to schema.Document
 	documents := make([]*schema.Document, 0, len(results))
 	for _, result := range results {
@@ -243,10 +278,10 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		}
 		documents = append(documents, document...)
 	}
-	
+
 	// callback info on end
 	callbacks.OnEnd(ctx, &retriever.CallbackOutput{Docs: documents})
-	
+
 	return documents, nil
 }
 

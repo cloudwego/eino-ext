@@ -49,9 +49,11 @@ func main() {
 	defer cli.Close()
 
 	// Create an indexer
+	// Note: The default schema uses BinaryVector, which requires HAMMING metric
 	indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
-		Client:    cli,
-		Embedding: &mockEmbedding{},
+		Client:     cli,
+		MetricType: milvus.HAMMING, // Required for binary vectors
+		Embedding:  &mockEmbedding{},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create indexer: %v", err)
