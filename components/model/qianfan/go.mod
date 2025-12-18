@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/baidubce/bce-qianfan-sdk/go/qianfan v0.0.14
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.6.0
+	github.com/cloudwego/eino v0.7.11
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.10.0
 )
@@ -20,7 +20,7 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.2 // indirect
+	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect

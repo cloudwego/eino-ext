@@ -1236,12 +1236,17 @@ func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
 	if usage.PromptTokensDetails != nil {
 		promptTokenDetails.CachedTokens = usage.PromptTokensDetails.CachedTokens
 	}
+	completionTokensDetails := schema.CompletionTokensDetails{}
+	if usage.CompletionTokensDetails != nil {
+		completionTokensDetails.ReasoningTokens = usage.CompletionTokensDetails.ReasoningTokens
+	}
 
 	return &schema.TokenUsage{
-		PromptTokens:       usage.PromptTokens,
-		PromptTokenDetails: promptTokenDetails,
-		CompletionTokens:   usage.CompletionTokens,
-		TotalTokens:        usage.TotalTokens,
+		PromptTokens:            usage.PromptTokens,
+		PromptTokenDetails:      promptTokenDetails,
+		CompletionTokens:        usage.CompletionTokens,
+		TotalTokens:             usage.TotalTokens,
+		CompletionTokensDetails: completionTokensDetails,
 	}
 }
 
@@ -1260,6 +1265,9 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
 	}
 }
 

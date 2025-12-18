@@ -7,8 +7,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/config v1.29.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.54
 	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.6.0
-	github.com/eino-contrib/jsonschema v1.0.2
+	github.com/cloudwego/eino v0.7.11
+	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/stretchr/testify v1.10.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 )
