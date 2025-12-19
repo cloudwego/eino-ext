@@ -34,7 +34,7 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
-// defaultSearchParam returns the default search param
+// defaultSearchParam returns a default AUTOINDEX search parameter with the given score threshold and radius.
 func defaultSearchParam(score float64, dim float64) entity.SearchParam {
 	searchParam, _ := entity.NewIndexAUTOINDEXSearchParam(defaultAutoIndexLevel)
 	searchParam.AddRadius(dim)
@@ -42,11 +42,12 @@ func defaultSearchParam(score float64, dim float64) entity.SearchParam {
 	return searchParam
 }
 
-// defaultDocumentConverter returns the default document converter
+// defaultDocumentConverter returns the default function for converting Milvus search results
+// to schema.Document instances. It extracts id, content, and metadata fields from search results.
 func defaultDocumentConverter() func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error) {
 	return func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error) {
 		var err error
-		result := make([]*schema.Document, doc.IDs.Len(), doc.IDs.Len())
+		result := make([]*schema.Document, doc.IDs.Len())
 		for i := range result {
 			result[i] = &schema.Document{
 				MetaData: make(map[string]any),
@@ -89,7 +90,8 @@ func defaultDocumentConverter() func(ctx context.Context, doc client.SearchResul
 	}
 }
 
-// defaultVectorConverter returns the default vector converter
+// defaultVectorConverter returns the default function for converting embedding vectors
+// to Milvus BinaryVector format.
 func defaultVectorConverter() func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
 	return func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
 		vec := make([]entity.Vector, 0, len(vectors))
@@ -100,7 +102,8 @@ func defaultVectorConverter() func(ctx context.Context, vectors [][]float64) ([]
 	}
 }
 
-// checkCollectionSchema checks if the vector field exists in the schema
+// checkCollectionSchema verifies that the specified vector field exists in the collection schema.
+// It returns an error if the field is not found.
 func checkCollectionSchema(field string, s *entity.Schema) error {
 	for _, column := range s.Fields {
 		if column.Name == field {
@@ -110,7 +113,8 @@ func checkCollectionSchema(field string, s *entity.Schema) error {
 	return errors.New("vector field not found")
 }
 
-// getCollectionDim gets the dimension of the vector field
+// getCollectionDim retrieves the dimension of the specified vector field from the collection schema.
+// It returns an error if the field is not found or the dimension cannot be parsed.
 func getCollectionDim(field string, s *entity.Schema) (float64, error) {
 	for _, column := range s.Fields {
 		if column.Name == field {
@@ -124,7 +128,8 @@ func getCollectionDim(field string, s *entity.Schema) (float64, error) {
 	return 0, errors.New("vector field not found")
 }
 
-// loadCollection loads the collection
+// loadCollection ensures the collection is loaded into memory for querying.
+// It checks the current load state and waits for loading to complete if in progress.
 func loadCollection(ctx context.Context, conf *RetrieverConfig) error {
 	loadState, err := conf.Client.GetLoadState(ctx, conf.Collection, nil)
 	if err != nil {
@@ -167,7 +172,8 @@ func loadCollection(ctx context.Context, conf *RetrieverConfig) error {
 	}
 }
 
-// makeEmbeddingCtx makes the embedding context
+// makeEmbeddingCtx creates a context with callback run information for embedding operations.
+// This ensures proper tracing and logging of embedding calls within the retriever flow.
 func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
 	runInfo := &callbacks.RunInfo{
 		Component: components.ComponentOfEmbedding,
@@ -182,7 +188,8 @@ func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder
 	return callbacks.ReuseHandlers(ctx, runInfo)
 }
 
-// vector2Bytes converts the vector to bytes
+// vector2Bytes converts a float64 vector to a byte slice representation.
+// Each float64 is first converted to float32, then encoded as 4 bytes in little-endian order.
 func vector2Bytes(vector []float64) []byte {
 	float32Arr := make([]float32, len(vector))
 	for i, v := range vector {

@@ -18,10 +18,14 @@ package milvus
 
 import "github.com/cloudwego/eino/components/indexer"
 
+// ImplOptions contains Milvus-specific options for indexer operations.
 type ImplOptions struct {
+	// Partition specifies the target partition for data storage.
 	Partition string
 }
 
+// WithPartition returns an option that specifies the target partition for the Store operation.
+// This option is ignored when partition key mode is enabled (PartitionNum > 1).
 func WithPartition(partition string) indexer.Option {
 	return indexer.WrapImplSpecificOptFn(func(o *ImplOptions) {
 		o.Partition = partition

@@ -37,59 +37,72 @@ import (
 // to create a SearchMode instance.
 type SearchMode = search_mode.SearchMode
 
+// RetrieverConfig provides configuration options for creating a Milvus Retriever.
 type RetrieverConfig struct {
-	// Client is the milvus client to be called
-	// It requires the milvus-sdk-go client of version 2.4.x
-	// Required
+	// Client is the Milvus client used for database operations.
+	// This field is required and must be a milvus-sdk-go client of version 2.4.x.
 	Client client.Client
 
-	// Default Retriever config
-	// Collection is the collection name in the milvus database
-	// Optional, and the default value is "eino_collection"
+	// Collection specifies the collection name in the Milvus database.
+	// Optional; defaults to "eino_collection".
 	Collection string
-	// Partition is the collection partition name
-	// Optional, and the default value is empty
+
+	// Partition specifies the partitions to search within.
+	// Optional; defaults to an empty slice (search all partitions).
 	Partition []string
-	// VectorField is the vector field name in the collection
-	// Optional, and the default value is "vector"
+
+	// VectorField specifies the name of the vector field in the collection.
+	// Optional; defaults to "vector".
 	VectorField string
-	// OutputFields is the fields to be returned
-	// Optional, and the default value is empty
+
+	// OutputFields specifies which fields to include in search results.
+	// Optional; defaults to an empty slice (only return IDs and distances).
 	OutputFields []string
-	// DocumentConverter is the function to convert the search result to schema.Document
-	// Optional, and the default value is defaultDocumentConverter
+
+	// DocumentConverter transforms Milvus search results into schema.Document instances.
+	// Optional; defaults to a converter compatible with the built-in schema.
 	DocumentConverter func(ctx context.Context, doc client.SearchResult) ([]*schema.Document, error)
-	// VectorConverter is the function to convert the vectors to entity.Vector
+
+	// VectorConverter transforms embedding vectors into Milvus entity.Vector format.
+	// Optional; defaults to a BinaryVector converter.
 	VectorConverter func(ctx context.Context, vectors [][]float64) ([]entity.Vector, error)
-	// TopK is the top k results to be returned
-	// Optional, and the default value is 5
+
+	// TopK specifies the maximum number of results to return.
+	// Optional; defaults to 5.
 	TopK int
-	// ScoreThreshold is the threshold for the search result
-	// Optional, and the default value is 0
+
+	// ScoreThreshold filters results below this similarity score.
+	// Optional; defaults to 0 (no filtering).
 	ScoreThreshold float64
 
-	// SearchMode defines the search strategy and parameters.
+	// SearchMode defines the search strategy and parameters for different index types.
 	// Use search_mode.SearchModeHNSW, SearchModeIvfFlat, SearchModeAuto, or SearchModeFlat.
-	// Optional; if nil, SearchModeAuto will be used as default.
-	// When SearchMode is set, MetricType and Sp are ignored.
+	// Optional; defaults to AUTOINDEX with COSINE metric.
+	// When SearchMode is set, MetricType and Sp fields are ignored.
 	SearchMode SearchMode
 
-	// Deprecated: MetricType is deprecated; set metric type in SearchMode config instead.
-	// If SearchMode is not set, this field will be used.
+	// Deprecated: MetricType is deprecated; set the metric type in SearchMode instead.
 	MetricType entity.MetricType
-	// Deprecated: Sp is deprecated; use SearchMode instead.
-	// If SearchMode is not set, this field will be used.
+
+	// Deprecated: Sp is deprecated; use SearchMode instead to configure search parameters.
 	Sp entity.SearchParam
 
-	// Embedding is the embedding vectorization method for values needs to be embedded from schema.Document's content.
-	// Required
+	// Embedding provides the embedding model for vectorizing query strings.
+	// This field is required.
 	Embedding embedding.Embedder
 }
 
+// Retriever performs similarity search queries against a Milvus collection.
+// It implements the eino retriever.Retriever interface.
 type Retriever struct {
 	config RetrieverConfig
 }
 
+// NewRetriever creates a new Milvus Retriever with the given configuration.
+// It validates the configuration, verifies the collection exists and its schema
+// matches the expected fields, and loads the collection if needed.
+// NewRetriever returns an error if the client is not ready, the collection
+// does not exist, or required fields are missing from the configuration.
 func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, error) {
 	if err := config.check(); err != nil {
 		return nil, err
@@ -168,6 +181,10 @@ func NewRetriever(ctx context.Context, config *RetrieverConfig) (*Retriever, err
 	}, nil
 }
 
+// Retrieve performs a similarity search for the given query string.
+// It embeds the query using the configured Embedding model, searches the
+// Milvus collection using the configured SearchMode, and returns matching documents.
+// Retrieve returns an error if embedding fails, no results are found, or search fails.
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
 	// get common options
 	co := retriever.GetCommonOptions(&retriever.Options{
@@ -285,15 +302,19 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	return documents, nil
 }
 
+// GetType returns the type identifier for this retriever ("Milvus").
 func (r *Retriever) GetType() string {
 	return typ
 }
 
+// IsCallbacksEnabled indicates whether this retriever supports callbacks.
+// It always returns true for Milvus retriever.
 func (r *Retriever) IsCallbacksEnabled() bool {
 	return true
 }
 
-// check the retriever config and set the default value
+// check validates the configuration and applies default values for optional fields.
+// It returns an error if required fields (Client, Embedding) are missing.
 func (r *RetrieverConfig) check() error {
 	if r.Client == nil {
 		return fmt.Errorf("[NewRetriever] milvus client not provided")

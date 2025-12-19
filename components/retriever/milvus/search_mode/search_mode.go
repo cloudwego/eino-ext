@@ -52,12 +52,11 @@ type SearchMode interface {
 	MetricType() entity.MetricType
 }
 
-// ImplOptions contains implementation-specific options that can be passed
-// through retriever options to customize search behavior.
-// This mirrors the ImplOptions in the parent milvus package.
+// ImplOptions contains implementation-specific options from retriever options.
+// This mirrors the ImplOptions structure in the parent milvus package.
 type ImplOptions struct {
-	// Radius for range search
+	// Radius defines the outer boundary for range search.
 	Radius *float64
-	// RangeFilter for range search (minimum similarity threshold)
+	// RangeFilter specifies the minimum similarity threshold for range search.
 	RangeFilter *float64
 }

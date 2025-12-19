@@ -63,10 +63,13 @@ func SearchModeIvfFlat(config *IvfFlatConfig) (SearchMode, error) {
 	return &ivfFlatSearchMode{config: config}, nil
 }
 
+// ivfFlatSearchMode implements SearchMode for IVF_FLAT indexes.
 type ivfFlatSearchMode struct {
 	config *IvfFlatConfig
 }
 
+// BuildSearchParam creates IVF_FLAT-specific search parameters with the configured nprobe.
+// It applies optional Radius and RangeFilter from retriever options.
 func (i *ivfFlatSearchMode) BuildSearchParam(ctx context.Context, opts ...retriever.Option) (entity.SearchParam, error) {
 	sp, err := entity.NewIndexIvfFlatSearchParam(i.config.NProbe)
 	if err != nil {
@@ -85,6 +88,7 @@ func (i *ivfFlatSearchMode) BuildSearchParam(ctx context.Context, opts ...retrie
 	return sp, nil
 }
 
+// MetricType returns the configured metric type for this IVF_FLAT search mode.
 func (i *ivfFlatSearchMode) MetricType() entity.MetricType {
 	return i.config.Metric
 }

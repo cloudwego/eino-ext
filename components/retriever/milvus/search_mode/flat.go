@@ -52,10 +52,13 @@ func SearchModeFlat(config *FlatConfig) SearchMode {
 	return &flatSearchMode{config: config}
 }
 
+// flatSearchMode implements SearchMode for FLAT indexes.
 type flatSearchMode struct {
 	config *FlatConfig
 }
 
+// BuildSearchParam creates FLAT-specific search parameters.
+// It applies optional Radius and RangeFilter from retriever options.
 func (f *flatSearchMode) BuildSearchParam(ctx context.Context, opts ...retriever.Option) (entity.SearchParam, error) {
 	sp, _ := entity.NewIndexFlatSearchParam()
 
@@ -71,6 +74,7 @@ func (f *flatSearchMode) BuildSearchParam(ctx context.Context, opts ...retriever
 	return sp, nil
 }
 
+// MetricType returns the configured metric type for this FLAT search mode.
 func (f *flatSearchMode) MetricType() entity.MetricType {
 	return f.config.Metric
 }

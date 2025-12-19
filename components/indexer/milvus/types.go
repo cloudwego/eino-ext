@@ -20,27 +20,44 @@ import (
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 )
 
+// ConsistencyLevel constants define the available consistency levels for Milvus collections.
 const (
-	ConsistencyLevelStrong     ConsistencyLevel = 1
-	ConsistencyLevelSession    ConsistencyLevel = 2
-	ConsistencyLevelBounded    ConsistencyLevel = 3
+	// ConsistencyLevelStrong ensures the latest data is always returned.
+	ConsistencyLevelStrong ConsistencyLevel = 1
+	// ConsistencyLevelSession ensures reads reflect all writes from the current session.
+	ConsistencyLevelSession ConsistencyLevel = 2
+	// ConsistencyLevelBounded allows reads to lag behind writes by a bounded time (default 5 seconds).
+	ConsistencyLevelBounded ConsistencyLevel = 3
+	// ConsistencyLevelEventually provides the weakest consistency with eventual convergence.
 	ConsistencyLevelEventually ConsistencyLevel = 4
+	// ConsistencyLevelCustomized allows custom consistency level configuration.
 	ConsistencyLevelCustomized ConsistencyLevel = 5
-	
-	L2             = MetricType(entity.L2)
-	IP             = MetricType(entity.IP)
-	// CONSINE is deprecated due to a typo, use COSINE instead.
-	// Deprecated: use COSINE
-	CONSINE        = MetricType(entity.COSINE)
-	COSINE         = MetricType(entity.COSINE)
-	HAMMING        = MetricType(entity.HAMMING)
-	JACCARD        = MetricType(entity.JACCARD)
-	TANIMOTO       = MetricType(entity.TANIMOTO)
-	SUBSTRUCTURE   = MetricType(entity.SUBSTRUCTURE)
-	SUPERSTRUCTURE = MetricType(entity.SUPERSTRUCTURE)
 )
 
-// defaultSchema is the default schema for milvus by eino
+// MetricType constants define the available distance metrics for vector similarity.
+const (
+	// L2 represents Euclidean distance metric for FloatVector fields.
+	L2 = MetricType(entity.L2)
+	// IP represents Inner Product metric for FloatVector fields.
+	IP = MetricType(entity.IP)
+	// COSINE represents Cosine similarity metric for FloatVector fields.
+	COSINE = MetricType(entity.COSINE)
+	// HAMMING represents Hamming distance metric for BinaryVector fields.
+	HAMMING = MetricType(entity.HAMMING)
+	// JACCARD represents Jaccard distance metric for BinaryVector fields.
+	JACCARD = MetricType(entity.JACCARD)
+	// TANIMOTO represents Tanimoto distance metric.
+	TANIMOTO = MetricType(entity.TANIMOTO)
+	// SUBSTRUCTURE is a metric for chemical structure matching.
+	SUBSTRUCTURE = MetricType(entity.SUBSTRUCTURE)
+	// SUPERSTRUCTURE is a metric for chemical structure matching.
+	SUPERSTRUCTURE = MetricType(entity.SUPERSTRUCTURE)
+
+	// Deprecated: CONSINE has a typo; use COSINE instead.
+	CONSINE = MetricType(entity.COSINE)
+)
+
+// defaultSchema represents the default row structure for storing documents in Milvus.
 type defaultSchema struct {
 	ID       string `json:"id" milvus:"name:id"`
 	Content  string `json:"content" milvus:"name:content"`
@@ -48,6 +65,8 @@ type defaultSchema struct {
 	Metadata []byte `json:"metadata" milvus:"name:metadata"`
 }
 
+// getDefaultFields returns the default collection schema fields.
+// The schema includes id (primary key), vector (binary), content, and metadata fields.
 func getDefaultFields() []*entity.Field {
 	return []*entity.Field{
 		entity.NewField().
@@ -76,16 +95,18 @@ func getDefaultFields() []*entity.Field {
 	}
 }
 
+// ConsistencyLevel represents the consistency level for Milvus operations.
 type ConsistencyLevel entity.ConsistencyLevel
 
+// getConsistencyLevel converts the ConsistencyLevel to its Milvus entity equivalent.
 func (c *ConsistencyLevel) getConsistencyLevel() entity.ConsistencyLevel {
 	return entity.ConsistencyLevel(*c - 1)
 }
 
-// MetricType is the metric type for vector by eino
+// MetricType represents the distance metric type for vector similarity calculations.
 type MetricType entity.MetricType
 
-// getMetricType returns the metric type
+// getMetricType converts the MetricType to its Milvus entity equivalent.
 func (t *MetricType) getMetricType() entity.MetricType {
 	return entity.MetricType(*t)
 }

@@ -60,10 +60,13 @@ func SearchModeAuto(config *AutoConfig) SearchMode {
 	return &autoSearchMode{config: config}
 }
 
+// autoSearchMode implements SearchMode for AUTOINDEX.
 type autoSearchMode struct {
 	config *AutoConfig
 }
 
+// BuildSearchParam creates AUTOINDEX-specific search parameters with the configured level.
+// It applies optional Radius and RangeFilter from retriever options.
 func (a *autoSearchMode) BuildSearchParam(ctx context.Context, opts ...retriever.Option) (entity.SearchParam, error) {
 	sp, _ := entity.NewIndexAUTOINDEXSearchParam(a.config.Level)
 
@@ -79,6 +82,7 @@ func (a *autoSearchMode) BuildSearchParam(ctx context.Context, opts ...retriever
 	return sp, nil
 }
 
+// MetricType returns the configured metric type for this AUTOINDEX search mode.
 func (a *autoSearchMode) MetricType() entity.MetricType {
 	return a.config.Metric
 }

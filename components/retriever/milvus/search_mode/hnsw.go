@@ -62,10 +62,13 @@ func SearchModeHNSW(config *HNSWConfig) (SearchMode, error) {
 	return &hnswSearchMode{config: config}, nil
 }
 
+// hnswSearchMode implements SearchMode for HNSW indexes.
 type hnswSearchMode struct {
 	config *HNSWConfig
 }
 
+// BuildSearchParam creates HNSW-specific search parameters with the configured ef value.
+// It applies optional Radius and RangeFilter from retriever options.
 func (h *hnswSearchMode) BuildSearchParam(ctx context.Context, opts ...retriever.Option) (entity.SearchParam, error) {
 	sp, err := entity.NewIndexHNSWSearchParam(h.config.Ef)
 	if err != nil {
@@ -84,6 +87,7 @@ func (h *hnswSearchMode) BuildSearchParam(ctx context.Context, opts ...retriever
 	return sp, nil
 }
 
+// MetricType returns the configured metric type for this HNSW search mode.
 func (h *hnswSearchMode) MetricType() entity.MetricType {
 	return h.config.Metric
 }

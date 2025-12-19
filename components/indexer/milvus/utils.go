@@ -26,7 +26,8 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 )
 
-// vector2Bytes converts vector to bytes
+// vector2Bytes converts a float64 vector to a byte slice representation.
+// Each float64 is first converted to float32, then encoded as 4 bytes in little-endian order.
 func vector2Bytes(vector []float64) []byte {
 	float32Arr := make([]float32, len(vector))
 	for i, v := range vector {
@@ -39,7 +40,8 @@ func vector2Bytes(vector []float64) []byte {
 	return bytes
 }
 
-// MakeEmbeddingCtx makes the embedding context.
+// makeEmbeddingCtx creates a context with callback run information for embedding operations.
+// This ensures proper tracing and logging of embedding calls within the indexer flow.
 func makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
 	runInfo := &callbacks.RunInfo{
 		Component: components.ComponentOfEmbedding,
