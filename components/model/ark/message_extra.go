@@ -157,7 +157,7 @@ func setContextID(msg *schema.Message, contextID string) {
 // Call this to mark those message caches as invalid.
 func InvalidateMessageCaches(messages []*schema.Message) error {
 	for _, msg := range messages {
-		expireAtSec, ok := getCacheExpiration(msg)
+		expireAtSec, ok := GetCacheExpiration(msg)
 		if !ok || expireAtSec <= 0 {
 			continue
 		}
@@ -194,9 +194,9 @@ func setResponseID(msg *schema.Message, responseID string) {
 	setMsgExtra(msg, keyOfResponseID, arkResponseID(responseID))
 }
 
-// getCacheExpiration returns the cache expiration time in seconds.
+// GetCacheExpiration returns the cache expiration time in seconds.
 // Only available for ResponsesAPI responses.
-func getCacheExpiration(msg *schema.Message) (expireAtSec int64, ok bool) {
+func GetCacheExpiration(msg *schema.Message) (expireAtSec int64, ok bool) {
 	expireAtSec_, ok := getMsgExtraValue[arkResponseCacheExpireAt](msg, keyOfResponseCacheExpireAt)
 	if ok {
 		return int64(expireAtSec_), true
@@ -248,7 +248,7 @@ func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 	return getFPS(part.Extra)
 }
 
-func setInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
+func SetInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
 	if part == nil {
 		return
 	}

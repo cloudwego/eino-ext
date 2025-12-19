@@ -3,12 +3,12 @@ module github.com/cloudwego/eino-ext/components/model/openai
 go 1.18
 
 require (
-	github.com/bytedance/mockey v1.2.14
+	github.com/bytedance/mockey v1.3.0
 	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.6.0
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.3
-	github.com/eino-contrib/jsonschema v1.0.2
-	github.com/meguminnnnnnnnn/go-openai v0.1.0
+	github.com/cloudwego/eino v0.7.11
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.10
+	github.com/eino-contrib/jsonschema v1.0.3
+	github.com/meguminnnnnnnnn/go-openai v0.1.1
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 )
 
@@ -20,6 +20,7 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

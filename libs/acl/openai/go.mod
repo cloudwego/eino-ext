@@ -3,11 +3,11 @@ module github.com/cloudwego/eino-ext/libs/acl/openai
 go 1.18
 
 require (
-	github.com/bytedance/mockey v1.2.13
-	github.com/cloudwego/eino v0.6.0
-	github.com/eino-contrib/jsonschema v1.0.2
-	github.com/meguminnnnnnnnn/go-openai v0.1.0 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
-	github.com/stretchr/testify v1.10.0
+	github.com/bytedance/mockey v1.3.0
+	github.com/cloudwego/eino v0.7.11
+	github.com/eino-contrib/jsonschema v1.0.3
+	github.com/meguminnnnnnnnn/go-openai v0.1.1 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
+	github.com/stretchr/testify v1.11.1
 )
 
 require (
@@ -20,6 +20,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

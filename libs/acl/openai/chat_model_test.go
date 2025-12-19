@@ -17,8 +17,13 @@
 package openai
 
 import (
+	"context"
+	"fmt"
+	"io"
 	"math/rand"
+	"reflect"
 	"testing"
+	"unsafe"
 
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/model"
@@ -26,6 +31,156 @@ import (
 	openai "github.com/meguminnnnnnnnn/go-openai"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestStream(t *testing.T) {
+	t.Run("stream applies RequestPayloadModifier", func(t *testing.T) {
+		// mock CreateChatCompletionStream to validate options carry payload modifier
+		defer mockey.Mock((*openai.Client).CreateChatCompletionStream).To(func(ctx context.Context,
+			request openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (response *openai.ChatCompletionStream, err error) {
+			assert.GreaterOrEqual(t, len(opts), 1)
+			return nil, fmt.Errorf("expected error to stop early")
+		}).Build().Patch().UnPatch()
+
+		c := &Client{config: &Config{Model: "test-model"}}
+		// initialize cli to a valid client; network won't be used due to mocking
+		conf := openai.DefaultConfig("dummy-key")
+		c.cli = openai.NewClientWithConfig(conf)
+
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+		_, err := c.Stream(t.Context(), in,
+			WithRequestPayloadModifier(func(ctx context.Context, msgs []*schema.Message, rawBody []byte) ([]byte, error) {
+				return rawBody, nil
+			}),
+		)
+		assert.Error(t, err)
+	})
+
+	t.Run("stream_with_ResponseChunkMessageModifier", func(t *testing.T) {
+
+		c := &Client{config: &Config{Model: "test-model"}}
+		conf := openai.DefaultConfig("dummy-key")
+		c.cli = openai.NewClientWithConfig(conf)
+
+		// prepare a fake stream and patch its methods
+		stream := &openai.ChatCompletionStream{}
+
+		defer mockey.Mock(mockey.GetMethod(c.cli, "CreateChatCompletionStream")).
+			To(func(ctx context.Context, req openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (
+				response *openai.ChatCompletionStream, err error) {
+				return stream, nil
+			}).Build().Patch().UnPatch()
+
+		innerStream := populateAndGetEmbeddedStreamReader(stream)
+		var call int
+		defer mockey.Mock(mockey.GetMethod(innerStream, "Recv")).
+			To(func() (openai.ChatCompletionStreamResponse, error) {
+				call++
+				if call == 1 {
+					return openai.ChatCompletionStreamResponse{
+						Choices: []openai.ChatCompletionStreamChoice{
+							{
+								Index: 0,
+								Delta: openai.ChatCompletionStreamChoiceDelta{Role: "assistant", Content: "hello"},
+							},
+						},
+						RawBody: []byte(`{"role":"assistant","content":"hello"}`),
+					}, nil
+				}
+				// final EOF with last raw body
+				return openai.ChatCompletionStreamResponse{RawBody: []byte("rawEOF")}, io.EOF
+			}).Build().Patch().UnPatch()
+		defer mockey.Mock(mockey.GetMethod(innerStream, "Close")).Return(nil).Build().Patch().UnPatch()
+
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+		var seenBodies []string
+		var seenEnds []bool
+		outStream, err := c.Stream(t.Context(), in,
+			WithResponseChunkMessageModifier(func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error) {
+				seenBodies = append(seenBodies, string(rawBody))
+				seenEnds = append(seenEnds, end)
+				if msg == nil {
+					return msg, nil
+				}
+				// reflect rawBody usage by appending its string form
+				msg.Content = msg.Content + "|mod|" + string(rawBody)
+				return msg, nil
+			}),
+		)
+		assert.NoError(t, err)
+		defer outStream.Close()
+
+		// read first message
+		msg, recvErr := outStream.Recv()
+		assert.NoError(t, recvErr)
+		assert.Equal(t, schema.Assistant, msg.Role)
+		assert.Equal(t, "hello|mod|{\"role\":\"assistant\",\"content\":\"hello\"}", msg.Content)
+		// next call should be EOF
+		_, recvErr = outStream.Recv()
+		assert.Equal(t, io.EOF, recvErr)
+		// verify rawBody captured for both the content frame and EOF frame
+		assert.Equal(t, 2, len(seenBodies))
+		assert.Equal(t, []bool{false, true}, seenEnds)
+		assert.Equal(t, "{\"role\":\"assistant\",\"content\":\"hello\"}", seenBodies[0])
+		// Some versions may not carry RawBody on EOF; accept empty
+		assert.True(t, seenBodies[1] == "rawEOF" || seenBodies[1] == "")
+	})
+}
+
+func TestGenerate(t *testing.T) {
+	t.Run("payload and response modifiers", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		conf := openai.DefaultConfig("dummy-key")
+		c.cli = openai.NewClientWithConfig(conf)
+
+		// Mock CreateChatCompletion to assert options and return a basic response
+		defer mockey.Mock((*openai.Client).CreateChatCompletion).To(func(ctx context.Context,
+			req openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (openai.ChatCompletionResponse, error) {
+			// expect at least one option due to RequestPayloadModifier
+			assert.GreaterOrEqual(t, len(opts), 1)
+			return openai.ChatCompletionResponse{
+				ID: "resp-id-123",
+				Choices: []openai.ChatCompletionChoice{
+					{
+						Index:   0,
+						Message: openai.ChatCompletionMessage{Role: "assistant", Content: "hello"},
+					},
+				},
+				RawBody: []byte(`{"role":"assistant","content":"hello"}`),
+				Usage: openai.Usage{
+					PromptTokens: 10,
+					CompletionTokensDetails: &openai.CompletionTokensDetails{
+						ReasoningTokens: 10,
+					},
+				},
+			}, nil
+		}).Build().UnPatch()
+
+		in := []*schema.Message{{Role: schema.User, Content: "hi"}}
+
+		outMsg, err := c.Generate(t.Context(), in,
+			WithRequestPayloadModifier(func(ctx context.Context, msgs []*schema.Message, rawBody []byte) ([]byte, error) {
+				// keep raw body unchanged for simplicity; presence is asserted via len(opts)
+				return rawBody, nil
+			}),
+			WithResponseMessageModifier(func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error) {
+				// append marker and raw body to verify usage
+				return &schema.Message{
+					Role:         msg.Role,
+					Name:         msg.Name,
+					Content:      msg.Content + "|mod|" + string(rawBody),
+					ToolCallID:   msg.ToolCallID,
+					ToolCalls:    msg.ToolCalls,
+					ResponseMeta: msg.ResponseMeta,
+				}, nil
+			}),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, outMsg)
+		assert.Equal(t, schema.Assistant, outMsg.Role)
+		assert.Equal(t, 10, outMsg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
+		assert.Equal(t, "hello|mod|{\"role\":\"assistant\",\"content\":\"hello\"}", outMsg.Content)
+	})
+}
 
 func TestToXXXUtils(t *testing.T) {
 	t.Run("toOpenAIMultiContent", func(t *testing.T) {
@@ -163,28 +318,6 @@ func TestLogProbs(t *testing.T) {
 			},
 		},
 	}}))
-}
-
-func TestClientGetChatCompletionRequestOptions(t *testing.T) {
-	cli := &Client{
-		config: &Config{},
-	}
-
-	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
-		WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
-			return rawBody, nil
-		}),
-	}), 1)
-}
-
-func TestClientWithExtraHeader(t *testing.T) {
-	cli := &Client{
-		config: &Config{},
-	}
-
-	assert.Len(t, cli.getChatCompletionRequestOptions([]model.Option{
-		WithExtraHeader(map[string]string{"test": "test"}),
-	}), 1)
 }
 
 func TestToTools(t *testing.T) {
@@ -535,4 +668,175 @@ func Test_streamMessageBuilder_build(t *testing.T) {
 	assert.Equal(t, schema.Assistant, msg.Role)
 	assert.Equal(t, "hello", msg.Content)
 	assert.Len(t, msg.AssistantGenMultiContent, 1)
+}
+
+func Test_genRequest(t *testing.T) {
+	t.Run("basic request", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+
+		req, cbInput, reqOpts, spec, err := c.genRequest(t.Context(), in)
+		assert.NoError(t, err)
+		assert.NotNil(t, req)
+		assert.NotNil(t, cbInput)
+		assert.NotNil(t, spec)
+		assert.Equal(t, "test-model", req.Model)
+		assert.Equal(t, 1, len(req.Messages))
+		assert.Equal(t, "hello", req.Messages[0].Content)
+		assert.Equal(t, "test-model", cbInput.Config.Model)
+		assert.Equal(t, in, cbInput.Messages)
+		assert.Len(t, reqOpts, 0)
+	})
+
+	t.Run("multi-content conflict error", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{
+			Role:                     schema.User,
+			UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "hi"}},
+			AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "out"}},
+		}}
+
+		_, _, _, _, err := c.genRequest(t.Context(), in)
+		assert.Error(t, err)
+	})
+
+	t.Run("payload modifier and extra header options", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+
+		opts := []model.Option{
+			WithRequestPayloadModifier(func(ctx context.Context, msgs []*schema.Message, rawBody []byte) ([]byte, error) {
+				return rawBody, nil
+			}),
+			WithExtraHeader(map[string]string{"x-test": "y"}),
+		}
+
+		_, _, reqOpts, _, err := c.genRequest(t.Context(), in, opts...)
+		assert.NoError(t, err)
+		assert.Len(t, reqOpts, 2)
+	})
+
+	t.Run("forced tool choice without tools returns error", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		tc := schema.ToolChoiceForced
+		c.toolChoice = &tc
+
+		_, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.Error(t, err)
+	})
+
+	t.Run("forced tool choice with multiple tools becomes required", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		tools := []*schema.ToolInfo{
+			{
+				Name: "tool1",
+				Desc: "desc1",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"param": {Type: schema.String, Required: true},
+				}),
+			},
+			{
+				Name: "tool2",
+				Desc: "desc2",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"param": {Type: schema.String, Required: true},
+				}),
+			},
+		}
+		assert.NoError(t, c.BindForcedTools(tools))
+
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(req.Tools))
+		// tool choice should be "required" when multiple tools are bound and forced
+		if v, ok := any(req.ToolChoice).(string); ok {
+			assert.Equal(t, toolChoiceRequired, v)
+		} else {
+			t.Fatalf("expected toolChoice to be string 'required', got %T", req.ToolChoice)
+		}
+	})
+
+	t.Run("modalities audio requires audio config", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model", Modalities: []Modality{AudioModality}}}
+		_, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.Error(t, err)
+	})
+
+	t.Run("modalities audio with config populates extra fields", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model", Modalities: []Modality{AudioModality}, Audio: &Audio{Format: "mp3", Voice: "alloy"}}}
+		_, _, _, spec, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.NoError(t, err)
+		assert.NotNil(t, spec.ExtraFields)
+		// Expect modalities and audio to be present in ExtraFields
+		_, okMod := spec.ExtraFields["modalities"]
+		_, okAudio := spec.ExtraFields["audio"]
+		assert.True(t, okMod)
+		assert.True(t, okAudio)
+	})
+
+	t.Run("response format mapping", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model", ResponseFormat: &ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText}}}
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.NoError(t, err)
+		assert.NotNil(t, req.ResponseFormat)
+		assert.Equal(t, ChatCompletionResponseFormatTypeText, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
+	})
+
+	t.Run("request payload modifier wiring", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+		opts := []model.Option{
+			WithRequestPayloadModifier(func(ctx context.Context, msgs []*schema.Message, rawBody []byte) ([]byte, error) {
+				return append(rawBody, []byte("x")...), nil
+			}),
+		}
+		_, _, reqOpts, spec, err := c.genRequest(t.Context(), in, opts...)
+		assert.NoError(t, err)
+		assert.Len(t, reqOpts, 1)
+		if assert.NotNil(t, spec.RequestPayloadModifier) {
+			out, mErr := spec.RequestPayloadModifier(t.Context(), in, []byte("body"))
+			assert.NoError(t, mErr)
+			assert.Equal(t, []byte("bodyx"), out)
+		}
+	})
+
+	t.Run("response message modifier wiring", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+		opts := []model.Option{
+			WithResponseMessageModifier(func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error) {
+				return &schema.Message{
+					Role:         msg.Role,
+					Name:         msg.Name,
+					Content:      msg.Content + "|mod",
+					ToolCallID:   msg.ToolCallID,
+					ToolCalls:    msg.ToolCalls,
+					ResponseMeta: msg.ResponseMeta,
+				}, nil
+			}),
+		}
+		_, _, _, spec, err := c.genRequest(t.Context(), in, opts...)
+		assert.NoError(t, err)
+		if assert.NotNil(t, spec.ResponseMessageModifier) {
+			outMsg, mErr := spec.ResponseMessageModifier(t.Context(), &schema.Message{Role: schema.Assistant, Content: "resp"}, []byte("raw"))
+			assert.NoError(t, mErr)
+			assert.Equal(t, "resp|mod", outMsg.Content)
+			assert.Equal(t, schema.Assistant, outMsg.Role)
+		}
+	})
+}
+
+func populateAndGetEmbeddedStreamReader(stream *openai.ChatCompletionStream) any {
+	v := reflect.ValueOf(stream).Elem()
+	f := v.Field(0) // embedded *streamReader[ChatCompletionStreamResponse]
+	t := f.Type()   // pointer type
+
+	// allocate zero streamReader[T]
+	newReaderPtr := reflect.New(t.Elem()) // *streamReader[T]
+
+	// unsafe set unexported embedded pointer field
+	// reflect.Value.Set on unexported fields will panic; use NewAt with UnsafeAddr to bypass
+	p := unsafe.Pointer(f.UnsafeAddr())
+	reflect.NewAt(t, p).Elem().Set(newReaderPtr)
+	return newReaderPtr.Interface()
 }

@@ -37,10 +37,11 @@ var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
 
 var (
 	// all default values are from github.com/volcengine/volcengine-go-sdk/service/arkruntime/config.go
-	defaultBaseURL    = "https://ark.cn-beijing.volces.com/api/v3"
-	defaultRegion     = "cn-beijing"
-	defaultRetryTimes = 2
-	defaultTimeout    = 10 * time.Minute
+	defaultBaseURL          = "https://ark.cn-beijing.volces.com/api/v3"
+	defaultRegion           = "cn-beijing"
+	defaultRetryTimes       = 2
+	defaultTimeout          = 10 * time.Minute
+	defaultBatchMaxParallel = 3000
 )
 
 var (
@@ -86,9 +87,17 @@ type ChatModelConfig struct {
 	// Required
 	Model string `json:"model"`
 
-	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion.
-	// Optional. Default: 4096
+	// MaxTokens limits the maximum number of output tokens in the Chat Completion API. See https://www.volcengine.com/docs/82379/1494384.
+	// In Responses API, corresponds to `max_output_tokens`, representing both the model output and reasoning output. See https://www.volcengine.com/docs/82379/1569618.
+	// Optional. In chat completion, default: 4096, in Responses API, no default.
 	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// MaxCompletionTokens specifies the maximum tokens in the Chat Completion API,
+	// representing both the model output and reasoning output. See https://www.volcengine.com/docs/82379/1569618.
+	// Range: 0 to 65,536 tokens. Exceeding the maximum threshold will result in an error.
+	// Note: In chat completion, MaxCompletionTokens and MaxTokens cannot both be set, in Responses API, this field is ignored; use MaxTokens.
+	// Optional.
+	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
 
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both
@@ -143,7 +152,27 @@ type ChatModelConfig struct {
 	// Optional.
 	ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
 
+	// BatchChat ark batch chat config
+	// Optional.
+	BatchChat *BatchChatConfig `json:"batch_chat,omitempty"`
+
 	Cache *CacheConfig `json:"cache,omitempty"`
+}
+
+type BatchChatConfig struct {
+	// EnableBatchChat specifies whether to use the batch chat completion API. Only applies to non-streaming scenarios.
+	// For authentication details, see: https://www.volcengine.com/docs/82379/1399517?lang=en#01826852
+	EnableBatchChat bool `json:"enable_batch_chat,omitempty"`
+
+	// BatchChatTimeout specifies the timeout for the batch chat completion API. When using batch chat model must set a timeout period.
+	// Model will keep retrying until the timeout or the execution succeeds. It is using context timeout to implement the retry time limit.
+	// Attention: BatchChatAsyncRetryTimeout is different from the http client timeout which controls the timeout for a single HTTP request.
+	// Required. Recommend to set a longer timeout period.
+	BatchChatAsyncRetryTimeout time.Duration `json:"batch_chat_async_retry_timeout,omitempty"`
+
+	// BatchMaxParallel specifies the maximum number of parallel requests to send to the chat completion API.
+	// Optional. Default: 3000.
+	BatchMaxParallel *int `json:"batch_max_parallel,omitempty"`
 }
 
 type CacheConfig struct {
@@ -167,7 +196,10 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 		config = &ChatModelConfig{}
 	}
 
-	chatModel := buildChatCompletionAPIChatModel(config)
+	chatModel, err := buildChatCompletionAPIChatModel(config)
+	if err != nil {
+		return nil, err
+	}
 
 	respChatModel, err := buildResponsesAPIChatModel(config)
 	if err != nil {
@@ -180,7 +212,7 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	}, nil
 }
 
-func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChatModel {
+func buildChatCompletionAPIChatModel(config *ChatModelConfig) (*completionAPIChatModel, error) {
 	baseURL := defaultBaseURL
 	if config.BaseURL != "" {
 		baseURL = config.BaseURL
@@ -204,6 +236,7 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		arkruntime.WithRegion(region),
 		arkruntime.WithTimeout(timeout),
 	}
+
 	if config.HTTPClient != nil {
 		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
 	}
@@ -215,27 +248,40 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) *completionAPIChat
 		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
 	}
 
-	cm := &completionAPIChatModel{
-		client:           client,
-		model:            config.Model,
-		maxTokens:        config.MaxTokens,
-		temperature:      config.Temperature,
-		topP:             config.TopP,
-		stop:             config.Stop,
-		frequencyPenalty: config.FrequencyPenalty,
-		logitBias:        config.LogitBias,
-		presencePenalty:  config.PresencePenalty,
-		customHeader:     config.CustomHeader,
-		logProbs:         config.LogProbs,
-		topLogProbs:      config.TopLogProbs,
-		responseFormat:   config.ResponseFormat,
-		thinking:         config.Thinking,
-		cache:            config.Cache,
-		serviceTier:      config.ServiceTier,
-		reasoningEffort:  config.ReasoningEffort,
+	if config.BatchChat != nil && config.BatchChat.EnableBatchChat {
+		if config.BatchChat.BatchChatAsyncRetryTimeout == 0 {
+			return nil, errors.New("batch chat timeout must be set when enable batch chat")
+		}
+		batchMaxParallel := defaultBatchMaxParallel
+		if config.BatchChat.BatchMaxParallel != nil {
+			batchMaxParallel = *config.BatchChat.BatchMaxParallel
+		}
+		opts = append(opts, arkruntime.WithBatchMaxParallel(batchMaxParallel))
 	}
 
-	return cm
+	cm := &completionAPIChatModel{
+		client:              client,
+		model:               config.Model,
+		maxTokens:           config.MaxTokens,
+		maxCompletionTokens: config.MaxCompletionTokens,
+		temperature:         config.Temperature,
+		topP:                config.TopP,
+		stop:                config.Stop,
+		frequencyPenalty:    config.FrequencyPenalty,
+		logitBias:           config.LogitBias,
+		presencePenalty:     config.PresencePenalty,
+		customHeader:        config.CustomHeader,
+		logProbs:            config.LogProbs,
+		topLogProbs:         config.TopLogProbs,
+		responseFormat:      config.ResponseFormat,
+		thinking:            config.Thinking,
+		cache:               config.Cache,
+		serviceTier:         config.ServiceTier,
+		reasoningEffort:     config.ReasoningEffort,
+		batchChat:           config.BatchChat,
+	}
+
+	return cm, nil
 }
 
 func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel, error) {
@@ -577,7 +623,7 @@ func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*sc
 	}
 
 	return &CacheInfo{
-		ResponseID: resp.ID,
+		ContextID: resp.ID,
 		Usage: schema.TokenUsage{
 			PromptTokens: resp.Usage.PromptTokens,
 			PromptTokenDetails: schema.PromptTokenDetails{
