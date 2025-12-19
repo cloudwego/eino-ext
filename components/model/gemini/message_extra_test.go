@@ -18,6 +18,7 @@ package gemini
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -179,5 +180,184 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 
 		retrieved := getToolCallThoughtSignature(&restored)
 		assert.Equal(t, signature, retrieved)
+	})
+}
+
+func TestSetPartSequenceByConvCandidate(t *testing.T) {
+	c := &ChatModel{}
+
+	t.Run("test generate", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Parts: []*genai.Part{
+					{
+						Text:    "mock thought",
+						Thought: true,
+					},
+					{
+						Text:    "mock text",
+						Thought: false,
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							ID: "1234",
+							Args: map[string]any{
+								"param": "value",
+							},
+							Name: "test_tool",
+						},
+					},
+					{
+						CodeExecutionResult: &genai.CodeExecutionResult{
+							Output: "mock code execution result",
+						},
+					},
+					{
+						ExecutableCode: &genai.ExecutableCode{
+							Code: "mock executable code",
+						},
+					},
+					{
+						InlineData: &genai.Blob{
+							Data:     []byte("mock blob data"),
+							MIMEType: "image/jpeg",
+						},
+					},
+				},
+				Role: "assistant",
+			},
+		}
+
+		msg, err := c.convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, msg.Extra)
+		v, ok := msg.Extra[partTypeKey].(geminiPartType)
+		assert.True(t, ok)
+		exp := []string{
+			string(partTypeThoughtText),
+			string(partTypeText),
+			string(partTypeFunctionCall),
+			string(partTypeCodeExecutionResult),
+			string(partTypeExecutableCode),
+			string(partTypeInlineData),
+		}
+		assert.Equal(t, geminiPartType(strings.Join(exp, ",")), v)
+	})
+
+	t.Run("test stream", func(t *testing.T) {
+		parts := []*genai.Part{
+			{
+				Text:    "mock thought 1",
+				Thought: true,
+			},
+			{
+				Text:    "mock thought 2",
+				Thought: true,
+			},
+			{
+				Text:    "mock text 1",
+				Thought: false,
+			},
+			{
+				Text:    "mock text 2",
+				Thought: false,
+			},
+			{
+				FunctionCall: &genai.FunctionCall{
+					ID: "1234",
+					Args: map[string]any{
+						"param": "value",
+					},
+					Name: "test_tool",
+				},
+			},
+			{
+				CodeExecutionResult: &genai.CodeExecutionResult{
+					Output: "mock code execution result",
+				},
+			},
+			{
+				ExecutableCode: &genai.ExecutableCode{
+					Code: "mock executable code",
+				},
+			},
+			{
+				InlineData: &genai.Blob{
+					Data:     []byte("mock blob data"),
+					MIMEType: "image/jpeg",
+				},
+			},
+		}
+		var chunks []*schema.Message
+		for i := range parts {
+			candidate := &genai.Candidate{
+				Content: &genai.Content{
+					Parts: []*genai.Part{parts[i]},
+					Role:  "assistant",
+				},
+			}
+			msg, err := c.convCandidate(candidate)
+			assert.NoError(t, err)
+			chunks = append(chunks, msg)
+		}
+		msg, err := schema.ConcatMessages(chunks)
+		assert.NoError(t, err)
+		assert.NotNil(t, msg.Extra)
+		v, ok := msg.Extra[partTypeKey].(geminiPartType)
+		assert.True(t, ok)
+		exp := []string{
+			string(partTypeThoughtText),
+			string(partTypeText),
+			string(partTypeFunctionCall),
+			string(partTypeCodeExecutionResult),
+			string(partTypeExecutableCode),
+			string(partTypeInlineData),
+		}
+		assert.Equal(t, geminiPartType(strings.Join(exp, ",")), v)
+	})
+}
+
+func TestSortByPartSequence(t *testing.T) {
+	c := &ChatModel{}
+	_ = c
+
+	t.Run("test valid extra", func(t *testing.T) {
+		exp := []string{
+			string(partTypeThoughtText),
+			string(partTypeText),
+			string(partTypeCodeExecutionResult),
+			string(partTypeExecutableCode),
+			string(partTypeInlineData),
+			string(partTypeFunctionCall),
+		}
+
+		msg := &schema.Message{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "mock text",
+				},
+			},
+			Name:             "",
+			ToolCalls:        nil,
+			ToolCallID:       "",
+			ToolName:         "",
+			ResponseMeta:     nil,
+			ReasoningContent: "mock thought",
+			Extra: map[string]any{
+				partTypeKey: geminiPartType(strings.Join(exp, ",")),
+			},
+		}
+
+		_ = msg
+	})
+
+	t.Run("test extra key not found", func(t *testing.T) {
+
+	})
+
+	t.Run("test length not aligned", func(t *testing.T) {
+
 	})
 }

@@ -18,7 +18,10 @@ package gemini
 
 import (
 	"encoding/base64"
+	"fmt"
+	"strings"
 
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 )
@@ -26,7 +29,41 @@ import (
 const (
 	videoMetaDataKey    = "gemini_video_meta_data"
 	thoughtSignatureKey = "gemini_thought_signature"
+	partTypeKey         = "gemini_part_type"
 )
+
+type geminiPartType string
+
+const (
+	partTypeThoughtText         geminiPartType = "thought"
+	partTypeText                geminiPartType = "text"
+	partTypeInlineData          geminiPartType = "inline_data"
+	partTypeFunctionCall        geminiPartType = "function_call"
+	partTypeCodeExecutionResult geminiPartType = "code_execution_result"
+	partTypeExecutableCode      geminiPartType = "executable_code"
+)
+
+func init() {
+	compose.RegisterStreamChunkConcatFunc(func(types []geminiPartType) (geminiPartType, error) {
+		set := make(map[geminiPartType]struct{})
+		var ss []string
+		i := 0
+		for i < len(types) {
+			t := types[i]
+			if _, found := set[t]; found { // unexpected duplicated, skip
+				return "", nil
+			}
+			j := i + 1
+			for j < len(types) && t == types[j] {
+				j++
+			}
+			set[t] = struct{}{}
+			ss = append(ss, string(t))
+			i = j
+		}
+		return geminiPartType(strings.Join(ss, ",")), nil
+	})
+}
 
 // Deprecated: use SetInputVideoMetaData or SetOutputVideoMetaData instead.
 func SetVideoMetaData(part *schema.ChatMessageVideoURL, metaData *genai.VideoMetadata) {
@@ -163,4 +200,63 @@ func getToolCallThoughtSignature(toolCall *schema.ToolCall) []byte {
 		return nil
 	}
 	return getThoughtSignatureFromExtra(toolCall.Extra)
+}
+
+func setPartType(extra map[string]any, typ geminiPartType) {
+	if extra == nil {
+		return
+	}
+	if cur, found := extra[partTypeKey]; !found {
+		extra[partTypeKey] = typ
+	} else {
+		extra[partTypeKey] = geminiPartType(fmt.Sprintf("%v,%v", cur, typ))
+	}
+}
+
+func sortPartsBySequence(msg *schema.Message, parts []*genai.Part) (sorted []*genai.Part) {
+	if msg == nil || msg.Role != schema.Assistant || msg.Extra == nil {
+		return parts
+	}
+	raw, ok := msg.Extra[partTypeKey].(geminiPartType)
+	if !ok {
+		return parts
+	}
+	if raw == "" {
+		return parts
+	}
+	split := strings.Split(string(raw), ",")
+	if len(split) != len(parts) {
+		return parts
+	}
+	after := make([]*genai.Part, len(parts))
+	for i := range parts {
+		after[i] = parts[i]
+	}
+	find := func(i int, t geminiPartType) (int, bool) {
+		for i < len(after) {
+			part := after[i]
+			if (t == partTypeThoughtText && part.Thought == true) ||
+				(t == partTypeText && part.Text != "") ||
+				(t == partTypeInlineData && part.InlineData != nil && part.InlineData.Data != nil) ||
+				(t == partTypeFunctionCall && part.FunctionCall != nil) ||
+				(t == partTypeCodeExecutionResult && part.CodeExecutionResult != nil) ||
+				(t == partTypeExecutableCode && part.ExecutableCode != nil) {
+				return i, true
+			}
+		}
+		return -1, false
+	}
+
+	for i, t := range split {
+		j, found := find(i, geminiPartType(t))
+		if !found {
+			// return original parts
+			return parts
+		}
+		v := after[i]
+		after[i] = after[j]
+		after[j] = v
+	}
+
+	return after
 }

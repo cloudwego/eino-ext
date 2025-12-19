@@ -644,6 +644,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			return nil, err
 		}
 		content.Parts = append(content.Parts, parts...)
+		content.Parts = sortPartsBySequence(message, content.Parts) // try sort by sequence in extra
 		return content, nil
 	}
 	if message.Content != "" {
@@ -937,7 +938,7 @@ func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.
 }
 
 func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
-	result := &schema.Message{}
+	result := &schema.Message{Extra: make(map[string]any)}
 	result.ResponseMeta = &schema.ResponseMeta{
 		FinishReason: string(candidate.FinishReason),
 	}
@@ -967,6 +968,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 
 			if part.Thought {
 				result.ReasoningContent = part.Text
+				setPartType(result.Extra, partTypeThoughtText)
 			} else if len(part.Text) > 0 {
 				texts = append(texts, part.Text)
 				contentBuilder.WriteString(part.Text)
@@ -974,6 +976,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.Text,
 				})
+				setPartType(result.Extra, partTypeText)
 			}
 			if part.FunctionCall != nil {
 				fc, err := convFC(part)
@@ -987,6 +990,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 					setToolCallThoughtSignature(fc, part.ThoughtSignature)
 				}
 				result.ToolCalls = append(result.ToolCalls, *fc)
+				setPartType(result.Extra, partTypeFunctionCall)
 			}
 			if part.CodeExecutionResult != nil {
 				texts = append(texts, part.CodeExecutionResult.Output)
@@ -994,6 +998,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.CodeExecutionResult.Output,
 				})
+				setPartType(result.Extra, partTypeCodeExecutionResult)
 			}
 			if part.ExecutableCode != nil {
 				texts = append(texts, part.ExecutableCode.Code)
@@ -1001,6 +1006,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.ExecutableCode.Code,
 				})
+				setPartType(result.Extra, partTypeExecutableCode)
 			}
 			if part.InlineData != nil && part.InlineData.Data != nil {
 				outPart, err := toMultiOutPart(part)
@@ -1008,6 +1014,7 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 					return nil, err
 				}
 				outParts = append(outParts, outPart)
+				setPartType(result.Extra, partTypeInlineData)
 			}
 		}
 		result.Content = contentBuilder.String()
