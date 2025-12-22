@@ -105,10 +105,10 @@ func NewEmbeddingClient(ctx context.Context, config *EmbeddingConfig) (*Embeddin
 		}
 	}
 
-	clientConf.HTTPClient = config.HTTPClient
-	if clientConf.HTTPClient == nil {
-		clientConf.HTTPClient = http.DefaultClient
+	if config.HTTPClient == nil {
+		config.HTTPClient = http.DefaultClient
 	}
+	clientConf.HTTPClient = config.HTTPClient
 
 	return &EmbeddingClient{
 		cli:    openai.NewClientWithConfig(clientConf),
