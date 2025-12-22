@@ -1030,3 +1030,11 @@ func TestCreatePrefixCache(t *testing.T) {
 		assert.Len(t, generateConf.Tools, 0)
 	})
 }
+
+func TestChatModel_convSchemaMessage(t *testing.T) {
+	cm := &ChatModel{}
+	content, err := cm.convSchemaMessage(&schema.Message{Role: schema.System, Content: "sys"})
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(content.Parts))
+
+}
