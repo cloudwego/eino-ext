@@ -2,15 +2,14 @@
 
 English | [简体中文](README_zh.md)
 
-An Milvus 2.x indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer`
-interface. This enables seamless integration
-with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
+A Milvus 2.x indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer`
+interface. This enables seamless integration with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
 ## Quick Start
 
 ### Installation
 
-It requires the milvus-sdk-go client of version 2.4.x
+Requires milvus-sdk-go version 2.4.x:
 
 ```bash
 go get github.com/milvus-io/milvus-sdk-go/v2@2.4.2
@@ -74,7 +73,7 @@ func main() {
 		log.Fatalf("Failed to create indexer: %v", err)
 		return
 	}
-	log.Printf("Indexer created success")
+	log.Printf("Indexer created successfully")
 	
 	// Store documents
 	docs := []*schema.Document{
@@ -168,7 +167,7 @@ type IndexerConfig struct {
 
 ## IndexBuilder
 
-Flexible index type selection with `IndexBuilder` interface. Choose the right index for your use case:
+The `IndexBuilder` interface provides flexible index type selection. Choose the right index for your use case:
 
 | Index Type | Best For | Trade-off |
 |------------|----------|----------|

@@ -2,14 +2,13 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
-基于 Milvus 2.x 的向量搜索实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Retriever` 接口的存储方案。该组件可无缝集成
-Eino 的向量存储和检索系统，增强语义搜索能力。
+基于 Milvus 2.x 的向量搜索实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Retriever` 接口的检索方案。该组件可无缝集成 Eino 的向量存储和检索系统，增强语义搜索能力。
 
 ## 快速开始
 
 ### 安装
 
-它需要 milvus-sdk-go 客户端版本 2.4.x
+需要 milvus-sdk-go 版本 2.4.x：
 
 ```bash
 go get github.com/milvus-io/milvus-sdk-go/v2@2.4.2

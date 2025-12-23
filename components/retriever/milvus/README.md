@@ -2,9 +2,8 @@
 
 English | [简体中文](README_zh.md)
 
-An Milvus 2.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever`
-interface. This enables seamless integration
-with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
+A Milvus 2.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever`
+interface. This enables seamless integration with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
 ## Quick Start
 
@@ -159,7 +158,7 @@ type RetrieverConfig struct {
 
 ## SearchMode
 
-Flexible search configuration with `SearchMode` interface. Match your search mode with your index type:
+The `SearchMode` interface provides flexible search configuration. Match your search mode with your index type:
 
 | SearchMode | Index Type | Key Parameter |
 |------------|------------|---------------|
