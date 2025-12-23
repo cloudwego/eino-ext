@@ -81,6 +81,8 @@ func main() {
 			RRF:             false,
 			RRFRankConstant: nil,
 			RRFWindowSize:   nil,
+			K:               of(10),
+			NumCandidates:   of(100),
 		}),
 		ResultParser: func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error) {
 			doc = &schema.Document{
@@ -101,7 +103,7 @@ func main() {
 
 				case fieldContentVector:
 					var v []float64
-					for _, item := range val.([]interface{}) {
+					for _, item := range val.([]any) {
 						v = append(v, item.(float64))
 					}
 					doc.WithDenseVector(v)
