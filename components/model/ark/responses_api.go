@@ -323,7 +323,7 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		return nil, err
 	}
 
-	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
+	err = cm.populateTools(responseReq, options)
 	if err != nil {
 		return nil, err
 	}
@@ -497,39 +497,24 @@ func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 	return nil
 }
 
-func (cm *responsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, optTools []*schema.ToolInfo, toolChoice *schema.ToolChoice) error {
+func (cm *responsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options) error {
 	if responseReq.PreviousResponseId != nil {
 		return nil
 	}
 	tools := cm.tools
-	if optTools != nil {
+	if options.Tools != nil {
 		var err error
-		if tools, err = cm.toTools(optTools); err != nil {
+		if tools, err = cm.toTools(options.Tools); err != nil {
 			return err
 		}
 	}
+	responseReq.Tools = tools
 
-	if toolChoice != nil {
-		var mode responses.ToolChoiceMode_Enum
-		switch *toolChoice {
-		case schema.ToolChoiceForbidden:
-			mode = responses.ToolChoiceMode_none
-		case schema.ToolChoiceAllowed:
-			mode = responses.ToolChoiceMode_auto
-		case schema.ToolChoiceForced:
-			mode = responses.ToolChoiceMode_required
-		default:
-			mode = responses.ToolChoiceMode_auto
-		}
-		responseReq.ToolChoice = &responses.ResponsesToolChoice{
-			Union: &responses.ResponsesToolChoice_Mode{
-				Mode: mode,
-			},
-		}
-
+	err := populateResponseAPIToolChoice(responseReq, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return err
 	}
 
-	responseReq.Tools = tools
 	return nil
 }
 
@@ -1311,6 +1296,75 @@ func toContentItemImageDetail(cImage *responses.ContentItemImage, detail schema.
 	return nil
 }
 
+func populateResponseAPIToolChoice(responseReq *responses.ResponsesRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+
+	if tc == nil {
+		return nil
+	}
+
+	var mode responses.ToolChoiceMode_Enum
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		mode = responses.ToolChoiceMode_none
+	case schema.ToolChoiceAllowed:
+		mode = responses.ToolChoiceMode_auto
+	case schema.ToolChoiceForced:
+		mode = responses.ToolChoiceMode_required
+	default:
+		mode = responses.ToolChoiceMode_auto
+	}
+
+	if mode == responses.ToolChoiceMode_required && len(responseReq.Tools) == 0 {
+		return fmt.Errorf("tool_choice is forced but no tools are provided")
+	}
+
+	if mode == responses.ToolChoiceMode_required {
+		var onlyOneToolName string
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(responseReq.Tools))
+			for _, t := range responseReq.Tools {
+				if t.GetToolFunction() != nil {
+					toolsMap[t.GetToolFunction().Name] = true
+				}
+			}
+
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+
+			onlyOneToolName = allowedToolName
+		} else if len(responseReq.Tools) == 1 && responseReq.Tools[0].GetToolFunction() != nil {
+			onlyOneToolName = responseReq.Tools[0].GetToolFunction().GetName()
+		}
+
+		if onlyOneToolName != "" {
+			responseReq.ToolChoice = &responses.ResponsesToolChoice{
+				Union: &responses.ResponsesToolChoice_FunctionToolChoice{
+					FunctionToolChoice: &responses.FunctionToolChoice{
+						Type: responses.ToolType_function,
+						Name: onlyOneToolName,
+					},
+				},
+			}
+			return nil
+		}
+	}
+
+	responseReq.ToolChoice = &responses.ResponsesToolChoice{
+		Union: &responses.ResponsesToolChoice_Mode{
+			Mode: mode,
+		},
+	}
+
+	return nil
+
+}
+
 func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Context, prefix []*schema.Message, ttl int, opts ...model.Option) (info *CacheInfo, err error) {
 	responseReq := &responses.ResponsesRequest{
 		Model:    cm.model,
@@ -1336,7 +1390,7 @@ func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Cont
 		return nil, err
 	}
 
-	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
+	err = cm.populateTools(responseReq, options)
 	if err != nil {
 		return nil, err
 	}
