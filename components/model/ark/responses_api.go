@@ -469,6 +469,9 @@ func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Tool:
+			if len(msg.UserInputMultiContent) > 0 {
+				return fmt.Errorf("ark response api doesn't support multi modal tool result")
+			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCallOutput{
 				FunctionToolCallOutput: &responses.ItemFunctionToolCallOutput{
 					Type:   responses.ItemType_function_call_output,

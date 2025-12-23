@@ -674,35 +674,43 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	}
 
 	if len(message.UserInputMultiContent) > 0 {
-		if message.Role != schema.User {
+		if message.Role != schema.User && message.Role != schema.Tool {
 			return mp, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
 		}
-		for i := range message.UserInputMultiContent {
-			switch message.UserInputMultiContent[i].Type {
-			case schema.ChatMessagePartTypeText:
-				messageParams = append(messageParams, anthropic.NewTextBlock(message.UserInputMultiContent[i].Text))
-			case schema.ChatMessagePartTypeImageURL:
-				if message.UserInputMultiContent[i].Image == nil {
-					return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
-				}
-				image := message.UserInputMultiContent[i].Image
-				if image.URL != nil && *image.URL != "" {
-					messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
-						URL: *image.URL,
-					}))
-				} else if image.Base64Data != nil && *image.Base64Data != "" {
-					if image.MIMEType == "" {
-						return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+		if message.Role == schema.Tool {
+			m, err := convToolMultiContent(message.ToolCallID, message.UserInputMultiContent)
+			if err != nil {
+				return mp, err
+			}
+			messageParams = append(messageParams, m)
+		} else {
+			for i := range message.UserInputMultiContent {
+				switch message.UserInputMultiContent[i].Type {
+				case schema.ChatMessagePartTypeText:
+					messageParams = append(messageParams, anthropic.NewTextBlock(message.UserInputMultiContent[i].Text))
+				case schema.ChatMessagePartTypeImageURL:
+					if message.UserInputMultiContent[i].Image == nil {
+						return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
 					}
-					if strings.HasPrefix(*image.Base64Data, "data:") {
-						return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+					image := message.UserInputMultiContent[i].Image
+					if image.URL != nil && *image.URL != "" {
+						messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+							URL: *image.URL,
+						}))
+					} else if image.Base64Data != nil && *image.Base64Data != "" {
+						if image.MIMEType == "" {
+							return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+						}
+						if strings.HasPrefix(*image.Base64Data, "data:") {
+							return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+						}
+						messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
+					} else {
+						return mp, fmt.Errorf("image part must have either a URL or Base64Data")
 					}
-					messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
-				} else {
-					return mp, fmt.Errorf("image part must have either a URL or Base64Data")
+				default:
+					return mp, fmt.Errorf("anthropic message type not supported: %s", message.UserInputMultiContent[i].Type)
 				}
-			default:
-				return mp, fmt.Errorf("anthropic message type not supported: %s", message.UserInputMultiContent[i].Type)
 			}
 		}
 	} else if len(message.AssistantGenMultiContent) > 0 {
@@ -739,7 +747,7 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		}
 
 	} else if len(message.Content) > 0 {
-		if len(message.ToolCallID) > 0 {
+		if message.Role == schema.Tool {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
@@ -795,13 +803,69 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	switch message.Role {
 	case schema.Assistant:
 		mp = anthropic.NewAssistantMessage(messageParams...)
-	case schema.User:
+	case schema.User, schema.Tool:
 		mp = anthropic.NewUserMessage(messageParams...)
 	default:
 		mp = anthropic.NewUserMessage(messageParams...)
 	}
 
 	return mp, nil
+}
+
+func convToolMultiContent(callID string, parts []schema.MessageInputPart) (anthropic.ContentBlockParamUnion, error) {
+	result := anthropic.ContentBlockParamUnion{OfToolResult: &anthropic.ToolResultBlockParam{
+		ToolUseID: callID,
+		IsError:   param.Opt[bool]{},
+		Content:   make([]anthropic.ToolResultBlockParamContentUnion, 0, len(parts)),
+	}}
+	for _, part := range parts {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+				OfText: &anthropic.TextBlockParam{
+					Text: part.Text,
+				},
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				return result, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+			}
+			image := part.Image
+			if image.URL != nil && *image.URL != "" {
+				result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+					OfImage: &anthropic.ImageBlockParam{
+						Source: anthropic.ImageBlockParamSourceUnion{
+							OfURL: &anthropic.URLImageSourceParam{
+								URL: *image.URL,
+							},
+						},
+					},
+				})
+			} else if image.Base64Data != nil && *image.Base64Data != "" {
+				if image.MIMEType == "" {
+					return result, fmt.Errorf("image part must have MIMEType when use Base64Data")
+				}
+				if strings.HasPrefix(*image.Base64Data, "data:") {
+					return result, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+				}
+				result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+					OfImage: &anthropic.ImageBlockParam{
+						Source: anthropic.ImageBlockParamSourceUnion{
+							OfBase64: &anthropic.Base64ImageSourceParam{
+								Data:      *image.Base64Data,
+								MediaType: anthropic.Base64ImageSourceMediaType(image.MIMEType),
+							},
+						},
+					},
+				})
+			} else {
+				return result, fmt.Errorf("image part must have either a URL or Base64Data")
+			}
+		default:
+			return result, fmt.Errorf("anthropic message type not supported: %s", part.Type)
+		}
+	}
+	return result, nil
 }
 
 func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion) {
