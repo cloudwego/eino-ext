@@ -66,14 +66,15 @@ func main() {
 	// Create a retriever with AUTOINDEX search mode
 	retriever, err := milvus.NewRetriever(ctx, &milvus.RetrieverConfig{
 		Client:     cli,
-		Collection: "eino_collection",
+		Collection: "auto_collection",
 		OutputFields: []string{
 			"id",
 			"content",
 		},
-		TopK:       5,
-		SearchMode: autoMode,
-		Embedding:  &mockEmbedding{},
+		TopK:            5,
+		SearchMode:      autoMode,
+		VectorConverter: floatVectorConverter,
+		Embedding:       &mockEmbedding{},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create retriever: %v", err)
@@ -117,4 +118,17 @@ func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts .
 		res = append(res, data.Embedding)
 	}
 	return res, nil
+}
+
+// floatVectorConverter converts float64 vectors to FloatVector
+func floatVectorConverter(ctx context.Context, vectors [][]float64) ([]entity.Vector, error) {
+	vec := make([]entity.Vector, 0, len(vectors))
+	for _, vector := range vectors {
+		vec32 := make([]float32, len(vector))
+		for i, v := range vector {
+			vec32[i] = float32(v)
+		}
+		vec = append(vec, entity.FloatVector(vec32))
+	}
+	return vec, nil
 }
