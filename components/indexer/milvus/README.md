@@ -106,6 +106,7 @@ func main() {
 ```go
 type IndexerConfig struct {
     // Client is the milvus client to be called
+    // It requires the milvus-sdk-go client of version 2.4.x
     // Required
     Client client.Client
 
@@ -120,9 +121,14 @@ type IndexerConfig struct {
     // Optional, and the default value is 1(disable)
     // If the partition number is larger than 1, it means use partition and must have a partition key in Fields
     PartitionNum int64
+    // PartitionName is the partition name in milvus database
+    // Optional, and the default value is ""
+    // If PartitionNum is larger than 1, it means use partition and not support manually specifying the partition names
+    // give priority to using WithPartition
+    PartitionName string
     // Fields is the collection fields
     // Optional, and the default value is the default fields
-    Fields       []*entity.Field
+    Fields []*entity.Field
     // SharedNum is the milvus required param to create collection
     // Optional, and the default value is 1
     SharedNum int32
@@ -139,14 +145,69 @@ type IndexerConfig struct {
     DocumentConverter func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error)
 
     // Index config to the vector column
-    // MetricType the metric type for vector
-    // Optional and default type is HAMMING
+    // MetricType is the metric type for vector similarity calculation.
+    // Optional; defaults to COSINE.
+    // Common values: L2 (Euclidean), IP (Inner Product), COSINE.
     MetricType MetricType
+
+    // IndexBuilder defines the index type and parameters for the vector field.
+    // Optional; if nil, AUTOINDEX will be used (recommended for most use cases).
+    // Use NewHNSWIndexBuilder, NewIvfFlatIndexBuilder, NewFlatIndexBuilder, or
+    // NewAutoIndexBuilder to create an IndexBuilder.
+    IndexBuilder IndexBuilder
+
+    // VectorFieldName is the name of the vector field to create index on.
+    // Optional; defaults to "vector".
+    VectorFieldName string
 
     // Embedding vectorization method for values needs to be embedded from schema.Document's content.
     // Required
     Embedding embedding.Embedder
 }
+```
+
+## IndexBuilder
+
+Flexible index type selection with `IndexBuilder` interface. Choose the right index for your use case:
+
+| Index Type | Best For | Trade-off |
+|------------|----------|----------|
+| `AUTOINDEX` | Most use cases | Milvus optimizes automatically (recommended) |
+| `HNSW` | High recall requirements | Higher memory usage, excellent search speed |
+| `IVF_FLAT` | Large datasets | Good balance of speed and accuracy |
+| `FLAT` | Small datasets, 100% recall needed | Slow for large datasets |
+
+**Usage Examples:**
+
+```go
+// AUTOINDEX (recommended for most cases)
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:     cli,
+    Collection: "my_collection",
+    MetricType: milvus.COSINE, // or milvus.L2, milvus.IP
+    Embedding:  emb,
+    // IndexBuilder defaults to AUTOINDEX when not specified
+})
+
+// HNSW - High performance graph-based index
+hnswBuilder, _ := milvus.NewHNSWIndexBuilder(16, 200) // M=16, efConstruction=200
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "hnsw_collection",
+    MetricType:   milvus.L2,
+    IndexBuilder: hnswBuilder,
+    Embedding:    emb,
+})
+
+// IVF_FLAT - Inverted file index for large-scale search
+ivfBuilder, _ := milvus.NewIvfFlatIndexBuilder(1024) // nlist=1024
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "ivf_collection",
+    MetricType:   milvus.COSINE,
+    IndexBuilder: ivfBuilder,
+    Embedding:    emb,
+})
 ```
 
 ## Default Collection Schema

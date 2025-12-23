@@ -13,7 +13,7 @@ Eino 的向量存储和检索系统，增强语义搜索能力。
 
 ```bash
 go get github.com/milvus-io/milvus-sdk-go/v2@2.4.2
-go get github.com/eino-project/eino/indexer/milvus@latest
+go get github.com/cloudwego/eino-ext/components/indexer/milvus@latest
 ```
 
 ### 创建 Milvus 存储
@@ -30,7 +30,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
 	
-	"github.com/cloudwego/eino-ext/components/retriever/milvus"
+	"github.com/cloudwego/eino-ext/components/indexer/milvus"
 )
 
 func main() {
@@ -105,9 +105,10 @@ func main() {
 ```go
 type IndexerConfig struct {
 	// Client 是要调用的 milvus 客户端
+	// 需要 milvus-sdk-go 客户端版本 2.4.x
 	// 必需
 	Client client.Client
-	
+
 	// 默认集合配置
 	// Collection 是 milvus 数据库中的集合名称
 	// 可选，默认值为 "eino_collection"
@@ -119,9 +120,14 @@ type IndexerConfig struct {
 	// 可选，默认值为 1（禁用）
 	// 如果分区数量大于 1，表示使用分区，并且必须在 Fields 中有一个分区键
 	PartitionNum int64
+	// PartitionName 是 milvus 数据库中的分区名称
+	// 可选，默认值为 ""
+	// 如果 PartitionNum 大于 1，表示使用分区键模式，不支持手动指定分区名称
+	// 优先使用 WithPartition
+	PartitionName string
 	// Fields 是集合字段
 	// 可选，默认值为默认字段
-	Fields       []*entity.Field
+	Fields []*entity.Field
 	// SharedNum 是创建集合所需的 milvus 参数
 	// 可选，默认值为 1
 	SharedNum int32
@@ -132,20 +138,75 @@ type IndexerConfig struct {
 	// 可选，默认值为 false
 	// 启用动态模式可能会影响 milvus 性能
 	EnableDynamicSchema bool
-	
+
 	// DocumentConverter 是将 schema.Document 转换为行数据的函数
 	// 可选，默认值为 defaultDocumentConverter
 	DocumentConverter func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error)
-	
+
 	// 向量列的索引配置
-	// MetricType 是向量的度量类型
-	// 可选，默认类型为 HAMMING
+	// MetricType 是向量相似度计算的度量类型（Metric Type）
+	// 可选，默认值为 COSINE
+	// 常用值: L2（欧几里得）、IP（内积）、COSINE（余弦相似度）
 	MetricType MetricType
-	
+
+	// IndexBuilder 定义向量字段的索引类型和参数
+	// 可选；如果为 nil，将使用 AUTOINDEX（推荐用于大多数场景）
+	// 使用 NewHNSWIndexBuilder、NewIvfFlatIndexBuilder、NewFlatIndexBuilder 或
+	// NewAutoIndexBuilder 创建 IndexBuilder
+	IndexBuilder IndexBuilder
+
+	// VectorFieldName 是要创建索引的向量字段名称
+	// 可选，默认值为 "vector"
+	VectorFieldName string
+
 	// Embedding 是从 schema.Document 的内容中嵌入值所需的向量化方法
 	// 必需
 	Embedding embedding.Embedder
 }
+```
+
+## IndexBuilder
+
+通过 `IndexBuilder` 接口灵活选择索引类型，根据您的使用场景选择合适的索引：
+
+| 索引类型 | 适用场景 | 权衡 |
+|----------|----------|------|
+| `AUTOINDEX` | 大多数场景 | Milvus 自动优化（推荐） |
+| `HNSW` | 高召回率需求 | 内存占用较高，搜索速度优秀 |
+| `IVF_FLAT` | 大规模数据集 | 速度与精度的良好平衡 |
+| `FLAT` | 小数据集，需要 100% 召回率 | 大数据集时较慢 |
+
+**使用示例：**
+
+```go
+// AUTOINDEX（推荐用于大多数场景）
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:     cli,
+    Collection: "my_collection",
+    MetricType: milvus.COSINE, // 或 milvus.L2, milvus.IP
+    Embedding:  emb,
+    // 未指定 IndexBuilder 时默认使用 AUTOINDEX
+})
+
+// HNSW - 高性能图索引
+hnswBuilder, _ := milvus.NewHNSWIndexBuilder(16, 200) // M=16, efConstruction=200
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "hnsw_collection",
+    MetricType:   milvus.L2,
+    IndexBuilder: hnswBuilder,
+    Embedding:    emb,
+})
+
+// IVF_FLAT - 倒排文件索引，用于大规模搜索
+ivfBuilder, _ := milvus.NewIvfFlatIndexBuilder(1024) // nlist=1024
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "ivf_collection",
+    MetricType:   milvus.COSINE,
+    IndexBuilder: ivfBuilder,
+    Embedding:    emb,
+})
 ```
 
 ## 默认数据模型
