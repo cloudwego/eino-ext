@@ -559,3 +559,155 @@ func Test_completionAPIChatModel_genRequest(t *testing.T) {
 	assert.Len(t, req.Messages, 1)
 	assert.Equal(t, *req.Messages[0].ReasoningContent, "keyOfReasoningContent")
 }
+
+func Test_populateCompletionAPIToolChoice(t *testing.T) {
+
+	convey.Convey("Test_populateCompletionAPIToolChoice", t, func() {
+		convey.Convey("no tool choice", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool choice forbidden", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForbidden),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceNone)
+		})
+
+		convey.Convey("tool choice allowed", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceAllowed),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceAuto)
+		})
+
+		convey.Convey("tool choice forced with one tool", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldResemble, model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: "test_tool",
+				},
+			})
+		})
+
+		convey.Convey("tool choice forced with one allowed tool name", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+					{
+						Function: &model.FunctionDefinition{
+							Name: "another_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"test_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldResemble, model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: "test_tool",
+				},
+			})
+		})
+
+		convey.Convey("tool choice forced with multiple tools", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+					{
+						Function: &model.FunctionDefinition{
+							Name: "another_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceRequired)
+		})
+
+		convey.Convey("tool choice forced with no tools", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "tool_choice is forced but no tools are provided")
+		})
+
+		convey.Convey("tool choice forced with multiple allowed tool names", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"test_tool", "another_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "only one allowed tool name can be configured")
+		})
+
+		convey.Convey("tool choice forced with allowed tool name not in tools list", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"non_existent_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "allowed tool name 'non_existent_tool' not found in tools list")
+		})
+	})
+}

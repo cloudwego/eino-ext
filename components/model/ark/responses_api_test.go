@@ -26,6 +26,7 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
@@ -792,4 +793,97 @@ func Test_responsesAPIChatModel_handleCompletedStreamEvent(t *testing.T) {
 	})
 	assert.Equal(t, responses.ResponseStatus_completed.String(), msg.ResponseMeta.FinishReason)
 
+}
+
+func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
+	cm := &responsesAPIChatModel{}
+	convey.Convey("TestPopulateToolChoice", t, func() {
+		convey.Convey("no tool choice", func() {
+			req := &responses.ResponsesRequest{}
+			options := &model.Options{}
+			err := cm.populateTools(req, options)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldBeNil)
+		})
+		convey.Convey("tool choice forbidden", func() {
+			req := &responses.ResponsesRequest{}
+			toolChoice := schema.ToolChoiceForbidden
+			options := &model.Options{
+				ToolChoice: &toolChoice,
+			}
+			err := cm.populateTools(req, options)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice.GetMode(), convey.ShouldEqual, responses.ToolChoiceMode_none)
+		})
+		convey.Convey("tool choice allowed", func() {
+			req := &responses.ResponsesRequest{}
+			toolChoice := schema.ToolChoiceAllowed
+			options := &model.Options{
+				ToolChoice: &toolChoice,
+			}
+			err := cm.populateTools(req, options)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice.GetMode(), convey.ShouldEqual, responses.ToolChoiceMode_auto)
+		})
+		convey.Convey("tool choice forced with no tools", func() {
+			req := &responses.ResponsesRequest{}
+			toolChoice := schema.ToolChoiceForced
+			options := &model.Options{
+				ToolChoice: &toolChoice,
+			}
+			err := cm.populateTools(req, options)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "tool_choice is forced but no tools are provided")
+		})
+		convey.Convey("tool choice forced with tools", func() {
+			req := &responses.ResponsesRequest{}
+			toolChoice := schema.ToolChoiceForced
+			options := &model.Options{
+				ToolChoice: &toolChoice,
+				Tools: []*schema.ToolInfo{
+					{
+						Name: "my_func",
+						Desc: "description",
+						ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+							"param1": {Type: schema.String},
+						}),
+					},
+					{
+						Name: "my_func2",
+						Desc: "description",
+						ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+							"param1": {Type: schema.String},
+						}),
+					},
+				},
+			}
+			err := cm.populateTools(req, options)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice.GetMode(), convey.ShouldEqual, responses.ToolChoiceMode_required)
+		})
+		convey.Convey("tool choice forced with allowed tool name", func() {
+			req := &responses.ResponsesRequest{}
+			toolChoice := schema.ToolChoiceForced
+			options := &model.Options{
+				ToolChoice:       &toolChoice,
+				AllowedToolNames: []string{"my_func"},
+				Tools: []*schema.ToolInfo{
+					{
+						Name: "my_func",
+						Desc: "description",
+						ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+							"param1": {Type: schema.String},
+						}),
+					},
+				},
+			}
+			err := cm.populateTools(req, options)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice.GetFunctionToolChoice(), convey.ShouldEqual, &responses.FunctionToolChoice{
+				Name: "my_func",
+				Type: responses.ToolType_function,
+			})
+		})
+
+	})
 }

@@ -659,41 +659,9 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 		}
 	}
 
-	if options.ToolChoice != nil {
-		/*
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
-
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
-
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
-		*/
-
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = openai.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: openai.ToolFunction{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
-		}
+	err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 
 	msgs := make([]openai.ChatCompletionMessage, 0, len(in))
@@ -1001,6 +969,106 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
+type allowedTools struct {
+	Mode  string              `json:"mode"`
+	Tools []openai.ToolChoice `json:"tools"`
+}
+
+func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	validateAllowedNamesTools := func() error {
+		if len(allowedToolNames) > 0 {
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			for _, name := range allowedToolNames {
+				if !toolsMap[name] {
+					return fmt.Errorf("allowed tool %s not found in request tools", name)
+				}
+			}
+		}
+		return nil
+	}
+
+	buildToolChoices := func() []openai.ToolChoice {
+		choices := make([]openai.ToolChoice, len(allowedToolNames))
+		for i, n := range allowedToolNames {
+			choices[i] = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: n,
+				},
+			}
+		}
+		return choices
+	}
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+		return nil
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedNamesTools(); err != nil {
+				return err
+			}
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceAuto,
+					Tools: buildToolChoices(),
+				},
+			}
+
+		} else {
+			req.ToolChoice = toolChoiceAuto
+		}
+		return nil
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool_choice is forced but no tools are provided")
+		}
+
+		err := validateAllowedNamesTools()
+		if err != nil {
+			return err
+		}
+
+		var onlyOneToolName string
+		if len(allowedToolNames) == 1 {
+			onlyOneToolName = allowedToolNames[0]
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+
+		if onlyOneToolName != "" {
+			req.ToolChoice = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: onlyOneToolName,
+				},
+			}
+		} else if len(allowedToolNames) > 1 {
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceRequired,
+					Tools: buildToolChoices(),
+				},
+			}
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("unsupported tool_choice: %s", *tc)
+	}
+}
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
 	if probs == nil {
 		return nil

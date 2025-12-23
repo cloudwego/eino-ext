@@ -540,3 +540,118 @@ func Test_toArkContent(t *testing.T) {
 		})
 	})
 }
+
+func Test_populateToolChoice(t *testing.T) {
+	convey.Convey("Test_populateToolChoice", t, func() {
+		var req = &model.BotChatCompletionRequest{}
+		var options = &fmodel.Options{}
+
+		convey.Reset(func() {
+			req = &model.BotChatCompletionRequest{}
+			options = &fmodel.Options{}
+		})
+
+		convey.Convey("nil tool choice", func() {
+			options.ToolChoice = nil
+			err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool choice forbidden", func() {
+			val := schema.ToolChoiceForbidden
+			options.ToolChoice = &val
+			err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceNone)
+		})
+
+		convey.Convey("tool choice allowed", func() {
+			val := schema.ToolChoiceAllowed
+			options.ToolChoice = &val
+			err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceAuto)
+		})
+
+		convey.Convey("tool choice forced", func() {
+			val := schema.ToolChoiceForced
+			options.ToolChoice = &val
+
+			convey.Convey("no tools provided", func() {
+				req.Tools = nil
+				err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "tool_choice is forced but no tools are provided")
+			})
+
+			convey.Convey("one tool in req.Tools", func() {
+				req.Tools = []*model.Tool{
+					{Type: model.ToolTypeFunction, Function: &model.FunctionDefinition{Name: "test_func"}},
+				}
+				options.AllowedToolNames = nil
+				err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(req.ToolChoice, convey.ShouldNotBeNil)
+				tc, ok := req.ToolChoice.(model.ToolChoice)
+				convey.So(ok, convey.ShouldBeTrue)
+				convey.So(tc.Type, convey.ShouldEqual, model.ToolTypeFunction)
+				convey.So(tc.Function.Name, convey.ShouldEqual, "test_func")
+			})
+
+			convey.Convey("multiple tools in req.Tools, no allowed tools", func() {
+				req.Tools = []*model.Tool{
+					{Type: model.ToolTypeFunction, Function: &model.FunctionDefinition{Name: "test_func_1"}},
+					{Type: model.ToolTypeFunction, Function: &model.FunctionDefinition{Name: "test_func_2"}},
+				}
+				options.AllowedToolNames = nil
+				err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceRequired)
+			})
+
+			convey.Convey("multiple tools, one allowed tool", func() {
+				req.Tools = []*model.Tool{
+					{Type: model.ToolTypeFunction, Function: &model.FunctionDefinition{Name: "test_func_1"}},
+					{Type: model.ToolTypeFunction, Function: &model.FunctionDefinition{Name: "test_func_2"}},
+				}
+				options.AllowedToolNames = []string{"test_func_2"}
+				err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(req.ToolChoice, convey.ShouldNotBeNil)
+				tc, ok := req.ToolChoice.(model.ToolChoice)
+				convey.So(ok, convey.ShouldBeTrue)
+				convey.So(tc.Type, convey.ShouldEqual, model.ToolTypeFunction)
+				convey.So(tc.Function.Name, convey.ShouldEqual, "test_func_2")
+			})
+
+			convey.Convey("allowed tool not in tools list", func() {
+				req.Tools = []*model.Tool{
+					{Type: model.ToolTypeFunction, Function: &model.FunctionDefinition{Name: "test_func_1"}},
+				}
+				options.AllowedToolNames = []string{"non_existent_tool"}
+				err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "not found in tools list")
+			})
+
+			convey.Convey("more than one allowed tool", func() {
+				req.Tools = []*model.Tool{
+					{Type: model.ToolTypeFunction, Function: &model.FunctionDefinition{Name: "test_func_1"}},
+				}
+				options.AllowedToolNames = []string{"tool1", "tool2"}
+				err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "only one allowed tool name can be configured")
+			})
+		})
+
+		convey.Convey("unknown tool choice", func() {
+			val := schema.ToolChoice("unknown_choice")
+			options.ToolChoice = &val
+			err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceAuto)
+		})
+	})
+}
