@@ -174,6 +174,8 @@ The `IndexBuilder` interface provides flexible index type selection. Choose the 
 | `AUTOINDEX` | Most use cases | Milvus optimizes automatically (recommended) |
 | `HNSW` | High recall requirements | Higher memory usage, excellent search speed |
 | `IVF_FLAT` | Large datasets | Good balance of speed and accuracy |
+| `IVF_PQ` | Very large datasets, memory constrained | Lower memory, some accuracy loss |
+| `DISKANN` | Datasets that don't fit in memory (100M+ vectors) | Disk-based, good for massive scale |
 | `FLAT` | Small datasets, 100% recall needed | Slow for large datasets |
 
 **Usage Examples:**
@@ -205,6 +207,26 @@ indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
     Collection:   "ivf_collection",
     MetricType:   milvus.COSINE,
     IndexBuilder: ivfBuilder,
+    Embedding:    emb,
+})
+
+// IVF_PQ - Memory-efficient index with product quantization
+ivfPQBuilder, _ := milvus.NewIvfPQIndexBuilder(1024, 8, 8) // nlist=1024, m=8, nbits=8
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "ivf_pq_collection",
+    MetricType:   milvus.L2,
+    IndexBuilder: ivfPQBuilder,
+    Embedding:    emb,
+})
+
+// DISKANN - Disk-based index for very large datasets
+diskannBuilder := milvus.NewDiskANNIndexBuilder()
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "diskann_collection",
+    MetricType:   milvus.L2,
+    IndexBuilder: diskannBuilder,
     Embedding:    emb,
 })
 ```

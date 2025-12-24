@@ -245,3 +245,68 @@ func (b *BinIvfFlatIndexBuilder) Build(metricType MetricType) (entity.Index, err
 func (b *BinIvfFlatIndexBuilder) IndexType() IndexType {
 	return IndexTypeBinIvfFlat
 }
+
+// DiskANNIndexBuilder builds a DISKANN (Disk-based Approximate Nearest Neighbor) index.
+// DiskANN is designed for datasets that don't fit entirely in memory, storing the index
+// on disk while maintaining fast search performance. Best for very large datasets (100M+ vectors).
+type DiskANNIndexBuilder struct{}
+
+// NewDiskANNIndexBuilder creates a DISKANN index builder.
+// Note: DiskANN build parameters (MaxDegree, SearchListSize, etc.) are configured
+// on the Milvus server side via milvus.yaml, not through the SDK.
+func NewDiskANNIndexBuilder() *DiskANNIndexBuilder {
+	return &DiskANNIndexBuilder{}
+}
+
+// Build creates a DISKANN index.
+func (d *DiskANNIndexBuilder) Build(metricType MetricType) (entity.Index, error) {
+	return entity.NewIndexDISKANN(metricType.getMetricType())
+}
+
+// IndexType returns IndexTypeDiskANN.
+func (d *DiskANNIndexBuilder) IndexType() IndexType {
+	return IndexTypeDiskANN
+}
+
+// IvfPQIndexBuilder builds an IVF_PQ (Inverted File with Product Quantization) index.
+// IVF_PQ provides significant memory savings by compressing vectors using product quantization.
+// Best for very large datasets where memory is a concern and some accuracy loss is acceptable.
+type IvfPQIndexBuilder struct {
+	// NList is the number of cluster units (inverted lists).
+	// Range: [1, 65536], recommended: 32-4096
+	NList int
+	// M is the number of factors of product quantization.
+	// The vector dimension must be divisible by M (dim % m == 0).
+	M int
+	// NBits is the number of bits used to store each sub-vector.
+	// Range: [1, 16], determines 2^nbits centroids per sub-vector.
+	NBits int
+}
+
+// NewIvfPQIndexBuilder creates an IVF_PQ index builder.
+// Parameters:
+//   - nlist: Number of cluster centroids [1, 65536]
+//   - m: Number of sub-vectors for product quantization (dim must be divisible by m)
+//   - nbits: Bits per sub-vector [1, 16]
+func NewIvfPQIndexBuilder(nlist, m, nbits int) (*IvfPQIndexBuilder, error) {
+	if nlist < 1 || nlist > 65536 {
+		return nil, fmt.Errorf("nlist must be in range [1, 65536], got %d", nlist)
+	}
+	if m < 1 {
+		return nil, fmt.Errorf("m must be at least 1, got %d", m)
+	}
+	if nbits < 1 || nbits > 16 {
+		return nil, fmt.Errorf("nbits must be in range [1, 16], got %d", nbits)
+	}
+	return &IvfPQIndexBuilder{NList: nlist, M: m, NBits: nbits}, nil
+}
+
+// Build creates an IVF_PQ index with the configured parameters.
+func (i *IvfPQIndexBuilder) Build(metricType MetricType) (entity.Index, error) {
+	return entity.NewIndexIvfPQ(metricType.getMetricType(), i.NList, i.M, i.NBits)
+}
+
+// IndexType returns IndexTypeIvfPQ.
+func (i *IvfPQIndexBuilder) IndexType() IndexType {
+	return IndexTypeIvfPQ
+}

@@ -173,6 +173,8 @@ type IndexerConfig struct {
 | `AUTOINDEX` | 大多数场景 | Milvus 自动优化（推荐） |
 | `HNSW` | 高召回率需求 | 内存占用较高，搜索速度优秀 |
 | `IVF_FLAT` | 大规模数据集 | 速度与精度的良好平衡 |
+| `IVF_PQ` | 超大数据集，内存受限 | 内存占用低，精度略有损失 |
+| `DISKANN` | 无法装入内存的数据集（1亿+向量） | 基于磁盘，适合超大规模 |
 | `FLAT` | 小数据集，需要 100% 召回率 | 大数据集时较慢 |
 
 **使用示例：**
@@ -204,6 +206,26 @@ indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
     Collection:   "ivf_collection",
     MetricType:   milvus.COSINE,
     IndexBuilder: ivfBuilder,
+    Embedding:    emb,
+})
+
+// IVF_PQ - 使用乘积量化的内存高效索引
+ivfPQBuilder, _ := milvus.NewIvfPQIndexBuilder(1024, 8, 8) // nlist=1024, m=8, nbits=8
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "ivf_pq_collection",
+    MetricType:   milvus.L2,
+    IndexBuilder: ivfPQBuilder,
+    Embedding:    emb,
+})
+
+// DISKANN - 基于磁盘的索引，适用于超大数据集
+diskannBuilder := milvus.NewDiskANNIndexBuilder()
+indexer, err := milvus.NewIndexer(ctx, &milvus.IndexerConfig{
+    Client:       cli,
+    Collection:   "diskann_collection",
+    MetricType:   milvus.L2,
+    IndexBuilder: diskannBuilder,
     Embedding:    emb,
 })
 ```
