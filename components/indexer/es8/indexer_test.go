@@ -202,7 +202,7 @@ func TestBulkAdd(t *testing.T) {
 				convey.So(item.DocumentID, convey.ShouldEqual, doc.ID)
 				b, err := io.ReadAll(item.Body)
 				convey.So(err, convey.ShouldBeNil)
-				var mp map[string]interface{}
+				var mp map[string]any
 				convey.So(json.Unmarshal(b, &mp), convey.ShouldBeNil)
 				convey.So(mp["k0"], convey.ShouldEqual, doc.Content)
 				convey.So(mp["k1"], convey.ShouldEqual, "v1")
@@ -210,6 +210,7 @@ func TestBulkAdd(t *testing.T) {
 				convey.So(mp["k3"], convey.ShouldEqual, 123)
 				convey.So(mp["vk1"], convey.ShouldEqual, []any{2.1})
 				convey.So(mp["vk2"], convey.ShouldEqual, []any{2.1})
+				convey.So(item.OnFailure, convey.ShouldNotBeNil)
 			}
 		})
 	})
