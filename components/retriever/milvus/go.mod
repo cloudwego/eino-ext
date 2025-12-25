@@ -1,3 +1,5 @@
+// Deprecated: use github.com/cloudwego/eino-ext/components/retriever/milvus2 instead.
+// This module uses milvus-sdk-go v2.4.x which only supports Milvus 2.4.
 module github.com/cloudwego/eino-ext/components/retriever/milvus
 
 go 1.23.0

@@ -2,6 +2,9 @@
 
 English | [简体中文](README_zh.md)
 
+> [!WARNING]
+> **Deprecated**: This component uses the legacy milvus-sdk-go v2.4.x which is no longer actively maintained and only supports Milvus 2.4. It is retained for backward compatibility. New users should use [milvus2](../milvus2/README.md), which provides additional features and is built on the newer SDK.
+
 An Milvus 2.x indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer`
 interface. This enables seamless integration
 with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
