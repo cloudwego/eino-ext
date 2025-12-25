@@ -30,7 +30,10 @@ import (
 
 func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
-	modelName := os.Getenv("GEMINI_MODEL")
+	modelName, ok := os.LookupEnv("GEMINI_MODEL")
+	if !ok {
+		modelName = "gemini-2.5-flash"
+	}
 
 	ctx := context.Background()
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{
