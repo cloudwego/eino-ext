@@ -40,14 +40,20 @@ type Config struct {
 	ScoreThreshold *float64
 	// Number of top results to retrieve from Qdrant.
 	TopK int
+	// ReturnFields limits the attributes returned from the document's payload. num is the number of attributes following the keyword.
+	// Default []string{"content", "metadata"}
+	ReturnFields []string
+	// DocumentConverter converts retrieved raw document to eino Document, default defaultResultParser.
+	DocumentConverter func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error)
 }
 
 type Retriever struct {
-	client         *qdrant.Client
-	collection     string
-	embedding      embedding.Embedder
-	scoreThreshold *float64
-	topK           int
+	client            *qdrant.Client
+	collection        string
+	embedding         embedding.Embedder
+	scoreThreshold    *float64
+	topK              int
+	documentConverter func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error)
 }
 
 func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
@@ -69,12 +75,21 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		topK = 5
 	}
 
+	if len(config.ReturnFields) == 0 {
+		config.ReturnFields = []string{defaultMetadataKey, defaultContentKey}
+	}
+
+	if config.DocumentConverter == nil {
+		config.DocumentConverter = defaultResultParser(config.ReturnFields)
+	}
+
 	return &Retriever{
-		client:         config.Client,
-		collection:     config.Collection,
-		embedding:      config.Embedding,
-		scoreThreshold: config.ScoreThreshold,
-		topK:           topK,
+		client:            config.Client,
+		collection:        config.Collection,
+		embedding:         config.Embedding,
+		scoreThreshold:    config.ScoreThreshold,
+		topK:              topK,
+		documentConverter: config.DocumentConverter,
 	}, nil
 }
 
@@ -134,19 +149,13 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 	docs = make([]*schema.Document, 0, len(resp))
 	for _, pt := range resp {
-		doc := &schema.Document{
-			ID:       pt.Id.GetUuid(),
-			MetaData: map[string]any{},
+		doc, err := r.documentConverter(ctx, pt)
+		if err != nil {
+			return nil, err
 		}
-
-		if val, ok := pt.Payload[defaultContentKey]; ok {
-			doc.Content = val.GetStringValue()
+		if doc == nil {
+			return nil, fmt.Errorf("[qdrant retriever] document converter returned nil document")
 		}
-
-		if val, ok := pt.Payload[defaultMetadataKey]; ok {
-			doc.MetaData[defaultMetadataKey] = val.GetStructValue().Fields
-		}
-
 		doc.WithScore(float64(pt.Score))
 
 		docs = append(docs, doc)
@@ -169,6 +178,44 @@ func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
 	return callbacks.ReuseHandlers(ctx, runInfo)
+}
+
+func defaultResultParser(returnFields []string) func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
+	return func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
+		if point == nil {
+			return nil, fmt.Errorf("[defaultResultParser] point is nil")
+		}
+
+		resp := &schema.Document{
+			Content:  "",
+			MetaData: map[string]any{},
+		}
+
+		if point.Id != nil {
+			if uuid := point.Id.GetUuid(); uuid != "" {
+				resp.ID = uuid
+			} else {
+				resp.ID = fmt.Sprintf("%d", point.Id.GetNum())
+			}
+		}
+
+		for _, field := range returnFields {
+			val, found := point.Payload[field]
+			if !found {
+				return nil, fmt.Errorf("[defaultResultParser] field=%s not found in payload, point=%v", field, point)
+			}
+
+			if field == defaultContentKey {
+				resp.Content = val.GetStringValue()
+			} else if field == defaultMetadataKey {
+				resp.MetaData[defaultMetadataKey] = val.GetStructValue().Fields
+			} else {
+				resp.MetaData[field] = val
+			}
+		}
+
+		return resp, nil
+	}
 }
 
 func tryMarshalJsonString(input any) string {
