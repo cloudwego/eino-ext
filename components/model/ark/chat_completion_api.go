@@ -152,7 +152,10 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Message:    outMsg,
 		Config:     reqConf,
 		TokenUsage: cm.toModelCallbackUsage(outMsg.ResponseMeta),
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Extra: map[string]any{
+			callbackExtraKeyThinking: specOptions.thinking,
+			callbackExtraModelName:   resp.Model,
+		},
 	})
 
 	return outMsg, nil
@@ -265,7 +268,10 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 				Message:    msg,
 				Config:     reqConf,
 				TokenUsage: cm.toModelCallbackUsage(msg.ResponseMeta),
-				Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
+				Extra: map[string]any{
+					callbackExtraKeyThinking: arkOpts.thinking,
+					callbackExtraModelName:   resp.Model,
+				},
 			}, nil)
 			if closed {
 				return

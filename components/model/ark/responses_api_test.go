@@ -548,7 +548,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ToolCallMetaMsg(t *testing.
 		streamReader := &utils.ResponsesStreamReader{}
 
 		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).To(
-			func(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
+			func(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
 				msg *schema.Message) {
 				assert.Equal(t, "123", msg.ToolCalls[0].ID)
 				assert.Equal(t, "test", msg.ToolCalls[0].Function.Name)

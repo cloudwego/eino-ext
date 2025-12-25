@@ -111,6 +111,9 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert output to schema.Message: %w", err)
 	}
+
+	callbackExtra[callbackExtraModelName] = responseObject.Model
+
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     config,
@@ -879,7 +882,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			}
 			msg := &schema.Message{Role: schema.Assistant}
 			cm.setStreamChunkDefaultExtra(msg, ev.Response.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, msg)
+			cm.sendCallbackOutput(sw, config, ev.Response.Response.Model, msg)
 
 		case *responses.Event_ResponseCompleted:
 			if ev.ResponseCompleted == nil || ev.ResponseCompleted.Response == nil {
@@ -887,7 +890,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			}
 			msg := cm.handleCompletedStreamEvent(ev.ResponseCompleted.Response)
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseCompleted.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseCompleted.Response.Model, msg)
 
 		case *responses.Event_Error:
 			sw.Send(nil, fmt.Errorf("received error: %s", ev.Error.Message))
@@ -905,7 +908,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				},
 			}
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseIncomplete.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseIncomplete.Response.Model, msg)
 
 		case *responses.Event_ResponseFailed:
 			if ev.ResponseFailed == nil || ev.ResponseFailed.Response == nil {
@@ -923,7 +926,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				},
 			}
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseFailed.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseFailed.Response.Model, msg)
 
 		case *responses.Event_Item:
 			if ev.Item == nil || ev.Item.GetItem() == nil || ev.Item.GetItem().GetUnion() == nil {
@@ -956,7 +959,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 						},
 					},
 				}
-				cm.sendCallbackOutput(sw, config, msg)
+				cm.sendCallbackOutput(sw, config, "", msg)
 			}
 
 		case *responses.Event_ReasoningText:
@@ -969,7 +972,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				ReasoningContent: delta,
 			}
 			setReasoningContent(msg, delta)
-			cm.sendCallbackOutput(sw, config, msg)
+			cm.sendCallbackOutput(sw, config, "", msg)
 
 		case *responses.Event_Text:
 			if ev.Text == nil || ev.Text.Delta == nil {
@@ -979,7 +982,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				Role:    schema.Assistant,
 				Content: *ev.Text.Delta,
 			}
-			cm.sendCallbackOutput(sw, config, msg)
+			cm.sendCallbackOutput(sw, config, "", msg)
 
 		}
 
@@ -1001,7 +1004,7 @@ func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message,
 
 }
 
-func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config,
+func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
 	msg *schema.Message) {
 
 	var token *model.TokenUsage
@@ -1015,10 +1018,19 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 			TotalTokens:      msg.ResponseMeta.Usage.TotalTokens,
 		}
 	}
+
+	var extra map[string]any
+	if len(modelName) > 0 {
+		extra = map[string]any{
+			callbackExtraModelName: modelName,
+		}
+	}
+
 	sw.Send(&model.CallbackOutput{
 		Message:    msg,
 		Config:     reqConf,
 		TokenUsage: token,
+		Extra:      extra,
 	}, nil)
 }
 
