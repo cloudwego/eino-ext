@@ -58,18 +58,24 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 	return &ChatModel{
 		cli: cfg.Client,
 
-		model:               cfg.Model,
-		maxTokens:           cfg.MaxTokens,
-		temperature:         cfg.Temperature,
-		topP:                cfg.TopP,
-		topK:                cfg.TopK,
-		responseJSONSchema:  cfg.ResponseJSONSchema,
-		enableCodeExecution: cfg.EnableCodeExecution,
-		safetySettings:      cfg.SafetySettings,
-		thinkingConfig:      cfg.ThinkingConfig,
-		responseModalities:  cfg.ResponseModalities,
-		mediaResolution:     cfg.MediaResolution,
-		cache:               cfg.Cache,
+		model:                       cfg.Model,
+		maxTokens:                   cfg.MaxTokens,
+		temperature:                 cfg.Temperature,
+		topP:                        cfg.TopP,
+		topK:                        cfg.TopK,
+		responseJSONSchema:          cfg.ResponseJSONSchema,
+		enableCodeExecution:         cfg.EnableCodeExecution,
+		enableGoogleSearch:          cfg.EnableGoogleSearch,
+		enableGoogleSearchRetrieval: cfg.EnableGoogleSearchRetrieval,
+		enableComputerUse:           cfg.EnableComputerUse,
+		enableURLContext:            cfg.EnableURLContext,
+		enableFileSearch:            cfg.EnableFileSearch,
+		enableGoogleMaps:            cfg.EnableGoogleMaps,
+		safetySettings:              cfg.SafetySettings,
+		thinkingConfig:              cfg.ThinkingConfig,
+		responseModalities:          cfg.ResponseModalities,
+		mediaResolution:             cfg.MediaResolution,
+		cache:                       cfg.Cache,
 	}, nil
 }
 
@@ -110,6 +116,13 @@ type Config struct {
 	// Optional. Default: false
 	EnableCodeExecution bool
 
+	EnableGoogleSearch          *genai.GoogleSearch
+	EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
+	EnableComputerUse           *genai.ComputerUse
+	EnableURLContext            *genai.URLContext
+	EnableFileSearch            *genai.FileSearch
+	EnableGoogleMaps            *genai.GoogleMaps
+
 	// SafetySettings configures content filtering for different harm categories
 	// Controls the model's filtering behavior for potentially harmful content
 	// Optional.
@@ -139,21 +152,27 @@ type CacheConfig struct {
 type ChatModel struct {
 	cli *genai.Client
 
-	model               string
-	maxTokens           *int
-	topP                *float32
-	temperature         *float32
-	topK                *int32
-	responseJSONSchema  *jsonschema.Schema
-	tools               []*genai.FunctionDeclaration
-	origTools           []*schema.ToolInfo
-	toolChoice          *schema.ToolChoice
-	enableCodeExecution bool
-	safetySettings      []*genai.SafetySetting
-	thinkingConfig      *genai.ThinkingConfig
-	responseModalities  []GeminiResponseModality
-	mediaResolution     genai.MediaResolution
-	cache               *CacheConfig
+	model                       string
+	maxTokens                   *int
+	topP                        *float32
+	temperature                 *float32
+	topK                        *int32
+	responseJSONSchema          *jsonschema.Schema
+	tools                       []*genai.FunctionDeclaration
+	origTools                   []*schema.ToolInfo
+	toolChoice                  *schema.ToolChoice
+	enableCodeExecution         bool
+	enableGoogleSearch          *genai.GoogleSearch
+	enableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
+	enableComputerUse           *genai.ComputerUse
+	enableURLContext            *genai.URLContext
+	enableFileSearch            *genai.FileSearch
+	enableGoogleMaps            *genai.GoogleMaps
+	safetySettings              []*genai.SafetySetting
+	thinkingConfig              *genai.ThinkingConfig
+	responseModalities          []GeminiResponseModality
+	mediaResolution             genai.MediaResolution
+	cache                       *CacheConfig
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -184,7 +203,7 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	if len(input) == 0 {
 		return nil, fmt.Errorf("gemini input is empty")
 	}
-	contents, err := cm.convSchemaMessages(nInput)
+	contents, err := convSchemaMessages(nInput)
 	if err != nil {
 		return nil, err
 	}
@@ -194,12 +213,12 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		return nil, fmt.Errorf("send message fail: %w", err)
 	}
 
-	message, err = cm.convResponse(result)
+	message, err = convResponse(result)
 	if err != nil {
 		return nil, fmt.Errorf("convert response fail: %w", err)
 	}
 
-	callbacks.OnEnd(ctx, cm.convCallbackOutput(message, cbConf))
+	callbacks.OnEnd(ctx, convCallbackOutput(message, cbConf))
 	return message, nil
 }
 
@@ -232,7 +251,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		return nil, fmt.Errorf("gemini input is empty")
 	}
 
-	contents, err := cm.convSchemaMessages(nInput)
+	contents, err := convSchemaMessages(nInput)
 	if err != nil {
 		return nil, fmt.Errorf("convert schema message fail: %w", err)
 	}
@@ -253,12 +272,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				sw.Send(nil, err_)
 				return
 			}
-			message, err_ := cm.convResponse(resp)
+			message, err_ := convResponse(resp)
 			if err_ != nil {
 				sw.Send(nil, err_)
 				return
 			}
-			closed := sw.Send(cm.convCallbackOutput(message, cbConf), nil)
+			closed := sw.Send(convCallbackOutput(message, cbConf), nil)
 			if closed {
 				return
 			}
@@ -330,7 +349,7 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema
 		return nil, fmt.Errorf("genInputAndConf for CreatePrefixCache failed: %w", err)
 	}
 
-	contents, err := cm.convSchemaMessages(inputMsgs)
+	contents, err := convSchemaMessages(inputMsgs)
 	if err != nil {
 		return nil, err
 	}
@@ -404,6 +423,36 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 			CodeExecution: &genai.ToolCodeExecution{},
 		})
 	}
+	if cm.enableGoogleSearch != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			GoogleSearch: cm.enableGoogleSearch,
+		})
+	}
+	if cm.enableGoogleSearchRetrieval != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			GoogleSearchRetrieval: cm.enableGoogleSearchRetrieval,
+		})
+	}
+	if cm.enableComputerUse != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			ComputerUse: cm.enableComputerUse,
+		})
+	}
+	if cm.enableURLContext != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			URLContext: cm.enableURLContext,
+		})
+	}
+	if cm.enableFileSearch != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			FileSearch: cm.enableFileSearch,
+		})
+	}
+	if cm.enableGoogleMaps != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			GoogleMaps: cm.enableGoogleMaps,
+		})
+	}
 
 	m.MediaResolution = cm.mediaResolution
 
@@ -463,7 +512,7 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	copy(nInput, input)
 	if len(input) > 1 && input[0].Role == schema.System {
 		var err error
-		m.SystemInstruction, err = cm.convSchemaMessage(input[0])
+		m.SystemInstruction, err = convSchemaMessage(input[0])
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf("failed to convert system instruction: %w", err)
 		}
@@ -506,7 +555,7 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 }
 
 // convToolMessageToPart converts a tool response message into a Gemini part.
-func (cm *ChatModel) convToolMessageToPart(toolName, content string) (*genai.Part, error) {
+func convToolMessageToPart(toolName, content string) (*genai.Part, error) {
 	response := make(map[string]any)
 	err := sonic.UnmarshalString(content, &response)
 	if err != nil {
@@ -516,7 +565,7 @@ func (cm *ChatModel) convToolMessageToPart(toolName, content string) (*genai.Par
 	return genai.NewPartFromFunctionResponse(toolName, response), nil
 }
 
-func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
+func convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
 	var result []*genai.Content
 
 	for i := 0; i < len(messages); i++ {
@@ -525,7 +574,7 @@ func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Co
 			continue
 		}
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		if err != nil {
 			return nil, fmt.Errorf("convert schema message fail at index %d: %w", i, err)
 		}
@@ -568,7 +617,7 @@ func isToolResponseContent(content *genai.Content) bool {
 	return content.Parts[0].FunctionResponse != nil
 }
 
-func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content, error) {
+func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 	if message == nil {
 		return nil, nil
 	}
@@ -580,7 +629,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 			// falling back to the original toolCallId if tool name is empty.
 			toolName = message.ToolCallID
 		}
-		part, err := cm.convToolMessageToPart(toolName, message.Content)
+		part, err := convToolMessageToPart(toolName, message.Content)
 		if err != nil {
 			return nil, err
 		}
@@ -631,7 +680,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		if message.Role != schema.User {
 			return nil, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
 		}
-		parts, err := cm.convInputMedia(message.UserInputMultiContent)
+		parts, err := convInputMedia(message.UserInputMultiContent)
 		if err != nil {
 			return nil, err
 		}
@@ -641,7 +690,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 		if message.Role != schema.Assistant {
 			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
 		}
-		parts, err := cm.convOutputMedia(message.AssistantGenMultiContent)
+		parts, err := convOutputMedia(message.AssistantGenMultiContent)
 		if err != nil {
 			return nil, err
 		}
@@ -663,7 +712,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 	}
 	if len(message.MultiContent) > 0 {
 		log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
-		parts, err := cm.convMedia(message.MultiContent)
+		parts, err := convMedia(message.MultiContent)
 		if err != nil {
 			return nil, err
 		}
@@ -672,7 +721,7 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 	return content, nil
 }
 
-func (cm *ChatModel) convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
+func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 	result := make([]*genai.Part, 0, len(contents))
 	for _, content := range contents {
 		switch content.Type {
@@ -682,137 +731,124 @@ func (cm *ChatModel) convInputMedia(contents []schema.MessageInputPart) ([]*gena
 			if content.Image == nil {
 				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
 			}
-			if content.Image.Base64Data != nil {
-				data, err := decodeBase64DataURL(*content.Image.Base64Data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
-				}
-				if content.Image.MIMEType == "" {
-					return nil, fmt.Errorf("MIMEType is required for image parts with Base64Data")
-				}
-				result = append(result, genai.NewPartFromBytes(data, content.Image.MIMEType))
-			} else if content.Image.URL != nil {
-				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Image.URL, MIMEType: content.Image.MIMEType}))
+			p, err := toGenAIDataPart(content.Image.Base64Data, content.Image.URL, content.Image.MIMEType, schema.ChatMessagePartTypeImageURL)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, p)
+
 		case schema.ChatMessagePartTypeAudioURL:
 			if content.Audio == nil {
 				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in user message")
 			}
-			if content.Audio.Base64Data != nil {
-				data, err := decodeBase64DataURL(*content.Audio.Base64Data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
-				}
-				if content.Audio.MIMEType == "" {
-					return nil, fmt.Errorf("MIMEType is required for audio parts with Base64Data")
-				}
-				result = append(result, genai.NewPartFromBytes(data, content.Audio.MIMEType))
-			} else if content.Audio.URL != nil {
-				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Audio.URL, MIMEType: content.Audio.MIMEType}))
+			p, err := toGenAIDataPart(content.Audio.Base64Data, content.Audio.URL, content.Audio.MIMEType, schema.ChatMessagePartTypeAudioURL)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, p)
+
 		case schema.ChatMessagePartTypeVideoURL:
 			if content.Video == nil {
 				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in user message")
 			}
 			if content.Video.Extra != nil {
-				videoMetaData := GetInputVideoMetaData(content.Video)
-				if videoMetaData != nil {
+				if videoMetaData := GetInputVideoMetaData(content.Video); videoMetaData != nil {
 					result = append(result, &genai.Part{VideoMetadata: videoMetaData})
 				}
 			}
-			if content.Video.Base64Data != nil {
-				data, err := decodeBase64DataURL(*content.Video.Base64Data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
-				}
-				if content.Video.MIMEType == "" {
-					return nil, fmt.Errorf("MIMEType is required for video parts with Base64Data")
-				}
-				result = append(result, genai.NewPartFromBytes(data, content.Video.MIMEType))
-			} else if content.Video.URL != nil {
-				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Video.URL, MIMEType: content.Video.MIMEType}))
+			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, p)
+
 		case schema.ChatMessagePartTypeFileURL:
 			if content.File == nil {
 				return nil, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in user message")
 			}
-			if content.File.Base64Data != nil {
-				data, err := decodeBase64DataURL(*content.File.Base64Data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
-				}
-				if content.File.MIMEType == "" {
-					return nil, fmt.Errorf("MIMEType is required for file parts with Base64Data")
-				}
-				result = append(result, genai.NewPartFromBytes(data, content.File.MIMEType))
-			} else if content.File.URL != nil {
-				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.File.URL, MIMEType: content.File.MIMEType}))
+			p, err := toGenAIDataPart(content.File.Base64Data, content.File.URL, content.File.MIMEType, schema.ChatMessagePartTypeFileURL)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, p)
 		}
 	}
 	return result, nil
 }
 
-func (cm *ChatModel) convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error) {
+func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error) {
 	result := make([]*genai.Part, 0, len(contents))
 	for _, content := range contents {
 		switch content.Type {
 		case schema.ChatMessagePartTypeText:
-			result = append(result, genai.NewPartFromText(content.Text))
+			p := tryRestoreSpecialPart(content)
+			if p == nil {
+				p = genai.NewPartFromText(content.Text)
+			}
+			result = append(result, p)
+
 		case schema.ChatMessagePartTypeImageURL:
 			if content.Image == nil {
 				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
 			}
-			if content.Image.Base64Data != nil {
-				data, err := decodeBase64DataURL(*content.Image.Base64Data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
-				}
-				if content.Image.MIMEType == "" {
-					return nil, fmt.Errorf("MIMEType is required for image parts with Base64Data")
-				}
-				result = append(result, genai.NewPartFromBytes(data, content.Image.MIMEType))
-			} else if content.Image.URL != nil {
-				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Image.URL, MIMEType: content.Image.MIMEType}))
+			p, err := toGenAIDataPart(content.Image.Base64Data, content.Image.URL, content.Image.MIMEType, schema.ChatMessagePartTypeImageURL)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, p)
+
 		case schema.ChatMessagePartTypeAudioURL:
 			if content.Audio == nil {
 				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in assistant message")
 			}
-			if content.Audio.Base64Data != nil {
-				data, err := decodeBase64DataURL(*content.Audio.Base64Data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
-				}
-				if content.Audio.MIMEType == "" {
-					return nil, fmt.Errorf("MIMEType is required for audio parts with Base64Data")
-				}
-				result = append(result, genai.NewPartFromBytes(data, content.Audio.MIMEType))
-			} else if content.Audio.URL != nil {
-				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Audio.URL, MIMEType: content.Audio.MIMEType}))
+			p, err := toGenAIDataPart(content.Audio.Base64Data, content.Audio.URL, content.Audio.MIMEType, schema.ChatMessagePartTypeAudioURL)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, p)
+
 		case schema.ChatMessagePartTypeVideoURL:
 			if content.Video == nil {
 				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in assistant message")
 			}
-			if content.Video.Base64Data != nil {
-				data, err := decodeBase64DataURL(*content.Video.Base64Data)
-				if err != nil {
-					return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
-				}
-				if content.Video.MIMEType == "" {
-					return nil, fmt.Errorf("MIMEType is required for video parts with Base64Data")
-				}
-				result = append(result, genai.NewPartFromBytes(data, content.Video.MIMEType))
-			} else if content.Video.URL != nil {
-				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Video.URL, MIMEType: content.Video.MIMEType}))
+			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
+			if err != nil {
+				return nil, err
 			}
+			result = append(result, p)
 		}
 	}
 	return result, nil
 }
 
-func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) ([]*genai.Part, error) {
+func toGenAIDataPart(b64 *string, url *string, mimeType string, partType schema.ChatMessagePartType) (*genai.Part, error) {
+	if b64 != nil {
+		data, err := decodeBase64Data(*b64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode [%s] base64 data: %w", partType, err)
+		}
+		return genai.NewPartFromBytes(data, mimeType), nil
+	} else if url != nil {
+		return genai.NewPartFromFile(genai.File{URI: *url, MIMEType: mimeType}), nil
+	}
+	return nil, fmt.Errorf("[%s] is empty", partType)
+}
+
+func tryRestoreSpecialPart(part schema.MessageOutputPart) *genai.Part {
+	if sp, ok := part.Extra[specialParteKey]; ok && sp != nil {
+		switch v := sp.(type) {
+		case *genai.ExecutableCode:
+			return &genai.Part{ExecutableCode: v}
+		case *genai.CodeExecutionResult:
+			return &genai.Part{CodeExecutionResult: v}
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+func convMedia(contents []schema.ChatMessagePart) ([]*genai.Part, error) {
 	result := make([]*genai.Part, 0, len(contents))
 	for _, content := range contents {
 		switch content.Type {
@@ -823,7 +859,7 @@ func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) ([]*genai.Part
 				if content.ImageURL.URI != "" {
 					result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.ImageURL.MIMEType))
 				} else {
-					data, err := decodeBase64DataURL(content.ImageURL.URL)
+					data, err := decodeBase64Data(content.ImageURL.URL)
 					if err != nil {
 						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
 					}
@@ -835,7 +871,7 @@ func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) ([]*genai.Part
 				if content.AudioURL.URI != "" {
 					result = append(result, genai.NewPartFromURI(content.AudioURL.URI, content.AudioURL.MIMEType))
 				} else {
-					data, err := decodeBase64DataURL(content.AudioURL.URL)
+					data, err := decodeBase64Data(content.AudioURL.URL)
 					if err != nil {
 						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
 					}
@@ -855,7 +891,7 @@ func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) ([]*genai.Part
 				if content.VideoURL.URI != "" {
 					result = append(result, genai.NewPartFromURI(content.VideoURL.URI, content.VideoURL.MIMEType))
 				} else {
-					data, err := decodeBase64DataURL(content.VideoURL.URL)
+					data, err := decodeBase64Data(content.VideoURL.URL)
 					if err != nil {
 						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
 					}
@@ -867,7 +903,7 @@ func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) ([]*genai.Part
 				if content.FileURL.URI != "" {
 					result = append(result, genai.NewPartFromURI(content.FileURL.URI, content.FileURL.MIMEType))
 				} else {
-					data, err := decodeBase64DataURL(content.FileURL.URL)
+					data, err := decodeBase64Data(content.FileURL.URL)
 					if err != nil {
 						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
 					}
@@ -879,9 +915,9 @@ func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) ([]*genai.Part
 	return result, nil
 }
 
-// decodeBase64DataURL decodes a base64 data URL string into raw bytes.
+// decodeBase64Data decodes a base64 data URL string into raw bytes.
 // It correctly handles the "data:[<mediatype>];base64," prefix.
-func decodeBase64DataURL(dataURL string) ([]byte, error) {
+func decodeBase64Data(dataURL string) ([]byte, error) {
 	// Check if a web URL is passed by mistake.
 	if strings.HasPrefix(dataURL, "http") {
 		return nil, fmt.Errorf("invalid input: expected base64 data or data URL, but got a web URL starting with 'http'. Please fetch the content from the URL first")
@@ -909,12 +945,12 @@ func decodeBase64DataURL(dataURL string) ([]byte, error) {
 	return decoded, nil
 }
 
-func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) {
+func convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) {
 	if len(resp.Candidates) == 0 {
 		return nil, fmt.Errorf("gemini result is empty")
 	}
 
-	message, err := cm.convCandidate(resp.Candidates[0])
+	message, err := convCandidate(resp.Candidates[0])
 	if err != nil {
 		return nil, fmt.Errorf("convert candidate fail: %w", err)
 	}
@@ -938,11 +974,17 @@ func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.
 	return message, nil
 }
 
-func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
-	result := &schema.Message{}
-	result.ResponseMeta = &schema.ResponseMeta{
-		FinishReason: string(candidate.FinishReason),
+func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
+	result := &schema.Message{
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: string(candidate.FinishReason),
+		},
 	}
+
+	if candidate.GroundingMetadata != nil {
+		setGroundMetadata(result, candidate.GroundingMetadata)
+	}
+
 	if candidate.Content != nil {
 		if candidate.Content.Role == roleUser {
 			result.Role = schema.User
@@ -991,18 +1033,24 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 				result.ToolCalls = append(result.ToolCalls, *fc)
 			}
 			if part.CodeExecutionResult != nil {
-				texts = append(texts, part.CodeExecutionResult.Output)
-				outParts = append(outParts, schema.MessageOutputPart{
+				p := schema.MessageOutputPart{
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.CodeExecutionResult.Output,
-				})
+					Extra: map[string]any{
+						specialParteKey: part.CodeExecutionResult,
+					},
+				}
+				outParts = append(outParts, p)
 			}
 			if part.ExecutableCode != nil {
-				texts = append(texts, part.ExecutableCode.Code)
-				outParts = append(outParts, schema.MessageOutputPart{
+				p := schema.MessageOutputPart{
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.ExecutableCode.Code,
-				})
+					Extra: map[string]any{
+						specialParteKey: part.ExecutableCode,
+					},
+				}
+				outParts = append(outParts, p)
 			}
 			if part.InlineData != nil && part.InlineData.Data != nil {
 				outPart, err := toMultiOutPart(part)
@@ -1075,7 +1123,7 @@ func convFC(part *genai.Part) (*schema.ToolCall, error) {
 	return toolCall, nil
 }
 
-func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {
+func convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {
 	callbackOutput := &model.CallbackOutput{
 		Message: message,
 		Config:  conf,

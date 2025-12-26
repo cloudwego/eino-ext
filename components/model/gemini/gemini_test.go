@@ -326,7 +326,6 @@ func Test_toMultiOutPart(t *testing.T) {
 
 func TestChatModel_convMedia(t *testing.T) {
 	t.Run("convMedia", func(t *testing.T) {
-		cm := &ChatModel{model: "test model"}
 		base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 		dataURL := "data:image/png;base64," + base64Data
 		t.Run("success", func(t *testing.T) {
@@ -353,7 +352,7 @@ func TestChatModel_convMedia(t *testing.T) {
 				},
 			}
 
-			parts, err := cm.convMedia(contents)
+			parts, err := convMedia(contents)
 			assert.NoError(t, err)
 			assert.Len(t, parts, 5)
 			assert.Equal(t, "test text", parts[0].Text)
@@ -383,7 +382,7 @@ func TestChatModel_convMedia(t *testing.T) {
 					VideoURL: videoPart,
 				},
 			}
-			parts, err := cm.convMedia(contents)
+			parts, err := convMedia(contents)
 			assert.NoError(t, err)
 			assert.Len(t, parts, 2)
 			assert.NotNil(t, parts[0].VideoMetadata)
@@ -398,11 +397,10 @@ func TestChatModel_convMedia(t *testing.T) {
 					ImageURL: &schema.ChatMessageImageURL{URL: "data:image/png;base64,invalid"},
 				},
 			}
-			_, err := cm.convMedia(contents)
+			_, err := convMedia(contents)
 			assert.Error(t, err)
 		})
 	})
-	cm := &ChatModel{model: "test model"}
 	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 
 	t.Run("convInputMedia", func(t *testing.T) {
@@ -414,7 +412,7 @@ func TestChatModel_convMedia(t *testing.T) {
 				{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}},
 				{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "application/pdf"}}},
 			}
-			parts, err := cm.convInputMedia(contents)
+			parts, err := convInputMedia(contents)
 			assert.NoError(t, err)
 			assert.Len(t, parts, 5)
 			assert.Equal(t, "hello", parts[0].Text)
@@ -440,7 +438,7 @@ func TestChatModel_convMedia(t *testing.T) {
 					Video: videoPart,
 				},
 			}
-			parts, err := cm.convInputMedia(contents)
+			parts, err := convInputMedia(contents)
 			assert.NoError(t, err)
 			assert.Len(t, parts, 2)
 			assert.NotNil(t, parts[0].VideoMetadata)
@@ -455,13 +453,9 @@ func TestChatModel_convMedia(t *testing.T) {
 				content schema.MessageInputPart
 			}{
 				{name: "Image with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
-				{name: "Image without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Audio with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
-				{name: "Audio without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Video with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
-				{name: "Video without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "File with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
-				{name: "File without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Image with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: nil}},
 				{name: "Audio with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}},
 				{name: "Video with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}},
@@ -470,7 +464,7 @@ func TestChatModel_convMedia(t *testing.T) {
 
 			for _, tc := range testCases {
 				t.Run(tc.name, func(t *testing.T) {
-					_, err := cm.convInputMedia([]schema.MessageInputPart{tc.content})
+					_, err := convInputMedia([]schema.MessageInputPart{tc.content})
 					assert.Error(t, err)
 				})
 			}
@@ -485,7 +479,7 @@ func TestChatModel_convMedia(t *testing.T) {
 				{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "audio/mp3"}}},
 				{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}},
 			}
-			parts, err := cm.convOutputMedia(contents)
+			parts, err := convOutputMedia(contents)
 			assert.NoError(t, err)
 			assert.Len(t, parts, 4)
 			assert.Equal(t, "hello", parts[0].Text)
@@ -505,11 +499,8 @@ func TestChatModel_convMedia(t *testing.T) {
 				content schema.MessageOutputPart
 			}{
 				{name: "Image with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
-				{name: "Image without MIMEType", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Audio with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
-				{name: "Audio without MIMEType", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Video with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
-				{name: "Video without MIMEType", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Image with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: nil}},
 				{name: "Audio with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}},
 				{name: "Video with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}},
@@ -517,7 +508,7 @@ func TestChatModel_convMedia(t *testing.T) {
 
 			for _, tc := range testCases {
 				t.Run(tc.name, func(t *testing.T) {
-					_, err := cm.convOutputMedia([]schema.MessageOutputPart{tc.content})
+					_, err := convOutputMedia([]schema.MessageOutputPart{tc.content})
 					assert.Error(t, err)
 				})
 			}
@@ -526,12 +517,8 @@ func TestChatModel_convMedia(t *testing.T) {
 }
 
 func TestThoughtSignatureRoundTrip(t *testing.T) {
-	ctx := context.Background()
-	cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{}})
-	assert.Nil(t, err)
-
 	t.Run("convToolMessageToPart", func(t *testing.T) {
-		part, err := cm.convToolMessageToPart("tool_1", `{"result":"ok"}`)
+		part, err := convToolMessageToPart("tool_1", `{"result":"ok"}`)
 		assert.NoError(t, err)
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "tool_1", part.FunctionResponse.Name)
@@ -539,7 +526,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 	})
 
 	t.Run("convToolMessageToPart fallback to output", func(t *testing.T) {
-		part, err := cm.convToolMessageToPart("tool_2", "raw-response")
+		part, err := convToolMessageToPart("tool_2", "raw-response")
 		assert.NoError(t, err)
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "tool_2", part.FunctionResponse.Name)
@@ -571,7 +558,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			{Role: schema.Tool, ToolCallID: "call_b", Content: `{"res":"B"}`},
 		}
 
-		contents, err := cm.convSchemaMessages(messages)
+		contents, err := convSchemaMessages(messages)
 		assert.NoError(t, err)
 		assert.Len(t, contents, 2)
 		assert.Equal(t, roleModel, contents[0].Role)
@@ -598,7 +585,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			ToolCalls: []schema.ToolCall{*toolCall},
 		}
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		assert.NoError(t, err)
 		assert.NotNil(t, content)
 		assert.Len(t, content.Parts, 1)
@@ -619,7 +606,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		}
 		setMessageThoughtSignature(message, signature)
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		assert.NoError(t, err)
 		assert.NotNil(t, content)
 		// Should have 2 parts: thought part + text part
@@ -643,7 +630,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			ReasoningContent: "thinking process",
 		}
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		assert.NoError(t, err)
 		assert.NotNil(t, content)
 		// Should have 2 parts: thought part + text part
@@ -674,7 +661,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			ToolCalls:        []schema.ToolCall{toolCall},
 		}
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		assert.NoError(t, err)
 		assert.NotNil(t, content)
 		// Should have 2 parts: thought part + function call part
@@ -709,7 +696,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			ToolCalls: []schema.ToolCall{toolCall},
 		}
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		assert.NoError(t, err)
 		assert.NotNil(t, content)
 		assert.Len(t, content.Parts, 1)
@@ -747,7 +734,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			ToolCalls: []schema.ToolCall{toolCall1, toolCall2},
 		}
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		assert.NoError(t, err)
 		assert.NotNil(t, content)
 		assert.Len(t, content.Parts, 2)
@@ -773,7 +760,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		}
 		setMessageThoughtSignature(message, signature)
 
-		content, err := cm.convSchemaMessage(message)
+		content, err := convSchemaMessage(message)
 		assert.NoError(t, err)
 		assert.NotNil(t, content)
 		assert.Len(t, content.Parts, 1)
@@ -802,7 +789,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := cm.convCandidate(candidate)
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 1)
@@ -829,7 +816,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := cm.convCandidate(candidate)
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Equal(t, "Final response", message.Content)
@@ -859,7 +846,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		msg1, err := cm.convCandidate(candidate1)
+		msg1, err := convCandidate(candidate1)
 		assert.NoError(t, err)
 		assert.Equal(t, sigA, getToolCallThoughtSignature(&msg1.ToolCalls[0]))
 
@@ -879,16 +866,16 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		msg2, err := cm.convCandidate(candidate2)
+		msg2, err := convCandidate(candidate2)
 		assert.NoError(t, err)
 		assert.Equal(t, sigB, getToolCallThoughtSignature(&msg2.ToolCalls[0]))
 
 		// Verify both signatures can be restored correctly
-		content1, err := cm.convSchemaMessage(msg1)
+		content1, err := convSchemaMessage(msg1)
 		assert.NoError(t, err)
 		assert.Equal(t, sigA, content1.Parts[0].ThoughtSignature)
 
-		content2, err := cm.convSchemaMessage(msg2)
+		content2, err := convSchemaMessage(msg2)
 		assert.NoError(t, err)
 		assert.Equal(t, sigB, content2.Parts[0].ThoughtSignature)
 	})
@@ -1014,10 +1001,22 @@ func TestCreatePrefixCache(t *testing.T) {
 	})
 }
 
-func TestChatModel_convSchemaMessage(t *testing.T) {
-	cm := &ChatModel{}
-	content, err := cm.convSchemaMessage(&schema.Message{Role: schema.System, Content: "sys"})
+func TestSpecialPart(t *testing.T) {
+	msg, err := convCandidate(&genai.Candidate{
+		Content: &genai.Content{
+			Parts: []*genai.Part{
+				genai.NewPartFromExecutableCode("code", "language"),
+				genai.NewPartFromCodeExecutionResult("outcome", "output"),
+			},
+			Role: genai.RoleModel,
+		},
+	})
 	assert.Nil(t, err)
-	assert.Equal(t, 1, len(content.Parts))
 
+	content, err := convSchemaMessage(msg)
+	assert.Nil(t, err)
+	assert.Equal(t, content.Parts[0].ExecutableCode.Code, "code")
+	assert.Equal(t, content.Parts[0].ExecutableCode.Language, genai.Language("language"))
+	assert.Equal(t, content.Parts[1].CodeExecutionResult.Output, "output")
+	assert.Equal(t, content.Parts[1].CodeExecutionResult.Outcome, genai.Outcome("outcome"))
 }
