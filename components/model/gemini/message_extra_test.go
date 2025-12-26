@@ -168,3 +168,29 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		assert.Equal(t, signature, retrieved)
 	})
 }
+
+func TestCustomConcat(t *testing.T) {
+	extras := []map[string]any{
+		{"ExecutableCode": &genai.ExecutableCode{Code: "1", Language: "1"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "2", Language: "2"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "3", Language: ""}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "1", Output: "1"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "2"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "", Output: "3"}},
+	}
+
+	var msgs []*schema.Message
+	for _, extra := range extras {
+		msgs = append(msgs, &schema.Message{
+			Role:  schema.Assistant,
+			Extra: extra,
+		})
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"ExecutableCode":      &genai.ExecutableCode{Code: "123", Language: "2"},
+		"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "123"},
+	}, msg.Extra)
+}

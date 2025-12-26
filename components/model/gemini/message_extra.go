@@ -18,14 +18,94 @@ package gemini
 
 import (
 	"encoding/base64"
+	"strings"
 
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 )
 
+func init() {
+	compose.RegisterStreamChunkConcatFunc(func(chunks []*genai.ExecutableCode) (final *genai.ExecutableCode, err error) {
+		if len(chunks) == 0 {
+			return nil, nil
+		}
+		var lang genai.Language
+		code := &strings.Builder{}
+		for _, chunk := range chunks {
+			if chunk == nil {
+				continue
+			}
+			if len(chunk.Language) > 0 {
+				lang = chunk.Language
+			}
+			if len(chunk.Code) > 0 {
+				code.WriteString(chunk.Code)
+			}
+		}
+		return &genai.ExecutableCode{
+			Code:     code.String(),
+			Language: lang,
+		}, nil
+	})
+	schema.RegisterName[*genai.ExecutableCode]("_eino_ext_gemini_executalbe_code")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []*genai.CodeExecutionResult) (final *genai.CodeExecutionResult, err error) {
+		if len(chunks) == 0 {
+			return nil, nil
+		}
+		var outcome genai.Outcome
+		output := &strings.Builder{}
+		for _, chunk := range chunks {
+			if chunk == nil {
+				continue
+			}
+			if len(chunk.Outcome) > 0 {
+				outcome = chunk.Outcome
+			}
+			if len(chunk.Output) > 0 {
+				output.WriteString(chunk.Output)
+			}
+		}
+		return &genai.CodeExecutionResult{
+			Outcome: outcome,
+			Output:  output.String(),
+		}, nil
+	})
+	schema.RegisterName[*genai.CodeExecutionResult]("_eino_ext_gemini_code_execution_result")
+
+	compose.RegisterStreamChunkConcatFunc(func(chunks []*genai.GroundingMetadata) (final *genai.GroundingMetadata, err error) {
+		if len(chunks) == 0 {
+			return nil, nil
+		}
+		ret := &genai.GroundingMetadata{}
+		for _, chunk := range chunks {
+			if chunk == nil {
+				continue
+			}
+			ret.GoogleMapsWidgetContextToken += chunk.GoogleMapsWidgetContextToken
+			ret.GroundingChunks = append(ret.GroundingChunks, chunk.GroundingChunks...)
+			ret.GroundingSupports = append(ret.GroundingSupports, chunk.GroundingSupports...)
+			if chunk.RetrievalMetadata != nil {
+				ret.RetrievalMetadata = chunk.RetrievalMetadata
+			}
+			ret.RetrievalQueries = append(ret.RetrievalQueries, chunk.RetrievalQueries...)
+			if chunk.SearchEntryPoint != nil {
+				ret.SearchEntryPoint = chunk.SearchEntryPoint
+			}
+			ret.SourceFlaggingUris = append(ret.SourceFlaggingUris, chunk.SourceFlaggingUris...)
+			ret.WebSearchQueries = append(ret.WebSearchQueries, chunk.WebSearchQueries...)
+		}
+		return ret, nil
+	})
+	schema.RegisterName[*genai.GroundingMetadata]("_eino_ext_gemini_ground_metadata")
+}
+
 const (
 	videoMetaDataKey    = "gemini_video_meta_data"
 	thoughtSignatureKey = "gemini_thought_signature"
+	specialParteKey     = "gemini_special_part"
+	groundMetadataKey   = "gemini_ground_metadata"
 )
 
 // Deprecated: use SetInputVideoMetaData instead.
@@ -163,4 +243,24 @@ func getToolCallThoughtSignature(toolCall *schema.ToolCall) []byte {
 		return nil
 	}
 	return getThoughtSignatureFromExtra(toolCall.Extra)
+}
+
+func setGroundMetadata(m *schema.Message, gm *genai.GroundingMetadata) {
+	if m == nil {
+		return
+	}
+	if m.Extra == nil {
+		m.Extra = make(map[string]any)
+	}
+	m.Extra[groundMetadataKey] = gm
+}
+
+func GetGroundMetadata(m *schema.Message) *genai.GroundingMetadata {
+	if m == nil {
+		return nil
+	}
+	if gm, ok := m.Extra[groundMetadataKey].(*genai.GroundingMetadata); ok {
+		return gm
+	}
+	return nil
 }
