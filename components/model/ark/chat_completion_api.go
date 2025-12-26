@@ -311,6 +311,7 @@ func populateChatMsgReasoningContent(in *schema.Message, msg *model.ChatCompleti
 }
 
 func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *model.CreateChatCompletionRequest, err error) {
+
 	req = &model.CreateChatCompletionRequest{
 		MaxTokens:           options.MaxTokens,
 		Temperature:         options.Temperature,
@@ -368,7 +369,6 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 
 	if tools != nil {
 		req.Tools = make([]*model.Tool, 0, len(tools))
-
 		for _, tool := range tools {
 			arkTool := &model.Tool{
 				Type: model.ToolTypeFunction,
@@ -383,19 +383,9 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		}
 	}
 
-	if options.ToolChoice != nil {
-		var tc toolChoice
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			tc = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			tc = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			tc = toolChoiceRequired
-		default:
-			tc = toolChoiceAuto
-		}
-		req.ToolChoice = tc
+	err = populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -852,4 +842,66 @@ func (cm *completionAPIChatModel) toModelCallbackUsage(respMeta *schema.Response
 		},
 		TotalTokens: usage.TotalTokens,
 	}
+}
+
+func populateCompletionAPIToolChoice(req *model.CreateChatCompletionRequest, schemaToolChoice *schema.ToolChoice, allowedToolNames []string) error {
+	if schemaToolChoice == nil {
+		return nil
+	}
+
+	var tc toolChoice
+	switch *schemaToolChoice {
+	case schema.ToolChoiceForbidden:
+		tc = toolChoiceNone
+	case schema.ToolChoiceAllowed:
+		tc = toolChoiceAuto
+	case schema.ToolChoiceForced:
+		tc = toolChoiceRequired
+	default:
+		tc = toolChoiceAuto
+	}
+
+	if tc == toolChoiceRequired && len(req.Tools) == 0 {
+		return fmt.Errorf("tool_choice is forced but no tools are provided")
+	}
+
+	if tc == toolChoiceRequired {
+		var onlyOneToolName = ""
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+
+			allowedToolName := allowedToolNames[0]
+
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				if t.Function != nil {
+					toolsMap[t.Function.Name] = true
+				}
+			}
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+			onlyOneToolName = allowedToolNames[0]
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+
+		if onlyOneToolName != "" {
+			req.ToolChoice = model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: onlyOneToolName,
+				},
+			}
+			return nil
+		}
+
+	}
+
+	req.ToolChoice = tc
+
+	return nil
+
 }

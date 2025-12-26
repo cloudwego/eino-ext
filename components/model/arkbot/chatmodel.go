@@ -497,7 +497,79 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 		}
 	}
 
+	err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return req, err
+	}
+
 	return req, nil
+}
+
+type toolChoice string
+
+const (
+	toolChoiceNone     toolChoice = "none"
+	toolChoiceAuto     toolChoice = "auto"
+	toolChoiceRequired toolChoice = "required"
+)
+
+func populateToolChoice(req *model.BotChatCompletionRequest, optionTc *schema.ToolChoice, allowedToolNames []string) error {
+	if optionTc == nil {
+		return nil
+	}
+
+	var tc toolChoice
+	switch *optionTc {
+	case schema.ToolChoiceForbidden:
+		tc = toolChoiceNone
+	case schema.ToolChoiceAllowed:
+		tc = toolChoiceAuto
+	case schema.ToolChoiceForced:
+		tc = toolChoiceRequired
+	default:
+		tc = toolChoiceAuto
+	}
+
+	if tc == toolChoiceRequired && len(req.Tools) == 0 {
+		return fmt.Errorf("tool_choice is forced but no tools are provided")
+	}
+
+	if tc == toolChoiceRequired {
+		var onlyOneToolName string
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				if t.Function != nil {
+					toolsMap[t.Function.Name] = true
+				}
+			}
+
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+			onlyOneToolName = allowedToolName
+		} else if len(req.Tools) == 1 && req.Tools[0].Function != nil {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+		if onlyOneToolName != "" {
+			req.ToolChoice = model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: onlyOneToolName,
+				},
+			}
+			return nil
+		}
+
+	}
+	req.ToolChoice = tc
+
+	return nil
+
 }
 
 func toLogProbs(probs *model.LogProbs) *schema.LogProbs {
