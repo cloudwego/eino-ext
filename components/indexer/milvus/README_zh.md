@@ -2,6 +2,9 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
+> [!WARNING]
+> **已弃用**: 此组件基于已停止维护的 milvus-sdk-go v2.4.x，仅支持 Milvus 2.4。保留此组件是为了向后兼容。新用户请使用 [milvus2](../milvus2/README_zh.md)，它提供了更多功能并基于更新的 SDK 构建。
+
 基于 Milvus 2.x 的向量存储实现，为 [Eino](https://github.com/cloudwego/eino) 提供了符合 `Indexer` 接口的存储方案。该组件可无缝集成
 Eino 的向量存储和检索系统，增强语义搜索能力。
 
