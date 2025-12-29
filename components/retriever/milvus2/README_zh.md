@@ -4,6 +4,8 @@
 
 本包为 EINO 框架提供 Milvus 2.x (V2 SDK) 检索器实现，支持多种搜索模式的向量相似度搜索。
 
+> **注意**: 本包需要 **Milvus 2.5+** 以支持服务器端函数（如 BM25）。
+
 ## 功能特性
 
 - **Milvus V2 SDK**: 使用最新的 `milvus-io/milvus/client/v2` SDK
@@ -106,7 +108,6 @@ func main() {
 | `ScoreThreshold` | `*float64` | - | 最低分数阈值 |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | 读取一致性级别 |
 | `Partitions` | `[]string` | - | 要搜索的分区 |
-| `SparseEmbedding` | `SparseEmbedder` | - | 稀疏向量 Embedder，用于混合搜索 |
 
 ## 搜索模式
 
@@ -150,15 +151,16 @@ hybridMode := search_mode.NewHybrid(
         TopK:        10,
         MetricType:  milvus2.L2,
     },
+    // 稀疏子请求 (Sparse SubRequest)
     &search_mode.SubRequest{
-        VectorField: "sparse_vector",      // 稀疏向量字段
-        VectorType:  milvus2.SparseVector, // 指定稀疏类型
+        VectorField: "sparse_vector",       // 稀疏向量字段
+        VectorType:  milvus2.SparseVector,  // 指定稀疏类型
         TopK:        10,
-        MetricType:  milvus2.IP,            // 稀疏使用 IP 度量
+        MetricType:  milvus2.BM25,          // 使用 BM25 或 IP
     },
 )
 
-// 创建包含两个 Embedder 的 retriever
+// 创建 retriever (稀疏向量生成由 Milvus Function 服务器端处理)
 retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
     ClientConfig:    &milvusclient.ClientConfig{Address: "localhost:19530"},
     Collection:      "hybrid_collection",
@@ -166,7 +168,6 @@ retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
     TopK:            5,
     SearchMode:      hybridMode,
     Embedding:       denseEmbedder,        // 稠密向量的标准 Embedder
-    SparseEmbedding: sparseEmbedder,       // 稀疏查询的 SparseEmbedder
 })
 ```
 
@@ -200,6 +201,7 @@ docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023
 | `COSINE` | 余弦相似度 |
 | `HAMMING` | 汉明距离（二进制） |
 | `JACCARD` | 杰卡德距离（二进制） |
+| `BM25` | Okapi BM25 (稀疏) |
 
 > **重要提示**: SearchMode 中的度量类型必须与创建集合时使用的索引度量类型一致。
 

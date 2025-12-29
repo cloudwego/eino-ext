@@ -36,7 +36,7 @@ type SearchMode interface {
 type HybridSearchMode interface {
 	SearchMode
 	// BuildHybridSearchOption creates a HybridSearchOption for multi-vector search with reranking.
-	BuildHybridSearchOption(ctx context.Context, conf *RetrieverConfig, queryVector []float32, querySparseVector map[int]float64, opts ...retriever.Option) (milvusclient.HybridSearchOption, error)
+	BuildHybridSearchOption(ctx context.Context, conf *RetrieverConfig, queryVector []float32, query string, opts ...retriever.Option) (milvusclient.HybridSearchOption, error)
 }
 
 // QuerySearchMode defines the interface for scalar/query-only search.

@@ -77,10 +77,6 @@ type RetrieverConfig struct {
 	// Embedding is the embedder for query vectorization.
 	// Optional. Required if SearchMode uses vector search.
 	Embedding embedding.Embedder
-
-	// SparseEmbedding is the embedder for sparse query vectorization.
-	// Optional. Use this if your search mode involves sparse vectors.
-	SparseEmbedding SparseEmbedder
 }
 
 // Retriever implements the retriever.Retriever interface for Milvus 2.x using the V2 SDK.
@@ -205,16 +201,10 @@ func (r *Retriever) retrieveHybrid(ctx context.Context, mode HybridSearchMode, c
 		}
 	}
 
-	var querySparseVector map[int]float64
-	if r.config.SparseEmbedding != nil {
-		var err error
-		querySparseVector, err = r.embedSparseQuery(ctx, r.config.SparseEmbedding, query)
-		if err != nil {
-			return nil, err
-		}
-	}
+	// For sparse vectors with Milvus Function (BM25), we pass the raw query string.
+	// The underlying search mode implementation should handle passing this string to the AnnRequest.
 
-	searchOpt, err := mode.BuildHybridSearchOption(ctx, r.config, queryVector, querySparseVector, opts...)
+	searchOpt, err := mode.BuildHybridSearchOption(ctx, r.config, queryVector, query, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("[Retriever] failed to build hybrid search option: %w", err)
 	}
@@ -312,23 +302,6 @@ func (r *Retriever) embedQuery(ctx context.Context, emb embedding.Embedder, quer
 		queryVector[i] = float32(v)
 	}
 	return queryVector, nil
-}
-
-// embedSparseQuery embeds the query string into a sparse vector.
-func (r *Retriever) embedSparseQuery(ctx context.Context, emb SparseEmbedder, query string) (map[int]float64, error) {
-	if emb == nil {
-		return nil, fmt.Errorf("[Retriever] sparse embedding not provided")
-	}
-
-	vectors, err := emb.EmbedStrings(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("[Retriever] failed to embed sparse query: %w", err)
-	}
-	if len(vectors) != 1 {
-		return nil, fmt.Errorf("[Retriever] invalid sparse embedding result: expected 1, got %d", len(vectors))
-	}
-
-	return vectors[0], nil
 }
 
 // applyScoreThreshold filters documents below the score threshold.

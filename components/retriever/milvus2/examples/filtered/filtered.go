@@ -15,7 +15,13 @@
  */
 
 // This example demonstrates filtered vector search using Milvus boolean expressions.
-// Run the indexer HNSW example first to populate the collection.
+//
+// Prerequisites:
+// Run the hnsw indexer first to create the collection:
+//
+//	cd ../../../indexer/milvus2/examples/hnsw && go run .
+//
+// The collection "demo_hnsw" will be used for search.
 package main
 
 import (

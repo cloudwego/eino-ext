@@ -97,7 +97,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil)
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
@@ -116,7 +116,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq1, subReq2)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil)
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
@@ -130,7 +130,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil)
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
@@ -151,7 +151,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, configWithPartitions, queryVector, nil)
+			opt, err := hybrid.BuildHybridSearchOption(ctx, configWithPartitions, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
@@ -165,7 +165,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil,
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "",
 				milvus2.WithFilter("id > 10"))
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
@@ -181,7 +181,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			hybrid := NewHybrid(reranker, subReq)
 			hybrid.TopK = 50
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil)
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
@@ -196,7 +196,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil)
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
@@ -210,7 +210,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil,
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "",
 				milvus2.WithGrouping("category", 3, true))
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
@@ -225,7 +225,7 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, nil,
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "",
 				retriever.WithTopK(100))
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
@@ -240,8 +240,8 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 			}
 			hybrid := NewHybrid(reranker, subReq)
 
-			querySparseVector := map[int]float64{1: 0.5, 2: 0.8}
-			opt, err := hybrid.BuildHybridSearchOption(ctx, config, nil, querySparseVector)
+			query := "test query"
+			opt, err := hybrid.BuildHybridSearchOption(ctx, config, nil, query)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
