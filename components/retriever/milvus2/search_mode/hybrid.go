@@ -80,7 +80,7 @@ func (h *Hybrid) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverC
 }
 
 // BuildHybridSearchOption creates a HybridSearchOption for multi-vector search with reranking.
-func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, querySparseVector map[int]float64, opts ...retriever.Option) (milvusclient.HybridSearchOption, error) {
+func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, query string, opts ...retriever.Option) (milvusclient.HybridSearchOption, error) {
 	io := retriever.GetImplSpecificOptions(&milvus2.ImplOptions{}, opts...)
 	co := retriever.GetCommonOptions(&retriever.Options{
 		TopK: &conf.TopK,
@@ -111,21 +111,8 @@ func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.Retr
 		// Create ANN request based on VectorType
 		var annReq *milvusclient.AnnRequest
 		if req.VectorType == milvus2.SparseVector {
-			if len(querySparseVector) == 0 {
-				continue // Skip if no sparse vector provided but requested
-			}
-			// Convert map to sparse embedding
-			indices := make([]uint32, 0, len(querySparseVector))
-			values := make([]float32, 0, len(querySparseVector))
-			for k, v := range querySparseVector {
-				indices = append(indices, uint32(k))
-				values = append(values, float32(v))
-			}
-			sparseEmb, err := entity.NewSliceSparseEmbedding(indices, values)
-			if err != nil {
-				return nil, fmt.Errorf("failed to create sparse embedding: %w", err)
-			}
-			annReq = milvusclient.NewAnnRequest(field, limit, sparseEmb)
+			// Sparse vector: use raw text for BM25 function
+			annReq = milvusclient.NewAnnRequest(field, limit, entity.Text(query))
 		} else {
 			if len(queryVector) == 0 {
 				continue // Skip if no dense vector provided but requested

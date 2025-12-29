@@ -4,6 +4,8 @@ English | [中文](./README_zh.md)
 
 This package provides a Milvus 2.x (V2 SDK) retriever implementation for the EINO framework. It enables vector similarity search with multiple search modes.
 
+> **Note**: This package requires **Milvus 2.5+** for server-side function support (e.g., BM25).
+
 ## Features
 
 - **Milvus V2 SDK**: Uses the latest `milvus-io/milvus/client/v2` SDK
@@ -106,7 +108,6 @@ func main() {
 | `ScoreThreshold` | `*float64` | - | Minimum score threshold |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | Read consistency level |
 | `Partitions` | `[]string` | - | Partitions to search |
-| `SparseEmbedding` | `SparseEmbedder` | - | Sparse embedder for hybrid search |
 
 ## Search Modes
 
@@ -150,15 +151,16 @@ hybridMode := search_mode.NewHybrid(
         TopK:        10,
         MetricType:  milvus2.L2,
     },
+    // Sparse SubRequest
     &search_mode.SubRequest{
-        VectorField: "sparse_vector",      // Sparse vector field
-        VectorType:  milvus2.SparseVector, // Specify sparse type
+        VectorField: "sparse_vector",       // Sparse vector field
+        VectorType:  milvus2.SparseVector,  // Specify sparse type
         TopK:        10,
-        MetricType:  milvus2.IP,            // Sparse uses IP metric
+        MetricType:  milvus2.BM25,          // Use BM25 or IP based on index
     },
 )
 
-// Create retriever with both embedders
+// Create retriever (Sparse embedding handled server-side by Milvus Function)
 retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
     ClientConfig:    &milvusclient.ClientConfig{Address: "localhost:19530"},
     Collection:      "hybrid_collection",
@@ -166,7 +168,6 @@ retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
     TopK:            5,
     SearchMode:      hybridMode,
     Embedding:       denseEmbedder,        // Standard embedder for dense vectors
-    SparseEmbedding: sparseEmbedder,       // SparseEmbedder for sparse queries
 })
 ```
 
@@ -200,6 +201,7 @@ docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023
 | `COSINE` | Cosine similarity |
 | `HAMMING` | Hamming distance (binary) |
 | `JACCARD` | Jaccard distance (binary) |
+| `BM25` | Okapi BM25 (sparse) |
 
 > **Important**: The metric type in SearchMode must match the index metric type used when creating the collection.
 

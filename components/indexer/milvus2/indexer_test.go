@@ -401,8 +401,8 @@ func TestDefaultDocumentConverter(t *testing.T) {
 
 			columns, err := converter(ctx, docs, vectors)
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(columns), convey.ShouldEqual, 5) // id, content, metadata, vector, sparse_vector
-			convey.So(columns[4].Name(), convey.ShouldEqual, "sparse_vector")
+			// Sparse vector is generated server-side, so only 4 columns returned
+			convey.So(len(columns), convey.ShouldEqual, 4)
 			convey.So(columns[3].Name(), convey.ShouldEqual, defaultVectorField)
 		})
 	})

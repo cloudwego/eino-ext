@@ -85,8 +85,12 @@ type IndexerConfig struct {
 	VectorField string
 
 	// SparseVectorField is the name of the sparse vector field in the collection.
-	// Optional. If provided, sparse vectors will be extracted and indexed.
+	// Optional. If provided, the field will be created in the schema.
 	SparseVectorField string
+
+	// SparseMetricType is the metric type for sparse vector similarity.
+	// Default: IP (Inner Product). For BM25, use BM25.
+	SparseMetricType MetricType
 
 	// DocumentConverter converts EINO documents to Milvus columns.
 	// If nil, uses default conversion (id, content, vector, metadata as JSON).
@@ -95,6 +99,15 @@ type IndexerConfig struct {
 	// Embedding is the embedder for vectorization.
 	// Required.
 	Embedding embedding.Embedder
+
+	// Functions defines the Milvus built-in functions (e.g. BM25) to be added to the schema.
+	// Optional.
+	Functions []*entity.Function
+
+	// FieldParams defines extra parameters for fields (e.g. "enable_analyzer": "true").
+	// Key is field name, value is a map of parameter key-value pairs.
+	// Optional.
+	FieldParams map[string]map[string]string
 }
 
 // Indexer implements the indexer.Indexer interface for Milvus 2.x using the V2 SDK.
@@ -141,18 +154,9 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 		return nil, fmt.Errorf("[NewIndexer] failed to get load state: %w", err)
 	}
 	if loadState.State != entity.LoadStateLoaded {
-		indexes, err := cli.ListIndexes(ctx, milvusclient.NewListIndexOption(conf.Collection))
-		if err != nil {
-			// "index not found" error means no indexes exist - this is expected for new collections
-			if !isIndexNotFoundError(err) {
-				return nil, fmt.Errorf("[NewIndexer] failed to list indexes: %w", err)
-			}
-			indexes = nil
-		}
-		if len(indexes) == 0 {
-			if err := createIndex(ctx, cli, conf); err != nil {
-				return nil, err
-			}
+		// Try to create indexes. Ignore "already exists" errors.
+		if err := createIndex(ctx, cli, conf); err != nil {
+			return nil, err
 		}
 
 		loadTask, err := cli.LoadCollection(ctx, milvusclient.NewLoadCollectionOption(conf.Collection))
@@ -286,40 +290,70 @@ func (c *IndexerConfig) validate() error {
 	if c.DocumentConverter == nil {
 		c.DocumentConverter = defaultDocumentConverter(c.VectorField, c.SparseVectorField)
 	}
+	if c.SparseMetricType == "" {
+		c.SparseMetricType = IP
+	}
 	return nil
 }
 
 // createCollection creates a new Milvus collection with the default schema.
 func createCollection(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
+	// Helper to apply field params
+	applyParams := func(f *entity.Field, name string) {
+		if params, ok := conf.FieldParams[name]; ok {
+			for k, v := range params {
+				f.WithTypeParams(k, v)
+			}
+		}
+	}
+
+	idField := entity.NewField().
+		WithName(defaultIDField).
+		WithDataType(entity.FieldTypeVarChar).
+		WithMaxLength(defaultMaxIDLen).
+		WithIsPrimaryKey(true)
+	applyParams(idField, defaultIDField)
+
+	contentField := entity.NewField().
+		WithName(defaultContentField).
+		WithDataType(entity.FieldTypeVarChar).
+		WithMaxLength(defaultMaxContentLen)
+	applyParams(contentField, defaultContentField)
+
+	metadataField := entity.NewField().
+		WithName(defaultMetadataField).
+		WithDataType(entity.FieldTypeJSON)
+	applyParams(metadataField, defaultMetadataField)
+
 	sch := entity.NewSchema().
-		WithField(entity.NewField().
-			WithName(defaultIDField).
-			WithDataType(entity.FieldTypeVarChar).
-			WithMaxLength(defaultMaxIDLen).
-			WithIsPrimaryKey(true)).
-		WithField(entity.NewField().
-			WithName(defaultContentField).
-			WithDataType(entity.FieldTypeVarChar).
-			WithMaxLength(defaultMaxContentLen)).
-		WithField(entity.NewField().
-			WithName(defaultMetadataField).
-			WithDataType(entity.FieldTypeJSON)).
+		WithField(idField).
+		WithField(contentField).
+		WithField(metadataField).
 		WithDynamicFieldEnabled(conf.EnableDynamicSchema)
 
 	if conf.VectorField != "" {
-		sch.WithField(entity.NewField().
+		vecField := entity.NewField().
 			WithName(conf.VectorField).
 			WithDataType(entity.FieldTypeFloatVector).
-			WithDim(conf.Dimension))
+			WithDim(conf.Dimension)
+		applyParams(vecField, conf.VectorField)
+		sch.WithField(vecField)
 	} else if conf.SparseVectorField == "" {
 		// Should not happen if validation passed, but safety check: at least one vector field required
 		return fmt.Errorf("[NewIndexer] at least one vector field (dense or sparse) is required")
 	}
 
 	if conf.SparseVectorField != "" {
-		sch.WithField(entity.NewField().
+		sparseField := entity.NewField().
 			WithName(conf.SparseVectorField).
-			WithDataType(entity.FieldTypeSparseVector))
+			WithDataType(entity.FieldTypeSparseVector)
+		applyParams(sparseField, conf.SparseVectorField)
+		sch.WithField(sparseField)
+	}
+
+	// Add functions to schema
+	for _, fn := range conf.Functions {
+		sch.WithFunction(fn)
 	}
 
 	createOpt := milvusclient.NewCreateCollectionOption(conf.Collection, sch).
@@ -332,7 +366,7 @@ func createCollection(ctx context.Context, cli *milvusclient.Client, conf *Index
 	return nil
 }
 
-// createIndex creates an index on the vector field using the configured IndexBuilder.
+// createIndex creates indexes on fields if they don't exist.
 func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
 	if conf.VectorField != "" {
 		var idx index.Index
@@ -345,30 +379,34 @@ func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerCon
 		createIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.VectorField, idx)
 
 		createTask, err := cli.CreateIndex(ctx, createIndexOpt)
-		if err != nil {
+		if err != nil && !isIndexExistsError(err) {
 			return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
 		}
-		if err := createTask.Await(ctx); err != nil {
-			return fmt.Errorf("[NewIndexer] failed to await index creation: %w", err)
+		if err == nil {
+			if err := createTask.Await(ctx); err != nil {
+				return fmt.Errorf("[NewIndexer] failed to await index creation: %w", err)
+			}
 		}
 	}
 
 	if conf.SparseVectorField != "" {
 		var sparseIdx index.Index
 		if conf.SparseIndexBuilder != nil {
-			sparseIdx = conf.SparseIndexBuilder.Build(IP)
+			sparseIdx = conf.SparseIndexBuilder.Build(conf.SparseMetricType)
 		} else {
-			sparseIdx = NewSparseInvertedIndexBuilder().Build(IP)
+			sparseIdx = NewSparseInvertedIndexBuilder().Build(conf.SparseMetricType)
 		}
 
 		createSparseIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.SparseVectorField, sparseIdx)
 
 		createTask, err := cli.CreateIndex(ctx, createSparseIndexOpt)
-		if err != nil {
+		if err != nil && !isIndexExistsError(err) {
 			return fmt.Errorf("[NewIndexer] failed to create sparse index: %w", err)
 		}
-		if err := createTask.Await(ctx); err != nil {
-			return fmt.Errorf("[NewIndexer] failed to await sparse index creation: %w", err)
+		if err == nil {
+			if err := createTask.Await(ctx); err != nil {
+				return fmt.Errorf("[NewIndexer] failed to await sparse index creation: %w", err)
+			}
 		}
 	}
 
@@ -381,7 +419,6 @@ func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx co
 		ids := make([]string, 0, len(docs))
 		contents := make([]string, 0, len(docs))
 		vecs := make([][]float32, 0, len(docs))
-		sparseVecs := make([]entity.SparseEmbedding, 0, len(docs))
 		metadatas := make([][]byte, 0, len(docs))
 
 		for idx, doc := range docs {
@@ -395,31 +432,17 @@ func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx co
 				sourceVec = doc.DenseVector()
 			}
 
-			if len(sourceVec) == 0 {
-				return nil, fmt.Errorf("vector data missing for document %d (id: %s)", idx, doc.ID)
-			}
-
-			vec := make([]float32, len(sourceVec))
-			for i, v := range sourceVec {
-				vec[i] = float32(v)
-			}
-			vecs = append(vecs, vec)
-
-			if sparseVectorField != "" {
-				sparseMap := doc.SparseVector()
-
-				positions := make([]uint32, 0, len(sparseMap))
-				values := make([]float32, 0, len(sparseMap))
-				for k, v := range sparseMap {
-					positions = append(positions, uint32(k))
-					values = append(values, float32(v))
+			// Dense vector is required when vectorField is set (dense-only or hybrid mode).
+			// For sparse-only mode (e.g. BM25), vectorField is empty so this block is skipped.
+			if vectorField != "" {
+				if len(sourceVec) == 0 {
+					return nil, fmt.Errorf("vector data missing for document %d (id: %s)", idx, doc.ID)
 				}
-
-				se, err := entity.NewSliceSparseEmbedding(positions, values)
-				if err != nil {
-					return nil, fmt.Errorf("failed to create sparse embedding: %w", err)
+				vec := make([]float32, len(sourceVec))
+				for i, v := range sourceVec {
+					vec[i] = float32(v)
 				}
-				sparseVecs = append(sparseVecs, se)
+				vecs = append(vecs, vec)
 			}
 
 			metadata, err := sonic.Marshal(doc.MetaData)
@@ -442,10 +465,6 @@ func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx co
 
 		if vectorField != "" {
 			columns = append(columns, column.NewColumnFloatVector(vectorField, dim, vecs))
-		}
-
-		if sparseVectorField != "" {
-			columns = append(columns, column.NewColumnSparseVectors(sparseVectorField, sparseVecs))
 		}
 
 		return columns, nil
@@ -476,4 +495,12 @@ func isIndexNotFoundError(err error) bool {
 	errMsg := err.Error()
 	return strings.Contains(errMsg, "index not found") ||
 		strings.Contains(errMsg, "index doesn't exist")
+}
+
+func isIndexExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	return strings.Contains(strings.ToLower(errMsg), "already exists") || strings.Contains(strings.ToLower(errMsg), "already exist")
 }

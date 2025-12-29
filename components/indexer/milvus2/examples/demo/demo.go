@@ -180,16 +180,6 @@ func main() {
 	log.Printf("  Categories: %v", categories)
 	log.Printf("  Tags: %v", tags)
 	log.Printf("  Years: 2023, 2024")
-
-	// Flush
-	flushTask, err := cli.Flush(ctx, milvusclient.NewFlushOption(collectionName))
-	if err != nil {
-		log.Fatal(err)
-	}
-	if err := flushTask.Await(ctx); err != nil {
-		log.Fatal(err)
-	}
-
 	log.Println("Collection ready for retriever examples (grouping, iterator, scalar)")
 }
 

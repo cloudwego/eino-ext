@@ -395,7 +395,7 @@ type mockHybridSearchMode struct {
 	err error
 }
 
-func (m *mockHybridSearchMode) BuildHybridSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, querySparseVector map[int]float64, opts ...retriever.Option) (milvusclient.HybridSearchOption, error) {
+func (m *mockHybridSearchMode) BuildHybridSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, query string, opts ...retriever.Option) (milvusclient.HybridSearchOption, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -462,39 +462,7 @@ func TestRetriever_RetrieveHybrid(t *testing.T) {
 			convey.So(err.Error(), convey.ShouldContainSubstring, "hybrid search failed")
 			convey.So(docs, convey.ShouldBeNil)
 		})
-		PatchConvey("test hybrid search with sparse embedding", func() {
-			mockSparse := &mockSparseEmbedder{
-				result: []map[int]float64{{1: 0.5, 2: 0.8}},
-			}
-			r.config.SparseEmbedding = mockSparse
-
-			// Mock HybridSearch to return results
-			Mock(GetMethod(mockClient, "HybridSearch")).Return([]milvusclient.ResultSet{
-				createMockResultSet([]string{"1"}, []string{"doc1"}, []float32{0.9}, [][]byte{[]byte(`{}`)}),
-			}, nil).Build()
-
-			docs, err := r.Retrieve(ctx, "test query")
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(docs), convey.ShouldEqual, 1)
-			convey.So(docs[0].ID, convey.ShouldEqual, "1")
-		})
 	})
-}
-
-// mockSparseEmbedder implements SparseEmbedder for testing
-type mockSparseEmbedder struct {
-	result []map[int]float64
-	err    error
-}
-
-func (m *mockSparseEmbedder) EmbedStrings(ctx context.Context, texts []string) ([]map[int]float64, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	if len(texts) != 1 {
-		return nil, fmt.Errorf("expected 1 text, got %d", len(texts))
-	}
-	return m.result, nil
 }
 
 // mockIteratorSearchMode implements IteratorSearchMode for testing

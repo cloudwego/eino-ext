@@ -4,10 +4,14 @@
 
 本包为 EINO 框架提供 Milvus 2.x (V2 SDK) 索引器实现，支持文档存储和向量索引。
 
+> **注意**: 本包需要 **Milvus 2.5+** 以支持服务器端函数（如 BM25）。
+
 ## 功能特性
 
 - **Milvus V2 SDK**: 使用最新的 `milvus-io/milvus/client/v2` SDK
 - **自动集合管理**: 按需自动创建集合和索引
+- **Milvus Functions**: 支持服务器端函数（如 BM25）自动生成稀疏向量
+- **字段分析**: 支持文本字段的分析器配置 (Configurable analyzers)
 - **灵活的索引类型**: 支持多种索引构建器 (Auto, HNSW, IVF_FLAT, FLAT 等)
 - **稀疏向量支持**: 存储和索引稀疏向量，实现混合检索
 - **自定义文档转换**: 可配置的文档到列转换
@@ -115,6 +119,9 @@ func main() {
 | `EnableDynamicSchema` | `bool` | `false` | 启用动态字段支持 |
 | `SparseVectorField` | `string` | - | 稀疏向量字段名（启用稀疏索引） |
 | `SparseIndexBuilder` | `SparseIndexBuilder` | SPARSE_INVERTED | 稀疏索引构建器 |
+| `SparseMetricType` | `MetricType` | `IP` | 稀疏索引度量类型 (IP, BM25) |
+| `Functions` | `[]*entity.Function` | - | Schema 函数定义（如 BM25），用于服务器端处理 |
+| `FieldParams` | `map[string]map[string]string` | - | 字段参数配置（如 enable_analyzer） |
 
 ## 索引构建器
 
@@ -195,7 +202,7 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参�
 - [rabitq](./examples/rabitq) - IVF_RABITQ 索引示例 (Milvus 2.6+)
 - [auto](./examples/auto) - AutoIndex 示例
 - [diskann](./examples/diskann) - DISKANN 索引示例
-- [sparse](./examples/sparse) - 稀疏向量（稠密 + 稀疏混合）示例
+- [bm25](./examples/bm25) - BM25 服务端稀疏向量示例 (Milvus 2.5+)
 - [byov](./examples/byov) - 自带向量示例
 
 ### 稀疏向量支持

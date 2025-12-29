@@ -14,13 +14,22 @@
  * limitations under the License.
  */
 
-// This example demonstrates Hybrid Search combining Dense and Sparse vectors.
-// Dense vectors capture semantic meaning, while sparse vectors enable keyword matching.
-// Results from both searches are fused using RRFReranker.
+// This example demonstrates Hybrid Search combining Dense and Sparse (BM25) vectors.
+// Dense vectors capture semantic meaning, while BM25 sparse vectors enable keyword matching.
+// Results are fused using RRFReranker for best-of-both-worlds retrieval.
+//
+// Note on Reranking:
+// This example uses Milvus's server-side RRFReranker which fuses results from multiple
+// vector searches BEFORE returning. For post-retrieval reranking (e.g., using cross-encoder
+// models like Cohere Rerank), use Eino's document.Transformer interface instead. See:
+// github.com/cloudwego/eino-ext/components/document/transformer/reranker
 //
 // Prerequisites:
-// - A Milvus collection with both dense and sparse vector fields.
-// - Use the indexer sparse example to create such a collection.
+// Run the bm25 indexer first to create the collection with BM25 function:
+//
+//	cd ../../../indexer/milvus2/examples/bm25 && go run .
+//
+// Requires Milvus 2.5+ for server-side BM25 function support.
 package main
 
 import (
@@ -44,61 +53,66 @@ func main() {
 
 	ctx := context.Background()
 
-	// 1. Define Reranker
-	// RRFReranker (Reciprocal Rank Fusion) combines scores from multiple searches.
+	// Collection created by indexer bm25 example with BM25 function
+	collectionName := "eino_bm25_test"
+	sparseField := "sparse_vector"
+
+	// Define Reranker: RRF combines scores from dense and sparse searches
 	reranker := milvusclient.NewRRFReranker().WithK(60)
 
-	// 2. Define Hybrid Mode with Dense + Sparse SubRequests
+	// Define Hybrid Mode with Dense + Sparse (BM25) SubRequests
 	hybridMode := search_mode.NewHybrid(reranker,
 		// Dense vector search (semantic similarity)
 		&search_mode.SubRequest{
-			VectorField: "vector",            // Dense vector field
-			VectorType:  milvus2.DenseVector, // Default, can be omitted
+			VectorField: "vector",
+			VectorType:  milvus2.DenseVector,
 			TopK:        10,
-			MetricType:  milvus2.L2, // Must match index metric type
+			MetricType:  milvus2.L2,
 		},
-		// Sparse vector search (keyword matching)
+		// Sparse vector search (BM25 keyword matching)
+		// Uses raw query text - Milvus generates sparse vector server-side
 		&search_mode.SubRequest{
-			VectorField: "sparse_vector", // Sparse vector field
+			VectorField: sparseField,
 			VectorType:  milvus2.SparseVector,
 			TopK:        10,
-			MetricType:  milvus2.IP, // Sparse uses IP metric
+			MetricType:  milvus2.BM25,
 		},
 	)
 
-	// 3. Create Retriever with both Dense and Sparse Embedders
+	// Create Retriever
+	// Only dense embedding needed - sparse (BM25) is handled server-side
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
-		ClientConfig:    &milvusclient.ClientConfig{Address: addr},
-		Collection:      "eino_sparse_test", // Collection created by indexer sparse example
-		VectorField:     "vector",
-		OutputFields:    []string{"id", "content", "metadata"},
-		TopK:            5,
-		SearchMode:      hybridMode,
-		Embedding:       &mockDenseEmbedding{dim: 128}, // Dense embedder
-		SparseEmbedding: &mockSparseEmbedding{},        // Sparse embedder
+		ClientConfig: &milvusclient.ClientConfig{Address: addr},
+		Collection:   collectionName,
+		VectorField:  "vector",
+		OutputFields: []string{"id", "content", "metadata"},
+		TopK:         5,
+		SearchMode:   hybridMode,
+		Embedding:    &mockDenseEmbedding{dim: 128},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create retriever: %v", err)
 	}
-	log.Println("Hybrid (Dense+Sparse) Retriever created successfully")
+	log.Println("Hybrid (Dense + BM25) Retriever created successfully")
 
-	// 4. Perform Search
-	// The query is embedded using both dense and sparse embedders.
-	docs, err := retriever.Retrieve(ctx, "machine learning algorithms")
+	// Search with raw text
+	// - Dense: text is embedded via mockDenseEmbedding
+	// - Sparse: text is passed directly to Milvus for BM25 processing
+	docs, err := retriever.Retrieve(ctx, "scalable vector database")
 	if err != nil {
 		log.Fatalf("Failed to retrieve: %v", err)
 	}
 
-	fmt.Printf("\nFound %d documents (Hybrid Dense+Sparse Fused):\n", len(docs))
+	fmt.Printf("\nFound %d documents (Hybrid Dense + BM25):\n", len(docs))
 	for i, doc := range docs {
 		fmt.Printf("\n--- Document %d ---\n", i+1)
 		fmt.Printf("ID: %s\n", doc.ID)
 		fmt.Printf("Content: %s\n", doc.Content)
-		fmt.Printf("Score: %v\n", doc.MetaData["score"])
+		fmt.Printf("Score: %v\n", doc.Score())
 	}
 }
 
-// mockDenseEmbedding generates dense embeddings for demonstration
+// mockDenseEmbedding for demo purposes
 type mockDenseEmbedding struct{ dim int }
 
 func (m *mockDenseEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
@@ -109,25 +123,6 @@ func (m *mockDenseEmbedding) EmbedStrings(ctx context.Context, texts []string, o
 			vec[j] = float64(j) * 0.01
 		}
 		result[i] = vec
-	}
-	return result, nil
-}
-
-// mockSparseEmbedding generates sparse embeddings for demonstration
-// In production, use a real sparse embedding model (e.g., SPLADE, BM25).
-type mockSparseEmbedding struct{}
-
-func (m *mockSparseEmbedding) EmbedStrings(ctx context.Context, texts []string) ([]map[int]float64, error) {
-	result := make([]map[int]float64, len(texts))
-	for i, text := range texts {
-		// Simple mock: use character codes as sparse indices
-		sparse := make(map[int]float64)
-		for j, c := range text {
-			if j < 10 { // Limit to first 10 characters
-				sparse[int(c)] = float64(j+1) * 0.1
-			}
-		}
-		result[i] = sparse
 	}
 	return result, nil
 }

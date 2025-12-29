@@ -4,10 +4,14 @@ English | [中文](./README_zh.md)
 
 This package provides a Milvus 2.x (V2 SDK) indexer implementation for the EINO framework. It enables document storage and vector indexing in Milvus.
 
+> **Note**: This package requires **Milvus 2.5+** for server-side function support (e.g., BM25).
+
 ## Features
 
 - **Milvus V2 SDK**: Uses the latest `milvus-io/milvus/client/v2` SDK
 - **Auto Collection Management**: Automatically creates collections and indexes when needed
+- **Milvus Functions**: Support for server-side functions (e.g., BM25) for automatic sparse vector generation
+- **Field Analysis**: Configurable analyzers for text fields
 - **Flexible Index Types**: Supports multiple index builders (Auto, HNSW, IVF_FLAT, FLAT, etc.)
 - **Sparse Vector Support**: Store and index sparse vectors for hybrid retrieval
 - **Custom Document Conversion**: Configurable document-to-column conversion
@@ -115,6 +119,9 @@ func main() {
 | `EnableDynamicSchema` | `bool` | `false` | Enable dynamic field support |
 | `SparseVectorField` | `string` | - | Sparse vector field name (enables sparse indexing) |
 | `SparseIndexBuilder` | `SparseIndexBuilder` | SPARSE_INVERTED | Sparse index builder |
+| `SparseMetricType` | `MetricType` | `IP` | Metric type for sparse index (IP, BM25) |
+| `Functions` | `[]*entity.Function` | - | Schema functions (e.g., BM25) for server-side processing |
+| `FieldParams` | `map[string]map[string]string` | - | Parameters for fields (e.g., enable_analyzer) |
 
 ## Index Builders
 
@@ -195,7 +202,7 @@ See the [examples](./examples) directory for complete working examples:
 - [rabitq](./examples/rabitq) - IVF_RABITQ index example (Milvus 2.6+)
 - [auto](./examples/auto) - AutoIndex example
 - [diskann](./examples/diskann) - DISKANN index example
-- [sparse](./examples/sparse) - Sparse vector (Dense + Sparse hybrid) example
+- [bm25](./examples/bm25) - BM25 server-side sparse vector example (Milvus 2.5+)
 - [byov](./examples/byov) - Bring Your Own Vectors example
 
 ### Sparse Vector Support
