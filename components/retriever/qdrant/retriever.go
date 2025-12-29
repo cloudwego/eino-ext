@@ -210,7 +210,22 @@ func defaultResultParser(returnFields []string) func(ctx context.Context, point 
 			} else if field == defaultMetadataKey {
 				resp.MetaData[defaultMetadataKey] = val.GetStructValue().Fields
 			} else {
-				resp.MetaData[field] = val
+				switch val.GetKind().(type) {
+				case *qdrant.Value_NullValue:
+					resp.MetaData[field] = val.GetNullValue()
+				case *qdrant.Value_DoubleValue:
+					resp.MetaData[field] = val.GetDoubleValue()
+				case *qdrant.Value_IntegerValue:
+					resp.MetaData[field] = val.GetIntegerValue()
+				case *qdrant.Value_StringValue:
+					resp.MetaData[field] = val.GetStringValue()
+				case *qdrant.Value_BoolValue:
+					resp.MetaData[field] = val.GetBoolValue()
+				case *qdrant.Value_StructValue:
+					resp.MetaData[field] = val.GetStructValue().Fields
+				case *qdrant.Value_ListValue:
+					resp.MetaData[field] = val.GetListValue()
+				}
 			}
 		}
 
