@@ -506,18 +506,14 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 }
 
 // convToolMessageToPart converts a tool response message into a Gemini part.
-func (cm *ChatModel) convToolMessageToPart(message *schema.Message) (*genai.Part, error) {
-	if message.Role != schema.Tool {
-		return nil, fmt.Errorf("expected tool message, got %s", message.Role)
-	}
-
+func (cm *ChatModel) convToolMessageToPart(toolName, content string) (*genai.Part, error) {
 	response := make(map[string]any)
-	err := sonic.UnmarshalString(message.Content, &response)
+	err := sonic.UnmarshalString(content, &response)
 	if err != nil {
-		response = map[string]any{"output": message.Content}
+		response = map[string]any{"output": content}
 	}
 
-	return genai.NewPartFromFunctionResponse(message.ToolCallID, response), nil
+	return genai.NewPartFromFunctionResponse(toolName, response), nil
 }
 
 func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
@@ -578,7 +574,13 @@ func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content,
 	}
 
 	if message.Role == schema.Tool {
-		part, err := cm.convToolMessageToPart(message)
+		toolName := message.ToolName
+		if len(toolName) == 0 {
+			// For compatibility with Gemini, which does not provide a tool call id, this wrapper assigns the tool name to the tool call id field,
+			// falling back to the original toolCallId if tool name is empty.
+			toolName = message.ToolCallID
+		}
+		part, err := cm.convToolMessageToPart(toolName, message.Content)
 		if err != nil {
 			return nil, err
 		}
@@ -690,7 +692,7 @@ func (cm *ChatModel) convInputMedia(contents []schema.MessageInputPart) ([]*gena
 				}
 				result = append(result, genai.NewPartFromBytes(data, content.Image.MIMEType))
 			} else if content.Image.URL != nil {
-				return nil, fmt.Errorf("gemini: URL is not supported for image parts, please use Base64Data instead")
+				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Image.URL, MIMEType: content.Image.MIMEType}))
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			if content.Audio == nil {
@@ -706,7 +708,7 @@ func (cm *ChatModel) convInputMedia(contents []schema.MessageInputPart) ([]*gena
 				}
 				result = append(result, genai.NewPartFromBytes(data, content.Audio.MIMEType))
 			} else if content.Audio.URL != nil {
-				return nil, fmt.Errorf("gemini: URL is not supported for audio parts, please use Base64Data instead")
+				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Audio.URL, MIMEType: content.Audio.MIMEType}))
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			if content.Video == nil {
@@ -728,7 +730,7 @@ func (cm *ChatModel) convInputMedia(contents []schema.MessageInputPart) ([]*gena
 				}
 				result = append(result, genai.NewPartFromBytes(data, content.Video.MIMEType))
 			} else if content.Video.URL != nil {
-				return nil, fmt.Errorf("gemini: URL is not supported for video parts, please use Base64Data instead")
+				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Video.URL, MIMEType: content.Video.MIMEType}))
 			}
 		case schema.ChatMessagePartTypeFileURL:
 			if content.File == nil {
@@ -744,7 +746,7 @@ func (cm *ChatModel) convInputMedia(contents []schema.MessageInputPart) ([]*gena
 				}
 				result = append(result, genai.NewPartFromBytes(data, content.File.MIMEType))
 			} else if content.File.URL != nil {
-				return nil, fmt.Errorf("gemini: URL is not supported for file parts, please use Base64Data instead")
+				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.File.URL, MIMEType: content.File.MIMEType}))
 			}
 		}
 	}
@@ -771,7 +773,7 @@ func (cm *ChatModel) convOutputMedia(contents []schema.MessageOutputPart) ([]*ge
 				}
 				result = append(result, genai.NewPartFromBytes(data, content.Image.MIMEType))
 			} else if content.Image.URL != nil {
-				return nil, fmt.Errorf("gemini: URL is not supported for image parts, please use Base64Data instead")
+				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Image.URL, MIMEType: content.Image.MIMEType}))
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			if content.Audio == nil {
@@ -787,7 +789,7 @@ func (cm *ChatModel) convOutputMedia(contents []schema.MessageOutputPart) ([]*ge
 				}
 				result = append(result, genai.NewPartFromBytes(data, content.Audio.MIMEType))
 			} else if content.Audio.URL != nil {
-				return nil, fmt.Errorf("gemini: URL is not supported for audio parts, please use Base64Data instead")
+				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Audio.URL, MIMEType: content.Audio.MIMEType}))
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			if content.Video == nil {
@@ -803,7 +805,7 @@ func (cm *ChatModel) convOutputMedia(contents []schema.MessageOutputPart) ([]*ge
 				}
 				result = append(result, genai.NewPartFromBytes(data, content.Video.MIMEType))
 			} else if content.Video.URL != nil {
-				return nil, fmt.Errorf("gemini: URL is not supported for video parts, please use Base64Data instead")
+				result = append(result, genai.NewPartFromFile(genai.File{URI: *content.Video.URL, MIMEType: content.Video.MIMEType}))
 			}
 		}
 	}

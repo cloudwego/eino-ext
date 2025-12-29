@@ -430,7 +430,7 @@ func TestChatModel_convMedia(t *testing.T) {
 
 		t.Run("with video metadata", func(t *testing.T) {
 			videoPart := &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}
-			setInputVideoMetaData(videoPart, &genai.VideoMetadata{
+			SetInputVideoMetaData(videoPart, &genai.VideoMetadata{
 				StartOffset: time.Second,
 				EndOffset:   time.Second * 5,
 			})
@@ -449,16 +449,11 @@ func TestChatModel_convMedia(t *testing.T) {
 		})
 
 		t.Run("error cases", func(t *testing.T) {
-			url := "https://example.com/image.png"
 			invalidBase64 := "invalid-base64"
 			testCases := []struct {
 				name    string
 				content schema.MessageInputPart
 			}{
-				{name: "Image with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
-				{name: "Audio with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
-				{name: "Video with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
-				{name: "File with URL", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
 				{name: "Image with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
 				{name: "Image without MIMEType", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Audio with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
@@ -504,15 +499,11 @@ func TestChatModel_convMedia(t *testing.T) {
 		})
 
 		t.Run("error cases", func(t *testing.T) {
-			url := "https://example.com/image.png"
 			invalidBase64 := "invalid-base64"
 			testCases := []struct {
 				name    string
 				content schema.MessageOutputPart
 			}{
-				{name: "Image with URL", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
-				{name: "Audio with URL", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
-				{name: "Video with URL", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: &url}}}},
 				{name: "Image with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
 				{name: "Image without MIMEType", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}},
 				{name: "Audio with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
@@ -540,11 +531,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 	assert.Nil(t, err)
 
 	t.Run("convToolMessageToPart", func(t *testing.T) {
-		part, err := cm.convToolMessageToPart(&schema.Message{
-			Role:       schema.Tool,
-			ToolCallID: "tool_1",
-			Content:    `{"result":"ok"}`,
-		})
+		part, err := cm.convToolMessageToPart("tool_1", `{"result":"ok"}`)
 		assert.NoError(t, err)
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "tool_1", part.FunctionResponse.Name)
@@ -552,11 +539,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 	})
 
 	t.Run("convToolMessageToPart fallback to output", func(t *testing.T) {
-		part, err := cm.convToolMessageToPart(&schema.Message{
-			Role:       schema.Tool,
-			ToolCallID: "tool_2",
-			Content:    "raw-response",
-		})
+		part, err := cm.convToolMessageToPart("tool_2", "raw-response")
 		assert.NoError(t, err)
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "tool_2", part.FunctionResponse.Name)

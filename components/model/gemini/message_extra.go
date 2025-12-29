@@ -28,7 +28,7 @@ const (
 	thoughtSignatureKey = "gemini_thought_signature"
 )
 
-// Deprecated: use SetInputVideoMetaData or SetOutputVideoMetaData instead.
+// Deprecated: use SetInputVideoMetaData instead.
 func SetVideoMetaData(part *schema.ChatMessageVideoURL, metaData *genai.VideoMetadata) {
 	if part == nil {
 		return
@@ -39,7 +39,7 @@ func SetVideoMetaData(part *schema.ChatMessageVideoURL, metaData *genai.VideoMet
 	setVideoMetaData(part.Extra, metaData)
 }
 
-// Deprecated: use GetInputVideoMetaData or GetOutputVideoMetaData instead.
+// Deprecated: use GetInputVideoMetaData instead.
 func GetVideoMetaData(part *schema.ChatMessageVideoURL) *genai.VideoMetadata {
 	if part == nil || part.Extra == nil {
 		return nil
@@ -47,7 +47,7 @@ func GetVideoMetaData(part *schema.ChatMessageVideoURL) *genai.VideoMetadata {
 	return getVideoMetaData(part.Extra)
 }
 
-func setInputVideoMetaData(part *schema.MessageInputVideo, metaData *genai.VideoMetadata) {
+func SetInputVideoMetaData(part *schema.MessageInputVideo, metaData *genai.VideoMetadata) {
 	if part == nil {
 		return
 	}

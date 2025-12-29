@@ -60,6 +60,7 @@ const (
 const (
 	callbackExtraKeyThinking      = "thinking"
 	callbackExtraKeyPreResponseID = "ark-previous-response-id"
+	callbackExtraModelName        = "model_name"
 )
 
 type toolChoice string
