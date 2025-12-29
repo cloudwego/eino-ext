@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strings"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
@@ -61,21 +63,28 @@ var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 //	})
 func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 	var cli anthropic.Client
-	if !config.ByBedrock {
-		var opts []option.RequestOption
-
-		opts = append(opts, option.WithAPIKey(config.APIKey))
-
-		if config.BaseURL != nil {
-			opts = append(opts, option.WithBaseURL(*config.BaseURL))
+	if config.ByVertex {
+		// Use Google Vertex AI
+		// Auto-detect project ID from config or environment variables
+		projectID := config.VertexProjectID
+		if projectID == "" {
+			projectID = getEnvWithFallbacks("ANTHROPIC_VERTEX_PROJECT_ID", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT")
+		}
+		if projectID == "" {
+			return nil, errors.New("ByVertex is true but no project ID provided; set VertexProjectID or ANTHROPIC_VERTEX_PROJECT_ID")
 		}
 
-		if config.HTTPClient != nil {
-			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		// Auto-detect region from config or environment variable
+		region := config.VertexRegion
+		if region == "" {
+			region = os.Getenv("CLOUD_ML_REGION")
 		}
-
-		cli = anthropic.NewClient(opts...)
-	} else {
+		if region == "" {
+			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
+		}
+		cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+	} else if config.ByBedrock {
+		// Use AWS Bedrock
 		var opts []func(*awsConfig.LoadOptions) error
 		if config.Region != "" {
 			opts = append(opts, awsConfig.WithRegion(config.Region))
@@ -94,11 +103,36 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
 		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+	} else {
+		// Use direct Anthropic API
+		var opts []option.RequestOption
+
+		opts = append(opts, option.WithAPIKey(config.APIKey))
+
+		if config.BaseURL != nil {
+			opts = append(opts, option.WithBaseURL(*config.BaseURL))
+		}
+
+		if config.HTTPClient != nil {
+			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		}
+
+		cli = anthropic.NewClient(opts...)
 	}
+
+	// Auto-detect model from config or environment variable
+	model := config.Model
+	if model == "" {
+		model = os.Getenv("ANTHROPIC_MODEL")
+	}
+	if model == "" {
+		return nil, errors.New("no model specified; set Model config or ANTHROPIC_MODEL environment variable")
+	}
+
 	return &ChatModel{
 		cli:                    cli,
 		maxTokens:              config.MaxTokens,
-		model:                  config.Model,
+		model:                  model,
 		stopSequences:          config.StopSequences,
 		temperature:            config.Temperature,
 		thinking:               config.Thinking,
@@ -140,6 +174,19 @@ type Config struct {
 	// Optional for Bedrock
 	Region string
 
+	// ByVertex indicates whether to use Google Vertex AI
+	ByVertex bool
+
+	// VertexProjectID is your Google Cloud project ID.
+	// If not set, auto-detected from environment variables:
+	// ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT
+	VertexProjectID string
+
+	// VertexRegion is the Vertex AI region (e.g., "us-east5").
+	// If not set, auto-detected from CLOUD_ML_REGION environment variable.
+	// See: https://claude.ai/docs/en/google-vertex-ai
+	VertexRegion string
+
 	// BaseURL is the custom API endpoint URL
 	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
 	// Optional. Example: "https://custom-claude-api.example.com"
@@ -150,8 +197,8 @@ type Config struct {
 	// Required
 	APIKey string
 
-	// Model specifies which Claude model to use
-	// Required
+	// Model specifies which Claude model to use.
+	// If not set, auto-detected from ANTHROPIC_MODEL environment variable.
 	Model string
 
 	// MaxTokens limits the maximum number of tokens in the response
@@ -1099,4 +1146,15 @@ func newPanicErr(info any, stack []byte) error {
 		info:  info,
 		stack: stack,
 	}
+}
+
+// getEnvWithFallbacks returns the first non-empty environment variable value
+// from the given list of variable names.
+func getEnvWithFallbacks(keys ...string) string {
+	for _, key := range keys {
+		if val := os.Getenv(key); val != "" {
+			return val
+		}
+	}
+	return ""
 }
