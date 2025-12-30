@@ -149,7 +149,13 @@ docs, _ := retriever.Retrieve(ctx, "query", es7.WithFilters(filters))
 
 ## Full Examples
 
-- [Indexer Example](../../indexer/es7/examples/indexer)
+
+- [Dense Vector Similarity Example](./examples/dense_vector_similarity)
+- [Exact Match Example](./examples/exact_match)
+- [Raw String Request Example](./examples/raw_string)
+
+## Full Examples
+
 - [Dense Vector Similarity Example](./examples/dense_vector_similarity)
 - [Exact Match Example](./examples/exact_match)
 - [Raw String Request Example](./examples/raw_string)

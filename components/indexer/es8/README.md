@@ -153,6 +153,11 @@ type FieldValue struct {
 }
 ```
 
+## Full Examples
+
+- [Indexer Example](./examples/indexer)
+- [Indexer with Sparse Vector Example](./examples/indexer_with_sparse_vector)
+
 ## For More Details
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

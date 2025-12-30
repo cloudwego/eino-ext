@@ -173,6 +173,14 @@ type RetrieverConfig struct {
 }
 ```
 
+## Full Examples
+
+- [Approximate Search Example](./examples/approximate)
+- [Dense Vector Similarity Example](./examples/dense_vector_similarity)
+- [Exact Match Example](./examples/exact_match)
+- [Raw String Request Example](./examples/raw_string)
+- [Sparse Vector Query Example](./examples/sparse_vector_query)
+
 ## For More Details
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

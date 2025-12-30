@@ -175,6 +175,14 @@ type RetrieverConfig struct {
 }
 ```
 
+## 完整示例
+
+- [近似搜索示例](./examples/approximate)
+- [稠密向量相似度示例](./examples/dense_vector_similarity)
+- [精确匹配示例](./examples/exact_match)
+- [原始字符串请求示例](./examples/raw_string)
+- [稀疏向量查询示例](./examples/sparse_vector_query)
+
 ## 更多详情
 
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)

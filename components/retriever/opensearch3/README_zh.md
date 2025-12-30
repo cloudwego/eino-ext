@@ -137,6 +137,12 @@ type RetrieverConfig struct {
 }
 ```
 
+## 完整示例
+
+- [近似搜索示例](./examples/approximate)
+- [稠密向量相似度示例](./examples/dense_vector_similarity)
+- [Neural Sparse 搜索示例](./examples/neural_sparse)
+
 ## 更多详情
 
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)

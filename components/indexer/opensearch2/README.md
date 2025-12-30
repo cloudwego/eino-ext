@@ -112,6 +112,10 @@ type FieldValue struct {
 }
 ```
 
+## Full Examples
+
+- [Indexer Example](./examples/indexer)
+
 ## For More Details
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

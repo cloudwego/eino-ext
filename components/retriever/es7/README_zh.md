@@ -149,7 +149,13 @@ docs, _ := retriever.Retrieve(ctx, "query", es7.WithFilters(filters))
 
 ## 完整示例
 
-- [索引器示例](../../indexer/es7/examples/indexer)
+
+- [稠密向量相似度示例](./examples/dense_vector_similarity)
+- [精确匹配示例](./examples/exact_match)
+- [原始字符串请求示例](./examples/raw_string)
+
+## 完整示例
+
 - [稠密向量相似度示例](./examples/dense_vector_similarity)
 - [精确匹配示例](./examples/exact_match)
 - [原始字符串请求示例](./examples/raw_string)

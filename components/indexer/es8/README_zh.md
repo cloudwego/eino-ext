@@ -151,6 +151,11 @@ type FieldValue struct {
 }
 ```
 
+## 完整示例
+
+- [索引器示例](./examples/indexer)
+- [稀疏向量索引器示例](./examples/indexer_with_sparse_vector)
+
 ## 更多详情
 
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)

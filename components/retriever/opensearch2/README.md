@@ -134,6 +134,13 @@ type RetrieverConfig struct {
 }
 ```
 
+## Full Examples
+
+- [Approximate Search Example](./examples/approximate)
+- [Dense Vector Similarity Example](./examples/dense_vector_similarity)
+- [KNN Search Example](./examples/knn)
+- [Neural Sparse Search Example](./examples/neural_sparse)
+
 ## For More Details
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
