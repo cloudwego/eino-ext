@@ -31,10 +31,12 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/opensearch2"
 )
 
@@ -49,8 +51,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// create embedding component
-	emb := createYourEmbedding()
+	// create embedding component using ARK
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// create opensearch indexer component
 	indexer, _ := opensearch2.NewIndexer(ctx, &opensearch2.IndexerConfig{
@@ -72,8 +78,12 @@ func main() {
 		{ID: "1", Content: "example content"},
 	}
 
-	ids, _ := indexer.Store(ctx, docs)
-	fmt.Println(ids)
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		fmt.Printf("index error: %v\n", err)
+		return
+	}
+	fmt.Println("indexed ids:", ids)
 }
 ```
 

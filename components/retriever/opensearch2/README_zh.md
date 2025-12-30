@@ -46,11 +46,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2"
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2/search_mode"
 )
@@ -64,6 +67,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// 使用 Volcengine ARK 创建 embedding 组件
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// 创建检索器组件
 	retriever, _ := opensearch2.NewRetriever(ctx, &opensearch2.RetrieverConfig{
@@ -82,10 +92,17 @@ func main() {
 			content, _ := source["content"].(string)
 			return &schema.Document{ID: id, Content: content}, nil
 		},
-		Embedding: createYourEmbedding(),
+		Embedding: emb,
 	})
 
-	docs, _ := retriever.Retrieve(ctx, "search query")
+	docs, err := retriever.Retrieve(ctx, "search query")
+	if err != nil {
+		fmt.Printf("retrieve error: %v\n", err)
+		return
+	}
+	for _, doc := range docs {
+		fmt.Printf("ID: %s, Content: %s\n", doc.ID, doc.Content)
+	}
 }
 ```
 

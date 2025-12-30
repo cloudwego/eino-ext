@@ -35,6 +35,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v7"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/es7"
 	"github.com/cloudwego/eino-ext/components/retriever/es7/search_mode"
 )
@@ -53,7 +54,11 @@ func main() {
 	})
 
 	// Create embedding component for vector search
-	emb := createYourEmbedding()
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// Create retriever with dense vector similarity search
 	retriever, _ := es7.NewRetriever(ctx, &es7.RetrieverConfig{
@@ -68,7 +73,7 @@ func main() {
 	docs, _ := retriever.Retrieve(ctx, "search query")
 
 	for _, doc := range docs {
-		fmt.Printf("ID: %s, Content: %s, Score: %v\n", doc.ID, doc.Content, doc.MetaData["score"])
+		fmt.Printf("ID: %s, Content: %s, Score: %v\n", doc.ID, doc.Content, doc.Score())
 	}
 }
 ```

@@ -35,6 +35,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v7"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/es7"
 	"github.com/cloudwego/eino-ext/components/retriever/es7/search_mode"
 )
@@ -52,8 +53,12 @@ func main() {
 		Password:  password,
 	})
 
-	// 创建用于向量搜索的 embedding 组件
-	emb := createYourEmbedding()
+	// 使用 Volcengine ARK 创建用于向量搜索的 embedding 组件
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// 创建带有稠密向量相似度搜索的检索器
 	retriever, _ := es7.NewRetriever(ctx, &es7.RetrieverConfig{
@@ -68,7 +73,7 @@ func main() {
 	docs, _ := retriever.Retrieve(ctx, "search query")
 
 	for _, doc := range docs {
-		fmt.Printf("ID: %s, Content: %s, Score: %v\n", doc.ID, doc.Content, doc.MetaData["score"])
+		fmt.Printf("ID: %s, Content: %s, Score: %v\n", doc.ID, doc.Content, doc.Score())
 	}
 }
 ```
