@@ -1,8 +1,8 @@
-# OpenSearch Retriever
+# OpenSearch 3 Retriever
 
 English | [简体中文](README_zh.md)
 
-An OpenSearch retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration with Eino's vector retrieval system for enhanced semantic search capabilities.
+An OpenSearch 3 retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration with Eino's vector retrieval system for enhanced semantic search capabilities.
 
 ## Features
 

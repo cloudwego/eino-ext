@@ -1,8 +1,8 @@
-# OpenSearch Retriever
+# OpenSearch 2 Retriever
 
 [English](README.md) | 简体中文
 
-[Eino](https://github.com/cloudwego/eino) 的 OpenSearch 检索器实现，实现了 `Retriever` 接口。这使得 OpenSearch 可以无缝集成到 Eino 的向量检索系统中，增强语义搜索能力。
+[Eino](https://github.com/cloudwego/eino) 的 OpenSearch 2 检索器实现，实现了 `Retriever` 接口。这使得 OpenSearch 可以无缝集成到 Eino 的向量检索系统中，增强语义搜索能力。
 
 ## 功能特性
 

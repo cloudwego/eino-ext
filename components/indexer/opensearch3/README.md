@@ -1,8 +1,8 @@
-# OpenSearch Indexer
+# OpenSearch 3 Indexer
 
 English | [简体中文](README_zh.md)
 
-An OpenSearch indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer` interface. This enables seamless integration with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
+An OpenSearch 3 indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer` interface. This enables seamless integration with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
 ## Features
 
