@@ -25,6 +25,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 )
 
+// SearchModeExactMatch creates an exact match query for the specified field.
 func SearchModeExactMatch(queryFieldName string) es8.SearchMode {
 	return &exactMatch{queryFieldName}
 }

@@ -29,29 +29,16 @@ import (
 func TestVideoMetaDataFunctions(t *testing.T) {
 	ptr := func(f float64) *float64 { return &f }
 
-	t.Run("TestSetVideoMetaData", func(t *testing.T) {
-		videoURL := &schema.ChatMessageVideoURL{}
-
-		// Success case
-		metaData := &genai.VideoMetadata{FPS: ptr(24.0)}
-		SetVideoMetaData(videoURL, metaData)
-		assert.Equal(t, metaData, GetVideoMetaData(videoURL))
-
-		// Boundary case: nil input
-		SetVideoMetaData(nil, metaData)
-		assert.Nil(t, GetVideoMetaData(nil))
-	})
-
 	t.Run("TestSetInputVideoMetaData", func(t *testing.T) {
 		inputVideo := &schema.MessageInputVideo{}
 
 		// Success case
 		metaData := &genai.VideoMetadata{FPS: ptr(10.0)}
-		setInputVideoMetaData(inputVideo, metaData)
+		SetInputVideoMetaData(inputVideo, metaData)
 		assert.Equal(t, metaData, GetInputVideoMetaData(inputVideo))
 
 		// Boundary case: nil input
-		setInputVideoMetaData(nil, metaData)
+		SetInputVideoMetaData(nil, metaData)
 		assert.Nil(t, GetInputVideoMetaData(nil))
 	})
 }
@@ -180,4 +167,30 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		retrieved := getToolCallThoughtSignature(&restored)
 		assert.Equal(t, signature, retrieved)
 	})
+}
+
+func TestCustomConcat(t *testing.T) {
+	extras := []map[string]any{
+		{"ExecutableCode": &genai.ExecutableCode{Code: "1", Language: "1"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "2", Language: "2"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "3", Language: ""}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "1", Output: "1"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "2"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "", Output: "3"}},
+	}
+
+	var msgs []*schema.Message
+	for _, extra := range extras {
+		msgs = append(msgs, &schema.Message{
+			Role:  schema.Assistant,
+			Extra: extra,
+		})
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"ExecutableCode":      &genai.ExecutableCode{Code: "123", Language: "2"},
+		"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "123"},
+	}, msg.Extra)
 }

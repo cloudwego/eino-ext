@@ -152,7 +152,10 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 		Message:    outMsg,
 		Config:     reqConf,
 		TokenUsage: cm.toModelCallbackUsage(outMsg.ResponseMeta),
-		Extra:      map[string]any{callbackExtraKeyThinking: specOptions.thinking},
+		Extra: map[string]any{
+			callbackExtraKeyThinking: specOptions.thinking,
+			callbackExtraModelName:   resp.Model,
+		},
 	})
 
 	return outMsg, nil
@@ -265,7 +268,10 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 				Message:    msg,
 				Config:     reqConf,
 				TokenUsage: cm.toModelCallbackUsage(msg.ResponseMeta),
-				Extra:      map[string]any{callbackExtraKeyThinking: arkOpts.thinking},
+				Extra: map[string]any{
+					callbackExtraKeyThinking: arkOpts.thinking,
+					callbackExtraModelName:   resp.Model,
+				},
 			}, nil)
 			if closed {
 				return
@@ -587,8 +593,8 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 	}
 
 	if len(msg.UserInputMultiContent) > 0 {
-		if msg.Role != schema.User {
-			return nil, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
+		if msg.Role != schema.User && msg.Role != schema.Tool {
+			return nil, fmt.Errorf("user input multi content only support user&tool role, got %s", msg.Role)
 		}
 		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.UserInputMultiContent))
 		var err error

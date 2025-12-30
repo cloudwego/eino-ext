@@ -1,6 +1,6 @@
 # ES8 Retriever
 
-English
+English | [中文](README_zh.md)
 
 An Elasticsearch 8.x retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration with Eino's vector retrieval system for enhanced semantic search capabilities.
 
@@ -140,13 +140,16 @@ type RetrieverConfig struct {
     Client *elasticsearch.Client // Required: Elasticsearch client instance
     Index  string               // Required: Index name to retrieve documents from
     TopK   int                  // Required: Number of results to return
-    
+
     // Required: Search mode configuration
     SearchMode search_mode.SearchMode
-    
-    // Required: Function to parse Elasticsearch hits into Documents
+
+    // Optional: Function to parse Elasticsearch hits into Documents
+    // If not provided, default parser will be used which:
+    // 1. Extracts "content" field from source as Document.Content
+    // 2. Used other source fields as Document.MetaData
     ResultParser func(ctx context.Context, hit types.Hit) (*schema.Document, error)
-    
+
     // Optional: Required only if query vectorization is needed
     Embedding embedding.Embedder
 }

@@ -92,6 +92,123 @@ func TestNewRetriever(t *testing.T) {
 		assert.Equal(t, "i'm fine, thank you", docs[0].Content)
 	})
 
+	t.Run("default_result_parser", func(t *testing.T) {
+		r, err := NewRetriever(ctx, &RetrieverConfig{
+			Client: &elasticsearch.Client{},
+			Index:  "eino_ut",
+			TopK:   10,
+			// No ResultParser provided, should use default
+			SearchMode: &mockSearchMode{},
+		})
+		assert.NoError(t, err)
+
+		mockSearch := search.NewSearchFunc(r.client)()
+
+		defer mockey.Mock(mockey.GetMethod(mockSearch, "Index")).
+			Return(mockSearch).Build().Patch().UnPatch()
+
+		defer mockey.Mock(mockey.GetMethod(mockSearch, "Request")).
+			Return(mockSearch).Build().Patch().UnPatch()
+
+		t.Run("success", func(t *testing.T) {
+			defer mockey.Mock(mockey.GetMethod(mockSearch, "Do")).Return(&search.Response{
+				Hits: types.HitsMetadata{
+					Hits: []types.Hit{
+						{
+							Id_:    func() *string { s := "doc_1"; return &s }(),
+							Score_: func() *types.Float64 { f := types.Float64(0.9); return &f }(),
+							Source_: json.RawMessage([]byte(`{
+						  "content": "default parser content",
+						  "extra": "metadata"
+						}`)),
+						},
+					},
+				},
+			}, nil).Build().Patch().UnPatch()
+
+			docs, err := r.Retrieve(ctx, "test query")
+			assert.NoError(t, err)
+
+			assert.Len(t, docs, 1)
+			assert.Equal(t, "doc_1", docs[0].ID)
+			assert.Equal(t, "default parser content", docs[0].Content)
+			assert.Equal(t, "metadata", docs[0].MetaData["extra"])
+			assert.Equal(t, 0.9, docs[0].Score())
+		})
+
+		t.Run("missing_id", func(t *testing.T) {
+			defer mockey.Mock(mockey.GetMethod(mockSearch, "Do")).Return(&search.Response{
+				Hits: types.HitsMetadata{
+					Hits: []types.Hit{
+						{
+							Score_: func() *types.Float64 { f := types.Float64(0.9); return &f }(),
+							Source_: json.RawMessage([]byte(`{
+						  "content": "default parser content"
+						}`)),
+						},
+					},
+				},
+			}, nil).Build().Patch().UnPatch()
+
+			_, err := r.Retrieve(ctx, "test query")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "field '_id' not found")
+		})
+
+		t.Run("missing_source", func(t *testing.T) {
+			defer mockey.Mock(mockey.GetMethod(mockSearch, "Do")).Return(&search.Response{
+				Hits: types.HitsMetadata{
+					Hits: []types.Hit{
+						{
+							Id_: func() *string { s := "doc_1"; return &s }(),
+						},
+					},
+				},
+			}, nil).Build().Patch().UnPatch()
+
+			_, err := r.Retrieve(ctx, "test query")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "field '_source' not found")
+		})
+
+		t.Run("missing_content", func(t *testing.T) {
+			defer mockey.Mock(mockey.GetMethod(mockSearch, "Do")).Return(&search.Response{
+				Hits: types.HitsMetadata{
+					Hits: []types.Hit{
+						{
+							Id_: func() *string { s := "doc_1"; return &s }(),
+							Source_: json.RawMessage([]byte(`{
+						  "other": "field"
+						}`)),
+						},
+					},
+				},
+			}, nil).Build().Patch().UnPatch()
+
+			_, err := r.Retrieve(ctx, "test query")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "field 'content' not found")
+		})
+
+		t.Run("invalid_content_type", func(t *testing.T) {
+			defer mockey.Mock(mockey.GetMethod(mockSearch, "Do")).Return(&search.Response{
+				Hits: types.HitsMetadata{
+					Hits: []types.Hit{
+						{
+							Id_: func() *string { s := "doc_1"; return &s }(),
+							Source_: json.RawMessage([]byte(`{
+						  "content": 123
+						}`)),
+						},
+					},
+				},
+			}, nil).Build().Patch().UnPatch()
+
+			_, err := r.Retrieve(ctx, "test query")
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "field 'content' in document doc_1 is not a string")
+		})
+	})
 }
 
 type mockSearchMode struct{}

@@ -24,6 +24,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/core/search"
 )
 
+// SearchModeRawStringRequest uses the query string as the JSON request body directly.
 func SearchModeRawStringRequest() es8.SearchMode {
 	return &rawString{}
 }
