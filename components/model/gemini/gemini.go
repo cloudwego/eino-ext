@@ -73,6 +73,7 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		enableGoogleMaps:            cfg.EnableGoogleMaps,
 		safetySettings:              cfg.SafetySettings,
 		thinkingConfig:              cfg.ThinkingConfig,
+		imageConfig:                 cfg.ImageConfig,
 		responseModalities:          cfg.ResponseModalities,
 		mediaResolution:             cfg.MediaResolution,
 		cache:                       cfg.Cache,
@@ -130,6 +131,8 @@ type Config struct {
 
 	ThinkingConfig *genai.ThinkingConfig
 
+	ImageConfig *genai.ImageConfig
+
 	// ResponseModalities specifies the modalities the model can return.
 	// Optional.
 	ResponseModalities []GeminiResponseModality
@@ -170,6 +173,7 @@ type ChatModel struct {
 	enableGoogleMaps            *genai.GoogleMaps
 	safetySettings              []*genai.SafetySetting
 	thinkingConfig              *genai.ThinkingConfig
+	imageConfig                 *genai.ImageConfig
 	responseModalities          []GeminiResponseModality
 	mediaResolution             genai.MediaResolution
 	cache                       *CacheConfig
@@ -522,6 +526,11 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	m.ThinkingConfig = cm.thinkingConfig
 	if geminiOptions.ThinkingConfig != nil {
 		m.ThinkingConfig = geminiOptions.ThinkingConfig
+	}
+
+	m.ImageConfig = cm.imageConfig
+	if geminiOptions.ImageConfig != nil {
+		m.ImageConfig = geminiOptions.ImageConfig
 	}
 
 	if len(geminiOptions.CachedContentName) > 0 {
