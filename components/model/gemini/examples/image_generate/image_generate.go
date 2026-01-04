@@ -22,10 +22,10 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
-	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
@@ -71,21 +71,39 @@ func main() {
 			},
 		}
 	*/
-	resp, err := cm.Generate(ctx, []*schema.Message{
-		{
-			Role: schema.User,
-			UserInputMultiContent: []schema.MessageInputPart{
-				{
-					Type: schema.ChatMessagePartTypeText,
-					Text: "Generate an image of a cat",
-				},
+	firstUserMessage := &schema.Message{
+		Role: schema.User,
+		UserInputMultiContent: []schema.MessageInputPart{
+			{
+				Type: schema.ChatMessagePartTypeText,
+				Text: "Generate an image of a cat",
 			},
 		},
-	})
+	}
+
+	resp, err := cm.Generate(ctx, []*schema.Message{firstUserMessage})
 	if err != nil {
 		log.Fatalf("Generate error: %v", err)
 	}
 	log.Printf("\ngenerate output: \n")
 	respBody, _ := json.MarshalIndent(resp, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
+
+	secondUserMessage := &schema.Message{
+		Role: schema.User,
+		UserInputMultiContent: []schema.MessageInputPart{
+			{
+				Type: schema.ChatMessagePartTypeText,
+				Text: "Generate another image based on the previous image, but the cat is wearing a hat",
+			},
+		},
+	}
+
+	resp2, err := cm.Generate(ctx, []*schema.Message{firstUserMessage, resp, secondUserMessage})
+	if err != nil {
+		log.Fatalf("Generate error: %v", err)
+	}
+	log.Printf("\ngenerate output (round 2): \n")
+	respBody2, _ := json.MarshalIndent(resp2, "  ", "  ")
+	log.Printf("  body: %s\n", string(respBody2))
 }

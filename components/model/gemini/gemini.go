@@ -825,11 +825,15 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error) {
 	result := make([]*genai.Part, 0, len(contents))
 	for _, content := range contents {
+		sig, _ := GetThoughtSignatureFromExtra(content.Extra)
 		switch content.Type {
 		case schema.ChatMessagePartTypeText:
 			p := tryRestoreSpecialPart(content)
 			if p == nil {
 				p = genai.NewPartFromText(content.Text)
+			}
+			if len(sig) > 0 {
+				p.ThoughtSignature = sig
 			}
 			result = append(result, p)
 
@@ -841,6 +845,9 @@ func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error)
 			if err != nil {
 				return nil, err
 			}
+			if len(sig) > 0 {
+				p.ThoughtSignature = sig
+			}
 			result = append(result, p)
 
 		case schema.ChatMessagePartTypeAudioURL:
@@ -851,6 +858,9 @@ func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error)
 			if err != nil {
 				return nil, err
 			}
+			if len(sig) > 0 {
+				p.ThoughtSignature = sig
+			}
 			result = append(result, p)
 
 		case schema.ChatMessagePartTypeVideoURL:
@@ -860,6 +870,9 @@ func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error)
 			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
 			if err != nil {
 				return nil, err
+			}
+			if len(sig) > 0 {
+				p.ThoughtSignature = sig
 			}
 			result = append(result, p)
 		}
@@ -1060,10 +1073,12 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 			} else if len(part.Text) > 0 {
 				texts = append(texts, part.Text)
 				contentBuilder.WriteString(part.Text)
-				outParts = append(outParts, schema.MessageOutputPart{
+				outPart := schema.MessageOutputPart{
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.Text,
-				})
+				}
+				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
+				outParts = append(outParts, outPart)
 			}
 			if part.FunctionCall != nil {
 				fc, err := convFC(part)
@@ -1086,6 +1101,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 						specialParteKey: part.CodeExecutionResult,
 					},
 				}
+				setMessageOutputPartThoughtSignature(&p, part.ThoughtSignature)
 				outParts = append(outParts, p)
 			}
 			if part.ExecutableCode != nil {
@@ -1096,6 +1112,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 						specialParteKey: part.ExecutableCode,
 					},
 				}
+				setMessageOutputPartThoughtSignature(&p, part.ThoughtSignature)
 				outParts = append(outParts, p)
 			}
 			if part.InlineData != nil && part.InlineData.Data != nil {
@@ -1103,6 +1120,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 				if err != nil {
 					return nil, err
 				}
+				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
 				outParts = append(outParts, outPart)
 			}
 		}
@@ -1144,6 +1162,7 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 			return schema.MessageOutputPart{}, fmt.Errorf("unsupported media type from Gemini model response: MIMEType=%s", mimeType)
 		}
 	}
+
 	return res, nil
 }
 

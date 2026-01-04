@@ -795,9 +795,13 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Len(t, message.ToolCalls, 1)
 
 		// Signature should be stored on the tool call
-		assert.Equal(t, signature, getToolCallThoughtSignature(&message.ToolCalls[0]))
+		sig, ok := GetThoughtSignatureFromExtra(message.ToolCalls[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, signature, sig)
 		// Message-level signature should be nil (signature is on functionCall)
-		assert.Nil(t, getMessageThoughtSignature(message))
+		sig, ok = GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, sig)
 	})
 
 	// Test convCandidate extracts signature from text part (non-function-call)
@@ -822,7 +826,42 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Equal(t, "Final response", message.Content)
 
 		// Signature should be stored at message level for non-functionCall parts
-		assert.Equal(t, signature, getMessageThoughtSignature(message))
+		sig, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.True(t, ok)
+		assert.Equal(t, signature, sig)
+	})
+
+	t.Run("convCandidate stores signatures on output parts and convSchemaMessage restores them", func(t *testing.T) {
+		sigA := []byte("sig_A")
+		sigB := []byte("sig_B")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{Text: "A", ThoughtSignature: sigA},
+					{Text: "B", ThoughtSignature: sigB},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.AssistantGenMultiContent, 2)
+
+		sig, ok := GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigA, sig)
+		sig, ok = GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[1].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigB, sig)
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.Len(t, content.Parts, 2)
+		assert.Equal(t, sigA, content.Parts[0].ThoughtSignature)
+		assert.Equal(t, sigB, content.Parts[1].ThoughtSignature)
 	})
 
 	// Test sequential function calls - each step has its own signature
@@ -848,7 +887,9 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 
 		msg1, err := convCandidate(candidate1)
 		assert.NoError(t, err)
-		assert.Equal(t, sigA, getToolCallThoughtSignature(&msg1.ToolCalls[0]))
+		sig, ok := GetThoughtSignatureFromExtra(msg1.ToolCalls[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigA, sig)
 
 		// Simulate step 2 response
 		candidate2 := &genai.Candidate{
@@ -868,7 +909,9 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 
 		msg2, err := convCandidate(candidate2)
 		assert.NoError(t, err)
-		assert.Equal(t, sigB, getToolCallThoughtSignature(&msg2.ToolCalls[0]))
+		sig, ok = GetThoughtSignatureFromExtra(msg2.ToolCalls[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigB, sig)
 
 		// Verify both signatures can be restored correctly
 		content1, err := convSchemaMessage(msg1)
