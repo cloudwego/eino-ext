@@ -188,7 +188,7 @@ func getMessageThoughtSignature(message *schema.Message) []byte {
 
 // GetThoughtSignatureFromExtra tries to read thought_signature from an Extra map.
 //
-// ThoughtSignature should be read from:
+// thought_signature should be read from:
 //   - message.Extra: thought_signature on generated content parts (text/inlineData)
 //   - toolCall.Extra: thought_signature on functionCall parts
 //
