@@ -27,6 +27,7 @@ type options struct {
 	TopK               *int32
 	ResponseJSONSchema *jsonschema.Schema
 	ThinkingConfig     *genai.ThinkingConfig
+	ImageConfig        *genai.ImageConfig
 	ResponseModalities []GeminiResponseModality
 
 	CachedContentName string
@@ -47,6 +48,12 @@ func WithResponseJSONSchema(s *jsonschema.Schema) model.Option {
 func WithThinkingConfig(t *genai.ThinkingConfig) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ThinkingConfig = t
+	})
+}
+
+func WithImageConfig(i *genai.ImageConfig) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ImageConfig = i
 	})
 }
 
