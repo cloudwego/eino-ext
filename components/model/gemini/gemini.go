@@ -1074,6 +1074,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 				if err != nil {
 					return nil, err
 				}
+				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
 				outParts = append(outParts, outPart)
 			}
 		}
@@ -1115,9 +1116,7 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 			return schema.MessageOutputPart{}, fmt.Errorf("unsupported media type from Gemini model response: MIMEType=%s", mimeType)
 		}
 	}
-	if len(part.ThoughtSignature) > 0 {
-		setMessageOutputPartThoughtSignature(&res, part.ThoughtSignature)
-	}
+
 	return res, nil
 }
 
