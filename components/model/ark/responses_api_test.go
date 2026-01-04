@@ -37,9 +37,9 @@ import (
 func TestResponsesAPIChatModelGenerate(t *testing.T) {
 	PatchConvey("test Generate", t, func() {
 		Mock(callbacks.OnError).Return(context.Background()).Build()
-		Mock((*responsesAPIChatModel).genRequestAndOptions).
+		Mock((*ResponsesAPIChatModel).genRequestAndOptions).
 			Return(&responses.ResponsesRequest{}, nil).Build()
-		Mock((*responsesAPIChatModel).toCallbackConfig).
+		Mock((*ResponsesAPIChatModel).toCallbackConfig).
 			Return(&model.Config{}).Build()
 		MockGeneric(callbacks.OnStart[*callbacks.CallbackInput]).Return(context.Background()).Build()
 
@@ -49,8 +49,8 @@ func TestResponsesAPIChatModelGenerate(t *testing.T) {
 					OutputTokensDetails: &responses.OutputTokensDetails{ReasoningTokens: 100}},
 			}, nil).Build()
 
-		Mock((*responsesAPIChatModel).toOutputMessage).To(func(resp *responses.ResponseObject, cache *cacheConfig) (*schema.Message, error) {
-			cm := &responsesAPIChatModel{}
+		Mock((*ResponsesAPIChatModel).toOutputMessage).To(func(resp *responses.ResponseObject, cache *cacheConfig) (*schema.Message, error) {
+			cm := &ResponsesAPIChatModel{}
 			return &schema.Message{
 				Role:    schema.Assistant,
 				Content: "assistant",
@@ -62,7 +62,7 @@ func TestResponsesAPIChatModelGenerate(t *testing.T) {
 
 		MockGeneric(callbacks.OnEnd[*callbacks.CallbackOutput]).Return(context.Background()).Build()
 
-		cm := &responsesAPIChatModel{}
+		cm := &ResponsesAPIChatModel{}
 		msg, err := cm.Generate(context.Background(), []*schema.Message{
 			{
 				Role:    schema.User,
@@ -82,10 +82,10 @@ func TestResponsesAPIChatModelStream(t *testing.T) {
 
 		Mock(callbacks.OnError).Return(ctx).Build()
 
-		Mock((*responsesAPIChatModel).genRequestAndOptions).
+		Mock((*ResponsesAPIChatModel).genRequestAndOptions).
 			Return(&responses.ResponsesRequest{}, nil).Build()
 
-		Mock((*responsesAPIChatModel).toCallbackConfig).
+		Mock((*ResponsesAPIChatModel).toCallbackConfig).
 			Return(&model.Config{}).Build()
 		MockGeneric(callbacks.OnStart[*callbacks.CallbackInput]).Return(context.Background()).Build()
 
@@ -97,9 +97,9 @@ func TestResponsesAPIChatModelStream(t *testing.T) {
 		MockGeneric(schema.Pipe[*model.CallbackOutput]).
 			Return(sr, sw).Build()
 
-		Mock((*responsesAPIChatModel).receivedStreamResponse).Return().Build()
+		Mock((*ResponsesAPIChatModel).receivedStreamResponse).Return().Build()
 
-		cm := &responsesAPIChatModel{}
+		cm := &ResponsesAPIChatModel{}
 		stream, err := cm.Stream(context.Background(), []*schema.Message{
 			{
 				Role:    schema.User,
@@ -120,7 +120,7 @@ func TestResponsesAPIChatModelStream(t *testing.T) {
 }
 
 func TestResponsesAPIChatModelInjectInput(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 
 	PatchConvey("empty input message", t, func() {
 		req := &responses.ResponsesRequest{
@@ -230,7 +230,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 }
 
 func TestResponsesAPIChatModelToOpenaiMultiModalContent(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 
 	PatchConvey("image message", t, func() {
 		msg := &schema.Message{
@@ -267,7 +267,7 @@ func TestResponsesAPIChatModelToOpenaiMultiModalContent(t *testing.T) {
 }
 
 func TestResponsesAPIChatModelToTools(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 
 	PatchConvey("empty tools", t, func() {
 		tools := []*schema.ToolInfo{}
@@ -302,7 +302,7 @@ func TestResponsesAPIChatModelToTools(t *testing.T) {
 func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 	PatchConvey("not configure", t, func() {
 		var (
-			cm = &responsesAPIChatModel{}
+			cm = &ResponsesAPIChatModel{}
 		)
 		arkOpts := &arkOptions{}
 		msgs := []*schema.Message{
@@ -321,7 +321,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 	})
 
 	PatchConvey("enable cache", t, func() {
-		cm := &responsesAPIChatModel{
+		cm := &ResponsesAPIChatModel{
 			cache: &CacheConfig{
 				SessionCache: &SessionCacheConfig{
 					EnableCache: true,
@@ -353,7 +353,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		assert.NotNil(t, reqParams.ExpireAt)
 	})
 	PatchConvey("option overridden config", t, func() {
-		cm := &responsesAPIChatModel{
+		cm := &ResponsesAPIChatModel{
 			cache: &CacheConfig{
 				SessionCache: &SessionCacheConfig{
 					EnableCache: false,
@@ -397,7 +397,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 }
 
 func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCreatedEvent(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 
 	PatchConvey("ResponseCreatedEvent", t, func() {
 		Mock((*utils.ResponsesStreamReader).Recv).Return(Sequence(&responses.Event{
@@ -407,7 +407,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCreatedEvent(t *tes
 				},
 			},
 		}, nil).Then(nil, io.EOF)).Build()
-		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 		streamReader := &utils.ResponsesStreamReader{}
 		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
 		assert.Equal(t, 1, mocker.Times())
@@ -415,7 +415,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCreatedEvent(t *tes
 }
 
 func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCompletedEvent(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	PatchConvey("ResponseCompletedEvent", t, func() {
 		Mock((*utils.ResponsesStreamReader).Recv).Return(Sequence(&responses.Event{
 			Event: &responses.Event_ResponseCompleted{
@@ -426,7 +426,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCompletedEvent(t *t
 				},
 			},
 		}, nil).Then(nil, io.EOF)).Build()
-		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 		streamReader := &utils.ResponsesStreamReader{}
 		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
 		assert.Equal(t, 1, mocker.Times())
@@ -434,7 +434,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCompletedEvent(t *t
 }
 
 func TestResponsesAPIChatModelReceivedStreamResponse_ResponseErrorEvent(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	PatchConvey("ResponseErrorEvent", t, func() {
 		Mock((*utils.ResponsesStreamReader).Recv).Return(Sequence(&responses.Event{
 			Event: &responses.Event_Error{
@@ -455,7 +455,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseErrorEvent(t *testi
 
 func TestResponsesAPIChatModelReceivedStreamResponse_ResponseIncompleteEvent(t *testing.T) {
 
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	PatchConvey("ResponseIncompleteEvent", t, func() {
 		Mock((*utils.ResponsesStreamReader).Recv).Return(Sequence(&responses.Event{
 			Event: &responses.Event_ResponseIncomplete{
@@ -468,7 +468,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseIncompleteEvent(t *
 			},
 		}, nil).Then(nil, io.EOF)).Build()
 		streamReader := &utils.ResponsesStreamReader{}
-		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 
 		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
 
@@ -478,7 +478,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseIncompleteEvent(t *
 }
 
 func TestResponsesAPIChatModelReceivedStreamResponse_ResponseFailedEvent(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	PatchConvey("ResponseFailedEvent", t, func() {
 		Mock((*utils.ResponsesStreamReader).Recv).Return(Sequence(&responses.Event{
 			Event: &responses.Event_ResponseFailed{
@@ -492,7 +492,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseFailedEvent(t *test
 			},
 		}, nil).Then(nil, io.EOF)).Build()
 		streamReader := &utils.ResponsesStreamReader{}
-		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 
 		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
 
@@ -501,7 +501,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseFailedEvent(t *test
 }
 
 func TestResponsesAPIChatModelReceivedStreamResponse_Default(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	PatchConvey("Default", t, func() {
 		Mock((*utils.ResponsesStreamReader).Recv).Return(Sequence(&responses.Event{
 			Event: &responses.Event_Text{
@@ -511,7 +511,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_Default(t *testing.T) {
 			},
 		}, nil).Then(nil, io.EOF)).Build()
 		streamReader := &utils.ResponsesStreamReader{}
-		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).Return().Build()
+		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 
 		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
 
@@ -521,7 +521,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_Default(t *testing.T) {
 }
 
 func TestResponsesAPIChatModelReceivedStreamResponse_ToolCallMetaMsg(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	PatchConvey("ToolCallMetaMsg", t, func() {
 		Mock((*utils.ResponsesStreamReader).Recv).Return(Sequence(&responses.Event{
 			Event: &responses.Event_Item{
@@ -548,7 +548,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ToolCallMetaMsg(t *testing.
 		}, nil).Then(nil, io.EOF)).Build()
 		streamReader := &utils.ResponsesStreamReader{}
 
-		mocker := Mock((*responsesAPIChatModel).sendCallbackOutput).To(
+		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).To(
 			func(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
 				msg *schema.Message) {
 				assert.Equal(t, "123", msg.ToolCalls[0].ID)
@@ -567,7 +567,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ToolCallMetaMsg(t *testing.
 }
 
 func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
-	cm := &responsesAPIChatModel{
+	cm := &ResponsesAPIChatModel{
 		temperature: ptrOf(float32(1.0)),
 		maxTokens:   ptrOf(1),
 		model:       "model",
@@ -587,7 +587,7 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 	}
 
 	PatchConvey("vv", t, func() {
-		Mock((*responsesAPIChatModel).checkOptions).To(func(mOpts *model.Options, arkOpts *arkOptions) error {
+		Mock((*ResponsesAPIChatModel).checkOptions).To(func(mOpts *model.Options, arkOpts *arkOptions) error {
 			assert.Equal(t, int(float32(2.0)), int(*mOpts.Temperature))
 			assert.Equal(t, 2, *mOpts.MaxTokens)
 			assert.Equal(t, int(float32(2.0)), int(*mOpts.TopP))
@@ -601,7 +601,7 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 			return nil
 		}).Build()
 
-		Mock((*responsesAPIChatModel).populateCache).To(func(in []*schema.Message, respRequest *responses.ResponsesRequest, arkOpts *arkOptions,
+		Mock((*ResponsesAPIChatModel).populateCache).To(func(in []*schema.Message, respRequest *responses.ResponsesRequest, arkOpts *arkOptions,
 		) ([]*schema.Message, error) {
 			return in, nil
 		}).Build()
@@ -654,7 +654,7 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 }
 
 func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
 	httpURL := "https://example.com/image.png"
 
@@ -786,7 +786,7 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 }
 
 func Test_responsesAPIChatModel_handleCompletedStreamEvent(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	msg := cm.handleCompletedStreamEvent(&responses.ResponseObject{
 		Status: responses.ResponseStatus_completed,
 		Usage:  &responses.Usage{InputTokensDetails: &responses.InputTokensDetails{}},
@@ -796,12 +796,12 @@ func Test_responsesAPIChatModel_handleCompletedStreamEvent(t *testing.T) {
 }
 
 func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
-	cm := &responsesAPIChatModel{}
+	cm := &ResponsesAPIChatModel{}
 	convey.Convey("TestPopulateToolChoice", t, func() {
 		convey.Convey("no tool choice", func() {
 			req := &responses.ResponsesRequest{}
 			options := &model.Options{}
-			err := cm.populateTools(req, options)
+			err := cm.populateTools(req, options, nil, nil)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req.ToolChoice, convey.ShouldBeNil)
 		})
@@ -811,7 +811,7 @@ func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
 			options := &model.Options{
 				ToolChoice: &toolChoice,
 			}
-			err := cm.populateTools(req, options)
+			err := cm.populateTools(req, options, nil, nil)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req.ToolChoice.GetMode(), convey.ShouldEqual, responses.ToolChoiceMode_none)
 		})
@@ -821,7 +821,7 @@ func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
 			options := &model.Options{
 				ToolChoice: &toolChoice,
 			}
-			err := cm.populateTools(req, options)
+			err := cm.populateTools(req, options, nil, nil)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req.ToolChoice.GetMode(), convey.ShouldEqual, responses.ToolChoiceMode_auto)
 		})
@@ -831,7 +831,7 @@ func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
 			options := &model.Options{
 				ToolChoice: &toolChoice,
 			}
-			err := cm.populateTools(req, options)
+			err := cm.populateTools(req, options, nil, nil)
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(err.Error(), convey.ShouldContainSubstring, "tool_choice is forced but no tools are provided")
 		})
@@ -857,9 +857,40 @@ func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
 					},
 				},
 			}
-			err := cm.populateTools(req, options)
+			err := cm.populateTools(req, options, nil, nil)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req.ToolChoice.GetMode(), convey.ShouldEqual, responses.ToolChoiceMode_required)
+		})
+
+		convey.Convey("tool choice forced with web search", func() {
+			req := &responses.ResponsesRequest{}
+			toolChoice := schema.ToolChoiceForced
+			options := &model.Options{
+				ToolChoice: &toolChoice,
+				Tools: []*schema.ToolInfo{
+					{
+						Name: "my_func",
+						Desc: "description",
+						ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+							"param1": {Type: schema.String},
+						}),
+					},
+					{
+						Name: "my_func2",
+						Desc: "description",
+						ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+							"param1": {Type: schema.String},
+						}),
+					},
+				},
+			}
+			err := cm.populateTools(req, options, &EnableToolWebSearch{
+				Limit:   ptrOf(int64(2)),
+				Sources: []Source{SourceOfToutiao},
+			}, nil)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice.GetMode(), convey.ShouldEqual, responses.ToolChoiceMode_required)
+			convey.So(len(req.Tools), convey.ShouldEqual, 3)
 		})
 		convey.Convey("tool choice forced with allowed tool name", func() {
 			req := &responses.ResponsesRequest{}
@@ -877,12 +908,163 @@ func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
 					},
 				},
 			}
-			err := cm.populateTools(req, options)
+			err := cm.populateTools(req, options, nil, nil)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req.ToolChoice.GetFunctionToolChoice(), convey.ShouldEqual, &responses.FunctionToolChoice{
 				Name: "my_func",
 				Type: responses.ToolType_function,
 			})
+		})
+
+	})
+}
+func TestNewResponsesAPIChatModel(t *testing.T) {
+	PatchConvey("TestNewResponsesAPIChatModel", t, func() {
+		ctx := context.Background()
+
+		PatchConvey("NilConfig", func() {
+			m, err := NewResponsesAPIChatModel(ctx, nil)
+			assert.Error(t, err)
+			assert.Nil(t, m)
+			assert.Equal(t, "config cannot be nil", err.Error())
+		})
+
+		PatchConvey("NoCredentials", func() {
+			config := &ResponsesAPIConfig{
+				Model: "test-model",
+			}
+			m, err := NewResponsesAPIChatModel(ctx, config)
+			assert.Error(t, err)
+			assert.Nil(t, m)
+			assert.Contains(t, err.Error(), "missing credentials")
+		})
+
+		PatchConvey("PartialCredentials", func() {
+			config := &ResponsesAPIConfig{
+				Model:     "test-model",
+				AccessKey: "test-access-key",
+			}
+			m, err := NewResponsesAPIChatModel(ctx, config)
+			assert.Error(t, err)
+			assert.Nil(t, m)
+			assert.Contains(t, err.Error(), "missing credentials")
+		})
+
+		PatchConvey("SuccessWithAPIKey", func() {
+			config := &ResponsesAPIConfig{
+				Model:  "test-model",
+				APIKey: "test-api-key",
+			}
+			m, err := NewResponsesAPIChatModel(ctx, config)
+			assert.NoError(t, err)
+			assert.NotNil(t, m)
+			assert.Equal(t, "test-model", m.model)
+		})
+
+		PatchConvey("SuccessWithAkSk", func() {
+			config := &ResponsesAPIConfig{
+				Model:     "test-model",
+				AccessKey: "test-access-key",
+				SecretKey: "test-secret-key",
+			}
+			m, err := NewResponsesAPIChatModel(ctx, config)
+			assert.NoError(t, err)
+			assert.NotNil(t, m)
+			assert.Equal(t, "test-model", m.model)
+		})
+
+		PatchConvey("SuccessWithDefaults", func() {
+			config := &ResponsesAPIConfig{
+				Model:  "test-model",
+				APIKey: "test-api-key",
+			}
+			m, err := NewResponsesAPIChatModel(ctx, config)
+			assert.NoError(t, err)
+			assert.NotNil(t, m)
+			// check default values are not implemented in the function itself, but in the arkruntime client
+		})
+
+		PatchConvey("FullConfig", func() {
+			timeout := 10 * time.Second
+			retryTimes := 3
+			maxTokens := 1024
+			temperature := float32(0.8)
+			topP := float32(0.9)
+			config := &ResponsesAPIConfig{
+				Timeout:         &timeout,
+				RetryTimes:      &retryTimes,
+				BaseURL:         "https://example.com",
+				Region:          "us-east-1",
+				APIKey:          "test-api-key",
+				Model:           "test-model-full",
+				MaxOutputTokens: &maxTokens,
+				Temperature:     &temperature,
+				TopP:            &topP,
+				CustomHeader: map[string]string{
+					"X-Custom": "true",
+				},
+				ResponseFormat: &ResponseFormat{
+					Type: arkModel.ResponseFormatJsonObject,
+				},
+				Thinking: &arkModel.Thinking{
+					Type: arkModel.ThinkingTypeAuto,
+				},
+				ServiceTier:     ptrOf("tier1"),
+				ReasoningEffort: ptrOf(arkModel.ReasoningEffortLow),
+				SessionCache: &SessionCacheConfig{
+					EnableCache: true,
+				},
+				EnableToolWebSearch: &EnableToolWebSearch{},
+				MaxToolCalls:        ptrOf(int64(5)),
+			}
+			m, err := NewResponsesAPIChatModel(ctx, config)
+			assert.NoError(t, err)
+			assert.NotNil(t, m)
+			assert.Equal(t, "test-model-full", m.model)
+			assert.Equal(t, &maxTokens, m.maxTokens)
+			assert.Equal(t, &temperature, m.temperature)
+			assert.Equal(t, &topP, m.topP)
+			assert.Equal(t, "true", m.customHeader["X-Custom"])
+			assert.NotNil(t, m.responseFormat)
+			assert.NotNil(t, m.thinking)
+			assert.NotNil(t, m.cache.SessionCache)
+			assert.True(t, m.cache.SessionCache.EnableCache)
+			assert.NotNil(t, m.serviceTier)
+			assert.NotNil(t, m.reasoningEffort)
+			assert.NotNil(t, m.enableToolWebSearch)
+			assert.Equal(t, int64(5), *m.maxToolCalls)
+		})
+	})
+}
+
+func TestResponsesAPIChatModel_CreatePrefixCache(t *testing.T) {
+	PatchConvey("Test CreatePrefixCache", t, func() {
+		ctx := context.Background()
+
+		chatModel := &ResponsesAPIChatModel{}
+
+		PatchConvey("Success", func() {
+			var ttl = 3600
+			exAt := ptrOf(time.Now().Unix() + int64(ttl))
+			Mock((*arkruntime.Client).CreateResponses).Return(&responses.ResponseObject{Id: "test-cache-id", Usage: &responses.Usage{}, ExpireAt: exAt}, nil).Build()
+
+			prefix := []*schema.Message{
+				{Role: "user", Content: "Hello"},
+				{Role: "assistant", Content: "Hi there!"},
+			}
+
+			info, err := chatModel.CreatePrefixCache(ctx, prefix, ttl)
+
+			assert.NoError(t, err)
+			assert.NotNil(t, info)
+			assert.Equal(t, "test-cache-id", info.ResponseID)
+
+		})
+		PatchConvey("Error: Nil Prefix", func() {
+			info, err := chatModel.CreatePrefixCache(ctx, nil, 3600)
+			assert.Error(t, err)
+			assert.Nil(t, info)
+			assert.Equal(t, "prefix messages cannot be empty", err.Error())
 		})
 
 	})

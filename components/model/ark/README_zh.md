@@ -5,7 +5,7 @@
 该软件包提供了两种不同的模型：
 - **ChatModel**：用于基于文本和多模态的聊天补全。
 - **ImageGenerationModel**：用于从文本提示或图像生成图像。
-- **ResponseAPI**：包含有助于与 openai API 交互的方法和其他服务。
+- **ResponsesAPIChatModel**：用于与 ResponsesAPI 交互的方法和其他服务。
 
 ## 特性
 
@@ -1193,7 +1193,7 @@ func main() {
 ```
 
 
-### ResponseAPI Session缓存
+### ResponsesAPI Session缓存
 ```go
 
 package main

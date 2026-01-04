@@ -5,7 +5,7 @@ A Volcengine Ark model implementation for [Eino](https://github.com/cloudwego/ei
 This package provides two distinct models:
 - **ChatModel**: For text-based and multi-modal chat completions.
 - **ImageGenerationModel**: For generating images from text prompts or image.
-- **ResponseAPI**: Contains methods and other services that help with interacting with the openai API.
+- **ResponsesAPIChatModel**: Contains methods and other services that help with interacting with ResponsesAPI.
 
 ## Features
 
