@@ -314,6 +314,14 @@ func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatMessagePart
 					URL: part.VideoURL.URL,
 				},
 			})
+		case schema.ChatMessagePartTypeVideo:
+			if part.Video == nil {
+				return nil, fmt.Errorf("Video field must not be nil when Type is ChatMessagePartTypeVideo")
+			}
+			ret = append(ret, openai.ChatMessagePart{
+				Type:  openai.ChatMessagePartTypeVideo,
+				Video: part.Video.Video,
+			})
 		default:
 			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
 		}
