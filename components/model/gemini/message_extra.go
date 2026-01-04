@@ -205,6 +205,9 @@ func getThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 		}
 		return sig, true
 	case string:
+		// When marshaling a map[string]any to JSON, a []byte value is encoded as a base64 string.
+		// After unmarshaling back into map[string]any, the value becomes string.
+		// Decode it here for compatibility with messages restored from JSON.
 		if sig == "" {
 			return nil, false
 		}
