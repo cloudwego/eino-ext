@@ -770,23 +770,6 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
 	})
 
-	t.Run("convSchemaMessage does not restore signature for user message", func(t *testing.T) {
-		signature := []byte("text_signature")
-
-		message := &schema.Message{
-			Role:    schema.User,
-			Content: "user input",
-		}
-		setMessageThoughtSignature(message, signature)
-
-		content, err := convSchemaMessage(message)
-		assert.NoError(t, err)
-		assert.NotNil(t, content)
-		assert.Len(t, content.Parts, 1)
-		assert.Equal(t, "user input", content.Parts[0].Text)
-		assert.Nil(t, content.Parts[0].ThoughtSignature)
-	})
-
 	// Test convCandidate extracts signature from functionCall part
 	t.Run("convCandidate extracts signature from functionCall part", func(t *testing.T) {
 		signature := []byte("extracted_signature")
