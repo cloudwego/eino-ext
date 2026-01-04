@@ -186,6 +186,16 @@ func getMessageThoughtSignature(message *schema.Message) []byte {
 	return sig
 }
 
+func setMessageOutputPartThoughtSignature(part *schema.MessageOutputPart, signature []byte) {
+	if part == nil || len(signature) == 0 {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	part.Extra[thoughtSignatureKey] = signature
+}
+
 // GetThoughtSignatureFromExtra tries to read thought_signature from an Extra map.
 //
 // thought_signature should be read from:

@@ -1033,9 +1033,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.Text,
 				}
-				if len(part.ThoughtSignature) > 0 {
-					outPart.Extra = map[string]any{thoughtSignatureKey: part.ThoughtSignature}
-				}
+				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
 				outParts = append(outParts, outPart)
 			}
 			if part.FunctionCall != nil {
@@ -1059,9 +1057,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 						specialParteKey: part.CodeExecutionResult,
 					},
 				}
-				if len(part.ThoughtSignature) > 0 {
-					p.Extra[thoughtSignatureKey] = part.ThoughtSignature
-				}
+				setMessageOutputPartThoughtSignature(&p, part.ThoughtSignature)
 				outParts = append(outParts, p)
 			}
 			if part.ExecutableCode != nil {
@@ -1072,9 +1068,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 						specialParteKey: part.ExecutableCode,
 					},
 				}
-				if len(part.ThoughtSignature) > 0 {
-					p.Extra[thoughtSignatureKey] = part.ThoughtSignature
-				}
+				setMessageOutputPartThoughtSignature(&p, part.ThoughtSignature)
 				outParts = append(outParts, p)
 			}
 			if part.InlineData != nil && part.InlineData.Data != nil {
@@ -1124,10 +1118,7 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 		}
 	}
 	if len(part.ThoughtSignature) > 0 {
-		if res.Extra == nil {
-			res.Extra = make(map[string]any)
-		}
-		res.Extra[thoughtSignatureKey] = part.ThoughtSignature
+		setMessageOutputPartThoughtSignature(&res, part.ThoughtSignature)
 	}
 	return res, nil
 }
