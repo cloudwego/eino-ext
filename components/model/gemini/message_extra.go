@@ -182,12 +182,20 @@ func getMessageThoughtSignature(message *schema.Message) []byte {
 	if message == nil {
 		return nil
 	}
-	sig, _ := getThoughtSignatureFromExtra(message.Extra)
+	sig, _ := GetThoughtSignatureFromExtra(message.Extra)
 	return sig
 }
 
-// getThoughtSignatureFromExtra is a helper function that extracts thought signature from an Extra map.
-func getThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
+// GetThoughtSignatureFromExtra tries to read thought_signature from an Extra map.
+//
+// Callers should try reading from:
+//   - message.Extra: thought_signature on generated content parts (text/inlineData)
+//   - toolCall.Extra: thought_signature on functionCall parts
+//
+// The returned bool indicates whether thought_signature key exists in Extra.
+// The returned []byte is the decoded signature if available; it may be nil when the value is empty
+// or cannot be decoded (e.g. JSON round-trip turns []byte into base64 string).
+func GetThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 	if extra == nil {
 		return nil, false
 	}
@@ -223,19 +231,6 @@ func getThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 	}
 }
 
-// GetThoughtSignatureFromExtra tries to read thought_signature from an Extra map.
-//
-// Callers should try reading from:
-//   - message.Extra: thought_signature on generated content parts (text/inlineData)
-//   - toolCall.Extra: thought_signature on functionCall parts
-//
-// The returned bool indicates whether thought_signature key exists in Extra.
-// The returned []byte is the decoded signature if available; it may be nil when the value is empty
-// or cannot be decoded (e.g. JSON round-trip turns []byte into base64 string).
-func GetThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
-	return getThoughtSignatureFromExtra(extra)
-}
-
 // setToolCallThoughtSignature stores the thought signature for a specific tool call
 // in the ToolCall's Extra field.
 //
@@ -259,7 +254,7 @@ func getToolCallThoughtSignature(toolCall *schema.ToolCall) []byte {
 	if toolCall == nil {
 		return nil
 	}
-	sig, _ := getThoughtSignatureFromExtra(toolCall.Extra)
+	sig, _ := GetThoughtSignatureFromExtra(toolCall.Extra)
 	return sig
 }
 
