@@ -795,11 +795,11 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Len(t, message.ToolCalls, 1)
 
 		// Signature should be stored on the tool call
-		sig, ok := GetToolCallThoughtSignature(&message.ToolCalls[0])
+		sig, ok := GetThoughtSignatureFromExtra(message.ToolCalls[0].Extra)
 		assert.True(t, ok)
 		assert.Equal(t, signature, sig)
 		// Message-level signature should be nil (signature is on functionCall)
-		sig, ok = GetMessageThoughtSignature(message)
+		sig, ok = GetThoughtSignatureFromExtra(message.Extra)
 		assert.False(t, ok)
 		assert.Nil(t, sig)
 	})
@@ -826,7 +826,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Equal(t, "Final response", message.Content)
 
 		// Signature should be stored at message level for non-functionCall parts
-		sig, ok := GetMessageThoughtSignature(message)
+		sig, ok := GetThoughtSignatureFromExtra(message.Extra)
 		assert.True(t, ok)
 		assert.Equal(t, signature, sig)
 	})
@@ -854,7 +854,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 
 		msg1, err := convCandidate(candidate1)
 		assert.NoError(t, err)
-		sig, ok := GetToolCallThoughtSignature(&msg1.ToolCalls[0])
+		sig, ok := GetThoughtSignatureFromExtra(msg1.ToolCalls[0].Extra)
 		assert.True(t, ok)
 		assert.Equal(t, sigA, sig)
 
@@ -876,7 +876,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 
 		msg2, err := convCandidate(candidate2)
 		assert.NoError(t, err)
-		sig, ok = GetToolCallThoughtSignature(&msg2.ToolCalls[0])
+		sig, ok = GetThoughtSignatureFromExtra(msg2.ToolCalls[0].Extra)
 		assert.True(t, ok)
 		assert.Equal(t, sigB, sig)
 
