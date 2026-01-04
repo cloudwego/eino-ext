@@ -1039,9 +1039,8 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 		}
 
 		var (
-			texts          []string
-			outParts       []schema.MessageOutputPart
-			contentBuilder strings.Builder
+			texts    []string
+			outParts []schema.MessageOutputPart
 		)
 		// Process parts and extract thought signatures per Gemini docs:
 		// https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
@@ -1059,7 +1058,6 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 				result.ReasoningContent = part.Text
 			} else if len(part.Text) > 0 {
 				texts = append(texts, part.Text)
-				contentBuilder.WriteString(part.Text)
 				outParts = append(outParts, schema.MessageOutputPart{
 					Type: schema.ChatMessagePartTypeText,
 					Text: part.Text,
@@ -1106,8 +1104,10 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 				outParts = append(outParts, outPart)
 			}
 		}
-		result.Content = contentBuilder.String()
-		if len(texts) > 1 {
+
+		if len(texts) == 1 {
+			result.Content = texts[0]
+		} else if len(texts) > 1 {
 			for _, text := range texts {
 				result.MultiContent = append(result.MultiContent, schema.ChatMessagePart{
 					Type: schema.ChatMessagePartTypeText,
@@ -1115,7 +1115,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 				})
 			}
 		}
-		if len(outParts) > 0 {
+		if len(texts) > 1 && len(outParts) > 0 {
 			result.AssistantGenMultiContent = outParts
 		}
 	}
