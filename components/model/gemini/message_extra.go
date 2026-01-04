@@ -178,15 +178,6 @@ func setMessageThoughtSignature(message *schema.Message, signature []byte) {
 	message.Extra[thoughtSignatureKey] = signature
 }
 
-// getMessageThoughtSignature retrieves the thought signature from a Message's Extra field.
-func getMessageThoughtSignature(message *schema.Message) ([]byte, bool) {
-	if message == nil || message.Extra == nil {
-		return nil, false
-	}
-
-	return getThoughtSignatureFromExtra(message.Extra)
-}
-
 // getThoughtSignatureFromExtra is a helper function that extracts thought signature from an Extra map.
 func getThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 	if extra == nil {
@@ -200,21 +191,27 @@ func getThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 
 	switch sig := signature.(type) {
 	case []byte:
+		if len(sig) == 0 {
+			return nil, false
+		}
 		return sig, true
 	case string:
 		// When marshaling a map[string]any to JSON, a []byte value is encoded as a base64 string.
 		// After unmarshaling back into map[string]any, the value becomes string.
 		// Decode it here for compatibility with messages restored from JSON.
 		if sig == "" {
-			return nil, true
+			return nil, false
 		}
 		decoded, err := base64.StdEncoding.DecodeString(sig)
 		if err != nil {
-			return nil, true
+			return nil, false
+		}
+		if len(decoded) == 0 {
+			return nil, false
 		}
 		return decoded, true
 	default:
-		return nil, true
+		return nil, false
 	}
 }
 
@@ -227,7 +224,10 @@ func getThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 // When a response contains multiple non-functionCall parts with thought_signature,
 // callers should check and decide which one to use based on their own policy.
 func GetMessageThoughtSignature(message *schema.Message) ([]byte, bool) {
-	return getMessageThoughtSignature(message)
+	if message == nil || message.Extra == nil {
+		return nil, false
+	}
+	return getThoughtSignatureFromExtra(message.Extra)
 }
 
 // setToolCallThoughtSignature stores the thought signature for a specific tool call
@@ -249,20 +249,15 @@ func setToolCallThoughtSignature(toolCall *schema.ToolCall, signature []byte) {
 	toolCall.Extra[thoughtSignatureKey] = signature
 }
 
-// getToolCallThoughtSignature retrieves the thought signature from a ToolCall's Extra field.
-func getToolCallThoughtSignature(toolCall *schema.ToolCall) ([]byte, bool) {
-	if toolCall == nil || toolCall.Extra == nil {
-		return nil, false
-	}
-	return getThoughtSignatureFromExtra(toolCall.Extra)
-}
-
 // GetToolCallThoughtSignature gets the thought signature stored on a specific tool call.
 //
 // Note: In model responses there may be multiple tool calls, each with its own thought_signature.
 // Callers should iterate over message.ToolCalls and check each tool call individually.
 func GetToolCallThoughtSignature(toolCall *schema.ToolCall) ([]byte, bool) {
-	return getToolCallThoughtSignature(toolCall)
+	if toolCall == nil || toolCall.Extra == nil {
+		return nil, false
+	}
+	return getThoughtSignatureFromExtra(toolCall.Extra)
 }
 
 func setGroundMetadata(m *schema.Message, gm *genai.GroundingMetadata) {
