@@ -25,12 +25,19 @@ go get github.com/cloudwego/eino-ext/components/retriever/es8@latest
 这里是使用近似搜索模式的快速示例，更多细节请阅读 components/retriever/es8/examples/approximate/approximate.go：
 
 ```go
+package main
+
 import (
+	"context"
+	"encoding/json"
+	"os"
+
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/search_mode"
 )
@@ -45,15 +52,17 @@ const (
 
 func main() {
 	ctx := context.Background()
-
-	// es 支持多种连接方式
+	// es supports multiple ways to connect
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
-	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 
-	cert, err := os.ReadFile(httpCACertPath)
-	if err != nil {
-		log.Fatalf("read file failed, err=%v", err)
+	// 1. 创建 ES 客户端
+	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
+	if httpCACertPath != "" {
+		cert, err := os.ReadFile(httpCACertPath)
+		if err != nil {
+			log.Fatalf("read file failed, err=%v", err)
+		}
 	}
 
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
@@ -63,21 +72,31 @@ func main() {
 		CACert:    cert,
 	})
 
-	// 创建 retriever 组件
+	// 2. 创建 embedding 组件
+	// 使用火山引擎 Ark，替换环境变量为真实配置
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
+
+	// 3. 创建 ES 检索器组件
 	retriever, _ := es8.NewRetriever(ctx, &es8.RetrieverConfig{
 		Client: client,
 		Index:  indexName,
-		TopK:   5,
+		TopK:   5, // 检索前 5 个结果
+		// 使用近似搜索模式 (向量搜索)
 		SearchMode: search_mode.SearchModeApproximate(&search_mode.ApproximateConfig{
 			QueryFieldName:  fieldContent,
 			VectorFieldName: fieldContentVector,
-			Hybrid:          true,
+			Hybrid:          true, // 启用混合搜索 (向量 + 关键词)
 			// RRF 仅在特定许可证下可用
 			// 参见: https://www.elastic.co/subscriptions
 			RRF:             false,
 			RRFRankConstant: nil,
 			RRFWindowSize:   nil,
 		}),
+		// ResultParser 从 ES 结果中提取文档字段
 		ResultParser: func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error) {
 			doc = &schema.Document{
 				ID:       *hit.Id_,
@@ -118,11 +137,12 @@ func main() {
 	docs, _ := retriever.Retrieve(ctx, "tourist attraction")
 
 	// 带过滤器的搜索
+	caseInsensitive := true
 	docs, _ = retriever.Retrieve(ctx, "tourist attraction",
 		es8.WithFilters([]types.Query{{
 			Term: map[string]types.TermQuery{
 				fieldExtraLocation: {
-					CaseInsensitive: of(true),
+					CaseInsensitive: &caseInsensitive,
 					Value:           "China",
 				},
 			},
@@ -154,6 +174,14 @@ type RetrieverConfig struct {
     Embedding embedding.Embedder
 }
 ```
+
+## 完整示例
+
+- [近似搜索示例](./examples/approximate)
+- [稠密向量相似度示例](./examples/dense_vector_similarity)
+- [精确匹配示例](./examples/exact_match)
+- [原始字符串请求示例](./examples/raw_string)
+- [稀疏向量查询示例](./examples/sparse_vector_query)
 
 ## 更多详情
 

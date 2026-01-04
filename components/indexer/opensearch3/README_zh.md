@@ -1,8 +1,8 @@
-# OpenSearch Indexer
+# OpenSearch 3 Indexer
 
 [English](README.md) | 简体中文
 
-[Eino](https://github.com/cloudwego/eino) 的 OpenSearch 索引器实现，实现了 `Indexer` 接口。这使得 OpenSearch 可以无缝集成到 Eino 的向量存储和检索系统中，增强语义搜索能力。
+[Eino](https://github.com/cloudwego/eino) 的 OpenSearch 3 索引器实现，实现了 `Indexer` 接口。这使得 OpenSearch 可以无缝集成到 Eino 的向量存储和检索系统中，增强语义搜索能力。
 
 ## 功能特性
 
@@ -104,6 +104,10 @@ type FieldValue struct {
     Stringify func(val any) (string, error) // 选填：自定义字符串转换函数
 }
 ```
+
+## 完整示例
+
+- [索引器示例](./examples/indexer)
 
 ## 更多详情
 

@@ -1,8 +1,8 @@
-# OpenSearch Retriever
+# OpenSearch 2 Retriever
 
 English | [简体中文](README_zh.md)
 
-An OpenSearch retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration with Eino's vector retrieval system for enhanced semantic search capabilities.
+An OpenSearch 2 retriever implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Retriever` interface. This enables seamless integration with Eino's vector retrieval system for enhanced semantic search capabilities.
 
 ## Features
 
@@ -46,11 +46,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"os"
 	
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2"
 	"github.com/cloudwego/eino-ext/components/retriever/opensearch2/search_mode"
 )
@@ -64,6 +67,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	// create embedding component using ARK
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// create retriever component
 	retriever, _ := opensearch2.NewRetriever(ctx, &opensearch2.RetrieverConfig{
@@ -82,10 +92,17 @@ func main() {
 			content, _ := source["content"].(string)
 			return &schema.Document{ID: id, Content: content}, nil
 		},
-		Embedding: createYourEmbedding(),
+		Embedding: emb,
 	})
 
-	docs, _ := retriever.Retrieve(ctx, "search query")
+	docs, err := retriever.Retrieve(ctx, "search query")
+	if err != nil {
+		fmt.Printf("retrieve error: %v\n", err)
+		return
+	}
+	for _, doc := range docs {
+		fmt.Printf("ID: %s, Content: %s\n", doc.ID, doc.Content)
+	}
 }
 ```
 
@@ -116,6 +133,13 @@ type RetrieverConfig struct {
     Embedding embedding.Embedder
 }
 ```
+
+## Full Examples
+
+- [Approximate Search Example](./examples/approximate)
+- [Dense Vector Similarity Example](./examples/dense_vector_similarity)
+- [KNN Search Example](./examples/knn)
+- [Neural Sparse Search Example](./examples/neural_sparse)
 
 ## For More Details
 

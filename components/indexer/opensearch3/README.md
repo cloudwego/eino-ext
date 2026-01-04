@@ -1,8 +1,8 @@
-# OpenSearch Indexer
+# OpenSearch 3 Indexer
 
 English | [简体中文](README_zh.md)
 
-An OpenSearch indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer` interface. This enables seamless integration with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
+An OpenSearch 3 indexer implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Indexer` interface. This enables seamless integration with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
 ## Features
 
@@ -31,11 +31,13 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/opensearch3"
 )
 
@@ -52,8 +54,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// create embedding component
-	emb := createYourEmbedding()
+	// create embedding component using ARK
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// create opensearch indexer component
 	indexer, _ := opensearch3.NewIndexer(ctx, &opensearch3.IndexerConfig{
@@ -75,8 +81,12 @@ func main() {
 		{ID: "1", Content: "example content"},
 	}
 
-	ids, _ := indexer.Store(ctx, docs)
-	fmt.Println(ids)
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		fmt.Printf("index error: %v\n", err)
+		return
+	}
+	fmt.Println("indexed ids:", ids)
 }
 ```
 
@@ -104,6 +114,10 @@ type FieldValue struct {
     Stringify func(val any) (string, error) // Optional: custom string conversion
 }
 ```
+
+## Full Examples
+
+- [Indexer Example](./examples/indexer)
 
 ## For More Details
 
