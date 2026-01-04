@@ -667,7 +667,7 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 		// - For parallel calls: only first functionCall has signature
 		// - For sequential calls: each functionCall has its own signature
 		// - Omitting required signature causes 400 error on Gemini 3 Pro
-		if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
+		if sig, ok := getToolCallThoughtSignature(call); ok {
 			part.ThoughtSignature = sig
 		}
 		content.Parts = append(content.Parts, part)
@@ -704,7 +704,7 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 		// - The final Part (text, inlineData, etc.) may contain a thought_signature
 		// - Returning this signature is recommended for best performance but not strictly required
 		if len(message.ToolCalls) == 0 {
-			if sig := getMessageThoughtSignature(message); len(sig) > 0 {
+			if sig, ok := getMessageThoughtSignature(message); ok {
 				textPart.ThoughtSignature = sig
 			}
 		}
