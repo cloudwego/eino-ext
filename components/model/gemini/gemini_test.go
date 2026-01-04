@@ -831,6 +831,39 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Equal(t, signature, sig)
 	})
 
+	t.Run("convCandidate stores signatures on output parts and convSchemaMessage restores them", func(t *testing.T) {
+		sigA := []byte("sig_A")
+		sigB := []byte("sig_B")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{Text: "A", ThoughtSignature: sigA},
+					{Text: "B", ThoughtSignature: sigB},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.AssistantGenMultiContent, 2)
+
+		sig, ok := GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigA, sig)
+		sig, ok = GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[1].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigB, sig)
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.Len(t, content.Parts, 2)
+		assert.Equal(t, sigA, content.Parts[0].ThoughtSignature)
+		assert.Equal(t, sigB, content.Parts[1].ThoughtSignature)
+	})
+
 	// Test sequential function calls - each step has its own signature
 	t.Run("sequential function call signatures are preserved separately", func(t *testing.T) {
 		sigA := []byte("signature_A")
