@@ -22,10 +22,10 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino-ext/components/model/gemini"
-	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
