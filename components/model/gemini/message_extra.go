@@ -200,27 +200,21 @@ func getThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 
 	switch sig := signature.(type) {
 	case []byte:
-		if len(sig) == 0 {
-			return nil, false
-		}
 		return sig, true
 	case string:
 		// When marshaling a map[string]any to JSON, a []byte value is encoded as a base64 string.
 		// After unmarshaling back into map[string]any, the value becomes string.
 		// Decode it here for compatibility with messages restored from JSON.
 		if sig == "" {
-			return nil, false
+			return nil, true
 		}
 		decoded, err := base64.StdEncoding.DecodeString(sig)
 		if err != nil {
-			return nil, false
-		}
-		if len(decoded) == 0 {
-			return nil, false
+			return nil, true
 		}
 		return decoded, true
 	default:
-		return nil, false
+		return nil, true
 	}
 }
 
