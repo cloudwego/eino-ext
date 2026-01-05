@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.3.0
 	github.com/bytedance/sonic v1.14.1
 	github.com/cloudwego/eino v0.7.13
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.10
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.11
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/json-iterator/go v1.1.12
 	github.com/stretchr/testify v1.11.1
