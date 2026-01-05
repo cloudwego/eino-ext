@@ -26,10 +26,14 @@ go get github.com/cloudwego/eino-ext/components/indexer/es8@latest
 
 ```go
 import (
+	"context"
+	"os"
+
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v8"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/es8"
 )
 
@@ -43,15 +47,17 @@ const (
 
 func main() {
 	ctx := context.Background()
-
-	// es 支持多种连接方式
+	// es supports multiple ways to connect
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
-	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 
-	cert, err := os.ReadFile(httpCACertPath)
-	if err != nil {
-		log.Fatalf("read file failed, err=%v", err)
+	// 1. 创建 ES 客户端
+	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
+	if httpCACertPath != "" {
+		cert, err := os.ReadFile(httpCACertPath)
+		if err != nil {
+			log.Fatalf("read file failed, err=%v", err)
+		}
 	}
 
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
@@ -61,36 +67,62 @@ func main() {
 		CACert:    cert,
 	})
 
-	// 创建 embedding 组件
-	// emb := createYourEmbedding()
+	// 2. 创建 embedding 组件
+	// 使用火山引擎 Ark，替换环境变量为真实配置
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
-	// 加载文档
-	// docs := loadYourDocs()
+	// 3. 准备文档
+	// 文档通常包含 ID 和 Content。也可以添加额外的元数据用于过滤等用途。
+	docs := []*schema.Document{
+		{
+			ID:      "1",
+			Content: "Eiffel Tower: Located in Paris, France.",
+			MetaData: map[string]any{
+				docExtraLocation: "France",
+			},
+		},
+		{
+			ID:      "2",
+			Content: "The Great Wall: Located in China.",
+			MetaData: map[string]any{
+				docExtraLocation: "China",
+			},
+		},
+	}
 
-	// 创建 es 索引器组件
+	// 4. 创建 ES 索引器组件
 	indexer, _ := es8.NewIndexer(ctx, &es8.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
 		BatchSize: 10,
+		// DocumentToFields 指定如何将文档字段映射到 ES 字段
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]es8.FieldValue, err error) {
 			return map[string]es8.FieldValue{
 				fieldContent: {
 					Value:    doc.Content,
-					EmbedKey: fieldContentVector, // 对文档内容进行向量化并保存到 "content_vector" 字段
+					EmbedKey: fieldContentVector, // 向量化文档内容并保存到 "content_vector" 字段
 				},
 				fieldExtraLocation: {
+					// 额外的元数据字段
 					Value: doc.MetaData[docExtraLocation],
 				},
 			}, nil
 		},
-		// Embedding: emb, // 替换为真实的 embedding 组件
+		// 提供 embedding 组件用于向量化
+		Embedding: emb,
 	})
 
-	// ids, _ := indexer.Store(ctx, docs)
-
-	// fmt.Println(ids)
-    // 与 Eino 系统一起使用
-    // ... 在 Eino 中配置和使用
+	// 5. 索引文档
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		fmt.Printf("index error: %v\n", err)
+		return
+	}
+	fmt.Println("indexed ids:", ids)
 }
 ```
 
@@ -118,6 +150,11 @@ type FieldValue struct {
     Stringify func(val any) (string, error) // 选填: 自定义字符串转换
 }
 ```
+
+## 完整示例
+
+- [索引器示例](./examples/indexer)
+- [稀疏向量索引器示例](./examples/indexer_with_sparse_vector)
 
 ## 更多详情
 
