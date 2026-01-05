@@ -35,6 +35,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v7"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/es7"
 )
 
@@ -59,11 +60,30 @@ func main() {
 		Password:  password,
 	})
 
-	// create embedding component
-	emb := createYourEmbedding()
+	// create embedding component using ARK
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// load docs
-	docs := loadYourDocs()
+	docs := []*schema.Document{
+		{
+			ID:      "1",
+			Content: "Eiffel Tower: Located in Paris, France.",
+			MetaData: map[string]any{
+				docExtraLocation: "France",
+			},
+		},
+		{
+			ID:      "2",
+			Content: "The Great Wall: Located in China.",
+			MetaData: map[string]any{
+				docExtraLocation: "China",
+			},
+		},
+	}
 
 	// create es indexer component
 	indexer, _ := es7.NewIndexer(ctx, &es7.IndexerConfig{
@@ -81,14 +101,15 @@ func main() {
 				},
 			}, nil
 		},
-		Embedding: emb, // replace it with real embedding component
+		Embedding: emb,
 	})
 
-	ids, _ := indexer.Store(ctx, docs)
-
-	fmt.Println(ids)
-    // Use with Eino's system
-    // ... configure and use with Eino
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		fmt.Printf("index error: %v\n", err)
+		return
+	}
+	fmt.Println("indexed ids:", ids)
 }
 ```
 
@@ -116,6 +137,10 @@ type FieldValue struct {
     Stringify func(val any) (string, error) // Optional: custom string conversion
 }
 ```
+
+## Full Examples
+
+- [Indexer Example](./examples/indexer)
 
 ## For More Details
 
