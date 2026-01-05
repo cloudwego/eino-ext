@@ -824,11 +824,15 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Equal(t, "Final response", message.Content)
+		assert.Len(t, message.AssistantGenMultiContent, 1)
 
-		// Signature should be stored at message level for non-functionCall parts
-		sig, ok := GetThoughtSignatureFromExtra(message.Extra)
+		sig, ok := GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[0].Extra)
 		assert.True(t, ok)
 		assert.Equal(t, signature, sig)
+
+		sig, ok = GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, sig)
 	})
 
 	t.Run("convCandidate stores signatures on output parts and convSchemaMessage restores them", func(t *testing.T) {

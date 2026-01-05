@@ -199,12 +199,12 @@ func setMessageOutputPartThoughtSignature(part *schema.MessageOutputPart, signat
 // GetThoughtSignatureFromExtra tries to read thought_signature from an Extra map.
 //
 // thought_signature should be read from:
-//   - message.Extra: thought_signature on generated content (text/inlineData)
+//   - message.AssistantGenMultiContent[i].Extra: thought_signature on each generated output part
 //   - toolCall.Extra: thought_signature on toolCall
+//   - message.Extra: thought_signature on generated content (legacy, only used when message.AssistantGenMultiContent are absent)
 //
 // The returned bool indicates whether thought_signature key exists in Extra.
-// The returned []byte is the thought signature if available; it may be nil when the value is empty
-// or cannot be decoded (e.g. JSON round-trip turns []byte into base64 string).
+// The returned []byte is the thought signature if available
 func GetThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 	if extra == nil {
 		return nil, false

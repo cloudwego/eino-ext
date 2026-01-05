@@ -1015,7 +1015,8 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 		//
 		// Signature placement rules:
 		// - functionCall parts: signature stored on ToolCall.Extra (required for Gemini 3 Pro)
-		// - non-functionCall parts (text, thought, inlineData): signature stored on Message.Extra
+		// - output parts (text/inlineData/...): signature stored on MessageOutputPart.Extra
+		// - message.Extra is only used when output parts are absent
 		for _, part := range candidate.Content.Parts {
 			// Store thought signature at message level for non-functionCall parts
 			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil {
