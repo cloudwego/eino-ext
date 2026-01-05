@@ -26,11 +26,18 @@ Here's a quick example of how to use the retriever with approximate search mode,
 
 ```go
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/elastic/go-elasticsearch/v9/typedapi/types"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/es9"
 	"github.com/cloudwego/eino-ext/components/retriever/es9/search_mode"
 )
@@ -51,9 +58,13 @@ func main() {
 	password := os.Getenv("ES_PASSWORD")
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 
-	cert, err := os.ReadFile(httpCACertPath)
-	if err != nil {
-		log.Fatalf("read file failed, err=%v", err)
+	var cert []byte
+	var err error
+	if httpCACertPath != "" {
+		cert, err = os.ReadFile(httpCACertPath)
+		if err != nil {
+			log.Fatalf("read file failed, err=%v", err)
+		}
 	}
 
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
@@ -61,6 +72,14 @@ func main() {
 		Username:  username,
 		Password:  password,
 		CACert:    cert,
+	})
+
+	// 2. Create embedding component using ARK
+	// Replace "ARK_API_KEY", "ARK_REGION", "ARK_MODEL" with your actual config
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
 	})
 
 	// create retriever component
@@ -111,7 +130,7 @@ func main() {
 
 			return doc, nil
 		},
-		Embedding: emb, // your embedding component
+		Embedding: emb,
 	})
 
 	// search without filter
@@ -128,6 +147,12 @@ func main() {
 			},
 		}}),
 	)
+
+	fmt.Printf("retrieved docs: %+v\n", docs)
+}
+
+func of[T any](v T) *T {
+	return &v
 }
 ```
 
@@ -154,6 +179,10 @@ type RetrieverConfig struct {
     Embedding embedding.Embedder
 }
 ```
+
+## Full Examples
+
+- [Approximate Search Example](./examples/approximate)
 
 ## For More Details
 

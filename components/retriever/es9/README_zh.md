@@ -26,11 +26,18 @@ go get github.com/cloudwego/eino-ext/components/retriever/es9@latest
 
 ```go
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/elastic/go-elasticsearch/v9/typedapi/types"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/es9"
 	"github.com/cloudwego/eino-ext/components/retriever/es9/search_mode"
 )
@@ -46,14 +53,18 @@ const (
 func main() {
 	ctx := context.Background()
 
-	// es 支持多种连接方式
+	// ES 支持多种连接方式
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 
-	cert, err := os.ReadFile(httpCACertPath)
-	if err != nil {
-		log.Fatalf("read file failed, err=%v", err)
+	var cert []byte
+	var err error
+	if httpCACertPath != "" {
+		cert, err = os.ReadFile(httpCACertPath)
+		if err != nil {
+			log.Fatalf("read file failed, err=%v", err)
+		}
 	}
 
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
@@ -61,6 +72,14 @@ func main() {
 		Username:  username,
 		Password:  password,
 		CACert:    cert,
+	})
+
+	// 2. 创建 embedding 组件 (使用 Ark)
+	// 请将 "ARK_API_KEY", "ARK_REGION", "ARK_MODEL" 替换为实际配置
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
 	})
 
 	// 创建 retriever 组件
@@ -111,7 +130,7 @@ func main() {
 
 			return doc, nil
 		},
-		// Embedding: emb, // 你的 embedding 组件
+		Embedding: emb,
 	})
 
 	// 不带过滤器的搜索
@@ -128,6 +147,12 @@ func main() {
 			},
 		}}),
 	)
+
+	fmt.Printf("retrieved docs: %+v\n", docs)
+}
+
+func of[T any](v T) *T {
+	return &v
 }
 ```
 
@@ -154,6 +179,10 @@ type RetrieverConfig struct {
     Embedding embedding.Embedder
 }
 ```
+
+## 完整示例
+
+- [近似搜索示例](./examples/approximate)
 
 ## 更多详情
 
