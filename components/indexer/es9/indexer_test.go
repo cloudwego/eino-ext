@@ -27,6 +27,7 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
+	"github.com/elastic/go-elasticsearch/v9"
 	"github.com/elastic/go-elasticsearch/v9/esutil"
 	"github.com/smartystreets/goconvey/convey"
 )
@@ -214,6 +215,116 @@ func TestBulkAdd(t *testing.T) {
 			}
 		})
 	})
+}
+
+func TestNewIndexer(t *testing.T) {
+	PatchConvey("test NewIndexer", t, func() {
+		ctx := context.Background()
+		client := &elasticsearch.Client{}
+		docToFields := func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+			return nil, nil
+		}
+
+		PatchConvey("test client is nil", func() {
+			_, err := NewIndexer(ctx, &IndexerConfig{
+				DocumentToFields: docToFields,
+			})
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "es client not provided")
+		})
+
+		PatchConvey("test DocumentToFields is nil", func() {
+			_, err := NewIndexer(ctx, &IndexerConfig{
+				Client: client,
+			})
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "DocumentToFields method not provided")
+		})
+
+		PatchConvey("test success", func() {
+			idx, err := NewIndexer(ctx, &IndexerConfig{
+				Client:           client,
+				DocumentToFields: docToFields,
+			})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(idx, convey.ShouldNotBeNil)
+			convey.So(idx.config.BatchSize, convey.ShouldEqual, defaultBatchSize)
+			convey.So(idx.GetType(), convey.ShouldEqual, typ)
+			convey.So(idx.IsCallbacksEnabled(), convey.ShouldBeTrue)
+		})
+	})
+}
+
+func TestStore(t *testing.T) {
+	PatchConvey("test Store", t, func() {
+		ctx := context.Background()
+		client := &elasticsearch.Client{}
+		docToFields := func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+			return map[string]FieldValue{"content": {Value: doc.Content}}, nil
+		}
+
+		idx, err := NewIndexer(ctx, &IndexerConfig{
+			Client:           client,
+			DocumentToFields: docToFields,
+			Index:            "test_index",
+		})
+		convey.So(err, convey.ShouldBeNil)
+
+		// Mock NewBulkIndexer to return our MockBulkIndexer
+		mockBI := &MockBulkIndexer{}
+		Mock(esutil.NewBulkIndexer).Return(mockBI, nil).Build()
+
+		PatchConvey("test success", func() {
+			mockBI.AddFunc = func(ctx context.Context, item esutil.BulkIndexerItem) error {
+				return nil
+			}
+			ids, err := idx.Store(ctx, []*schema.Document{{ID: "1", Content: "test"}})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(len(ids), convey.ShouldEqual, 1)
+			convey.So(ids[0], convey.ShouldEqual, "1")
+		})
+
+		PatchConvey("test validation error in bulkAdd", func() {
+			// Trigger error in bulkAdd by providing embedding but no embedding implementation
+			// To do this, we need to return a field with EmbedKey
+			idx.config.DocumentToFields = func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+				return map[string]FieldValue{
+					"vec": {Value: "val", EmbedKey: "vec_key"},
+				}, nil
+			}
+
+			_, err := idx.Store(ctx, []*schema.Document{{ID: "1", Content: "test"}})
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "embedding method not provided")
+		})
+	})
+}
+
+type MockBulkIndexer struct {
+	AddFunc   func(ctx context.Context, item esutil.BulkIndexerItem) error
+	CloseFunc func(ctx context.Context) error
+	StatsFunc func() esutil.BulkIndexerStats
+}
+
+func (m *MockBulkIndexer) Add(ctx context.Context, item esutil.BulkIndexerItem) error {
+	if m.AddFunc != nil {
+		return m.AddFunc(ctx, item)
+	}
+	return nil
+}
+
+func (m *MockBulkIndexer) Close(ctx context.Context) error {
+	if m.CloseFunc != nil {
+		return m.CloseFunc(ctx)
+	}
+	return nil
+}
+
+func (m *MockBulkIndexer) Stats() esutil.BulkIndexerStats {
+	if m.StatsFunc != nil {
+		return m.StatsFunc()
+	}
+	return esutil.BulkIndexerStats{}
 }
 
 type mockEmbedding struct {
