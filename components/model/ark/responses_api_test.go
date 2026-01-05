@@ -884,7 +884,7 @@ func TestResponsesAPIChatModel_populateToolChoice(t *testing.T) {
 					},
 				},
 			}
-			err := cm.populateTools(req, options, &EnableToolWebSearch{
+			err := cm.populateTools(req, options, &ToolWebSearch{
 				Limit:   ptrOf(int64(2)),
 				Sources: []Source{SourceOfToutiao},
 			}, nil)
@@ -1014,7 +1014,7 @@ func TestNewResponsesAPIChatModel(t *testing.T) {
 				SessionCache: &SessionCacheConfig{
 					EnableCache: true,
 				},
-				EnableToolWebSearch: &EnableToolWebSearch{},
+				EnableToolWebSearch: &ToolWebSearch{},
 				MaxToolCalls:        ptrOf(int64(5)),
 			}
 			m, err := NewResponsesAPIChatModel(ctx, config)

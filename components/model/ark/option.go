@@ -30,7 +30,7 @@ type arkOptions struct {
 
 	cache *CacheOption
 
-	enableWebSearch *EnableToolWebSearch
+	enableWebSearch *ToolWebSearch
 
 	maxToolCalls *int64
 }
@@ -121,9 +121,9 @@ func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
 // and you do not need to develop your own search engine or maintain data resources.
 // Note: This option is only effective for the Responses API.
 // For more details, see https://www.volcengine.com/docs/82379/1756990?lang=zh
-func WithEnableToolWebSearch(enable *EnableToolWebSearch) model.Option {
+func WithEnableToolWebSearch(toolWebSearch *ToolWebSearch) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
-		o.enableWebSearch = enable
+		o.enableWebSearch = toolWebSearch
 	})
 
 }

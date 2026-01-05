@@ -85,8 +85,8 @@ const (
 	SourceOfMoji    = "moji"
 )
 
-// EnableToolWebSearch holds the configuration for the web search tool.
-type EnableToolWebSearch struct {
+// ToolWebSearch holds the configuration for the web search tool.
+type ToolWebSearch struct {
 	// Limit is the maximum number of results to retrieve per search in a single round.
 	// It affects input size and performance. The value must be in the range [1, 50].
 	// Optional. Default 10

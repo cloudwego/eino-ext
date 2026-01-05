@@ -125,7 +125,7 @@ type ResponsesAPIConfig struct {
 	// Note: This option is only effective for the Responses API.
 	// For more details, see https://www.volcengine.com/docs/82379/1756990?lang=zh
 	// Optional.
-	EnableToolWebSearch *EnableToolWebSearch `json:"enable_tool_web_search,omitempty"`
+	EnableToolWebSearch *ToolWebSearch `json:"enable_tool_web_search,omitempty"`
 
 	// MaxToolCalls specifies the maximum number of tool-calling rounds.
 	// The value must be in the range [1, 10].
@@ -210,7 +210,7 @@ type ResponsesAPIChatModel struct {
 	serviceTier     *string
 	reasoningEffort *arkModel.ReasoningEffort
 
-	enableToolWebSearch *EnableToolWebSearch
+	enableToolWebSearch *ToolWebSearch
 
 	maxToolCalls *int64
 }
@@ -660,7 +660,7 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 	return nil
 }
 
-func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options, enableToolWebSearch *EnableToolWebSearch, maxToolCalls *int64) error {
+func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options, enableToolWebSearch *ToolWebSearch, maxToolCalls *int64) error {
 
 	if responseReq.PreviousResponseId != nil {
 		return nil
@@ -700,7 +700,7 @@ func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesR
 	return nil
 }
 
-func convToolWebSearch(enableToolWebSearch *EnableToolWebSearch) (*responses.ToolWebSearch, error) {
+func convToolWebSearch(enableToolWebSearch *ToolWebSearch) (*responses.ToolWebSearch, error) {
 	tl := &responses.ToolWebSearch{
 		Type:       responses.ToolType_web_search,
 		Limit:      enableToolWebSearch.Limit,
