@@ -825,14 +825,14 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error) {
 	result := make([]*genai.Part, 0, len(contents))
 	for _, content := range contents {
-		sig, _ := GetThoughtSignatureFromExtra(content.Extra)
+		sig, ok := GetThoughtSignatureFromExtra(content.Extra)
 		switch content.Type {
 		case schema.ChatMessagePartTypeText:
 			p := tryRestoreSpecialPart(content)
 			if p == nil {
 				p = genai.NewPartFromText(content.Text)
 			}
-			if len(sig) > 0 {
+			if ok {
 				p.ThoughtSignature = sig
 			}
 			result = append(result, p)
@@ -845,7 +845,7 @@ func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error)
 			if err != nil {
 				return nil, err
 			}
-			if len(sig) > 0 {
+			if ok {
 				p.ThoughtSignature = sig
 			}
 			result = append(result, p)
@@ -858,7 +858,7 @@ func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error)
 			if err != nil {
 				return nil, err
 			}
-			if len(sig) > 0 {
+			if ok {
 				p.ThoughtSignature = sig
 			}
 			result = append(result, p)
@@ -871,7 +871,7 @@ func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error)
 			if err != nil {
 				return nil, err
 			}
-			if len(sig) > 0 {
+			if ok {
 				p.ThoughtSignature = sig
 			}
 			result = append(result, p)
@@ -1135,6 +1135,12 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 			}
 		}
 		if len(outParts) > 0 {
+			if result.Extra != nil {
+				delete(result.Extra, thoughtSignatureKey)
+				if len(result.Extra) == 0 {
+					result.Extra = nil
+				}
+			}
 			result.AssistantGenMultiContent = outParts
 		}
 	}
