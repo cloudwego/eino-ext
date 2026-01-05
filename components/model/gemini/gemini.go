@@ -379,6 +379,70 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema
 	return cachedContent, nil
 }
 
+func populateToolChoice(m *genai.GenerateContentConfig, toolChoice *schema.ToolChoice, allowedToolNames []string) error {
+	if toolChoice == nil {
+		return nil
+	}
+
+	validateAllowedToolNames := func() error {
+		if len(allowedToolNames) > 0 {
+			toolsMap := make(map[string]bool, len(m.Tools))
+			for _, tools := range m.Tools {
+				for _, functions := range tools.FunctionDeclarations {
+					toolsMap[functions.Name] = true
+				}
+			}
+			for _, name := range allowedToolNames {
+				if !toolsMap[name] {
+					return fmt.Errorf("allowed tool %s not found in request tools", name)
+				}
+			}
+		}
+		return nil
+	}
+	switch *toolChoice {
+	case schema.ToolChoiceForbidden:
+		m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+			Mode: genai.FunctionCallingConfigModeNone,
+		}}
+		return nil
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedToolNames(); err != nil {
+				return err
+			}
+			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode:                 genai.FunctionCallingConfigModeValidated,
+				AllowedFunctionNames: allowedToolNames,
+			}}
+			return nil
+		}
+		m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+			Mode: genai.FunctionCallingConfigModeAuto,
+		}}
+		return nil
+	case schema.ToolChoiceForced:
+		if len(m.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedToolNames(); err != nil {
+				return err
+			}
+		}
+
+		m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+			Mode:                 genai.FunctionCallingConfigModeAny,
+			AllowedFunctionNames: allowedToolNames,
+		}}
+		return nil
+	default:
+		return fmt.Errorf("unknown tool choice %s", *toolChoice)
+	}
+
+}
+
 func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Option) (string, []*schema.Message, *genai.GenerateContentConfig, *model.Config, error) {
 	commonOptions := model.GetCommonOptions(&model.Options{
 		Temperature: cm.temperature,
@@ -468,32 +532,14 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		conf.Temperature = *commonOptions.Temperature
 		m.Temperature = commonOptions.Temperature
 	}
-	if commonOptions.ToolChoice != nil {
-		switch *commonOptions.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode: genai.FunctionCallingConfigModeNone,
-			}}
-		case schema.ToolChoiceAllowed:
-			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode: genai.FunctionCallingConfigModeAuto,
-			}}
-		case schema.ToolChoiceForced:
-			// The predicted function call will be any one of the provided "functionDeclarations".
-			if len(m.Tools) == 0 {
-				return "", nil, nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else {
-				m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-					Mode: genai.FunctionCallingConfigModeAny,
-				}}
-			}
-		default:
-			return "", nil, nil, nil, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
-		}
-	}
 	if geminiOptions.TopK != nil {
 		topK := float32(*geminiOptions.TopK)
 		m.TopK = &topK
+	}
+
+	err := populateToolChoice(m, commonOptions.ToolChoice, commonOptions.AllowedToolNames)
+	if err != nil {
+		return "", nil, nil, nil, err
 	}
 
 	if geminiOptions.ResponseJSONSchema != nil {

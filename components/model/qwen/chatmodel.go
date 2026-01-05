@@ -205,16 +205,37 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 	}, nil
 }
 
+func validateToolOptions(opts ...model.Option) error {
+	modelOptions := model.GetCommonOptions(&model.Options{}, opts...)
+	if modelOptions.ToolChoice != nil {
+		if *modelOptions.ToolChoice == schema.ToolChoiceAllowed && len(modelOptions.AllowedToolNames) > 0 {
+			return fmt.Errorf("tool_choice 'allowed' is not supported when allowed tool names are present")
+		}
+		if *modelOptions.ToolChoice == schema.ToolChoiceForced && len(modelOptions.AllowedToolNames) > 1 {
+			return fmt.Errorf("only one allowed tool name can be configured for tool_choice 'forced'")
+		}
+	}
+	return nil
+}
+
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	opts = cm.parseCustomOptions(opts...)
+	if err = validateToolOptions(opts...); err != nil {
+		return nil, err
+	}
+
 	return cm.cli.Generate(ctx, in, opts...)
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	opts = cm.parseCustomOptions(opts...)
+	if err = validateToolOptions(opts...); err != nil {
+		return nil, err
+	}
+
 	outStream, err = cm.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err

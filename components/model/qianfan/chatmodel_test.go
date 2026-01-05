@@ -493,3 +493,87 @@ func TestToQianfanMultiModalMessages(t *testing.T) {
 	assert.Equal(t, imageUrl, msgs[0].Content[1].ImageURL.URL)
 
 }
+
+func TestPopulateToolChoice(t *testing.T) {
+	PatchConvey("test populateToolChoice", t, func() {
+		req := &qianfan.ChatCompletionV2Request{}
+		options := &fmodel.Options{}
+
+		// 1. ToolChoice is nil
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldBeNil)
+
+		// 2. ToolChoice is ToolChoiceForbidden
+		tcForbidden := schema.ToolChoiceForbidden
+		options.ToolChoice = &tcForbidden
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldResemble, toolChoiceNone)
+
+		// 3. ToolChoice is ToolChoiceAllowed
+		tcAllowed := schema.ToolChoiceAllowed
+		options.ToolChoice = &tcAllowed
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldResemble, toolChoiceAuto)
+
+		// 4. ToolChoice is ToolChoiceForced
+		tcForced := schema.ToolChoiceForced
+		options.ToolChoice = &tcForced
+		// 4.1 No tools provided
+		req.Tools = nil
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "tool choice is forced but tool is not provided")
+
+		// 4.2 One tool provided
+		req.Tools = []qianfan.Tool{
+			{Function: qianfan.FunctionV2{Name: "test_tool"}},
+		}
+		options.AllowedToolNames = nil
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		tc, ok := req.ToolChoice.(qianfan.ToolChoice)
+		convey.So(ok, convey.ShouldBeTrue)
+		convey.So(tc.Type, convey.ShouldEqual, "function")
+		convey.So(tc.Function.Name, convey.ShouldEqual, "test_tool")
+
+		// 4.3 Multiple tools provided
+		req.Tools = []qianfan.Tool{
+			{Function: qianfan.FunctionV2{Name: "test_tool_1"}},
+			{Function: qianfan.FunctionV2{Name: "test_tool_2"}},
+		}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldResemble, toolChoiceRequired)
+
+		// 4.4 AllowedToolNames has one tool
+		options.AllowedToolNames = []string{"test_tool_1"}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		tc2, ok2 := req.ToolChoice.(qianfan.ToolChoice)
+		convey.So(ok2, convey.ShouldBeTrue)
+		convey.So(tc2.Type, convey.ShouldEqual, "function")
+		convey.So(tc2.Function.Name, convey.ShouldEqual, "test_tool_1")
+
+		// 4.5 AllowedToolNames has more than one tool
+		options.AllowedToolNames = []string{"test_tool_1", "test_tool_2"}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "only one allowed tool name can be configured")
+
+		// 4.6 AllowedToolNames has a tool that is not in the tools list
+		options.AllowedToolNames = []string{"non_exist_tool"}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "allowed tool name 'non_exist_tool' not found in tools list")
+
+		// 5. Unsupported ToolChoice
+		unsupported := schema.ToolChoice("unsupported")
+		options.ToolChoice = &unsupported
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "[qianfan][genRequest] tool choice=unsupported not support")
+	})
+}

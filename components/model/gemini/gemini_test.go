@@ -1067,3 +1067,182 @@ func TestSpecialPart(t *testing.T) {
 	assert.Equal(t, content.Parts[1].CodeExecutionResult.Output, "output")
 	assert.Equal(t, content.Parts[1].CodeExecutionResult.Outcome, genai.Outcome("outcome"))
 }
+
+func TestPopulateToolChoice(t *testing.T) {
+	toolChoiceForbidden := schema.ToolChoiceForbidden
+	toolChoiceAllowed := schema.ToolChoiceAllowed
+	toolChoiceRequired := schema.ToolChoiceForced
+	emptyToolChoice := schema.ToolChoice("")
+
+	testCases := []struct {
+		name      string
+		m         *genai.GenerateContentConfig
+		options   *model.Options
+		wantErr   bool
+		expectedM *genai.GenerateContentConfig
+	}{
+		{
+			name:      "nil options",
+			m:         &genai.GenerateContentConfig{},
+			options:   &model.Options{},
+			wantErr:   false,
+			expectedM: &genai.GenerateContentConfig{},
+		},
+		{
+			name:      "nil tool choice",
+			m:         &genai.GenerateContentConfig{},
+			options:   &model.Options{},
+			wantErr:   false,
+			expectedM: &genai.GenerateContentConfig{},
+		},
+		{
+			name: "allowed tool not found",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice:       &toolChoiceAllowed,
+				AllowedToolNames: []string{"tool2"},
+			},
+			wantErr: true,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+		},
+		{
+			name: "tool choice forbidden",
+			m:    &genai.GenerateContentConfig{},
+			options: &model.Options{
+				ToolChoice: &toolChoiceForbidden,
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode: genai.FunctionCallingConfigModeNone,
+					},
+				},
+			},
+		},
+		{
+			name: "tool choice allowed",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice: &toolChoiceAllowed,
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode: genai.FunctionCallingConfigModeAuto,
+					},
+				},
+			},
+		},
+		{
+			name: "tool choice allowed with allowed_tools",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice:       &toolChoiceAllowed,
+				AllowedToolNames: []string{"tool1"},
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode:                 genai.FunctionCallingConfigModeValidated,
+						AllowedFunctionNames: []string{"tool1"},
+					},
+				},
+			},
+		},
+		{
+			name: "tool choice required",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice: &toolChoiceRequired,
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode: genai.FunctionCallingConfigModeAny,
+					},
+				},
+			},
+		},
+		{
+			name: "tool choice required with allowed_tools",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice:       &toolChoiceRequired,
+				AllowedToolNames: []string{"tool1"},
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode:                 genai.FunctionCallingConfigModeAny,
+						AllowedFunctionNames: []string{"tool1"},
+					},
+				},
+			},
+		},
+		{
+			name: "empty tool choice",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice: &emptyToolChoice,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := populateToolChoice(tc.m, tc.options.ToolChoice, tc.options.AllowedToolNames)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedM, tc.m)
+			}
+		})
+	}
+}
