@@ -190,6 +190,22 @@ func GetResponseID(msg *schema.Message) (string, bool) {
 	return responseIDStr, true
 }
 
+// DisableMessageCaches clears the response ID from messages to force the model
+// to recompute responses instead of using cached results.
+// Use this when you want the model to generate fresh responses for messages
+// that may have been previously cached.
+func DisableMessageCaches(messages []*schema.Message) {
+	for _, msg := range messages {
+		if msg == nil || msg.Extra == nil {
+			continue
+		}
+		if _, ok := msg.Extra[keyOfResponseID]; !ok {
+			continue
+		}
+		delete(msg.Extra, keyOfResponseID)
+	}
+}
+
 func setResponseID(msg *schema.Message, responseID string) {
 	setMsgExtra(msg, keyOfResponseID, arkResponseID(responseID))
 }
