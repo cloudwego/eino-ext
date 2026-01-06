@@ -307,3 +307,24 @@ func getMultiModalToolResultDisplayName(input schema.MessageInputPart) string {
 	}
 	return displayName
 }
+
+func SetMultiModalToolResultDisplayNameForMap(m map[string]any, displayName string) map[string]any {
+	if m == nil {
+		return map[string]any{
+			displayNameKey: displayName,
+		}
+	}
+	m[displayNameKey] = displayName
+	return m
+}
+
+func getMultiModalToolResultDisplayNameFromMap(m map[string]any) string {
+	if m == nil {
+		return ""
+	}
+	displayName, ok := m[displayNameKey].(string)
+	if !ok {
+		return ""
+	}
+	return displayName
+}

@@ -605,6 +605,9 @@ func convToolMessageToPart(toolName string, msg *schema.Message) (*genai.Part, e
 	if len(msg.UserInputMultiContent) > 0 {
 		return convMultiModalToolMessageToPart(toolName, msg.UserInputMultiContent)
 	}
+	if len(msg.MultiContent) > 0 {
+		return convMultiModalToolMessageToPartFromMultiContent(toolName, msg.MultiContent)
+	}
 	response := make(map[string]any)
 	err := sonic.UnmarshalString(msg.Content, &response)
 	if err != nil {
@@ -612,6 +615,76 @@ func convToolMessageToPart(toolName string, msg *schema.Message) (*genai.Part, e
 	}
 
 	return genai.NewPartFromFunctionResponse(toolName, response), nil
+}
+
+func convMultiModalToolMessageToPartFromMultiContent(toolName string, inputs []schema.ChatMessagePart) (*genai.Part, error) {
+	var text *string
+	var parts []*genai.FunctionResponsePart
+	for _, input := range inputs {
+		switch input.Type {
+		case schema.ChatMessagePartTypeText:
+			if text != nil {
+				return nil, fmt.Errorf("multi-modal tool result only allows one text part, parts: %+v", inputs)
+			}
+			text = &input.Text
+
+		case schema.ChatMessagePartTypeImageURL:
+			if input.ImageURL == nil {
+				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in tool message")
+			}
+			displayName := getMultiModalToolResultDisplayNameFromMap(input.ImageURL.Extra)
+			part, err := toFunctionResponsePart(&input.ImageURL.URL, nil, input.ImageURL.MIMEType, input.Type, displayName)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+
+		case schema.ChatMessagePartTypeVideoURL:
+			if input.VideoURL == nil {
+				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in tool message")
+			}
+			displayName := getMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
+			part, err := toFunctionResponsePart(&input.VideoURL.URL, nil, input.VideoURL.MIMEType, input.Type, displayName)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+
+		case schema.ChatMessagePartTypeAudioURL:
+			if input.AudioURL == nil {
+				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in tool message")
+			}
+			displayName := getMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
+			part, err := toFunctionResponsePart(&input.AudioURL.URL, nil, input.AudioURL.MIMEType, input.Type, displayName)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+
+		case schema.ChatMessagePartTypeFileURL:
+			if input.FileURL == nil {
+				return nil, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in tool message")
+			}
+			displayName := getMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
+			part, err := toFunctionResponsePart(&input.FileURL.URL, nil, input.FileURL.MIMEType, input.Type, displayName)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+
+		default:
+			return nil, fmt.Errorf("unknown part type: %s", input.Type)
+		}
+	}
+	response := make(map[string]any)
+	if text != nil {
+		err := sonic.UnmarshalString(*text, &response)
+		if err != nil {
+			response = map[string]any{"output": *text}
+		}
+	}
+
+	return genai.NewPartFromFunctionResponseWithParts(toolName, response, parts), nil
 }
 
 func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInputPart) (*genai.Part, error) {

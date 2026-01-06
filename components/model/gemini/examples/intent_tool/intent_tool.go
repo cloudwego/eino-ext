@@ -168,19 +168,10 @@ func imageToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
 
 	fmt.Printf("output: \n%v", resp)
 
-	imageToolResult := gemini.SetMultiModalToolResultDisplayName(schema.MessageInputPart{
-		Type: schema.ChatMessagePartTypeImageURL,
-		Image: &schema.MessageInputImage{
-			MessagePartCommon: schema.MessagePartCommon{
-				Base64Data: &imageStr,
-				MIMEType:   "image/png",
-			},
-		},
-	}, "cat.png")
 	toolResult := &schema.Message{
 		Role:       schema.Tool,
 		ToolCallID: resp.ToolCalls[0].ID,
-		UserInputMultiContent: []schema.MessageInputPart{
+		MultiContent: []schema.ChatMessagePart{
 			{
 				Type: schema.ChatMessagePartTypeText,
 				Text: `{
@@ -190,9 +181,16 @@ func imageToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
                         "output": ""
                     }`,
 			},
-			imageToolResult,
+			{
+				Type: schema.ChatMessagePartTypeImageURL,
+				ImageURL: &schema.ChatMessageImageURL{
+					URL:      imageStr,
+					MIMEType: "image/png",
+				},
+			},
 		},
 	}
+	toolResult.MultiContent[1].ImageURL.Extra = gemini.SetMultiModalToolResultDisplayNameForMap(toolResult.MultiContent[1].ImageURL.Extra, "cat.png")
 	resp, err = chatModel.Generate(ctx, append(query, resp, toolResult))
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
