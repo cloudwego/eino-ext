@@ -73,6 +73,7 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		enableGoogleMaps:            cfg.EnableGoogleMaps,
 		safetySettings:              cfg.SafetySettings,
 		thinkingConfig:              cfg.ThinkingConfig,
+		imageConfig:                 cfg.ImageConfig,
 		responseModalities:          cfg.ResponseModalities,
 		mediaResolution:             cfg.MediaResolution,
 		cache:                       cfg.Cache,
@@ -130,6 +131,11 @@ type Config struct {
 
 	ThinkingConfig *genai.ThinkingConfig
 
+	// ImageConfig is the image generation configuration.
+	// Note: an error will be returned if this field is set for a model that does not support the configuration options.
+	// Optional.
+	ImageConfig *genai.ImageConfig
+
 	// ResponseModalities specifies the modalities the model can return.
 	// Optional.
 	ResponseModalities []GeminiResponseModality
@@ -170,6 +176,7 @@ type ChatModel struct {
 	enableGoogleMaps            *genai.GoogleMaps
 	safetySettings              []*genai.SafetySetting
 	thinkingConfig              *genai.ThinkingConfig
+	imageConfig                 *genai.ImageConfig
 	responseModalities          []GeminiResponseModality
 	mediaResolution             genai.MediaResolution
 	cache                       *CacheConfig
@@ -455,6 +462,7 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		TopK:               cm.topK,
 		ResponseJSONSchema: cm.responseJSONSchema,
 		ResponseModalities: cm.responseModalities,
+		ImageConfig:        cm.imageConfig,
 	}, opts...)
 	conf := &model.Config{}
 
@@ -570,6 +578,10 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		m.ThinkingConfig = geminiOptions.ThinkingConfig
 	}
 
+	if geminiOptions.ImageConfig != nil {
+		m.ImageConfig = geminiOptions.ImageConfig
+	}
+
 	if len(geminiOptions.CachedContentName) > 0 {
 		m.CachedContent = geminiOptions.CachedContentName
 		// remove system instruction and tools when using cached content
@@ -577,6 +589,7 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		m.Tools = nil
 		m.ToolConfig = nil
 	}
+
 	return conf.Model, nInput, m, conf, nil
 }
 

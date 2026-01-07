@@ -28,8 +28,8 @@ type options struct {
 	ResponseJSONSchema *jsonschema.Schema
 	ThinkingConfig     *genai.ThinkingConfig
 	ResponseModalities []GeminiResponseModality
-
-	CachedContentName string
+	ImageConfig        *genai.ImageConfig
+	CachedContentName  string
 }
 
 func WithTopK(k int32) model.Option {
@@ -61,5 +61,14 @@ func WithResponseModalities(m []GeminiResponseModality) model.Option {
 func WithCachedContentName(name string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.CachedContentName = name
+	})
+}
+
+// WithImageConfig sets the image generation configuration.
+// Note: an error will be returned for a model that does not support the configuration options.
+// Optional.
+func WithImageConfig(cfg *genai.ImageConfig) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ImageConfig = cfg
 	})
 }
