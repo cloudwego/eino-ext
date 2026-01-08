@@ -500,6 +500,14 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	return req, nil
 }
 
+type toolChoice string
+
+const (
+	toolChoiceNone     toolChoice = "none"
+	toolChoiceAuto     toolChoice = "auto"
+	toolChoiceRequired toolChoice = "required"
+)
+
 func toLogProbs(probs *model.LogProbs) *schema.LogProbs {
 	if probs == nil {
 		return nil

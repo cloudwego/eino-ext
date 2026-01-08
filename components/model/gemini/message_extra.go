@@ -106,6 +106,7 @@ const (
 	thoughtSignatureKey = "gemini_thought_signature"
 	specialParteKey     = "gemini_special_part"
 	groundMetadataKey   = "gemini_ground_metadata"
+	displayNameKey      = "gemini_display_name"
 )
 
 // Deprecated: use SetInputVideoMetaData instead.
@@ -178,43 +179,66 @@ func setMessageThoughtSignature(message *schema.Message, signature []byte) {
 	message.Extra[thoughtSignatureKey] = signature
 }
 
-// getMessageThoughtSignature retrieves the thought signature from a Message's Extra field.
 func getMessageThoughtSignature(message *schema.Message) []byte {
-	if message == nil || message.Extra == nil {
+	if message == nil {
 		return nil
 	}
-
-	return getThoughtSignatureFromExtra(message.Extra)
+	sig, _ := GetThoughtSignatureFromExtra(message.Extra)
+	return sig
 }
 
-// getThoughtSignatureFromExtra is a helper function that extracts thought signature from an Extra map.
-func getThoughtSignatureFromExtra(extra map[string]any) []byte {
+func setMessageOutputPartThoughtSignature(part *schema.MessageOutputPart, signature []byte) {
+	if part == nil || len(signature) == 0 {
+		return
+	}
+	if part.Extra == nil {
+		part.Extra = make(map[string]any)
+	}
+	part.Extra[thoughtSignatureKey] = signature
+}
+
+// GetThoughtSignatureFromExtra tries to read thought_signature from an Extra map.
+//
+// thought_signature should be read from:
+//   - message.AssistantGenMultiContent[i].Extra: thought_signature on each generated output part
+//   - toolCall.Extra: thought_signature on toolCall
+//   - message.Extra: thought_signature on generated content (legacy, only used when message.AssistantGenMultiContent are absent)
+//
+// The returned bool indicates whether thought_signature key exists in Extra.
+// The returned []byte is the thought signature if available
+func GetThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 	if extra == nil {
-		return nil
+		return nil, false
 	}
 
 	signature, exists := extra[thoughtSignatureKey]
 	if !exists {
-		return nil
+		return nil, false
 	}
 
 	switch sig := signature.(type) {
 	case []byte:
 		if len(sig) == 0 {
-			return nil
+			return nil, true
 		}
-		return sig
+		return sig, true
 	case string:
+		// When marshaling a map[string]any to JSON, a []byte value is encoded as a base64 string.
+		// After unmarshaling back into map[string]any, the value becomes string.
+		// Decode it here for compatibility with messages restored from JSON.
 		if sig == "" {
-			return nil
+			return nil, true
 		}
 		decoded, err := base64.StdEncoding.DecodeString(sig)
 		if err != nil {
-			return nil
+			return nil, true
 		}
-		return decoded
+		if len(decoded) == 0 {
+			return nil, true
+		}
+		return decoded, true
 	default:
-		return nil
+		return nil, true
 	}
 }
 
@@ -237,12 +261,12 @@ func setToolCallThoughtSignature(toolCall *schema.ToolCall, signature []byte) {
 	toolCall.Extra[thoughtSignatureKey] = signature
 }
 
-// getToolCallThoughtSignature retrieves the thought signature from a ToolCall's Extra field.
 func getToolCallThoughtSignature(toolCall *schema.ToolCall) []byte {
-	if toolCall == nil || toolCall.Extra == nil {
+	if toolCall == nil {
 		return nil
 	}
-	return getThoughtSignatureFromExtra(toolCall.Extra)
+	sig, _ := GetThoughtSignatureFromExtra(toolCall.Extra)
+	return sig
 }
 
 func setGroundMetadata(m *schema.Message, gm *genai.GroundingMetadata) {
@@ -263,4 +287,23 @@ func GetGroundMetadata(m *schema.Message) *genai.GroundingMetadata {
 		return gm
 	}
 	return nil
+}
+
+func SetMultiModalToolResultDisplayName(input schema.MessageInputPart, displayName string) schema.MessageInputPart {
+	if input.Extra == nil {
+		input.Extra = make(map[string]any)
+	}
+	input.Extra[displayNameKey] = displayName
+	return input
+}
+
+func getMultiModalToolResultDisplayName(input schema.MessageInputPart) string {
+	if input.Extra == nil {
+		return ""
+	}
+	displayName, ok := input.Extra[displayNameKey].(string)
+	if !ok {
+		return ""
+	}
+	return displayName
 }

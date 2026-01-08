@@ -26,11 +26,16 @@ Here's a quick example of how to use the retriever with approximate search mode,
 
 ```go
 import (
+	"context"
+	"encoding/json"
+	"os"
+
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/es8"
 	"github.com/cloudwego/eino-ext/components/retriever/es8/search_mode"
 )
@@ -45,15 +50,17 @@ const (
 
 func main() {
 	ctx := context.Background()
-
 	// es supports multiple ways to connect
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
-	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 
-	cert, err := os.ReadFile(httpCACertPath)
-	if err != nil {
-		log.Fatalf("read file failed, err=%v", err)
+	// 1. Create ES client
+	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
+	if httpCACertPath != "" {
+		cert, err := os.ReadFile(httpCACertPath)
+		if err != nil {
+			log.Fatalf("read file failed, err=%v", err)
+		}
 	}
 
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
@@ -63,21 +70,31 @@ func main() {
 		CACert:    cert,
 	})
 
-	// create retriever component
+	// 2. Create embedding component using ARK
+	// Replace "ARK_API_KEY", "ARK_REGION", "ARK_MODEL" with your actual config
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
+
+	// 3. Create ES retriever component
 	retriever, _ := es8.NewRetriever(ctx, &es8.RetrieverConfig{
 		Client: client,
 		Index:  indexName,
-		TopK:   5,
+		TopK:   5, // Retrieve top 5 results
+		// Use approximate search mode (vector search)
 		SearchMode: search_mode.SearchModeApproximate(&search_mode.ApproximateConfig{
 			QueryFieldName:  fieldContent,
 			VectorFieldName: fieldContentVector,
-			Hybrid:          true,
+			Hybrid:          true, // Enable hybrid search (vector + keyword)
 			// RRF only available with specific licenses
 			// see: https://www.elastic.co/subscriptions
 			RRF:             false,
 			RRFRankConstant: nil,
 			RRFWindowSize:   nil,
 		}),
+		// ResultParser extracts document fields from ES hit
 		ResultParser: func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error) {
 			doc = &schema.Document{
 				ID:       *hit.Id_,
@@ -118,11 +135,12 @@ func main() {
 	docs, _ := retriever.Retrieve(ctx, "tourist attraction")
 
 	// search with filter
+	caseInsensitive := true
 	docs, _ = retriever.Retrieve(ctx, "tourist attraction",
 		es8.WithFilters([]types.Query{{
 			Term: map[string]types.TermQuery{
 				fieldExtraLocation: {
-					CaseInsensitive: of(true),
+					CaseInsensitive: &caseInsensitive,
 					Value:           "China",
 				},
 			},
@@ -154,6 +172,14 @@ type RetrieverConfig struct {
     Embedding embedding.Embedder
 }
 ```
+
+## Full Examples
+
+- [Approximate Search Example](./examples/approximate)
+- [Dense Vector Similarity Example](./examples/dense_vector_similarity)
+- [Exact Match Example](./examples/exact_match)
+- [Raw String Request Example](./examples/raw_string)
+- [Sparse Vector Query Example](./examples/sparse_vector_query)
 
 ## For More Details
 

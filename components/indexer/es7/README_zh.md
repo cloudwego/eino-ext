@@ -35,6 +35,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v7"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/es7"
 )
 
@@ -59,11 +60,30 @@ func main() {
 		Password:  password,
 	})
 
-	// 创建 embedding 组件
-	emb := createYourEmbedding()
+	// 使用 Volcengine ARK 创建 embedding 组件
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// 加载文档
-	docs := loadYourDocs()
+	docs := []*schema.Document{
+		{
+			ID:      "1",
+			Content: "Eiffel Tower: Located in Paris, France.",
+			MetaData: map[string]any{
+				docExtraLocation: "France",
+			},
+		},
+		{
+			ID:      "2",
+			Content: "The Great Wall: Located in China.",
+			MetaData: map[string]any{
+				docExtraLocation: "China",
+			},
+		},
+	}
 
 	// 创建 ES 索引器组件
 	indexer, _ := es7.NewIndexer(ctx, &es7.IndexerConfig{
@@ -81,14 +101,15 @@ func main() {
 				},
 			}, nil
 		},
-		Embedding: emb, // 替换为真实的 embedding 组件
+		Embedding: emb,
 	})
 
-	ids, _ := indexer.Store(ctx, docs)
-
-	fmt.Println(ids)
-    // 与 Eino 系统一起使用
-    // ... 配置并与 Eino 一起使用
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		fmt.Printf("index error: %v\n", err)
+		return
+	}
+	fmt.Println("indexed ids:", ids)
 }
 ```
 
@@ -116,6 +137,10 @@ type FieldValue struct {
     Stringify func(val any) (string, error) // 选填：自定义字符串转换
 }
 ```
+
+## 完整示例
+
+- [索引器示例](./examples/indexer)
 
 ## 更多详情
 

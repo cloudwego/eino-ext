@@ -17,9 +17,8 @@
 package ark
 
 import (
-	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-
 	"github.com/cloudwego/eino/components/model"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 type arkOptions struct {
@@ -30,6 +29,10 @@ type arkOptions struct {
 	thinking *arkModel.Thinking
 
 	cache *CacheOption
+
+	enableWebSearch *ToolWebSearch
+
+	maxToolCalls *int64
 }
 
 // WithCustomHeader sets custom headers for a single request
@@ -70,8 +73,9 @@ func WithReasoningEffort(effort arkModel.ReasoningEffort) model.Option {
 }
 
 type CacheOption struct {
-	// See [CacheConfig.APIType]
-	// Required.
+	// APIType specifies the API type for caching.
+	// Deprecated: This field defaults to ContextAPI and will be removed in a future version.
+	// To use the ResponsesAPI, please use NewResponsesAPIChatModel to create a ResponsesAPIChatModel.
 	APIType APIType
 
 	// ContextID is the unique identifier returned by ContextAPI.
@@ -107,4 +111,33 @@ func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.maxCompletionTokens = &maxCompletionTokens
 	})
+}
+
+// WithEnableToolWebSearch enables the web search tool.
+// This option is only supported for the ResponsesAPIChatModel.
+// Web Search is a basic internet search tool that can obtain real-time public network information
+// (such as news, products, weather, etc.) for your large model through the Responses API.
+// This tool can solve core issues such as data timeliness, knowledge gaps, and information synchronization,
+// and you do not need to develop your own search engine or maintain data resources.
+// Note: This option is only effective for the Responses API.
+// For more details, see https://www.volcengine.com/docs/82379/1756990?lang=zh
+func WithEnableToolWebSearch(toolWebSearch *ToolWebSearch) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.enableWebSearch = toolWebSearch
+	})
+
+}
+
+// WithMaxToolCalls sets the maximum number of tool-calling rounds.
+// This option is only supported for the ResponsesAPIChatModel.
+// The value must be in the range [1, 10].
+// After this limit is reached, the model is prompted to stop making further tool calls and generate a response.
+// Note: This is a best-effort parameter, and the actual number of calls may be affected by model performance and tool results.
+// The default value for the Web Search tool is 3.
+// For more details, see https://www.volcengine.com/docs/82379/1569618?lang=zh
+func WithMaxToolCalls(n int64) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.maxToolCalls = &n
+	})
+
 }

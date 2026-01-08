@@ -6,7 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.7.11
+	github.com/cloudwego/eino v0.7.13
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.10.0
 )
