@@ -49,7 +49,7 @@ type AgentConfig struct {
 	// todo: support notification?
 }
 
-func NewAgent(ctx context.Context, cfg AgentConfig) (adk.Agent, error) {
+func NewAgent(ctx context.Context, cfg AgentConfig) (*A2AAgent, error) {
 	cli, err := client.NewA2AClient(ctx, &client.Config{
 		Transport: cfg.Transport,
 	})
@@ -77,7 +77,7 @@ func NewAgent(ctx context.Context, cfg AgentConfig) (adk.Agent, error) {
 		streaming = *cfg.Streaming
 	}
 
-	a := &a2aAgent{
+	a := &A2AAgent{
 		name:                  name,
 		description:           desc,
 		streaming:             streaming,
@@ -125,7 +125,7 @@ func WithMetadata(metadata map[string]any) adk.AgentRunOption {
 	})
 }
 
-type a2aAgent struct {
+type A2AAgent struct {
 	name        string
 	description string
 	streaming   bool
@@ -137,15 +137,15 @@ type a2aAgent struct {
 	cli *client.A2AClient
 }
 
-func (a *a2aAgent) Name(ctx context.Context) string {
+func (a *A2AAgent) Name(ctx context.Context) string {
 	return a.name
 }
 
-func (a *a2aAgent) Description(ctx context.Context) string {
+func (a *A2AAgent) Description(ctx context.Context) string {
 	return a.description
 }
 
-func (a *a2aAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+func (a *A2AAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
 	o := adk.GetImplSpecificOptions(&options{}, opts...)
 	m, err := a.inputMessageConvertor(ctx, input.Messages)
 	if err != nil {
@@ -158,7 +158,7 @@ func (a *a2aAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.A
 	return a.run(ctx, m, input.EnableStreaming, o.metadata)
 }
 
-func (a *a2aAgent) Resume(ctx context.Context, info *adk.ResumeInfo, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
+func (a *A2AAgent) Resume(ctx context.Context, info *adk.ResumeInfo, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
 	if info == nil {
 		// unreachable
 		iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
@@ -188,7 +188,34 @@ func (a *a2aAgent) Resume(ctx context.Context, info *adk.ResumeInfo, opts ...adk
 	return a.run(ctx, msg, info.EnableStreaming, o.metadata)
 }
 
-func (a *a2aAgent) run(ctx context.Context, msg models.Message, streaming bool, metadata map[string]any) *adk.AsyncIterator[*adk.AgentEvent] {
+func (a *A2AAgent) Resubscribe(ctx context.Context, input *models.TaskIDParams) *adk.AsyncIterator[*adk.AgentEvent] {
+	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+
+	stream, err := a.cli.ResubscribeTask(ctx, input)
+	if err != nil {
+		gen.Send(&adk.AgentEvent{
+			AgentName: a.Name(ctx),
+			Err:       err,
+		})
+		gen.Close()
+		return iter
+	}
+	receiver := &ResponseUnionReceiver{stream}
+	go func() {
+		defer func() {
+			e := recover()
+			if e != nil {
+				gen.Send(&adk.AgentEvent{Err: utils.NewPanicErr(e, debug.Stack())})
+			}
+			gen.Close()
+		}()
+		a.outputConvertor(ctx, receiver, &AgentEventSender{gen: gen})
+	}()
+
+	return iter
+}
+
+func (a *A2AAgent) run(ctx context.Context, msg models.Message, streaming bool, metadata map[string]any) *adk.AsyncIterator[*adk.AgentEvent] {
 	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 
 	if streaming {
