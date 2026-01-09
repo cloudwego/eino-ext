@@ -318,7 +318,7 @@ func SetMultiModalToolResultDisplayNameForMap(m map[string]any, displayName stri
 	return m
 }
 
-func getMultiModalToolResultDisplayNameFromMap(m map[string]any) string {
+func GetMultiModalToolResultDisplayNameFromMap(m map[string]any) string {
 	if m == nil {
 		return ""
 	}

@@ -632,7 +632,7 @@ func convMultiModalToolMessageToPartFromMultiContent(toolName string, inputs []s
 			if input.ImageURL == nil {
 				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in tool message")
 			}
-			displayName := getMultiModalToolResultDisplayNameFromMap(input.ImageURL.Extra)
+			displayName := GetMultiModalToolResultDisplayNameFromMap(input.ImageURL.Extra)
 			part, err := toFunctionResponsePart(&input.ImageURL.URL, nil, input.ImageURL.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
@@ -643,7 +643,7 @@ func convMultiModalToolMessageToPartFromMultiContent(toolName string, inputs []s
 			if input.VideoURL == nil {
 				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in tool message")
 			}
-			displayName := getMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
+			displayName := GetMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
 			part, err := toFunctionResponsePart(&input.VideoURL.URL, nil, input.VideoURL.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
@@ -654,7 +654,7 @@ func convMultiModalToolMessageToPartFromMultiContent(toolName string, inputs []s
 			if input.AudioURL == nil {
 				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in tool message")
 			}
-			displayName := getMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
+			displayName := GetMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
 			part, err := toFunctionResponsePart(&input.AudioURL.URL, nil, input.AudioURL.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
@@ -665,7 +665,7 @@ func convMultiModalToolMessageToPartFromMultiContent(toolName string, inputs []s
 			if input.FileURL == nil {
 				return nil, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in tool message")
 			}
-			displayName := getMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
+			displayName := GetMultiModalToolResultDisplayNameFromMap(input.VideoURL.Extra)
 			part, err := toFunctionResponsePart(&input.FileURL.URL, nil, input.FileURL.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
