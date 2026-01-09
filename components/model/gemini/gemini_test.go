@@ -518,7 +518,7 @@ func TestChatModel_convMedia(t *testing.T) {
 
 func TestThoughtSignatureRoundTrip(t *testing.T) {
 	t.Run("convToolMessageToPart", func(t *testing.T) {
-		part, err := convToolMessageToPart("tool_1", `{"result":"ok"}`)
+		part, err := convToolMessageToPart("tool_1", schema.ToolMessage(`{"result":"ok"}`, ""))
 		assert.NoError(t, err)
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "tool_1", part.FunctionResponse.Name)
@@ -526,7 +526,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 	})
 
 	t.Run("convToolMessageToPart fallback to output", func(t *testing.T) {
-		part, err := convToolMessageToPart("tool_2", "raw-response")
+		part, err := convToolMessageToPart("tool_2", schema.ToolMessage("raw-response", ""))
 		assert.NoError(t, err)
 		assert.NotNil(t, part.FunctionResponse)
 		assert.Equal(t, "tool_2", part.FunctionResponse.Name)

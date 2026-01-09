@@ -27,8 +27,6 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
-	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
@@ -389,9 +387,6 @@ type CacheInfo struct {
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
 	outMsg *schema.Message, err error) {
-
-	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-
 	ok, err := cm.callByResponsesAPI(opts...)
 	if err != nil {
 		return nil, err
@@ -405,8 +400,6 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
 	outStream *schema.StreamReader[*schema.Message], err error) {
-
-	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	ok, err := cm.callByResponsesAPI(opts...)
 	if err != nil {
