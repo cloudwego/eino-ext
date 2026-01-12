@@ -211,7 +211,8 @@ See the [examples](./examples) directory for complete working examples:
 
 - [approximate](./examples/approximate) - Basic ANN search
 - [range](./examples/range) - Range search example
-- [hybrid](./examples/hybrid) - Hybrid multi-vector search
+- [hybrid](./examples/hybrid) - Hybrid multi-vector search (Dense + BM25)
+- [hybrid_chinese](./examples/hybrid_chinese) - Chinese text hybrid search with BM25
 - [iterator](./examples/iterator) - Batch iterator search
 - [scalar](./examples/scalar) - Scalar/metadata filtering
 - [grouping](./examples/grouping) - Grouping search results

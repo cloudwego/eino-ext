@@ -28,21 +28,22 @@ import (
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
-// This example demonstrates how to use Milvus BM25 function for server-side
-// sparse vector generation. The BM25 function tokenizes text and generates
-// term frequency vectors automatically, enabling keyword-based search without
-// client-side sparse embedding.
+// This example demonstrates Hybrid Search indexing - creating a collection with
+// both Dense vectors (for semantic search) and Sparse vectors (BM25 for keyword search).
+//
+// The BM25 function tokenizes text and generates term frequency vectors automatically
+// on the server side, enabling keyword-based search without client-side sparse embedding.
 //
 // Prerequisites:
 // - Milvus 2.5+ (required for server-side functions)
 // - Run: docker run -d --name milvus -p 19530:19530 milvusdb/milvus:latest
 //
 // The collection created here can be used with the retriever hybrid example
-// for BM25-based hybrid search.
+// for combined Dense + Sparse (BM25) hybrid search.
 
 func main() {
 	ctx := context.Background()
-	collectionName := "eino_bm25_test"
+	collectionName := "eino_hybrid_test"
 	milvusAddr := "localhost:19530"
 
 	// Define BM25 function: reads from "content", outputs to sparse_vector

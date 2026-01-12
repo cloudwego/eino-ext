@@ -14,20 +14,10 @@
  * limitations under the License.
  */
 
-// This example demonstrates Hybrid Search combining Dense and Sparse (BM25) vectors.
-// Dense vectors capture semantic meaning, while BM25 sparse vectors enable keyword matching.
-// Results are fused using RRFReranker for best-of-both-worlds retrieval.
+// This example demonstrates Chinese text retrieval using BM25 sparse vectors in Hybrid mode.
+// Run the indexer hybrid_chinese example first to create the collection:
 //
-// Note on Reranking:
-// This example uses Milvus's server-side RRFReranker which fuses results from multiple
-// vector searches BEFORE returning. For post-retrieval reranking (e.g., using cross-encoder
-// models like Cohere Rerank), use Eino's document.Transformer interface instead. See:
-// github.com/cloudwego/eino-ext/components/document/transformer/reranker
-//
-// Prerequisites:
-// Run the indexer hybrid example first to create the collection with BM25 function:
-//
-//	cd ../../../indexer/milvus2/examples/hybrid && go run .
+//	cd ../../../indexer/milvus2/examples/hybrid_chinese && go run .
 //
 // Requires Milvus 2.5+ for server-side BM25 function support.
 package main
@@ -53,11 +43,11 @@ func main() {
 
 	ctx := context.Background()
 
-	// Collection created by indexer hybrid example with BM25 function
-	collectionName := "eino_hybrid_test"
+	// Collection created by indexer hybrid_chinese example
+	collectionName := "eino_hybrid_chinese"
 	sparseField := "sparse_vector"
 
-	// Define Reranker: RRF combines scores from dense and sparse searches
+	// Define Reranker: RRF combines scores from multiple searches
 	reranker := milvusclient.NewRRFReranker().WithK(60)
 
 	// Define Hybrid Mode with Dense + Sparse (BM25) SubRequests
@@ -80,7 +70,6 @@ func main() {
 	)
 
 	// Create Retriever
-	// Only dense embedding needed - sparse (BM25) is handled server-side
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   collectionName,
@@ -93,22 +82,29 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create retriever: %v", err)
 	}
-	log.Println("Hybrid (Dense + BM25) Retriever created successfully")
+	log.Println("Chinese Hybrid Retriever created successfully")
 
-	// Search with raw text
+	// Search with Chinese query text
 	// - Dense: text is embedded via mockDenseEmbedding
-	// - Sparse: text is passed directly to Milvus for BM25 processing
-	docs, err := retriever.Retrieve(ctx, "scalable vector database")
-	if err != nil {
-		log.Fatalf("Failed to retrieve: %v", err)
+	// - Sparse: text is passed directly to Milvus for BM25 processing with Chinese tokenizer
+	queries := []string{
+		"向量数据库",
+		"AI 应用",
+		"框架",
 	}
 
-	fmt.Printf("\nFound %d documents (Hybrid Dense + BM25):\n", len(docs))
-	for i, doc := range docs {
-		fmt.Printf("\n--- Document %d ---\n", i+1)
-		fmt.Printf("ID: %s\n", doc.ID)
-		fmt.Printf("Content: %s\n", doc.Content)
-		fmt.Printf("Score: %v\n", doc.Score())
+	for _, query := range queries {
+		fmt.Printf("\n=== Query: %s ===\n", query)
+
+		docs, err := retriever.Retrieve(ctx, query)
+		if err != nil {
+			log.Fatalf("Failed to retrieve: %v", err)
+		}
+
+		fmt.Printf("Found %d documents:\n", len(docs))
+		for i, doc := range docs {
+			fmt.Printf("%d. [ID: %s] %s\n", i+1, doc.ID, doc.Content)
+		}
 	}
 }
 

@@ -201,7 +201,8 @@ See the [examples](./examples) directory for complete working examples:
 - [rabitq](./examples/rabitq) - IVF_RABITQ index example (Milvus 2.6+)
 - [auto](./examples/auto) - AutoIndex example
 - [diskann](./examples/diskann) - DISKANN index example
-- [bm25](./examples/bm25) - BM25 server-side sparse vector example (Milvus 2.5+)
+- [hybrid](./examples/hybrid) - Hybrid search setup (Dense + BM25 sparse) (Milvus 2.5+)
+- [hybrid_chinese](./examples/hybrid_chinese) - Hybrid search with Chinese analyzer (Milvus 2.5+)
 - [byov](./examples/byov) - Bring Your Own Vectors example
 
 ### Sparse Vector Support

@@ -201,7 +201,8 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参�
 - [rabitq](./examples/rabitq) - IVF_RABITQ 索引示例 (Milvus 2.6+)
 - [auto](./examples/auto) - AutoIndex 示例
 - [diskann](./examples/diskann) - DISKANN 索引示例
-- [bm25](./examples/bm25) - BM25 服务端稀疏向量示例 (Milvus 2.5+)
+- [hybrid](./examples/hybrid) - 混合搜索设置 (稠密 + BM25 稀疏) (Milvus 2.5+)
+- [hybrid_chinese](./examples/hybrid_chinese) - 中文混合搜索示例 (Milvus 2.5+)
 - [byov](./examples/byov) - 自带向量示例
 
 ### 稀疏向量支持

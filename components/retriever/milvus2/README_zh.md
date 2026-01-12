@@ -211,7 +211,8 @@ docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023
 
 - [approximate](./examples/approximate) - 基础 ANN 搜索
 - [range](./examples/range) - 范围搜索示例
-- [hybrid](./examples/hybrid) - 混合多向量搜索
+- [hybrid](./examples/hybrid) - 混合多向量搜索 (稠密 + BM25)
+- [hybrid_chinese](./examples/hybrid_chinese) - 中文混合搜索示例
 - [iterator](./examples/iterator) - 批次迭代器搜索
 - [scalar](./examples/scalar) - 标量/元数据过滤
 - [grouping](./examples/grouping) - 分组搜索结果
