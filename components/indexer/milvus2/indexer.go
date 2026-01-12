@@ -19,7 +19,6 @@ package milvus2
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
@@ -379,13 +378,12 @@ func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerCon
 		createIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.VectorField, idx)
 
 		createTask, err := cli.CreateIndex(ctx, createIndexOpt)
-		if err != nil && !isIndexExistsError(err) {
+		if err != nil {
 			return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
 		}
-		if err == nil {
-			if err := createTask.Await(ctx); err != nil {
-				return fmt.Errorf("[NewIndexer] failed to await index creation: %w", err)
-			}
+
+		if err := createTask.Await(ctx); err != nil {
+			return fmt.Errorf("[NewIndexer] failed to await index creation: %w", err)
 		}
 	}
 
@@ -400,13 +398,12 @@ func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerCon
 		createSparseIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.SparseVectorField, sparseIdx)
 
 		createTask, err := cli.CreateIndex(ctx, createSparseIndexOpt)
-		if err != nil && !isIndexExistsError(err) {
+		if err != nil {
 			return fmt.Errorf("[NewIndexer] failed to create sparse index: %w", err)
 		}
-		if err == nil {
-			if err := createTask.Await(ctx); err != nil {
-				return fmt.Errorf("[NewIndexer] failed to await sparse index creation: %w", err)
-			}
+
+		if err := createTask.Await(ctx); err != nil {
+			return fmt.Errorf("[NewIndexer] failed to await sparse index creation: %w", err)
 		}
 	}
 
@@ -484,23 +481,4 @@ func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) 
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
 	return callbacks.ReuseHandlers(ctx, runInfo)
-}
-
-// isIndexNotFoundError checks if the error is an "index not found" error from Milvus.
-// This is expected when querying indexes on a newly created collection.
-func isIndexNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "index not found") ||
-		strings.Contains(errMsg, "index doesn't exist")
-}
-
-func isIndexExistsError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errMsg := err.Error()
-	return strings.Contains(strings.ToLower(errMsg), "already exists") || strings.Contains(strings.ToLower(errMsg), "already exist")
 }

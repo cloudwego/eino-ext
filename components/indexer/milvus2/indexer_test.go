@@ -336,33 +336,6 @@ func TestIndexer_Store(t *testing.T) {
 	})
 }
 
-func TestIsIndexNotFoundError(t *testing.T) {
-	convey.Convey("test isIndexNotFoundError", t, func() {
-		convey.Convey("test with index not found error", func() {
-			err := fmt.Errorf("index not found")
-			result := isIndexNotFoundError(err)
-			convey.So(result, convey.ShouldBeTrue)
-		})
-
-		convey.Convey("test with index doesn't exist error", func() {
-			err := fmt.Errorf("index doesn't exist")
-			result := isIndexNotFoundError(err)
-			convey.So(result, convey.ShouldBeTrue)
-		})
-
-		convey.Convey("test with other error", func() {
-			err := fmt.Errorf("some other error")
-			result := isIndexNotFoundError(err)
-			convey.So(result, convey.ShouldBeFalse)
-		})
-
-		convey.Convey("test with nil error", func() {
-			result := isIndexNotFoundError(nil)
-			convey.So(result, convey.ShouldBeFalse)
-		})
-	})
-}
-
 func TestDefaultDocumentConverter(t *testing.T) {
 	convey.Convey("test defaultDocumentConverter", t, func() {
 		convey.Convey("test conversion (dense only)", func() {
