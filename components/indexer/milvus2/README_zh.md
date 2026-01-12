@@ -229,10 +229,16 @@ indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
     Functions: []*entity.Function{bm25Function},
     
     // BM25 需要在内容字段上启用分析器
+    // 分析器选项 (内置):
+    // - {"type": "standard"} - 通用, 分词 + 小写
+    // - {"type": "english"}  - 英文, 支持停用词
+    // - {"type": "chinese"}  - 中文, Jieba 分词
+    // - 自定义: {"tokenizer": "...", "filter": [...]}
+    // 参考: https://milvus.io/docs/analyzer-overview.md
     FieldParams: map[string]map[string]string{
         "content": {
             "enable_analyzer": "true",
-            "analyzer_params": `{"tokenizer": "standard"}`,
+            "analyzer_params": `{"type": "standard"}`, // 中文使用 {"type": "chinese"}
         },
     },
 })

@@ -61,11 +61,17 @@ func main() {
 		Collection: collectionName,
 		Dimension:  128, // Dense vector dimension
 
-		// BM25 requires analyzer on content field
+		// BM25 requires analyzer on content field.
+		// Analyzer options (built-in):
+		// - {"type": "standard"} - general-purpose, tokenization + lowercase
+		// - {"type": "english"}  - English with stopwords support
+		// - {"type": "chinese"}  - Chinese with Jieba segmentation
+		// - Custom: {"tokenizer": "...", "filter": [...]}
+		// See: https://milvus.io/docs/analyzer-overview.md
 		FieldParams: map[string]map[string]string{
 			"content": {
 				"enable_analyzer": "true",
-				"analyzer_params": `{"tokenizer": "standard"}`,
+				"analyzer_params": `{"type": "standard"}`, // Use {"type": "chinese"} for Chinese text
 			},
 		},
 		Functions:         []*entity.Function{bm25Function},
