@@ -10,10 +10,9 @@ This package provides a Milvus 2.x (V2 SDK) indexer implementation for the EINO 
 
 - **Milvus V2 SDK**: Uses the latest `milvus-io/milvus/client/v2` SDK
 - **Auto Collection Management**: Automatically creates collections and indexes when needed
-- **Milvus Functions**: Support for server-side functions (e.g., BM25) for automatic sparse vector generation
+- **Sparse Vector Support**: Support for server-side functions (e.g., BM25) for automatic sparse vector generation
 - **Field Analysis**: Configurable analyzers for text fields
 - **Flexible Index Types**: Supports multiple index builders (Auto, HNSW, IVF_FLAT, FLAT, etc.)
-- **Sparse Vector Support**: Store and index sparse vectors for hybrid retrieval
 - **Custom Document Conversion**: Configurable document-to-column conversion
 
 ## Installation
@@ -117,10 +116,10 @@ func main() {
 | `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | Read consistency level |
 | `PartitionName` | `string` | - | Default partition for insertion |
 | `EnableDynamicSchema` | `bool` | `false` | Enable dynamic field support |
-| `SparseVectorField` | `string` | - | Sparse vector field name (enables sparse indexing) |
+| `SparseVectorField` | `string` | - | Sparse vector field name (required for server-side function output) |
 | `SparseIndexBuilder` | `SparseIndexBuilder` | SPARSE_INVERTED | Sparse index builder |
 | `SparseMetricType` | `MetricType` | `IP` | Metric type for sparse index (IP, BM25) |
-| `Functions` | `[]*entity.Function` | - | Schema functions (e.g., BM25) for server-side processing |
+| `Functions` | `[]*entity.Function` | - | Schema functions (e.g., BM25) for server-side processing (e.g., generating sparse vectors from content) |
 | `FieldParams` | `map[string]map[string]string` | - | Parameters for fields (e.g., enable_analyzer) |
 
 ## Index Builders
@@ -207,29 +206,36 @@ See the [examples](./examples) directory for complete working examples:
 
 ### Sparse Vector Support
 
-Store documents with both dense and sparse vectors for hybrid retrieval:
+Use Milvus server-side functions (e.g., BM25) to automatically generate sparse vectors from text content:
 
 ```go
-// Create indexer with sparse vector field
+// Define BM25 function
+bm25Function := entity.NewFunction().
+    WithName("bm25_fn").
+    WithType(entity.FunctionTypeBM25).
+    WithInputFields("content").         // Input text field
+    WithOutputFields("sparse_vector")   // Output sparse vector field
+
+// Create indexer with function
 indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
-    ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
+    // ... basic config ...
     Collection:        "hybrid_collection",
-    Dimension:         128,                   // Dense vector dimension
-    SparseVectorField: "sparse_vector",      // Enable sparse field
-    // SparseIndexBuilder defaults to SPARSE_INVERTED_INDEX
+    
+    // Enable sparse vector support
+    SparseVectorField: "sparse_vector",
+    SparseMetricType:  milvus2.BM25,
+    
+    // Register function
+    Functions: []*entity.Function{bm25Function},
+    
+    // BM25 requires analyzer on content field
+    FieldParams: map[string]map[string]string{
+        "content": {
+            "enable_analyzer": "true",
+            "analyzer_params": `{"tokenizer": "standard"}`,
+        },
+    },
 })
-
-// Create document with both vector types
-doc := &schema.Document{
-    ID:      "doc1",
-    Content: "Hybrid document with dense and sparse vectors",
-}
-
-// Attach vectors
-doc.WithDenseVector(denseVector)   // []float64
-doc.WithSparseVector(sparseVector) // map[int]float64
-
-ids, err := indexer.Store(ctx, []*schema.Document{doc})
 ```
 
 ### Bring Your Own Vectors (BYOV)

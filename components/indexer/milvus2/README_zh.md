@@ -10,10 +10,9 @@
 
 - **Milvus V2 SDK**: 使用最新的 `milvus-io/milvus/client/v2` SDK
 - **自动集合管理**: 按需自动创建集合和索引
-- **Milvus Functions**: 支持服务器端函数（如 BM25）自动生成稀疏向量
+- **稀疏向量支持**: 支持服务器端函数（如 BM25）自动生成稀疏向量
 - **字段分析**: 支持文本字段的分析器配置 (Configurable analyzers)
-- **灵活的索引类型**: 支持多种索引构建器 (Auto, HNSW, IVF_FLAT, FLAT 等)
-- **稀疏向量支持**: 存储和索引稀疏向量，实现混合检索
+- **灵活的索引类型**: 支持多种索引构建器（Auto, HNSW, IVF_FLAT, FLAT 等）
 - **自定义文档转换**: 可配置的文档到列转换
 
 ## 安装
@@ -111,16 +110,16 @@ func main() {
 | `Collection` | `string` | `"eino_collection"` | 集合名称 |
 | `Dimension` | `int64` | - | 向量维度（创建新集合时必需） |
 | `VectorField` | `string` | `"vector"` | 向量字段名称 |
-| `MetricType` | `MetricType` | `L2` | 相似度度量类型 (L2, IP, COSINE 等) |
+| `MetricType` | `MetricType` | `L2` | 相似度度量类型（L2, IP, COSINE 等） |
 | `IndexBuilder` | `IndexBuilder` | AutoIndex | 索引类型构建器 |
 | `Embedding` | `embedding.Embedder` | - | 用于向量化的 Embedder（可选）。如果为空，文档必须包含向量。 |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | 读取一致性级别 |
 | `PartitionName` | `string` | - | 插入数据的默认分区 |
 | `EnableDynamicSchema` | `bool` | `false` | 启用动态字段支持 |
-| `SparseVectorField` | `string` | - | 稀疏向量字段名（启用稀疏索引） |
+| `SparseVectorField` | `string` | - | 稀疏向量字段名（用于服务器端函数输出） |
 | `SparseIndexBuilder` | `SparseIndexBuilder` | SPARSE_INVERTED | 稀疏索引构建器 |
-| `SparseMetricType` | `MetricType` | `IP` | 稀疏索引度量类型 (IP, BM25) |
-| `Functions` | `[]*entity.Function` | - | Schema 函数定义（如 BM25），用于服务器端处理 |
+| `SparseMetricType` | `MetricType` | `IP` | 稀疏索引度量类型（IP, BM25） |
+| `Functions` | `[]*entity.Function` | - | Schema 函数定义（如 BM25），用于服务器端处理（例如从内容自动生成稀疏向量） |
 | `FieldParams` | `map[string]map[string]string` | - | 字段参数配置（如 enable_analyzer） |
 
 ## 索引构建器
@@ -207,29 +206,36 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参�
 
 ### 稀疏向量支持
 
-存储同时包含稠密向量和稀疏向量的文档，实现混合检索：
+使用 Milvus 服务器端函数（如 BM25）从文本内容自动生成稀疏向量：
 
 ```go
-// 创建带稀疏向量字段的 indexer
+// 定义 BM25 函数
+bm25Function := entity.NewFunction().
+    WithName("bm25_fn").
+    WithType(entity.FunctionTypeBM25).
+    WithInputFields("content").         // 输入文本字段
+    WithOutputFields("sparse_vector")   // 输出稀疏向量字段
+
+// 创建带有函数的 indexer
 indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
-    ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
+    // ... 基础配置 ...
     Collection:        "hybrid_collection",
-    Dimension:         128,                   // 稠密向量维度
-    SparseVectorField: "sparse_vector",      // 启用稀疏字段
-    // SparseIndexBuilder 默认为 SPARSE_INVERTED_INDEX
+    
+    // 启用稀疏向量支持
+    SparseVectorField: "sparse_vector",
+    SparseMetricType:  milvus2.BM25,
+    
+    // 注册函数
+    Functions: []*entity.Function{bm25Function},
+    
+    // BM25 需要在内容字段上启用分析器
+    FieldParams: map[string]map[string]string{
+        "content": {
+            "enable_analyzer": "true",
+            "analyzer_params": `{"tokenizer": "standard"}`,
+        },
+    },
 })
-
-// 创建包含两种向量类型的文档
-doc := &schema.Document{
-    ID:      "doc1",
-    Content: "包含稠密和稀疏向量的混合文档",
-}
-
-// 附加向量
-doc.WithDenseVector(denseVector)   // []float64
-doc.WithSparseVector(sparseVector) // map[int]float64
-
-ids, err := indexer.Store(ctx, []*schema.Document{doc})
 ```
 
 ### 自带向量 (Bring Your Own Vectors)
