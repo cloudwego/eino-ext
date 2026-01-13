@@ -231,10 +231,9 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	co := indexer.GetCommonOptions(&indexer.Options{
 		Embedding: i.config.Embedding,
 	}, opts...)
-	io := indexer.GetImplSpecificOptions(&ImplOptions{}, opts...)
-	if io.Partition == "" {
-		io.Partition = i.config.PartitionName
-	}
+	io := indexer.GetImplSpecificOptions(&ImplOptions{
+		Partition: i.config.PartitionName,
+	}, opts...)
 
 	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{
