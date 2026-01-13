@@ -301,14 +301,6 @@ func (i *Indexer) insertDocuments(ctx context.Context, docs []*schema.Document, 
 		return nil, fmt.Errorf("[Indexer.Store] failed to insert documents: %w", err)
 	}
 
-	flushTask, err := i.client.Flush(ctx, milvusclient.NewFlushOption(i.config.Collection))
-	if err != nil {
-		return nil, fmt.Errorf("[Indexer.Store] failed to flush collection: %w", err)
-	}
-	if err := flushTask.Await(ctx); err != nil {
-		return nil, fmt.Errorf("[Indexer.Store] failed to await flush: %w", err)
-	}
-
 	ids := make([]string, 0, result.IDs.Len())
 	for idx := 0; idx < result.IDs.Len(); idx++ {
 		idStr, err := result.IDs.GetAsString(idx)

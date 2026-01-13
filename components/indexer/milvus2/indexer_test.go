@@ -496,11 +496,6 @@ func TestIndexer_Store(t *testing.T) {
 			}
 			Mock(GetMethod(mockClient, "Insert")).Return(mockResult, nil).Build()
 
-			// Mock flush
-			mockFlushTask := &milvusclient.FlushTask{}
-			Mock(GetMethod(mockClient, "Flush")).Return(mockFlushTask, nil).Build()
-			Mock(GetMethod(mockFlushTask, "Await")).Return(nil).Build()
-
 			ids, err := indexer.Store(ctx, docs)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(ids, convey.ShouldNotBeNil)
