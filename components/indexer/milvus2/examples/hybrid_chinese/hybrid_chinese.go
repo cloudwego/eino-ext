@@ -34,7 +34,6 @@ import (
 //
 // Prerequisites:
 // - Milvus 2.5+ (required for server-side functions)
-// - Run: docker run -d --name milvus -p 19530:19530 milvusdb/milvus:latest
 //
 // The collection created here can be used with the retriever hybrid_chinese example
 // for Chinese text hybrid search.
