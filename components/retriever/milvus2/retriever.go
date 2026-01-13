@@ -92,44 +92,61 @@ func NewRetriever(ctx context.Context, conf *RetrieverConfig) (*Retriever, error
 		return nil, err
 	}
 
-	cli := conf.Client
-	if cli == nil {
-		if conf.ClientConfig == nil {
-			return nil, fmt.Errorf("[NewRetriever] either Client or ClientConfig must be provided")
-		}
-		var err error
-		cli, err = milvusclient.New(ctx, conf.ClientConfig)
-		if err != nil {
-			return nil, fmt.Errorf("[NewRetriever] failed to create milvus client: %w", err)
-		}
+	cli, err := initClient(ctx, conf)
+	if err != nil {
+		return nil, err
 	}
 
-	hasCollection, err := cli.HasCollection(ctx, milvusclient.NewHasCollectionOption(conf.Collection))
-	if err != nil {
-		return nil, fmt.Errorf("[NewRetriever] failed to check collection: %w", err)
-	}
-	if !hasCollection {
-		return nil, fmt.Errorf("[NewRetriever] collection %q not found", conf.Collection)
-	}
-
-	loadState, err := cli.GetLoadState(ctx, milvusclient.NewGetLoadStateOption(conf.Collection))
-	if err != nil {
-		return nil, fmt.Errorf("[NewRetriever] failed to get load state: %w", err)
-	}
-	if loadState.State != entity.LoadStateLoaded {
-		loadTask, err := cli.LoadCollection(ctx, milvusclient.NewLoadCollectionOption(conf.Collection))
-		if err != nil {
-			return nil, fmt.Errorf("[NewRetriever] failed to load collection: %w", err)
-		}
-		if err := loadTask.Await(ctx); err != nil {
-			return nil, fmt.Errorf("[NewRetriever] failed to await collection load: %w", err)
-		}
+	if err := loadCollection(ctx, cli, conf); err != nil {
+		return nil, err
 	}
 
 	return &Retriever{
 		client: cli,
 		config: conf,
 	}, nil
+}
+
+func initClient(ctx context.Context, conf *RetrieverConfig) (*milvusclient.Client, error) {
+	if conf.Client != nil {
+		return conf.Client, nil
+	}
+
+	if conf.ClientConfig == nil {
+		return nil, fmt.Errorf("[NewRetriever] either Client or ClientConfig must be provided")
+	}
+
+	cli, err := milvusclient.New(ctx, conf.ClientConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[NewRetriever] failed to create milvus client: %w", err)
+	}
+
+	return cli, nil
+}
+
+func loadCollection(ctx context.Context, cli *milvusclient.Client, conf *RetrieverConfig) error {
+	hasCollection, err := cli.HasCollection(ctx, milvusclient.NewHasCollectionOption(conf.Collection))
+	if err != nil {
+		return fmt.Errorf("[NewRetriever] failed to check collection: %w", err)
+	}
+	if !hasCollection {
+		return fmt.Errorf("[NewRetriever] collection %q not found", conf.Collection)
+	}
+
+	loadState, err := cli.GetLoadState(ctx, milvusclient.NewGetLoadStateOption(conf.Collection))
+	if err != nil {
+		return fmt.Errorf("[NewRetriever] failed to get load state: %w", err)
+	}
+	if loadState.State != entity.LoadStateLoaded {
+		loadTask, err := cli.LoadCollection(ctx, milvusclient.NewLoadCollectionOption(conf.Collection))
+		if err != nil {
+			return fmt.Errorf("[NewRetriever] failed to load collection: %w", err)
+		}
+		if err := loadTask.Await(ctx); err != nil {
+			return fmt.Errorf("[NewRetriever] failed to await collection load: %w", err)
+		}
+	}
+	return nil
 }
 
 // Retrieve searches for documents matching the given query.

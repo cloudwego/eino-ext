@@ -144,55 +144,73 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 		return nil, err
 	}
 
-	cli := conf.Client
-	if cli == nil {
-		if conf.ClientConfig == nil {
-			return nil, fmt.Errorf("[NewIndexer] either Client or ClientConfig must be provided")
-		}
-		var err error
-		cli, err = milvusclient.New(ctx, conf.ClientConfig)
-		if err != nil {
-			return nil, fmt.Errorf("[NewIndexer] failed to create milvus client: %w", err)
-		}
-	}
-
-	hasCollection, err := cli.HasCollection(ctx, milvusclient.NewHasCollectionOption(conf.Collection))
+	cli, err := initClient(ctx, conf)
 	if err != nil {
-		return nil, fmt.Errorf("[NewIndexer] failed to check collection: %w", err)
+		return nil, err
 	}
 
-	if !hasCollection {
-		if conf.Dimension <= 0 {
-			return nil, fmt.Errorf("[NewIndexer] dimension is required when collection does not exist")
-		}
-		if err := createCollection(ctx, cli, conf); err != nil {
-			return nil, err
-		}
-	}
-
-	loadState, err := cli.GetLoadState(ctx, milvusclient.NewGetLoadStateOption(conf.Collection))
-	if err != nil {
-		return nil, fmt.Errorf("[NewIndexer] failed to get load state: %w", err)
-	}
-	if loadState.State != entity.LoadStateLoaded {
-		// Try to create indexes. Ignore "already exists" errors.
-		if err := createIndex(ctx, cli, conf); err != nil {
-			return nil, err
-		}
-
-		loadTask, err := cli.LoadCollection(ctx, milvusclient.NewLoadCollectionOption(conf.Collection))
-		if err != nil {
-			return nil, fmt.Errorf("[NewIndexer] failed to load collection: %w", err)
-		}
-		if err := loadTask.Await(ctx); err != nil {
-			return nil, fmt.Errorf("[NewIndexer] failed to await collection load: %w", err)
-		}
+	if err := initCollection(ctx, cli, conf); err != nil {
+		return nil, err
 	}
 
 	return &Indexer{
 		client: cli,
 		config: conf,
 	}, nil
+}
+
+func initClient(ctx context.Context, conf *IndexerConfig) (*milvusclient.Client, error) {
+	if conf.Client != nil {
+		return conf.Client, nil
+	}
+
+	if conf.ClientConfig == nil {
+		return nil, fmt.Errorf("[NewIndexer] either Client or ClientConfig must be provided")
+	}
+
+	cli, err := milvusclient.New(ctx, conf.ClientConfig)
+	if err != nil {
+		return nil, fmt.Errorf("[NewIndexer] failed to create milvus client: %w", err)
+	}
+
+	return cli, nil
+}
+
+func initCollection(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
+	hasCollection, err := cli.HasCollection(ctx, milvusclient.NewHasCollectionOption(conf.Collection))
+	if err != nil {
+		return fmt.Errorf("[NewIndexer] failed to check collection: %w", err)
+	}
+
+	if !hasCollection {
+		if conf.Dimension <= 0 {
+			return fmt.Errorf("[NewIndexer] dimension is required when collection does not exist")
+		}
+		if err := createCollection(ctx, cli, conf); err != nil {
+			return err
+		}
+	}
+
+	loadState, err := cli.GetLoadState(ctx, milvusclient.NewGetLoadStateOption(conf.Collection))
+	if err != nil {
+		return fmt.Errorf("[NewIndexer] failed to get load state: %w", err)
+	}
+	if loadState.State != entity.LoadStateLoaded {
+		// Try to create indexes. Ignore "already exists" errors.
+		if err := createIndex(ctx, cli, conf); err != nil {
+			return err
+		}
+
+		loadTask, err := cli.LoadCollection(ctx, milvusclient.NewLoadCollectionOption(conf.Collection))
+		if err != nil {
+			return fmt.Errorf("[NewIndexer] failed to load collection: %w", err)
+		}
+		if err := loadTask.Await(ctx); err != nil {
+			return fmt.Errorf("[NewIndexer] failed to await collection load: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // Store adds the provided documents to the Milvus collection.
@@ -216,32 +234,52 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		}
 	}()
 
-	emb := co.Embedding
-
-	var vectors [][]float64
-	if emb != nil {
-		texts := make([]string, 0, len(docs))
-		for _, doc := range docs {
-			texts = append(texts, doc.Content)
-		}
-
-		vectors, err = emb.EmbedStrings(i.makeEmbeddingCtx(ctx, emb), texts)
-		if err != nil {
-			return nil, fmt.Errorf("[Indexer.Store] failed to embed documents: %w", err)
-		}
-		if len(vectors) != len(docs) {
-			return nil, fmt.Errorf("[Indexer.Store] embedding result length mismatch: need %d, got %d", len(docs), len(vectors))
-		}
+	vectors, err := i.embedDocuments(ctx, co.Embedding, docs)
+	if err != nil {
+		return nil, err
 	}
 
+	insertResult, err := i.insertDocuments(ctx, docs, vectors, io.Partition)
+	if err != nil {
+		return nil, err
+	}
+
+	callbacks.OnEnd(ctx, &indexer.CallbackOutput{
+		IDs: insertResult,
+	})
+
+	return insertResult, nil
+}
+
+func (i *Indexer) embedDocuments(ctx context.Context, emb embedding.Embedder, docs []*schema.Document) ([][]float64, error) {
+	if emb == nil {
+		return nil, nil // Return nil vectors if no embedder
+	}
+
+	texts := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		texts = append(texts, doc.Content)
+	}
+
+	vectors, err := emb.EmbedStrings(i.makeEmbeddingCtx(ctx, emb), texts)
+	if err != nil {
+		return nil, fmt.Errorf("[Indexer.Store] failed to embed documents: %w", err)
+	}
+	if len(vectors) != len(docs) {
+		return nil, fmt.Errorf("[Indexer.Store] embedding result length mismatch: need %d, got %d", len(docs), len(vectors))
+	}
+	return vectors, nil
+}
+
+func (i *Indexer) insertDocuments(ctx context.Context, docs []*schema.Document, vectors [][]float64, partition string) ([]string, error) {
 	columns, err := i.config.DocumentConverter(ctx, docs, vectors)
 	if err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
 	}
 
 	insertOpt := milvusclient.NewColumnBasedInsertOption(i.config.Collection)
-	if io.Partition != "" {
-		insertOpt = insertOpt.WithPartition(io.Partition)
+	if partition != "" {
+		insertOpt = insertOpt.WithPartition(partition)
 	}
 	for _, col := range columns {
 		insertOpt = insertOpt.WithColumns(col)
@@ -260,7 +298,7 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		return nil, fmt.Errorf("[Indexer.Store] failed to await flush: %w", err)
 	}
 
-	ids = make([]string, 0, result.IDs.Len())
+	ids := make([]string, 0, result.IDs.Len())
 	for idx := 0; idx < result.IDs.Len(); idx++ {
 		idStr, err := result.IDs.GetAsString(idx)
 		if err != nil {
@@ -268,10 +306,6 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		}
 		ids = append(ids, idStr)
 	}
-
-	callbacks.OnEnd(ctx, &indexer.CallbackOutput{
-		IDs: ids,
-	})
 
 	return ids, nil
 }
@@ -309,6 +343,19 @@ func (c *IndexerConfig) validate() error {
 		c.VectorField = defaultVectorField
 	}
 
+	c.validateSparse()
+
+	if c.DocumentConverter == nil {
+		sparseField := ""
+		if c.Sparse != nil && c.Sparse.Method == SparseMethodClient {
+			sparseField = c.Sparse.VectorField
+		}
+		c.DocumentConverter = defaultDocumentConverter(c.VectorField, sparseField)
+	}
+	return nil
+}
+
+func (c *IndexerConfig) validateSparse() {
 	if c.Sparse != nil {
 		if c.Sparse.VectorField == "" {
 			c.Sparse.VectorField = defaultSparseVectorField
@@ -320,9 +367,12 @@ func (c *IndexerConfig) validate() error {
 		if c.Sparse.MetricType == BM25 && c.Sparse.Method == "" {
 			c.Sparse.Method = SparseMethodBM25
 		}
-	}
 
-	// Auto-generate BM25 function if needed
+		c.addDefaultBM25Function()
+	}
+}
+
+func (c *IndexerConfig) addDefaultBM25Function() {
 	if c.Sparse != nil && c.Sparse.Method == SparseMethodBM25 {
 		hasSparseFunc := false
 		for _, fn := range c.Functions {
@@ -346,19 +396,26 @@ func (c *IndexerConfig) validate() error {
 			c.Functions = append(c.Functions, bm25Fn)
 		}
 	}
-
-	if c.DocumentConverter == nil {
-		sparseField := ""
-		if c.Sparse != nil && c.Sparse.Method == SparseMethodClient {
-			sparseField = c.Sparse.VectorField
-		}
-		c.DocumentConverter = defaultDocumentConverter(c.VectorField, sparseField)
-	}
-	return nil
 }
 
 // createCollection creates a new Milvus collection with the default schema.
 func createCollection(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
+	sch, err := buildSchema(conf)
+	if err != nil {
+		return err
+	}
+
+	createOpt := milvusclient.NewCreateCollectionOption(conf.Collection, sch).
+		WithConsistencyLevel(conf.ConsistencyLevel.toEntity())
+
+	if err := cli.CreateCollection(ctx, createOpt); err != nil {
+		return fmt.Errorf("[NewIndexer] failed to create collection: %w", err)
+	}
+
+	return nil
+}
+
+func buildSchema(conf *IndexerConfig) (*entity.Schema, error) {
 	// Helper to apply field params
 	applyParams := func(f *entity.Field, name string) {
 		if params, ok := conf.FieldParams[name]; ok {
@@ -401,7 +458,7 @@ func createCollection(ctx context.Context, cli *milvusclient.Client, conf *Index
 		sch.WithField(vecField)
 	} else if conf.Sparse == nil {
 		// Should not happen if validation passed, but safety check: at least one vector field required
-		return fmt.Errorf("[NewIndexer] at least one vector field (dense or sparse) is required")
+		return nil, fmt.Errorf("[NewIndexer] at least one vector field (dense or sparse) is required")
 	}
 
 	if conf.Sparse != nil {
@@ -417,58 +474,65 @@ func createCollection(ctx context.Context, cli *milvusclient.Client, conf *Index
 		sch.WithFunction(fn)
 	}
 
-	createOpt := milvusclient.NewCreateCollectionOption(conf.Collection, sch).
-		WithConsistencyLevel(conf.ConsistencyLevel.toEntity())
-
-	if err := cli.CreateCollection(ctx, createOpt); err != nil {
-		return fmt.Errorf("[NewIndexer] failed to create collection: %w", err)
-	}
-
-	return nil
+	return sch, nil
 }
 
 // createIndex creates indexes on fields if they don't exist.
 func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
 	if conf.VectorField != "" {
-		var idx index.Index
-		if conf.IndexBuilder != nil {
-			idx = conf.IndexBuilder.Build(conf.MetricType)
-		} else {
-			idx = index.NewAutoIndex(conf.MetricType.toEntity())
-		}
-
-		createIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.VectorField, idx)
-
-		createTask, err := cli.CreateIndex(ctx, createIndexOpt)
-		if err != nil {
-			return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
-		}
-
-		if err := createTask.Await(ctx); err != nil {
-			return fmt.Errorf("[NewIndexer] failed to await index creation: %w", err)
+		if err := createDenseIndex(ctx, cli, conf); err != nil {
+			return err
 		}
 	}
 
 	if conf.Sparse != nil {
-		var sparseIdx index.Index
-		if conf.Sparse.IndexBuilder != nil {
-			sparseIdx = conf.Sparse.IndexBuilder.Build(conf.Sparse.MetricType)
-		} else {
-			sparseIdx = NewSparseInvertedIndexBuilder().Build(conf.Sparse.MetricType)
-		}
-
-		createSparseIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.Sparse.VectorField, sparseIdx)
-
-		createTask, err := cli.CreateIndex(ctx, createSparseIndexOpt)
-		if err != nil {
-			return fmt.Errorf("[NewIndexer] failed to create sparse index: %w", err)
-		}
-
-		if err := createTask.Await(ctx); err != nil {
-			return fmt.Errorf("[NewIndexer] failed to await sparse index creation: %w", err)
+		if err := createSparseIndex(ctx, cli, conf); err != nil {
+			return err
 		}
 	}
 
+	return nil
+}
+
+func createDenseIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
+	var idx index.Index
+	if conf.IndexBuilder != nil {
+		idx = conf.IndexBuilder.Build(conf.MetricType)
+	} else {
+		idx = index.NewAutoIndex(conf.MetricType.toEntity())
+	}
+
+	createIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.VectorField, idx)
+
+	createTask, err := cli.CreateIndex(ctx, createIndexOpt)
+	if err != nil {
+		return fmt.Errorf("[NewIndexer] failed to create index: %w", err)
+	}
+
+	if err := createTask.Await(ctx); err != nil {
+		return fmt.Errorf("[NewIndexer] failed to await index creation: %w", err)
+	}
+	return nil
+}
+
+func createSparseIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
+	var sparseIdx index.Index
+	if conf.Sparse.IndexBuilder != nil {
+		sparseIdx = conf.Sparse.IndexBuilder.Build(conf.Sparse.MetricType)
+	} else {
+		sparseIdx = NewSparseInvertedIndexBuilder().Build(conf.Sparse.MetricType)
+	}
+
+	createSparseIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.Sparse.VectorField, sparseIdx)
+
+	createTask, err := cli.CreateIndex(ctx, createSparseIndexOpt)
+	if err != nil {
+		return fmt.Errorf("[NewIndexer] failed to create sparse index: %w", err)
+	}
+
+	if err := createTask.Await(ctx); err != nil {
+		return fmt.Errorf("[NewIndexer] failed to await sparse index creation: %w", err)
+	}
 	return nil
 }
 
