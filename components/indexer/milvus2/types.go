@@ -24,8 +24,12 @@ import (
 type ConsistencyLevel int
 
 const (
+	// ConsistencyLevelDefault lets Milvus use its built-in default consistency level.
+	// When creating a collection, if this is set (zero value), no explicit consistency
+	// level is passed, and Milvus defaults to Bounded Staleness.
+	ConsistencyLevelDefault ConsistencyLevel = iota
 	// ConsistencyLevelStrong guarantees that reads return the most recent data.
-	ConsistencyLevelStrong ConsistencyLevel = iota + 1
+	ConsistencyLevelStrong
 	// ConsistencyLevelSession ensures read-your-write consistency within the same session.
 	ConsistencyLevelSession
 	// ConsistencyLevelBounded allows reads to return data within a certain staleness bound.
@@ -37,6 +41,8 @@ const (
 )
 
 // toEntity converts ConsistencyLevel to the Milvus SDK entity.ConsistencyLevel type.
+// Note: ConsistencyLevelDefault should be checked before calling this method,
+// as it indicates "use default" and should be resolved first.
 func (c ConsistencyLevel) toEntity() entity.ConsistencyLevel {
 	switch c {
 	case ConsistencyLevelStrong:
@@ -50,6 +56,7 @@ func (c ConsistencyLevel) toEntity() entity.ConsistencyLevel {
 	case ConsistencyLevelCustomized:
 		return entity.ClCustomized
 	default:
+		// ConsistencyLevelCollection (0) or invalid value - default to Bounded
 		return entity.ClBounded
 	}
 }

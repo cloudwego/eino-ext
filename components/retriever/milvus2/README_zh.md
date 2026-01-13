@@ -106,7 +106,7 @@ func main() {
 | `SearchMode` | `SearchMode` | - | 搜索策略（必需） |
 | `Embedding` | `embedding.Embedder` | - | 用于查询向量化的 Embedder（必需） |
 | `ScoreThreshold` | `*float64` | - | 最低分数阈值 |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | 读取一致性级别 |
+| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | 一致性级别 (Default 使用 collection 的级别) |
 | `Partitions` | `[]string` | - | 要搜索的分区 |
 
 ## 搜索模式

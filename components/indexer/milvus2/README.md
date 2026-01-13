@@ -114,7 +114,7 @@ func main() {
 | `MetricType` | `MetricType` | `L2` | Similarity metric (L2, IP, COSINE, etc.) |
 | `IndexBuilder` | `IndexBuilder` | AutoIndex | Index type builder |
 | `Embedding` | `embedding.Embedder` | - | Embedder for vectorization (optional). If nil, documents must have vectors. |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | Read consistency level |
+| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses Milvus default: Bounded) |
 | `PartitionName` | `string` | - | Default partition for insertion |
 | `EnableDynamicSchema` | `bool` | `false` | Enable dynamic field support |
 | `Sparse` | `*SparseIndexerConfig` | - | Configuration for sparse vector index (Optional) |

@@ -107,6 +107,10 @@ func (r *Range) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverCo
 		}
 	}
 
+	if conf.ConsistencyLevel != milvus2.ConsistencyLevelDefault {
+		searchOpt = searchOpt.WithConsistencyLevel(conf.ConsistencyLevel.ToEntity())
+	}
+
 	return searchOpt, nil
 }
 

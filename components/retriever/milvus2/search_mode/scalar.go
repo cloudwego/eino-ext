@@ -72,8 +72,7 @@ func (s *Scalar) BuildQueryOption(ctx context.Context, conf *milvus2.RetrieverCo
 		opt = opt.WithPartitions(conf.Partitions...)
 	}
 
-	// Consistency
-	if conf.ConsistencyLevel > 0 {
+	if conf.ConsistencyLevel != milvus2.ConsistencyLevelDefault {
 		opt = opt.WithConsistencyLevel(conf.ConsistencyLevel.ToEntity())
 	}
 

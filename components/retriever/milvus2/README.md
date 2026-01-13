@@ -106,7 +106,7 @@ func main() {
 | `SearchMode` | `SearchMode` | - | Search strategy (required) |
 | `Embedding` | `embedding.Embedder` | - | Embedder for query vectorization (required) |
 | `ScoreThreshold` | `*float64` | - | Minimum score threshold |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | Read consistency level |
+| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses collection's level) |
 | `Partitions` | `[]string` | - | Partitions to search |
 
 ## Search Modes

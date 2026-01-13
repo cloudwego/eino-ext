@@ -153,6 +153,10 @@ func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.Retr
 		hybridOpt = hybridOpt.WithPartitions(conf.Partitions...)
 	}
 
+	if conf.ConsistencyLevel != milvus2.ConsistencyLevelDefault {
+		hybridOpt = hybridOpt.WithConsistencyLevel(conf.ConsistencyLevel.ToEntity())
+	}
+
 	return hybridOpt, nil
 }
 

@@ -28,6 +28,4 @@ const (
 	defaultIDField           = "id"
 	defaultMaxContentLen     = 65535
 	defaultMaxIDLen          = 512
-
-	defaultConsistencyLevel = ConsistencyLevelBounded
 )

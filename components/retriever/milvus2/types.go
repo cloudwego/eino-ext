@@ -70,8 +70,12 @@ func (m MetricType) toEntity() entity.MetricType {
 type ConsistencyLevel int
 
 const (
+	// ConsistencyLevelDefault uses the collection's default consistency level.
+	// For the retriever, this is the zero value: no per-request override is applied,
+	// and the collection-level consistency (set during indexer creation) is used.
+	ConsistencyLevelDefault ConsistencyLevel = iota
 	// ConsistencyLevelStrong guarantees that reads return the most recent data.
-	ConsistencyLevelStrong ConsistencyLevel = iota + 1
+	ConsistencyLevelStrong
 	// ConsistencyLevelSession ensures read-your-write consistency within the same session.
 	ConsistencyLevelSession
 	// ConsistencyLevelBounded allows reads to return data within a certain staleness bound.
@@ -83,6 +87,8 @@ const (
 )
 
 // ToEntity converts ConsistencyLevel to the Milvus SDK entity.ConsistencyLevel type.
+// Note: ConsistencyLevelDefault should be checked before calling this method,
+// as it indicates "use collection default" and should not be converted.
 func (c ConsistencyLevel) ToEntity() entity.ConsistencyLevel {
 	switch c {
 	case ConsistencyLevelStrong:
@@ -96,6 +102,7 @@ func (c ConsistencyLevel) ToEntity() entity.ConsistencyLevel {
 	case ConsistencyLevelCustomized:
 		return entity.ClCustomized
 	default:
+		// ConsistencyLevelCollection (0) or invalid value - default to Bounded
 		return entity.ClBounded
 	}
 }

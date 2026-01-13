@@ -83,6 +83,10 @@ func (a *Approximate) BuildSearchOption(ctx context.Context, conf *milvus2.Retri
 		}
 	}
 
+	if conf.ConsistencyLevel != milvus2.ConsistencyLevelDefault {
+		searchOpt = searchOpt.WithConsistencyLevel(conf.ConsistencyLevel.ToEntity())
+	}
+
 	return searchOpt, nil
 }
 

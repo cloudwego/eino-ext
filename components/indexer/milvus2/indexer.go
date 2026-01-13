@@ -333,9 +333,6 @@ func (c *IndexerConfig) validate() error {
 	if c.Description == "" {
 		c.Description = defaultDescription
 	}
-	if c.ConsistencyLevel <= 0 || c.ConsistencyLevel > 5 {
-		c.ConsistencyLevel = defaultConsistencyLevel
-	}
 	if c.MetricType == "" {
 		c.MetricType = L2
 	}
@@ -407,8 +404,10 @@ func createCollection(ctx context.Context, cli *milvusclient.Client, conf *Index
 		return err
 	}
 
-	createOpt := milvusclient.NewCreateCollectionOption(conf.Collection, sch).
-		WithConsistencyLevel(conf.ConsistencyLevel.toEntity())
+	createOpt := milvusclient.NewCreateCollectionOption(conf.Collection, sch)
+	if conf.ConsistencyLevel != ConsistencyLevelDefault {
+		createOpt = createOpt.WithConsistencyLevel(conf.ConsistencyLevel.toEntity())
+	}
 
 	if err := cli.CreateCollection(ctx, createOpt); err != nil {
 		return fmt.Errorf("[NewIndexer] failed to create collection: %w", err)

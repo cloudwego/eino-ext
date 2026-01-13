@@ -107,6 +107,10 @@ func (i *Iterator) BuildSearchIteratorOption(ctx context.Context, conf *milvus2.
 		}
 	}
 
+	if conf.ConsistencyLevel != milvus2.ConsistencyLevelDefault {
+		opt.WithConsistencyLevel(conf.ConsistencyLevel.ToEntity())
+	}
+
 	return opt, nil
 }
 

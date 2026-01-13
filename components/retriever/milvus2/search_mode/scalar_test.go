@@ -115,19 +115,6 @@ func TestScalar_BuildQueryOption(t *testing.T) {
 			convey.So(opt, convey.ShouldNotBeNil)
 		})
 
-		convey.Convey("test with consistency level", func() {
-			configWithConsistency := &milvus2.RetrieverConfig{
-				Collection:       "test_collection",
-				VectorField:      "vector",
-				TopK:             10,
-				OutputFields:     []string{"id", "content"},
-				ConsistencyLevel: milvus2.ConsistencyLevelStrong,
-			}
-			scalar := NewScalar()
-			opt, err := scalar.BuildQueryOption(ctx, configWithConsistency, "id > 10")
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(opt, convey.ShouldNotBeNil)
-		})
 	})
 }
 

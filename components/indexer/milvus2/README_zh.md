@@ -114,7 +114,7 @@ func main() {
 | `MetricType` | `MetricType` | `L2` | 相似度度量类型（L2, IP, COSINE 等） |
 | `IndexBuilder` | `IndexBuilder` | AutoIndex | 索引类型构建器 |
 | `Embedding` | `embedding.Embedder` | - | 用于向量化的 Embedder（可选）。如果为空，文档必须包含向量。 |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | 读取一致性级别 |
+| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | 一致性级别 (Default 使用 Milvus 默认: Bounded) |
 | `PartitionName` | `string` | - | 插入数据的默认分区 |
 | `EnableDynamicSchema` | `bool` | `false` | 启用动态字段支持 |
 | `Sparse` | `*SparseIndexerConfig` | - | 稀疏向量索引配置（可选） |
