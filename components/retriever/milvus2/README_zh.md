@@ -137,7 +137,9 @@ mode := search_mode.NewRange(milvus2.L2).
 使用 BM25 进行纯稀疏向量搜索。需要 Milvus 2.5+ 支持稀疏向量字段并启用 Functions。
 
 ```go
+// 纯稀疏搜索需要指定 OutputFields 以获取内容
 mode := search_mode.NewSparse(milvus2.BM25)
+// 在配置中: OutputFields: []string{"*"}
 ```
 
 ### 混合搜索 (Hybrid - 稠密 + 稀疏)
@@ -226,6 +228,7 @@ docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023
 - [scalar](./examples/scalar) - 标量/元数据过滤
 - [grouping](./examples/grouping) - 分组搜索结果
 - [filtered](./examples/filtered) - 带过滤的向量搜索
+- [sparse](./examples/sparse) - 纯稀疏搜索示例 (BM25)
 
 ## 许可证
 

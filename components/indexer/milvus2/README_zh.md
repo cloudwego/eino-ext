@@ -67,8 +67,11 @@ func main() {
 			Password: password,
 		},
 		Collection:   "my_collection",
-		Dimension:    1024, // 与 embedding 模型维度匹配
-		MetricType:   milvus2.COSINE,
+
+		Vector: &milvus2.VectorConfig{
+			Dimension:  1024, // 与 embedding 模型维度匹配
+			MetricType: milvus2.COSINE,
+		},
 		IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),
 		Embedding:    emb,
 	})
@@ -109,17 +112,31 @@ func main() {
 | `Client` | `*milvusclient.Client` | - | 预配置的 Milvus 客户端（可选） |
 | `ClientConfig` | `*milvusclient.ClientConfig` | - | 客户端配置（Client 为空时必需） |
 | `Collection` | `string` | `"eino_collection"` | 集合名称 |
-| `Dimension` | `int64` | - | 向量维度（创建新集合时必需） |
-| `VectorField` | `string` | `"vector"` | 向量字段名称 |
-| `MetricType` | `MetricType` | `L2` | 相似度度量类型（L2, IP, COSINE 等） |
+| `Vector` | `*VectorConfig` | - | 稠密向量配置 (维度, MetricType, 字段名) |
+| `Sparse` | `*SparseVectorConfig` | - | 稀疏向量配置 (MetricType, 字段名) |
 | `IndexBuilder` | `IndexBuilder` | AutoIndex | 索引类型构建器 |
-| `Embedding` | `embedding.Embedder` | - | 用于向量化的 Embedder（可选）。如果为空，文档必须包含向量。 |
+| `Embedding` | `embedding.Embedder` | - | 用于向量化的 Embedder（可选）。如果为空，文档必须包含向量 (BYOV)。 |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Default` | 一致性级别 (Default 使用 Milvus 默认: Bounded) |
 | `PartitionName` | `string` | - | 插入数据的默认分区 |
 | `EnableDynamicSchema` | `bool` | `false` | 启用动态字段支持 |
-| `Sparse` | `*SparseIndexerConfig` | - | 稀疏向量索引配置（可选） |
 | `Functions` | `[]*entity.Function` | - | Schema 函数定义（如 BM25），用于服务器端处理 |
 | `FieldParams` | `map[string]map[string]string` | - | 字段参数配置（如 enable_analyzer） |
+
+### 稠密向量配置 (`VectorConfig`)
+
+| 字段 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `Dimension` | `int64` | - | 向量维度 (必需) |
+| `MetricType` | `MetricType` | `L2` | 相似度度量类型 (L2, IP, COSINE 等) |
+| `VectorField` | `string` | `"vector"` | 稠密向量字段名 |
+
+### 稀疏向量配置 (`SparseVectorConfig`)
+
+| 字段 | 类型 | 默认值 | 描述 |
+|------|------|--------|------|
+| `VectorField` | `string` | `"sparse_vector"` | 稀疏向量字段名 |
+| `MetricType` | `MetricType` | `BM25` | 相似度度量类型 |
+| `Method` | `SparseMethod` | `Auto` | 生成方法 (`Auto` 或 `Precomputed`) |
 
 ## 索引构建器
 
@@ -203,6 +220,7 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参�
 - [diskann](./examples/diskann) - DISKANN 索引示例
 - [hybrid](./examples/hybrid) - 混合搜索设置 (稠密 + BM25 稀疏) (Milvus 2.5+)
 - [hybrid_chinese](./examples/hybrid_chinese) - 中文混合搜索示例 (Milvus 2.5+)
+- [sparse](./examples/sparse) - 纯稀疏索引示例 (BM25)
 - [byov](./examples/byov) - 自带向量示例
 
 ### 稀疏向量支持
@@ -216,7 +234,7 @@ indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
     Collection:        "hybrid_collection",
     
     // 启用稀疏向量支持
-    Sparse: &milvus2.SparseIndexerConfig{
+    Sparse: &milvus2.SparseVectorConfig{
         VectorField: "sparse_vector",
         MetricType:  milvus2.BM25,
         Method:      milvus2.SparseMethodAuto, // 使用 BM25 自动生成
@@ -253,7 +271,10 @@ indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
         Address: "localhost:19530",
     },
     Collection:   "my_collection",
-    Dimension:    128,
+    Vector: &milvus2.VectorConfig{
+        Dimension:  128,
+        MetricType: milvus2.L2,
+    },
     // Embedding: nil, // 留空
 })
 
@@ -284,7 +305,7 @@ ids, err := indexer.Store(ctx, docs)
 对于 BYOV 模式下的稀疏向量，请确保您的配置使用 `Method: milvus2.SparseMethodPrecomputed`：
 
 ```go
-Sparse: &milvus2.SparseIndexerConfig{
+Sparse: &milvus2.SparseVectorConfig{
     VectorField: "sparse_vector",
     MetricType:  milvus2.IP, // 或 BM25（如适用）
     Method:      milvus2.SparseMethodPrecomputed,

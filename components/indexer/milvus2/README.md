@@ -67,8 +67,11 @@ func main() {
 			Password: password,
 		},
 		Collection:   "my_collection",
-		Dimension:    1024, // Match your embedding model dimension
-		MetricType:   milvus2.COSINE,
+
+		Vector: &milvus2.VectorConfig{
+			Dimension:  1024, // Match your embedding model dimension
+			MetricType: milvus2.COSINE,
+		},
 		IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),
 		Embedding:    emb,
 	})
@@ -109,17 +112,31 @@ func main() {
 | `Client` | `*milvusclient.Client` | - | Pre-configured Milvus client (optional) |
 | `ClientConfig` | `*milvusclient.ClientConfig` | - | Client configuration (required if Client is nil) |
 | `Collection` | `string` | `"eino_collection"` | Collection name |
-| `Dimension` | `int64` | - | Vector dimension (required for new collections) |
-| `VectorField` | `string` | `"vector"` | Vector field name |
-| `MetricType` | `MetricType` | `L2` | Similarity metric (L2, IP, COSINE, etc.) |
+| `Vector` | `*VectorConfig` | - | Dense vector configuration (Dimension, MetricType, FieldName) |
+| `Sparse` | `*SparseVectorConfig` | - | Sparse vector configuration (MetricType, FieldName)  |
 | `IndexBuilder` | `IndexBuilder` | AutoIndex | Index type builder |
-| `Embedding` | `embedding.Embedder` | - | Embedder for vectorization (optional). If nil, documents must have vectors. |
+| `Embedding` | `embedding.Embedder` | - | Embedder for vectorization (optional). If nil, documents must have vectors (BYOV). |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses Milvus default: Bounded) |
 | `PartitionName` | `string` | - | Default partition for insertion |
 | `EnableDynamicSchema` | `bool` | `false` | Enable dynamic field support |
-| `Sparse` | `*SparseIndexerConfig` | - | Configuration for sparse vector index (Optional) |
 | `Functions` | `[]*entity.Function` | - | Schema functions (e.g., BM25) for server-side processing |
 | `FieldParams` | `map[string]map[string]string` | - | Parameters for fields (e.g., enable_analyzer) |
+
+### Vector Configuration (`VectorConfig`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `Dimension` | `int64` | - | Vector dimension (Required) |
+| `MetricType` | `MetricType` | `L2` | Similarity metric (L2, IP, COSINE, etc.) |
+| `VectorField` | `string` | `"vector"` | Field name for dense vector |
+
+### Sparse Vector Configuration (`SparseVectorConfig`)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `VectorField` | `string` | `"sparse_vector"` | Field name for sparse vector |
+| `MetricType` | `MetricType` | `BM25` | Similarity metric |
+| `Method` | `SparseMethod` | `Auto` | Generation method (`Auto` or `Precomputed`) |
 
 ## Index Builders
 
@@ -203,6 +220,7 @@ See the [examples](./examples) directory for complete working examples:
 - [diskann](./examples/diskann) - DISKANN index example
 - [hybrid](./examples/hybrid) - Hybrid search setup (Dense + BM25 sparse) (Milvus 2.5+)
 - [hybrid_chinese](./examples/hybrid_chinese) - Hybrid search with Chinese analyzer (Milvus 2.5+)
+- [sparse](./examples/sparse) - Sparse-only index example (BM25)
 - [byov](./examples/byov) - Bring Your Own Vectors example
 
 ### Sparse Vector Support
@@ -216,7 +234,7 @@ indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
     Collection:        "hybrid_collection",
     
     // Enable sparse vector support
-    Sparse: &milvus2.SparseIndexerConfig{
+    Sparse: &milvus2.SparseVectorConfig{
         VectorField: "sparse_vector",
         MetricType:  milvus2.BM25,
         Method:      milvus2.SparseMethodAuto, // Auto-generate using BM25
@@ -253,7 +271,10 @@ indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
         Address: "localhost:19530",
     },
     Collection:   "my_collection",
-    Dimension:    128,
+    Vector: &milvus2.VectorConfig{
+        Dimension:  128,
+        MetricType: milvus2.L2,
+    },
     // Embedding: nil, // Leave nil
 })
 
@@ -284,7 +305,7 @@ ids, err := indexer.Store(ctx, docs)
 For sparse vectors in BYOV mode, ensure your config uses `Method: milvus2.SparseMethodPrecomputed`:
 
 ```go
-Sparse: &milvus2.SparseIndexerConfig{
+Sparse: &milvus2.SparseVectorConfig{
     VectorField: "sparse_vector",
     MetricType:  milvus2.IP, // Or BM25 if applicable
     Method:      milvus2.SparseMethodPrecomputed,

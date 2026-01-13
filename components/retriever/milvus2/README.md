@@ -137,7 +137,9 @@ mode := search_mode.NewRange(milvus2.L2).
 Sparse-only search using BM25. Requires Milvus 2.5+ with sparse vector fields and enabled Functions.
 
 ```go
+// OutputFields is required to retrieve content for sparse-only search
 mode := search_mode.NewSparse(milvus2.BM25)
+// In config: OutputFields: []string{"*"}
 ```
 
 ### Hybrid Search (Dense + Sparse)
@@ -226,6 +228,7 @@ See the [examples](./examples) directory for complete working examples:
 - [scalar](./examples/scalar) - Scalar/metadata filtering
 - [grouping](./examples/grouping) - Grouping search results
 - [filtered](./examples/filtered) - Filtered vector search
+- [sparse](./examples/sparse) - Sparse-only search example (BM25)
 
 ## License
 
