@@ -69,6 +69,7 @@ func main() {
 		Sparse: &milvus2.SparseIndexerConfig{
 			VectorField: "sparse_vector",
 			MetricType:  milvus2.BM25,
+			Method:      milvus2.SparseMethodAuto,
 		},
 		Embedding: &mockEmbedding{dim: 128},
 	})

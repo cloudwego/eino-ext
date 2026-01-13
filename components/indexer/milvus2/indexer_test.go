@@ -191,13 +191,13 @@ func TestIndexerConfig_validate(t *testing.T) {
 				Sparse: &SparseIndexerConfig{
 					VectorField: "sparse",
 					MetricType:  BM25,
-					// Method defaults to BM25
+					// Method defaults to BM25 (Auto)
 				},
 			}
 
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(config.Sparse.Method, convey.ShouldEqual, SparseMethodBM25)
+			convey.So(config.Sparse.Method, convey.ShouldEqual, SparseMethodAuto)
 			convey.So(len(config.Functions), convey.ShouldEqual, 1)
 			fn := config.Functions[0]
 			convey.So(fn.Name, convey.ShouldEqual, "bm25_auto")
@@ -205,7 +205,7 @@ func TestIndexerConfig_validate(t *testing.T) {
 			convey.So(fn.OutputFieldNames[0], convey.ShouldEqual, "sparse")
 		})
 
-		PatchConvey("test explicit SparseMethodClient (No Auto-Gen)", func() {
+		PatchConvey("test explicit SparseMethodPrecomputed (No Auto-Gen)", func() {
 			mockEmb := &mockEmbedding{}
 			config := &IndexerConfig{
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
@@ -215,13 +215,13 @@ func TestIndexerConfig_validate(t *testing.T) {
 				Sparse: &SparseIndexerConfig{
 					VectorField: "sparse",
 					MetricType:  BM25,
-					Method:      SparseMethodClient,
+					Method:      SparseMethodPrecomputed,
 				},
 			}
 
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(config.Sparse.Method, convey.ShouldEqual, SparseMethodClient)
+			convey.So(config.Sparse.Method, convey.ShouldEqual, SparseMethodPrecomputed)
 			// Should NOT generate function
 			convey.So(len(config.Functions), convey.ShouldEqual, 0)
 		})
@@ -241,7 +241,7 @@ func TestIndexerConfig_validate(t *testing.T) {
 				Dimension:    128,
 				Sparse: &SparseIndexerConfig{
 					VectorField: "sparse",
-					Method:      SparseMethodBM25,
+					Method:      SparseMethodAuto,
 				},
 				Functions: []*entity.Function{customFn},
 			}
@@ -268,7 +268,7 @@ func TestIndexerConfig_validate(t *testing.T) {
 				Dimension:    128,
 				Sparse: &SparseIndexerConfig{
 					VectorField: "sparse",
-					Method:      SparseMethodBM25,
+					Method:      SparseMethodAuto,
 				},
 				Functions: []*entity.Function{otherFn},
 			}
@@ -417,7 +417,7 @@ func TestIndexer_Store(t *testing.T) {
 				Collection:        "test_collection",
 				Dimension:         128,
 				Embedding:         mockEmb,
-				DocumentConverter: defaultDocumentConverter(defaultVectorField, ""),
+				DocumentConverter: defaultDocumentConverter(defaultVectorField, nil),
 			},
 		}
 
@@ -477,7 +477,7 @@ func TestIndexer_Store(t *testing.T) {
 func TestDefaultDocumentConverter(t *testing.T) {
 	convey.Convey("test defaultDocumentConverter", t, func() {
 		convey.Convey("test conversion (dense only)", func() {
-			converter := defaultDocumentConverter(defaultVectorField, "")
+			converter := defaultDocumentConverter(defaultVectorField, nil)
 
 			ctx := context.Background()
 			docs := []*schema.Document{
@@ -497,7 +497,10 @@ func TestDefaultDocumentConverter(t *testing.T) {
 		})
 
 		convey.Convey("test conversion with sparse vector", func() {
-			converter := defaultDocumentConverter(defaultVectorField, "sparse_vector")
+			converter := defaultDocumentConverter(defaultVectorField, &SparseIndexerConfig{
+				VectorField: "sparse_vector",
+				Method:      SparseMethodPrecomputed,
+			})
 
 			ctx := context.Background()
 			docs := []*schema.Document{

@@ -106,10 +106,12 @@ type IndexerConfig struct {
 type SparseMethod string
 
 const (
-	// SparseMethodBM25 indicates using Milvus built-in BM25 function to generate sparse vectors on server side.
-	SparseMethodBM25 SparseMethod = "BM25"
-	// SparseMethodClient indicates using client-provided sparse vectors (e.g. from document.SparseVector()).
-	SparseMethodClient SparseMethod = "Client"
+	// SparseMethodAuto indicates that Milvus will automatically generate sparse vectors
+	// (e.g. via built-in BM25 function) on the server side.
+	SparseMethodAuto SparseMethod = "Auto"
+	// SparseMethodPrecomputed indicates that the client will provide precomputed sparse vectors
+	// (e.g. from document.SparseVector()).
+	SparseMethodPrecomputed SparseMethod = "Precomputed"
 )
 
 // SparseIndexerConfig contains configuration for sparse vector index.
@@ -119,15 +121,15 @@ type SparseIndexerConfig struct {
 	IndexBuilder IndexBuilder
 
 	// VectorField is the name of the sparse vector field in the collection.
-	// Required if Sparse is set.
+	// Optional. Default: "sparse_vector"
 	VectorField string
 
 	// MetricType is the metric type for sparse vector similarity.
-	// Default: IP (Inner Product). For BM25, use BM25.
+	// Optional. Default: BM25.
 	MetricType MetricType
 
 	// Method specifies the method for sparse vector generation.
-	// Optional. Default: SparseMethodBM25 if MetricType is BM25.
+	// Optional. Default: SparseMethodAuto if MetricType is BM25, otherwise SparseMethodPrecomputed.
 	Method SparseMethod
 }
 
@@ -346,11 +348,7 @@ func (c *IndexerConfig) validate() error {
 	c.validateSparse()
 
 	if c.DocumentConverter == nil {
-		sparseField := ""
-		if c.Sparse != nil && c.Sparse.Method == SparseMethodClient {
-			sparseField = c.Sparse.VectorField
-		}
-		c.DocumentConverter = defaultDocumentConverter(c.VectorField, sparseField)
+		c.DocumentConverter = defaultDocumentConverter(c.VectorField, c.Sparse)
 	}
 	return nil
 }
@@ -363,9 +361,13 @@ func (c *IndexerConfig) validateSparse() {
 		if c.Sparse.MetricType == "" {
 			c.Sparse.MetricType = BM25
 		}
-		// Default to BM25 method if MetricType is BM25 and Method is not specified
-		if c.Sparse.MetricType == BM25 && c.Sparse.Method == "" {
-			c.Sparse.Method = SparseMethodBM25
+
+		if c.Sparse.Method == "" {
+			if c.Sparse.MetricType == BM25 {
+				c.Sparse.Method = SparseMethodAuto
+			} else {
+				c.Sparse.Method = SparseMethodPrecomputed
+			}
 		}
 
 		c.addDefaultBM25Function()
@@ -373,7 +375,7 @@ func (c *IndexerConfig) validateSparse() {
 }
 
 func (c *IndexerConfig) addDefaultBM25Function() {
-	if c.Sparse != nil && c.Sparse.Method == SparseMethodBM25 {
+	if c.Sparse != nil && c.Sparse.Method == SparseMethodAuto {
 		hasSparseFunc := false
 		for _, fn := range c.Functions {
 			for _, output := range fn.OutputFieldNames {
@@ -537,13 +539,19 @@ func createSparseIndex(ctx context.Context, cli *milvusclient.Client, conf *Inde
 }
 
 // defaultDocumentConverter returns the default document to column converter.
-func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]column.Column, error) {
+func defaultDocumentConverter(vectorField string, sparse *SparseIndexerConfig) func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]column.Column, error) {
 	return func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]column.Column, error) {
 		ids := make([]string, 0, len(docs))
 		contents := make([]string, 0, len(docs))
 		vecs := make([][]float32, 0, len(docs))
 		metadatas := make([][]byte, 0, len(docs))
 		sparseVecs := make([]entity.SparseEmbedding, 0, len(docs))
+
+		// Determine if we need to handle sparse vectors
+		sparseVectorField := ""
+		if sparse != nil && sparse.Method == SparseMethodPrecomputed {
+			sparseVectorField = sparse.VectorField
+		}
 
 		for idx, doc := range docs {
 			ids = append(ids, doc.ID)
