@@ -45,6 +45,7 @@ func main() {
 
 	ctx := context.Background()
 	collectionName := "demo_milvus2"
+	vectorField := "vector"
 	dim := 128
 	itemCount := 60 // Enough for iterator (50+) and grouping tests
 
@@ -61,7 +62,7 @@ func main() {
 	// Create schema with category field for grouping
 	s := entity.NewSchema().
 		WithField(entity.NewField().WithName("id").WithDataType(entity.FieldTypeVarChar).WithMaxLength(65535).WithIsPrimaryKey(true)).
-		WithField(entity.NewField().WithName("vector").WithDataType(entity.FieldTypeFloatVector).WithDim(int64(dim))).
+		WithField(entity.NewField().WithName(vectorField).WithDataType(entity.FieldTypeFloatVector).WithDim(int64(dim))).
 		WithField(entity.NewField().WithName("content").WithDataType(entity.FieldTypeVarChar).WithMaxLength(65535)).
 		WithField(entity.NewField().WithName("metadata").WithDataType(entity.FieldTypeJSON)).
 		WithField(entity.NewField().WithName("category").WithDataType(entity.FieldTypeVarChar).WithMaxLength(255))
@@ -74,7 +75,7 @@ func main() {
 
 	// Create HNSW index with COSINE metric
 	idx := milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200).Build(milvus2.COSINE)
-	t, err := cli.CreateIndex(ctx, milvusclient.NewCreateIndexOption(collectionName, "vector", idx))
+	t, err := cli.CreateIndex(ctx, milvusclient.NewCreateIndexOption(collectionName, vectorField, idx))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -96,7 +97,7 @@ func main() {
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
 		Client:       cli,
 		Collection:   collectionName,
-		VectorField:  "vector",
+		VectorField:  vectorField,
 		Dimension:    int64(dim),
 		MetricType:   milvus2.COSINE,
 		IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),

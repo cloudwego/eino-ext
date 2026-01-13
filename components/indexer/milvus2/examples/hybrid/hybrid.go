@@ -44,6 +44,8 @@ func main() {
 	ctx := context.Background()
 	collectionName := "eino_hybrid_test"
 	milvusAddr := "localhost:19530"
+	denseField := "vector"
+	sparseField := "sparse_vector"
 
 	// Create indexer with BM25 function
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
@@ -51,7 +53,7 @@ func main() {
 			Address: milvusAddr,
 		},
 		Collection:  collectionName,
-		VectorField: "vector",
+		VectorField: denseField,
 		Dimension:   128, // Dense vector dimension
 
 		// BM25 requires analyzer on content field.
@@ -69,7 +71,7 @@ func main() {
 		},
 		// Functions: Auto-generated for BM25 when Sparse is set
 		Sparse: &milvus2.SparseIndexerConfig{
-			VectorField: "sparse_vector",
+			VectorField: sparseField,
 			MetricType:  milvus2.BM25,
 			Method:      milvus2.SparseMethodAuto,
 		},

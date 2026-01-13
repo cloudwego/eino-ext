@@ -45,6 +45,7 @@ func main() {
 
 	// Collection created by indexer hybrid_chinese example
 	collectionName := "eino_hybrid_chinese"
+	denseField := "vector"
 	sparseField := "sparse_vector"
 
 	// Define Reranker: RRF combines scores from multiple searches
@@ -54,7 +55,7 @@ func main() {
 	hybridMode := search_mode.NewHybrid(reranker,
 		// Dense vector search (semantic similarity)
 		&search_mode.SubRequest{
-			VectorField: "vector",
+			VectorField: denseField,
 			VectorType:  milvus2.DenseVector,
 			TopK:        10,
 			MetricType:  milvus2.L2,
@@ -73,7 +74,7 @@ func main() {
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig:      &milvusclient.ClientConfig{Address: addr},
 		Collection:        collectionName,
-		VectorField:       "vector",
+		VectorField:       denseField,
 		SparseVectorField: sparseField,
 		OutputFields:      []string{"id", "content", "metadata"},
 		TopK:              5,
