@@ -52,14 +52,19 @@ func (a *Approximate) BuildSearchOption(ctx context.Context, conf *milvus2.Retri
 		TopK: &conf.TopK,
 	}, opts...)
 
-	searchOpt := milvusclient.NewSearchOption(conf.Collection, conf.TopK, []entity.Vector{entity.FloatVector(queryVector)}).
+	// Determine final topK
+	topK := conf.TopK
+	if co.TopK != nil {
+		topK = *co.TopK
+	}
+
+	searchOpt := milvusclient.NewSearchOption(conf.Collection, topK, []entity.Vector{entity.FloatVector(queryVector)}).
 		WithANNSField(conf.VectorField).
 		WithOutputFields(conf.OutputFields...)
 
-	if co.TopK != nil && *co.TopK != conf.TopK {
-		searchOpt = milvusclient.NewSearchOption(conf.Collection, *co.TopK, []entity.Vector{entity.FloatVector(queryVector)}).
-			WithANNSField(conf.VectorField).
-			WithOutputFields(conf.OutputFields...)
+	// Apply metric type
+	if a.MetricType != "" {
+		searchOpt.WithSearchParam("metric_type", string(a.MetricType))
 	}
 
 	if len(conf.Partitions) > 0 {
