@@ -67,25 +67,37 @@ func (m MetricType) toEntity() entity.MetricType {
 }
 
 // ConsistencyLevel represents the consistency level for Milvus operations.
-type ConsistencyLevel int32
+type ConsistencyLevel int
 
 const (
-	// ConsistencyLevelStrong ensures that the read operation sees all the data written before the read.
-	ConsistencyLevelStrong ConsistencyLevel = ConsistencyLevel(entity.ClStrong)
-
-	// ConsistencyLevelSession ensures that the read operation sees all the data written in the same session.
-	ConsistencyLevelSession ConsistencyLevel = ConsistencyLevel(entity.ClSession)
-
-	// ConsistencyLevelBounded ensures that the read operation sees the data written before a certain time point.
-	ConsistencyLevelBounded ConsistencyLevel = ConsistencyLevel(entity.ClBounded)
-
-	// ConsistencyLevelEventually ensures that the read operation eventually sees the data written.
-	ConsistencyLevelEventually ConsistencyLevel = ConsistencyLevel(entity.ClEventually)
+	// ConsistencyLevelStrong guarantees that reads return the most recent data.
+	ConsistencyLevelStrong ConsistencyLevel = iota + 1
+	// ConsistencyLevelSession ensures read-your-write consistency within the same session.
+	ConsistencyLevelSession
+	// ConsistencyLevelBounded allows reads to return data within a certain staleness bound.
+	ConsistencyLevelBounded
+	// ConsistencyLevelEventually provides eventual consistency with no staleness guarantees.
+	ConsistencyLevelEventually
+	// ConsistencyLevelCustomized allows custom consistency configuration.
+	ConsistencyLevelCustomized
 )
 
 // ToEntity converts ConsistencyLevel to the Milvus SDK entity.ConsistencyLevel type.
 func (c ConsistencyLevel) ToEntity() entity.ConsistencyLevel {
-	return entity.ConsistencyLevel(c)
+	switch c {
+	case ConsistencyLevelStrong:
+		return entity.ClStrong
+	case ConsistencyLevelSession:
+		return entity.ClSession
+	case ConsistencyLevelBounded:
+		return entity.ClBounded
+	case ConsistencyLevelEventually:
+		return entity.ClEventually
+	case ConsistencyLevelCustomized:
+		return entity.ClCustomized
+	default:
+		return entity.ClBounded
+	}
 }
 
 // VectorType represents the type of vector field.
