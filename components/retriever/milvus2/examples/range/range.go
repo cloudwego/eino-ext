@@ -76,7 +76,7 @@ func main() {
 	for i, doc := range docs {
 		fmt.Printf("\n--- Document %d ---\n", i+1)
 		fmt.Printf("ID: %s\n", doc.ID)
-		fmt.Printf("Score: %v\n", doc.MetaData["score"])
+		fmt.Printf("Score: %v\n", doc.Score())
 	}
 }
 

@@ -72,7 +72,7 @@ func main() {
 	log.Printf("Found %d documents (Expected %d)", len(results), totalTopK)
 	for i, doc := range results {
 		if i == 0 || i == len(results)-1 {
-			log.Printf("Result %d: ID=%s, Content=%s", i+1, doc.ID, doc.Content)
+			log.Printf("Result %d: ID=%s, Content=%s, Score=%.4f", i+1, doc.ID, doc.Content, doc.Score())
 		}
 	}
 

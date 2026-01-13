@@ -105,7 +105,7 @@ func main() {
 
 		fmt.Printf("Found %d documents:\n", len(docs))
 		for i, doc := range docs {
-			fmt.Printf("%d. [ID: %s] %s\n", i+1, doc.ID, doc.Content)
+			fmt.Printf("%d. [ID: %s] [Score: %.4f] %s\n", i+1, doc.ID, doc.Score(), doc.Content)
 		}
 	}
 }

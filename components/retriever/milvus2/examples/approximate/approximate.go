@@ -72,7 +72,7 @@ func main() {
 		fmt.Printf("\n--- Document %d ---\n", i+1)
 		fmt.Printf("ID: %s\n", doc.ID)
 		fmt.Printf("Content: %s\n", doc.Content)
-		fmt.Printf("Score: %v\n", doc.MetaData["score"])
+		fmt.Printf("Score: %v\n", doc.Score())
 	}
 }
 

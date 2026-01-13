@@ -350,7 +350,7 @@ func (r *Retriever) applyScoreThreshold(docs []*schema.Document, threshold *floa
 
 	filtered := make([]*schema.Document, 0, len(docs))
 	for _, doc := range docs {
-		if score, ok := doc.MetaData["score"].(float64); ok && score >= *threshold {
+		if doc.Score() >= *threshold {
 			filtered = append(filtered, doc)
 		}
 	}

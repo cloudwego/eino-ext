@@ -60,6 +60,6 @@ func main() {
 	fmt.Printf("=== Query: %s ===\n", query)
 	fmt.Printf("Found %d documents:\n", len(docs))
 	for _, doc := range docs {
-		fmt.Printf("ID: %s, Score: %.4f, Content: %s\n", doc.ID, doc.MetaData["score"], doc.Content)
+		fmt.Printf("ID: %s, Score: %.4f, Content: %s\n", doc.ID, doc.Score(), doc.Content)
 	}
 }
