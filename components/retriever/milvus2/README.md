@@ -101,7 +101,8 @@ func main() {
 | `ClientConfig` | `*milvusclient.ClientConfig` | - | Client configuration (required if Client is nil) |
 | `Collection` | `string` | `"eino_collection"` | Collection name |
 | `TopK` | `int` | `5` | Number of results to return |
-| `VectorField` | `string` | `"vector"` | Vector field name |
+| `VectorField` | `string` | `"vector"` | Dense vector field name |
+| `SparseVectorField` | `string` | `"sparse_vector"` | Sparse vector field name |
 | `OutputFields` | `[]string` | all fields | Fields to return in results |
 | `SearchMode` | `SearchMode` | - | Search strategy (required) |
 | `Embedding` | `embedding.Embedder` | - | Embedder for query vectorization (required) |

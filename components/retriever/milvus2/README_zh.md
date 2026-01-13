@@ -101,7 +101,8 @@ func main() {
 | `ClientConfig` | `*milvusclient.ClientConfig` | - | 客户端配置（Client 为空时必需） |
 | `Collection` | `string` | `"eino_collection"` | 集合名称 |
 | `TopK` | `int` | `5` | 返回结果数量 |
-| `VectorField` | `string` | `"vector"` | 向量字段名 |
+| `VectorField` | `string` | `"vector"` | 稠密向量字段名 |
+| `SparseVectorField` | `string` | `"sparse_vector"` | 稀疏向量字段名 |
 | `OutputFields` | `[]string` | 所有字段 | 结果中返回的字段 |
 | `SearchMode` | `SearchMode` | - | 搜索策略（必需） |
 | `Embedding` | `embedding.Embedder` | - | 用于查询向量化的 Embedder（必需） |

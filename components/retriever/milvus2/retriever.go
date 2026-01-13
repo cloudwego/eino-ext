@@ -51,6 +51,10 @@ type RetrieverConfig struct {
 	// Default: "vector"
 	VectorField string
 
+	// SparseVectorField is the field name for sparse vectors.
+	// Default: "sparse_vector"
+	SparseVectorField string
+
 	// OutputFields specifies which fields to return in search results.
 	// Default: all fields
 	OutputFields []string
@@ -435,6 +439,9 @@ func (c *RetrieverConfig) validate() error {
 	}
 	if c.VectorField == "" {
 		c.VectorField = defaultVectorField
+	}
+	if c.SparseVectorField == "" {
+		c.SparseVectorField = defaultSparseVectorField
 	}
 	if c.TopK <= 0 {
 		c.TopK = defaultTopK

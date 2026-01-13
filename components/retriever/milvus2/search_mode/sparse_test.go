@@ -42,9 +42,10 @@ func TestSparse_BuildSparseSearchOption(t *testing.T) {
 	convey.Convey("test Sparse.BuildSparseSearchOption", t, func() {
 		ctx := context.Background()
 		config := &milvus2.RetrieverConfig{
-			Collection:  "test_collection",
-			VectorField: "vector",
-			TopK:        10,
+			Collection:        "test_collection",
+			VectorField:       "vector",
+			SparseVectorField: "sparse_vector",
+			TopK:              10,
 		}
 
 		convey.Convey("test with default options", func() {
@@ -67,10 +68,11 @@ func TestSparse_BuildSparseSearchOption(t *testing.T) {
 
 		convey.Convey("test with ConsistencyLevel", func() {
 			configWithConsistency := &milvus2.RetrieverConfig{
-				Collection:       "test_collection",
-				VectorField:      "vector",
-				TopK:             10,
-				ConsistencyLevel: milvus2.ConsistencyLevelStrong,
+				Collection:        "test_collection",
+				VectorField:       "vector",
+				SparseVectorField: "sparse_vector",
+				TopK:              10,
+				ConsistencyLevel:  milvus2.ConsistencyLevelStrong,
 			}
 			sparse := NewSparse(milvus2.BM25)
 			opt, err := sparse.BuildSparseSearchOption(ctx, configWithConsistency, "test query")

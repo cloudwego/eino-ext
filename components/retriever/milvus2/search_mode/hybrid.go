@@ -99,7 +99,11 @@ func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.Retr
 		// Determine vector field
 		field := req.VectorField
 		if field == "" {
-			field = conf.VectorField
+			if req.VectorType == milvus2.SparseVector {
+				field = conf.SparseVectorField
+			} else {
+				field = conf.VectorField
+			}
 		}
 
 		// Determine Limit

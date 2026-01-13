@@ -153,24 +153,27 @@ func TestRetrieverConfig_validate(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 			// Check defaults are set
 			convey.So(config.VectorField, convey.ShouldEqual, defaultVectorField)
+			convey.So(config.SparseVectorField, convey.ShouldEqual, defaultSparseVectorField)
 			convey.So(config.TopK, convey.ShouldEqual, defaultTopK)
 			convey.So(config.DocumentConverter, convey.ShouldNotBeNil)
 		})
 
 		convey.Convey("test with custom values preserved", func() {
 			config := &RetrieverConfig{
-				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:   "my_collection",
-				Embedding:    mockEmb,
-				VectorField:  "custom_vector",
-				TopK:         50,
-				Partitions:   []string{"p1", "p2"},
-				SearchMode:   mockSM,
+				ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:        "my_collection",
+				Embedding:         mockEmb,
+				VectorField:       "custom_vector",
+				SparseVectorField: "custom_sparse",
+				TopK:              50,
+				Partitions:        []string{"p1", "p2"},
+				SearchMode:        mockSM,
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(config.Collection, convey.ShouldEqual, "my_collection")
 			convey.So(config.VectorField, convey.ShouldEqual, "custom_vector")
+			convey.So(config.SparseVectorField, convey.ShouldEqual, "custom_sparse")
 			convey.So(config.TopK, convey.ShouldEqual, 50)
 		})
 

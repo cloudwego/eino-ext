@@ -64,7 +64,7 @@ func (s *Sparse) BuildSparseSearchOption(ctx context.Context, conf *milvus2.Retr
 	}
 
 	searchOpt := milvusclient.NewSearchOption(conf.Collection, topK, []entity.Vector{entity.Text(query)}).
-		WithANNSField(conf.VectorField).
+		WithANNSField(conf.SparseVectorField).
 		WithOutputFields(conf.OutputFields...)
 
 	// Apply metric type

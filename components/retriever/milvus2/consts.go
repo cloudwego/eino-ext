@@ -19,11 +19,12 @@ package milvus2
 const (
 	typ = "Milvus2"
 
-	defaultCollection    = "eino_collection"
-	defaultIDField       = "id"
-	defaultVectorField   = "vector"
-	defaultContentField  = "content"
-	defaultMetadataField = "metadata"
+	defaultCollection        = "eino_collection"
+	defaultIDField           = "id"
+	defaultVectorField       = "vector"
+	defaultSparseVectorField = "sparse_vector"
+	defaultContentField      = "content"
+	defaultMetadataField     = "metadata"
 
 	defaultTopK = 5
 )
