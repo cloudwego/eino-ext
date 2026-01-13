@@ -51,9 +51,11 @@ func main() {
 		ClientConfig: &milvusclient.ClientConfig{
 			Address: milvusAddr,
 		},
-		Collection:  collectionName,
-		VectorField: denseField,
-		Dimension:   128, // Dense vector dimension
+		Collection: collectionName,
+		Vector: &milvus2.VectorConfig{
+			VectorField: denseField,
+			Dimension:   128, // Dense vector dimension
+		},
 
 		// BM25 requires analyzer on content field.
 		// Analyzer options (built-in):
@@ -69,7 +71,7 @@ func main() {
 			},
 		},
 		// Functions: Auto-generated for BM25 when Sparse is set
-		Sparse: &milvus2.SparseIndexerConfig{
+		Sparse: &milvus2.SparseVectorConfig{
 			VectorField: sparseField,
 			MetricType:  milvus2.BM25,
 			Method:      milvus2.SparseMethodAuto,

@@ -95,13 +95,15 @@ func main() {
 
 	// Create indexer with custom DocumentConverter that extracts category for grouping
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
-		Client:       cli,
-		Collection:   collectionName,
-		VectorField:  vectorField,
-		Dimension:    int64(dim),
-		MetricType:   milvus2.COSINE,
-		IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),
-		Embedding:    &mockEmbedding{dim: dim},
+		Client:     cli,
+		Collection: collectionName,
+		Vector: &milvus2.VectorConfig{
+			VectorField:  vectorField,
+			Dimension:    int64(dim),
+			MetricType:   milvus2.COSINE,
+			IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),
+		},
+		Embedding: &mockEmbedding{dim: dim},
 		DocumentConverter: func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]column.Column, error) {
 			ids := make([]string, 0, len(docs))
 			contents := make([]string, 0, len(docs))

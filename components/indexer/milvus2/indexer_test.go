@@ -75,6 +75,9 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "test_collection",
 				Embedding:    nil,
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
@@ -85,15 +88,17 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "",
 				Embedding:    mockEmb,
-				Dimension:    128,
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
 			// Check defaults are set
 			convey.So(config.Collection, convey.ShouldEqual, defaultCollection)
 			convey.So(config.Description, convey.ShouldEqual, defaultDescription)
-			convey.So(config.MetricType, convey.ShouldEqual, L2)
-			convey.So(config.VectorField, convey.ShouldEqual, defaultVectorField)
+			convey.So(config.Vector.MetricType, convey.ShouldEqual, L2)
+			convey.So(config.Vector.VectorField, convey.ShouldEqual, defaultVectorField)
 			convey.So(config.DocumentConverter, convey.ShouldNotBeNil)
 		})
 
@@ -102,8 +107,10 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "default_sparse",
 				Embedding:    mockEmb,
-				Dimension:    256,
-				Sparse:       &SparseIndexerConfig{}, // Empty config
+				Vector: &VectorConfig{
+					Dimension: 256,
+				},
+				Sparse: &SparseVectorConfig{}, // Empty config
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
@@ -116,8 +123,10 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "my_collection",
 				Embedding:    mockEmb,
-				Dimension:    256,
-				Sparse: &SparseIndexerConfig{
+				Vector: &VectorConfig{
+					Dimension: 256,
+				},
+				Sparse: &SparseVectorConfig{
 					VectorField: "my_sparse_vector",
 				},
 			}
@@ -133,8 +142,10 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "my_collection",
 				Embedding:    mockEmb,
-				Dimension:    256,
-				Sparse: &SparseIndexerConfig{
+				Vector: &VectorConfig{
+					Dimension: 256,
+				},
+				Sparse: &SparseVectorConfig{
 					VectorField: "my_sparse_vector",
 					MetricType:  IP,
 				},
@@ -150,19 +161,21 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig:  &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:    "my_collection",
 				Description:   "my description",
-				MetricType:    IP,
 				Embedding:     mockEmb,
-				Dimension:     256,
 				PartitionName: "my_partition",
-				VectorField:   "my_vector",
-				IndexBuilder:  NewHNSWIndexBuilder(),
+				Vector: &VectorConfig{
+					Dimension:    256,
+					MetricType:   IP,
+					VectorField:  "my_vector",
+					IndexBuilder: NewHNSWIndexBuilder(),
+				},
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(config.Collection, convey.ShouldEqual, "my_collection")
 			convey.So(config.Description, convey.ShouldEqual, "my description")
-			convey.So(config.VectorField, convey.ShouldEqual, "my_vector")
-			convey.So(config.MetricType, convey.ShouldEqual, IP)
+			convey.So(config.Vector.VectorField, convey.ShouldEqual, "my_vector")
+			convey.So(config.Vector.MetricType, convey.ShouldEqual, IP)
 		})
 
 		PatchConvey("test sparse-only config", func() {
@@ -170,14 +183,14 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "sparse_only",
 				Embedding:    mockEmb,
-				Dimension:    0, // No dense dimension
-				Sparse: &SparseIndexerConfig{
+				// Vector is nil implies no dense vector
+				Sparse: &SparseVectorConfig{
 					VectorField: "s_vec",
 				},
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(config.VectorField, convey.ShouldBeEmpty) // Should NOT be defaulted
+			convey.So(config.Vector, convey.ShouldBeNil)
 			convey.So(config.Sparse.VectorField, convey.ShouldEqual, "s_vec")
 		})
 
@@ -187,8 +200,10 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "auto_bm25",
 				Embedding:    mockEmb,
-				Dimension:    128,
-				Sparse: &SparseIndexerConfig{
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
+				Sparse: &SparseVectorConfig{
 					VectorField: "sparse",
 					MetricType:  BM25,
 					// Method defaults to BM25 (Auto)
@@ -211,8 +226,10 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "client_sparse",
 				Embedding:    mockEmb,
-				Dimension:    128,
-				Sparse: &SparseIndexerConfig{
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
+				Sparse: &SparseVectorConfig{
 					VectorField: "sparse",
 					MetricType:  BM25,
 					Method:      SparseMethodPrecomputed,
@@ -238,8 +255,10 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "custom_bm25",
 				Embedding:    mockEmb,
-				Dimension:    128,
-				Sparse: &SparseIndexerConfig{
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
+				Sparse: &SparseVectorConfig{
 					VectorField: "sparse",
 					Method:      SparseMethodAuto,
 				},
@@ -265,8 +284,10 @@ func TestIndexerConfig_validate(t *testing.T) {
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "mixed_functions",
 				Embedding:    mockEmb,
-				Dimension:    128,
-				Sparse: &SparseIndexerConfig{
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
+				Sparse: &SparseVectorConfig{
 					VectorField: "sparse",
 					Method:      SparseMethodAuto,
 				},
@@ -298,8 +319,10 @@ func TestNewIndexer(t *testing.T) {
 				Client:       nil,
 				ClientConfig: nil,
 				Collection:   "test_collection",
-				Dimension:    128,
 				Embedding:    mockEmb,
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
 			})
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(err.Error(), convey.ShouldContainSubstring, "client")
@@ -314,8 +337,10 @@ func TestNewIndexer(t *testing.T) {
 					Address: "localhost:19530",
 				},
 				Collection: "test_collection",
-				Dimension:  128,
 				Embedding:  mockEmb,
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
 			})
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(indexer, convey.ShouldNotBeNil)
@@ -339,8 +364,10 @@ func TestNewIndexer(t *testing.T) {
 					Address: "localhost:19530",
 				},
 				Collection: "test_collection",
-				Dimension:  128,
 				Embedding:  mockEmb,
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
 			})
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(indexer, convey.ShouldNotBeNil)
@@ -365,8 +392,10 @@ func TestNewIndexer(t *testing.T) {
 					Address: "localhost:19530",
 				},
 				Collection: "test_collection",
-				Dimension:  128,
 				Embedding:  mockEmb,
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
 			})
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(indexer, convey.ShouldNotBeNil)
@@ -380,8 +409,10 @@ func TestNewIndexer(t *testing.T) {
 					Address: "localhost:19530",
 				},
 				Collection: "test_collection",
-				Dimension:  0, // No dimension
 				Embedding:  mockEmb,
+				Vector: &VectorConfig{
+					Dimension: 0, // No dimension
+				},
 			})
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(err.Error(), convey.ShouldContainSubstring, "dimension")
@@ -414,10 +445,14 @@ func TestIndexer_Store(t *testing.T) {
 		indexer := &Indexer{
 			client: mockClient,
 			config: &IndexerConfig{
-				Collection:        "test_collection",
-				Dimension:         128,
-				Embedding:         mockEmb,
-				DocumentConverter: defaultDocumentConverter(defaultVectorField, nil),
+				Collection: "test_collection",
+				Vector: &VectorConfig{
+					Dimension: 128,
+				},
+				Embedding: mockEmb,
+				DocumentConverter: defaultDocumentConverter(&VectorConfig{
+					VectorField: defaultVectorField,
+				}, nil),
 			},
 		}
 
@@ -477,7 +512,9 @@ func TestIndexer_Store(t *testing.T) {
 func TestDefaultDocumentConverter(t *testing.T) {
 	convey.Convey("test defaultDocumentConverter", t, func() {
 		convey.Convey("test conversion (dense only)", func() {
-			converter := defaultDocumentConverter(defaultVectorField, nil)
+			converter := defaultDocumentConverter(&VectorConfig{
+				VectorField: defaultVectorField,
+			}, nil)
 
 			ctx := context.Background()
 			docs := []*schema.Document{
@@ -497,7 +534,9 @@ func TestDefaultDocumentConverter(t *testing.T) {
 		})
 
 		convey.Convey("test conversion with sparse vector", func() {
-			converter := defaultDocumentConverter(defaultVectorField, &SparseIndexerConfig{
+			converter := defaultDocumentConverter(&VectorConfig{
+				VectorField: defaultVectorField,
+			}, &SparseVectorConfig{
 				VectorField: "sparse_vector",
 				Method:      SparseMethodPrecomputed,
 			})

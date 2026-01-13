@@ -45,12 +45,14 @@ func main() {
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_hnsw",
-		VectorField:  "vector",
-		Dimension:    128,
-		MetricType:   milvus2.COSINE,
-		IndexBuilder: milvus2.NewHNSWIndexBuilder().
-			WithM(16).
-			WithEfConstruction(200),
+		Vector: &milvus2.VectorConfig{
+			VectorField: "vector",
+			Dimension:   128,
+			MetricType:  milvus2.COSINE,
+			IndexBuilder: milvus2.NewHNSWIndexBuilder().
+				WithM(16).
+				WithEfConstruction(200),
+		},
 		Embedding: &mockEmbedding{dim: 128},
 	})
 	if err != nil {

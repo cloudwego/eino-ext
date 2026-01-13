@@ -44,11 +44,13 @@ func main() {
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_diskann",
-		VectorField:  "vector",
-		Dimension:    128,
-		MetricType:   milvus2.L2,
-		IndexBuilder: milvus2.NewDiskANNIndexBuilder(),
-		Embedding:    &mockEmbedding{dim: 128},
+		Vector: &milvus2.VectorConfig{
+			VectorField:  "vector",
+			Dimension:    128,
+			MetricType:   milvus2.L2,
+			IndexBuilder: milvus2.NewDiskANNIndexBuilder(),
+		},
+		Embedding: &mockEmbedding{dim: 128},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create indexer: %v", err)

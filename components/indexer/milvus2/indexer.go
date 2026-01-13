@@ -51,10 +51,6 @@ type IndexerConfig struct {
 	// Default: "the collection for eino"
 	Description string
 
-	// Dimension is the vector dimension.
-	// Required when auto-creating the collection.
-	Dimension int64
-
 	// PartitionName is the default partition for insertion.
 	// Optional.
 	PartitionName string
@@ -67,22 +63,13 @@ type IndexerConfig struct {
 	// Default: false
 	EnableDynamicSchema bool
 
-	// MetricType is the metric type for vector similarity.
-	// Default: L2
-	MetricType MetricType
-
-	// IndexBuilder specifies how to build the vector index.
-	// If nil, uses AutoIndex (Milvus automatically selects the best index).
-	// Use NewHNSWIndexBuilder(), NewIVFFlatIndexBuilder(), etc. for specific index types.
-	IndexBuilder IndexBuilder
+	// Vector defines the configuration for dense vector index.
+	// Optional.
+	Vector *VectorConfig
 
 	// Sparse defines the configuration for sparse vector index.
 	// Optional.
-	Sparse *SparseIndexerConfig
-
-	// VectorField is the name of the vector field in the collection.
-	// Default: "vector"
-	VectorField string
+	Sparse *SparseVectorConfig
 
 	// DocumentConverter converts EINO documents to Milvus columns.
 	// If nil, uses default conversion (id, content, vector, metadata as JSON).
@@ -102,6 +89,26 @@ type IndexerConfig struct {
 	FieldParams map[string]map[string]string
 }
 
+// VectorConfig contains configuration for dense vector index.
+type VectorConfig struct {
+	// Dimension is the vector dimension.
+	// Required when auto-creating the collection.
+	Dimension int64
+
+	// MetricType is the metric type for vector similarity.
+	// Default: L2
+	MetricType MetricType
+
+	// IndexBuilder specifies how to build the vector index.
+	// If nil, uses AutoIndex (Milvus automatically selects the best index).
+	// Use NewHNSWIndexBuilder(), NewIVFFlatIndexBuilder(), etc. for specific index types.
+	IndexBuilder IndexBuilder
+
+	// VectorField is the name of the vector field in the collection.
+	// Default: "vector"
+	VectorField string
+}
+
 // SparseMethod defines the method for sparse vector generation.
 type SparseMethod string
 
@@ -114,8 +121,8 @@ const (
 	SparseMethodPrecomputed SparseMethod = "Precomputed"
 )
 
-// SparseIndexerConfig contains configuration for sparse vector index.
-type SparseIndexerConfig struct {
+// SparseVectorConfig contains configuration for sparse vector index.
+type SparseVectorConfig struct {
 	// IndexBuilder specifies how to build the sparse vector index.
 	// Optional. If nil, uses SPARSE_INVERTED_INDEX by default.
 	IndexBuilder SparseIndexBuilder
@@ -185,8 +192,12 @@ func initCollection(ctx context.Context, cli *milvusclient.Client, conf *Indexer
 	}
 
 	if !hasCollection {
-		if conf.Dimension <= 0 {
-			return fmt.Errorf("[NewIndexer] dimension is required when collection does not exist")
+		// Dimension is required only if Vector config is present or we want default behavior.
+		// However, in this new design, if Collection doesn't exist, we need to know schema.
+		// Schema builder checks conf.Vector. So we check it here too if needed?
+		// Actually buildSchema checks conf.Vector.
+		if conf.Vector != nil && conf.Vector.Dimension <= 0 {
+			return fmt.Errorf("[NewIndexer] vector dimension is required when collection does not exist")
 		}
 		if err := createCollection(ctx, cli, conf); err != nil {
 			return err
@@ -327,30 +338,30 @@ func (c *IndexerConfig) validate() error {
 	if c.Client == nil && c.ClientConfig == nil {
 		return fmt.Errorf("[NewIndexer] milvus client or client config not provided")
 	}
+
+	// Ensure at least one vector config is present
+	if c.Vector == nil && c.Sparse == nil {
+		return fmt.Errorf("[NewIndexer] at least one vector field (dense or sparse) is required")
+	}
+
 	if c.Collection == "" {
 		c.Collection = defaultCollection
 	}
 	if c.Description == "" {
 		c.Description = defaultDescription
 	}
-	if c.MetricType == "" {
-		c.MetricType = L2
-	}
-	// Default VectorField only if we have a dense dimension or no sparse field.
-	// If Dimension is 0 and Sparse is set, we assume sparse-only mode.
-	if c.VectorField == "" && (c.Dimension > 0 || c.Sparse == nil) {
-		c.VectorField = defaultVectorField
+
+	// Dense vector defaults
+	if c.Vector != nil {
+		if c.Vector.MetricType == "" {
+			c.Vector.MetricType = L2
+		}
+		if c.Vector.VectorField == "" {
+			c.Vector.VectorField = defaultVectorField
+		}
 	}
 
-	c.validateSparse()
-
-	if c.DocumentConverter == nil {
-		c.DocumentConverter = defaultDocumentConverter(c.VectorField, c.Sparse)
-	}
-	return nil
-}
-
-func (c *IndexerConfig) validateSparse() {
+	// Sparse vector defaults
 	if c.Sparse != nil {
 		if c.Sparse.VectorField == "" {
 			c.Sparse.VectorField = defaultSparseVectorField
@@ -369,6 +380,11 @@ func (c *IndexerConfig) validateSparse() {
 
 		c.addDefaultBM25Function()
 	}
+
+	if c.DocumentConverter == nil {
+		c.DocumentConverter = defaultDocumentConverter(c.Vector, c.Sparse)
+	}
+	return nil
 }
 
 func (c *IndexerConfig) addDefaultBM25Function() {
@@ -450,12 +466,12 @@ func buildSchema(conf *IndexerConfig) (*entity.Schema, error) {
 		WithField(metadataField).
 		WithDynamicFieldEnabled(conf.EnableDynamicSchema)
 
-	if conf.VectorField != "" {
+	if conf.Vector != nil {
 		vecField := entity.NewField().
-			WithName(conf.VectorField).
+			WithName(conf.Vector.VectorField).
 			WithDataType(entity.FieldTypeFloatVector).
-			WithDim(conf.Dimension)
-		applyParams(vecField, conf.VectorField)
+			WithDim(conf.Vector.Dimension)
+		applyParams(vecField, conf.Vector.VectorField)
 		sch.WithField(vecField)
 	} else if conf.Sparse == nil {
 		// Should not happen if validation passed, but safety check: at least one vector field required
@@ -480,14 +496,14 @@ func buildSchema(conf *IndexerConfig) (*entity.Schema, error) {
 
 // createIndex creates indexes on fields if they don't exist.
 func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
-	if conf.VectorField != "" {
-		if err := createDenseIndex(ctx, cli, conf); err != nil {
+	if conf.Vector != nil {
+		if err := createVectorIndex(ctx, cli, conf.Vector.VectorField, conf.Vector, conf.Collection); err != nil {
 			return err
 		}
 	}
 
 	if conf.Sparse != nil {
-		if err := createSparseIndex(ctx, cli, conf); err != nil {
+		if err := createSparseIndex(ctx, cli, conf.Sparse, conf.Collection); err != nil {
 			return err
 		}
 	}
@@ -495,15 +511,15 @@ func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerCon
 	return nil
 }
 
-func createDenseIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
+func createVectorIndex(ctx context.Context, cli *milvusclient.Client, vectorField string, vectorConf *VectorConfig, collection string) error {
 	var idx index.Index
-	if conf.IndexBuilder != nil {
-		idx = conf.IndexBuilder.Build(conf.MetricType)
+	if vectorConf.IndexBuilder != nil {
+		idx = vectorConf.IndexBuilder.Build(vectorConf.MetricType)
 	} else {
-		idx = index.NewAutoIndex(conf.MetricType.toEntity())
+		idx = index.NewAutoIndex(vectorConf.MetricType.toEntity())
 	}
 
-	createIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.VectorField, idx)
+	createIndexOpt := milvusclient.NewCreateIndexOption(collection, vectorField, idx)
 
 	createTask, err := cli.CreateIndex(ctx, createIndexOpt)
 	if err != nil {
@@ -516,15 +532,15 @@ func createDenseIndex(ctx context.Context, cli *milvusclient.Client, conf *Index
 	return nil
 }
 
-func createSparseIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerConfig) error {
+func createSparseIndex(ctx context.Context, cli *milvusclient.Client, sparseConf *SparseVectorConfig, collection string) error {
 	var sparseIdx index.Index
-	if conf.Sparse.IndexBuilder != nil {
-		sparseIdx = conf.Sparse.IndexBuilder.Build(conf.Sparse.MetricType)
+	if sparseConf.IndexBuilder != nil {
+		sparseIdx = sparseConf.IndexBuilder.Build(sparseConf.MetricType)
 	} else {
-		sparseIdx = NewSparseInvertedIndexBuilder().Build(conf.Sparse.MetricType)
+		sparseIdx = NewSparseInvertedIndexBuilder().Build(sparseConf.MetricType)
 	}
 
-	createSparseIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.Sparse.VectorField, sparseIdx)
+	createSparseIndexOpt := milvusclient.NewCreateIndexOption(collection, sparseConf.VectorField, sparseIdx)
 
 	createTask, err := cli.CreateIndex(ctx, createSparseIndexOpt)
 	if err != nil {
@@ -538,7 +554,7 @@ func createSparseIndex(ctx context.Context, cli *milvusclient.Client, conf *Inde
 }
 
 // defaultDocumentConverter returns the default document to column converter.
-func defaultDocumentConverter(vectorField string, sparse *SparseIndexerConfig) func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]column.Column, error) {
+func defaultDocumentConverter(vector *VectorConfig, sparse *SparseVectorConfig) func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]column.Column, error) {
 	return func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]column.Column, error) {
 		ids := make([]string, 0, len(docs))
 		contents := make([]string, 0, len(docs))
@@ -550,6 +566,12 @@ func defaultDocumentConverter(vectorField string, sparse *SparseIndexerConfig) f
 		sparseVectorField := ""
 		if sparse != nil && sparse.Method == SparseMethodPrecomputed {
 			sparseVectorField = sparse.VectorField
+		}
+
+		// Determine if we need to handle dense vectors
+		denseVectorField := ""
+		if vector != nil {
+			denseVectorField = vector.VectorField
 		}
 
 		for idx, doc := range docs {
@@ -564,7 +586,7 @@ func defaultDocumentConverter(vectorField string, sparse *SparseIndexerConfig) f
 			}
 
 			// Dense vector is required when vectorField is set (dense-only or hybrid mode).
-			if vectorField != "" {
+			if denseVectorField != "" {
 				if len(sourceVec) == 0 {
 					return nil, fmt.Errorf("vector data missing for document %d (id: %s)", idx, doc.ID)
 				}
@@ -597,12 +619,12 @@ func defaultDocumentConverter(vectorField string, sparse *SparseIndexerConfig) f
 			column.NewColumnJSONBytes(defaultMetadataField, metadatas),
 		}
 
-		if vectorField != "" {
+		if denseVectorField != "" {
 			dim := 0
 			if len(vecs) > 0 {
 				dim = len(vecs[0])
 			}
-			columns = append(columns, column.NewColumnFloatVector(vectorField, dim, vecs))
+			columns = append(columns, column.NewColumnFloatVector(denseVectorField, dim, vecs))
 		}
 
 		if sparseVectorField != "" {
