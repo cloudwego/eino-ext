@@ -118,7 +118,7 @@ const (
 type SparseIndexerConfig struct {
 	// IndexBuilder specifies how to build the sparse vector index.
 	// Optional. If nil, uses SPARSE_INVERTED_INDEX by default.
-	IndexBuilder IndexBuilder
+	IndexBuilder SparseIndexBuilder
 
 	// VectorField is the name of the sparse vector field in the collection.
 	// Optional. Default: "sparse_vector"

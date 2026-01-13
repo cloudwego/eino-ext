@@ -27,6 +27,12 @@ type IndexBuilder interface {
 	Build(metricType MetricType) index.Index
 }
 
+// SparseIndexBuilder defines the interface for building Milvus sparse vector indexes.
+type SparseIndexBuilder interface {
+	// Build creates a Milvus sparse index configured with the specified metric type.
+	Build(metricType MetricType) index.Index
+}
+
 // AutoIndexBuilder creates an AUTOINDEX that allows Milvus to automatically
 // select the optimal index type based on data characteristics.
 type AutoIndexBuilder struct{}
@@ -404,7 +410,7 @@ func (b *SparseWANDIndexBuilder) Build(metricType MetricType) index.Index {
 	return index.NewSparseWANDIndex(metricType.toEntity(), b.DropRatioBuild)
 }
 
-// Ensure all builders implement IndexBuilder
+// Ensure all builders implement IndexBuilder or SparseIndexBuilder
 var (
 	_ IndexBuilder = (*AutoIndexBuilder)(nil)
 	_ IndexBuilder = (*FlatIndexBuilder)(nil)
@@ -420,6 +426,7 @@ var (
 	_ IndexBuilder = (*GPUIVFFlatIndexBuilder)(nil)
 	_ IndexBuilder = (*GPUCagraIndexBuilder)(nil)
 	_ IndexBuilder = (*IVFRabitQIndexBuilder)(nil)
-	_ IndexBuilder = (*SparseInvertedIndexBuilder)(nil)
-	_ IndexBuilder = (*SparseWANDIndexBuilder)(nil)
+
+	_ SparseIndexBuilder = (*SparseInvertedIndexBuilder)(nil)
+	_ SparseIndexBuilder = (*SparseWANDIndexBuilder)(nil)
 )
