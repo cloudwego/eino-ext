@@ -116,10 +116,8 @@ func main() {
 | `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | 读取一致性级别 |
 | `PartitionName` | `string` | - | 插入数据的默认分区 |
 | `EnableDynamicSchema` | `bool` | `false` | 启用动态字段支持 |
-| `SparseVectorField` | `string` | - | 稀疏向量字段名（用于服务器端函数输出） |
-| `SparseIndexBuilder` | `SparseIndexBuilder` | SPARSE_INVERTED | 稀疏索引构建器 |
-| `SparseMetricType` | `MetricType` | `IP` | 稀疏索引度量类型（IP, BM25） |
-| `Functions` | `[]*entity.Function` | - | Schema 函数定义（如 BM25），用于服务器端处理（例如从内容自动生成稀疏向量） |
+| `Sparse` | `*SparseIndexerConfig` | - | 稀疏向量索引配置（可选） |
+| `Functions` | `[]*entity.Function` | - | Schema 函数定义（如 BM25），用于服务器端处理 |
 | `FieldParams` | `map[string]map[string]string` | - | 字段参数配置（如 enable_analyzer） |
 
 ## 索引构建器
@@ -190,6 +188,7 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参�
 | `COSINE` | 余弦相似度 |
 | `HAMMING` | 汉明距离（二进制） |
 | `JACCARD` | 杰卡德距离（二进制） |
+| `BM25` | Okapi BM25 (稀疏) |
 
 ## 示例
 
@@ -210,24 +209,21 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参�
 使用 Milvus 服务器端函数（如 BM25）从文本内容自动生成稀疏向量：
 
 ```go
-// 定义 BM25 函数
-bm25Function := entity.NewFunction().
-    WithName("bm25_fn").
-    WithType(entity.FunctionTypeBM25).
-    WithInputFields("content").         // 输入文本字段
-    WithOutputFields("sparse_vector")   // 输出稀疏向量字段
-
 // 创建带有函数的 indexer
 indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
     // ... 基础配置 ...
     Collection:        "hybrid_collection",
     
     // 启用稀疏向量支持
-    SparseVectorField: "sparse_vector",
-    SparseMetricType:  milvus2.BM25,
+    Sparse: &milvus2.SparseIndexerConfig{
+        VectorField: "sparse_vector",
+        MetricType:  milvus2.BM25,
+        Method:      milvus2.SparseMethodAuto, // 使用 BM25 自动生成
+    },
     
-    // 注册函数
-    Functions: []*entity.Function{bm25Function},
+    // 当 Method=Auto 时会自动检测 BM25 配置
+    // 如果需要显式添加函数:
+    // Functions: []*entity.Function{bm25Function},
     
     // BM25 需要在内容字段上启用分析器
     // 分析器选项 (内置):
@@ -268,12 +264,30 @@ docs := []*schema.Document{
     },
 }
 
-// 将向量附加到文档
+// 附加稠密向量到文档
 // 向量维度必须与集合维度匹配
 vector := []float64{0.1, 0.2, ...} 
 docs[0].WithDenseVector(vector)
 
+// 附加稀疏向量（可选，如果配置了 Sparse）
+// 稀疏向量是 index -> weight 的映射
+sparseVector := map[int]float64{
+    10: 0.5,
+    25: 0.8,
+}
+docs[0].WithSparseVector(sparseVector)
+
 ids, err := indexer.Store(ctx, docs)
+```
+
+对于 BYOV 模式下的稀疏向量，请确保您的配置使用 `Method: milvus2.SparseMethodPrecomputed`：
+
+```go
+Sparse: &milvus2.SparseIndexerConfig{
+    VectorField: "sparse_vector",
+    MetricType:  milvus2.IP, // 或 BM25（如适用）
+    Method:      milvus2.SparseMethodPrecomputed,
+},
 ```
 
 ## 许可证

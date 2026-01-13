@@ -116,10 +116,8 @@ func main() {
 | `ConsistencyLevel` | `ConsistencyLevel` | `Bounded` | Read consistency level |
 | `PartitionName` | `string` | - | Default partition for insertion |
 | `EnableDynamicSchema` | `bool` | `false` | Enable dynamic field support |
-| `SparseVectorField` | `string` | - | Sparse vector field name (required for server-side function output) |
-| `SparseIndexBuilder` | `SparseIndexBuilder` | SPARSE_INVERTED | Sparse index builder |
-| `SparseMetricType` | `MetricType` | `IP` | Metric type for sparse index (IP, BM25) |
-| `Functions` | `[]*entity.Function` | - | Schema functions (e.g., BM25) for server-side processing (e.g., generating sparse vectors from content) |
+| `Sparse` | `*SparseIndexerConfig` | - | Configuration for sparse vector index (Optional) |
+| `Functions` | `[]*entity.Function` | - | Schema functions (e.g., BM25) for server-side processing |
 | `FieldParams` | `map[string]map[string]string` | - | Parameters for fields (e.g., enable_analyzer) |
 
 ## Index Builders
@@ -190,6 +188,7 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // Disk-based, no extra params
 | `COSINE` | Cosine similarity |
 | `HAMMING` | Hamming distance (binary) |
 | `JACCARD` | Jaccard distance (binary) |
+| `BM25` | Okapi BM25 (sparse) |
 
 ## Examples
 
@@ -210,24 +209,21 @@ See the [examples](./examples) directory for complete working examples:
 Use Milvus server-side functions (e.g., BM25) to automatically generate sparse vectors from text content:
 
 ```go
-// Define BM25 function
-bm25Function := entity.NewFunction().
-    WithName("bm25_fn").
-    WithType(entity.FunctionTypeBM25).
-    WithInputFields("content").         // Input text field
-    WithOutputFields("sparse_vector")   // Output sparse vector field
-
 // Create indexer with function
 indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
     // ... basic config ...
     Collection:        "hybrid_collection",
     
     // Enable sparse vector support
-    SparseVectorField: "sparse_vector",
-    SparseMetricType:  milvus2.BM25,
+    Sparse: &milvus2.SparseIndexerConfig{
+        VectorField: "sparse_vector",
+        MetricType:  milvus2.BM25,
+        Method:      milvus2.SparseMethodAuto, // Auto-generate using BM25
+    },
     
-    // Register function
-    Functions: []*entity.Function{bm25Function},
+    // Configurable functions are auto-detected for BM25 when Method=Auto
+    // You can also explicitly add them if needed:
+    // Functions: []*entity.Function{bm25Function},
     
     // BM25 requires analyzer on content field.
     // Analyzer options (built-in):
@@ -268,12 +264,30 @@ docs := []*schema.Document{
     },
 }
 
-// Attach vector to document
+// Attach dense vector to document
 // Vector dimension must match the collection dimension
 vector := []float64{0.1, 0.2, ...} 
 docs[0].WithDenseVector(vector)
 
+// Attach sparse vector (optional, if Sparse is configured)
+// Sparse vectors are maps of index -> weight
+sparseVector := map[int]float64{
+    10: 0.5,
+    25: 0.8,
+}
+docs[0].WithSparseVector(sparseVector)
+
 ids, err := indexer.Store(ctx, docs)
+```
+
+For sparse vectors in BYOV mode, ensure your config uses `Method: milvus2.SparseMethodPrecomputed`:
+
+```go
+Sparse: &milvus2.SparseIndexerConfig{
+    VectorField: "sparse_vector",
+    MetricType:  milvus2.IP, // Or BM25 if applicable
+    Method:      milvus2.SparseMethodPrecomputed,
+},
 ```
 
 ## License
