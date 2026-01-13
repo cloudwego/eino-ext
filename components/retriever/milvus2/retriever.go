@@ -37,7 +37,6 @@ type RetrieverConfig struct {
 	Client *milvusclient.Client
 
 	// ClientConfig for creating Milvus client if Client is not provided.
-	// Supports both standard Milvus (Address) and Zilliz Cloud (URI + APIKey).
 	ClientConfig *milvusclient.ClientConfig
 
 	// Collection is the collection name in Milvus.
