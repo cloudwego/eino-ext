@@ -88,7 +88,7 @@ func main() {
 		fmt.Printf("Document %d:\n", i)
 		fmt.Printf("  ID: %s\n", doc.ID)
 		fmt.Printf("  Content: %s\n", doc.Content)
-		fmt.Printf("  MetaData: %v\n", doc.MetaData)
+		fmt.Printf("  Score: %v\n", doc.Score())
 	}
 }
 ```
@@ -127,9 +127,8 @@ mode := search_mode.NewApproximate(milvus2.COSINE)
 Search within a distance range.
 
 ```go
-mode := search_mode.NewRange(milvus2.L2).
-    WithRadius(0.5).        // Minimum distance
-    WithRangeFilter(1.0)    // Maximum distance
+mode := search_mode.NewRange(milvus2.L2, 0.5).
+    WithRangeFilter(1.0)    // Optional: Maximum distance
 ```
 
 ### Sparse Search (BM25)
@@ -187,9 +186,8 @@ retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 Batch-based traversal for large result sets.
 
 ```go
-mode := search_mode.NewIterator(milvus2.COSINE).
-    WithBatchSize(100).
-    WithLimit(1000)
+mode := search_mode.NewIterator(milvus2.COSINE, 100)
+// Use RetrieverConfig.TopK or retriever.WithTopK to set the total limit.
 ```
 
 ### Scalar Search

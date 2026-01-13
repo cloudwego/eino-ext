@@ -88,7 +88,7 @@ func main() {
 		fmt.Printf("Document %d:\n", i)
 		fmt.Printf("  ID: %s\n", doc.ID)
 		fmt.Printf("  Content: %s\n", doc.Content)
-		fmt.Printf("  MetaData: %v\n", doc.MetaData)
+		fmt.Printf("  Score: %v\n", doc.Score())
 	}
 }
 ```
@@ -127,9 +127,8 @@ mode := search_mode.NewApproximate(milvus2.COSINE)
 在指定距离范围内搜索。
 
 ```go
-mode := search_mode.NewRange(milvus2.L2).
-    WithRadius(0.5).        // 最小距离
-    WithRangeFilter(1.0)    // 最大距离
+mode := search_mode.NewRange(milvus2.L2, 0.5).
+    WithRangeFilter(1.0)    // 可选: 最大距离
 ```
 
 ### 稀疏搜索 (BM25)
@@ -187,9 +186,8 @@ retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 基于批次的遍历，适用于大结果集。
 
 ```go
-mode := search_mode.NewIterator(milvus2.COSINE).
-    WithBatchSize(100).
-    WithLimit(1000)
+mode := search_mode.NewIterator(milvus2.COSINE, 100)
+// 使用 RetrieverConfig.TopK 或 retriever.WithTopK 设置总限制。
 ```
 
 ### 标量搜索 (Scalar)

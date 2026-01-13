@@ -71,8 +71,8 @@ func main() {
 		Vector: &milvus2.VectorConfig{
 			Dimension:  1024, // 与 embedding 模型维度匹配
 			MetricType: milvus2.COSINE,
+			IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),
 		},
-		IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),
 		Embedding:    emb,
 	})
 	if err != nil {
