@@ -28,6 +28,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
@@ -219,8 +220,14 @@ type cacheConfig struct {
 	ExpireAt *int64
 }
 
+func (cm *ResponsesAPIChatModel) GetType() string {
+	return "ResponsesAPI"
+}
+
 func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outMsg *schema.Message, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+
 	options, specOptions, err := cm.getOptions(opts)
 	if err != nil {
 		return nil, err
@@ -288,7 +295,7 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 
 func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	options, specOptions, err := cm.getOptions(opts)
 	if err != nil {
 		return nil, err
