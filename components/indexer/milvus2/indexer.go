@@ -19,6 +19,7 @@ package milvus2
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
@@ -75,21 +76,13 @@ type IndexerConfig struct {
 	// Use NewHNSWIndexBuilder(), NewIVFFlatIndexBuilder(), etc. for specific index types.
 	IndexBuilder IndexBuilder
 
-	// SparseIndexBuilder specifies how to build the sparse vector index.
-	// Optional. If nil and SparseVectorField is set, uses SPARSE_INVERTED_INDEX by default.
-	SparseIndexBuilder IndexBuilder
+	// Sparse defines the configuration for sparse vector index.
+	// Optional.
+	Sparse *SparseIndexerConfig
 
 	// VectorField is the name of the vector field in the collection.
 	// Default: "vector"
 	VectorField string
-
-	// SparseVectorField is the name of the sparse vector field in the collection.
-	// Optional. If provided, the field will be created in the schema.
-	SparseVectorField string
-
-	// SparseMetricType is the metric type for sparse vector similarity.
-	// Default: IP (Inner Product). For BM25, use BM25.
-	SparseMetricType MetricType
 
 	// DocumentConverter converts EINO documents to Milvus columns.
 	// If nil, uses default conversion (id, content, vector, metadata as JSON).
@@ -107,6 +100,35 @@ type IndexerConfig struct {
 	// Key is field name, value is a map of parameter key-value pairs.
 	// Optional.
 	FieldParams map[string]map[string]string
+}
+
+// SparseMethod defines the method for sparse vector generation.
+type SparseMethod string
+
+const (
+	// SparseMethodBM25 indicates using Milvus built-in BM25 function to generate sparse vectors on server side.
+	SparseMethodBM25 SparseMethod = "BM25"
+	// SparseMethodClient indicates using client-provided sparse vectors (e.g. from document.SparseVector()).
+	SparseMethodClient SparseMethod = "Client"
+)
+
+// SparseIndexerConfig contains configuration for sparse vector index.
+type SparseIndexerConfig struct {
+	// IndexBuilder specifies how to build the sparse vector index.
+	// Optional. If nil, uses SPARSE_INVERTED_INDEX by default.
+	IndexBuilder IndexBuilder
+
+	// VectorField is the name of the sparse vector field in the collection.
+	// Required if Sparse is set.
+	VectorField string
+
+	// MetricType is the metric type for sparse vector similarity.
+	// Default: IP (Inner Product). For BM25, use BM25.
+	MetricType MetricType
+
+	// Method specifies the method for sparse vector generation.
+	// Optional. Default: SparseMethodBM25 if MetricType is BM25.
+	Method SparseMethod
 }
 
 // Indexer implements the indexer.Indexer interface for Milvus 2.x using the V2 SDK.
@@ -282,15 +304,55 @@ func (c *IndexerConfig) validate() error {
 		c.MetricType = L2
 	}
 	// Default VectorField only if we have a dense dimension or no sparse field.
-	// If Dimension is 0 and SparseVectorField is set, we assume sparse-only mode.
-	if c.VectorField == "" && (c.Dimension > 0 || c.SparseVectorField == "") {
+	// If Dimension is 0 and Sparse is set, we assume sparse-only mode.
+	if c.VectorField == "" && (c.Dimension > 0 || c.Sparse == nil) {
 		c.VectorField = defaultVectorField
 	}
-	if c.DocumentConverter == nil {
-		c.DocumentConverter = defaultDocumentConverter(c.VectorField, c.SparseVectorField)
+
+	if c.Sparse != nil {
+		if c.Sparse.VectorField == "" {
+			c.Sparse.VectorField = defaultSparseVectorField
+		}
+		if c.Sparse.MetricType == "" {
+			c.Sparse.MetricType = BM25
+		}
+		// Default to BM25 method if MetricType is BM25 and Method is not specified
+		if c.Sparse.MetricType == BM25 && c.Sparse.Method == "" {
+			c.Sparse.Method = SparseMethodBM25
+		}
 	}
-	if c.SparseMetricType == "" {
-		c.SparseMetricType = IP
+
+	// Auto-generate BM25 function if needed
+	if c.Sparse != nil && c.Sparse.Method == SparseMethodBM25 {
+		hasSparseFunc := false
+		for _, fn := range c.Functions {
+			for _, output := range fn.OutputFieldNames {
+				if output == c.Sparse.VectorField {
+					hasSparseFunc = true
+					break
+				}
+			}
+			if hasSparseFunc {
+				break
+			}
+		}
+
+		if !hasSparseFunc {
+			bm25Fn := entity.NewFunction().
+				WithName("bm25_auto").
+				WithType(entity.FunctionTypeBM25).
+				WithInputFields(defaultContentField).
+				WithOutputFields(c.Sparse.VectorField)
+			c.Functions = append(c.Functions, bm25Fn)
+		}
+	}
+
+	if c.DocumentConverter == nil {
+		sparseField := ""
+		if c.Sparse != nil && c.Sparse.Method == SparseMethodClient {
+			sparseField = c.Sparse.VectorField
+		}
+		c.DocumentConverter = defaultDocumentConverter(c.VectorField, sparseField)
 	}
 	return nil
 }
@@ -337,16 +399,16 @@ func createCollection(ctx context.Context, cli *milvusclient.Client, conf *Index
 			WithDim(conf.Dimension)
 		applyParams(vecField, conf.VectorField)
 		sch.WithField(vecField)
-	} else if conf.SparseVectorField == "" {
+	} else if conf.Sparse == nil {
 		// Should not happen if validation passed, but safety check: at least one vector field required
 		return fmt.Errorf("[NewIndexer] at least one vector field (dense or sparse) is required")
 	}
 
-	if conf.SparseVectorField != "" {
+	if conf.Sparse != nil {
 		sparseField := entity.NewField().
-			WithName(conf.SparseVectorField).
+			WithName(conf.Sparse.VectorField).
 			WithDataType(entity.FieldTypeSparseVector)
-		applyParams(sparseField, conf.SparseVectorField)
+		applyParams(sparseField, conf.Sparse.VectorField)
 		sch.WithField(sparseField)
 	}
 
@@ -387,15 +449,15 @@ func createIndex(ctx context.Context, cli *milvusclient.Client, conf *IndexerCon
 		}
 	}
 
-	if conf.SparseVectorField != "" {
+	if conf.Sparse != nil {
 		var sparseIdx index.Index
-		if conf.SparseIndexBuilder != nil {
-			sparseIdx = conf.SparseIndexBuilder.Build(conf.SparseMetricType)
+		if conf.Sparse.IndexBuilder != nil {
+			sparseIdx = conf.Sparse.IndexBuilder.Build(conf.Sparse.MetricType)
 		} else {
-			sparseIdx = NewSparseInvertedIndexBuilder().Build(conf.SparseMetricType)
+			sparseIdx = NewSparseInvertedIndexBuilder().Build(conf.Sparse.MetricType)
 		}
 
-		createSparseIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.SparseVectorField, sparseIdx)
+		createSparseIndexOpt := milvusclient.NewCreateIndexOption(conf.Collection, conf.Sparse.VectorField, sparseIdx)
 
 		createTask, err := cli.CreateIndex(ctx, createSparseIndexOpt)
 		if err != nil {
@@ -417,6 +479,7 @@ func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx co
 		contents := make([]string, 0, len(docs))
 		vecs := make([][]float32, 0, len(docs))
 		metadatas := make([][]byte, 0, len(docs))
+		sparseVecs := make([]entity.SparseEmbedding, 0, len(docs))
 
 		for idx, doc := range docs {
 			ids = append(ids, doc.ID)
@@ -430,7 +493,6 @@ func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx co
 			}
 
 			// Dense vector is required when vectorField is set (dense-only or hybrid mode).
-			// For sparse-only mode (e.g. BM25), vectorField is empty so this block is skipped.
 			if vectorField != "" {
 				if len(sourceVec) == 0 {
 					return nil, fmt.Errorf("vector data missing for document %d (id: %s)", idx, doc.ID)
@@ -442,16 +504,20 @@ func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx co
 				vecs = append(vecs, vec)
 			}
 
+			if sparseVectorField != "" {
+				sv := doc.SparseVector()
+				se, err := toMilvusSparseEmbedding(sv)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert sparse vector for document %d: %w", idx, err)
+				}
+				sparseVecs = append(sparseVecs, se)
+			}
+
 			metadata, err := sonic.Marshal(doc.MetaData)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal metadata: %w", err)
 			}
 			metadatas = append(metadatas, metadata)
-		}
-
-		dim := 0
-		if len(vecs) > 0 {
-			dim = len(vecs[0])
 		}
 
 		columns := []column.Column{
@@ -461,11 +527,46 @@ func defaultDocumentConverter(vectorField, sparseVectorField string) func(ctx co
 		}
 
 		if vectorField != "" {
+			dim := 0
+			if len(vecs) > 0 {
+				dim = len(vecs[0])
+			}
 			columns = append(columns, column.NewColumnFloatVector(vectorField, dim, vecs))
+		}
+
+		if sparseVectorField != "" {
+			// SparseFloatVector column does not typically require specific dimension argument in insert
+			columns = append(columns, column.NewColumnSparseVectors(sparseVectorField, sparseVecs))
 		}
 
 		return columns, nil
 	}
+}
+
+func toMilvusSparseEmbedding(sv map[int]float64) (entity.SparseEmbedding, error) {
+	if len(sv) == 0 {
+		return entity.NewSliceSparseEmbedding([]uint32{}, []float32{})
+	}
+
+	indices := make([]int, 0, len(sv))
+	for k := range sv {
+		indices = append(indices, k)
+	}
+
+	sort.Ints(indices)
+
+	uint32Indices := make([]uint32, len(indices))
+	values := make([]float32, len(indices))
+
+	for i, idx := range indices {
+		if idx < 0 {
+			return nil, fmt.Errorf("negative sparse index: %d", idx)
+		}
+		uint32Indices[i] = uint32(idx)
+		values[i] = float32(sv[idx])
+	}
+
+	return entity.NewSliceSparseEmbedding(uint32Indices, values)
 }
 
 // makeEmbeddingCtx creates a context with embedding callback information.

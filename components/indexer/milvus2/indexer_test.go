@@ -97,17 +97,52 @@ func TestIndexerConfig_validate(t *testing.T) {
 			convey.So(config.DocumentConverter, convey.ShouldNotBeNil)
 		})
 
-		PatchConvey("test valid config preserves custom sparse vector field", func() {
+		PatchConvey("test valid config sets defaults (sparse)", func() {
 			config := &IndexerConfig{
-				ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:        "my_collection",
-				Embedding:         mockEmb,
-				Dimension:         256,
-				SparseVectorField: "my_sparse_vector",
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "default_sparse",
+				Embedding:    mockEmb,
+				Dimension:    256,
+				Sparse:       &SparseIndexerConfig{}, // Empty config
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(config.SparseVectorField, convey.ShouldEqual, "my_sparse_vector")
+			convey.So(config.Sparse.VectorField, convey.ShouldEqual, defaultSparseVectorField)
+			convey.So(config.Sparse.MetricType, convey.ShouldEqual, BM25)
+		})
+
+		PatchConvey("test valid config preserves custom sparse vector field", func() {
+			config := &IndexerConfig{
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "my_collection",
+				Embedding:    mockEmb,
+				Dimension:    256,
+				Sparse: &SparseIndexerConfig{
+					VectorField: "my_sparse_vector",
+				},
+			}
+			err := config.validate()
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(config.Sparse.VectorField, convey.ShouldEqual, "my_sparse_vector")
+			convey.So(config.Sparse.MetricType, convey.ShouldEqual, BM25) // Default to BM25
+			convey.So(len(config.Functions), convey.ShouldEqual, 1)       // Auto-generated function
+		})
+
+		PatchConvey("test explicit IP metric type", func() {
+			config := &IndexerConfig{
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "my_collection",
+				Embedding:    mockEmb,
+				Dimension:    256,
+				Sparse: &SparseIndexerConfig{
+					VectorField: "my_sparse_vector",
+					MetricType:  IP,
+				},
+			}
+			err := config.validate()
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(config.Sparse.MetricType, convey.ShouldEqual, IP)
+			convey.So(len(config.Functions), convey.ShouldEqual, 0) // No auto-generated function
 		})
 
 		PatchConvey("test valid config preserves custom values", func() {
@@ -132,16 +167,119 @@ func TestIndexerConfig_validate(t *testing.T) {
 
 		PatchConvey("test sparse-only config", func() {
 			config := &IndexerConfig{
-				ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:        "sparse_only",
-				Embedding:         mockEmb,
-				Dimension:         0, // No dense dimension
-				SparseVectorField: "s_vec",
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "sparse_only",
+				Embedding:    mockEmb,
+				Dimension:    0, // No dense dimension
+				Sparse: &SparseIndexerConfig{
+					VectorField: "s_vec",
+				},
 			}
 			err := config.validate()
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(config.VectorField, convey.ShouldBeEmpty) // Should NOT be defaulted
-			convey.So(config.SparseVectorField, convey.ShouldEqual, "s_vec")
+			convey.So(config.Sparse.VectorField, convey.ShouldEqual, "s_vec")
+		})
+
+		PatchConvey("test auto-generate BM25 function (Default)", func() {
+			mockEmb := &mockEmbedding{}
+			config := &IndexerConfig{
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "auto_bm25",
+				Embedding:    mockEmb,
+				Dimension:    128,
+				Sparse: &SparseIndexerConfig{
+					VectorField: "sparse",
+					MetricType:  BM25,
+					// Method defaults to BM25
+				},
+			}
+
+			err := config.validate()
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(config.Sparse.Method, convey.ShouldEqual, SparseMethodBM25)
+			convey.So(len(config.Functions), convey.ShouldEqual, 1)
+			fn := config.Functions[0]
+			convey.So(fn.Name, convey.ShouldEqual, "bm25_auto")
+			convey.So(fn.Type, convey.ShouldEqual, entity.FunctionTypeBM25)
+			convey.So(fn.OutputFieldNames[0], convey.ShouldEqual, "sparse")
+		})
+
+		PatchConvey("test explicit SparseMethodClient (No Auto-Gen)", func() {
+			mockEmb := &mockEmbedding{}
+			config := &IndexerConfig{
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "client_sparse",
+				Embedding:    mockEmb,
+				Dimension:    128,
+				Sparse: &SparseIndexerConfig{
+					VectorField: "sparse",
+					MetricType:  BM25,
+					Method:      SparseMethodClient,
+				},
+			}
+
+			err := config.validate()
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(config.Sparse.Method, convey.ShouldEqual, SparseMethodClient)
+			// Should NOT generate function
+			convey.So(len(config.Functions), convey.ShouldEqual, 0)
+		})
+
+		PatchConvey("test custom BM25 function (Suppresses Auto-Gen)", func() {
+			mockEmb := &mockEmbedding{}
+			customFn := entity.NewFunction().
+				WithName("bm25_custom").
+				WithType(entity.FunctionTypeBM25).
+				WithInputFields(defaultContentField).
+				WithOutputFields("sparse") // Targets the sparse field
+
+			config := &IndexerConfig{
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "custom_bm25",
+				Embedding:    mockEmb,
+				Dimension:    128,
+				Sparse: &SparseIndexerConfig{
+					VectorField: "sparse",
+					Method:      SparseMethodBM25,
+				},
+				Functions: []*entity.Function{customFn},
+			}
+
+			err := config.validate()
+			convey.So(err, convey.ShouldBeNil)
+			// Should NOT generate auto function, so count remains 1
+			convey.So(len(config.Functions), convey.ShouldEqual, 1)
+			convey.So(config.Functions[0].Name, convey.ShouldEqual, "bm25_custom")
+		})
+
+		PatchConvey("test unrelated function (Allows Auto-Gen)", func() {
+			mockEmb := &mockEmbedding{}
+			otherFn := entity.NewFunction().
+				WithName("other_fn").
+				WithType(entity.FunctionTypeUnknown).
+				WithInputFields("other_col").
+				WithOutputFields("other_out")
+
+			config := &IndexerConfig{
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "mixed_functions",
+				Embedding:    mockEmb,
+				Dimension:    128,
+				Sparse: &SparseIndexerConfig{
+					VectorField: "sparse",
+					Method:      SparseMethodBM25,
+				},
+				Functions: []*entity.Function{otherFn},
+			}
+
+			err := config.validate()
+			convey.So(err, convey.ShouldBeNil)
+			// Should generate auto function, so count becomes 2
+			convey.So(len(config.Functions), convey.ShouldEqual, 2)
+			// First is custom, second is auto
+			convey.So(config.Functions[0].Name, convey.ShouldEqual, "other_fn")
+			convey.So(config.Functions[1].Name, convey.ShouldEqual, "bm25_auto")
 		})
 	})
 }
@@ -374,9 +512,10 @@ func TestDefaultDocumentConverter(t *testing.T) {
 
 			columns, err := converter(ctx, docs, vectors)
 			convey.So(err, convey.ShouldBeNil)
-			// Sparse vector is generated server-side, so only 4 columns returned
-			convey.So(len(columns), convey.ShouldEqual, 4)
-			convey.So(columns[3].Name(), convey.ShouldEqual, defaultVectorField)
+			// Now returns 5 columns: id, content, metadata, dense_vector, sparse_vector
+			convey.So(len(columns), convey.ShouldEqual, 5)
+			convey.So(columns[4].Name(), convey.ShouldEqual, "sparse_vector")
 		})
+
 	})
 }

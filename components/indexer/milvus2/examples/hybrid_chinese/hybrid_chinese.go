@@ -24,7 +24,6 @@ import (
 	"github.com/cloudwego/eino-ext/components/indexer/milvus2"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
-	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
@@ -44,14 +43,6 @@ func main() {
 	ctx := context.Background()
 	collectionName := "eino_hybrid_chinese"
 	milvusAddr := "localhost:19530"
-
-	// Define BM25 function: reads from "content", outputs to sparse_vector
-	sparseField := "sparse_vector"
-	bm25Function := entity.NewFunction().
-		WithName("bm25_fn").
-		WithType(entity.FunctionTypeBM25).
-		WithInputFields("content").
-		WithOutputFields(sparseField)
 
 	// Create indexer with Chinese analyzer
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
@@ -74,10 +65,12 @@ func main() {
 				"analyzer_params": `{"type": "chinese"}`, // Use Chinese analyzer
 			},
 		},
-		Functions:         []*entity.Function{bm25Function},
-		SparseVectorField: sparseField,
-		SparseMetricType:  milvus2.BM25,
-		Embedding:         &mockEmbedding{dim: 128},
+		// Functions: Auto-generated for BM25 when Sparse is set
+		Sparse: &milvus2.SparseIndexerConfig{
+			VectorField: "sparse_vector",
+			MetricType:  milvus2.BM25,
+		},
+		Embedding: &mockEmbedding{dim: 128},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create indexer: %v", err)
