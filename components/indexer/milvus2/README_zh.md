@@ -9,11 +9,12 @@
 ## 功能特性
 
 - **Milvus V2 SDK**: 使用最新的 `milvus-io/milvus/client/v2` SDK
-- **自动集合管理**: 按需自动创建集合和索引
-- **稀疏向量支持**: 支持服务器端函数（如 BM25）自动生成稀疏向量
-- **字段分析**: 支持文本字段的分析器配置 (Configurable analyzers)
-- **灵活的索引类型**: 支持多种索引构建器（Auto, HNSW, IVF_FLAT, FLAT 等）
-- **自定义文档转换**: 可配置的文档到列转换
+- **灵活的索引类型**: 支持多种索引构建器，包括 Auto, HNSW, IVF 系列, SCANN, DiskANN, GPU 索引以及 RaBitQ (Milvus 2.6+)
+- **混合搜索就绪**: 原生支持稀疏向量 (BM25/SPLADE) 与稠密向量的混合存储
+- **服务端向量生成**: 使用 Milvus Functions (BM25) 自动生成稀疏向量
+- **自动化管理**: 自动处理集合 Schema 创建、索引构建和加载
+- **字段分析**: 可配置的文本分析器（支持中文 Jieba、英文、Standard 等）
+- **自定义文档转换**: Eino 文档到 Milvus 列的灵活映射
 
 ## 安装
 

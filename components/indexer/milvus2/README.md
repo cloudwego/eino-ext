@@ -9,11 +9,12 @@ This package provides a Milvus 2.x (V2 SDK) indexer implementation for the EINO 
 ## Features
 
 - **Milvus V2 SDK**: Uses the latest `milvus-io/milvus/client/v2` SDK
-- **Auto Collection Management**: Automatically creates collections and indexes when needed
-- **Sparse Vector Support**: Support for server-side functions (e.g., BM25) for automatic sparse vector generation
-- **Field Analysis**: Configurable analyzers for text fields
-- **Flexible Index Types**: Supports multiple index builders (Auto, HNSW, IVF_FLAT, FLAT, etc.)
-- **Custom Document Conversion**: Configurable document-to-column conversion
+- **Flexible Index Types**: Supports comprehensive index types including Auto, HNSW, IVF variants, SCANN, DiskANN, GPU indexes, and RaBitQ (Milvus 2.6+)
+- **Hybrid Search Ready**: Native support for Sparse Vectors (BM25/SPLADE) alongside Dense Vectors
+- **Service-side Vector Generation**: Automatically generate sparse vectors using Milvus Functions (BM25)
+- **Auto Management**: Handles collection schema creation, index building, and loading automatically
+- **Field Analysis**: Configurable text analyzers (English, Chinese, Standard, etc.)
+- **Custom Document Conversion**: Flexible mapping from Eino documents to Milvus columns
 
 ## Installation
 
