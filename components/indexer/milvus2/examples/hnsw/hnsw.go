@@ -45,6 +45,7 @@ func main() {
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_hnsw",
+		VectorField:  "vector",
 		Dimension:    128,
 		MetricType:   milvus2.COSINE,
 		IndexBuilder: milvus2.NewHNSWIndexBuilder().

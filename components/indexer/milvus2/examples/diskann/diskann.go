@@ -44,6 +44,7 @@ func main() {
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_diskann",
+		VectorField:  "vector",
 		Dimension:    128,
 		MetricType:   milvus2.L2,
 		IndexBuilder: milvus2.NewDiskANNIndexBuilder(),

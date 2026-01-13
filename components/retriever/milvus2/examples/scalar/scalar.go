@@ -52,6 +52,7 @@ func main() {
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   collectionName,
 		TopK:         10,
+		VectorField:  "vector",
 		OutputFields: []string{"content", "metadata"},
 		SearchMode:   search_mode.NewScalar(),
 		Embedding:    &mockEmbedding{dim: dim},

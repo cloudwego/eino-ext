@@ -54,6 +54,7 @@ func main() {
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_hnsw", // Using collection from hnsw example
+		VectorField:  "vector",
 		OutputFields: []string{"id", "content", "metadata"},
 		TopK:         100, // TopK behaves as a limit for range search results
 		SearchMode:   search_mode.NewRange(milvus2.COSINE, 0.99),

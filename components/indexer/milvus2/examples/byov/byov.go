@@ -52,9 +52,10 @@ func main() {
 	// Create Indexer WITHOUT an Embedder
 	// This configuration allows "Bring Your Own Vectors" (BYOV)
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
-		Client:     cli,
-		Collection: collectionName,
-		Dimension:  int64(dim),
+		Client:      cli,
+		Collection:  collectionName,
+		VectorField: "vector",
+		Dimension:   int64(dim),
 		// Embedding field is omitted/nil
 	})
 	if err != nil {

@@ -49,6 +49,7 @@ func main() {
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_hnsw", // Uses collection created by indexer/hnsw example
+		VectorField:  "vector",
 		OutputFields: []string{"id", "content", "metadata"},
 		TopK:         5,
 		SearchMode:   search_mode.NewApproximate(milvus2.COSINE),

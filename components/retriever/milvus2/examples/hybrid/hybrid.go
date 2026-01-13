@@ -82,13 +82,14 @@ func main() {
 	// Create Retriever
 	// Only dense embedding needed - sparse (BM25) is handled server-side
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
-		ClientConfig: &milvusclient.ClientConfig{Address: addr},
-		Collection:   collectionName,
-		VectorField:  "vector",
-		OutputFields: []string{"id", "content", "metadata"},
-		TopK:         5,
-		SearchMode:   hybridMode,
-		Embedding:    &mockDenseEmbedding{dim: 128},
+		ClientConfig:      &milvusclient.ClientConfig{Address: addr},
+		Collection:        collectionName,
+		VectorField:       "vector",
+		SparseVectorField: sparseField,
+		OutputFields:      []string{"id", "content", "metadata"},
+		TopK:              5,
+		SearchMode:        hybridMode,
+		Embedding:         &mockDenseEmbedding{dim: 128},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create retriever: %v", err)

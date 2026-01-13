@@ -96,6 +96,7 @@ func main() {
 	indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
 		Client:       cli,
 		Collection:   collectionName,
+		VectorField:  "vector",
 		Dimension:    int64(dim),
 		MetricType:   milvus2.COSINE,
 		IndexBuilder: milvus2.NewHNSWIndexBuilder().WithM(16).WithEfConstruction(200),

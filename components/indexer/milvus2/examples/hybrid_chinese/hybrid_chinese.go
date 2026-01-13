@@ -49,8 +49,9 @@ func main() {
 		ClientConfig: &milvusclient.ClientConfig{
 			Address: milvusAddr,
 		},
-		Collection: collectionName,
-		Dimension:  128, // Dense vector dimension
+		Collection:  collectionName,
+		VectorField: "vector",
+		Dimension:   128, // Dense vector dimension
 
 		// BM25 requires analyzer on content field.
 		// Analyzer options (built-in):

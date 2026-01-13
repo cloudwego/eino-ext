@@ -49,6 +49,7 @@ func main() {
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   collectionName,
+		VectorField:  "vector",
 		OutputFields: []string{"id", "content", "category"},
 		TopK:         10,
 		SearchMode:   search_mode.NewApproximate(milvus2.COSINE),
