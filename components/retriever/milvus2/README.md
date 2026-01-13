@@ -131,6 +131,14 @@ mode := search_mode.NewRange(milvus2.L2).
     WithRangeFilter(1.0)    // Maximum distance
 ```
 
+### Sparse Search (BM25)
+
+Sparse-only search using BM25. Requires Milvus 2.5+ with sparse vector fields and enabled Functions.
+
+```go
+mode := search_mode.NewSparse(milvus2.BM25)
+```
+
 ### Hybrid Search (Dense + Sparse)
 
 Multi-vector search combining dense and sparse vectors with result reranking. Requires a collection with both dense and sparse vector fields (see indexer sparse example).

@@ -93,6 +93,18 @@ func TestRetrieverConfig_validate(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 		})
 
+		convey.Convey("test optional embedding with SparseSearchMode", func() {
+			mockSSMode := &mockSparseSearchMode{}
+			config := &RetrieverConfig{
+				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
+				Collection:   "test_collection",
+				Embedding:    nil, // Valid for SparseSearchMode
+				SearchMode:   mockSSMode,
+			}
+			err := config.validate()
+			convey.So(err, convey.ShouldBeNil)
+		})
+
 		convey.Convey("test missing embedding for vector search", func() {
 			config := &RetrieverConfig{
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
@@ -481,6 +493,23 @@ func (m *mockIteratorSearchMode) BuildSearchIteratorOption(ctx context.Context, 
 }
 
 func (m *mockIteratorSearchMode) BuildSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
+	return nil, nil
+}
+
+// mockSparseSearchMode implements SparseSearchMode for testing
+type mockSparseSearchMode struct {
+	err error
+}
+
+func (m *mockSparseSearchMode) BuildSparseSearchOption(ctx context.Context, config *RetrieverConfig, query string, opts ...retriever.Option) (milvusclient.SearchOption, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	// Return a dummy option
+	return milvusclient.NewSearchOption(config.Collection, 10, []entity.Vector{entity.Text(query)}), nil
+}
+
+func (m *mockSparseSearchMode) BuildSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
 	return nil, nil
 }
 

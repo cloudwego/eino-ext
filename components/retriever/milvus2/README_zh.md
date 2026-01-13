@@ -131,6 +131,14 @@ mode := search_mode.NewRange(milvus2.L2).
     WithRangeFilter(1.0)    // 最大距离
 ```
 
+### 稀疏搜索 (BM25)
+
+使用 BM25 进行纯稀疏向量搜索。需要 Milvus 2.5+ 支持稀疏向量字段并启用 Functions。
+
+```go
+mode := search_mode.NewSparse(milvus2.BM25)
+```
+
 ### 混合搜索 (Hybrid - 稠密 + 稀疏)
 
 结合稠密向量和稀疏向量的多向量搜索，支持结果重排序。需要一个同时包含稠密和稀疏向量字段的集合（参见 indexer sparse 示例）。

@@ -54,3 +54,11 @@ type IteratorSearchMode interface {
 	// BuildSearchIteratorOption creates a SearchIteratorOption for batch-based result traversal.
 	BuildSearchIteratorOption(ctx context.Context, conf *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchIteratorOption, error)
 }
+
+// SparseSearchMode defines the interface for sparse-only vector search.
+// It supports search using raw text input (e.g. BM25 function) without dense embeddings.
+type SparseSearchMode interface {
+	SearchMode
+	// BuildSparseSearchOption creates a SearchOption using text query for sparse search.
+	BuildSparseSearchOption(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (milvusclient.SearchOption, error)
+}

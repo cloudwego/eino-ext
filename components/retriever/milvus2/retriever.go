@@ -178,6 +178,8 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		docs, err = r.retrieveHybrid(ctx, sm, co, query, opts...)
 	case IteratorSearchMode:
 		docs, err = r.retrieveIterator(ctx, sm, co, query, opts...)
+	case SparseSearchMode:
+		docs, err = r.retrieveSparse(ctx, sm, co, query, opts...)
 	default:
 		docs, err = r.retrieveStandard(ctx, co, query, opts...)
 	}
@@ -209,17 +211,12 @@ func (r *Retriever) retrieveQuery(ctx context.Context, mode QuerySearchMode, que
 
 // retrieveHybrid handles HybridSearchMode.
 func (r *Retriever) retrieveHybrid(ctx context.Context, mode HybridSearchMode, co *retriever.Options, query string, opts ...retriever.Option) ([]*schema.Document, error) {
-	var queryVector []float32
-	if r.config.Embedding != nil {
-		var err error
-		queryVector, err = r.embedQuery(ctx, co.Embedding, query)
-		if err != nil {
-			return nil, err
-		}
+	queryVector, err := r.embedQuery(ctx, co.Embedding, query)
+	if err != nil {
+		return nil, err
 	}
 
 	// For sparse vectors with Milvus Function (BM25), we pass the raw query string.
-	// The underlying search mode implementation should handle passing this string to the AnnRequest.
 
 	searchOpt, err := mode.BuildHybridSearchOption(ctx, r.config, queryVector, query, opts...)
 	if err != nil {
@@ -275,6 +272,27 @@ func (r *Retriever) retrieveIterator(ctx context.Context, mode IteratorSearchMod
 	}
 
 	return allDocs, nil
+}
+
+// retrieveSparse handles SparseSearchMode (sparse-only search via text/BM25).
+func (r *Retriever) retrieveSparse(ctx context.Context, mode SparseSearchMode, co *retriever.Options, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	// Improve: Sparse search (BM25) uses raw text, so no embedding is needed here.
+	// The Milvus Function will handle vector generation server-side.
+
+	searchOpt, err := mode.BuildSparseSearchOption(ctx, r.config, query, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("[Retriever] failed to build sparse search option: %w", err)
+	}
+
+	results, err := r.client.Search(ctx, searchOpt)
+	if err != nil {
+		return nil, fmt.Errorf("[Retriever] sparse search failed: %w", err)
+	}
+	if len(results) == 0 {
+		return []*schema.Document{}, nil
+	}
+
+	return r.config.DocumentConverter(ctx, results[0])
 }
 
 // retrieveStandard handles standard SearchMode (Approximate, Range, etc.).
@@ -403,10 +421,13 @@ func (c *RetrieverConfig) validate() error {
 		return fmt.Errorf("[NewRetriever] search mode not provided")
 	}
 	if c.Embedding == nil {
-		// Embedding is required unless the search mode is QuerySearchMode (scalar filtering only).
-		if _, ok := c.SearchMode.(QuerySearchMode); !ok {
+		switch c.SearchMode.(type) {
+		case QuerySearchMode, SparseSearchMode:
+			// Allowed: QuerySearchMode doesn't require embeddings
+			// Allowed: SparseSearchMode uses raw text for function-based search (BM25)
+		default:
 			return fmt.Errorf("[NewRetriever] embedding not provided; it is required for vector search modes. " +
-				"Please provide an Embedding or use QuerySearchMode for metadata-only filtering")
+				"Please provide an Embedding, or use QuerySearchMode (metadata-only) or SparseSearchMode (text-only)")
 		}
 	}
 	if c.Collection == "" {
