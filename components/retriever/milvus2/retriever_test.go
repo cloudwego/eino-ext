@@ -248,10 +248,10 @@ func TestRetriever_applyScoreThreshold(t *testing.T) {
 		}
 
 		docs := []*schema.Document{
-			{ID: "doc1", MetaData: map[string]interface{}{"score": float64(0.9)}},
-			{ID: "doc2", MetaData: map[string]interface{}{"score": float64(0.7)}},
-			{ID: "doc3", MetaData: map[string]interface{}{"score": float64(0.5)}},
-			{ID: "doc4", MetaData: map[string]interface{}{"score": float64(0.3)}},
+			(&schema.Document{ID: "doc1"}).WithScore(0.9),
+			(&schema.Document{ID: "doc2"}).WithScore(0.7),
+			(&schema.Document{ID: "doc3"}).WithScore(0.5),
+			(&schema.Document{ID: "doc4"}).WithScore(0.3),
 		}
 
 		convey.Convey("test nil threshold returns all docs", func() {
@@ -282,7 +282,7 @@ func TestRetriever_applyScoreThreshold(t *testing.T) {
 		convey.Convey("test with missing score in metadata", func() {
 			docsNoScore := []*schema.Document{
 				{ID: "doc1", MetaData: map[string]interface{}{}},
-				{ID: "doc2", MetaData: map[string]interface{}{"score": float64(0.7)}},
+				(&schema.Document{ID: "doc2"}).WithScore(0.7),
 			}
 			threshold := 0.5
 			result := r.applyScoreThreshold(docsNoScore, &threshold)
@@ -653,13 +653,17 @@ func TestDocumentConverter(t *testing.T) {
 			// Check first doc
 			convey.So(docs[0].ID, convey.ShouldEqual, "1")
 			convey.So(docs[0].Content, convey.ShouldEqual, "doc1")
-			convey.So(docs[0].MetaData["score"], convey.ShouldAlmostEqual, 0.9, 0.0001)
+			convey.So(docs[0].Score(), convey.ShouldAlmostEqual, 0.9, 0.0001)
+			_, ok := docs[0].MetaData["score"]
+			convey.So(ok, convey.ShouldBeFalse)
 			convey.So(docs[0].MetaData["key"], convey.ShouldEqual, "val1")
 
 			// Check second doc
 			convey.So(docs[1].ID, convey.ShouldEqual, "2")
 			convey.So(docs[1].Content, convey.ShouldEqual, "doc2")
-			convey.So(docs[1].MetaData["score"], convey.ShouldAlmostEqual, 0.8, 0.0001)
+			convey.So(docs[1].Score(), convey.ShouldAlmostEqual, 0.8, 0.0001)
+			_, ok = docs[1].MetaData["score"]
+			convey.So(ok, convey.ShouldBeFalse)
 			convey.So(docs[1].MetaData["key"], convey.ShouldEqual, "val2")
 		})
 

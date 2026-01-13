@@ -462,7 +462,6 @@ func defaultDocumentConverter() func(ctx context.Context, result milvusclient.Re
 			}
 
 			if i < len(result.Scores) {
-				doc.MetaData["score"] = float64(result.Scores[i])
 				doc = doc.WithScore(float64(result.Scores[i]))
 			}
 
