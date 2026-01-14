@@ -123,11 +123,13 @@ mode := search_mode.NewApproximate(milvus2.COSINE)
 
 ### 范围搜索 (Range)
 
-在指定距离范围内搜索。
+在指定距离范围内搜索 (向量在 `Radius` 内)。
 
 ```go
+// L2: 距离 <= Radius
+// IP/Cosine: 分数 >= Radius
 mode := search_mode.NewRange(milvus2.L2, 0.5).
-    WithRangeFilter(1.0)    // 可选: 最大距离
+    WithRangeFilter(0.1) // 可选: 环形搜索的内边界
 ```
 
 ### 稀疏搜索 (BM25)
@@ -136,7 +138,9 @@ mode := search_mode.NewRange(milvus2.L2, 0.5).
 
 ```go
 // 纯稀疏搜索 (BM25) 需要指定 OutputFields 以获取内容
+// MetricType: BM25 (默认) 或 IP
 mode := search_mode.NewSparse(milvus2.BM25)
+
 // 在配置中，使用 "*" 或特定字段以确保返回内容:
 // OutputFields: []string{"*"}
 ```
@@ -172,12 +176,13 @@ hybridMode := search_mode.NewHybrid(
 
 // 创建 retriever (稀疏向量生成由 Milvus Function 服务器端处理)
 retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
-    ClientConfig:    &milvusclient.ClientConfig{Address: "localhost:19530"},
-    Collection:      "hybrid_collection",
-    VectorField:     "vector",
-    TopK:            5,
-    SearchMode:      hybridMode,
-    Embedding:       denseEmbedder,        // 稠密向量的标准 Embedder
+    ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
+    Collection:        "hybrid_collection",
+    VectorField:       "vector",             // 默认稠密字段
+    SparseVectorField: "sparse_vector",      // 默认稀疏字段
+    TopK:              5,
+    SearchMode:        hybridMode,
+    Embedding:         denseEmbedder,        // 稠密向量的标准 Embedder
 })
 ```
 
@@ -189,10 +194,11 @@ retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 > `Iterator` 模式的 `Retrieve` 方法会获取 **所有** 结果，直到达到总限制 (`TopK`) 或集合末尾。对于极大数据集，这可能会消耗大量内存。
 
 ```go
+// 100 是批次大小 (每次网络调用的条目数)
 mode := search_mode.NewIterator(milvus2.COSINE, 100).
     WithSearchParams(map[string]string{"nprobe": "10"})
 
-// 使用 RetrieverConfig.TopK 或 retriever.WithTopK 设置总限制 (IteratorLimit)。
+// 使用 RetrieverConfig.TopK 设置总限制 (IteratorLimit)。
 ```
 
 ### 标量搜索 (Scalar)

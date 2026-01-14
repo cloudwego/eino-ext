@@ -130,11 +130,13 @@ mode := search_mode.NewApproximate(milvus2.COSINE)
 
 ### Range Search
 
-Search within a distance range.
+Search within a distance range (vectors within `Radius`).
 
 ```go
+// L2: Distance <= Radius
+// IP/Cosine: Score >= Radius
 mode := search_mode.NewRange(milvus2.L2, 0.5).
-    WithRangeFilter(1.0)    // Optional: Maximum distance
+    WithRangeFilter(0.1) // Optional: Inner boundary for ring search
 ```
 
 ### Sparse Search (BM25)
@@ -143,7 +145,9 @@ Sparse-only search using BM25. Requires Milvus 2.5+ with sparse vector fields an
 
 ```go
 // OutputFields is required to retrieve content for sparse-only search (BM25)
+// MetricType: BM25 (default) or IP
 mode := search_mode.NewSparse(milvus2.BM25)
+
 // In config, use "*" or specific fields to ensure content is returned:
 // OutputFields: []string{"*"}
 ```
@@ -179,12 +183,13 @@ hybridMode := search_mode.NewHybrid(
 
 // Create retriever (Sparse embedding handled server-side by Milvus Function)
 retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
-    ClientConfig:    &milvusclient.ClientConfig{Address: "localhost:19530"},
-    Collection:      "hybrid_collection",
-    VectorField:     "vector",
-    TopK:            5,
-    SearchMode:      hybridMode,
-    Embedding:       denseEmbedder,        // Standard embedder for dense vectors
+    ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
+    Collection:        "hybrid_collection",
+    VectorField:       "vector",             // Default dense field
+    SparseVectorField: "sparse_vector",      // Default sparse field
+    TopK:              5,
+    SearchMode:        hybridMode,
+    Embedding:         denseEmbedder,        // Standard embedder for dense vectors
 })
 ```
 
@@ -196,10 +201,11 @@ Batch-based traversal for large result sets.
 > The `Retrieve` method in `Iterator` mode fetches **all** results until the total limit (`TopK`) or end-of-collection is reached. For extremely large datasets, this may consume significant memory.
 
 ```go
+// 100 is the batch size (items per network call)
 mode := search_mode.NewIterator(milvus2.COSINE, 100).
     WithSearchParams(map[string]string{"nprobe": "10"})
 
-// Use RetrieverConfig.TopK or retriever.WithTopK to set the total limit (IteratorLimit).
+// Use RetrieverConfig.TopK to set the total limit (IteratorLimit).
 ```
 
 ### Scalar Search
