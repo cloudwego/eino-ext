@@ -20,7 +20,9 @@ import (
 	"context"
 	"testing"
 
+	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 
@@ -95,7 +97,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				MetricType:  milvus2.L2,
 				TopK:        10,
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
@@ -128,7 +134,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				MetricType:  milvus2.L2,
 				TopK:        0, // Should default to 10
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
@@ -149,7 +159,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				MetricType:  milvus2.L2,
 				TopK:        10,
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, configWithPartitions, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
@@ -163,7 +177,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				MetricType:  milvus2.L2,
 				TopK:        10,
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "",
 				milvus2.WithFilter("id > 10"))
@@ -178,7 +196,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				MetricType:  milvus2.L2,
 				TopK:        10,
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 			hybrid.TopK = 50
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
@@ -194,7 +216,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				TopK:         10,
 				SearchParams: map[string]string{"nprobe": "16", "ef": "64"},
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "")
 			convey.So(err, convey.ShouldBeNil)
@@ -208,7 +234,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				MetricType:  milvus2.L2,
 				TopK:        10,
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "",
 				milvus2.WithGrouping("category", 3, true))
@@ -223,7 +253,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				MetricType:  milvus2.L2,
 				TopK:        10,
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2",
+				MetricType:  milvus2.IP,
+				TopK:        5,
+			})
 
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, queryVector, "",
 				retriever.WithTopK(100))
@@ -238,7 +272,11 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 				VectorType:  milvus2.SparseVector,
 				TopK:        10,
 			}
-			hybrid := NewHybrid(reranker, subReq)
+			hybrid := NewHybrid(reranker, subReq, &SubRequest{
+				VectorField: "vector2_sparse",
+				VectorType:  milvus2.SparseVector,
+				TopK:        5,
+			})
 
 			query := "test query"
 			opt, err := hybrid.BuildHybridSearchOption(ctx, config, nil, query)
@@ -252,5 +290,81 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 func TestHybrid_ImplementsSearchMode(t *testing.T) {
 	convey.Convey("test Hybrid implements SearchMode", t, func() {
 		var _ milvus2.SearchMode = (*Hybrid)(nil)
+	})
+}
+
+func TestHybridSearchTopK(t *testing.T) {
+	PatchConvey("Test Hybrid Search TopK Default", t, func() {
+		ctx := context.Background()
+		mockClient := &milvusclient.Client{}
+
+		// Mock Reranker
+		mockReranker := milvusclient.NewRRFReranker()
+
+		// Hybrid mode with no explicit TopK in SubRequest
+		hybridMode := NewHybrid(
+			mockReranker,
+			&SubRequest{
+				VectorField: "vector",
+				MetricType:  milvus2.L2,
+				// TopK is unset (0)
+			},
+			&SubRequest{
+				VectorField: "vector_sparse",
+				MetricType:  milvus2.IP,
+				// TopK is unset (0)
+			},
+		)
+
+		// We just need a config object to pass to BuildHybridSearchOption
+		// No need for a full Retriever instance since we are testing the SearchMode method directly
+		config := &milvus2.RetrieverConfig{
+			Collection:  "test_collection",
+			VectorField: "vector",
+			TopK:        50, // Global TopK > 10
+			SearchMode:  hybridMode,
+		}
+
+		convey.Convey("should use global TopK when SubRequest TopK is missing", func() {
+			Mock(GetMethod(mockClient, "HybridSearch")).Return([]milvusclient.ResultSet{}, nil).Build()
+
+			queryVector := make([]float32, 128)
+			opt, err := hybridMode.BuildHybridSearchOption(ctx, config, queryVector, "query")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(opt, convey.ShouldNotBeNil)
+
+			var capturedLimits []int
+			Mock(milvusclient.NewAnnRequest).To(func(fieldName string, limit int, vectors ...entity.Vector) *milvusclient.AnnRequest {
+				capturedLimits = append(capturedLimits, limit)
+				return &milvusclient.AnnRequest{}
+			}).Build()
+
+			Mock((*milvusclient.AnnRequest).WithSearchParam).To(func(r *milvusclient.AnnRequest, key string, value string) *milvusclient.AnnRequest {
+				return r
+			}).Build()
+
+			_, _ = hybridMode.BuildHybridSearchOption(ctx, config, queryVector, "query")
+
+			convey.So(capturedLimits, convey.ShouldContain, 50)
+		})
+
+		convey.Convey("should use explicit TopK when SubRequest TopK is set", func() {
+			hybridMode.SubRequests[0].TopK = 5
+
+			var capturedLimits []int
+			Mock(milvusclient.NewAnnRequest).To(func(fieldName string, limit int, vectors ...entity.Vector) *milvusclient.AnnRequest {
+				capturedLimits = append(capturedLimits, limit)
+				return &milvusclient.AnnRequest{}
+			}).Build()
+
+			Mock((*milvusclient.AnnRequest).WithSearchParam).To(func(r *milvusclient.AnnRequest, key string, value string) *milvusclient.AnnRequest {
+				return r
+			}).Build()
+
+			queryVector := make([]float32, 128)
+			_, _ = hybridMode.BuildHybridSearchOption(ctx, config, queryVector, "query")
+
+			convey.So(capturedLimits, convey.ShouldContain, 5)
+		})
 	})
 }
