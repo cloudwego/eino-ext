@@ -153,6 +153,7 @@ func TestRetrieverConfig_validate(t *testing.T) {
 			// Check defaults are set
 			convey.So(config.VectorField, convey.ShouldEqual, defaultVectorField)
 			convey.So(config.SparseVectorField, convey.ShouldEqual, defaultSparseVectorField)
+			convey.So(config.OutputFields, convey.ShouldResemble, []string{"*"})
 			convey.So(config.TopK, convey.ShouldEqual, defaultTopK)
 			convey.So(config.DocumentConverter, convey.ShouldNotBeNil)
 		})

@@ -435,6 +435,9 @@ func (c *RetrieverConfig) validate() error {
 	if c.SparseVectorField == "" {
 		c.SparseVectorField = defaultSparseVectorField
 	}
+	if len(c.OutputFields) == 0 {
+		c.OutputFields = []string{"*"}
+	}
 	if c.TopK <= 0 {
 		c.TopK = defaultTopK
 	}
