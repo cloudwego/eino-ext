@@ -48,6 +48,9 @@ func main() {
 	collectionName := "demo_milvus2"
 	dim := 128
 
+	// Create retriever with Scalar search mode
+	// Scalar uses the Query API (metadata filtering) instead of vector search.
+	// The query string is treated as a boolean filter expression.
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   collectionName,
@@ -55,7 +58,6 @@ func main() {
 		VectorField:  "vector",
 		OutputFields: []string{"content", "metadata"},
 		SearchMode:   search_mode.NewScalar(),
-		Embedding:    &mockEmbedding{dim: dim},
 	})
 	if err != nil {
 		log.Fatalf("Failed to create retriever: %v", err)

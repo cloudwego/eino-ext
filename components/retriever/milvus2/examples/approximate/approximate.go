@@ -46,6 +46,8 @@ func main() {
 	ctx := context.Background()
 
 	// Create a retriever for approximate nearest neighbor search
+	// SearchMode encapsulates the entire search execution logic including
+	// embedding, option building, and result conversion.
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_hnsw", // Uses collection created by indexer/hnsw example

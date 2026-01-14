@@ -46,17 +46,15 @@ func main() {
 	ctx := context.Background()
 
 	// 1. Create Retriever with Range Search
-	// We use COSINE similarity.
-	// - Similarity = 1.0 (Exact)
-	// - Similarity decreases as distance increases.
-	// Range Search with COSINE: finds vectors with Score >= Radius.
-	// Setting Radius = 0.99 means "very similar".
+	// Range search returns all vectors within a similarity/distance radius.
+	// For COSINE: radius is minimum similarity (0.99 = very similar).
+	// For L2: radius is maximum distance.
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   "demo_hnsw", // Using collection from hnsw example
 		VectorField:  "vector",
 		OutputFields: []string{"id", "content", "metadata"},
-		TopK:         100, // TopK behaves as a limit for range search results
+		TopK:         100, // TopK acts as a limit for range search results
 		SearchMode:   search_mode.NewRange(milvus2.COSINE, 0.99),
 		Embedding:    &mockEmbedding{dim: 128},
 	})

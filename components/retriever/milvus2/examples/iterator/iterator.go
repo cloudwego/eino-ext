@@ -50,6 +50,9 @@ func main() {
 	totalTopK := 25
 	batchSize := 10
 
+	// Create retriever with Iterator search mode
+	// Iterator fetches results in batches to handle large result sets efficiently.
+	// BatchSize controls how many items are fetched per network call.
 	retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{Address: addr},
 		Collection:   collectionName,

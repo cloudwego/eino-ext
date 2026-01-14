@@ -34,7 +34,9 @@ func main() {
 	collectionName := "eino_sparse_test"
 	milvusAddr := "localhost:19530"
 
-	// Create retriever
+	// Create retriever with Sparse search mode (BM25)
+	// Sparse mode sends raw text to Milvus for server-side BM25 processing.
+	// No Embedding is needed as the sparse vector is generated server-side.
 	r, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 		ClientConfig: &milvusclient.ClientConfig{
 			Address: milvusAddr,
@@ -44,7 +46,6 @@ func main() {
 		SearchMode:        search_mode.NewSparse(milvus2.BM25),
 		TopK:              3,
 		OutputFields:      []string{"*"},
-		// No Embedding needed for Sparse Search (BM25 uses text)
 	})
 	if err != nil {
 		log.Fatalf("Failed to create retriever: %v", err)
