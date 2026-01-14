@@ -18,9 +18,15 @@ package search_mode
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"testing"
 
+	. "github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 
 	milvus2 "github.com/cloudwego/eino-ext/components/retriever/milvus2"
@@ -163,4 +169,89 @@ func TestIterator_ImplementsSearchMode(t *testing.T) {
 	convey.Convey("test Iterator implements SearchMode", t, func() {
 		var _ milvus2.SearchMode = (*Iterator)(nil)
 	})
+}
+
+func TestIterator_Retrieve(t *testing.T) {
+	PatchConvey("test Iterator.Retrieve", t, func() {
+		ctx := context.Background()
+		mockClient := &milvusclient.Client{}
+		mockEmb := &mockIterEmbedding{}
+
+		config := &milvus2.RetrieverConfig{
+			Collection:   "test_collection",
+			VectorField:  "vector",
+			TopK:         10,
+			OutputFields: []string{"id", "content"},
+			Embedding:    mockEmb,
+		}
+
+		iter := NewIterator(milvus2.L2, 10)
+
+		PatchConvey("success", func() {
+			mockIt := &mockSearchIterator{
+				nextFunc: func(ctx context.Context) (milvusclient.ResultSet, error) {
+					return milvusclient.ResultSet{ResultCount: 1}, nil
+				},
+			}
+			// Use counter to return result then EOF
+			called := 0
+			mockIt.nextFunc = func(ctx context.Context) (milvusclient.ResultSet, error) {
+				if called == 0 {
+					called++
+					return milvusclient.ResultSet{ResultCount: 1}, nil
+				}
+				return milvusclient.ResultSet{}, io.EOF
+			}
+
+			Mock(GetMethod(mockClient, "SearchIterator")).Return(mockIt, nil).Build()
+
+			mockConverter := func(ctx context.Context, result milvusclient.ResultSet) ([]*schema.Document, error) {
+				return []*schema.Document{{ID: "1"}}, nil
+			}
+			config.DocumentConverter = mockConverter
+
+			docs, err := iter.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(len(docs), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("embedding error", func() {
+			mockEmb.err = fmt.Errorf("embed error")
+			docs, err := iter.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
+
+		PatchConvey("SearchIterator creation error", func() {
+			mockEmb.err = nil
+			Mock(GetMethod(mockClient, "SearchIterator")).Return(nil, fmt.Errorf("create iter error")).Build()
+
+			docs, err := iter.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
+	})
+}
+
+type mockSearchIterator struct {
+	nextFunc func(ctx context.Context) (milvusclient.ResultSet, error)
+}
+
+func (m *mockSearchIterator) Next(ctx context.Context) (milvusclient.ResultSet, error) {
+	if m.nextFunc != nil {
+		return m.nextFunc(ctx)
+	}
+	return milvusclient.ResultSet{}, io.EOF
+}
+
+// mockIterEmbedding implements embedding.Embedder for testing
+type mockIterEmbedding struct {
+	err error
+}
+
+func (m *mockIterEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return [][]float64{make([]float64, 128)}, nil
 }

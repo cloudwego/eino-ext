@@ -18,10 +18,13 @@ package search_mode
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	. "github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
@@ -367,4 +370,80 @@ func TestHybridSearchTopK(t *testing.T) {
 			convey.So(capturedLimits, convey.ShouldContain, 5)
 		})
 	})
+}
+
+func TestHybrid_Retrieve(t *testing.T) {
+	PatchConvey("test Hybrid.Retrieve", t, func() {
+		ctx := context.Background()
+		mockClient := &milvusclient.Client{}
+		mockEmb := &mockHybridEmbedding{}
+
+		config := &milvus2.RetrieverConfig{
+			Collection:   "test_collection",
+			VectorField:  "vector",
+			TopK:         10,
+			OutputFields: []string{"id", "content"},
+			Embedding:    mockEmb,
+		}
+
+		reranker := milvusclient.NewRRFReranker()
+		subReq1 := &SubRequest{
+			VectorField: "vector1",
+			MetricType:  milvus2.L2,
+			TopK:        10,
+		}
+		subReq2 := &SubRequest{
+			VectorField: "vector2",
+			MetricType:  milvus2.IP,
+			TopK:        5,
+		}
+		hybrid := NewHybrid(reranker, subReq1, subReq2)
+
+		PatchConvey("success", func() {
+			// Mock Client.HybridSearch
+			Mock(GetMethod(mockClient, "HybridSearch")).Return([]milvusclient.ResultSet{
+				{
+					ResultCount: 1,
+					IDs:         nil,
+				},
+			}, nil).Build()
+
+			mockConverter := func(ctx context.Context, result milvusclient.ResultSet) ([]*schema.Document, error) {
+				return []*schema.Document{{ID: "1"}}, nil
+			}
+			config.DocumentConverter = mockConverter
+
+			docs, err := hybrid.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(len(docs), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("embedding error", func() {
+			mockEmb.err = fmt.Errorf("embed error")
+			docs, err := hybrid.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
+
+		PatchConvey("search error", func() {
+			mockEmb.err = nil
+			Mock(GetMethod(mockClient, "HybridSearch")).Return(nil, fmt.Errorf("search error")).Build()
+
+			docs, err := hybrid.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
+	})
+}
+
+// mockHybridEmbedding implements embedding.Embedder for testing
+type mockHybridEmbedding struct {
+	err error
+}
+
+func (m *mockHybridEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return [][]float64{make([]float64, 128)}, nil
 }

@@ -18,9 +18,13 @@ package search_mode
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 
 	milvus2 "github.com/cloudwego/eino-ext/components/retriever/milvus2"
@@ -104,5 +108,44 @@ func TestScalar_BuildQueryOption(t *testing.T) {
 func TestScalar_ImplementsSearchMode(t *testing.T) {
 	convey.Convey("test Scalar implements SearchMode", t, func() {
 		var _ milvus2.SearchMode = (*Scalar)(nil)
+	})
+}
+
+func TestScalar_Retrieve(t *testing.T) {
+	PatchConvey("test Scalar.Retrieve", t, func() {
+		ctx := context.Background()
+		mockClient := &milvusclient.Client{}
+
+		config := &milvus2.RetrieverConfig{
+			Collection:   "test_collection",
+			VectorField:  "vector",
+			TopK:         10,
+			OutputFields: []string{"id", "content"},
+		}
+
+		scalar := NewScalar()
+
+		PatchConvey("success", func() {
+			Mock(GetMethod(mockClient, "Query")).Return(milvusclient.ResultSet{
+				ResultCount: 1,
+			}, nil).Build()
+
+			mockConverter := func(ctx context.Context, result milvusclient.ResultSet) ([]*schema.Document, error) {
+				return []*schema.Document{{ID: "1"}}, nil
+			}
+			config.DocumentConverter = mockConverter
+
+			docs, err := scalar.Retrieve(ctx, mockClient, config, "id > 10")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(len(docs), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("query error", func() {
+			Mock(GetMethod(mockClient, "Query")).Return(nil, fmt.Errorf("query error")).Build()
+
+			docs, err := scalar.Retrieve(ctx, mockClient, config, "id > 10")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
 	})
 }

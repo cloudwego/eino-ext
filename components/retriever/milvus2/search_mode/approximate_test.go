@@ -18,11 +18,16 @@ package search_mode
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 
+	. "github.com/bytedance/mockey"
 	milvus2 "github.com/cloudwego/eino-ext/components/retriever/milvus2"
 )
 
@@ -119,4 +124,84 @@ func TestApproximate_ImplementsSearchMode(t *testing.T) {
 	convey.Convey("test Approximate implements SearchMode", t, func() {
 		var _ milvus2.SearchMode = (*Approximate)(nil)
 	})
+}
+
+func TestApproximate_Retrieve(t *testing.T) {
+	PatchConvey("test Approximate.Retrieve", t, func() {
+		ctx := context.Background()
+		mockClient := &milvusclient.Client{}
+		mockEmb := &mockApproxEmbedding{}
+
+		config := &milvus2.RetrieverConfig{
+			Collection:   "test_collection",
+			VectorField:  "vector",
+			TopK:         10,
+			OutputFields: []string{"id", "content"},
+			Embedding:    mockEmb,
+		}
+
+		approx := NewApproximate(milvus2.L2)
+
+		PatchConvey("success", func() {
+			// Mock EmbedQuery implicitly by mocking EmbedStrings in mockEmbedding
+			// Or we assume EmbedQuery works (it's tested elsewhere)
+
+			// Mock Client.Search
+			Mock(GetMethod(mockClient, "Search")).Return([]milvusclient.ResultSet{
+				{
+					ResultCount: 1,
+					IDs:         nil, // Simplified
+				},
+			}, nil).Build()
+
+			// Mock DocumentConverter to avoid complex ResultSet construction
+			mockConverter := func(ctx context.Context, result milvusclient.ResultSet) ([]*schema.Document, error) {
+				return []*schema.Document{{ID: "1"}}, nil
+			}
+			config.DocumentConverter = mockConverter
+
+			docs, err := approx.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(len(docs), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("embedding error", func() {
+			mockEmb.err = fmt.Errorf("embed error")
+			docs, err := approx.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
+
+		PatchConvey("search error", func() {
+			// Restore embedding
+			mockEmb.err = nil
+
+			Mock(GetMethod(mockClient, "Search")).Return(nil, fmt.Errorf("search error")).Build()
+
+			docs, err := approx.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
+
+		PatchConvey("empty result", func() {
+			mockEmb.err = nil
+			Mock(GetMethod(mockClient, "Search")).Return([]milvusclient.ResultSet{}, nil).Build()
+
+			docs, err := approx.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(len(docs), convey.ShouldEqual, 0)
+		})
+	})
+}
+
+// mockApproxEmbedding implements embedding.Embedder for testing
+type mockApproxEmbedding struct {
+	err error
+}
+
+func (m *mockApproxEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return [][]float64{make([]float64, 128)}, nil
 }

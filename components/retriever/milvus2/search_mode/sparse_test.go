@@ -18,9 +18,13 @@ package search_mode
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
+	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 
 	milvus2 "github.com/cloudwego/eino-ext/components/retriever/milvus2"
@@ -85,5 +89,46 @@ func TestSparse_BuildSparseSearchOption(t *testing.T) {
 func TestSparse_ImplementsSearchMode(t *testing.T) {
 	convey.Convey("test Sparse implements SearchMode", t, func() {
 		var _ milvus2.SearchMode = (*Sparse)(nil)
+	})
+}
+
+func TestSparse_Retrieve(t *testing.T) {
+	PatchConvey("test Sparse.Retrieve", t, func() {
+		ctx := context.Background()
+		mockClient := &milvusclient.Client{}
+
+		config := &milvus2.RetrieverConfig{
+			Collection:        "test_collection",
+			SparseVectorField: "sparse",
+			TopK:              10,
+			OutputFields:      []string{"id", "content"},
+		}
+
+		sparse := NewSparse(milvus2.BM25)
+
+		PatchConvey("success", func() {
+			Mock(GetMethod(mockClient, "Search")).Return([]milvusclient.ResultSet{
+				{
+					ResultCount: 1,
+				},
+			}, nil).Build()
+
+			mockConverter := func(ctx context.Context, result milvusclient.ResultSet) ([]*schema.Document, error) {
+				return []*schema.Document{{ID: "1"}}, nil
+			}
+			config.DocumentConverter = mockConverter
+
+			docs, err := sparse.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(len(docs), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("search error", func() {
+			Mock(GetMethod(mockClient, "Search")).Return(nil, fmt.Errorf("search error")).Build()
+
+			docs, err := sparse.Retrieve(ctx, mockClient, config, "query")
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(docs, convey.ShouldBeNil)
+		})
 	})
 }
