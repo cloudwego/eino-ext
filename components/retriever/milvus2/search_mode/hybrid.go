@@ -109,7 +109,7 @@ func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.Retr
 		// Determine Limit
 		limit := req.TopK
 		if limit <= 0 {
-			limit = 10 // Default internal limit
+			limit = conf.TopK // Default to global TopK
 		}
 
 		// Create ANN request based on VectorType
