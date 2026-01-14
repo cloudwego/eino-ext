@@ -11,7 +11,6 @@
 - **Milvus V2 SDK**: 使用最新的 `milvus-io/milvus/client/v2` SDK
 - **多种搜索模式**: 支持近似搜索、范围搜索、混合搜索、迭代器搜索和标量搜索
 - **稠密 + 稀疏混合搜索**: 结合稠密向量和稀疏向量，使用 RRF 重排序
-- **分数过滤**: 按相似度分数阈值过滤结果
 - **自定义结果转换**: 可配置的结果到文档转换
 
 ## 安装
@@ -106,7 +105,6 @@ func main() {
 | `OutputFields` | `[]string` | 所有字段 | 结果中返回的字段 |
 | `SearchMode` | `SearchMode` | - | 搜索策略（必需） |
 | `Embedding` | `embedding.Embedder` | - | 用于查询向量化的 Embedder（必需） |
-| `ScoreThreshold` | `*float64` | - | 最低分数阈值 |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Default` | 一致性级别 (Default 使用 collection 的级别) |
 | `Partitions` | `[]string` | - | 要搜索的分区 |
 

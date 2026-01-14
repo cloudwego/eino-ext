@@ -62,9 +62,6 @@ type RetrieverConfig struct {
 	// Default: 5
 	TopK int
 
-	// ScoreThreshold filters results with scores below this threshold.
-	ScoreThreshold *float64
-
 	// ConsistencyLevel for Milvus operations.
 	// Default: ConsistencyLevelBounded
 	ConsistencyLevel ConsistencyLevel
@@ -156,17 +153,15 @@ func loadCollection(ctx context.Context, cli *milvusclient.Client, conf *Retriev
 // It returns the matching documents or an error.
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
 	co := retriever.GetCommonOptions(&retriever.Options{
-		Index:          &r.config.VectorField,
-		TopK:           &r.config.TopK,
-		ScoreThreshold: r.config.ScoreThreshold,
-		Embedding:      r.config.Embedding,
+		Index:     &r.config.VectorField,
+		TopK:      &r.config.TopK,
+		Embedding: r.config.Embedding,
 	}, opts...)
 
 	ctx = callbacks.EnsureRunInfo(ctx, r.GetType(), components.ComponentOfRetriever)
 	ctx = callbacks.OnStart(ctx, &retriever.CallbackInput{
-		Query:          query,
-		TopK:           *co.TopK,
-		ScoreThreshold: co.ScoreThreshold,
+		Query: query,
+		TopK:  *co.TopK,
 	})
 	defer func() {
 		if err != nil {
@@ -190,8 +185,6 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	if err != nil {
 		return nil, err
 	}
-
-	docs = r.applyScoreThreshold(docs, co.ScoreThreshold)
 
 	callbacks.OnEnd(ctx, &retriever.CallbackOutput{Docs: docs})
 	return docs, nil

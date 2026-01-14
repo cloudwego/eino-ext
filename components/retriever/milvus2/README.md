@@ -11,7 +11,6 @@ This package provides a Milvus 2.x (V2 SDK) retriever implementation for the EIN
 - **Milvus V2 SDK**: Uses the latest `milvus-io/milvus/client/v2` SDK
 - **Multiple Search Modes**: Approximate, Range, Hybrid, Iterator, and Scalar search
 - **Dense + Sparse Hybrid Search**: Combine dense and sparse vectors with RRF reranking
-- **Score Filtering**: Filter results by similarity score threshold
 - **Custom Result Conversion**: Configurable result-to-document conversion
 
 ## Installation
@@ -106,7 +105,6 @@ func main() {
 | `OutputFields` | `[]string` | all fields | Fields to return in results |
 | `SearchMode` | `SearchMode` | - | Search strategy (required) |
 | `Embedding` | `embedding.Embedder` | - | Embedder for query vectorization (required) |
-| `ScoreThreshold` | `*float64` | - | Minimum score threshold |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses collection's level) |
 | `Partitions` | `[]string` | - | Partitions to search |
 

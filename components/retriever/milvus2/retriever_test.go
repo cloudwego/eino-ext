@@ -24,7 +24,6 @@ import (
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
-	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/column"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
@@ -238,57 +237,6 @@ func TestRetriever_IsCallbacksEnabled(t *testing.T) {
 		}
 		result := r.IsCallbacksEnabled()
 		convey.So(result, convey.ShouldBeTrue)
-	})
-}
-
-func TestRetriever_applyScoreThreshold(t *testing.T) {
-	convey.Convey("test Retriever.applyScoreThreshold", t, func() {
-		r := &Retriever{
-			config: &RetrieverConfig{},
-		}
-
-		docs := []*schema.Document{
-			(&schema.Document{ID: "doc1"}).WithScore(0.9),
-			(&schema.Document{ID: "doc2"}).WithScore(0.7),
-			(&schema.Document{ID: "doc3"}).WithScore(0.5),
-			(&schema.Document{ID: "doc4"}).WithScore(0.3),
-		}
-
-		convey.Convey("test nil threshold returns all docs", func() {
-			result := r.applyScoreThreshold(docs, nil)
-			convey.So(len(result), convey.ShouldEqual, 4)
-		})
-
-		convey.Convey("test threshold filters docs", func() {
-			threshold := 0.6
-			result := r.applyScoreThreshold(docs, &threshold)
-			convey.So(len(result), convey.ShouldEqual, 2)
-			convey.So(result[0].ID, convey.ShouldEqual, "doc1")
-			convey.So(result[1].ID, convey.ShouldEqual, "doc2")
-		})
-
-		convey.Convey("test high threshold filters all docs", func() {
-			threshold := 0.95
-			result := r.applyScoreThreshold(docs, &threshold)
-			convey.So(len(result), convey.ShouldEqual, 0)
-		})
-
-		convey.Convey("test low threshold keeps all docs", func() {
-			threshold := 0.1
-			result := r.applyScoreThreshold(docs, &threshold)
-			convey.So(len(result), convey.ShouldEqual, 4)
-		})
-
-		convey.Convey("test with missing score in metadata", func() {
-			docsNoScore := []*schema.Document{
-				{ID: "doc1", MetaData: map[string]interface{}{}},
-				(&schema.Document{ID: "doc2"}).WithScore(0.7),
-			}
-			threshold := 0.5
-			result := r.applyScoreThreshold(docsNoScore, &threshold)
-			// Only doc2 has a score and passes threshold
-			convey.So(len(result), convey.ShouldEqual, 1)
-		})
 	})
 }
 
