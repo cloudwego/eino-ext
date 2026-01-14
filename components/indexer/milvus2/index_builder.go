@@ -301,7 +301,57 @@ func NewGPUIVFFlatIndexBuilder() *GPUIVFFlatIndexBuilder {
 
 // Build creates a GPU IVF_FLAT index.
 func (b *GPUIVFFlatIndexBuilder) Build(metricType MetricType) index.Index {
+	// NewGPUIVPFlatIndex is a typo in Milvus SDK (should be NewGPUIVFFlatIndex).
+	// We keep using it until SDK fixes it.
 	return index.NewGPUIVPFlatIndex(metricType.toEntity())
+}
+
+// GPUIVFPQIndexBuilder creates a GPU-accelerated IVF_PQ index.
+// It provides high-speed approximate nearest neighbor search with memory efficiency.
+type GPUIVFPQIndexBuilder struct {
+	// NList is the number of cluster units (recommended: 1-65536).
+	NList int
+	// M is the number of subquantizers (recommended: 1-div).
+	M int
+	// NBits is the number of bits for each subquantizer (recommended: 1-16).
+	NBits int
+}
+
+// NewGPUIVFPQIndexBuilder creates a new GPUIVFPQIndexBuilder with default parameters.
+// Default: NList=128, M=16, NBits=8
+func NewGPUIVFPQIndexBuilder() *GPUIVFPQIndexBuilder {
+	return &GPUIVFPQIndexBuilder{
+		NList: 128,
+		M:     16,
+		NBits: 8,
+	}
+}
+
+// WithNList sets the NList parameter.
+func (b *GPUIVFPQIndexBuilder) WithNList(nlist int) *GPUIVFPQIndexBuilder {
+	b.NList = nlist
+	return b
+}
+
+// WithM sets the M parameter.
+func (b *GPUIVFPQIndexBuilder) WithM(m int) *GPUIVFPQIndexBuilder {
+	b.M = m
+	return b
+}
+
+// WithNBits sets the NBits parameter.
+func (b *GPUIVFPQIndexBuilder) WithNBits(nbits int) *GPUIVFPQIndexBuilder {
+	b.NBits = nbits
+	return b
+}
+
+// Build creates a GPU IVF_PQ index.
+func (b *GPUIVFPQIndexBuilder) Build(metricType MetricType) index.Index {
+	// NewGPUIVPPQIndex is a typo in Milvus SDK (should be NewGPUIVFPQIndex).
+	// We keep using it until SDK fixes it.
+	// Note: The current SDK implementation for NewGPUIVPPQIndex does not accept NList, M, NBits.
+	// Use default values as provided by the SDK.
+	return index.NewGPUIVPPQIndex(metricType.toEntity())
 }
 
 // GPUCagraIndexBuilder creates a GPU CAGRA index.
@@ -425,6 +475,7 @@ var (
 	_ IndexBuilder = (*GPUBruteForceIndexBuilder)(nil)
 	_ IndexBuilder = (*GPUIVFFlatIndexBuilder)(nil)
 	_ IndexBuilder = (*GPUCagraIndexBuilder)(nil)
+	_ IndexBuilder = (*GPUIVFPQIndexBuilder)(nil)
 	_ IndexBuilder = (*IVFRabitQIndexBuilder)(nil)
 
 	_ SparseIndexBuilder = (*SparseInvertedIndexBuilder)(nil)
