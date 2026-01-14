@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
@@ -65,6 +66,50 @@ func (i *Iterator) WithSearchParams(params map[string]string) *Iterator {
 // BuildSearchOption returns an error because Iterator search mode requires BuildSearchIteratorOption.
 func (i *Iterator) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
 	return nil, fmt.Errorf("Iterator search mode requires BuildSearchIteratorOption")
+}
+
+// Retrieve performs the search iterator operation, fetching all results.
+func (i *Iterator) Retrieve(ctx context.Context, client *milvusclient.Client, conf *milvus2.RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	if conf.Embedding == nil {
+		return nil, fmt.Errorf("embedding is required for iterator search")
+	}
+
+	queryVector, err := milvus2.EmbedQuery(ctx, conf.Embedding, query)
+	if err != nil {
+		return nil, err
+	}
+
+	iterOpt, err := i.BuildSearchIteratorOption(ctx, conf, queryVector, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build search iterator option: %w", err)
+	}
+
+	iterator, err := client.SearchIterator(ctx, iterOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create search iterator: %w", err)
+	}
+
+	var allDocs []*schema.Document
+	for {
+		res, err := iterator.Next(ctx)
+		if err != nil {
+			if err.Error() == "EOF" {
+				break
+			}
+			return nil, fmt.Errorf("iterator next failed: %w", err)
+		}
+		if res.ResultCount == 0 {
+			break
+		}
+
+		batchDocs, err := conf.DocumentConverter(ctx, res)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert batch results: %w", err)
+		}
+		allDocs = append(allDocs, batchDocs...)
+	}
+
+	return allDocs, nil
 }
 
 // BuildSearchIteratorOption creates a SearchIteratorOption for batch-based result traversal.
@@ -113,6 +158,3 @@ func (i *Iterator) BuildSearchIteratorOption(ctx context.Context, conf *milvus2.
 
 	return opt, nil
 }
-
-// Ensure Iterator implements milvus2.IteratorSearchMode
-var _ milvus2.IteratorSearchMode = (*Iterator)(nil)

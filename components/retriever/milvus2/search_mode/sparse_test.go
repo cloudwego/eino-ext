@@ -82,9 +82,8 @@ func TestSparse_BuildSparseSearchOption(t *testing.T) {
 	})
 }
 
-func TestSparse_ImplementsSparseSearchMode(t *testing.T) {
-	convey.Convey("test Sparse implements SparseSearchMode", t, func() {
-		var _ milvus2.SparseSearchMode = (*Sparse)(nil)
-		convey.So(true, convey.ShouldBeTrue)
+func TestSparse_ImplementsSearchMode(t *testing.T) {
+	convey.Convey("test Sparse implements SearchMode", t, func() {
+		var _ milvus2.SearchMode = (*Sparse)(nil)
 	})
 }

@@ -19,8 +19,10 @@ package search_mode
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
@@ -43,6 +45,34 @@ func NewApproximate(metricType milvus2.MetricType) *Approximate {
 	return &Approximate{
 		MetricType: metricType,
 	}
+}
+
+// Retrieve performs the approximate vector search.
+func (a *Approximate) Retrieve(ctx context.Context, client *milvusclient.Client, conf *milvus2.RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	if conf.Embedding == nil {
+		return nil, fmt.Errorf("embedding is required for approximate search")
+	}
+
+	queryVector, err := milvus2.EmbedQuery(ctx, conf.Embedding, query)
+	if err != nil {
+		return nil, err
+	}
+
+	searchOpt, err := a.BuildSearchOption(ctx, conf, queryVector, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build search option: %w", err)
+	}
+
+	result, err := client.Search(ctx, searchOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search: %w", err)
+	}
+
+	if len(result) == 0 {
+		return []*schema.Document{}, nil
+	}
+
+	return conf.DocumentConverter(ctx, result[0])
 }
 
 // BuildSearchOption creates a SearchOption for ANN search with the configured metric type.
@@ -89,6 +119,3 @@ func (a *Approximate) BuildSearchOption(ctx context.Context, conf *milvus2.Retri
 
 	return searchOpt, nil
 }
-
-// Ensure Approximate implements milvus2.SearchMode
-var _ milvus2.SearchMode = (*Approximate)(nil)

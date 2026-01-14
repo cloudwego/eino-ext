@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
@@ -45,9 +46,23 @@ func NewSparse(metricType milvus2.MetricType) *Sparse {
 	}
 }
 
-// BuildSearchOption returns an error because Sparse search mode requires BuildSparseSearchOption.
-func (s *Sparse) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	return nil, fmt.Errorf("Sparse search mode requires BuildSparseSearchOption")
+// Retrieve performs the sparse search operation (text search via function).
+func (s *Sparse) Retrieve(ctx context.Context, client *milvusclient.Client, conf *milvus2.RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	searchOpt, err := s.BuildSparseSearchOption(ctx, conf, query, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build sparse search option: %w", err)
+	}
+
+	result, err := client.Search(ctx, searchOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search: %w", err)
+	}
+
+	if len(result) == 0 {
+		return []*schema.Document{}, nil
+	}
+
+	return conf.DocumentConverter(ctx, result[0])
 }
 
 // BuildSparseSearchOption creates a SearchOption configured for sparse vector search using text query.
@@ -94,6 +109,3 @@ func (s *Sparse) BuildSparseSearchOption(ctx context.Context, conf *milvus2.Retr
 
 	return searchOpt, nil
 }
-
-// Ensure Sparse implements milvus2.SparseSearchMode
-var _ milvus2.SparseSearchMode = (*Sparse)(nil)

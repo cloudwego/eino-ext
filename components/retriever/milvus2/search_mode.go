@@ -20,45 +20,13 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 )
 
-// SearchMode defines the interface for building Milvus search options.
-// It specifies how vector search is performed, including index parameters and search behavior.
+// SearchMode defines the interface for executing Milvus search operations.
+// It encapsulates the entire search logic, including option building and client execution.
 type SearchMode interface {
-	// BuildSearchOption creates a SearchOption for the given query vector.
-	// It returns an error if the mode requires a specialized method (e.g., BuildHybridSearchOption).
-	BuildSearchOption(ctx context.Context, conf *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error)
-}
-
-// HybridSearchMode defines the interface for building Milvus hybrid search options.
-// It supports multi-vector search with result reranking.
-type HybridSearchMode interface {
-	SearchMode
-	// BuildHybridSearchOption creates a HybridSearchOption for multi-vector search with reranking.
-	BuildHybridSearchOption(ctx context.Context, conf *RetrieverConfig, queryVector []float32, query string, opts ...retriever.Option) (milvusclient.HybridSearchOption, error)
-}
-
-// QuerySearchMode defines the interface for scalar/query-only search.
-// It enables document retrieval based solely on metadata filtering without vector similarity.
-type QuerySearchMode interface {
-	SearchMode
-	// BuildQueryOption creates a QueryOption using the query string as a filter expression.
-	BuildQueryOption(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (milvusclient.QueryOption, error)
-}
-
-// IteratorSearchMode defines the interface for search iterator operations.
-// It enables efficient traversal of large result sets by fetching results in batches.
-type IteratorSearchMode interface {
-	SearchMode
-	// BuildSearchIteratorOption creates a SearchIteratorOption for batch-based result traversal.
-	BuildSearchIteratorOption(ctx context.Context, conf *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchIteratorOption, error)
-}
-
-// SparseSearchMode defines the interface for sparse-only vector search.
-// It supports search using raw text input (e.g. BM25 function) without dense embeddings.
-type SparseSearchMode interface {
-	SearchMode
-	// BuildSparseSearchOption creates a SearchOption using text query for sparse search.
-	BuildSparseSearchOption(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (milvusclient.SearchOption, error)
+	// Retrieve performs the search operation using the provided client and configuration.
+	Retrieve(ctx context.Context, client *milvusclient.Client, conf *RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error)
 }

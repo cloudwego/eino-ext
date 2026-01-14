@@ -159,9 +159,8 @@ func TestIterator_BuildSearchIteratorOption(t *testing.T) {
 }
 
 // Verify interface implementation
-func TestIterator_ImplementsIteratorSearchMode(t *testing.T) {
-	convey.Convey("test Iterator implements IteratorSearchMode", t, func() {
-		var _ milvus2.IteratorSearchMode = (*Iterator)(nil)
-		convey.So(true, convey.ShouldBeTrue)
+func TestIterator_ImplementsSearchMode(t *testing.T) {
+	convey.Convey("test Iterator implements SearchMode", t, func() {
+		var _ milvus2.SearchMode = (*Iterator)(nil)
 	})
 }

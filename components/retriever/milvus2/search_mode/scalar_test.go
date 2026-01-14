@@ -33,24 +33,6 @@ func TestNewScalar(t *testing.T) {
 	})
 }
 
-func TestScalar_BuildSearchOption(t *testing.T) {
-	convey.Convey("test Scalar.BuildSearchOption returns nil", t, func() {
-		ctx := context.Background()
-		queryVector := []float32{0.1, 0.2, 0.3}
-		config := &milvus2.RetrieverConfig{
-			Collection:  "test_collection",
-			VectorField: "vector",
-			TopK:        10,
-		}
-
-		scalar := NewScalar()
-
-		opt, err := scalar.BuildSearchOption(ctx, config, queryVector)
-		convey.So(opt, convey.ShouldBeNil)
-		convey.So(err, convey.ShouldBeNil)
-	})
-}
-
 func TestScalar_BuildQueryOption(t *testing.T) {
 	convey.Convey("test Scalar.BuildQueryOption", t, func() {
 		ctx := context.Background()
@@ -119,9 +101,8 @@ func TestScalar_BuildQueryOption(t *testing.T) {
 }
 
 // Verify interface implementation
-func TestScalar_ImplementsQuerySearchMode(t *testing.T) {
-	convey.Convey("test Scalar implements QuerySearchMode", t, func() {
-		var _ milvus2.QuerySearchMode = (*Scalar)(nil)
-		convey.So(true, convey.ShouldBeTrue)
+func TestScalar_ImplementsSearchMode(t *testing.T) {
+	convey.Convey("test Scalar implements SearchMode", t, func() {
+		var _ milvus2.SearchMode = (*Scalar)(nil)
 	})
 }

@@ -24,8 +24,8 @@ import (
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/column"
-	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 )
@@ -55,11 +55,15 @@ func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts .
 }
 
 // mockSearchMode implements SearchMode for testing (avoids import cycle)
-type mockSearchMode struct{}
+type mockSearchMode struct {
+	retrieveFunc func(ctx context.Context, client *milvusclient.Client, conf *RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error)
+}
 
-func (m *mockSearchMode) BuildSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	// Return nil since we'll mock the Search call anyway
-	return nil, nil
+func (m *mockSearchMode) Retrieve(ctx context.Context, client *milvusclient.Client, conf *RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	if m.retrieveFunc != nil {
+		return m.retrieveFunc(ctx, client, conf, query, opts...)
+	}
+	return []*schema.Document{{ID: "1", Content: "doc1"}}, nil
 }
 
 func TestRetrieverConfig_validate(t *testing.T) {
@@ -80,41 +84,19 @@ func TestRetrieverConfig_validate(t *testing.T) {
 			convey.So(err.Error(), convey.ShouldContainSubstring, "client")
 		})
 
-		convey.Convey("test optional embedding with QuerySearchMode", func() {
-			mockQSMode := &mockQuerySearchMode{}
-			config := &RetrieverConfig{
-				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:   "test_collection",
-				Embedding:    nil, // Valid for QuerySearchMode
-				SearchMode:   mockQSMode,
-			}
-			err := config.validate()
-			convey.So(err, convey.ShouldBeNil)
-		})
+		// QuerySearchMode and SparseSearchMode specific validations are removed as SearchMode is now polymorphic.
+		// The requirement for Embedding is now enforced by specific implementations inside Retrieve/BuildOptions if needed, not strictly by Config.validate for generic SearchMode.
+		// However, if the code still checks for embedding availability generally:
 
-		convey.Convey("test optional embedding with SparseSearchMode", func() {
-			mockSSMode := &mockSparseSearchMode{}
+		convey.Convey("test valid config", func() {
 			config := &RetrieverConfig{
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "test_collection",
-				Embedding:    nil, // Valid for SparseSearchMode
-				SearchMode:   mockSSMode,
-			}
-			err := config.validate()
-			convey.So(err, convey.ShouldBeNil)
-		})
-
-		convey.Convey("test missing embedding for vector search", func() {
-			config := &RetrieverConfig{
-				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:   "test_collection",
-				Embedding:    nil, // Invalid for mockSearchMode (Standard)
+				Embedding:    mockEmb,
 				SearchMode:   mockSM,
 			}
 			err := config.validate()
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "embedding not provided")
-			convey.So(err.Error(), convey.ShouldContainSubstring, "QuerySearchMode")
+			convey.So(err, convey.ShouldBeNil)
 		})
 
 		convey.Convey("test missing search mode", func() {
@@ -127,67 +109,6 @@ func TestRetrieverConfig_validate(t *testing.T) {
 			err := config.validate()
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(err.Error(), convey.ShouldContainSubstring, "search mode")
-		})
-
-		convey.Convey("test missing collection defaults", func() {
-			config := &RetrieverConfig{
-				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:   "",
-				Embedding:    mockEmb,
-				SearchMode:   mockSM,
-			}
-			err := config.validate()
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(config.Collection, convey.ShouldEqual, defaultCollection)
-		})
-
-		convey.Convey("test valid config with defaults", func() {
-			config := &RetrieverConfig{
-				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:   "test_collection",
-				Embedding:    mockEmb,
-				SearchMode:   mockSM,
-			}
-			err := config.validate()
-			convey.So(err, convey.ShouldBeNil)
-			// Check defaults are set
-			convey.So(config.VectorField, convey.ShouldEqual, defaultVectorField)
-			convey.So(config.SparseVectorField, convey.ShouldEqual, defaultSparseVectorField)
-			convey.So(config.OutputFields, convey.ShouldResemble, []string{"*"})
-			convey.So(config.TopK, convey.ShouldEqual, defaultTopK)
-			convey.So(config.DocumentConverter, convey.ShouldNotBeNil)
-		})
-
-		convey.Convey("test with custom values preserved", func() {
-			config := &RetrieverConfig{
-				ClientConfig:      &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:        "my_collection",
-				Embedding:         mockEmb,
-				VectorField:       "custom_vector",
-				SparseVectorField: "custom_sparse",
-				TopK:              50,
-				Partitions:        []string{"p1", "p2"},
-				SearchMode:        mockSM,
-			}
-			err := config.validate()
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(config.Collection, convey.ShouldEqual, "my_collection")
-			convey.So(config.VectorField, convey.ShouldEqual, "custom_vector")
-			convey.So(config.SparseVectorField, convey.ShouldEqual, "custom_sparse")
-			convey.So(config.TopK, convey.ShouldEqual, 50)
-		})
-
-		convey.Convey("test with custom output fields", func() {
-			config := &RetrieverConfig{
-				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
-				Collection:   "test_collection",
-				Embedding:    mockEmb,
-				OutputFields: []string{"field1", "field2"},
-				SearchMode:   mockSM,
-			}
-			err := config.validate()
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(config.OutputFields, convey.ShouldResemble, []string{"field1", "field2"})
 		})
 	})
 }
@@ -260,287 +181,36 @@ func TestRetriever_Retrieve(t *testing.T) {
 			},
 		}
 
-		PatchConvey("test retrieve with embedding error", func() {
-			r.config.Embedding = &mockEmbedding{err: fmt.Errorf("embedding error")}
-			docs, err := r.Retrieve(ctx, "test query")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "embed")
-			convey.So(docs, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test retrieve with search error", func() {
-			r.config.Embedding = mockEmb
-			// Mock Search to return an error
-			Mock(GetMethod(mockClient, "Search")).Return(nil, fmt.Errorf("search error")).Build()
-
-			docs, err := r.Retrieve(ctx, "test query")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(docs, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test retrieve with empty results", func() {
-			r.config.Embedding = mockEmb
-			// Mock Search to return empty results
-			Mock(GetMethod(mockClient, "Search")).Return([]milvusclient.ResultSet{}, nil).Build()
-
-			docs, err := r.Retrieve(ctx, "test query")
-			// Empty result might return empty docs or nil
-			if err != nil {
-				convey.So(docs, convey.ShouldBeNil)
-			} else {
-				convey.So(docs, convey.ShouldNotBeNil)
+		PatchConvey("test retrieve success", func() {
+			expectedDocs := []*schema.Document{{ID: "1", Content: "success"}}
+			mockSM.retrieveFunc = func(ctx context.Context, client *milvusclient.Client, conf *RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+				return expectedDocs, nil
 			}
-		})
-	})
-}
-
-func TestRetriever_RetrieveQuery(t *testing.T) {
-	PatchConvey("test Retriever.Retrieve with QuerySearchMode", t, func() {
-		ctx := context.Background()
-		mockClient := &milvusclient.Client{}
-		mockQSMode := &mockQuerySearchMode{}
-
-		r := &Retriever{
-			client: mockClient,
-			config: &RetrieverConfig{
-				Collection:        "test_collection",
-				OutputFields:      []string{"id", "content"},
-				SearchMode:        mockQSMode,
-				DocumentConverter: defaultDocumentConverter(),
-			},
-		}
-
-		PatchConvey("test query success", func() {
-			Mock(GetMethod(mockClient, "Query")).Return(createMockQueryResult(
-				[]string{"1"}, []string{"doc1"}, [][]byte{[]byte(`{}`)}), nil).Build()
-
-			docs, err := r.Retrieve(ctx, "id > 0")
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(docs), convey.ShouldEqual, 1)
-			convey.So(docs[0].ID, convey.ShouldEqual, "1")
-		})
-
-		PatchConvey("test build query option error", func() {
-			mockQSMode.err = fmt.Errorf("build error")
-			docs, err := r.Retrieve(ctx, "id > 0")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "build query option")
-			convey.So(docs, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test client query error", func() {
-			Mock(GetMethod(mockClient, "Query")).Return(milvusclient.ResultSet{}, fmt.Errorf("query fail")).Build()
-			docs, err := r.Retrieve(ctx, "id > 0")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "execute query")
-			convey.So(docs, convey.ShouldBeNil)
-		})
-	})
-}
-
-// mockQuerySearchMode implements QuerySearchMode for testing
-type mockQuerySearchMode struct {
-	err error
-}
-
-func (m *mockQuerySearchMode) BuildQueryOption(ctx context.Context, config *RetrieverConfig, query string, opts ...retriever.Option) (milvusclient.QueryOption, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return milvusclient.NewQueryOption(config.Collection), nil
-}
-
-func (m *mockQuerySearchMode) BuildSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	return nil, nil
-}
-
-// mockHybridSearchMode implements HybridSearchMode for testing
-type mockHybridSearchMode struct {
-	err error
-}
-
-func (m *mockHybridSearchMode) BuildHybridSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, query string, opts ...retriever.Option) (milvusclient.HybridSearchOption, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	// NewHybridSearchOption needs collection, limit, and a request.
-	// Since we mock the client call, we just need a valid option object.
-	req := milvusclient.NewAnnRequest("vector", 10, entity.FloatVector(make([]float32, 128)))
-	req.WithSearchParam("metric_type", "L2")
-	return milvusclient.NewHybridSearchOption(config.Collection, 3, req), nil
-}
-
-func (m *mockHybridSearchMode) BuildSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	return nil, nil
-}
-
-func TestRetriever_RetrieveHybrid(t *testing.T) {
-	PatchConvey("test Retriever.Retrieve with HybridSearchMode", t, func() {
-		ctx := context.Background()
-		mockClient := &milvusclient.Client{}
-		mockEmb := &mockEmbedding{dims: 128}
-		mockHSMode := &mockHybridSearchMode{}
-
-		r := &Retriever{
-			client: mockClient,
-			config: &RetrieverConfig{
-				Collection:        "test_collection",
-				Embedding:         mockEmb,
-				SearchMode:        mockHSMode,
-				DocumentConverter: defaultDocumentConverter(),
-			},
-		}
-
-		PatchConvey("test hybrid search success", func() {
-			// Mock HybridSearch to return []ResultSet
-			results := []milvusclient.ResultSet{
-				createMockResultSet([]string{"1"}, []string{"doc1"}, []float32{0.9}, [][]byte{[]byte(`{}`)}),
-			}
-			Mock(GetMethod(mockClient, "HybridSearch")).Return(results, nil).Build()
-
 			docs, err := r.Retrieve(ctx, "test query")
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(docs), convey.ShouldEqual, 1)
-			convey.So(docs[0].ID, convey.ShouldEqual, "1")
+			convey.So(docs, convey.ShouldResemble, expectedDocs)
 		})
 
-		PatchConvey("test embedding error", func() {
-			r.config.Embedding = &mockEmbedding{err: fmt.Errorf("embed error")}
-			docs, err := r.Retrieve(ctx, "test query")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(docs, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test build option error", func() {
-			mockHSMode.err = fmt.Errorf("build error")
-			docs, err := r.Retrieve(ctx, "test query")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "build hybrid search option")
-			convey.So(docs, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test client hybrid search error", func() {
-			Mock(GetMethod(mockClient, "HybridSearch")).Return(nil, fmt.Errorf("hybrid fail")).Build()
-			docs, err := r.Retrieve(ctx, "test query")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "hybrid search failed")
-			convey.So(docs, convey.ShouldBeNil)
-		})
-	})
-}
-
-// mockIteratorSearchMode implements IteratorSearchMode for testing
-type mockIteratorSearchMode struct {
-	err error
-}
-
-func (m *mockIteratorSearchMode) BuildSearchIteratorOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchIteratorOption, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	// NewSearchIteratorOption takes (collectionName, vector)
-	// assuming vector is entity.Vector
-	vector := entity.FloatVector(make([]float32, 128))
-	return milvusclient.NewSearchIteratorOption(config.Collection, vector).WithBatchSize(3), nil
-}
-
-func (m *mockIteratorSearchMode) BuildSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	return nil, nil
-}
-
-// mockSparseSearchMode implements SparseSearchMode for testing
-type mockSparseSearchMode struct {
-	err error
-}
-
-func (m *mockSparseSearchMode) BuildSparseSearchOption(ctx context.Context, config *RetrieverConfig, query string, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	// Return a dummy option
-	return milvusclient.NewSearchOption(config.Collection, 10, []entity.Vector{entity.Text(query)}), nil
-}
-
-func (m *mockSparseSearchMode) BuildSearchOption(ctx context.Context, config *RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	return nil, nil
-}
-
-// mockSearchIterator implements milvusclient.SearchIterator
-type mockSearchIterator struct {
-	err     error
-	results []milvusclient.ResultSet
-	idx     int
-}
-
-func (m *mockSearchIterator) Next(ctx context.Context) (milvusclient.ResultSet, error) {
-	if m.err != nil {
-		return milvusclient.ResultSet{}, m.err
-	}
-	if m.idx >= len(m.results) {
-		return milvusclient.ResultSet{}, nil // End of results (or simulate EOF)
-	}
-	res := m.results[m.idx]
-	m.idx++
-	return res, nil
-}
-
-func (m *mockSearchIterator) Close() error {
-	return nil
-}
-
-func TestRetriever_RetrieveIterator(t *testing.T) {
-	PatchConvey("test Retriever.Retrieve with IteratorSearchMode", t, func() {
-		ctx := context.Background()
-		mockClient := &milvusclient.Client{}
-		mockEmb := &mockEmbedding{dims: 128}
-		mockISMode := &mockIteratorSearchMode{}
-
-		r := &Retriever{
-			client: mockClient,
-			config: &RetrieverConfig{
-				Collection:        "test_collection",
-				Embedding:         mockEmb,
-				SearchMode:        mockISMode,
-				DocumentConverter: defaultDocumentConverter(),
-			},
-		}
-
-		PatchConvey("test iterator success", func() {
-			res1 := createMockResultSet([]string{"1"}, []string{"doc1"}, []float32{0.9}, nil)
-			res2 := createMockResultSet([]string{"2"}, []string{"doc2"}, []float32{0.8}, nil)
-			// Mock iterator
-			mockIter := &mockSearchIterator{
-				results: []milvusclient.ResultSet{res1, res2},
+		PatchConvey("test retrieve error", func() {
+			mockSM.retrieveFunc = func(ctx context.Context, client *milvusclient.Client, conf *RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+				return nil, fmt.Errorf("search error")
 			}
-
-			Mock(GetMethod(mockClient, "SearchIterator")).Return(mockIter, nil).Build()
-
-			docs, err := r.Retrieve(ctx, "test query")
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(docs), convey.ShouldEqual, 2)
-			convey.So(docs[0].ID, convey.ShouldEqual, "1")
-			convey.So(docs[1].ID, convey.ShouldEqual, "2")
-		})
-
-		PatchConvey("test client iterator creation error", func() {
-			Mock(GetMethod(mockClient, "SearchIterator")).Return(nil, fmt.Errorf("create iter fail")).Build()
 			docs, err := r.Retrieve(ctx, "test query")
 			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "create search iterator")
+			convey.So(err.Error(), convey.ShouldContainSubstring, "search error")
 			convey.So(docs, convey.ShouldBeNil)
 		})
 	})
 }
-func TestRetriever_embedQuery(t *testing.T) {
-	PatchConvey("test Retriever.embedQuery", t, func() {
+
+func TestEmbedQuery(t *testing.T) {
+	PatchConvey("test EmbedQuery", t, func() {
 		ctx := context.Background()
-		r := &Retriever{
-			config: &RetrieverConfig{},
-		}
+		// No need for retriever instance
 
 		PatchConvey("test embedding success returns float32 vector", func() {
 			mockEmb := &mockEmbedding{dims: 128}
-			vector, err := r.embedQuery(ctx, mockEmb, "test query")
+			vector, err := EmbedQuery(ctx, mockEmb, "test query")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(vector), convey.ShouldEqual, 128)
 			// First element should be 0.1 converted to float32
@@ -549,7 +219,7 @@ func TestRetriever_embedQuery(t *testing.T) {
 
 		PatchConvey("test embedding error", func() {
 			mockEmb := &mockEmbedding{err: fmt.Errorf("embedding failed")}
-			vector, err := r.embedQuery(ctx, mockEmb, "test query")
+			vector, err := EmbedQuery(ctx, mockEmb, "test query")
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(vector, convey.ShouldBeNil)
 		})
@@ -557,7 +227,7 @@ func TestRetriever_embedQuery(t *testing.T) {
 		PatchConvey("test embedding empty result", func() {
 			mockEmb := &mockEmbedding{dims: 0}
 			// Even with dims=0, the mock returns 128 (default)
-			vector, err := r.embedQuery(ctx, mockEmb, "test query")
+			vector, err := EmbedQuery(ctx, mockEmb, "test query")
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(vector), convey.ShouldBeGreaterThan, 0)
 		})

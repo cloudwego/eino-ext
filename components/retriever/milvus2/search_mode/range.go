@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
@@ -62,33 +63,54 @@ func (r *Range) WithRangeFilter(rangeFilter float64) *Range {
 	return r
 }
 
-// BuildSearchOption creates a SearchOption configured for range-based vector search.
+// Retrieve performs the range search operation.
+func (r *Range) Retrieve(ctx context.Context, client *milvusclient.Client, conf *milvus2.RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	if conf.Embedding == nil {
+		return nil, fmt.Errorf("embedding is required for range search")
+	}
+
+	queryVector, err := milvus2.EmbedQuery(ctx, conf.Embedding, query)
+	if err != nil {
+		return nil, err
+	}
+
+	searchOpt, err := r.BuildSearchOption(ctx, conf, queryVector, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build search option: %w", err)
+	}
+
+	result, err := client.Search(ctx, searchOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search: %w", err)
+	}
+
+	if len(result) == 0 {
+		return []*schema.Document{}, nil
+	}
+
+	return conf.DocumentConverter(ctx, result[0])
+}
+
+// BuildSearchOption creates a SearchOption for range search with the configured radius and range filter.
 func (r *Range) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
 	io := retriever.GetImplSpecificOptions(&milvus2.ImplOptions{}, opts...)
 	co := retriever.GetCommonOptions(&retriever.Options{
 		TopK: &conf.TopK,
 	}, opts...)
 
-	// TopK acts as a limit on the number of returned vectors within the radius.
-	searchOpt := milvusclient.NewSearchOption(conf.Collection, conf.TopK, []entity.Vector{entity.FloatVector(queryVector)}).
+	// Determine final topK
+	topK := conf.TopK
+	if co.TopK != nil {
+		topK = *co.TopK
+	}
+
+	searchOpt := milvusclient.NewSearchOption(conf.Collection, topK, []entity.Vector{entity.FloatVector(queryVector)}).
 		WithANNSField(conf.VectorField).
 		WithOutputFields(conf.OutputFields...).
 		WithSearchParam("radius", fmt.Sprintf("%v", r.Radius))
 
 	if r.RangeFilter != nil {
 		searchOpt = searchOpt.WithSearchParam("range_filter", fmt.Sprintf("%v", *r.RangeFilter))
-	}
-
-	// Apply TopK
-	if co.TopK != nil && *co.TopK != conf.TopK {
-		// NewSearchOption is the only way to set limit
-		searchOpt = milvusclient.NewSearchOption(conf.Collection, *co.TopK, []entity.Vector{entity.FloatVector(queryVector)}).
-			WithANNSField(conf.VectorField).
-			WithOutputFields(conf.OutputFields...).
-			WithSearchParam("radius", fmt.Sprintf("%v", r.Radius))
-		if r.RangeFilter != nil {
-			searchOpt = searchOpt.WithSearchParam("range_filter", fmt.Sprintf("%v", *r.RangeFilter))
-		}
 	}
 
 	if len(conf.Partitions) > 0 {
@@ -113,6 +135,3 @@ func (r *Range) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverCo
 
 	return searchOpt, nil
 }
-
-// Ensure Range implements milvus2.SearchMode
-var _ milvus2.SearchMode = (*Range)(nil)

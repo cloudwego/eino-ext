@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
@@ -79,7 +80,36 @@ func (h *Hybrid) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverC
 	return nil, fmt.Errorf("Hybrid search mode requires BuildHybridSearchOption")
 }
 
+// Retrieve performs the hybrid search operation.
+func (h *Hybrid) Retrieve(ctx context.Context, client *milvusclient.Client, conf *milvus2.RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	if conf.Embedding == nil {
+		return nil, fmt.Errorf("embedding is required for hybrid search")
+	}
+
+	queryVector, err := milvus2.EmbedQuery(ctx, conf.Embedding, query)
+	if err != nil {
+		return nil, err
+	}
+
+	searchOpt, err := h.BuildHybridSearchOption(ctx, conf, queryVector, query, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build hybrid search option: %w", err)
+	}
+
+	result, err := client.HybridSearch(ctx, searchOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hybrid search: %w", err)
+	}
+
+	if len(result) == 0 {
+		return []*schema.Document{}, nil
+	}
+
+	return conf.DocumentConverter(ctx, result[0])
+}
+
 // BuildHybridSearchOption creates a HybridSearchOption for multi-vector search with reranking.
+// It is internal to the hybrid implementation now/helper but kept as method for cleaner code.
 func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, query string, opts ...retriever.Option) (milvusclient.HybridSearchOption, error) {
 	io := retriever.GetImplSpecificOptions(&milvus2.ImplOptions{}, opts...)
 	co := retriever.GetCommonOptions(&retriever.Options{
@@ -163,7 +193,3 @@ func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.Retr
 
 	return hybridOpt, nil
 }
-
-// Ensure Hybrid implements milvus2.HybridSearchMode.
-
-var _ milvus2.HybridSearchMode = (*Hybrid)(nil)

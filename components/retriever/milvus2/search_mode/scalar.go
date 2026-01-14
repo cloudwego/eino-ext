@@ -18,8 +18,10 @@ package search_mode
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
 	milvus2 "github.com/cloudwego/eino-ext/components/retriever/milvus2"
@@ -34,10 +36,20 @@ func NewScalar() *Scalar {
 	return &Scalar{}
 }
 
-// BuildSearchOption returns nil because Scalar search mode uses the Query API instead of Search.
-// Retriever dispatches to BuildQueryOption for QuerySearchMode implementations.
-func (s *Scalar) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, opts ...retriever.Option) (milvusclient.SearchOption, error) {
-	return nil, nil
+// Retrieve performs the scalar query search.
+func (s *Scalar) Retrieve(ctx context.Context, client *milvusclient.Client, conf *milvus2.RetrieverConfig, query string, opts ...retriever.Option) ([]*schema.Document, error) {
+	queryOpt, err := s.BuildQueryOption(ctx, conf, query, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query option: %w", err)
+	}
+
+	result, err := client.Query(ctx, queryOpt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query: %w", err)
+	}
+
+	// Helper to convert Query ResultSet to Documents
+	return milvus2.QueryResultSetToDocuments(result)
 }
 
 // BuildQueryOption creates a QueryOption for scalar/metadata-based document retrieval.
@@ -78,6 +90,3 @@ func (s *Scalar) BuildQueryOption(ctx context.Context, conf *milvus2.RetrieverCo
 
 	return opt, nil
 }
-
-// Ensure Scalar implements milvus2.QuerySearchMode
-var _ milvus2.QuerySearchMode = (*Scalar)(nil)

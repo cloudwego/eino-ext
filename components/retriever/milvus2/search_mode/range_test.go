@@ -139,6 +139,5 @@ func TestRange_BuildSearchOption(t *testing.T) {
 func TestRange_ImplementsSearchMode(t *testing.T) {
 	convey.Convey("test Range implements SearchMode", t, func() {
 		var _ milvus2.SearchMode = (*Range)(nil)
-		convey.So(true, convey.ShouldBeTrue)
 	})
 }

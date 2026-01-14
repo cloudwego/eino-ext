@@ -118,6 +118,5 @@ func TestApproximate_BuildSearchOption(t *testing.T) {
 func TestApproximate_ImplementsSearchMode(t *testing.T) {
 	convey.Convey("test Approximate implements SearchMode", t, func() {
 		var _ milvus2.SearchMode = (*Approximate)(nil)
-		convey.So(true, convey.ShouldBeTrue)
 	})
 }

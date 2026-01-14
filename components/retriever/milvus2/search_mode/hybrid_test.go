@@ -249,9 +249,8 @@ func TestHybrid_BuildHybridSearchOption(t *testing.T) {
 }
 
 // Verify interface implementation
-func TestHybrid_ImplementsHybridSearchMode(t *testing.T) {
-	convey.Convey("test Hybrid implements HybridSearchMode", t, func() {
-		var _ milvus2.HybridSearchMode = (*Hybrid)(nil)
-		convey.So(true, convey.ShouldBeTrue)
+func TestHybrid_ImplementsSearchMode(t *testing.T) {
+	convey.Convey("test Hybrid implements SearchMode", t, func() {
+		var _ milvus2.SearchMode = (*Hybrid)(nil)
 	})
 }
