@@ -56,7 +56,7 @@ func (c ConsistencyLevel) ToEntity() entity.ConsistencyLevel {
 	case ConsistencyLevelCustomized:
 		return entity.ClCustomized
 	default:
-		// ConsistencyLevelCollection (0) or invalid value - default to Bounded
+		// ConsistencyLevelDefault (0) or invalid value - default to Bounded
 		return entity.ClBounded
 	}
 }

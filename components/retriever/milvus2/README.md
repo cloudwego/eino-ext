@@ -104,9 +104,17 @@ func main() {
 | `SparseVectorField` | `string` | `"sparse_vector"` | Sparse vector field name |
 | `OutputFields` | `[]string` | all fields | Fields to return in results |
 | `SearchMode` | `SearchMode` | - | Search strategy (required) |
-| `Embedding` | `embedding.Embedder` | - | Embedder for query vectorization (required) |
+| `Embedding` | `embedding.Embedder` | - | Embedder for query vectorization (optional, required for vector search) |
+| `DocumentConverter` | `func` | default | Custom result-to-document converter |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses collection's level) |
 | `Partitions` | `[]string` | - | Partitions to search |
+
+### VectorType (for Hybrid Search)
+
+| Value | Description |
+|-------|-------------|
+| `DenseVector` | Standard dense floating-point vectors (default) |
+| `SparseVector` | Sparse vectors (used with BM25 or precomputed sparse embeddings) |
 
 ## Search Modes
 

@@ -112,10 +112,10 @@ func main() {
 | `Client` | `*milvusclient.Client` | - | Pre-configured Milvus client (optional) |
 | `ClientConfig` | `*milvusclient.ClientConfig` | - | Client configuration (required if Client is nil) |
 | `Collection` | `string` | `"eino_collection"` | Collection name |
-| `Vector` | `*VectorConfig` | - | Dense vector configuration (Dimension, MetricType, FieldName) |
-| `Sparse` | `*SparseVectorConfig` | - | Sparse vector configuration (MetricType, FieldName)  |
-| `IndexBuilder` | `IndexBuilder` | AutoIndex | Index type builder |
+| `Vector` | `*VectorConfig` | - | Dense vector configuration (Dimension, MetricType, IndexBuilder) |
+| `Sparse` | `*SparseVectorConfig` | - | Sparse vector configuration (MetricType, FieldName) |
 | `Embedding` | `embedding.Embedder` | - | Embedder for vectorization (optional). If nil, documents must have vectors (BYOV). |
+| `DocumentConverter` | `func` | default | Custom document to Milvus column converter |
 | `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses Milvus default: Bounded) |
 | `PartitionName` | `string` | - | Default partition for insertion |
 | `EnableDynamicSchema` | `bool` | `false` | Enable dynamic field support |
@@ -128,6 +128,7 @@ func main() {
 |-------|------|---------|-------------|
 | `Dimension` | `int64` | - | Vector dimension (Required) |
 | `MetricType` | `MetricType` | `L2` | Similarity metric (L2, IP, COSINE, etc.) |
+| `IndexBuilder` | `IndexBuilder` | AutoIndex | Index type builder (HNSW, IVF, etc.) |
 | `VectorField` | `string` | `"vector"` | Field name for dense vector |
 
 ### Sparse Vector Configuration (`SparseVectorConfig`)

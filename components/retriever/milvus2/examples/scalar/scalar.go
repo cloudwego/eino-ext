@@ -30,7 +30,6 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
@@ -87,14 +86,4 @@ func printRes(docs []*schema.Document, err error) {
 	for _, d := range docs {
 		fmt.Printf("ID: %s, Content: %s\n", d.ID, d.Content)
 	}
-}
-
-type mockEmbedding struct{ dim int }
-
-func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts ...embedding.Option) ([][]float64, error) {
-	res := make([][]float64, len(texts))
-	for i := range texts {
-		res[i] = make([]float64, m.dim)
-	}
-	return res, nil
 }
