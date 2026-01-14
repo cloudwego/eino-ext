@@ -350,6 +350,7 @@ func TestNewIndexer(t *testing.T) {
 			Mock(GetMethod(mockClient, "HasCollection")).Return(true, nil).Build()
 			Mock(GetMethod(mockClient, "GetLoadState")).Return(entity.LoadState{State: entity.LoadStateNotLoad}, nil).Build()
 			Mock(GetMethod(mockClient, "ListIndexes")).Return([]string{}, nil).Build()
+			Mock(GetMethod(mockClient, "DescribeIndex")).Return(milvusclient.IndexDescription{}, fmt.Errorf("index not found")).Build()
 
 			mockTask := &milvusclient.CreateIndexTask{}
 			Mock(GetMethod(mockClient, "CreateIndex")).Return(mockTask, nil).Build()
@@ -378,6 +379,7 @@ func TestNewIndexer(t *testing.T) {
 			Mock(GetMethod(mockClient, "CreateCollection")).Return(nil).Build()
 			Mock(GetMethod(mockClient, "GetLoadState")).Return(entity.LoadState{State: entity.LoadStateNotLoad}, nil).Build()
 			Mock(GetMethod(mockClient, "ListIndexes")).Return([]string{}, nil).Build()
+			Mock(GetMethod(mockClient, "DescribeIndex")).Return(milvusclient.IndexDescription{}, fmt.Errorf("index not found")).Build()
 
 			mockTask := &milvusclient.CreateIndexTask{}
 			Mock(GetMethod(mockClient, "CreateIndex")).Return(mockTask, nil).Build()

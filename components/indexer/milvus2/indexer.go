@@ -19,6 +19,7 @@ package milvus2
 import (
 	"context"
 	"fmt"
+	"log"
 	"sort"
 
 	"github.com/bytedance/sonic"
@@ -513,6 +514,13 @@ func createVectorIndex(ctx context.Context, cli *milvusclient.Client, vectorFiel
 		idx = index.NewAutoIndex(vectorConf.MetricType.toEntity())
 	}
 
+	descOpts := milvusclient.NewDescribeIndexOption(collection, vectorField)
+	_, err := cli.DescribeIndex(ctx, descOpts)
+	if err == nil {
+		log.Printf("[NewIndexer] vector index for field %s already exists, skipping creation", vectorField)
+		return nil
+	}
+
 	createIndexOpt := milvusclient.NewCreateIndexOption(collection, vectorField, idx)
 
 	createTask, err := cli.CreateIndex(ctx, createIndexOpt)
@@ -532,6 +540,13 @@ func createSparseIndex(ctx context.Context, cli *milvusclient.Client, sparseConf
 		sparseIdx = sparseConf.IndexBuilder.Build(sparseConf.MetricType)
 	} else {
 		sparseIdx = NewSparseInvertedIndexBuilder().Build(sparseConf.MetricType)
+	}
+
+	descOpts := milvusclient.NewDescribeIndexOption(collection, sparseConf.VectorField)
+	_, err := cli.DescribeIndex(ctx, descOpts)
+	if err == nil {
+		log.Printf("[NewIndexer] sparse index for field %s already exists, skipping creation", sparseConf.VectorField)
+		return nil
 	}
 
 	createSparseIndexOpt := milvusclient.NewCreateIndexOption(collection, sparseConf.VectorField, sparseIdx)
