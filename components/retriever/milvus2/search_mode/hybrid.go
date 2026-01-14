@@ -111,6 +111,11 @@ func (h *Hybrid) Retrieve(ctx context.Context, client *milvusclient.Client, conf
 // BuildHybridSearchOption creates a HybridSearchOption for multi-vector search with reranking.
 // It is internal to the hybrid implementation now/helper but kept as method for cleaner code.
 func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.RetrieverConfig, queryVector []float32, query string, opts ...retriever.Option) (milvusclient.HybridSearchOption, error) {
+	// Validate SubRequests - hybrid requires at least 2 SubRequests for meaningful fusion
+	if len(h.SubRequests) < 2 {
+		return nil, fmt.Errorf("hybrid search requires at least 2 SubRequests; use Approximate or Sparse search mode for single-vector search")
+	}
+
 	io := retriever.GetImplSpecificOptions(&milvus2.ImplOptions{}, opts...)
 	co := retriever.GetCommonOptions(&retriever.Options{
 		TopK: &conf.TopK,
@@ -148,8 +153,9 @@ func (h *Hybrid) BuildHybridSearchOption(ctx context.Context, conf *milvus2.Retr
 			// Sparse vector: use raw text for BM25 function
 			annReq = milvusclient.NewAnnRequest(field, limit, entity.Text(query))
 		} else {
+			// Dense vector: require query vector
 			if len(queryVector) == 0 {
-				continue // Skip if no dense vector provided but requested
+				return nil, fmt.Errorf("dense vector SubRequest requires embedding, but query vector is empty")
 			}
 			annReq = milvusclient.NewAnnRequest(field, limit, entity.FloatVector(queryVector))
 		}
