@@ -217,54 +217,6 @@ func (r *Retriever) applyScoreThreshold(docs []*schema.Document, threshold *floa
 	return filtered
 }
 
-// QueryResultSetToDocuments converts a Query result set to documents.
-func QueryResultSetToDocuments(resultSet milvusclient.ResultSet) ([]*schema.Document, error) {
-	docs := make([]*schema.Document, 0, resultSet.ResultCount)
-
-	getField := func(fieldName string, idx int) (any, bool) {
-		col := resultSet.GetColumn(fieldName)
-		if col == nil {
-			return nil, false
-		}
-		val, err := col.Get(idx)
-		return val, err == nil
-	}
-
-	for i := 0; i < resultSet.ResultCount; i++ {
-		idVal, ok := getField(defaultIDField, i)
-		if !ok {
-			continue
-		}
-		idStr := fmt.Sprintf("%v", idVal)
-
-		contentVal, _ := getField(defaultContentField, i)
-		contentStr := ""
-		if contentVal != nil {
-			contentStr = fmt.Sprintf("%v", contentVal)
-		}
-
-		meta := make(map[string]any)
-		if metaVal, ok := getField(defaultMetadataField, i); ok {
-			if fieldBytes, ok := metaVal.([]byte); ok {
-				var m map[string]any
-				if err := sonic.Unmarshal(fieldBytes, &m); err == nil {
-					for k, v := range m {
-						meta[k] = v
-					}
-				}
-			}
-		}
-
-		docs = append(docs, &schema.Document{
-			ID:       idStr,
-			Content:  contentStr,
-			MetaData: meta,
-		})
-	}
-
-	return docs, nil
-}
-
 // GetType returns the type of the retriever.
 func (r *Retriever) GetType() string {
 	return typ

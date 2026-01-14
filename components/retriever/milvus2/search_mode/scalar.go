@@ -48,8 +48,7 @@ func (s *Scalar) Retrieve(ctx context.Context, client *milvusclient.Client, conf
 		return nil, fmt.Errorf("failed to query: %w", err)
 	}
 
-	// Helper to convert Query ResultSet to Documents
-	return milvus2.QueryResultSetToDocuments(result)
+	return conf.DocumentConverter(ctx, result)
 }
 
 // BuildQueryOption creates a QueryOption for scalar/metadata-based document retrieval.
