@@ -109,6 +109,11 @@ func (r *Range) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverCo
 		WithOutputFields(conf.OutputFields...).
 		WithSearchParam("radius", fmt.Sprintf("%v", r.Radius))
 
+	// Apply metric type
+	if r.MetricType != "" {
+		searchOpt.WithSearchParam("metric_type", string(r.MetricType))
+	}
+
 	if r.RangeFilter != nil {
 		searchOpt = searchOpt.WithSearchParam("range_filter", fmt.Sprintf("%v", *r.RangeFilter))
 	}
