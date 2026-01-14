@@ -477,9 +477,9 @@ func TestIndexer_Store(t *testing.T) {
 			convey.So(ids, convey.ShouldBeNil)
 		})
 
-		PatchConvey("test store with insert error", func() {
+		PatchConvey("test store with upsert error", func() {
 			indexer.config.Embedding = mockEmb
-			Mock(GetMethod(mockClient, "Insert")).Return(nil, fmt.Errorf("insert error")).Build()
+			Mock(GetMethod(mockClient, "Upsert")).Return(nil, fmt.Errorf("upsert error")).Build()
 
 			ids, err := indexer.Store(ctx, docs)
 			convey.So(err, convey.ShouldNotBeNil)
@@ -491,10 +491,10 @@ func TestIndexer_Store(t *testing.T) {
 
 			// Create mock ID column
 			mockIDColumn := column.NewColumnVarChar("id", []string{"doc1", "doc2"})
-			mockResult := milvusclient.InsertResult{
+			mockResult := milvusclient.UpsertResult{
 				IDs: mockIDColumn,
 			}
-			Mock(GetMethod(mockClient, "Insert")).Return(mockResult, nil).Build()
+			Mock(GetMethod(mockClient, "Upsert")).Return(mockResult, nil).Build()
 
 			ids, err := indexer.Store(ctx, docs)
 			convey.So(err, convey.ShouldBeNil)

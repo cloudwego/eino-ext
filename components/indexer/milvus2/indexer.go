@@ -250,16 +250,16 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		return nil, err
 	}
 
-	insertResult, err := i.insertDocuments(ctx, docs, vectors, io.Partition)
+	upsertResult, err := i.upsertDocuments(ctx, docs, vectors, io.Partition)
 	if err != nil {
 		return nil, err
 	}
 
 	callbacks.OnEnd(ctx, &indexer.CallbackOutput{
-		IDs: insertResult,
+		IDs: upsertResult,
 	})
 
-	return insertResult, nil
+	return upsertResult, nil
 }
 
 func (i *Indexer) embedDocuments(ctx context.Context, emb embedding.Embedder, docs []*schema.Document) ([][]float64, error) {
@@ -282,7 +282,7 @@ func (i *Indexer) embedDocuments(ctx context.Context, emb embedding.Embedder, do
 	return vectors, nil
 }
 
-func (i *Indexer) insertDocuments(ctx context.Context, docs []*schema.Document, vectors [][]float64, partition string) ([]string, error) {
+func (i *Indexer) upsertDocuments(ctx context.Context, docs []*schema.Document, vectors [][]float64, partition string) ([]string, error) {
 	columns, err := i.config.DocumentConverter(ctx, docs, vectors)
 	if err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
@@ -296,9 +296,9 @@ func (i *Indexer) insertDocuments(ctx context.Context, docs []*schema.Document, 
 		insertOpt = insertOpt.WithColumns(col)
 	}
 
-	result, err := i.client.Insert(ctx, insertOpt)
+	result, err := i.client.Upsert(ctx, insertOpt)
 	if err != nil {
-		return nil, fmt.Errorf("[Indexer.Store] failed to insert documents: %w", err)
+		return nil, fmt.Errorf("[Indexer.Store] failed to upsert documents: %w", err)
 	}
 
 	ids := make([]string, 0, result.IDs.Len())
