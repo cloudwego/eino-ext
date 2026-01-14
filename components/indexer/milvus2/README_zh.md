@@ -136,7 +136,9 @@ func main() {
 |------|------|--------|------|
 | `VectorField` | `string` | `"sparse_vector"` | 稀疏向量字段名 |
 | `MetricType` | `MetricType` | `BM25` | 相似度度量类型 |
-| `Method` | `SparseMethod` | `Auto` | 生成方法 (`Auto` 或 `Precomputed`) |
+| `Method` | `SparseMethod` | `Auto` (BM25) | 生成方法 (`Auto` 或 `Precomputed`) |
+
+> **注意**: 仅当 `MetricType` 为 `BM25` 时，`Method` 默认为 `Auto`。`Auto` 意味着使用 Milvus 服务器端函数（远程函数）。对于其他度量类型（如 `IP`），默认为 `Precomputed`。
 
 ## 索引构建器
 

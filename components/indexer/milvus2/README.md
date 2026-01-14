@@ -136,7 +136,9 @@ func main() {
 |-------|------|---------|-------------|
 | `VectorField` | `string` | `"sparse_vector"` | Field name for sparse vector |
 | `MetricType` | `MetricType` | `BM25` | Similarity metric |
-| `Method` | `SparseMethod` | `Auto` | Generation method (`Auto` or `Precomputed`) |
+| `Method` | `SparseMethod` | `Auto` (BM25) | Generation method (`Auto` or `Precomputed`) |
+
+> **Note**: `Method` defaults to `Auto` only if `MetricType` is `BM25`. `Auto` implies using Milvus server-side functions (remote function). For other metrics (e.g., `IP`), it defaults to `Precomputed`.
 
 ## Index Builders
 

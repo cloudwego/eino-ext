@@ -361,6 +361,10 @@ func (c *IndexerConfig) validate() error {
 		}
 
 		if c.Sparse.Method == "" {
+			// Auto uses Milvus server-side functions (e.g. BM25).
+			// Precomputed requires the user to provide the sparse vector in the document.
+			// Currently, Milvus only provides built-in Auto support for BM25.
+			// For other metrics (e.g. IP), default to Precomputed.
 			if c.Sparse.MetricType == BM25 {
 				c.Sparse.Method = SparseMethodAuto
 			} else {
