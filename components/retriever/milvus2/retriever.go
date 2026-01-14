@@ -172,36 +172,6 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	return docs, nil
 }
 
-// EmbedQuery embeds the query string into a vector.
-// It is exposed for SearchMode implementations to use.
-func EmbedQuery(ctx context.Context, emb embedding.Embedder, query string) ([]float32, error) {
-	if emb == nil {
-		return nil, fmt.Errorf("[Retriever] embedding not provided")
-	}
-
-	// We can't access r.makeEmbeddingCtx here easily without passing r.
-	// For now, we assume the SearchMode implementation handles the context if needed,
-	// or we pass a context that already has the run info if possible.
-	// However, EmbedStrings usually expects just a context.
-	// Let's check how makeEmbeddingCtx was used. It adds ComponentOfEmbedding callback info.
-	// TODO: To fully support callbacks for embedding inside SearchMode, we might need a helper.
-	// For now, let's keep it simple.
-
-	vectors, err := emb.EmbedStrings(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("[Retriever] failed to embed query: %w", err)
-	}
-	if len(vectors) != 1 {
-		return nil, fmt.Errorf("[Retriever] invalid embedding result: expected 1, got %d", len(vectors))
-	}
-
-	queryVector := make([]float32, len(vectors[0]))
-	for i, v := range vectors[0] {
-		queryVector[i] = float32(v)
-	}
-	return queryVector, nil
-}
-
 // GetType returns the type of the retriever.
 func (r *Retriever) GetType() string {
 	return typ

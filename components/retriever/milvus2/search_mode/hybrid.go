@@ -86,7 +86,7 @@ func (h *Hybrid) Retrieve(ctx context.Context, client *milvusclient.Client, conf
 		return nil, fmt.Errorf("embedding is required for hybrid search")
 	}
 
-	queryVector, err := milvus2.EmbedQuery(ctx, conf.Embedding, query)
+	queryVector, err := EmbedQuery(ctx, conf.Embedding, query)
 	if err != nil {
 		return nil, err
 	}

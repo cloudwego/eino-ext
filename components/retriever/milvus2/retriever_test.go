@@ -204,37 +204,6 @@ func TestRetriever_Retrieve(t *testing.T) {
 	})
 }
 
-func TestEmbedQuery(t *testing.T) {
-	PatchConvey("test EmbedQuery", t, func() {
-		ctx := context.Background()
-		// No need for retriever instance
-
-		PatchConvey("test embedding success returns float32 vector", func() {
-			mockEmb := &mockEmbedding{dims: 128}
-			vector, err := EmbedQuery(ctx, mockEmb, "test query")
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(vector), convey.ShouldEqual, 128)
-			// First element should be 0.1 converted to float32
-			convey.So(vector[0], convey.ShouldEqual, float32(0.1))
-		})
-
-		PatchConvey("test embedding error", func() {
-			mockEmb := &mockEmbedding{err: fmt.Errorf("embedding failed")}
-			vector, err := EmbedQuery(ctx, mockEmb, "test query")
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(vector, convey.ShouldBeNil)
-		})
-
-		PatchConvey("test embedding empty result", func() {
-			mockEmb := &mockEmbedding{dims: 0}
-			// Even with dims=0, the mock returns 128 (default)
-			vector, err := EmbedQuery(ctx, mockEmb, "test query")
-			convey.So(err, convey.ShouldBeNil)
-			convey.So(len(vector), convey.ShouldBeGreaterThan, 0)
-		})
-	})
-}
-
 func TestWithFilter(t *testing.T) {
 	convey.Convey("test WithFilter option", t, func() {
 		opt := WithFilter("id > 10")

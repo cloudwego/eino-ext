@@ -76,7 +76,7 @@ func (i *Iterator) Retrieve(ctx context.Context, client *milvusclient.Client, co
 		return nil, fmt.Errorf("embedding is required for iterator search")
 	}
 
-	queryVector, err := milvus2.EmbedQuery(ctx, conf.Embedding, query)
+	queryVector, err := EmbedQuery(ctx, conf.Embedding, query)
 	if err != nil {
 		return nil, err
 	}
