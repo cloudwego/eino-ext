@@ -46,7 +46,6 @@ func main() {
 
 	ctx := context.Background()
 	collectionName := "demo_milvus2"
-	dim := 128
 
 	// Create retriever with Scalar search mode
 	// Scalar uses the Query API (metadata filtering) instead of vector search.
