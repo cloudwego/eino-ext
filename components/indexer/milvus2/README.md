@@ -115,8 +115,8 @@ func main() {
 | `Vector` | `*VectorConfig` | - | Dense vector configuration (Dimension, MetricType, IndexBuilder) |
 | `Sparse` | `*SparseVectorConfig` | - | Sparse vector configuration (MetricType, FieldName) |
 | `Embedding` | `embedding.Embedder` | - | Embedder for vectorization (optional). If nil, documents must have vectors (BYOV). |
-| `DocumentConverter` | `func` | default | Custom document to Milvus column converter |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses Milvus default: Bounded) |
+| `DocumentConverter` | `func` | default converter | Custom document to Milvus column converter |
+| `ConsistencyLevel` | `ConsistencyLevel` | `ConsistencyLevelDefault` | Consistency level (`ConsistencyLevelDefault` uses Milvus default: Bounded; stays at collection level if not explicitly set) |
 | `PartitionName` | `string` | - | Default partition for insertion |
 | `EnableDynamicSchema` | `bool` | `false` | Enable dynamic field support |
 | `Functions` | `[]*entity.Function` | - | Schema functions (e.g., BM25) for server-side processing |
@@ -128,7 +128,7 @@ func main() {
 |-------|------|---------|-------------|
 | `Dimension` | `int64` | - | Vector dimension (Required) |
 | `MetricType` | `MetricType` | `L2` | Similarity metric (L2, IP, COSINE, etc.) |
-| `IndexBuilder` | `IndexBuilder` | AutoIndex | Index type builder (HNSW, IVF, etc.) |
+| `IndexBuilder` | `IndexBuilder` | `AutoIndexBuilder` | Index type builder (HNSW, IVF, etc.) |
 | `VectorField` | `string` | `"vector"` | Field name for dense vector |
 
 ### Sparse Vector Configuration (`SparseVectorConfig`)
@@ -137,7 +137,7 @@ func main() {
 |-------|------|---------|-------------|
 | `VectorField` | `string` | `"sparse_vector"` | Field name for sparse vector |
 | `MetricType` | `MetricType` | `BM25` | Similarity metric |
-| `Method` | `SparseMethod` | `Auto` (BM25) | Generation method (`Auto` or `Precomputed`) |
+| `Method` | `SparseMethod` | `SparseMethodAuto` | Generation method (`SparseMethodAuto` or `SparseMethodPrecomputed`) |
 
 > **Note**: `Method` defaults to `Auto` only if `MetricType` is `BM25`. `Auto` implies using Milvus server-side functions (remote function). For other metrics (e.g., `IP`), it defaults to `Precomputed`.
 
@@ -153,7 +153,13 @@ func main() {
 | `NewIVFRabitQIndexBuilder()` | IVF + RaBitQ binary quantization (Milvus 2.6+) | `NList` |
 | `NewFlatIndexBuilder()` | Brute-force exact search | - |
 | `NewDiskANNIndexBuilder()` | Disk-based for large datasets | - |
-| `NewSCANNIndexBuilder()` | Fast with high recall | `NList`, `WithReorder` |
+| `NewSCANNIndexBuilder()` | Fast with high recall | `NList`, `WithRawDataEnabled` |
+| `NewBinFlatIndexBuilder()` | Brute-force for binary vectors | - |
+| `NewBinIVFFlatIndexBuilder()` | Cluster-based for binary vectors | `NList` |
+| `NewGPUBruteForceIndexBuilder()` | GPU-accelerated brute-force | - |
+| `NewGPUIVFFlatIndexBuilder()` | GPU-accelerated IVF_FLAT | - |
+| `NewGPUIVFPQIndexBuilder()` | GPU-accelerated IVF_PQ | - |
+| `NewGPUCagraIndexBuilder()` | GPU-accelerated graph-based (CAGRA) | `IntermediateGraphDegree`, `GraphDegree` |
 
 #### Sparse Index Builders
 
@@ -200,16 +206,27 @@ indexBuilder := milvus2.NewSCANNIndexBuilder().
 indexBuilder := milvus2.NewDiskANNIndexBuilder() // Disk-based, no extra params
 ```
 
-## Metric Types
-
+### Dense Vector Metrics
 | Metric | Description |
 |--------|-------------|
 | `L2` | Euclidean distance |
 | `IP` | Inner Product |
 | `COSINE` | Cosine similarity |
-| `HAMMING` | Hamming distance (binary) |
-| `JACCARD` | Jaccard distance (binary) |
-| `BM25` | Okapi BM25 (sparse) |
+
+### Sparse Vector Metrics
+| Metric | Description |
+|--------|-------------|
+| `BM25` | Okapi BM25 (Required for `SparseMethodAuto`) |
+| `IP` | Inner Product (Suitable for precomputed sparse vectors) |
+
+### Binary Vector Metrics
+| Metric | Description |
+|--------|-------------|
+| `HAMMING` | Hamming distance |
+| `JACCARD` | Jaccard distance |
+| `TANIMOTO` | Tanimoto distance |
+| `SUBSTRUCTURE` | Substructure search |
+| `SUPERSTRUCTURE` | Superstructure search |
 
 ## Examples
 

@@ -105,7 +105,8 @@ func main() {
 | `OutputFields` | `[]string` | 所有字段 | 结果中返回的字段 |
 | `SearchMode` | `SearchMode` | - | 搜索策略（必需） |
 | `Embedding` | `embedding.Embedder` | - | 用于查询向量化的 Embedder（必需） |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | 一致性级别 (Default 使用 collection 的级别) |
+| `DocumentConverter` | `func` | 默认转换器 | 自定义结果到文档转换 |
+| `ConsistencyLevel` | `ConsistencyLevel` | `ConsistencyLevelDefault` | 一致性级别 (`ConsistencyLevelDefault` 使用 collection 的级别；不应用按请求覆盖) |
 | `Partitions` | `[]string` | - | 要搜索的分区 |
 
 ## 搜索模式
@@ -134,9 +135,10 @@ mode := search_mode.NewRange(milvus2.L2, 0.5).
 使用 BM25 进行纯稀疏向量搜索。需要 Milvus 2.5+ 支持稀疏向量字段并启用 Functions。
 
 ```go
-// 纯稀疏搜索需要指定 OutputFields 以获取内容
+// 纯稀疏搜索 (BM25) 需要指定 OutputFields 以获取内容
 mode := search_mode.NewSparse(milvus2.BM25)
-// 在配置中: OutputFields: []string{"*"}
+// 在配置中，使用 "*" 或特定字段以确保返回内容:
+// OutputFields: []string{"*"}
 ```
 
 ### 混合搜索 (Hybrid - 稠密 + 稀疏)
@@ -183,9 +185,14 @@ retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 
 基于批次的遍历，适用于大结果集。
 
+> [!WARNING]
+> `Iterator` 模式的 `Retrieve` 方法会获取 **所有** 结果，直到达到总限制 (`TopK`) 或集合末尾。对于极大数据集，这可能会消耗大量内存。
+
 ```go
-mode := search_mode.NewIterator(milvus2.COSINE, 100)
-// 使用 RetrieverConfig.TopK 或 retriever.WithTopK 设置总限制。
+mode := search_mode.NewIterator(milvus2.COSINE, 100).
+    WithSearchParams(map[string]string{"nprobe": "10"})
+
+// 使用 RetrieverConfig.TopK 或 retriever.WithTopK 设置总限制 (IteratorLimit)。
 ```
 
 ### 标量搜索 (Scalar)
@@ -199,16 +206,27 @@ mode := search_mode.NewScalar()
 docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023`)
 ```
 
-## 度量类型 (Metric Type)
-
+### 稠密向量度量 (Dense)
 | 度量类型 | 描述 |
 |----------|------|
 | `L2` | 欧几里得距离 |
 | `IP` | 内积 |
 | `COSINE` | 余弦相似度 |
-| `HAMMING` | 汉明距离（二进制） |
-| `JACCARD` | 杰卡德距离（二进制） |
-| `BM25` | Okapi BM25 (稀疏) |
+
+### 稀疏向量度量 (Sparse)
+| 度量类型 | 描述 |
+|----------|------|
+| `BM25` | Okapi BM25 (BM25 搜索必需) |
+| `IP` | 内积 (适用于预计算的稀疏向量) |
+
+### 二进制向量度量 (Binary)
+| 度量类型 | 描述 |
+|----------|------|
+| `HAMMING` | 汉明距离 |
+| `JACCARD` | 杰卡德距离 |
+| `TANIMOTO` | Tanimoto 距离 |
+| `SUBSTRUCTURE` | 子结构搜索 |
+| `SUPERSTRUCTURE` | 超结构搜索 |
 
 > **重要提示**: SearchMode 中的度量类型必须与创建集合时使用的索引度量类型一致。
 

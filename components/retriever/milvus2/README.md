@@ -105,8 +105,8 @@ func main() {
 | `OutputFields` | `[]string` | all fields | Fields to return in results |
 | `SearchMode` | `SearchMode` | - | Search strategy (required) |
 | `Embedding` | `embedding.Embedder` | - | Embedder for query vectorization (optional, required for vector search) |
-| `DocumentConverter` | `func` | default | Custom result-to-document converter |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | Consistency level (Default uses collection's level) |
+| `DocumentConverter` | `func` | default converter | Custom result-to-document converter |
+| `ConsistencyLevel` | `ConsistencyLevel` | `ConsistencyLevelDefault` | Consistency level (`ConsistencyLevelDefault` uses the collection's level; no per-request override is applied) |
 | `Partitions` | `[]string` | - | Partitions to search |
 
 ### VectorType (for Hybrid Search)
@@ -142,9 +142,10 @@ mode := search_mode.NewRange(milvus2.L2, 0.5).
 Sparse-only search using BM25. Requires Milvus 2.5+ with sparse vector fields and enabled Functions.
 
 ```go
-// OutputFields is required to retrieve content for sparse-only search
+// OutputFields is required to retrieve content for sparse-only search (BM25)
 mode := search_mode.NewSparse(milvus2.BM25)
-// In config: OutputFields: []string{"*"}
+// In config, use "*" or specific fields to ensure content is returned:
+// OutputFields: []string{"*"}
 ```
 
 ### Hybrid Search (Dense + Sparse)
@@ -191,9 +192,14 @@ retriever, err := milvus2.NewRetriever(ctx, &milvus2.RetrieverConfig{
 
 Batch-based traversal for large result sets.
 
+> [!WARNING]
+> The `Retrieve` method in `Iterator` mode fetches **all** results until the total limit (`TopK`) or end-of-collection is reached. For extremely large datasets, this may consume significant memory.
+
 ```go
-mode := search_mode.NewIterator(milvus2.COSINE, 100)
-// Use RetrieverConfig.TopK or retriever.WithTopK to set the total limit.
+mode := search_mode.NewIterator(milvus2.COSINE, 100).
+    WithSearchParams(map[string]string{"nprobe": "10"})
+
+// Use RetrieverConfig.TopK or retriever.WithTopK to set the total limit (IteratorLimit).
 ```
 
 ### Scalar Search
@@ -207,16 +213,27 @@ mode := search_mode.NewScalar()
 docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023`)
 ```
 
-## Metric Types
-
+### Dense Vector Metrics
 | Metric | Description |
 |--------|-------------|
 | `L2` | Euclidean distance |
 | `IP` | Inner Product |
 | `COSINE` | Cosine similarity |
-| `HAMMING` | Hamming distance (binary) |
-| `JACCARD` | Jaccard distance (binary) |
-| `BM25` | Okapi BM25 (sparse) |
+
+### Sparse Vector Metrics
+| Metric | Description |
+|--------|-------------|
+| `BM25` | Okapi BM25 (Required for BM25 Search) |
+| `IP` | Inner Product (Suitable for precomputed sparse vectors) |
+
+### Binary Vector Metrics
+| Metric | Description |
+|--------|-------------|
+| `HAMMING` | Hamming distance |
+| `JACCARD` | Jaccard distance |
+| `TANIMOTO` | Tanimoto distance |
+| `SUBSTRUCTURE` | Substructure search |
+| `SUPERSTRUCTURE` | Superstructure search |
 
 > **Important**: The metric type in SearchMode must match the index metric type used when creating the collection.
 

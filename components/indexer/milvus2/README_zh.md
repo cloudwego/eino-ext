@@ -114,9 +114,9 @@ func main() {
 | `Collection` | `string` | `"eino_collection"` | 集合名称 |
 | `Vector` | `*VectorConfig` | - | 稠密向量配置 (维度, MetricType, 字段名) |
 | `Sparse` | `*SparseVectorConfig` | - | 稀疏向量配置 (MetricType, 字段名) |
-| `IndexBuilder` | `IndexBuilder` | AutoIndex | 索引类型构建器 |
+| `IndexBuilder` | `IndexBuilder` | `AutoIndexBuilder` | 索引类型构建器 |
 | `Embedding` | `embedding.Embedder` | - | 用于向量化的 Embedder（可选）。如果为空，文档必须包含向量 (BYOV)。 |
-| `ConsistencyLevel` | `ConsistencyLevel` | `Default` | 一致性级别 (Default 使用 Milvus 默认: Bounded) |
+| `ConsistencyLevel` | `ConsistencyLevel` | `ConsistencyLevelDefault` | 一致性级别 (`ConsistencyLevelDefault` 使用 Milvus 默认: Bounded; 如果未显式设置，则保持集合级别设置) |
 | `PartitionName` | `string` | - | 插入数据的默认分区 |
 | `EnableDynamicSchema` | `bool` | `false` | 启用动态字段支持 |
 | `Functions` | `[]*entity.Function` | - | Schema 函数定义（如 BM25），用于服务器端处理 |
@@ -136,7 +136,7 @@ func main() {
 |------|------|--------|------|
 | `VectorField` | `string` | `"sparse_vector"` | 稀疏向量字段名 |
 | `MetricType` | `MetricType` | `BM25` | 相似度度量类型 |
-| `Method` | `SparseMethod` | `Auto` (BM25) | 生成方法 (`Auto` 或 `Precomputed`) |
+| `Method` | `SparseMethod` | `SparseMethodAuto` | 生成方法 (`SparseMethodAuto` 或 `SparseMethodPrecomputed`) |
 
 > **注意**: 仅当 `MetricType` 为 `BM25` 时，`Method` 默认为 `Auto`。`Auto` 意味着使用 Milvus 服务器端函数（远程函数）。对于其他度量类型（如 `IP`），默认为 `Precomputed`。
 
@@ -152,7 +152,13 @@ func main() {
 | `NewIVFRabitQIndexBuilder()` | IVF + RaBitQ 二进制量化 (Milvus 2.6+) | `NList` |
 | `NewFlatIndexBuilder()` | 暴力精确搜索 | - |
 | `NewDiskANNIndexBuilder()` | 面向大数据集的磁盘索引 | - |
-| `NewSCANNIndexBuilder()` | 高召回率的快速搜索 | `NList`, `WithReorder` |
+| `NewSCANNIndexBuilder()` | 高召回率的快速搜索 | `NList`, `WithRawDataEnabled` |
+| `NewBinFlatIndexBuilder()` | 二进制向量的暴力搜索 | - |
+| `NewBinIVFFlatIndexBuilder()` | 二进制向量的聚类搜索 | `NList` |
+| `NewGPUBruteForceIndexBuilder()` | GPU 加速暴力搜索 | - |
+| `NewGPUIVFFlatIndexBuilder()` | GPU 加速 IVF_FLAT | - |
+| `NewGPUIVFPQIndexBuilder()` | GPU 加速 IVF_PQ | - |
+| `NewGPUCagraIndexBuilder()` | GPU 加速图索引 (CAGRA) | `IntermediateGraphDegree`, `GraphDegree` |
 
 #### 稀疏索引构建器
 
@@ -199,16 +205,27 @@ indexBuilder := milvus2.NewSCANNIndexBuilder().
 indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参数
 ```
 
-## 度量类型 (Metric Type)
-
+### 稠密向量度量 (Dense)
 | 度量类型 | 描述 |
 |----------|------|
 | `L2` | 欧几里得距离 |
 | `IP` | 内积 |
 | `COSINE` | 余弦相似度 |
-| `HAMMING` | 汉明距离（二进制） |
-| `JACCARD` | 杰卡德距离（二进制） |
-| `BM25` | Okapi BM25 (稀疏) |
+
+### 稀疏向量度量 (Sparse)
+| 度量类型 | 描述 |
+|----------|------|
+| `BM25` | Okapi BM25 (`SparseMethodAuto` 必需) |
+| `IP` | 内积 (适用于预计算的稀疏向量) |
+
+### 二进制向量度量 (Binary)
+| 度量类型 | 描述 |
+|----------|------|
+| `HAMMING` | 汉明距离 |
+| `JACCARD` | 杰卡德距离 |
+| `TANIMOTO` | Tanimoto 距离 |
+| `SUBSTRUCTURE` | 子结构搜索 |
+| `SUPERSTRUCTURE` | 超结构搜索 |
 
 ## 示例
 
