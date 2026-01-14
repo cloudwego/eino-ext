@@ -27,43 +27,43 @@ func TestConsistencyLevel_toEntity(t *testing.T) {
 	convey.Convey("test ConsistencyLevel.toEntity", t, func() {
 		convey.Convey("test ConsistencyLevelStrong", func() {
 			level := ConsistencyLevelStrong
-			result := level.toEntity()
+			result := level.ToEntity()
 			convey.So(result, convey.ShouldEqual, entity.ClStrong)
 		})
 
 		convey.Convey("test ConsistencyLevelSession", func() {
 			level := ConsistencyLevelSession
-			result := level.toEntity()
+			result := level.ToEntity()
 			convey.So(result, convey.ShouldEqual, entity.ClSession)
 		})
 
 		convey.Convey("test ConsistencyLevelBounded", func() {
 			level := ConsistencyLevelBounded
-			result := level.toEntity()
+			result := level.ToEntity()
 			convey.So(result, convey.ShouldEqual, entity.ClBounded)
 		})
 
 		convey.Convey("test ConsistencyLevelEventually", func() {
 			level := ConsistencyLevelEventually
-			result := level.toEntity()
+			result := level.ToEntity()
 			convey.So(result, convey.ShouldEqual, entity.ClEventually)
 		})
 
 		convey.Convey("test ConsistencyLevelCustomized", func() {
 			level := ConsistencyLevelCustomized
-			result := level.toEntity()
+			result := level.ToEntity()
 			convey.So(result, convey.ShouldEqual, entity.ClCustomized)
 		})
 
 		convey.Convey("test default/unknown level", func() {
 			level := ConsistencyLevel(0)
-			result := level.toEntity()
+			result := level.ToEntity()
 			convey.So(result, convey.ShouldEqual, entity.ClBounded)
 		})
 
 		convey.Convey("test invalid level", func() {
 			level := ConsistencyLevel(100)
-			result := level.toEntity()
+			result := level.ToEntity()
 			convey.So(result, convey.ShouldEqual, entity.ClBounded)
 		})
 	})

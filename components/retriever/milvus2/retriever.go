@@ -202,21 +202,6 @@ func EmbedQuery(ctx context.Context, emb embedding.Embedder, query string) ([]fl
 	return queryVector, nil
 }
 
-// applyScoreThreshold filters documents below the score threshold.
-func (r *Retriever) applyScoreThreshold(docs []*schema.Document, threshold *float64) []*schema.Document {
-	if threshold == nil {
-		return docs
-	}
-
-	filtered := make([]*schema.Document, 0, len(docs))
-	for _, doc := range docs {
-		if doc.Score() >= *threshold {
-			filtered = append(filtered, doc)
-		}
-	}
-	return filtered
-}
-
 // GetType returns the type of the retriever.
 func (r *Retriever) GetType() string {
 	return typ
@@ -309,19 +294,4 @@ func defaultDocumentConverter() func(ctx context.Context, result milvusclient.Re
 
 		return docs, nil
 	}
-}
-
-// makeEmbeddingCtx creates a context with embedding callback information.
-func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
-	runInfo := &callbacks.RunInfo{
-		Component: components.ComponentOfEmbedding,
-	}
-
-	if embType, ok := components.GetType(emb); ok {
-		runInfo.Type = embType
-	}
-
-	runInfo.Name = runInfo.Type + string(runInfo.Component)
-
-	return callbacks.ReuseHandlers(ctx, runInfo)
 }

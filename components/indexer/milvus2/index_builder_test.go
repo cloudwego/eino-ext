@@ -301,37 +301,9 @@ func TestGPUIVFFlatIndexBuilder(t *testing.T) {
 
 func TestGPUIVFPQIndexBuilder(t *testing.T) {
 	convey.Convey("test GPUIVFPQIndexBuilder", t, func() {
-		convey.Convey("test NewGPUIVFPQIndexBuilder default values", func() {
+		convey.Convey("test NewGPUIVFPQIndexBuilder", func() {
 			builder := NewGPUIVFPQIndexBuilder()
 			convey.So(builder, convey.ShouldNotBeNil)
-			convey.So(builder.NList, convey.ShouldEqual, 128)
-			convey.So(builder.M, convey.ShouldEqual, 16)
-			convey.So(builder.NBits, convey.ShouldEqual, 8)
-		})
-
-		convey.Convey("test WithNList", func() {
-			builder := NewGPUIVFPQIndexBuilder().WithNList(100)
-			convey.So(builder.NList, convey.ShouldEqual, 100)
-		})
-
-		convey.Convey("test WithM", func() {
-			builder := NewGPUIVFPQIndexBuilder().WithM(32)
-			convey.So(builder.M, convey.ShouldEqual, 32)
-		})
-
-		convey.Convey("test WithNBits", func() {
-			builder := NewGPUIVFPQIndexBuilder().WithNBits(16)
-			convey.So(builder.NBits, convey.ShouldEqual, 16)
-		})
-
-		convey.Convey("test chained methods", func() {
-			builder := NewGPUIVFPQIndexBuilder().
-				WithNList(1024).
-				WithM(8).
-				WithNBits(12)
-			convey.So(builder.NList, convey.ShouldEqual, 1024)
-			convey.So(builder.M, convey.ShouldEqual, 8)
-			convey.So(builder.NBits, convey.ShouldEqual, 12)
 		})
 
 		convey.Convey("test Build", func() {

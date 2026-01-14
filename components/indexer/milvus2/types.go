@@ -40,10 +40,10 @@ const (
 	ConsistencyLevelCustomized
 )
 
-// toEntity converts ConsistencyLevel to the Milvus SDK entity.ConsistencyLevel type.
+// ToEntity converts ConsistencyLevel to the Milvus SDK entity.ConsistencyLevel type.
 // Note: ConsistencyLevelDefault should be checked before calling this method,
 // as it indicates "use default" and should be resolved first.
-func (c ConsistencyLevel) toEntity() entity.ConsistencyLevel {
+func (c ConsistencyLevel) ToEntity() entity.ConsistencyLevel {
 	switch c {
 	case ConsistencyLevelStrong:
 		return entity.ClStrong

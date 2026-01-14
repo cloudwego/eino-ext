@@ -308,49 +308,18 @@ func (b *GPUIVFFlatIndexBuilder) Build(metricType MetricType) index.Index {
 
 // GPUIVFPQIndexBuilder creates a GPU-accelerated IVF_PQ index.
 // It provides high-speed approximate nearest neighbor search with memory efficiency.
-type GPUIVFPQIndexBuilder struct {
-	// NList is the number of cluster units (recommended: 1-65536).
-	NList int
-	// M is the number of subquantizers (recommended: 1-div).
-	M int
-	// NBits is the number of bits for each subquantizer (recommended: 1-16).
-	NBits int
-}
+// Note: The current Milvus SDK implementation does not expose NList, M, NBits parameters.
+type GPUIVFPQIndexBuilder struct{}
 
-// NewGPUIVFPQIndexBuilder creates a new GPUIVFPQIndexBuilder with default parameters.
-// Default: NList=128, M=16, NBits=8
+// NewGPUIVFPQIndexBuilder creates a new GPUIVFPQIndexBuilder.
 func NewGPUIVFPQIndexBuilder() *GPUIVFPQIndexBuilder {
-	return &GPUIVFPQIndexBuilder{
-		NList: 128,
-		M:     16,
-		NBits: 8,
-	}
-}
-
-// WithNList sets the NList parameter.
-func (b *GPUIVFPQIndexBuilder) WithNList(nlist int) *GPUIVFPQIndexBuilder {
-	b.NList = nlist
-	return b
-}
-
-// WithM sets the M parameter.
-func (b *GPUIVFPQIndexBuilder) WithM(m int) *GPUIVFPQIndexBuilder {
-	b.M = m
-	return b
-}
-
-// WithNBits sets the NBits parameter.
-func (b *GPUIVFPQIndexBuilder) WithNBits(nbits int) *GPUIVFPQIndexBuilder {
-	b.NBits = nbits
-	return b
+	return &GPUIVFPQIndexBuilder{}
 }
 
 // Build creates a GPU IVF_PQ index.
 func (b *GPUIVFPQIndexBuilder) Build(metricType MetricType) index.Index {
 	// NewGPUIVPPQIndex is a typo in Milvus SDK (should be NewGPUIVFPQIndex).
 	// We keep using it until SDK fixes it.
-	// Note: The current SDK implementation for NewGPUIVPPQIndex does not accept NList, M, NBits.
-	// Use default values as provided by the SDK.
 	return index.NewGPUIVPPQIndex(metricType.toEntity())
 }
 

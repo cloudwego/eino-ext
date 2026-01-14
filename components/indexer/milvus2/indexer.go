@@ -417,7 +417,7 @@ func createCollection(ctx context.Context, cli *milvusclient.Client, conf *Index
 
 	createOpt := milvusclient.NewCreateCollectionOption(conf.Collection, sch)
 	if conf.ConsistencyLevel != ConsistencyLevelDefault {
-		createOpt = createOpt.WithConsistencyLevel(conf.ConsistencyLevel.toEntity())
+		createOpt = createOpt.WithConsistencyLevel(conf.ConsistencyLevel.ToEntity())
 	}
 
 	if err := cli.CreateCollection(ctx, createOpt); err != nil {
