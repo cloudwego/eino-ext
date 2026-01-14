@@ -880,15 +880,18 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 			if content.Video == nil {
 				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in user message")
 			}
-			if content.Video.Extra != nil {
-				if videoMetaData := GetInputVideoMetaData(content.Video); videoMetaData != nil {
-					result = append(result, &genai.Part{VideoMetadata: videoMetaData})
-				}
-			}
+
 			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
 			if err != nil {
 				return nil, err
 			}
+
+			if content.Video.Extra != nil {
+				if videoMetaData := GetInputVideoMetaData(content.Video); videoMetaData != nil {
+					p.VideoMetadata = videoMetaData
+				}
+			}
+
 			result = append(result, p)
 
 		case schema.ChatMessagePartTypeFileURL:
