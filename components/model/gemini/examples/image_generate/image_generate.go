@@ -43,6 +43,11 @@ func main() {
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
 		Model:  modelName,
+		// you can set the necessary parameters for image generation
+		ImageConfig: &genai.ImageConfig{
+			AspectRatio: "16:9",
+			ImageSize:   "1K",
+		},
 		ResponseModalities: []gemini.GeminiResponseModality{
 			gemini.GeminiResponseModalityText,
 			gemini.GeminiResponseModalityImage,

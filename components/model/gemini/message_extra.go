@@ -106,6 +106,7 @@ const (
 	thoughtSignatureKey = "gemini_thought_signature"
 	specialParteKey     = "gemini_special_part"
 	groundMetadataKey   = "gemini_ground_metadata"
+	displayNameKey      = "gemini_display_name"
 )
 
 // Deprecated: use SetInputVideoMetaData instead.
@@ -286,4 +287,23 @@ func GetGroundMetadata(m *schema.Message) *genai.GroundingMetadata {
 		return gm
 	}
 	return nil
+}
+
+func SetMultiModalToolResultDisplayName(input schema.MessageInputPart, displayName string) schema.MessageInputPart {
+	if input.Extra == nil {
+		input.Extra = make(map[string]any)
+	}
+	input.Extra[displayNameKey] = displayName
+	return input
+}
+
+func getMultiModalToolResultDisplayName(input schema.MessageInputPart) string {
+	if input.Extra == nil {
+		return ""
+	}
+	displayName, ok := input.Extra[displayNameKey].(string)
+	if !ok {
+		return ""
+	}
+	return displayName
 }
