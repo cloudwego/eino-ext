@@ -18,7 +18,9 @@ package search_mode
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
@@ -93,7 +95,7 @@ func (i *Iterator) Retrieve(ctx context.Context, client *milvusclient.Client, co
 	for {
 		res, err := iterator.Next(ctx)
 		if err != nil {
-			if err.Error() == "EOF" {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, fmt.Errorf("iterator next failed: %w", err)
