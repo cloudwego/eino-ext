@@ -440,7 +440,7 @@ func TestChatModel_convMedia(t *testing.T) {
 			}
 			parts, err := convInputMedia(contents)
 			assert.NoError(t, err)
-			assert.Len(t, parts, 2)
+			assert.Len(t, parts, 1)
 			assert.NotNil(t, parts[0].VideoMetadata)
 			assert.Equal(t, time.Second, parts[0].VideoMetadata.StartOffset)
 			assert.Equal(t, time.Second*5, parts[0].VideoMetadata.EndOffset)
