@@ -789,7 +789,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate)
+		message, err := convCandidate(candidate, make(map[string]int))
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 1)
@@ -820,7 +820,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate)
+		message, err := convCandidate(candidate, make(map[string]int))
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Equal(t, "Final response", message.Content)
@@ -849,7 +849,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate)
+		message, err := convCandidate(candidate, make(map[string]int))
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.AssistantGenMultiContent, 2)
@@ -889,7 +889,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		msg1, err := convCandidate(candidate1)
+		msg1, err := convCandidate(candidate1, make(map[string]int))
 		assert.NoError(t, err)
 		sig, ok := GetThoughtSignatureFromExtra(msg1.ToolCalls[0].Extra)
 		assert.True(t, ok)
@@ -911,7 +911,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		msg2, err := convCandidate(candidate2)
+		msg2, err := convCandidate(candidate2, make(map[string]int))
 		assert.NoError(t, err)
 		sig, ok = GetThoughtSignatureFromExtra(msg2.ToolCalls[0].Extra)
 		assert.True(t, ok)
@@ -1057,7 +1057,7 @@ func TestSpecialPart(t *testing.T) {
 			},
 			Role: genai.RoleModel,
 		},
-	})
+	}, make(map[string]int))
 	assert.Nil(t, err)
 
 	content, err := convSchemaMessage(msg)
@@ -1245,4 +1245,245 @@ func TestPopulateToolChoice(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDuplicateToolCallIDs(t *testing.T) {
+	t.Run("single tool call gets base name as ID", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate, make(map[string]int))
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 1)
+		assert.Equal(t, "get_weather", message.ToolCalls[0].ID)
+		assert.Equal(t, "get_weather", message.ToolCalls[0].Function.Name)
+	})
+
+	t.Run("multiple calls to same function get unique IDs", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "London"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Tokyo"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate, make(map[string]int))
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 3)
+		assert.Equal(t, "get_weather", message.ToolCalls[0].ID)
+		assert.Equal(t, "get_weather-2", message.ToolCalls[1].ID)
+		assert.Equal(t, "get_weather-3", message.ToolCalls[2].ID)
+
+		var args1, args2, args3 map[string]interface{}
+		err = sonic.UnmarshalString(message.ToolCalls[0].Function.Arguments, &args1)
+		assert.NoError(t, err)
+		assert.Equal(t, "Paris", args1["city"])
+
+		err = sonic.UnmarshalString(message.ToolCalls[1].Function.Arguments, &args2)
+		assert.NoError(t, err)
+		assert.Equal(t, "London", args2["city"])
+
+		err = sonic.UnmarshalString(message.ToolCalls[2].Function.Arguments, &args3)
+		assert.NoError(t, err)
+		assert.Equal(t, "Tokyo", args3["city"])
+	})
+
+	t.Run("multiple calls to different functions get base names as IDs", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_time",
+							Args: map[string]any{"timezone": "UTC"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "calculate",
+							Args: map[string]any{"expression": "2+2"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate, make(map[string]int))
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 3)
+		assert.Equal(t, "get_weather", message.ToolCalls[0].ID)
+		assert.Equal(t, "get_time", message.ToolCalls[1].ID)
+		assert.Equal(t, "calculate", message.ToolCalls[2].ID)
+	})
+
+	t.Run("mixed scenario with multiple duplicates", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "1"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "2"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_b",
+							Args: map[string]any{"param": "3"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "4"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "5"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate, make(map[string]int))
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 5)
+		assert.Equal(t, "function_a", message.ToolCalls[0].ID)
+		assert.Equal(t, "function_a-2", message.ToolCalls[1].ID)
+		assert.Equal(t, "function_b", message.ToolCalls[2].ID)
+		assert.Equal(t, "function_a-3", message.ToolCalls[3].ID)
+		assert.Equal(t, "function_a-4", message.ToolCalls[4].ID)
+	})
+
+	t.Run("streaming context preserves tool call ID counter", func(t *testing.T) {
+		toolCallIDs := make(map[string]int)
+
+		resp1 := &genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "first"},
+								},
+							},
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "second"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		message1, err := convResponse(resp1, toolCallIDs)
+		assert.NoError(t, err)
+		assert.NotNil(t, message1)
+		assert.Len(t, message1.ToolCalls, 2)
+		assert.Equal(t, "search", message1.ToolCalls[0].ID)
+		assert.Equal(t, "search-2", message1.ToolCalls[1].ID)
+
+		resp2 := &genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "third"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		message2, err := convResponse(resp2, toolCallIDs)
+		assert.NoError(t, err)
+		assert.NotNil(t, message2)
+		assert.Len(t, message2.ToolCalls, 1)
+		assert.Equal(t, "search-3", message2.ToolCalls[0].ID)
+	})
+
+	t.Run("empty toolCallIDs map starts fresh", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "test_func",
+							Args: map[string]any{},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate, make(map[string]int))
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 1)
+		assert.Equal(t, "test_func", message.ToolCalls[0].ID)
+	})
 }

@@ -12,6 +12,29 @@ A Google Gemini implementation for [Eino](https://github.com/cloudwego/eino) tha
 - Custom response parsing support
 - Flexible model configuration
 - Caching support for generated responses
+- Automatic handling of duplicate tool call IDs
+
+## Important Notes
+
+### Tool Call ID Handling
+
+When Gemini returns multiple function calls with the same function name but different arguments in a single response, this implementation automatically generates unique IDs for each tool call to prevent conflicts.
+
+**ID Generation Pattern:**
+- First call to a function: ID = `function_name`
+- Second call to same function: ID = `function_name-2`
+- Third call to same function: ID = `function_name-3`
+- And so on...
+
+**Example:**
+```go
+// If Gemini returns multiple calls to "get_weather" for different cities:
+// Tool Call 1: ID = "get_weather", Args = {"city": "Paris"}
+// Tool Call 2: ID = "get_weather-2", Args = {"city": "London"}
+// Tool Call 3: ID = "get_weather-3", Args = {"city": "Tokyo"}
+```
+
+This ensures that each tool call has a unique identifier, which is essential for proper tool execution tracking and response handling in agent workflows.
 
 ## Installation
 

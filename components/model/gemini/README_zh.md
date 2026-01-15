@@ -12,6 +12,29 @@
 - 支持自定义响应解析
 - 灵活的模型配置
 - 支持对生成的响应进行缓存
+- 自动处理重复的工具调用 ID
+
+## 重要说明
+
+### 工具调用 ID 处理
+
+当 Gemini 在单个响应中返回多个具有相同函数名但不同参数的函数调用时，此实现会自动为每个工具调用生成唯一的 ID 以防止冲突。
+
+**ID 生成模式：**
+- 第一次调用函数：ID = `function_name`
+- 第二次调用相同函数：ID = `function_name-2`
+- 第三次调用相同函数：ID = `function_name-3`
+- 以此类推...
+
+**示例：**
+```go
+// 如果 Gemini 为不同城市返回多次 "get_weather" 调用：
+// 工具调用 1：ID = "get_weather", Args = {"city": "Paris"}
+// 工具调用 2：ID = "get_weather-2", Args = {"city": "London"}
+// 工具调用 3：ID = "get_weather-3", Args = {"city": "Tokyo"}
+```
+
+这确保每个工具调用都有唯一的标识符，这对于 Agent 工作流中的工具执行跟踪和响应处理至关重要。
 
 ## 安装
 
