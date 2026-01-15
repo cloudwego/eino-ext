@@ -845,7 +845,9 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
 		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
 		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
-		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		if len(message.MultiContent) > 0 {
+			log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		}
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:
