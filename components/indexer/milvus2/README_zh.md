@@ -137,10 +137,13 @@ func main() {
 | `VectorField` | `string` | `"sparse_vector"` | 稀疏向量字段名 |
 | `MetricType` | `MetricType` | `BM25` | 相似度度量类型 |
 | `Method` | `SparseMethod` | `SparseMethodAuto` | 生成方法 (`SparseMethodAuto` 或 `SparseMethodPrecomputed`) |
+| `IndexBuilder` | `SparseIndexBuilder` | `SparseInvertedIndex` | 索引构建器 (`NewSparseInvertedIndexBuilder` 或 `NewSparseWANDIndexBuilder`) |
 
 > **注意**: 仅当 `MetricType` 为 `BM25` 时，`Method` 默认为 `Auto`。`Auto` 意味着使用 Milvus 服务器端函数（远程函数）。对于其他度量类型（如 `IP`），默认为 `Precomputed`。
 
 ## 索引构建器
+
+### 稠密索引构建器 (Dense)
 
 | 构建器 | 描述 | 关键参数 |
 |--------|------|----------|
@@ -160,7 +163,7 @@ func main() {
 | `NewGPUIVFPQIndexBuilder()` | GPU 加速 IVF_PQ | - |
 | `NewGPUCagraIndexBuilder()` | GPU 加速图索引 (CAGRA) | `IntermediateGraphDegree`, `GraphDegree` |
 
-#### 稀疏索引构建器
+### 稀疏索引构建器 (Sparse)
 
 | 构建器 | 描述 | 关键参数 |
 |--------|------|----------|
@@ -205,6 +208,13 @@ indexBuilder := milvus2.NewSCANNIndexBuilder().
 indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参数
 ```
 
+### 示例：Sparse Inverted Index (稀疏倒排索引)
+
+```go
+indexBuilder := milvus2.NewSparseInvertedIndexBuilder().
+	WithDropRatioBuild(0.2) // 构建时忽略小值的比例 (0.0-1.0)
+```
+
 ### 稠密向量度量 (Dense)
 | 度量类型 | 描述 |
 |----------|------|
@@ -227,59 +237,66 @@ indexBuilder := milvus2.NewDiskANNIndexBuilder() // 基于磁盘，无额外参�
 | `SUBSTRUCTURE` | 子结构搜索 |
 | `SUPERSTRUCTURE` | 超结构搜索 |
 
-## 示例
+## 稀疏向量支持
 
-查看 [examples](./examples) 目录获取完整的示例代码：
+索引器支持两种稀疏向量模式：**自动生成 (Auto-Generation)** 和 **预计算 (Precomputed)**。
 
-- [demo](./examples/demo) - 使用 HNSW 索引的基础集合设置
-- [hnsw](./examples/hnsw) - HNSW 索引示例
-- [ivf_flat](./examples/ivf_flat) - IVF_FLAT 索引示例
-- [rabitq](./examples/rabitq) - IVF_RABITQ 索引示例 (Milvus 2.6+)
-- [auto](./examples/auto) - AutoIndex 示例
-- [diskann](./examples/diskann) - DISKANN 索引示例
-- [hybrid](./examples/hybrid) - 混合搜索设置 (稠密 + BM25 稀疏) (Milvus 2.5+)
-- [hybrid_chinese](./examples/hybrid_chinese) - 中文混合搜索示例 (Milvus 2.5+)
-- [sparse](./examples/sparse) - 纯稀疏索引示例 (BM25)
-- [byov](./examples/byov) - 自带向量示例
+### 1. 自动生成 (BM25)
 
-### 稀疏向量支持
+使用 Milvus 服务器端函数从内容字段自动生成稀疏向量。
 
-使用 Milvus 服务器端函数（如 BM25）从文本内容自动生成稀疏向量：
+- **要求**: Milvus 2.5+
+- **配置**: 设置 `MetricType: milvus2.BM25`。
 
 ```go
-// 创建带有函数的 indexer
 indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
     // ... 基础配置 ...
     Collection:        "hybrid_collection",
     
-    // 启用稀疏向量支持
     Sparse: &milvus2.SparseVectorConfig{
         VectorField: "sparse_vector",
-        MetricType:  milvus2.BM25,
-        Method:      milvus2.SparseMethodAuto, // 使用 BM25 自动生成
+        MetricType:  milvus2.BM25, 
+        // BM25 时 Method 默认为 SparseMethodAuto
     },
     
-    // 当 Method=Auto 时会自动检测 BM25 配置
-    // 如果需要显式添加函数:
-    // Functions: []*entity.Function{bm25Function},
-    
-    // BM25 需要在内容字段上启用分析器
-    // 分析器选项 (内置):
-    // - {"type": "standard"} - 通用, 分词 + 小写
-    // - {"type": "english"}  - 英文, 支持停用词
-    // - {"type": "chinese"}  - 中文, Jieba 分词
-    // - 自定义: {"tokenizer": "...", "filter": [...]}
-    // 参考: https://milvus.io/docs/analyzer-overview.md
+    // BM25 的分析器配置
     FieldParams: map[string]map[string]string{
         "content": {
             "enable_analyzer": "true",
-            "analyzer_params": `{"type": "standard"}`, // 中文使用 {"type": "chinese"}
+            "analyzer_params": `{"type": "standard"}`, // 中文可使用 {"type": "chinese"}
         },
     },
 })
 ```
 
-### 自带向量 (Bring Your Own Vectors)
+### 2. 预计算 (SPLADE, BGE-M3 等)
+
+允许存储由外部模型（如 SPLADE, BGE-M3）或自定义逻辑生成的稀疏向量。
+
+- **配置**: 设置 `MetricType`（通常为 `IP`）和 `Method: milvus2.SparseMethodPrecomputed`。
+- **用法**: 通过 `doc.WithSparseVector()` 传入稀疏向量。
+
+```go
+indexer, err := milvus2.NewIndexer(ctx, &milvus2.IndexerConfig{
+    Collection: "sparse_collection",
+    
+    Sparse: &milvus2.SparseVectorConfig{
+        VectorField: "sparse_vector",
+        MetricType:  milvus2.IP,
+        Method:      milvus2.SparseMethodPrecomputed,
+    },
+})
+
+// 存储包含稀疏向量的文档
+doc := &schema.Document{ID: "1", Content: "..."}
+doc.WithSparseVector(map[int]float64{
+    1024: 0.5,
+    2048: 0.3,
+})
+indexer.Store(ctx, []*schema.Document{doc})
+```
+
+## 自带向量 (Bring Your Own Vectors)
 
 如果您的文档已经包含向量，可以不配置 Embedder 使用 Indexer。
 
@@ -321,15 +338,22 @@ docs[0].WithSparseVector(sparseVector)
 ids, err := indexer.Store(ctx, docs)
 ```
 
-对于 BYOV 模式下的稀疏向量，请确保您的配置使用 `Method: milvus2.SparseMethodPrecomputed`：
+对于 BYOV 模式下的稀疏向量，请参考上文 **预计算 (Precomputed)** 部分进行配置。
 
-```go
-Sparse: &milvus2.SparseVectorConfig{
-    VectorField: "sparse_vector",
-    MetricType:  milvus2.IP, // 或 BM25（如适用）
-    Method:      milvus2.SparseMethodPrecomputed,
-},
-```
+## 示例
+
+查看 [examples](./examples) 目录获取完整的示例代码：
+
+- [demo](./examples/demo) - 使用 HNSW 索引的基础集合设置
+- [hnsw](./examples/hnsw) - HNSW 索引示例
+- [ivf_flat](./examples/ivf_flat) - IVF_FLAT 索引示例
+- [rabitq](./examples/rabitq) - IVF_RABITQ 索引示例 (Milvus 2.6+)
+- [auto](./examples/auto) - AutoIndex 示例
+- [diskann](./examples/diskann) - DISKANN 索引示例
+- [hybrid](./examples/hybrid) - 混合搜索设置 (稠密 + BM25 稀疏) (Milvus 2.5+)
+- [hybrid_chinese](./examples/hybrid_chinese) - 中文混合搜索示例 (Milvus 2.5+)
+- [sparse](./examples/sparse) - 纯稀疏索引示例 (BM25)
+- [byov](./examples/byov) - 自带向量示例
 
 ## 许可证
 
