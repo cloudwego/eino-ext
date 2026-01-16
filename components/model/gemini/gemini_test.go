@@ -27,6 +27,7 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/genai"
@@ -789,7 +790,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate, make(map[string]int))
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 1)
@@ -820,7 +821,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate, make(map[string]int))
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Equal(t, "Final response", message.Content)
@@ -849,7 +850,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate, make(map[string]int))
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.AssistantGenMultiContent, 2)
@@ -889,7 +890,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		msg1, err := convCandidate(candidate1, make(map[string]int))
+		msg1, err := convCandidate(candidate1)
 		assert.NoError(t, err)
 		sig, ok := GetThoughtSignatureFromExtra(msg1.ToolCalls[0].Extra)
 		assert.True(t, ok)
@@ -911,7 +912,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 			},
 		}
 
-		msg2, err := convCandidate(candidate2, make(map[string]int))
+		msg2, err := convCandidate(candidate2)
 		assert.NoError(t, err)
 		sig, ok = GetThoughtSignatureFromExtra(msg2.ToolCalls[0].Extra)
 		assert.True(t, ok)
@@ -1057,7 +1058,7 @@ func TestSpecialPart(t *testing.T) {
 			},
 			Role: genai.RoleModel,
 		},
-	}, make(map[string]int))
+	})
 	assert.Nil(t, err)
 
 	content, err := convSchemaMessage(msg)
@@ -1247,8 +1248,14 @@ func TestPopulateToolChoice(t *testing.T) {
 	}
 }
 
-func TestDuplicateToolCallIDs(t *testing.T) {
-	t.Run("single tool call gets base name as ID", func(t *testing.T) {
+// isValidUUID checks if a string is a valid UUID format
+func isValidUUID(u string) bool {
+	_, err := uuid.Parse(u)
+	return err == nil
+}
+
+func TestUniqueToolCallIDs(t *testing.T) {
+	t.Run("single tool call gets UUID as ID", func(t *testing.T) {
 		candidate := &genai.Candidate{
 			Content: &genai.Content{
 				Role: roleModel,
@@ -1263,15 +1270,15 @@ func TestDuplicateToolCallIDs(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate, make(map[string]int))
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 1)
-		assert.Equal(t, "get_weather", message.ToolCalls[0].ID)
+		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID should be a valid UUID")
 		assert.Equal(t, "get_weather", message.ToolCalls[0].Function.Name)
 	})
 
-	t.Run("multiple calls to same function get unique IDs", func(t *testing.T) {
+	t.Run("multiple calls to same function get unique UUID IDs", func(t *testing.T) {
 		candidate := &genai.Candidate{
 			Content: &genai.Content{
 				Role: roleModel,
@@ -1298,14 +1305,22 @@ func TestDuplicateToolCallIDs(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate, make(map[string]int))
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 3)
-		assert.Equal(t, "get_weather", message.ToolCalls[0].ID)
-		assert.Equal(t, "get_weather-2", message.ToolCalls[1].ID)
-		assert.Equal(t, "get_weather-3", message.ToolCalls[2].ID)
+		
+		// Verify all IDs are valid UUIDs
+		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID 0 should be a valid UUID")
+		assert.True(t, isValidUUID(message.ToolCalls[1].ID), "ID 1 should be a valid UUID")
+		assert.True(t, isValidUUID(message.ToolCalls[2].ID), "ID 2 should be a valid UUID")
+		
+		// Verify all IDs are unique
+		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[1].ID, "IDs should be unique")
+		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[2].ID, "IDs should be unique")
+		assert.NotEqual(t, message.ToolCalls[1].ID, message.ToolCalls[2].ID, "IDs should be unique")
 
+		// Verify arguments are preserved correctly
 		var args1, args2, args3 map[string]interface{}
 		err = sonic.UnmarshalString(message.ToolCalls[0].Function.Arguments, &args1)
 		assert.NoError(t, err)
@@ -1320,7 +1335,7 @@ func TestDuplicateToolCallIDs(t *testing.T) {
 		assert.Equal(t, "Tokyo", args3["city"])
 	})
 
-	t.Run("multiple calls to different functions get base names as IDs", func(t *testing.T) {
+	t.Run("multiple calls to different functions get unique UUID IDs", func(t *testing.T) {
 		candidate := &genai.Candidate{
 			Content: &genai.Content{
 				Role: roleModel,
@@ -1347,16 +1362,25 @@ func TestDuplicateToolCallIDs(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate, make(map[string]int))
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 3)
-		assert.Equal(t, "get_weather", message.ToolCalls[0].ID)
-		assert.Equal(t, "get_time", message.ToolCalls[1].ID)
-		assert.Equal(t, "calculate", message.ToolCalls[2].ID)
+		
+		// Verify all IDs are valid UUIDs
+		for i, tc := range message.ToolCalls {
+			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
+		}
+		
+		// Verify all IDs are unique
+		ids := make(map[string]bool)
+		for _, tc := range message.ToolCalls {
+			assert.False(t, ids[tc.ID], "ID %s should be unique", tc.ID)
+			ids[tc.ID] = true
+		}
 	})
 
-	t.Run("mixed scenario with multiple duplicates", func(t *testing.T) {
+	t.Run("mixed scenario with multiple function calls", func(t *testing.T) {
 		candidate := &genai.Candidate{
 			Content: &genai.Content{
 				Role: roleModel,
@@ -1395,20 +1419,21 @@ func TestDuplicateToolCallIDs(t *testing.T) {
 			},
 		}
 
-		message, err := convCandidate(candidate, make(map[string]int))
+		message, err := convCandidate(candidate)
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 5)
-		assert.Equal(t, "function_a", message.ToolCalls[0].ID)
-		assert.Equal(t, "function_a-2", message.ToolCalls[1].ID)
-		assert.Equal(t, "function_b", message.ToolCalls[2].ID)
-		assert.Equal(t, "function_a-3", message.ToolCalls[3].ID)
-		assert.Equal(t, "function_a-4", message.ToolCalls[4].ID)
+		
+		// Verify all IDs are valid UUIDs and unique
+		ids := make(map[string]bool)
+		for i, tc := range message.ToolCalls {
+			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
+			assert.False(t, ids[tc.ID], "ID %s should be unique", tc.ID)
+			ids[tc.ID] = true
+		}
 	})
 
-	t.Run("streaming context preserves tool call ID counter", func(t *testing.T) {
-		toolCallIDs := make(map[string]int)
-
+	t.Run("multiple responses generate unique UUIDs", func(t *testing.T) {
 		resp1 := &genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{
@@ -1433,12 +1458,13 @@ func TestDuplicateToolCallIDs(t *testing.T) {
 			},
 		}
 
-		message1, err := convResponse(resp1, toolCallIDs)
+		message1, err := convResponse(resp1)
 		assert.NoError(t, err)
 		assert.NotNil(t, message1)
 		assert.Len(t, message1.ToolCalls, 2)
-		assert.Equal(t, "search", message1.ToolCalls[0].ID)
-		assert.Equal(t, "search-2", message1.ToolCalls[1].ID)
+		assert.True(t, isValidUUID(message1.ToolCalls[0].ID))
+		assert.True(t, isValidUUID(message1.ToolCalls[1].ID))
+		assert.NotEqual(t, message1.ToolCalls[0].ID, message1.ToolCalls[1].ID)
 
 		resp2 := &genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
@@ -1458,32 +1484,14 @@ func TestDuplicateToolCallIDs(t *testing.T) {
 			},
 		}
 
-		message2, err := convResponse(resp2, toolCallIDs)
+		message2, err := convResponse(resp2)
 		assert.NoError(t, err)
 		assert.NotNil(t, message2)
 		assert.Len(t, message2.ToolCalls, 1)
-		assert.Equal(t, "search-3", message2.ToolCalls[0].ID)
-	})
-
-	t.Run("empty toolCallIDs map starts fresh", func(t *testing.T) {
-		candidate := &genai.Candidate{
-			Content: &genai.Content{
-				Role: roleModel,
-				Parts: []*genai.Part{
-					{
-						FunctionCall: &genai.FunctionCall{
-							Name: "test_func",
-							Args: map[string]any{},
-						},
-					},
-				},
-			},
-		}
-
-		message, err := convCandidate(candidate, make(map[string]int))
-		assert.NoError(t, err)
-		assert.NotNil(t, message)
-		assert.Len(t, message.ToolCalls, 1)
-		assert.Equal(t, "test_func", message.ToolCalls[0].ID)
+		assert.True(t, isValidUUID(message2.ToolCalls[0].ID))
+		
+		// Verify IDs across responses are unique
+		assert.NotEqual(t, message1.ToolCalls[0].ID, message2.ToolCalls[0].ID)
+		assert.NotEqual(t, message1.ToolCalls[1].ID, message2.ToolCalls[0].ID)
 	})
 }

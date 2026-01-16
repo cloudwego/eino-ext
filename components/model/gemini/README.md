@@ -18,23 +18,27 @@ A Google Gemini implementation for [Eino](https://github.com/cloudwego/eino) tha
 
 ### Tool Call ID Handling
 
-When Gemini returns multiple function calls with the same function name but different arguments in a single response, this implementation automatically generates unique IDs for each tool call to prevent conflicts.
+Gemini's API does not provide tool call IDs in its responses. To ensure compatibility with the Eino framework and enable proper tool execution tracking, this implementation automatically generates a unique UUID (v4) for each tool call.
 
-**ID Generation Pattern:**
-- First call to a function: ID = `function_name`
-- Second call to same function: ID = `function_name-2`
-- Third call to same function: ID = `function_name-3`
-- And so on...
+**ID Generation:**
+- Each tool call receives a freshly generated UUID
+- UUIDs are globally unique across all responses and sessions
+- Format: Standard UUID v4 (e.g., `550e8400-e29b-41d4-a716-446655440000`)
 
 **Example:**
 ```go
 // If Gemini returns multiple calls to "get_weather" for different cities:
-// Tool Call 1: ID = "get_weather", Args = {"city": "Paris"}
-// Tool Call 2: ID = "get_weather-2", Args = {"city": "London"}
-// Tool Call 3: ID = "get_weather-3", Args = {"city": "Tokyo"}
+// Tool Call 1: ID = "550e8400-e29b-41d4-a716-446655440000", Args = {"city": "Paris"}
+// Tool Call 2: ID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8", Args = {"city": "London"}
+// Tool Call 3: ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7", Args = {"city": "Tokyo"}
 ```
 
-This ensures that each tool call has a unique identifier, which is essential for proper tool execution tracking and response handling in agent workflows.
+**Benefits:**
+- **Session-wide uniqueness**: UUIDs prevent ID collisions across multiple model calls
+- **Standard format**: Compatible with industry-standard tool tracking systems
+- **Simplified implementation**: No need to maintain state between calls
+
+This ensures that each tool call has a globally unique identifier, which is essential for proper tool execution tracking and response handling in complex agent workflows with multiple model interactions.
 
 ## Installation
 
