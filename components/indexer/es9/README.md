@@ -97,7 +97,7 @@ func main() {
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// 3. Prepare documents
+	// 4. Prepare documents
 	// Documents usually contain at least an ID and Content.
 	// You can also add extra metadata for filtering or other purposes.
 	docs := []*schema.Document{
@@ -117,7 +117,7 @@ func main() {
 		},
 	}
 
-	// 4. Create ES indexer component
+	// 5. Create ES indexer component
 	indexer, _ := es9.NewIndexer(ctx, &es9.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
@@ -140,7 +140,7 @@ func main() {
 		Embedding: emb,
 	})
 
-	// 5. Index documents
+	// 6. Index documents
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)

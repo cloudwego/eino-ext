@@ -28,6 +28,7 @@ Here's a quick example of how to use the indexer, you could read components/inde
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino/components/embedding"
@@ -54,8 +55,10 @@ func main() {
 
 	// 1. Create ES client
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
+	var cert []byte
 	if httpCACertPath != "" {
-		cert, err := os.ReadFile(httpCACertPath)
+		var err error
+		cert, err = os.ReadFile(httpCACertPath)
 		if err != nil {
 			log.Fatalf("read file failed, err=%v", err)
 		}
@@ -94,7 +97,7 @@ func main() {
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// 3. Prepare documents
+	// 4. Prepare documents
 	// Documents usually contain at least an ID and Content.
 	// You can also add extra metadata for filtering or other purposes.
 	docs := []*schema.Document{
@@ -114,7 +117,7 @@ func main() {
 		},
 	}
 
-	// 4. Create ES indexer component
+	// 5. Create ES indexer component
 	indexer, _ := es8.NewIndexer(ctx, &es8.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
@@ -137,7 +140,7 @@ func main() {
 		Embedding: emb,
 	})
 
-	// 5. Index documents
+	// 6. Index documents
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)

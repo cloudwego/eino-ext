@@ -27,6 +27,8 @@ go get github.com/cloudwego/eino-ext/components/indexer/es8@latest
 ```go
 import (
 	"context"
+	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino/components/embedding"
@@ -53,8 +55,10 @@ func main() {
 
 	// 1. 创建 ES 客户端
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
+	var cert []byte
 	if httpCACertPath != "" {
-		cert, err := os.ReadFile(httpCACertPath)
+		var err error
+		cert, err = os.ReadFile(httpCACertPath)
 		if err != nil {
 			log.Fatalf("read file failed, err=%v", err)
 		}
@@ -93,8 +97,8 @@ func main() {
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// 3. 准备文档
-	// 文档通常包含 ID 和 Content。也可以添加额外的元数据用于过滤等用途。
+	// 4. 准备文档
+	// 文档通常包含 ID 和 Content。也可以添加额外的元数据用于过滤等用途.
 	docs := []*schema.Document{
 		{
 			ID:      "1",
@@ -112,7 +116,7 @@ func main() {
 		},
 	}
 
-	// 4. 创建 ES 索引器组件
+	// 5. 创建 ES 索引器组件
 	indexer, _ := es8.NewIndexer(ctx, &es8.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
@@ -135,7 +139,7 @@ func main() {
 		Embedding: emb,
 	})
 
-	// 5. 索引文档
+	// 6. 索引文档
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)

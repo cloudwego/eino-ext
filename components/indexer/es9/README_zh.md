@@ -97,7 +97,7 @@ func main() {
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// 3. 准备文档
+	// 4. 准备文档
 	// 文档通常包含 ID 和 Content
 	// 也可以包含额外的 Metadata 用于过滤或其他用途
 	docs := []*schema.Document{
@@ -117,7 +117,7 @@ func main() {
 		},
 	}
 
-	// 4. 创建 ES 索引器组件
+	// 5. 创建 ES 索引器组件
 	indexer, _ := es9.NewIndexer(ctx, &es9.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
@@ -140,7 +140,7 @@ func main() {
 		Embedding: emb,
 	})
 
-	// 5. 索引文档
+	// 6. 索引文档
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)
