@@ -28,6 +28,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/google/uuid"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -222,7 +223,7 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	}
 
 	// Convert the API response to schema.Message format
-	message, err = convResponse(result, make(map[string]int))
+	message, err = convResponse(result)
 	if err != nil {
 		return nil, fmt.Errorf("convert response fail: %w", err)
 	}
@@ -275,24 +276,22 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
 			sw.Close()
-	}()
-	// Track tool call IDs to generate unique identifiers for each tool call
-	toolCallIDs := make(map[string]int)
-	for resp, err_ := range resultIter {
-		if err_ != nil {
-			sw.Send(nil, err_)
-			return
+		}()
+		for resp, err_ := range resultIter {
+			if err_ != nil {
+				sw.Send(nil, err_)
+				return
+			}
+			message, err_ := convResponse(resp)
+			if err_ != nil {
+				sw.Send(nil, err_)
+				return
+			}
+			closed := sw.Send(convCallbackOutput(message, cbConf), nil)
+			if closed {
+				return
+			}
 		}
-		message, err_ := convResponse(resp, toolCallIDs)
-		if err_ != nil {
-			sw.Send(nil, err_)
-			return
-		}
-		closed := sw.Send(convCallbackOutput(message, cbConf), nil)
-		if closed {
-			return
-		}
-	}
 	}()
 	srList := sr.Copy(2)
 	callbacks.OnEndWithStreamOutput(ctx, srList[0])
@@ -1119,12 +1118,12 @@ func decodeBase64Data(dataURL string) ([]byte, error) {
 	return decoded, nil
 }
 
-func convResponse(resp *genai.GenerateContentResponse, toolCallIDs map[string]int) (*schema.Message, error) {
+func convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) {
 	if len(resp.Candidates) == 0 {
 		return nil, fmt.Errorf("gemini result is empty")
 	}
 
-	message, err := convCandidate(resp.Candidates[0], toolCallIDs)
+	message, err := convCandidate(resp.Candidates[0])
 	if err != nil {
 		return nil, fmt.Errorf("convert candidate fail: %w", err)
 	}
@@ -1148,7 +1147,7 @@ func convResponse(resp *genai.GenerateContentResponse, toolCallIDs map[string]in
 	return message, nil
 }
 
-func convCandidate(candidate *genai.Candidate, toolCallIDs map[string]int) (*schema.Message, error) {
+func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 	result := &schema.Message{
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(candidate.FinishReason),
@@ -1197,7 +1196,7 @@ func convCandidate(candidate *genai.Candidate, toolCallIDs map[string]int) (*sch
 				outParts = append(outParts, outPart)
 			}
 			if part.FunctionCall != nil {
-				fc, err := convFC(part, toolCallIDs)
+				fc, err := convFC(part)
 				if err != nil {
 					return nil, err
 				}
@@ -1288,7 +1287,9 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 	return res, nil
 }
 
-func convFC(part *genai.Part, toolCallIDs map[string]int) (*schema.ToolCall, error) {
+// convFC converts a Gemini function call part to a schema.ToolCall.
+// Note: Gemini does not provide tool call IDs, so we generate a UUID for compatibility.
+func convFC(part *genai.Part) (*schema.ToolCall, error) {
 	if part == nil || part.FunctionCall == nil {
 		return nil, fmt.Errorf("part or function call is nil")
 	}
@@ -1299,19 +1300,8 @@ func convFC(part *genai.Part, toolCallIDs map[string]int) (*schema.ToolCall, err
 		return nil, fmt.Errorf("marshal gemini tool call arguments fail: %w", err)
 	}
 
-	// Generate a unique call ID for the tool call
-	// For the first call to a tool, use the tool name as the ID
-	// For subsequent calls, append a counter to make it unique
-	callID := tp.Name
-	if count, ok := toolCallIDs[tp.Name]; !ok {
-		toolCallIDs[tp.Name] = 1
-	} else {
-		callID = fmt.Sprintf("%s-%d", tp.Name, count+1)
-		toolCallIDs[tp.Name] = count + 1
-	}
-
 	toolCall := &schema.ToolCall{
-		ID: callID,
+		ID: uuid.NewString(),
 		Function: schema.FunctionCall{
 			Name:      tp.Name,
 			Arguments: args,
