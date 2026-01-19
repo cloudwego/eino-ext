@@ -29,6 +29,7 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
+	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchutil"
 )
 
@@ -39,6 +40,9 @@ type IndexerConfig struct {
 
 	// Index is the name of the OpenSearch index.
 	Index string `json:"index"`
+	// IndexSpec, if provided, describes the index structure (settings, mappings)
+	// to be used for automatic creation if the index does not exist.
+	IndexSpec *IndexSpec `json:"index_spec"`
 	// BatchSize specifies the maximum number of documents to embed in a single batch.
 	// Default is 5.
 	BatchSize int `json:"batch_size"`
@@ -51,6 +55,20 @@ type IndexerConfig struct {
 	// 1. The document content itself needs to be vectorized and does not have a pre-computed vector (see [schema.Document.Vector]).
 	// 2. Additional fields (other than content) need to be vectorized.
 	Embedding embedding.Embedder
+}
+
+// IndexSpec allows defining detailed index settings for auto-creation.
+type IndexSpec struct {
+	// Settings maps to the "settings" section of the OpenSearch Create Index API.
+	// Use this for "number_of_shards", "analysis", "refresh_interval", etc.
+	Settings map[string]any `json:"settings,omitempty"`
+
+	// Mappings maps to the "mappings" section of the OpenSearch Create Index API.
+	// Use this to define field properties, dynamic templates, etc.
+	Mappings map[string]any `json:"mappings,omitempty"`
+
+	// Aliases maps to the "aliases" section.
+	Aliases map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue represents a single field value in OpenSearch.
@@ -73,13 +91,50 @@ type Indexer struct {
 
 // NewIndexer creates a new OpenSearch indexer with the provided configuration.
 // It returns an error if the client or DocumentToFields mapping is missing.
-func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
+func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	if conf.Client == nil {
 		return nil, fmt.Errorf("[NewIndexer] opensearch client not provided")
 	}
 
 	if conf.DocumentToFields == nil {
 		return nil, fmt.Errorf("[NewIndexer] DocumentToFields method not provided")
+	}
+
+	if conf.IndexSpec != nil {
+		req := opensearchapi.IndicesExistsRequest{
+			Index: []string{conf.Index},
+		}
+		res, err := req.Do(ctx, conf.Client)
+		if err != nil {
+			return nil, fmt.Errorf("[NewIndexer] check index existence failed, %w", err)
+		}
+		if res.Body != nil {
+			_ = res.Body.Close()
+		}
+
+		if res.StatusCode == 404 {
+			body, err := json.Marshal(conf.IndexSpec)
+			if err != nil {
+				return nil, fmt.Errorf("[NewIndexer] marshal index spec failed, %w", err)
+			}
+
+			createReq := opensearchapi.IndicesCreateRequest{
+				Index: conf.Index,
+				Body:  bytes.NewReader(body),
+			}
+			createRes, err := createReq.Do(ctx, conf.Client)
+			if err != nil {
+				return nil, fmt.Errorf("[NewIndexer] create index failed, %w", err)
+			}
+			if createRes.Body != nil {
+				_ = createRes.Body.Close()
+			}
+			if createRes.IsError() {
+				return nil, fmt.Errorf("[NewIndexer] create index failed, response: %s", createRes.String())
+			}
+		} else if res.IsError() {
+			return nil, fmt.Errorf("[NewIndexer] check index existence failed, response: %s", res.String())
+		}
 	}
 
 	if conf.BatchSize == 0 {

@@ -45,6 +45,55 @@ func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return m.Response, nil
 }
 
+// mockTransportCreation handles index creation API calls for testing
+type mockTransportCreation struct {
+	existsResponse *http.Response
+	createResponse *http.Response
+	existsCalled   bool
+	createCalled   bool
+	createBody     []byte
+}
+
+func (m *mockTransportCreation) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Handle product check GET /
+	if req.Method == "GET" && req.URL.Path == "/" {
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewReader([]byte(`{"version":{"number":"7.17.0"}}`))),
+			Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+		}, nil
+	}
+	// Handle index exists check (HEAD /index-name)
+	if req.Method == "HEAD" {
+		m.existsCalled = true
+		if m.existsResponse != nil {
+			return m.existsResponse, nil
+		}
+		return &http.Response{
+			StatusCode: 404,
+			Body:       io.NopCloser(bytes.NewReader([]byte{})),
+			Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+		}, nil
+	}
+	// Handle index create (PUT /index-name)
+	if req.Method == "PUT" {
+		m.createCalled = true
+		if req.Body != nil {
+			m.createBody, _ = io.ReadAll(req.Body)
+			req.Body = io.NopCloser(bytes.NewReader(m.createBody))
+		}
+		if m.createResponse != nil {
+			return m.createResponse, nil
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(bytes.NewReader([]byte(`{"acknowledged": true}`))),
+			Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+		}, nil
+	}
+	return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.String())
+}
+
 func TestNewIndexer(t *testing.T) {
 	Convey("TestNewIndexer", t, func() {
 		ctx := context.Background()
@@ -89,6 +138,84 @@ func TestNewIndexer(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(indexer, ShouldNotBeNil)
 			So(indexer.config.BatchSize, ShouldEqual, 10)
+		})
+
+		Convey("IndexSpec - index exists", func() {
+			mockT := &mockTransportCreation{
+				existsResponse: &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(bytes.NewReader([]byte{})),
+					Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+				},
+			}
+			client, _ := elasticsearch.NewClient(elasticsearch.Config{Transport: mockT})
+			_, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    client,
+				Index:     "test-index",
+				BatchSize: 10,
+				IndexSpec: &IndexSpec{Settings: map[string]any{"number_of_shards": 1}},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			So(err, ShouldBeNil)
+			So(mockT.existsCalled, ShouldBeTrue)
+			So(mockT.createCalled, ShouldBeFalse)
+		})
+
+		Convey("IndexSpec - index not exists and create success", func() {
+			mockT := &mockTransportCreation{
+				existsResponse: &http.Response{
+					StatusCode: 404,
+					Body:       io.NopCloser(bytes.NewReader([]byte{})),
+					Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+				},
+				createResponse: &http.Response{
+					StatusCode: 200,
+					Body:       io.NopCloser(bytes.NewReader([]byte(`{"acknowledged": true}`))),
+					Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+				},
+			}
+			client, _ := elasticsearch.NewClient(elasticsearch.Config{Transport: mockT})
+			_, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    client,
+				Index:     "test-index",
+				BatchSize: 10,
+				IndexSpec: &IndexSpec{Settings: map[string]any{"number_of_shards": 1}},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			So(err, ShouldBeNil)
+			So(mockT.existsCalled, ShouldBeTrue)
+			So(mockT.createCalled, ShouldBeTrue)
+		})
+
+		Convey("IndexSpec - index creation fails", func() {
+			mockT := &mockTransportCreation{
+				existsResponse: &http.Response{
+					StatusCode: 404,
+					Body:       io.NopCloser(bytes.NewReader([]byte{})),
+					Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+				},
+				createResponse: &http.Response{
+					StatusCode: 500,
+					Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "failed"}`))),
+					Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+				},
+			}
+			client, _ := elasticsearch.NewClient(elasticsearch.Config{Transport: mockT})
+			_, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    client,
+				Index:     "test-index",
+				BatchSize: 10,
+				IndexSpec: &IndexSpec{Settings: map[string]any{"number_of_shards": 1}},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "create index failed")
 		})
 	})
 }

@@ -49,6 +49,26 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// 定义索引规范（选填：如果索引不存在，将自动创建）
+	indexSpec := &opensearch2.IndexSpec{
+		Settings: map[string]any{
+			"number_of_shards": 1,
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				"content_vector": map[string]any{
+					"type":      "knn_vector",
+					"dimension": 1536,
+					"method": map[string]any{
+						"name":      "hnsw",
+						"engine":    "nmslib",
+						"space_type": "l2",
+					},
+				},
+			},
+		},
+	}
+
 	// 创建 embedding 组件
 	emb := createYourEmbedding()
 
@@ -56,6 +76,7 @@ func main() {
 	indexer, _ := opensearch2.NewIndexer(ctx, &opensearch2.IndexerConfig{
 		Client:    client,
 		Index:     "your_index_name",
+		IndexSpec: indexSpec, // 添加此项以启用自动索引创建
 		BatchSize: 10,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]opensearch2.FieldValue, error) {
 			return map[string]opensearch2.FieldValue{
@@ -85,6 +106,7 @@ func main() {
 type IndexerConfig struct {
     Client *opensearch.Client // 必填：OpenSearch 客户端实例
     Index  string             // 必填：用于存储文档的索引名称
+    IndexSpec *IndexSpec       // 选填：用于自动创建索引的设置和映射
     BatchSize int             // 选填：最大文本嵌入批次大小（默认：5）
 
     // 必填：将 Document 字段映射到 OpenSearch 字段的函数
@@ -92,6 +114,13 @@ type IndexerConfig struct {
 
     // 选填：仅当需要向量化时必填
     Embedding embedding.Embedder
+}
+
+// IndexSpec 定义了索引的设置和映射
+type IndexSpec struct {
+    Settings map[string]any `json:"settings,omitempty"`
+    Mappings map[string]any `json:"mappings,omitempty"`
+    Aliases  map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue 定义字段应如何存储和向量化

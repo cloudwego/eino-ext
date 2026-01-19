@@ -54,6 +54,26 @@ func main() {
 		log.Fatal(err)
 	}
 
+	// Define Index Specification (Optional: automatically creates index if it doesn't exist)
+	indexSpec := &opensearch3.IndexSpec{
+		Settings: map[string]any{
+			"number_of_shards": 1,
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				"content_vector": map[string]any{
+					"type":      "knn_vector",
+					"dimension": 1536,
+					"method": map[string]any{
+						"name":      "hnsw",
+						"engine":    "nmslib",
+						"space_type": "l2",
+					},
+				},
+			},
+		},
+	}
+
 	// create embedding component using ARK
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
@@ -65,6 +85,7 @@ func main() {
 	indexer, _ := opensearch3.NewIndexer(ctx, &opensearch3.IndexerConfig{
 		Client:    client,
 		Index:     "your_index_name",
+		IndexSpec: indexSpec, // Add this to enable automatic index creation
 		BatchSize: 10,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]opensearch3.FieldValue, error) {
 			return map[string]opensearch3.FieldValue{
@@ -98,6 +119,7 @@ The indexer can be configured using the `IndexerConfig` struct:
 type IndexerConfig struct {
     Client *opensearchapi.Client // Required: OpenSearch client instance
     Index  string             // Required: Index name to store documents
+    IndexSpec *IndexSpec       // Optional: Settings and mappings for automatic index creation
     BatchSize int             // Optional: Max texts size for embedding (default: 5)
 
     // Required: Function to map Document fields to OpenSearch fields
@@ -105,6 +127,13 @@ type IndexerConfig struct {
 
     // Optional: Required only if vectorization is needed
     Embedding embedding.Embedder
+}
+
+// IndexSpec defines the settings and mappings for the index
+type IndexSpec struct {
+    Settings map[string]any `json:"settings,omitempty"`
+    Mappings map[string]any `json:"mappings,omitempty"`
+    Aliases  map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue defines how a field should be stored and vectorized

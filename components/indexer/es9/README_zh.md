@@ -71,7 +71,25 @@ func main() {
 		CACert:    cert,
 	})
 
-	// 2. 创建 embedding 组件 (使用 Ark)
+	// 2. 定义索引规范（选填：如果索引不存在，将自动创建）
+	indexSpec := &es9.IndexSpec{
+		Settings: map[string]any{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				fieldContentVector: map[string]any{
+					"type":            "dense_vector",
+					"dims":            1536,
+					"index":           true,
+					"similarity":      "l2_norm",
+				},
+			},
+		},
+	}
+
+	// 3. 创建 embedding 组件 (使用 Ark)
 	// 请将 "ARK_API_KEY", "ARK_REGION", "ARK_MODEL" 替换为实际配置
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
@@ -103,6 +121,7 @@ func main() {
 	indexer, _ := es9.NewIndexer(ctx, &es9.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
+		IndexSpec: indexSpec, // 添加此项以启用自动索引创建
 		BatchSize: 10,
 		// DocumentToFields 指定如何将文档字段映射到 ES 字段
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]es9.FieldValue, err error) {
@@ -139,6 +158,7 @@ func main() {
 type IndexerConfig struct {
     Client *elasticsearch.Client // 必填: Elasticsearch 客户端实例
     Index  string                // 必填: 存储文档的索引名称
+    IndexSpec *IndexSpec         // 选填: 用于自动创建索引的设置和映射
     BatchSize int                // 选填: 用于 embedding 的最大文本数量 (默认: 5)
 
     // 必填: 将 Document 字段映射到 Elasticsearch 字段的函数
@@ -146,6 +166,13 @@ type IndexerConfig struct {
 
     // 选填: 仅在需要向量化时必填
     Embedding embedding.Embedder
+}
+
+// IndexSpec 定义了索引的设置和映射
+type IndexSpec struct {
+    Settings map[string]any `json:"settings,omitempty"`
+    Mappings map[string]any `json:"mappings,omitempty"`
+    Aliases  map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue 定义了字段应如何存储和向量化

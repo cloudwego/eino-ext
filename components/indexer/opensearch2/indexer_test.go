@@ -19,6 +19,8 @@ package opensearch2
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 
 	. "github.com/bytedance/mockey"
@@ -26,6 +28,7 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v2"
+	"github.com/opensearch-project/opensearch-go/v2/opensearchapi"
 	"github.com/opensearch-project/opensearch-go/v2/opensearchutil"
 	"github.com/smartystreets/goconvey/convey"
 )
@@ -78,6 +81,36 @@ func TestNewIndexer(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(i, convey.ShouldNotBeNil)
 			convey.So(i.config.BatchSize, convey.ShouldEqual, 10)
+		})
+
+		PatchConvey("test index creation", func() {
+
+			// Mock Exists to return 404
+			Mock(GetMethod(opensearchapi.IndicesExistsRequest{}, "Do")).Return(&opensearchapi.Response{
+				StatusCode: 404,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil).Build()
+
+			// Mock Create to return success
+			Mock(GetMethod(opensearchapi.IndicesCreateRequest{}, "Do")).Return(&opensearchapi.Response{
+				StatusCode: 200,
+				Body:       io.NopCloser(strings.NewReader("{}")),
+			}, nil).Build()
+
+			i, err := NewIndexer(ctx, &IndexerConfig{
+				Client: client,
+				Index:  "test_index",
+				IndexSpec: &IndexSpec{
+					Settings: map[string]any{
+						"number_of_shards": 1,
+					},
+				},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(i, convey.ShouldNotBeNil)
 		})
 	})
 }

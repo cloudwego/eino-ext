@@ -71,7 +71,25 @@ func main() {
 		CACert:    cert,
 	})
 
-	// 2. Create embedding component using ARK
+	// 2. Define Index Specification (Optional: automatically creates index if it doesn't exist)
+	indexSpec := &es9.IndexSpec{
+		Settings: map[string]any{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				fieldContentVector: map[string]any{
+					"type":            "dense_vector",
+					"dims":            1536,
+					"index":           true,
+					"similarity":      "l2_norm",
+				},
+			},
+		},
+	}
+
+	// 3. Create embedding component using ARK
 	// Replace "ARK_API_KEY", "ARK_REGION", "ARK_MODEL" with your actual config
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
@@ -103,6 +121,7 @@ func main() {
 	indexer, _ := es9.NewIndexer(ctx, &es9.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
+		IndexSpec: indexSpec, // Add this to enable automatic index creation
 		BatchSize: 10,
 		// DocumentToFields specifies how to map document fields to ES fields
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]es9.FieldValue, err error) {
@@ -139,6 +158,7 @@ The indexer can be configured using the `IndexerConfig` struct:
 type IndexerConfig struct {
     Client *elasticsearch.Client // Required: Elasticsearch client instance
     Index  string                // Required: Index name to store documents
+    IndexSpec *IndexSpec         // Optional: Settings and mappings for automatic index creation
     BatchSize int                // Optional: Max texts size for embedding (default: 5)
 
     // Required: Function to map Document fields to Elasticsearch fields
@@ -146,6 +166,13 @@ type IndexerConfig struct {
 
     // Optional: Required only if vectorization is needed
     Embedding embedding.Embedder
+}
+
+// IndexSpec defines the settings and mappings for the index
+type IndexSpec struct {
+    Settings map[string]any `json:"settings,omitempty"`
+    Mappings map[string]any `json:"mappings,omitempty"`
+    Aliases  map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue defines how a field should be stored and vectorized
