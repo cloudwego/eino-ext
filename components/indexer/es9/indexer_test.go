@@ -243,7 +243,7 @@ func TestNewIndexer(t *testing.T) {
 			convey.So(err.Error(), convey.ShouldContainSubstring, "DocumentToFields method not provided")
 		})
 
-		PatchConvey("test success", func() {
+		PatchConvey("test success with defaults", func() {
 			idx, err := NewIndexer(ctx, &IndexerConfig{
 				Client:           client,
 				DocumentToFields: docToFields,
@@ -253,6 +253,17 @@ func TestNewIndexer(t *testing.T) {
 			convey.So(idx.config.BatchSize, convey.ShouldEqual, defaultBatchSize)
 			convey.So(idx.GetType(), convey.ShouldEqual, typ)
 			convey.So(idx.IsCallbacksEnabled(), convey.ShouldBeTrue)
+		})
+
+		PatchConvey("test success with custom batch size", func() {
+			idx, err := NewIndexer(ctx, &IndexerConfig{
+				Client:           client,
+				BatchSize:        10,
+				DocumentToFields: docToFields,
+			})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(idx, convey.ShouldNotBeNil)
+			convey.So(idx.config.BatchSize, convey.ShouldEqual, 10)
 		})
 
 		PatchConvey("IndexSpec - index exists", func() {
@@ -331,6 +342,28 @@ func TestNewIndexer(t *testing.T) {
 			})
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(err.Error(), convey.ShouldContainSubstring, "create index failed")
+		})
+
+		PatchConvey("IndexSpec - index existence check fails", func() {
+			mockT := &mockTransportCreation{
+				existsResponse: &http.Response{
+					StatusCode: 500,
+					Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "failed"}`))),
+					Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+				},
+			}
+			client, _ := elasticsearch.NewClient(elasticsearch.Config{Transport: mockT})
+			_, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    client,
+				Index:     "test-index",
+				BatchSize: 10,
+				IndexSpec: &IndexSpec{Settings: map[string]any{"number_of_shards": 1}},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "check index existence failed")
 		})
 	})
 }

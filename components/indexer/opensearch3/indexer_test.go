@@ -127,6 +127,123 @@ func TestNewIndexer(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(i, convey.ShouldNotBeNil)
 		})
+
+		PatchConvey("test index exists - skip creation", func() {
+			mockTransport := &mockTransport{
+				roundTrip: func(req *http.Request) (*http.Response, error) {
+					if req.Method == "HEAD" && strings.Contains(req.URL.Path, "test_index") {
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader("")),
+							Header:     make(http.Header),
+						}, nil
+					}
+					return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+				},
+			}
+
+			client, _ := opensearchapi.NewClient(opensearchapi.Config{
+				Client: opensearch.Config{
+					Transport: mockTransport,
+				},
+			})
+
+			i, err := NewIndexer(ctx, &IndexerConfig{
+				Client: client,
+				Index:  "test_index",
+				IndexSpec: &IndexSpec{
+					Settings: map[string]any{
+						"number_of_shards": 1,
+					},
+				},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(i, convey.ShouldNotBeNil)
+		})
+
+		PatchConvey("test index existence check fails", func() {
+			mockTransport := &mockTransport{
+				roundTrip: func(req *http.Request) (*http.Response, error) {
+					if req.Method == "HEAD" && strings.Contains(req.URL.Path, "test_index") {
+						return &http.Response{
+							StatusCode: 500,
+							Body:       io.NopCloser(strings.NewReader("internal error")),
+							Header:     make(http.Header),
+						}, nil
+					}
+					return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+				},
+			}
+
+			client, _ := opensearchapi.NewClient(opensearchapi.Config{
+				Client: opensearch.Config{
+					Transport: mockTransport,
+				},
+			})
+
+			i, err := NewIndexer(ctx, &IndexerConfig{
+				Client: client,
+				Index:  "test_index",
+				IndexSpec: &IndexSpec{
+					Settings: map[string]any{
+						"number_of_shards": 1,
+					},
+				},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "check index existence failed")
+			convey.So(i, convey.ShouldBeNil)
+		})
+
+		PatchConvey("test index creation fails", func() {
+			mockTransport := &mockTransport{
+				roundTrip: func(req *http.Request) (*http.Response, error) {
+					if req.Method == "HEAD" && strings.Contains(req.URL.Path, "test_index") {
+						return &http.Response{
+							StatusCode: 404,
+							Body:       io.NopCloser(strings.NewReader("")),
+							Header:     make(http.Header),
+						}, nil
+					}
+					if req.Method == "PUT" && strings.Contains(req.URL.Path, "test_index") {
+						return &http.Response{
+							StatusCode: 400,
+							Body:       io.NopCloser(strings.NewReader(`{"error": "bad request"}`)),
+							Header:     make(http.Header),
+						}, nil
+					}
+					return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+				},
+			}
+
+			client, _ := opensearchapi.NewClient(opensearchapi.Config{
+				Client: opensearch.Config{
+					Transport: mockTransport,
+				},
+			})
+
+			i, err := NewIndexer(ctx, &IndexerConfig{
+				Client: client,
+				Index:  "test_index",
+				IndexSpec: &IndexSpec{
+					Settings: map[string]any{
+						"number_of_shards": 1,
+					},
+				},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "create index failed")
+			convey.So(i, convey.ShouldBeNil)
+		})
 	})
 }
 

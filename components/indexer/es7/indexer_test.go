@@ -26,7 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bytedance/mockey"
+	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	elasticsearch "github.com/elastic/go-elasticsearch/v7"
@@ -95,16 +95,16 @@ func (m *mockTransportCreation) RoundTrip(req *http.Request) (*http.Response, er
 }
 
 func TestNewIndexer(t *testing.T) {
-	Convey("TestNewIndexer", t, func() {
+	PatchConvey("TestNewIndexer", t, func() {
 		ctx := context.Background()
 
-		Convey("client not provided", func() {
+		PatchConvey("client not provided", func() {
 			_, err := NewIndexer(ctx, &IndexerConfig{})
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldContainSubstring, "es client not provided")
 		})
 
-		Convey("DocumentToFields not provided", func() {
+		PatchConvey("DocumentToFields not provided", func() {
 			client, _ := elasticsearch.NewClient(elasticsearch.Config{})
 			_, err := NewIndexer(ctx, &IndexerConfig{
 				Client: client,
@@ -113,34 +113,33 @@ func TestNewIndexer(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "DocumentToFields method not provided")
 		})
 
-		Convey("success with default batch size", func() {
-			client, _ := elasticsearch.NewClient(elasticsearch.Config{})
+		client, _ := elasticsearch.NewClient(elasticsearch.Config{})
+		docToFields := func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+			return nil, nil
+		}
+
+		PatchConvey("success with default batch size", func() {
 			indexer, err := NewIndexer(ctx, &IndexerConfig{
-				Client: client,
-				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
-					return nil, nil
-				},
+				Client:           client,
+				DocumentToFields: docToFields,
 			})
 			So(err, ShouldBeNil)
 			So(indexer, ShouldNotBeNil)
 			So(indexer.config.BatchSize, ShouldEqual, defaultBatchSize)
 		})
 
-		Convey("success with custom batch size", func() {
-			client, _ := elasticsearch.NewClient(elasticsearch.Config{})
+		PatchConvey("success with custom batch size", func() {
 			indexer, err := NewIndexer(ctx, &IndexerConfig{
-				Client:    client,
-				BatchSize: 10,
-				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
-					return nil, nil
-				},
+				Client:           client,
+				BatchSize:        10,
+				DocumentToFields: docToFields,
 			})
 			So(err, ShouldBeNil)
 			So(indexer, ShouldNotBeNil)
 			So(indexer.config.BatchSize, ShouldEqual, 10)
 		})
 
-		Convey("IndexSpec - index exists", func() {
+		PatchConvey("IndexSpec - index exists", func() {
 			mockT := &mockTransportCreation{
 				existsResponse: &http.Response{
 					StatusCode: 200,
@@ -163,7 +162,7 @@ func TestNewIndexer(t *testing.T) {
 			So(mockT.createCalled, ShouldBeFalse)
 		})
 
-		Convey("IndexSpec - index not exists and create success", func() {
+		PatchConvey("IndexSpec - index not exists and create success", func() {
 			mockT := &mockTransportCreation{
 				existsResponse: &http.Response{
 					StatusCode: 404,
@@ -191,7 +190,7 @@ func TestNewIndexer(t *testing.T) {
 			So(mockT.createCalled, ShouldBeTrue)
 		})
 
-		Convey("IndexSpec - index creation fails", func() {
+		PatchConvey("IndexSpec - index creation fails", func() {
 			mockT := &mockTransportCreation{
 				existsResponse: &http.Response{
 					StatusCode: 404,
@@ -217,6 +216,28 @@ func TestNewIndexer(t *testing.T) {
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldContainSubstring, "create index failed")
 		})
+
+		PatchConvey("IndexSpec - index existence check fails", func() {
+			mockT := &mockTransportCreation{
+				existsResponse: &http.Response{
+					StatusCode: 500,
+					Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "failed"}`))),
+					Header:     http.Header{"X-Elastic-Product": []string{"Elasticsearch"}},
+				},
+			}
+			client, _ := elasticsearch.NewClient(elasticsearch.Config{Transport: mockT})
+			_, err := NewIndexer(ctx, &IndexerConfig{
+				Client:    client,
+				Index:     "test-index",
+				BatchSize: 10,
+				IndexSpec: &IndexSpec{Settings: map[string]any{"number_of_shards": 1}},
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return nil, nil
+				},
+			})
+			So(err, ShouldNotBeNil)
+			So(err.Error(), ShouldContainSubstring, "check index existence failed")
+		})
 	})
 }
 
@@ -236,7 +257,7 @@ func (m *mockEmbedder) EmbedStrings(ctx context.Context, texts []string, opts ..
 }
 
 func TestIndexer_GetType(t *testing.T) {
-	Convey("TestIndexer_GetType", t, func() {
+	PatchConvey("TestIndexer_GetType", t, func() {
 		client, _ := elasticsearch.NewClient(elasticsearch.Config{})
 		indexer, _ := NewIndexer(context.Background(), &IndexerConfig{
 			Client: client,
@@ -249,7 +270,7 @@ func TestIndexer_GetType(t *testing.T) {
 }
 
 func TestIndexer_IsCallbacksEnabled(t *testing.T) {
-	Convey("TestIndexer_IsCallbacksEnabled", t, func() {
+	PatchConvey("TestIndexer_IsCallbacksEnabled", t, func() {
 		client, _ := elasticsearch.NewClient(elasticsearch.Config{})
 		indexer, _ := NewIndexer(context.Background(), &IndexerConfig{
 			Client: client,
@@ -262,11 +283,11 @@ func TestIndexer_IsCallbacksEnabled(t *testing.T) {
 }
 
 func TestIndexer_bulkAdd(t *testing.T) {
-	mockey.PatchConvey("TestIndexer_bulkAdd", t, func() {
+	PatchConvey("TestIndexer_bulkAdd", t, func() {
 		ctx := context.Background()
 		client, _ := elasticsearch.NewClient(elasticsearch.Config{})
 
-		Convey("DocumentToFields returns error", func() {
+		PatchConvey("DocumentToFields returns error", func() {
 			indexer, _ := NewIndexer(ctx, &IndexerConfig{
 				Client: client,
 				Index:  "test-index",
@@ -281,7 +302,7 @@ func TestIndexer_bulkAdd(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "FieldMapping failed")
 		})
 
-		Convey("embedding not provided when needed", func() {
+		PatchConvey("embedding not provided when needed", func() {
 			indexer, _ := NewIndexer(ctx, &IndexerConfig{
 				Client: client,
 				Index:  "test-index",
@@ -298,7 +319,7 @@ func TestIndexer_bulkAdd(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "embedding method not provided")
 		})
 
-		Convey("embedding field size over batch size", func() {
+		PatchConvey("embedding field size over batch size", func() {
 			indexer, _ := NewIndexer(ctx, &IndexerConfig{
 				Client:    client,
 				Index:     "test-index",
@@ -318,7 +339,7 @@ func TestIndexer_bulkAdd(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "needEmbeddingFields length over batch size")
 		})
 
-		Convey("duplicate embed key", func() {
+		PatchConvey("duplicate embed key", func() {
 			indexer, _ := NewIndexer(ctx, &IndexerConfig{
 				Client: client,
 				Index:  "test-index",
@@ -337,7 +358,7 @@ func TestIndexer_bulkAdd(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "duplicate key")
 		})
 
-		Convey("value not string without stringify", func() {
+		PatchConvey("value not string without stringify", func() {
 			indexer, _ := NewIndexer(ctx, &IndexerConfig{
 				Client: client,
 				Index:  "test-index",
@@ -358,15 +379,15 @@ func TestIndexer_bulkAdd(t *testing.T) {
 }
 
 func TestGetType(t *testing.T) {
-	Convey("TestGetType", t, func() {
+	PatchConvey("TestGetType", t, func() {
 		So(GetType(), ShouldEqual, "ElasticSearch7")
 	})
 }
 func TestIndexer_Store(t *testing.T) {
-	Convey("TestIndexer_Store", t, func() {
+	PatchConvey("TestIndexer_Store", t, func() {
 		ctx := context.Background()
 
-		Convey("convert docs error", func() {
+		PatchConvey("convert docs error", func() {
 			client, _ := elasticsearch.NewClient(elasticsearch.Config{})
 			indexer, _ := NewIndexer(ctx, &IndexerConfig{
 				Client: client,
@@ -379,7 +400,7 @@ func TestIndexer_Store(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "convert error")
 		})
 
-		Convey("bulk request error", func() {
+		PatchConvey("bulk request error", func() {
 			mockT := &mockTransport{
 				Err: fmt.Errorf("transport error"),
 			}
@@ -396,7 +417,7 @@ func TestIndexer_Store(t *testing.T) {
 			So(err, ShouldBeNil)
 		})
 
-		Convey("bulk response error", func() {
+		PatchConvey("bulk response error", func() {
 			mockT := &mockTransport{
 				Response: &http.Response{
 					StatusCode: 500,
@@ -419,7 +440,7 @@ func TestIndexer_Store(t *testing.T) {
 			So(err, ShouldBeNil)
 		})
 
-		Convey("bulk response with errors in items", func() {
+		PatchConvey("bulk response with errors in items", func() {
 			respBody := map[string]any{
 				"errors": true,
 				"items": []any{
@@ -456,7 +477,7 @@ func TestIndexer_Store(t *testing.T) {
 			So(err, ShouldBeNil)
 		})
 
-		Convey("success", func() {
+		PatchConvey("success", func() {
 			respBody := map[string]any{
 				"errors": false,
 				"items": []any{
