@@ -72,7 +72,7 @@ func main() {
 		CACert:    cert,
 	})
 
-	// 2. 定义索引规范（选填：如果索引不存在，将自动创建）
+	// 2. 定义 Index Spec（选填：如果索引不存在，将自动创建）
 	indexSpec := &es9.IndexSpec{
 		Settings: map[string]any{
 			"number_of_shards":   1,
@@ -159,7 +159,9 @@ func main() {
 type IndexerConfig struct {
     Client *elasticsearch.Client // 必填: Elasticsearch 客户端实例
     Index  string                // 必填: 存储文档的索引名称
-    IndexSpec *IndexSpec         // 选填: 用于自动创建索引的设置和映射
+    IndexSpec *IndexSpec         // 选填: 用于自动创建索引的设置和映射。
+                                 // 如果提供，索引器将在初始化（NewIndexer）时检查索引是否存在。
+                                 // 如果不存在，将使用提供的 Spec 创建索引；如果已存在，则不执行任何操作。
     BatchSize int                // 选填: 用于 embedding 的最大文本数量 (默认: 5)
 
     // 必填: 将 Document 字段映射到 Elasticsearch 字段的函数

@@ -148,7 +148,10 @@ The indexer can be configured using the `IndexerConfig` struct:
 type IndexerConfig struct {
     Client *opensearch.Client // Required: OpenSearch client instance
     Index  string             // Required: Index name to store documents
-    IndexSpec *IndexSpec       // Optional: Settings and mappings for automatic index creation
+    IndexSpec *IndexSpec       // Optional: Settings and mappings for automatic index creation.
+                               // If provided, the indexer will check if the index exists during initialization (NewIndexer).
+                               // If it doesn't exist, it will be created with the provided specification.
+                               // If it already exists, no action is taken.
     BatchSize int             // Optional: Max texts size for embedding (default: 5)
 
     // Required: Function to map Document fields to OpenSearch fields
