@@ -105,6 +105,9 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 		}
 		res, err := conf.Client.Indices.Exists(ctx, req)
 		if err != nil {
+			// OpenSearch v4 SDK returns an error even on 404 responses (index not found),
+			// so we need to check the status code separately to distinguish between
+			// "index doesn't exist" (404) and actual errors.
 			if res != nil && res.StatusCode == 404 {
 				err = nil
 			} else {
