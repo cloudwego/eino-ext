@@ -50,17 +50,17 @@ const (
 func main() {
 	ctx := context.Background()
 
-	// ES 支持多种连接方式
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 
+	// 1. 创建 ES 客户端
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{"http://localhost:9200"},
 		Username:  username,
 		Password:  password,
 	})
 
-	// 定义索引规范（选填：如果索引不存在，将自动创建）
+	// 2. 定义索引规范（选填：如果索引不存在，将自动创建）
 	indexSpec := &es7.IndexSpec{
 		Settings: map[string]any{
 			"number_of_shards":   1,
@@ -76,14 +76,15 @@ func main() {
 		},
 	}
 
-	// 使用 Volcengine ARK 创建 embedding 组件
+	// 3. 使用 Volcengine ARK 创建 embedding 组件
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Region: os.Getenv("ARK_REGION"),
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// 加载文档
+	// 4. 准备文档
+	// 文档通常包含 ID 和 Content。也可以添加额外的元数据用于过滤等用途。
 	docs := []*schema.Document{
 		{
 			ID:      "1",
@@ -101,7 +102,7 @@ func main() {
 		},
 	}
 
-	// 创建 ES 索引器组件
+	// 5. 创建 ES 索引器组件
 	indexer, _ := es7.NewIndexer(ctx, &es7.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
@@ -121,6 +122,7 @@ func main() {
 		Embedding: emb,
 	})
 
+	// 6. 索引文档
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)

@@ -49,11 +49,10 @@ const (
 
 func main() {
 	ctx := context.Background()
-	// es supports multiple ways to connect
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 
-	// 1. Create ES client
+	// Prepare CA certificate (ES8 enables TLS by default, provide CA for custom certs)
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 	var cert []byte
 	if httpCACertPath != "" {
@@ -64,6 +63,7 @@ func main() {
 		}
 	}
 
+	// 1. Create ES client
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{"https://localhost:9200"},
 		Username:  username,

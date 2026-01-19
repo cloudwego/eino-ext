@@ -49,11 +49,10 @@ const (
 
 func main() {
 	ctx := context.Background()
-	// es supports multiple ways to connect
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 
-	// 1. 创建 ES 客户端
+	// 准备 CA 证书（ES8 默认启用 TLS，需要提供自定义证书的 CA）
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
 	var cert []byte
 	if httpCACertPath != "" {
@@ -64,6 +63,7 @@ func main() {
 		}
 	}
 
+	// 1. 创建 ES 客户端
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{"https://localhost:9200"},
 		Username:  username,

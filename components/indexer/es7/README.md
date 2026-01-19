@@ -50,17 +50,17 @@ const (
 func main() {
 	ctx := context.Background()
 
-	// es supports multiple ways to connect
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 
+	// 1. Create ES client
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{"http://localhost:9200"},
 		Username:  username,
 		Password:  password,
 	})
 
-	// Define Index Specification (Optional: automatically creates index if it doesn't exist)
+	// 2. Define Index Specification (Optional: automatically creates index if it doesn't exist)
 	indexSpec := &es7.IndexSpec{
 		Settings: map[string]any{
 			"number_of_shards":   1,
@@ -76,14 +76,16 @@ func main() {
 		},
 	}
 
-	// create embedding component using ARK
+	// 3. Create embedding component using ARK
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Region: os.Getenv("ARK_REGION"),
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// load docs
+	// 4. Prepare documents
+	// Documents usually contain at least an ID and Content.
+	// You can also add extra metadata for filtering or other purposes.
 	docs := []*schema.Document{
 		{
 			ID:      "1",
@@ -101,7 +103,7 @@ func main() {
 		},
 	}
 
-	// create es indexer component
+	// 5. Create ES indexer component
 	indexer, _ := es7.NewIndexer(ctx, &es7.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
@@ -121,6 +123,7 @@ func main() {
 		Embedding: emb,
 	})
 
+	// 6. Index documents
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)
