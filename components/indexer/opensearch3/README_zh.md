@@ -31,40 +31,54 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/opensearch3"
+)
+
+const (
+	indexName          = "eino_example"
+	fieldContent       = "content"
+	fieldContentVector = "content_vector"
+	fieldExtraLocation = "location"
+	docExtraLocation   = "location"
 )
 
 func main() {
 	ctx := context.Background()
+	username := os.Getenv("OPENSEARCH_USERNAME")
+	password := os.Getenv("OPENSEARCH_PASSWORD")
 
+	// 1. 创建 OpenSearch 客户端
 	client, err := opensearchapi.NewClient(opensearchapi.Config{
 		Client: opensearch.Config{
 			Addresses: []string{"http://localhost:9200"},
-			// ... auth config
+			Username:  username,
+			Password:  password,
 		},
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 定义索引规范（选填：如果索引不存在，将自动创建）
+	// 2. 定义索引规范（选填：如果索引不存在，将自动创建）
 	indexSpec := &opensearch3.IndexSpec{
 		Settings: map[string]any{
 			"number_of_shards": 1,
 		},
 		Mappings: map[string]any{
 			"properties": map[string]any{
-				"content_vector": map[string]any{
+				fieldContentVector: map[string]any{
 					"type":      "knn_vector",
 					"dimension": 1536,
 					"method": map[string]any{
-						"name":      "hnsw",
-						"engine":    "nmslib",
+						"name":       "hnsw",
+						"engine":     "nmslib",
 						"space_type": "l2",
 					},
 				},
@@ -72,32 +86,59 @@ func main() {
 		},
 	}
 
-	// 创建 embedding 组件
-	emb := createYourEmbedding()
+	// 3. 使用 Volcengine ARK 创建 embedding 组件
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
-	// 创建 opensearch indexer 组件
+	// 4. 创建 opensearch 索引器组件
 	indexer, _ := opensearch3.NewIndexer(ctx, &opensearch3.IndexerConfig{
 		Client:    client,
-		Index:     "your_index_name",
+		Index:     indexName,
 		IndexSpec: indexSpec, // 添加此项以启用自动索引创建
 		BatchSize: 10,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]opensearch3.FieldValue, error) {
 			return map[string]opensearch3.FieldValue{
-				"content": {
+				fieldContent: {
 					Value:    doc.Content,
-					EmbedKey: "content_vector",
+					EmbedKey: fieldContentVector, // 向量化文档内容并保存到 "content_vector" 字段
+				},
+				fieldExtraLocation: {
+					Value: doc.MetaData[docExtraLocation],
 				},
 			}, nil
 		},
 		Embedding: emb,
 	})
 
+	// 5. 准备文档
+	// 文档通常包含 ID 和 Content。也可以添加额外的元数据用于过滤等用途。
 	docs := []*schema.Document{
-		{ID: "1", Content: "example content"},
+		{
+			ID:      "1",
+			Content: "Eiffel Tower: Located in Paris, France.",
+			MetaData: map[string]any{
+				docExtraLocation: "France",
+			},
+		},
+		{
+			ID:      "2",
+			Content: "The Great Wall: Located in China.",
+			MetaData: map[string]any{
+				docExtraLocation: "China",
+			},
+		},
 	}
 
-	ids, _ := indexer.Store(ctx, docs)
-	fmt.Println(ids)
+	// 6. 索引文档
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		fmt.Printf("index error: %v\n", err)
+		return
+	}
+	fmt.Println("indexed ids:", ids)
 }
 ```
 

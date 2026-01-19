@@ -41,32 +41,44 @@ import (
 	"github.com/cloudwego/eino-ext/components/indexer/opensearch3"
 )
 
+const (
+	indexName          = "eino_example"
+	fieldContent       = "content"
+	fieldContentVector = "content_vector"
+	fieldExtraLocation = "location"
+	docExtraLocation   = "location"
+)
+
 func main() {
 	ctx := context.Background()
+	username := os.Getenv("OPENSEARCH_USERNAME")
+	password := os.Getenv("OPENSEARCH_PASSWORD")
 
+	// 1. Create OpenSearch client
 	client, err := opensearchapi.NewClient(opensearchapi.Config{
 		Client: opensearch.Config{
 			Addresses: []string{"http://localhost:9200"},
-			// ... auth config
+			Username:  username,
+			Password:  password,
 		},
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Define Index Specification (Optional: automatically creates index if it doesn't exist)
+	// 2. Define Index Specification (Optional: automatically creates index if it doesn't exist)
 	indexSpec := &opensearch3.IndexSpec{
 		Settings: map[string]any{
 			"number_of_shards": 1,
 		},
 		Mappings: map[string]any{
 			"properties": map[string]any{
-				"content_vector": map[string]any{
+				fieldContentVector: map[string]any{
 					"type":      "knn_vector",
 					"dimension": 1536,
 					"method": map[string]any{
-						"name":      "hnsw",
-						"engine":    "nmslib",
+						"name":       "hnsw",
+						"engine":     "nmslib",
 						"space_type": "l2",
 					},
 				},
@@ -74,34 +86,54 @@ func main() {
 		},
 	}
 
-	// create embedding component using ARK
+	// 3. Create embedding component using ARK
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Region: os.Getenv("ARK_REGION"),
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// create opensearch indexer component
+	// 4. Create opensearch indexer component
 	indexer, _ := opensearch3.NewIndexer(ctx, &opensearch3.IndexerConfig{
 		Client:    client,
-		Index:     "your_index_name",
+		Index:     indexName,
 		IndexSpec: indexSpec, // Add this to enable automatic index creation
 		BatchSize: 10,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]opensearch3.FieldValue, error) {
 			return map[string]opensearch3.FieldValue{
-				"content": {
+				fieldContent: {
 					Value:    doc.Content,
-					EmbedKey: "content_vector",
+					EmbedKey: fieldContentVector, // vectorize content and save to "content_vector"
+				},
+				fieldExtraLocation: {
+					Value: doc.MetaData[docExtraLocation],
 				},
 			}, nil
 		},
 		Embedding: emb,
 	})
 
+	// 5. Prepare documents
+	// Documents usually contain at least an ID and Content.
+	// You can also add extra metadata for filtering or other purposes.
 	docs := []*schema.Document{
-		{ID: "1", Content: "example content"},
+		{
+			ID:      "1",
+			Content: "Eiffel Tower: Located in Paris, France.",
+			MetaData: map[string]any{
+				docExtraLocation: "France",
+			},
+		},
+		{
+			ID:      "2",
+			Content: "The Great Wall: Located in China.",
+			MetaData: map[string]any{
+				docExtraLocation: "China",
+			},
+		},
 	}
 
+	// 6. Index documents
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)
