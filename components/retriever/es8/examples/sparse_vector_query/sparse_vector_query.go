@@ -96,13 +96,13 @@ func main() {
 
 				case fieldContentDenseVector:
 					var v []float64
-					for _, item := range val.([]interface{}) {
+					for _, item := range val.([]any) {
 						v = append(v, item.(float64))
 					}
 					doc.WithDenseVector(v)
 
 				case fieldContentSparseVector:
-					raw := val.(map[string]interface{})
+					raw := val.(map[string]any)
 					sparse := make(map[int]float64, len(raw))
 					for k, v := range raw {
 						id, err := strconv.ParseInt(k, 10, 64)

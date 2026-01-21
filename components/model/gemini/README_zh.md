@@ -12,6 +12,33 @@
 - 支持自定义响应解析
 - 灵活的模型配置
 - 支持对生成的响应进行缓存
+- 自动处理重复的工具调用 ID
+
+## 重要说明
+
+### 工具调用 ID 处理
+
+Gemini 的 API 不在其响应中提供工具调用 ID。为了确保与 Eino 框架的兼容性并实现正确的工具执行跟踪，此实现会自动为每个工具调用生成唯一的 UUID（v4）。
+
+**ID 生成：**
+- 每个工具调用都会收到一个新生成的 UUID
+- UUID 在所有响应和会话中全局唯一
+- 格式：标准 UUID v4（例如，`550e8400-e29b-41d4-a716-446655440000`）
+
+**示例：**
+```go
+// 如果 Gemini 为不同城市返回多次 "get_weather" 调用：
+// 工具调用 1：ID = "550e8400-e29b-41d4-a716-446655440000", Args = {"city": "Paris"}
+// 工具调用 2：ID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8", Args = {"city": "London"}
+// 工具调用 3：ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7", Args = {"city": "Tokyo"}
+```
+
+**优势：**
+- **会话范围内的唯一性**：UUID 可防止多次模型调用之间的 ID 冲突
+- **标准格式**：与行业标准工具跟踪系统兼容
+- **简化实现**：无需在调用之间维护状态
+
+这确保每个工具调用都有一个全局唯一的标识符，这对于具有多次模型交互的复杂 Agent 工作流中的工具执行跟踪和响应处理至关重要。
 
 ## 安装
 
@@ -678,6 +705,11 @@ func main() {
 	cm, err := gemini.NewChatModel(ctx, &gemini.Config{
 		Client: client,
 		Model:  modelName,
+		// you can set the necessary parameters for image generation
+		ImageConfig: &genai.ImageConfig{
+			AspectRatio: "16:9",
+			ImageSize:   "1K",
+		},
 		ResponseModalities: []gemini.GeminiResponseModality{
 			gemini.GeminiResponseModalityText,
 			gemini.GeminiResponseModalityImage,

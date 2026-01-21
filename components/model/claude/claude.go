@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strings"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
@@ -61,21 +63,28 @@ var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 //	})
 func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 	var cli anthropic.Client
-	if !config.ByBedrock {
-		var opts []option.RequestOption
-
-		opts = append(opts, option.WithAPIKey(config.APIKey))
-
-		if config.BaseURL != nil {
-			opts = append(opts, option.WithBaseURL(*config.BaseURL))
+	if config.ByVertex {
+		// Use Google Vertex AI
+		// Auto-detect project ID from config or environment variables
+		projectID := config.VertexProjectID
+		if projectID == "" {
+			projectID = getEnvWithFallbacks("ANTHROPIC_VERTEX_PROJECT_ID", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT")
+		}
+		if projectID == "" {
+			return nil, errors.New("ByVertex is true but no project ID provided; set VertexProjectID or ANTHROPIC_VERTEX_PROJECT_ID")
 		}
 
-		if config.HTTPClient != nil {
-			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		// Auto-detect region from config or environment variable
+		region := config.VertexRegion
+		if region == "" {
+			region = os.Getenv("CLOUD_ML_REGION")
 		}
-
-		cli = anthropic.NewClient(opts...)
-	} else {
+		if region == "" {
+			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
+		}
+		cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+	} else if config.ByBedrock {
+		// Use AWS Bedrock
 		var opts []func(*awsConfig.LoadOptions) error
 		if config.Region != "" {
 			opts = append(opts, awsConfig.WithRegion(config.Region))
@@ -94,11 +103,36 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
 		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+	} else {
+		// Use direct Anthropic API
+		var opts []option.RequestOption
+
+		opts = append(opts, option.WithAPIKey(config.APIKey))
+
+		if config.BaseURL != nil {
+			opts = append(opts, option.WithBaseURL(*config.BaseURL))
+		}
+
+		if config.HTTPClient != nil {
+			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		}
+
+		cli = anthropic.NewClient(opts...)
 	}
+
+	// Auto-detect model from config or environment variable
+	model := config.Model
+	if model == "" {
+		model = os.Getenv("ANTHROPIC_MODEL")
+	}
+	if model == "" {
+		return nil, errors.New("no model specified; set Model config or ANTHROPIC_MODEL environment variable")
+	}
+
 	return &ChatModel{
 		cli:                    cli,
 		maxTokens:              config.MaxTokens,
-		model:                  config.Model,
+		model:                  model,
 		stopSequences:          config.StopSequences,
 		temperature:            config.Temperature,
 		thinking:               config.Thinking,
@@ -140,6 +174,19 @@ type Config struct {
 	// Optional for Bedrock
 	Region string
 
+	// ByVertex indicates whether to use Google Vertex AI
+	ByVertex bool
+
+	// VertexProjectID is your Google Cloud project ID.
+	// If not set, auto-detected from environment variables:
+	// ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT
+	VertexProjectID string
+
+	// VertexRegion is the Vertex AI region (e.g., "us-east5").
+	// If not set, auto-detected from CLOUD_ML_REGION environment variable.
+	// See: https://claude.ai/docs/en/google-vertex-ai
+	VertexRegion string
+
 	// BaseURL is the custom API endpoint URL
 	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
 	// Optional. Example: "https://custom-claude-api.example.com"
@@ -150,8 +197,8 @@ type Config struct {
 	// Required
 	APIKey string
 
-	// Model specifies which Claude model to use
-	// Required
+	// Model specifies which Claude model to use.
+	// If not set, auto-detected from ANTHROPIC_MODEL environment variable.
 	Model string
 
 	// MaxTokens limits the maximum number of tokens in the response
@@ -566,38 +613,80 @@ func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOpt
 
 	params.Tools = tools
 
-	if commonOptions.ToolChoice != nil {
-		switch *commonOptions.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			params.Tools = []anthropic.ToolUnionParam{} // act like forbid tools
-		case schema.ToolChoiceAllowed:
-			p := &anthropic.ToolChoiceAutoParam{}
-			if specOptions.DisableParallelToolUse != nil {
-				p.DisableParallelToolUse = param.NewOpt[bool](*specOptions.DisableParallelToolUse)
+	err := populateToolChoice(params, commonOptions.ToolChoice, commonOptions.AllowedToolNames, specOptions.DisableParallelToolUse)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoice, allowedToolNames []string, disableParallelToolUse *bool) error {
+	if tc == nil {
+		return nil
+	}
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		ofNone := anthropic.NewToolChoiceNoneParam()
+		params.ToolChoice = anthropic.ToolChoiceUnionParam{
+			OfNone: &ofNone,
+		}
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			return fmt.Errorf("tool_choice 'allowed' is not supported when allowed tool names are present")
+		}
+		ofAuto := &anthropic.ToolChoiceAutoParam{}
+		if disableParallelToolUse != nil {
+			ofAuto.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
+		}
+		params.ToolChoice = anthropic.ToolChoiceUnionParam{
+			OfAuto: ofAuto,
+		}
+	case schema.ToolChoiceForced:
+		if len(params.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+
+		var onlyOneToolName = ""
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(params.Tools))
+			for _, t := range params.Tools {
+				if t.GetName() != nil {
+					toolsMap[*t.GetName()] = true
+				}
+			}
+
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+
+			onlyOneToolName = allowedToolName
+		} else if len(params.Tools) == 1 {
+			onlyOneToolName = *params.Tools[0].GetName()
+		}
+
+		if onlyOneToolName != "" {
+			params.ToolChoice = anthropic.ToolChoiceParamOfTool(onlyOneToolName)
+		} else {
+			ofAny := &anthropic.ToolChoiceAnyParam{}
+			if disableParallelToolUse != nil {
+				ofAny.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
 			}
 			params.ToolChoice = anthropic.ToolChoiceUnionParam{
-				OfAuto: p,
+				OfAny: ofAny,
 			}
-		case schema.ToolChoiceForced:
-			if len(tools) == 0 {
-				return fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(tools) == 1 {
-				params.ToolChoice = anthropic.ToolChoiceParamOfTool(*tools[0].GetName())
-			} else {
-				p := &anthropic.ToolChoiceAnyParam{}
-				if specOptions.DisableParallelToolUse != nil {
-					p.DisableParallelToolUse = param.NewOpt[bool](*specOptions.DisableParallelToolUse)
-				}
-				params.ToolChoice = anthropic.ToolChoiceUnionParam{
-					OfAny: p,
-				}
-			}
-		default:
-			return fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
 		}
+
+	default:
+		return fmt.Errorf("tool choice=%s not support", *tc)
 	}
 
 	return nil
+
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
@@ -674,35 +763,43 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	}
 
 	if len(message.UserInputMultiContent) > 0 {
-		if message.Role != schema.User {
+		if message.Role != schema.User && message.Role != schema.Tool {
 			return mp, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
 		}
-		for i := range message.UserInputMultiContent {
-			switch message.UserInputMultiContent[i].Type {
-			case schema.ChatMessagePartTypeText:
-				messageParams = append(messageParams, anthropic.NewTextBlock(message.UserInputMultiContent[i].Text))
-			case schema.ChatMessagePartTypeImageURL:
-				if message.UserInputMultiContent[i].Image == nil {
-					return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
-				}
-				image := message.UserInputMultiContent[i].Image
-				if image.URL != nil && *image.URL != "" {
-					messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
-						URL: *image.URL,
-					}))
-				} else if image.Base64Data != nil && *image.Base64Data != "" {
-					if image.MIMEType == "" {
-						return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+		if message.Role == schema.Tool {
+			m, err := convToolMultiContent(message.ToolCallID, message.UserInputMultiContent)
+			if err != nil {
+				return mp, err
+			}
+			messageParams = append(messageParams, m)
+		} else {
+			for i := range message.UserInputMultiContent {
+				switch message.UserInputMultiContent[i].Type {
+				case schema.ChatMessagePartTypeText:
+					messageParams = append(messageParams, anthropic.NewTextBlock(message.UserInputMultiContent[i].Text))
+				case schema.ChatMessagePartTypeImageURL:
+					if message.UserInputMultiContent[i].Image == nil {
+						return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
 					}
-					if strings.HasPrefix(*image.Base64Data, "data:") {
-						return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+					image := message.UserInputMultiContent[i].Image
+					if image.URL != nil && *image.URL != "" {
+						messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+							URL: *image.URL,
+						}))
+					} else if image.Base64Data != nil && *image.Base64Data != "" {
+						if image.MIMEType == "" {
+							return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+						}
+						if strings.HasPrefix(*image.Base64Data, "data:") {
+							return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+						}
+						messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
+					} else {
+						return mp, fmt.Errorf("image part must have either a URL or Base64Data")
 					}
-					messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
-				} else {
-					return mp, fmt.Errorf("image part must have either a URL or Base64Data")
+				default:
+					return mp, fmt.Errorf("anthropic message type not supported: %s", message.UserInputMultiContent[i].Type)
 				}
-			default:
-				return mp, fmt.Errorf("anthropic message type not supported: %s", message.UserInputMultiContent[i].Type)
 			}
 		}
 	} else if len(message.AssistantGenMultiContent) > 0 {
@@ -739,7 +836,7 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		}
 
 	} else if len(message.Content) > 0 {
-		if len(message.ToolCallID) > 0 {
+		if message.Role == schema.Tool {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
@@ -748,7 +845,9 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
 		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
 		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
-		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		if len(message.MultiContent) > 0 {
+			log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		}
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:
@@ -795,13 +894,69 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	switch message.Role {
 	case schema.Assistant:
 		mp = anthropic.NewAssistantMessage(messageParams...)
-	case schema.User:
+	case schema.User, schema.Tool:
 		mp = anthropic.NewUserMessage(messageParams...)
 	default:
 		mp = anthropic.NewUserMessage(messageParams...)
 	}
 
 	return mp, nil
+}
+
+func convToolMultiContent(callID string, parts []schema.MessageInputPart) (anthropic.ContentBlockParamUnion, error) {
+	result := anthropic.ContentBlockParamUnion{OfToolResult: &anthropic.ToolResultBlockParam{
+		ToolUseID: callID,
+		IsError:   param.Opt[bool]{},
+		Content:   make([]anthropic.ToolResultBlockParamContentUnion, 0, len(parts)),
+	}}
+	for _, part := range parts {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+				OfText: &anthropic.TextBlockParam{
+					Text: part.Text,
+				},
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				return result, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+			}
+			image := part.Image
+			if image.URL != nil && *image.URL != "" {
+				result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+					OfImage: &anthropic.ImageBlockParam{
+						Source: anthropic.ImageBlockParamSourceUnion{
+							OfURL: &anthropic.URLImageSourceParam{
+								URL: *image.URL,
+							},
+						},
+					},
+				})
+			} else if image.Base64Data != nil && *image.Base64Data != "" {
+				if image.MIMEType == "" {
+					return result, fmt.Errorf("image part must have MIMEType when use Base64Data")
+				}
+				if strings.HasPrefix(*image.Base64Data, "data:") {
+					return result, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+				}
+				result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+					OfImage: &anthropic.ImageBlockParam{
+						Source: anthropic.ImageBlockParamSourceUnion{
+							OfBase64: &anthropic.Base64ImageSourceParam{
+								Data:      *image.Base64Data,
+								MediaType: anthropic.Base64ImageSourceMediaType(image.MIMEType),
+							},
+						},
+					},
+				})
+			} else {
+				return result, fmt.Errorf("image part must have either a URL or Base64Data")
+			}
+		default:
+			return result, fmt.Errorf("anthropic message type not supported: %s", part.Type)
+		}
+	}
+	return result, nil
 }
 
 func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion) {
@@ -1035,4 +1190,15 @@ func newPanicErr(info any, stack []byte) error {
 		info:  info,
 		stack: stack,
 	}
+}
+
+// getEnvWithFallbacks returns the first non-empty environment variable value
+// from the given list of variable names.
+func getEnvWithFallbacks(keys ...string) string {
+	for _, key := range keys {
+		if val := os.Getenv(key); val != "" {
+			return val
+		}
+	}
+	return ""
 }
