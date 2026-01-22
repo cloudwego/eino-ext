@@ -154,7 +154,7 @@ func getAggrMessageOutputHookFromCtx(ctx context.Context) (*AggrMessageOutput, b
 func injectToolIDNameMapToCtx(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	if info.Component == compose.ComponentOfToolsNode {
 		message, ok := input.(*schema.Message)
-		if ok {
+		if ok && message != nil {
 			toolIDNameMap := make(map[string]string)
 			for _, toolCall := range message.ToolCalls {
 				toolIDNameMap[toolCall.ID] = toolCall.Function.Name
