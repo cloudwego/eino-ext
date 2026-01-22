@@ -47,6 +47,7 @@ func main() {
 	}
 
 	multiModalMsg := &schema.Message{
+		Role: schema.User,
 		UserInputMultiContent: []schema.MessageInputPart{
 			{
 				Type: schema.ChatMessagePartTypeText,

@@ -18,6 +18,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -195,6 +196,8 @@ type Client struct {
 	toolChoice *schema.ToolChoice
 }
 
+var otherReasoningKeys = []string{"reasoning"}
+
 var mimeType2AudioFormat = map[string]string{
 	"audio/wav":      "wav",
 	"audio/vnd.wav":  "wav",
@@ -218,7 +221,7 @@ var audioFormat2MimeTypes = map[string]string{
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
 	if config == nil {
-		return nil, fmt.Errorf("OpenAI client config cannot be nil")
+		return nil, fmt.Errorf("client config cannot be nil")
 	}
 
 	var clientConf openai.ClientConfig
@@ -496,8 +499,9 @@ func buildMessageFromAssistantGenMultiContent(inMsg *schema.Message) (openai.Cha
 	}
 	// Initialize the message with role and name.
 	comMessage := openai.ChatCompletionMessage{
-		Role: toOpenAIRole(inMsg.Role),
-		Name: inMsg.Name,
+		Role:      toOpenAIRole(inMsg.Role),
+		Name:      inMsg.Name,
+		ToolCalls: toOpenAIToolCalls(inMsg.ToolCalls),
 	}
 
 partsLoop:
@@ -519,6 +523,7 @@ partsLoop:
 				Audio: &openai.Audio{
 					ID: string(audioID),
 				},
+				ToolCalls: toOpenAIToolCalls(inMsg.ToolCalls),
 			}
 			break partsLoop
 
@@ -656,41 +661,9 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 		}
 	}
 
-	if options.ToolChoice != nil {
-		/*
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
-
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
-
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
-		*/
-
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = openai.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: openai.ToolFunction{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
-		}
+	err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 
 	msgs := make([]openai.ChatCompletionMessage, 0, len(in))
@@ -803,6 +776,8 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		if len(msg.ReasoningContent) > 0 {
 			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
+		} else if msg.ExtraFields != nil {
+			populateRCFromExtra(msg.ExtraFields, outMsg)
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
@@ -918,7 +893,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			}
 
 			if chunkErr != nil {
-				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk from OpenAI: %w", chunkErr))
+				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk: %w", chunkErr))
 				return
 			}
 
@@ -996,6 +971,106 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
+type allowedTools struct {
+	Mode  string              `json:"mode"`
+	Tools []openai.ToolChoice `json:"tools"`
+}
+
+func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	validateAllowedNamesTools := func() error {
+		if len(allowedToolNames) > 0 {
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			for _, name := range allowedToolNames {
+				if !toolsMap[name] {
+					return fmt.Errorf("allowed tool %s not found in request tools", name)
+				}
+			}
+		}
+		return nil
+	}
+
+	buildToolChoices := func() []openai.ToolChoice {
+		choices := make([]openai.ToolChoice, len(allowedToolNames))
+		for i, n := range allowedToolNames {
+			choices[i] = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: n,
+				},
+			}
+		}
+		return choices
+	}
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+		return nil
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedNamesTools(); err != nil {
+				return err
+			}
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceAuto,
+					Tools: buildToolChoices(),
+				},
+			}
+
+		} else {
+			req.ToolChoice = toolChoiceAuto
+		}
+		return nil
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool_choice is forced but no tools are provided")
+		}
+
+		err := validateAllowedNamesTools()
+		if err != nil {
+			return err
+		}
+
+		var onlyOneToolName string
+		if len(allowedToolNames) == 1 {
+			onlyOneToolName = allowedToolNames[0]
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+
+		if onlyOneToolName != "" {
+			req.ToolChoice = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: onlyOneToolName,
+				},
+			}
+		} else if len(allowedToolNames) > 1 {
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceRequired,
+					Tools: buildToolChoices(),
+				},
+			}
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("unsupported tool_choice: %s", *tc)
+	}
+}
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
 	if probs == nil {
 		return nil
@@ -1105,6 +1180,19 @@ func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, au
 
 }
 
+func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) {
+	if extra == nil {
+		return
+	}
+	for _, key := range otherReasoningKeys {
+		if reasoningRawMessage, ok := extra[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
+			msg.ReasoningContent = string(reasoningRawMessage)
+			setReasoningContent(msg, string(reasoningRawMessage))
+			break
+		}
+	}
+}
+
 func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
@@ -1128,8 +1216,9 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 		if len(choice.Delta.ReasoningContent) > 0 {
 			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
+		} else if choice.Delta.ExtraFields != nil {
+			populateRCFromExtra(choice.Delta.ExtraFields, msg)
 		}
-
 		if choice.Delta.Audio != nil {
 			err = b.setOutputMessageAudio(msg, choice.Delta.Audio)
 			if err != nil {
@@ -1217,12 +1306,17 @@ func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
 	if usage.PromptTokensDetails != nil {
 		promptTokenDetails.CachedTokens = usage.PromptTokensDetails.CachedTokens
 	}
+	completionTokensDetails := schema.CompletionTokensDetails{}
+	if usage.CompletionTokensDetails != nil {
+		completionTokensDetails.ReasoningTokens = usage.CompletionTokensDetails.ReasoningTokens
+	}
 
 	return &schema.TokenUsage{
-		PromptTokens:       usage.PromptTokens,
-		PromptTokenDetails: promptTokenDetails,
-		CompletionTokens:   usage.CompletionTokens,
-		TotalTokens:        usage.TotalTokens,
+		PromptTokens:            usage.PromptTokens,
+		PromptTokenDetails:      promptTokenDetails,
+		CompletionTokens:        usage.CompletionTokens,
+		TotalTokens:             usage.TotalTokens,
+		CompletionTokensDetails: completionTokensDetails,
 	}
 }
 
@@ -1241,6 +1335,9 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
 	}
 }
 

@@ -17,6 +17,7 @@
 package gemini
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -28,61 +29,184 @@ import (
 func TestVideoMetaDataFunctions(t *testing.T) {
 	ptr := func(f float64) *float64 { return &f }
 
-	t.Run("TestSetVideoMetaData", func(t *testing.T) {
-		videoURL := &schema.ChatMessageVideoURL{}
-
-		// Success case
-		metaData := &genai.VideoMetadata{FPS: ptr(24.0)}
-		SetVideoMetaData(videoURL, metaData)
-		assert.Equal(t, metaData, GetVideoMetaData(videoURL))
-
-		// Boundary case: nil input
-		SetVideoMetaData(nil, metaData)
-		assert.Nil(t, GetVideoMetaData(nil))
-	})
-
 	t.Run("TestSetInputVideoMetaData", func(t *testing.T) {
 		inputVideo := &schema.MessageInputVideo{}
 
 		// Success case
 		metaData := &genai.VideoMetadata{FPS: ptr(10.0)}
-		setInputVideoMetaData(inputVideo, metaData)
+		SetInputVideoMetaData(inputVideo, metaData)
 		assert.Equal(t, metaData, GetInputVideoMetaData(inputVideo))
 
 		// Boundary case: nil input
-		setInputVideoMetaData(nil, metaData)
+		SetInputVideoMetaData(nil, metaData)
 		assert.Nil(t, GetInputVideoMetaData(nil))
 	})
 }
 
-func TestThoughtSignatureFunctions(t *testing.T) {
-	t.Run("TestSetThoughtSignature", func(t *testing.T) {
+func TestMessageThoughtSignatureFunctions(t *testing.T) {
+	t.Run("TestSetMessageThoughtSignature", func(t *testing.T) {
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			ReasoningContent: "thinking process",
+		}
+
+		// Success case
+		signature := []byte("message_thought_signature_data")
+		setMessageThoughtSignature(message, signature)
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.True(t, ok)
+		assert.Equal(t, signature, retrieved)
+
+		// Verify it's stored in Extra
+		assert.NotNil(t, message.Extra)
+		assert.Equal(t, signature, message.Extra[thoughtSignatureKey])
+	})
+
+	t.Run("TestSetMessageThoughtSignature_NilMessage", func(t *testing.T) {
+		// Boundary case: nil message
+		signature := []byte("test_sig")
+		setMessageThoughtSignature(nil, signature)
+		retrieved, ok := GetThoughtSignatureFromExtra(nil)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
+	})
+
+	t.Run("TestSetMessageThoughtSignature_EmptySignature", func(t *testing.T) {
+		// Boundary case: empty signature
+		message := &schema.Message{Role: schema.Assistant}
+		setMessageThoughtSignature(message, []byte{})
+		// Empty signature should not be set
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
+	})
+
+	t.Run("TestGetMessageThoughtSignature_NilExtra", func(t *testing.T) {
+		// Boundary case: message with nil Extra
+		message := &schema.Message{Role: schema.Assistant}
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
+	})
+
+	t.Run("MessageThoughtSignatureCanRoundTripJSON", func(t *testing.T) {
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			ReasoningContent: "thinking",
+		}
+		signature := []byte("msg_sig_json")
+
+		setMessageThoughtSignature(message, signature)
+
+		data, err := json.Marshal(message)
+		assert.NoError(t, err)
+
+		var restored schema.Message
+		err = json.Unmarshal(data, &restored)
+		assert.NoError(t, err)
+
+		retrieved, ok := GetThoughtSignatureFromExtra(restored.Extra)
+		assert.True(t, ok)
+		assert.Equal(t, signature, retrieved)
+	})
+}
+
+func TestToolCallThoughtSignatureFunctions(t *testing.T) {
+	t.Run("TestSetToolCallThoughtSignature", func(t *testing.T) {
 		toolCall := &schema.ToolCall{
-			ID: "test_tool",
+			ID: "test_call",
 			Function: schema.FunctionCall{
 				Name:      "test_function",
-				Arguments: "{}",
+				Arguments: `{"param":"value"}`,
 			},
 		}
 
 		// Success case
-		signature := []byte("test_signature_data")
-		setThoughtSignature(toolCall, signature)
-		retrieved := getThoughtSignature(toolCall)
+		signature := []byte("toolcall_thought_signature_data")
+		setToolCallThoughtSignature(toolCall, signature)
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 
-		// Boundary case: nil tool call
-		setThoughtSignature(nil, signature)
-		assert.Nil(t, getThoughtSignature(nil))
-
-		// Boundary case: empty signature
-		toolCall2 := &schema.ToolCall{ID: "test2"}
-		setThoughtSignature(toolCall2, []byte{})
-		// Empty signature should not be set
-		assert.Nil(t, getThoughtSignature(toolCall2))
-
-		// Boundary case: toolCall with nil Extra
-		toolCall3 := &schema.ToolCall{ID: "test3"}
-		assert.Nil(t, getThoughtSignature(toolCall3))
+		// Verify it's stored in Extra
+		assert.NotNil(t, toolCall.Extra)
+		assert.Equal(t, signature, toolCall.Extra[thoughtSignatureKey])
 	})
+
+	t.Run("TestSetToolCallThoughtSignature_NilToolCall", func(t *testing.T) {
+		// Boundary case: nil tool call
+		signature := []byte("test_sig")
+		setToolCallThoughtSignature(nil, signature)
+		retrieved, ok := GetThoughtSignatureFromExtra(nil)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
+	})
+
+	t.Run("TestSetToolCallThoughtSignature_EmptySignature", func(t *testing.T) {
+		// Boundary case: empty signature
+		toolCall := &schema.ToolCall{ID: "test"}
+		setToolCallThoughtSignature(toolCall, []byte{})
+		// Empty signature should not be set
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
+	})
+
+	t.Run("TestGetToolCallThoughtSignature_NilExtra", func(t *testing.T) {
+		// Boundary case: tool call with nil Extra
+		toolCall := &schema.ToolCall{ID: "test"}
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
+	})
+
+	t.Run("ToolCallThoughtSignatureCanRoundTripJSON", func(t *testing.T) {
+		toolCall := &schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "check_flight",
+				Arguments: `{"flight":"AA100"}`,
+			},
+		}
+		signature := []byte("tc_sig_json")
+
+		setToolCallThoughtSignature(toolCall, signature)
+
+		data, err := json.Marshal(toolCall)
+		assert.NoError(t, err)
+
+		var restored schema.ToolCall
+		err = json.Unmarshal(data, &restored)
+		assert.NoError(t, err)
+
+		retrieved, ok := GetThoughtSignatureFromExtra(restored.Extra)
+		assert.True(t, ok)
+		assert.Equal(t, signature, retrieved)
+	})
+}
+
+func TestCustomConcat(t *testing.T) {
+	extras := []map[string]any{
+		{"ExecutableCode": &genai.ExecutableCode{Code: "1", Language: "1"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "2", Language: "2"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "3", Language: ""}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "1", Output: "1"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "2"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "", Output: "3"}},
+	}
+
+	var msgs []*schema.Message
+	for _, extra := range extras {
+		msgs = append(msgs, &schema.Message{
+			Role:  schema.Assistant,
+			Extra: extra,
+		})
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"ExecutableCode":      &genai.ExecutableCode{Code: "123", Language: "2"},
+		"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "123"},
+	}, msg.Extra)
 }

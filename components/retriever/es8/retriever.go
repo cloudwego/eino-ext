@@ -18,6 +18,7 @@ package es8
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/cloudwego/eino/components"
@@ -31,41 +32,49 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// RetrieverConfig contains configuration for the ES8 retriever.
 type RetrieverConfig struct {
+	// Client is the Elasticsearch client used for retrieval.
 	Client *elasticsearch.Client `json:"client"`
 
+	// Index is the name of the Elasticsearch index.
 	Index string `json:"index"`
-	// TopK number of result to return as top hits.
-	// Default is 10
-	TopK           int      `json:"top_k"`
+	// TopK specifies the number of results to return.
+	// Default is 10.
+	TopK int `json:"top_k"`
+	// ScoreThreshold filters results with a similarity score below this value.
 	ScoreThreshold *float64 `json:"score_threshold"`
 
-	// SearchMode retrieve strategy, see prepared impls in search_mode package:
+	// SearchMode defines the strategy for retrieval (e.g., dense vector, keyword).
 	// use search_mode.SearchModeExactMatch with string query
 	// use search_mode.SearchModeApproximate with search_mode.ApproximateQuery
 	// use search_mode.SearchModeDenseVectorSimilarity with search_mode.DenseVectorSimilarityQuery
 	// use search_mode.SearchModeSparseVectorTextExpansion with search_mode.SparseVectorTextExpansionQuery
 	// use search_mode.SearchModeRawStringRequest with json search request
 	SearchMode SearchMode `json:"search_mode"`
-	// ResultParser parse document from es search hits.
-	// If ResultParser not provided, defaultResultParser will be used as default
+	// ResultParser parses Elasticsearch hits into Eino documents.
+	// If ResultParser not provided, defaultResultParser will be used as default.
 	ResultParser func(ctx context.Context, hit types.Hit) (doc *schema.Document, err error)
-	// Embedding vectorization method, must provide when SearchMode needed
+	// Embedding is the embedding model used for vectorization.
+	// It is required when SearchMode needs it.
 	Embedding embedding.Embedder
 }
 
+// SearchMode defines the interface for building Elasticsearch search requests.
 type SearchMode interface {
-	// BuildRequest generate search request from config, query and options.
+	// BuildRequest generates the search request from configuration, query, and options.
 	// Additionally, some specified options (like filters for query) will be provided in options,
 	// and use retriever.GetImplSpecificOptions[options.ImplOptions] to get it.
 	BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error)
 }
 
+// Retriever implements the [retriever.Retriever] interface for Elasticsearch 8.x.
 type Retriever struct {
 	client *elasticsearch.Client
 	config *RetrieverConfig
 }
 
+// NewRetriever creates a new ES8 retriever with the provided configuration.
 func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) {
 	if conf.SearchMode == nil {
 		return nil, fmt.Errorf("[NewRetriever] search mode not provided")
@@ -76,7 +85,7 @@ func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) 
 	}
 
 	if conf.ResultParser == nil {
-		return nil, fmt.Errorf("[NewRetriever] result parser not provided")
+		conf.ResultParser = defaultResultParser
 	}
 
 	if conf.Client == nil {
@@ -88,6 +97,7 @@ func NewRetriever(_ context.Context, conf *RetrieverConfig) (*Retriever, error) 
 	}, nil
 }
 
+// Retrieve searches for documents in Elasticsearch matching the given query.
 func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retriever.Option) (docs []*schema.Document, err error) {
 	options := retriever.GetCommonOptions(&retriever.Options{
 		Index:          &r.config.Index,
@@ -132,6 +142,9 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 }
 
 func (r *Retriever) parseSearchResult(ctx context.Context, resp *search.Response) (docs []*schema.Document, err error) {
+	if len(resp.Hits.Hits) == 0 {
+		return []*schema.Document{}, nil
+	}
 	docs = make([]*schema.Document, 0, len(resp.Hits.Hits))
 
 	for _, hit := range resp.Hits.Hits {
@@ -146,10 +159,59 @@ func (r *Retriever) parseSearchResult(ctx context.Context, resp *search.Response
 	return docs, nil
 }
 
+// GetType returns the type of the retriever.
 func (r *Retriever) GetType() string {
 	return typ
 }
 
+// IsCallbacksEnabled checks if callbacks are enabled for this retriever.
 func (r *Retriever) IsCallbacksEnabled() bool {
 	return true
+}
+
+func defaultResultParser(ctx context.Context, hit types.Hit) (*schema.Document, error) {
+	if hit.Id_ == nil {
+		return nil, fmt.Errorf("defaultResultParser: field '_id' not found in hit")
+	}
+	id := *hit.Id_
+
+	score := 0.0
+	if hit.Score_ != nil {
+		score = float64(*hit.Score_)
+	}
+
+	if hit.Source_ == nil {
+		return nil, fmt.Errorf("defaultResultParser: field '_source' not found in document %s", id)
+	}
+
+	var source map[string]any
+	if err := json.Unmarshal(hit.Source_, &source); err != nil {
+		return nil, fmt.Errorf("defaultResultParser: unmarshal document content failed: %v", err)
+	}
+
+	val, ok := source["content"]
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field 'content' not found in document %s; please use a custom ResultParser or ensure index mapping has 'content' field", id)
+	}
+
+	content, ok := val.(string)
+	if !ok {
+		return nil, fmt.Errorf("defaultResultParser: field 'content' in document %s is not a string", id)
+	}
+
+	// Remove content from metadata to avoid duplication if it's large
+	meta := make(map[string]any, len(source)+1)
+	for k, v := range source {
+		if k != "content" {
+			meta[k] = v
+		}
+	}
+	meta["score"] = score
+
+	doc := &schema.Document{
+		ID:       id,
+		Content:  content,
+		MetaData: meta,
+	}
+	return doc.WithScore(score), nil
 }
