@@ -214,7 +214,7 @@ func TestImageGenerationStream(t *testing.T) {
 				sr, nil).Build()
 
 			times := 0
-			Mock(GetMethod((*utils.ImageGenerationStreamReader)(nil), "Recv")).To(
+			Mock((*utils.ImageGenerationStreamReader).Recv).To(
 				func() (response model.ImagesStreamResponse, err error) {
 					if times >= 1 {
 						return model.ImagesStreamResponse{}, io.EOF
