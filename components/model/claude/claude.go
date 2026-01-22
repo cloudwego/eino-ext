@@ -82,27 +82,39 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		if region == "" {
 			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
 		}
-		cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+
+		var opts []option.RequestOption
+		opts = append(opts, vertex.WithGoogleAuth(ctx, region, projectID))
+		if config.MaxRetries != nil {
+			opts = append(opts, option.WithMaxRetries(*config.MaxRetries))
+		}
+		cli = anthropic.NewClient(opts...)
 	} else if config.ByBedrock {
 		// Use AWS Bedrock
-		var opts []func(*awsConfig.LoadOptions) error
+		var awsOpts []func(*awsConfig.LoadOptions) error
 		if config.Region != "" {
-			opts = append(opts, awsConfig.WithRegion(config.Region))
+			awsOpts = append(awsOpts, awsConfig.WithRegion(config.Region))
 		}
 		if config.SecretAccessKey != "" && config.AccessKey != "" {
-			opts = append(opts, awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
+			awsOpts = append(awsOpts, awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
 				config.AccessKey,
 				config.SecretAccessKey,
 				config.SessionToken,
 			)))
 		} else if config.Profile != "" {
-			opts = append(opts, awsConfig.WithSharedConfigProfile(config.Profile))
+			awsOpts = append(awsOpts, awsConfig.WithSharedConfigProfile(config.Profile))
 		}
 
 		if config.HTTPClient != nil {
-			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
+			awsOpts = append(awsOpts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
-		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+
+		var clientOpts []option.RequestOption
+		clientOpts = append(clientOpts, bedrock.WithLoadDefaultConfig(ctx, awsOpts...))
+		if config.MaxRetries != nil {
+			clientOpts = append(clientOpts, option.WithMaxRetries(*config.MaxRetries))
+		}
+		cli = anthropic.NewClient(clientOpts...)
 	} else {
 		// Use direct Anthropic API
 		var opts []option.RequestOption
@@ -115,6 +127,10 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 
 		if config.HTTPClient != nil {
 			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		}
+
+		if config.MaxRetries != nil {
+			opts = append(opts, option.WithMaxRetries(*config.MaxRetries))
 		}
 
 		cli = anthropic.NewClient(opts...)
@@ -229,6 +245,12 @@ type Config struct {
 
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
+
+	// MaxRetries specifies the maximum number of retries for failed requests.
+	// If not set, the SDK's default of 2 retries is used.
+	// Set to 0 to disable retries (only make one request).
+	// Optional. Example: 3
+	MaxRetries *int `json:"max_retries"`
 
 	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 }
