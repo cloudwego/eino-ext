@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
@@ -31,18 +32,16 @@ func main() {
 	ctx := context.Background()
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
-	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+	responsesAPIChatModel, err := ark.NewResponsesAPIChatModel(ctx, &ark.ResponsesAPIConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Model:  os.Getenv("ARK_MODEL_ID"),
-		Cache: &ark.CacheConfig{
-			APIType: ptrOf(ark.ResponsesAPI),
-		},
 	})
+
 	if err != nil {
-		log.Fatalf("NewChatModel failed, err=%v", err)
+		log.Fatalf("NewResponsesAPIChatModel failed, err=%v", err)
 	}
 
-	err = chatModel.BindTools([]*schema.ToolInfo{
+	tools := []*schema.ToolInfo{
 		{
 			Name: "article_content_extractor",
 			Desc: "Extract key statements and chapter summaries from the provided article content",
@@ -55,14 +54,10 @@ func main() {
 					},
 				}),
 		},
-	})
-
-	if err != nil {
-		log.Fatalf("BindTools failed, err=%v", err)
 	}
 
 	// create response prefix cache, note: more than 1024 tokens are required, otherwise the prefix cache cannot be created
-	cacheInfo, err := chatModel.CreatePrefixCache(ctx, []*schema.Message{
+	cacheInfo, err := responsesAPIChatModel.CreatePrefixCache(ctx, []*schema.Message{
 		schema.SystemMessage(`Once upon a time, in a quaint little village surrounded by vast green forests and blooming meadows, there lived a spirited young girl known as Little Red Riding Hood. She earned her name from the vibrant red cape that her beloved grandmother had sewn for her, a gift that she cherished deeply. This cape was more than just a piece of clothing; it was a symbol of the bond between her and her grandmother, who lived on the other side of the great woods, near a sparkling brook that bubbled merrily all year round.
 
 			One sunny morning, Little Red Riding Hood's mother called her into the cozy kitchen, where the aroma of freshly baked bread filled the air. “My dear,” she said, “your grandmother isn’t feeling well today. I want you to take her this basket of treats. There are some delicious cakes, a jar of honey, and her favorite herbal tea. Can you do that for me?”
@@ -124,18 +119,17 @@ func main() {
 			And they all lived happily ever after.
 			
 			The end.`),
-	}, 300)
+	}, 300, model.WithTools(tools))
 	if err != nil {
 		log.Fatalf("CreatePrefixCache failed, err=%v", err)
 	}
 
 	// use cache information in subsequent requests
 	cacheOpt := &ark.CacheOption{
-		APIType:                ark.ResponsesAPI,
 		HeadPreviousResponseID: &cacheInfo.ResponseID,
 	}
 
-	outMsg, err := chatModel.Generate(ctx, []*schema.Message{
+	outMsg, err := responsesAPIChatModel.Generate(ctx, []*schema.Message{
 		schema.UserMessage("What is the main idea expressed above？"),
 	}, ark.WithCache(cacheOpt))
 

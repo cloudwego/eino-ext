@@ -840,3 +840,224 @@ func populateAndGetEmbeddedStreamReader(stream *openai.ChatCompletionStream) any
 	reflect.NewAt(t, p).Elem().Set(newReaderPtr)
 	return newReaderPtr.Interface()
 }
+
+func TestPopulateToolChoice(t *testing.T) {
+	t.Run("nil tool choice", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{}
+		options := &model.Options{}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.NoError(t, err)
+		assert.Nil(t, req.ToolChoice)
+	})
+
+	t.Run("tool choice forbidden", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{}
+		options := &model.Options{
+			ToolChoice: ptr(schema.ToolChoiceForbidden),
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.NoError(t, err)
+		assert.Equal(t, "none", req.ToolChoice)
+	})
+
+	t.Run("tool choice allowed", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{}
+		options := &model.Options{
+			ToolChoice: ptr(schema.ToolChoiceAllowed),
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.NoError(t, err)
+		assert.Equal(t, "auto", req.ToolChoice)
+	})
+
+	t.Run("tool choice allowed with allowed tools", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Tools: []openai.Tool{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool",
+					},
+				},
+			},
+		}
+		options := &model.Options{
+			ToolChoice:       ptr(schema.ToolChoiceAllowed),
+			AllowedToolNames: []string{"test-tool"},
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.NoError(t, err)
+
+		expected := allowedTools{
+			Mode: "auto",
+			Tools: []openai.ToolChoice{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: openai.ToolFunction{
+						Name: "test-tool",
+					},
+				},
+			},
+		}
+
+		assert.Equal(t, expected, req.ToolChoice.(map[string]any)["allowed_tools"])
+	})
+
+	t.Run("tool choice allowed with invalid allowed tool", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Tools: []openai.Tool{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool",
+					},
+				},
+			},
+		}
+		options := &model.Options{
+			ToolChoice:       ptr(schema.ToolChoiceAllowed),
+			AllowedToolNames: []string{"invalid-tool"},
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.Error(t, err)
+		assert.Equal(t, "allowed tool invalid-tool not found in request tools", err.Error())
+	})
+
+	t.Run("tool choice forced with no tools", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{}
+		options := &model.Options{
+			ToolChoice: ptr(schema.ToolChoiceForced),
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.Error(t, err)
+		assert.Equal(t, "tool_choice is forced but no tools are provided", err.Error())
+	})
+
+	t.Run("tool choice forced with one tool", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Tools: []openai.Tool{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool",
+					},
+				},
+			},
+		}
+		options := &model.Options{
+			ToolChoice: ptr(schema.ToolChoiceForced),
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.NoError(t, err)
+		expected := openai.ToolChoice{
+			Type: openai.ToolTypeFunction,
+			Function: openai.ToolFunction{
+				Name: "test-tool",
+			},
+		}
+		assert.Equal(t, expected, req.ToolChoice)
+	})
+
+	t.Run("tool choice forced with multiple tools", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Tools: []openai.Tool{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool-1",
+					},
+				},
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool-2",
+					},
+				},
+			},
+		}
+		options := &model.Options{
+			ToolChoice: ptr(schema.ToolChoiceForced),
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.NoError(t, err)
+		assert.Equal(t, "required", req.ToolChoice)
+	})
+
+	t.Run("tool choice forced with allowed tools", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Tools: []openai.Tool{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool-1",
+					},
+				},
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool-2",
+					},
+				},
+			},
+		}
+		options := &model.Options{
+			ToolChoice:       ptr(schema.ToolChoiceForced),
+			AllowedToolNames: []string{"test-tool-1"},
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.NoError(t, err)
+
+		expected := openai.ToolChoice{
+			Type: openai.ToolTypeFunction,
+			Function: openai.ToolFunction{
+				Name: "test-tool-1",
+			},
+		}
+		assert.Equal(t, expected, req.ToolChoice)
+	})
+
+	t.Run("tool choice forced with invalid allowed tool", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{
+			Tools: []openai.Tool{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: &openai.FunctionDefinition{
+						Name: "test-tool",
+					},
+				},
+			},
+		}
+		options := &model.Options{
+			ToolChoice:       ptr(schema.ToolChoiceForced),
+			AllowedToolNames: []string{"invalid-tool"},
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.Error(t, err)
+		assert.Equal(t, "allowed tool invalid-tool not found in request tools", err.Error())
+	})
+
+	t.Run("unsupported tool choice", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{}
+		options := &model.Options{
+			ToolChoice: ptr(schema.ToolChoice("unsupported")),
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.Error(t, err)
+		assert.Equal(t, "unsupported tool_choice: unsupported", err.Error())
+	})
+
+	t.Run("allowed_tools set without tools", func(t *testing.T) {
+		req := &openai.ChatCompletionRequest{}
+		options := &model.Options{
+			ToolChoice:       ptr(schema.ToolChoiceForced),
+			AllowedToolNames: []string{"test-tool"},
+		}
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		assert.Error(t, err)
+		assert.Equal(t, "tool_choice is forced but no tools are provided", err.Error())
+	})
+}
+
+func ptr[T any](t T) *T {
+	return &t
+}

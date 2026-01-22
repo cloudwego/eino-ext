@@ -635,38 +635,80 @@ func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOpt
 
 	params.Tools = tools
 
-	if commonOptions.ToolChoice != nil {
-		switch *commonOptions.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			params.Tools = []anthropic.ToolUnionParam{} // act like forbid tools
-		case schema.ToolChoiceAllowed:
-			p := &anthropic.ToolChoiceAutoParam{}
-			if specOptions.DisableParallelToolUse != nil {
-				p.DisableParallelToolUse = param.NewOpt[bool](*specOptions.DisableParallelToolUse)
+	err := populateToolChoice(params, commonOptions.ToolChoice, commonOptions.AllowedToolNames, specOptions.DisableParallelToolUse)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoice, allowedToolNames []string, disableParallelToolUse *bool) error {
+	if tc == nil {
+		return nil
+	}
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		ofNone := anthropic.NewToolChoiceNoneParam()
+		params.ToolChoice = anthropic.ToolChoiceUnionParam{
+			OfNone: &ofNone,
+		}
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			return fmt.Errorf("tool_choice 'allowed' is not supported when allowed tool names are present")
+		}
+		ofAuto := &anthropic.ToolChoiceAutoParam{}
+		if disableParallelToolUse != nil {
+			ofAuto.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
+		}
+		params.ToolChoice = anthropic.ToolChoiceUnionParam{
+			OfAuto: ofAuto,
+		}
+	case schema.ToolChoiceForced:
+		if len(params.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+
+		var onlyOneToolName = ""
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(params.Tools))
+			for _, t := range params.Tools {
+				if t.GetName() != nil {
+					toolsMap[*t.GetName()] = true
+				}
+			}
+
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+
+			onlyOneToolName = allowedToolName
+		} else if len(params.Tools) == 1 {
+			onlyOneToolName = *params.Tools[0].GetName()
+		}
+
+		if onlyOneToolName != "" {
+			params.ToolChoice = anthropic.ToolChoiceParamOfTool(onlyOneToolName)
+		} else {
+			ofAny := &anthropic.ToolChoiceAnyParam{}
+			if disableParallelToolUse != nil {
+				ofAny.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
 			}
 			params.ToolChoice = anthropic.ToolChoiceUnionParam{
-				OfAuto: p,
+				OfAny: ofAny,
 			}
-		case schema.ToolChoiceForced:
-			if len(tools) == 0 {
-				return fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(tools) == 1 {
-				params.ToolChoice = anthropic.ToolChoiceParamOfTool(*tools[0].GetName())
-			} else {
-				p := &anthropic.ToolChoiceAnyParam{}
-				if specOptions.DisableParallelToolUse != nil {
-					p.DisableParallelToolUse = param.NewOpt[bool](*specOptions.DisableParallelToolUse)
-				}
-				params.ToolChoice = anthropic.ToolChoiceUnionParam{
-					OfAny: p,
-				}
-			}
-		default:
-			return fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
 		}
+
+	default:
+		return fmt.Errorf("tool choice=%s not support", *tc)
 	}
 
 	return nil
+
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
@@ -825,7 +867,9 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
 		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
 		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
-		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		if len(message.MultiContent) > 0 {
+			log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		}
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:

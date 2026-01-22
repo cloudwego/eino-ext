@@ -28,6 +28,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -293,4 +294,122 @@ func TestLogProbs(t *testing.T) {
 			},
 		},
 	}}))
+}
+
+func TestPopulateToolChoice(t *testing.T) {
+	toolChoiceForbidden := schema.ToolChoiceForbidden
+	toolChoiceAllowed := schema.ToolChoiceAllowed
+	toolChoiceForced := schema.ToolChoiceForced
+	unsupportedToolChoice := schema.ToolChoice("unsupported")
+
+	tool1 := deepseek.Tool{Type: "function", Function: deepseek.Function{Name: "tool1"}}
+	tool2 := deepseek.Tool{Type: "function", Function: deepseek.Function{Name: "tool2"}}
+
+	testCases := []struct {
+		name        string
+		options     *model.Options
+		req         deepseek.ChatCompletionRequest
+		expectedReq deepseek.ChatCompletionRequest
+		expectErr   bool
+		errContains string
+	}{
+		{
+			name:        "nil tool choice",
+			options:     &model.Options{},
+			req:         deepseek.ChatCompletionRequest{},
+			expectedReq: deepseek.ChatCompletionRequest{},
+			expectErr:   false,
+		},
+		{
+			name:        "tool choice forbidden",
+			options:     &model.Options{ToolChoice: &toolChoiceForbidden},
+			req:         deepseek.ChatCompletionRequest{},
+			expectedReq: deepseek.ChatCompletionRequest{ToolChoice: "none"},
+			expectErr:   false,
+		},
+		{
+			name:        "tool choice allowed",
+			options:     &model.Options{ToolChoice: &toolChoiceAllowed},
+			req:         deepseek.ChatCompletionRequest{},
+			expectedReq: deepseek.ChatCompletionRequest{ToolChoice: "auto"},
+			expectErr:   false,
+		},
+		{
+			name:        "tool choice forced with no tools",
+			options:     &model.Options{ToolChoice: &toolChoiceForced},
+			req:         deepseek.ChatCompletionRequest{},
+			expectErr:   true,
+			errContains: "tool choice is forced but tool is not provided",
+		},
+		{
+			name:        "tool choice forced with multiple allowed tool names",
+			options:     &model.Options{ToolChoice: &toolChoiceForced, AllowedToolNames: []string{"tool1", "tool2"}},
+			req:         deepseek.ChatCompletionRequest{Tools: []deepseek.Tool{tool1, tool2}},
+			expectErr:   true,
+			errContains: "only one allowed tool name can be configured",
+		},
+		{
+			name:        "tool choice forced with allowed tool name not in tools list",
+			options:     &model.Options{ToolChoice: &toolChoiceForced, AllowedToolNames: []string{"tool3"}},
+			req:         deepseek.ChatCompletionRequest{Tools: []deepseek.Tool{tool1, tool2}},
+			expectErr:   true,
+			errContains: "allowed tool name 'tool3' not found in tools list",
+		},
+		{
+			name:    "tool choice forced with one allowed tool name",
+			options: &model.Options{ToolChoice: &toolChoiceForced, AllowedToolNames: []string{"tool1"}},
+			req:     deepseek.ChatCompletionRequest{Tools: []deepseek.Tool{tool1, tool2}},
+			expectedReq: deepseek.ChatCompletionRequest{
+				Tools: []deepseek.Tool{tool1, tool2},
+				ToolChoice: deepseek.ToolChoice{
+					Type:     "function",
+					Function: deepseek.ToolChoiceFunction{Name: "tool1"},
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name:    "tool choice forced with one tool",
+			options: &model.Options{ToolChoice: &toolChoiceForced},
+			req:     deepseek.ChatCompletionRequest{Tools: []deepseek.Tool{tool1}},
+			expectedReq: deepseek.ChatCompletionRequest{
+				Tools: []deepseek.Tool{tool1},
+				ToolChoice: deepseek.ToolChoice{
+					Type:     "function",
+					Function: deepseek.ToolChoiceFunction{Name: "tool1"},
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name:        "tool choice forced with multiple tools and no allowed tool names",
+			options:     &model.Options{ToolChoice: &toolChoiceForced},
+			req:         deepseek.ChatCompletionRequest{Tools: []deepseek.Tool{tool1, tool2}},
+			expectedReq: deepseek.ChatCompletionRequest{Tools: []deepseek.Tool{tool1, tool2}, ToolChoice: "required"},
+			expectErr:   false,
+		},
+		{
+			name:        "unsupported tool choice",
+			options:     &model.Options{ToolChoice: &unsupportedToolChoice},
+			req:         deepseek.ChatCompletionRequest{},
+			expectErr:   true,
+			errContains: "tool choice=unsupported not support",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := populateToolChoice(&tc.req, tc.options.ToolChoice, tc.options.AllowedToolNames)
+
+			if tc.expectErr {
+				assert.Error(t, err)
+				if tc.errContains != "" {
+					assert.Contains(t, err.Error(), tc.errContains)
+				}
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedReq, tc.req)
+			}
+		})
+	}
 }

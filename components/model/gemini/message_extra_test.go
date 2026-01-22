@@ -53,7 +53,8 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		// Success case
 		signature := []byte("message_thought_signature_data")
 		setMessageThoughtSignature(message, signature)
-		retrieved := getMessageThoughtSignature(message)
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 
 		// Verify it's stored in Extra
@@ -65,7 +66,9 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		// Boundary case: nil message
 		signature := []byte("test_sig")
 		setMessageThoughtSignature(nil, signature)
-		assert.Nil(t, getMessageThoughtSignature(nil))
+		retrieved, ok := GetThoughtSignatureFromExtra(nil)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestSetMessageThoughtSignature_EmptySignature", func(t *testing.T) {
@@ -73,13 +76,17 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		message := &schema.Message{Role: schema.Assistant}
 		setMessageThoughtSignature(message, []byte{})
 		// Empty signature should not be set
-		assert.Nil(t, getMessageThoughtSignature(message))
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestGetMessageThoughtSignature_NilExtra", func(t *testing.T) {
 		// Boundary case: message with nil Extra
 		message := &schema.Message{Role: schema.Assistant}
-		assert.Nil(t, getMessageThoughtSignature(message))
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("MessageThoughtSignatureCanRoundTripJSON", func(t *testing.T) {
@@ -98,7 +105,8 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		err = json.Unmarshal(data, &restored)
 		assert.NoError(t, err)
 
-		retrieved := getMessageThoughtSignature(&restored)
+		retrieved, ok := GetThoughtSignatureFromExtra(restored.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 	})
 }
@@ -116,7 +124,8 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		// Success case
 		signature := []byte("toolcall_thought_signature_data")
 		setToolCallThoughtSignature(toolCall, signature)
-		retrieved := getToolCallThoughtSignature(toolCall)
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 
 		// Verify it's stored in Extra
@@ -128,7 +137,9 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		// Boundary case: nil tool call
 		signature := []byte("test_sig")
 		setToolCallThoughtSignature(nil, signature)
-		assert.Nil(t, getToolCallThoughtSignature(nil))
+		retrieved, ok := GetThoughtSignatureFromExtra(nil)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestSetToolCallThoughtSignature_EmptySignature", func(t *testing.T) {
@@ -136,13 +147,17 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		toolCall := &schema.ToolCall{ID: "test"}
 		setToolCallThoughtSignature(toolCall, []byte{})
 		// Empty signature should not be set
-		assert.Nil(t, getToolCallThoughtSignature(toolCall))
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestGetToolCallThoughtSignature_NilExtra", func(t *testing.T) {
 		// Boundary case: tool call with nil Extra
 		toolCall := &schema.ToolCall{ID: "test"}
-		assert.Nil(t, getToolCallThoughtSignature(toolCall))
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("ToolCallThoughtSignatureCanRoundTripJSON", func(t *testing.T) {
@@ -164,7 +179,8 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		err = json.Unmarshal(data, &restored)
 		assert.NoError(t, err)
 
-		retrieved := getToolCallThoughtSignature(&restored)
+		retrieved, ok := GetThoughtSignatureFromExtra(restored.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 	})
 }

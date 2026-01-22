@@ -18,14 +18,17 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino/components/model"
 	"google.golang.org/genai"
 
-	"github.com/cloudwego/eino-ext/components/model/gemini"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/gemini"
 )
 
 func main() {
@@ -51,66 +54,148 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
 	}
-	err = cm.BindTools([]*schema.ToolInfo{
+
+	fmt.Printf("\n==========text tool call==========\n")
+	textToolCall(ctx, cm)
+	fmt.Printf("\n==========image tool call==========\n")
+	imageToolCall(ctx, cm)
+}
+
+func textToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
+	chatModel, err := chatModel.WithTools([]*schema.ToolInfo{
 		{
-			Name: "book_recommender",
-			Desc: "Recommends books based on user preferences and provides purchase links",
-			ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-				"genre": {
-					Type: "string",
-					Desc: "Preferred book genre",
-					Enum: []string{"fiction", "sci-fi", "mystery", "biography", "business"},
-				},
-				"max_pages": {
-					Type: "integer",
-					Desc: "Maximum page length (0 for no limit)",
-				},
-				"min_rating": {
-					Type: "number",
-					Desc: "Minimum user rating (0-5 scale)",
-				},
-			}),
+			Name: "user_company",
+			Desc: "Query the user's company and position information based on their name and email",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name": {
+						Type: "string",
+						Desc: "The user's name",
+					},
+					"email": {
+						Type: "string",
+						Desc: "The user's email",
+					},
+				}),
+		},
+		{
+			Name: "user_salary",
+			Desc: "Query the user's salary information based on their name and email",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"name": {
+						Type: "string",
+						Desc: "The user's name",
+					},
+					"email": {
+						Type: "string",
+						Desc: "The user's email",
+					},
+				}),
 		},
 	})
 	if err != nil {
-		log.Fatalf("Bind tools error: %v", err)
+		log.Fatalf("WithTools failed, err=%v", err)
+		return
 	}
 
-	resp, err := cm.Generate(ctx, []*schema.Message{
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "You are a real estate agent. Use the user_company and user_salary APIs to provide relevant property information based on the user's salary and job. Email is required",
+		},
 		{
 			Role:    schema.User,
-			Content: "Recommend business books with minimum 4.3 rating and max 350 pages",
+			Content: "My name is zhangsan, and my email is zhangsan@bytedance.com. Please recommend some suitable houses for me.",
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+		return
+	}
+
+	fmt.Printf("output: \n%v", resp)
+}
+
+func imageToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
+	image, err := os.ReadFile("./examples/intent_tool/img.png")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	imageStr := base64.StdEncoding.EncodeToString(image)
+
+	chatModel, err = chatModel.WithTools([]*schema.ToolInfo{
+		{
+			Name: "image_generator",
+			Desc: "a tool can generate images",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"description": {
+						Type: "string",
+						Desc: "The description of the image",
+					},
+				}),
 		},
 	})
 	if err != nil {
-		log.Fatalf("Generate error: %v", err)
+		log.Fatalf("WithTools failed, err=%v", err)
+		return
 	}
 
-	if len(resp.ToolCalls) > 0 {
-		fmt.Printf("Function called: \n")
-		if len(resp.ReasoningContent) > 0 {
-			fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
-		}
-		fmt.Println("Name: ", resp.ToolCalls[0].Function.Name)
-		fmt.Printf("Arguments: %s\n", resp.ToolCalls[0].Function.Arguments)
-	} else {
-		log.Printf("Function called without tool calls: %s\n", resp.Content)
-	}
-
-	resp, err = cm.Generate(ctx, []*schema.Message{
+	query := []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "You are a helpful assistant. If the user needs to generate an image, call the image_generator tool to generate the image.",
+		},
 		{
 			Role:    schema.User,
-			Content: "Recommend business books with minimum 4.3 rating and max 350 pages",
+			Content: "Generator a cat image and briefly describe the content of the image.",
 		},
-		resp,
-		{
-			Role:       schema.Tool,
-			ToolCallID: resp.ToolCalls[0].ID,
-			Content:    "{\"book name\":\"Microeconomics for Managers\"}",
-		},
-	})
-	if err != nil {
-		log.Fatalf("Generate error: %v", err)
 	}
-	fmt.Printf("Function call final result: %s\n", resp.Content)
+
+	resp, err := chatModel.Generate(ctx, query)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+		return
+	}
+
+	if len(resp.ToolCalls) == 0 {
+		log.Fatalf("No tool calls found")
+		return
+	}
+
+	fmt.Printf("output: \n%v", resp)
+
+	imageToolResult := gemini.SetMultiModalToolResultDisplayName(schema.MessageInputPart{
+		Type: schema.ChatMessagePartTypeImageURL,
+		Image: &schema.MessageInputImage{
+			MessagePartCommon: schema.MessagePartCommon{
+				Base64Data: &imageStr,
+				MIMEType:   "image/png",
+			},
+		},
+	}, "cat.png")
+	toolResult := &schema.Message{
+		Role:       schema.Tool,
+		ToolCallID: resp.ToolCalls[0].ID,
+		UserInputMultiContent: []schema.MessageInputPart{
+			{
+				Type: schema.ChatMessagePartTypeText,
+				Text: `{
+                        "image_ref": {
+                            "$ref": "cat.png"
+                        },
+                        "output": ""
+                    }`,
+			},
+			imageToolResult,
+		},
+	}
+	resp, err = chatModel.Generate(ctx, append(query, resp, toolResult))
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+	fmt.Printf("\noutput: \n%v", resp)
 }
