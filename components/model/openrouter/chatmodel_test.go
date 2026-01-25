@@ -264,6 +264,14 @@ func TestChatModel_buildResponseMessageModifier(t *testing.T) {
 		assert.Equal(t, msg, modifiedMsg)
 	})
 
+	t.Run("choices null", func(t *testing.T) {
+		msg := &schema.Message{}
+		rawBody := []byte(`{"choices":null}`)
+		modifiedMsg, err := modifier(ctx, msg, rawBody)
+		assert.NoError(t, err)
+		assert.Equal(t, msg, modifiedMsg)
+	})
+
 }
 
 func TestChatModel_buildResponseChunkMessageModifier(t *testing.T) {
@@ -345,6 +353,14 @@ func TestChatModel_buildResponseChunkMessageModifier(t *testing.T) {
 	t.Run("no choice with index 0", func(t *testing.T) {
 		msg := &schema.Message{}
 		rawBody := []byte(`{"choices":[{"index":1,"delta":{"reasoning":"test reasoning"}}]}`)
+		modifiedMsg, err := modifier(ctx, msg, rawBody, false)
+		assert.NoError(t, err)
+		assert.Equal(t, msg, modifiedMsg)
+	})
+
+	t.Run("choices null", func(t *testing.T) {
+		msg := &schema.Message{}
+		rawBody := []byte(`{"choices":null}`)
 		modifiedMsg, err := modifier(ctx, msg, rawBody, false)
 		assert.NoError(t, err)
 		assert.Equal(t, msg, modifiedMsg)
