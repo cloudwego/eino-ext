@@ -201,6 +201,13 @@ func TestChatModel_buildResponseMessageModifier(t *testing.T) {
 	modifier := cm.buildResponseMessageModifier()
 	ctx := context.Background()
 
+	t.Run("empty body", func(t *testing.T) {
+		msg := &schema.Message{}
+		modifiedMsg, err := modifier(ctx, msg, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, msg, modifiedMsg)
+	})
+
 	t.Run("success with reasoning details", func(t *testing.T) {
 		msg := &schema.Message{}
 		rawBody := []byte(`{"choices":[{"index":0,"message":{"reasoning":"test reasoning","reasoning_details":[{"format":"text","text":"detail"}]}}]}`)
@@ -264,6 +271,14 @@ func TestChatModel_buildResponseMessageModifier(t *testing.T) {
 		assert.Equal(t, msg, modifiedMsg)
 	})
 
+	t.Run("choices empty array", func(t *testing.T) {
+		msg := &schema.Message{}
+		rawBody := []byte(`{"choices":[]}`)
+		modifiedMsg, err := modifier(ctx, msg, rawBody)
+		assert.NoError(t, err)
+		assert.Equal(t, msg, modifiedMsg)
+	})
+
 	t.Run("choices null", func(t *testing.T) {
 		msg := &schema.Message{}
 		rawBody := []byte(`{"choices":null}`)
@@ -272,12 +287,26 @@ func TestChatModel_buildResponseMessageModifier(t *testing.T) {
 		assert.Equal(t, msg, modifiedMsg)
 	})
 
+	t.Run("invalid choices json", func(t *testing.T) {
+		msg := &schema.Message{}
+		rawBody := []byte(`{"choices":"invalid"}`)
+		_, err := modifier(ctx, msg, rawBody)
+		assert.Error(t, err)
+	})
+
 }
 
 func TestChatModel_buildResponseChunkMessageModifier(t *testing.T) {
 	cm := &ChatModel{}
 	modifier := cm.buildResponseChunkMessageModifier()
 	ctx := context.Background()
+
+	t.Run("empty body", func(t *testing.T) {
+		msg := &schema.Message{}
+		modifiedMsg, err := modifier(ctx, msg, nil, false)
+		assert.NoError(t, err)
+		assert.Equal(t, msg, modifiedMsg)
+	})
 
 	t.Run("success with reasoning details", func(t *testing.T) {
 		msg := &schema.Message{}
@@ -340,6 +369,18 @@ func TestChatModel_buildResponseChunkMessageModifier(t *testing.T) {
 		assert.True(t, ok)
 		assert.NotNil(t, terminatedError)
 		assert.Contains(t, terminatedError.Message, "test error")
+	})
+
+	t.Run("error finish reason without error field", func(t *testing.T) {
+		msg := &schema.Message{
+			ResponseMeta: &schema.ResponseMeta{
+				FinishReason: "error",
+			},
+		}
+		rawBody := []byte(`{"id":"no-error"}`)
+		modifiedMsg, err := modifier(ctx, msg, rawBody, true)
+		assert.NoError(t, err)
+		assert.Equal(t, msg, modifiedMsg)
 	})
 
 	t.Run("no choices", func(t *testing.T) {
