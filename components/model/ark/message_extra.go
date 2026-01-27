@@ -190,7 +190,9 @@ func GetResponseID(msg *schema.Message) (string, bool) {
 	return responseIDStr, true
 }
 
-func setResponseID(msg *schema.Message, responseID string) {
+// SetResponseID set the response ID to the message.
+// Available only for ResponsesAPI responses.
+func SetResponseID(msg *schema.Message, responseID string) {
 	setMsgExtra(msg, keyOfResponseID, arkResponseID(responseID))
 }
 

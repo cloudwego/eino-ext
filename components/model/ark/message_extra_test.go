@@ -41,8 +41,8 @@ func TestConcatMessages(t *testing.T) {
 
 	setResponseCacheExpireAt(msgs[0], arkResponseCacheExpireAt(10))
 	setResponseCacheExpireAt(msgs[1], arkResponseCacheExpireAt(10))
-	setResponseID(msgs[0], "resp id")
-	setResponseID(msgs[1], "resp id")
+	SetResponseID(msgs[0], "resp id")
+	SetResponseID(msgs[1], "resp id")
 	setContextID(msgs[0], "context id")
 	setContextID(msgs[1], "context id")
 

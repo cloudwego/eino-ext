@@ -955,7 +955,7 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cache.ExpireAt)))
 	}
 	setContextID(msg, resp.Id)
-	setResponseID(msg, resp.Id)
+	SetResponseID(msg, resp.Id)
 
 	if resp.ServiceTier != nil {
 		setServiceTier(msg, resp.ServiceTier.String())
@@ -1214,7 +1214,7 @@ func (cm *ResponsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message,
 		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(ptrFromOrZero(cacheConfig.ExpireAt)))
 	}
 	setContextID(msg, object.Id)
-	setResponseID(msg, object.Id)
+	SetResponseID(msg, object.Id)
 	if object.ServiceTier != nil {
 		setServiceTier(msg, object.ServiceTier.String())
 	}
