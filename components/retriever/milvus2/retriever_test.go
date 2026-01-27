@@ -100,16 +100,17 @@ func TestRetrieverConfig_validate(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 		})
 
-		convey.Convey("test missing search mode", func() {
+		convey.Convey("test missing search mode (defaults to auto)", func() {
 			config := &RetrieverConfig{
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "test_collection",
 				Embedding:    mockEmb,
-				SearchMode:   nil,
+				SearchMode:   nil, // Should trigger default
 			}
 			err := config.validate()
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "search mode")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(config.SearchMode, convey.ShouldNotBeNil)
+			// Optional: check type if we export it or use reflection, but checking not nil is enough for validate logic
 		})
 	})
 }
@@ -132,15 +133,21 @@ func TestNewRetriever(t *testing.T) {
 			convey.So(err.Error(), convey.ShouldContainSubstring, "client")
 		})
 
-		PatchConvey("test missing search mode", func() {
-			_, err := NewRetriever(ctx, &RetrieverConfig{
+		PatchConvey("test missing search mode (defaults to auto)", func() {
+			mockClient := &milvusclient.Client{}
+			Mock(milvusclient.New).Return(mockClient, nil).Build()
+			Mock(GetMethod(mockClient, "HasCollection")).Return(true, nil).Build()
+			Mock(GetMethod(mockClient, "GetLoadState")).Return(entity.LoadState{State: entity.LoadStateLoaded}, nil).Build()
+
+			r, err := NewRetriever(ctx, &RetrieverConfig{
 				ClientConfig: &milvusclient.ClientConfig{Address: "localhost:19530"},
 				Collection:   "test_collection",
 				Embedding:    mockEmb,
 				SearchMode:   nil,
 			})
-			convey.So(err, convey.ShouldNotBeNil)
-			convey.So(err.Error(), convey.ShouldContainSubstring, "search mode")
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(r, convey.ShouldNotBeNil)
+			convey.So(r.config.SearchMode, convey.ShouldNotBeNil)
 		})
 	})
 }
