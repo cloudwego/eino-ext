@@ -18,6 +18,7 @@ package pgvector
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/cloudwego/eino/components/embedding"
@@ -26,6 +27,11 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 )
+
+// Helper function for creating float64 pointers
+func float64Ptr(f float64) *float64 {
+	return &f
+}
 
 // mockEmbedder is a mock implementation of embedding.Embedder for testing.
 type mockEmbedder struct {
@@ -311,14 +317,224 @@ func TestCalculateThresholdDistance(t *testing.T) {
 	}
 }
 
+func TestNewRetrieverPingFailed(t *testing.T) {
+	ctx := context.Background()
+	config := &RetrieverConfig{
+		Conn:      &mockConn{pingFail: true},
+		Embedding: &mockEmbedder{},
+	}
+
+	_, err := NewRetriever(ctx, config)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to ping database")
+}
+
+func TestRetrieveSuccess(t *testing.T) {
+	ctx := context.Background()
+	config := &RetrieverConfig{
+		Conn:             &mockConnWithRows{},
+		Embedding:        &mockEmbedder{},
+		DistanceFunction: DistanceCosine,
+		TopK:             5,
+	}
+
+	r, err := NewRetriever(ctx, config)
+	assert.NoError(t, err)
+
+	docs, err := r.Retrieve(ctx, "test query")
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(docs))
+	assert.Equal(t, "doc1", docs[0].ID)
+	assert.Equal(t, "doc2", docs[1].ID)
+	assert.Equal(t, 1.0, docs[0].Score())
+}
+
+func TestRetrieveQueryFailed(t *testing.T) {
+	ctx := context.Background()
+	config := &RetrieverConfig{
+		Conn:             &mockConn{queryFail: true},
+		Embedding:        &mockEmbedder{},
+		DistanceFunction: DistanceCosine,
+		TopK:             5,
+	}
+
+	r, err := NewRetriever(ctx, config)
+	assert.NoError(t, err)
+
+	_, err = r.Retrieve(ctx, "test query")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "query failed")
+}
+
+func TestRetrieveWithScoreThreshold(t *testing.T) {
+	ctx := context.Background()
+	threshold := 0.8
+	config := &RetrieverConfig{
+		Conn:             &mockConnWithRows{},
+		Embedding:        &mockEmbedder{},
+		DistanceFunction: DistanceCosine,
+		TopK:             5,
+		ScoreThreshold:   &threshold,
+	}
+
+	r, err := NewRetriever(ctx, config)
+	assert.NoError(t, err)
+
+	docs, err := r.Retrieve(ctx, "test query")
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(docs))
+}
+
+func TestBuildSearchQuery(t *testing.T) {
+	tests := []struct {
+		name            string
+		whereClause     string
+		scoreThreshold  *float64
+		distanceFunc    DistanceFunction
+		expectedSubstr  string
+	}{
+		{
+			name:         "no filters",
+			whereClause:  "",
+			scoreThreshold: nil,
+			distanceFunc: DistanceCosine,
+			expectedSubstr: "ORDER BY distance ASC LIMIT $2",
+		},
+		{
+			name:         "with where clause",
+			whereClause:  "metadata->>'category' = 'tech'",
+			scoreThreshold: nil,
+			distanceFunc: DistanceCosine,
+			expectedSubstr: "WHERE metadata->>'category' = 'tech'",
+		},
+		{
+			name:            "with score threshold",
+			whereClause:     "",
+			scoreThreshold:  float64Ptr(0.8),
+			distanceFunc:    DistanceCosine,
+			expectedSubstr:  "(embedding <=> $1) < 0.200000",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			config := &RetrieverConfig{
+				Conn:             &mockConn{},
+				Embedding:        &mockEmbedder{},
+				DistanceFunction: tt.distanceFunc,
+			}
+			r, _ := NewRetriever(ctx, config)
+
+			query := r.buildSearchQuery(tt.whereClause, tt.scoreThreshold)
+			assert.Contains(t, query, tt.expectedSubstr)
+		})
+	}
+}
+
+// mockConnWithRows is a mock that returns actual rows
+type mockConnWithRows struct{}
+
+func (m *mockConnWithRows) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return newMockRowsWithData(), nil
+}
+
+func (m *mockConnWithRows) Ping(ctx context.Context) error {
+	return nil
+}
+
+type mockRowsWithData struct {
+	currentRow int
+	rows       []struct {
+		id       string
+		content  string
+		metadata map[string]any
+		distance float64
+	}
+}
+
+func newMockRowsWithData() *mockRowsWithData {
+	return &mockRowsWithData{
+		currentRow: 0,
+		rows: []struct {
+			id       string
+			content  string
+			metadata map[string]any
+			distance float64
+		}{
+			{
+				id:       "doc1",
+				content:  "test content 1",
+				metadata: map[string]any{"category": "test"},
+				distance: 0.0,
+			},
+			{
+				id:       "doc2",
+				content:  "test content 2",
+				metadata: map[string]any{"category": "test"},
+				distance: 0.1,
+			},
+		},
+	}
+}
+
+func (m *mockRowsWithData) Close() {}
+func (m *mockRowsWithData) Err() error { return nil }
+func (m *mockRowsWithData) CommandTag() pgconn.CommandTag {
+	return pgconn.NewCommandTag("0 0 0")
+}
+func (m *mockRowsWithData) Next() bool {
+	if m.currentRow < len(m.rows) {
+		m.currentRow++
+		return true
+	}
+	return false
+}
+
+func (m *mockRowsWithData) Scan(dest ...any) error {
+	if m.currentRow > 0 && m.currentRow <= len(m.rows) {
+		row := m.rows[m.currentRow-1]
+		if len(dest) >= 4 {
+			if str, ok := dest[0].(*string); ok {
+				*str = row.id
+			}
+			if str, ok := dest[1].(*string); ok {
+				*str = row.content
+			}
+			if meta, ok := dest[2].(*map[string]any); ok {
+				*meta = row.metadata
+			}
+			if f, ok := dest[3].(*float64); ok {
+				*f = row.distance
+			}
+		}
+	}
+	return nil
+}
+
+func (m *mockRowsWithData) Values() ([]any, error) { return nil, nil }
+func (m *mockRowsWithData) RawValues() [][]byte { return nil }
+func (m *mockRowsWithData) Conn() *pgx.Conn { return nil }
+func (m *mockRowsWithData) FieldDescriptions() []pgconn.FieldDescription { return nil }
+
+
 // mockConn is a mock implementation of PgxConn for testing.
-type mockConn struct{}
+type mockConn struct {
+	pingFail   bool
+	queryFail  bool
+}
 
 func (m *mockConn) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	if m.queryFail {
+		return nil, fmt.Errorf("query failed")
+	}
 	return &mockRows{}, nil
 }
 
 func (m *mockConn) Ping(ctx context.Context) error {
+	if m.pingFail {
+		return fmt.Errorf("ping failed")
+	}
 	return nil
 }
 
