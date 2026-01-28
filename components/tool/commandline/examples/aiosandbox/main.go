@@ -73,7 +73,7 @@ print("Arguments:", sys.argv[1:])
 	if err != nil {
 		log.Fatalf("WriteFile failed: %v", err)
 	}
-	fmt.Println("   Script written to /workspace/hello.py\n")
+	fmt.Println("   Script written to /workspace/hello.py")
 
 	// Example 3: Execute the Python script
 	fmt.Println("3. Executing Python script...")
