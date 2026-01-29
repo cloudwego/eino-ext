@@ -499,8 +499,9 @@ func buildMessageFromAssistantGenMultiContent(inMsg *schema.Message) (openai.Cha
 	}
 	// Initialize the message with role and name.
 	comMessage := openai.ChatCompletionMessage{
-		Role: toOpenAIRole(inMsg.Role),
-		Name: inMsg.Name,
+		Role:      toOpenAIRole(inMsg.Role),
+		Name:      inMsg.Name,
+		ToolCalls: toOpenAIToolCalls(inMsg.ToolCalls),
 	}
 
 partsLoop:
@@ -522,6 +523,7 @@ partsLoop:
 				Audio: &openai.Audio{
 					ID: string(audioID),
 				},
+				ToolCalls: toOpenAIToolCalls(inMsg.ToolCalls),
 			}
 			break partsLoop
 

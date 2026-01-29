@@ -28,7 +28,9 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
-	"github.com/elastic/go-elasticsearch/v9"
+
+	elasticsearch "github.com/elastic/go-elasticsearch/v9"
+	"github.com/elastic/go-elasticsearch/v9/esapi"
 	"github.com/elastic/go-elasticsearch/v9/esutil"
 )
 
@@ -39,6 +41,9 @@ type IndexerConfig struct {
 
 	// Index is the name of the Elasticsearch index.
 	Index string `json:"index"`
+	// IndexSpec, if provided, describes the index structure (settings, mappings)
+	// to be used for automatic creation if the index does not exist.
+	IndexSpec *IndexSpec `json:"index_spec"`
 	// BatchSize specifies the maximum number of documents to embed in a single batch.
 	// Default is 5.
 	BatchSize int `json:"batch_size"`
@@ -51,6 +56,20 @@ type IndexerConfig struct {
 	// 1. The document content itself needs to be vectorized and does not have a pre-computed vector (see [schema.Document.Vector]).
 	// 2. Additional fields (other than content) need to be vectorized.
 	Embedding embedding.Embedder
+}
+
+// IndexSpec allows defining detailed index settings for auto-creation.
+type IndexSpec struct {
+	// Settings maps to the "settings" section of the Elasticsearch Create Index API.
+	// Use this for "number_of_shards", "analysis", "refresh_interval", etc.
+	Settings map[string]any `json:"settings,omitempty"`
+
+	// Mappings maps to the "mappings" section of the Elasticsearch Create Index API.
+	// Use this to define field properties, dynamic templates, etc.
+	Mappings map[string]any `json:"mappings,omitempty"`
+
+	// Aliases maps to the "aliases" section.
+	Aliases map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue represents a single field value in Elasticsearch.
@@ -73,7 +92,7 @@ type Indexer struct {
 
 // NewIndexer creates a new ES9 indexer with the provided configuration.
 // It returns an error if the client or DocumentToFields mapping is missing.
-func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
+func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	if conf.Client == nil {
 		return nil, fmt.Errorf("[NewIndexer] es client not provided")
 	}
@@ -84,6 +103,43 @@ func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
 
 	if conf.BatchSize == 0 {
 		conf.BatchSize = defaultBatchSize
+	}
+
+	if conf.IndexSpec != nil {
+		existsReq := esapi.IndicesExistsRequest{
+			Index: []string{conf.Index},
+		}
+		existsRes, err := existsReq.Do(ctx, conf.Client)
+		if err != nil {
+			return nil, fmt.Errorf("[NewIndexer] check index existence failed, %w", err)
+		}
+		if existsRes.Body != nil {
+			_ = existsRes.Body.Close()
+		}
+
+		if existsRes.StatusCode == 404 {
+			body, err := json.Marshal(conf.IndexSpec)
+			if err != nil {
+				return nil, fmt.Errorf("[NewIndexer] marshal index spec failed, %w", err)
+			}
+
+			createReq := esapi.IndicesCreateRequest{
+				Index: conf.Index,
+				Body:  bytes.NewReader(body),
+			}
+			createRes, err := createReq.Do(ctx, conf.Client)
+			if err != nil {
+				return nil, fmt.Errorf("[NewIndexer] create index failed, %w", err)
+			}
+			if createRes.Body != nil {
+				_ = createRes.Body.Close()
+			}
+			if createRes.IsError() {
+				return nil, fmt.Errorf("[NewIndexer] create index failed, response: %s", createRes.String())
+			}
+		} else if existsRes.IsError() {
+			return nil, fmt.Errorf("[NewIndexer] check index existence failed, response: %s", existsRes.String())
+		}
 	}
 
 	return &Indexer{

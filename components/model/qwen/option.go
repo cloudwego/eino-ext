@@ -17,6 +17,7 @@
 package qwen
 
 import (
+	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/components/model"
 )
 
@@ -33,4 +34,14 @@ func WithEnableThinking(enableThinking bool) model.Option {
 	return model.WrapImplSpecificOptFn(func(opt *options) {
 		opt.EnableThinking = &enableThinking
 	})
+}
+
+// WithExtraHeader is used to set extra headers for the request.
+func WithExtraHeader(header map[string]string) model.Option {
+	return openai.WithExtraHeader(header)
+}
+
+// WithExtraFields is used to set extra body fields for the request.
+func WithExtraFields(extraFields map[string]any) model.Option {
+	return openai.WithExtraFields(extraFields)
 }

@@ -62,15 +62,36 @@ func main() {
 		log.Fatalf("Error creating the client: %s", err)
 	}
 
-	if err := ensureIndex(ctx, client, indexName); err != nil {
-		log.Fatalf("Failed to ensure index: %v", err)
+	// define index specification (optional: automatically creates index if it doesn't exist)
+	indexSpec := &opensearch2.IndexSpec{
+		Settings: map[string]any{
+			"index": map[string]any{
+				"knn": true,
+			},
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				"content": map[string]any{"type": "text"},
+				"vector": map[string]any{
+					"type":      "knn_vector",
+					"dimension": embDim,
+					"method": map[string]any{
+						"name":       "hnsw",
+						"engine":     "nmslib",
+						"space_type": "cosinesimil",
+					},
+				},
+				"author": map[string]any{"type": "keyword"},
+			},
+		},
 	}
 
 	mockEmb := &MockEmbedder{}
 
 	idx, err := opensearch2.NewIndexer(ctx, &opensearch2.IndexerConfig{
-		Client: client,
-		Index:  indexName,
+		Client:    client,
+		Index:     indexName,
+		IndexSpec: indexSpec,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]opensearch2.FieldValue, err error) {
 			return map[string]opensearch2.FieldValue{
 				"content": {
@@ -108,54 +129,6 @@ func main() {
 		log.Fatalf("Failed to store documents: %v", err)
 	}
 	fmt.Printf("Stored documents: %v\n", ids)
-}
-
-func ensureIndex(ctx context.Context, client *opensearch.Client, indexName string) error {
-	res, err := client.Indices.Exists([]string{indexName})
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode == 200 {
-		return nil
-	} else if res.StatusCode != 404 {
-		return fmt.Errorf("error checking index existence: %s", res.String())
-	}
-
-	mapping := fmt.Sprintf(`{
-		"settings": {
-			"index": {
-				"knn": true
-			}
-		},
-		"mappings": {
-			"properties": {
-				"content": { "type": "text" },
-				"vector": {
-					"type": "knn_vector",
-					"dimension": %d,
-					"method": {
-						"name": "hnsw",
-						"engine": "nmslib",
-						"space_type": "cosinesimil"
-					}
-				},
-				"author": { "type": "keyword" }
-			}
-		}
-	}`, embDim)
-
-	createRes, err := client.Indices.Create(indexName, client.Indices.Create.WithBody(strings.NewReader(mapping)))
-	if err != nil {
-		return err
-	}
-	defer createRes.Body.Close()
-	if createRes.IsError() {
-		return fmt.Errorf("error creating index: %s", createRes.String())
-	}
-	fmt.Printf("Created index: %s\n", indexName)
-	return nil
 }
 
 // MockEmbedder produces deterministic vectors based on word content.

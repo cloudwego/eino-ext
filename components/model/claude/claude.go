@@ -117,6 +117,14 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
 		}
 
+		for key, value := range config.AdditionalHeaderFields {
+			opts = append(opts, option.WithHeaderAdd(key, value))
+		}
+
+		for key, value := range config.AdditionalRequestFields {
+			opts = append(opts, option.WithJSONSet(key, value))
+		}
+
 		cli = anthropic.NewClient(opts...)
 	}
 
@@ -231,6 +239,13 @@ type Config struct {
 	HTTPClient *http.Client `json:"http_client"`
 
 	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
+
+	// Additional fields to set in the HTTP request header.
+	AdditionalHeaderFields map[string]string `json:"additional_header_fields"`
+
+	// Additional fields to set in the API request.
+	// The values of the map must be JSON serializable.
+	AdditionalRequestFields map[string]any `json:"additional_request_fields"`
 }
 
 type Thinking struct {
@@ -845,7 +860,9 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
 		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
 		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
-		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		if len(message.MultiContent) > 0 {
+			log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		}
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:

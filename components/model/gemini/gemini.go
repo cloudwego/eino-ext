@@ -28,6 +28,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/google/uuid"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -215,11 +216,13 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		return nil, err
 	}
 
+	// Generate content using the Gemini API
 	result, err := cm.cli.Models.GenerateContent(ctx, modelName, contents, genaiConf)
 	if err != nil {
 		return nil, fmt.Errorf("send message fail: %w", err)
 	}
 
+	// Convert the API response to schema.Message format
 	message, err = convResponse(result)
 	if err != nil {
 		return nil, fmt.Errorf("convert response fail: %w", err)
@@ -1284,6 +1287,8 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 	return res, nil
 }
 
+// convFC converts a Gemini function call part to a schema.ToolCall.
+// Note: Gemini does not provide tool call IDs, so we generate a UUID for compatibility.
 func convFC(part *genai.Part) (*schema.ToolCall, error) {
 	if part == nil || part.FunctionCall == nil {
 		return nil, fmt.Errorf("part or function call is nil")
@@ -1296,7 +1301,7 @@ func convFC(part *genai.Part) (*schema.ToolCall, error) {
 	}
 
 	toolCall := &schema.ToolCall{
-		ID: tp.Name,
+		ID: uuid.NewString(),
 		Function: schema.FunctionCall{
 			Name:      tp.Name,
 			Arguments: args,
