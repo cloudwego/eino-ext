@@ -24,11 +24,11 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+	"github.com/bytedance/sonic/ast"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/tidwall/sjson"
 
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
@@ -37,6 +37,8 @@ import (
 const (
 	defaultBaseURL = "https://openrouter.ai/api/v1"
 )
+
+var sonicSearchOptions = ast.SearchOptions{ValidateJSON: false}
 
 type Config struct {
 	APIKey string
@@ -213,7 +215,6 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 
 func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.RequestPayloadModifier {
 	return func(ctx context.Context, in []*schema.Message, rawBody []byte) ([]byte, error) {
-
 		var (
 			err             error
 			models          = option.models
@@ -272,7 +273,6 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageInputPart', but got part type '%s'", part.Type)
 					}
 				}
-
 			} else if len(msg.AssistantGenMultiContent) > 0 {
 				for cIdx, part := range msg.AssistantGenMultiContent {
 					if part.Type == schema.ChatMessagePartTypeText {
@@ -284,7 +284,6 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 						}
 					} else {
 						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageOutputPart', but got part type '%s'", part.Type)
-
 					}
 				}
 			} else if msg.Content != "" {
@@ -305,28 +304,39 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 
 func (cm *ChatModel) buildResponseMessageModifier() openai.ResponseMessageModifier {
 	return func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error) {
-		choices := make([]*responseChoice, 0)
-		if choicesString := jsoniter.Get(rawBody, "choices").ToString(); choicesString != "" {
-			err := sonic.UnmarshalString(choicesString, &choices)
-			if err != nil {
-				return nil, err
-			}
-			var firstChoice *responseChoice
-			for _, choice := range choices {
-				if choice.Index == 0 {
-					firstChoice = choice
-					break
-				}
-			}
-			if firstChoice == nil {
+		if len(rawBody) == 0 {
+			return msg, nil
+		}
+		choicesNode, err := sonic.GetWithOptions(rawBody, sonicSearchOptions, "choices")
+		if err != nil {
+			if err == ast.ErrNotExist {
 				return msg, nil
 			}
-
-			if firstChoice.Message != nil {
-				populateSchemaMessageFields(msg, firstChoice.Message)
-			}
-
+			return nil, err
 		}
+		if choicesNode.Exists() {
+			if choicesNode.TypeSafe() == ast.V_NULL {
+				return msg, nil
+			}
+			if choicesNode.TypeSafe() != ast.V_ARRAY {
+				return nil, fmt.Errorf("invalid choices type")
+			}
+			first := choicesNode.Index(0)
+			if first != nil && first.Valid() {
+				nodeRawStr, err := first.Raw()
+				if err != nil {
+					return nil, err
+				}
+				var firstChoice responseChoice
+				if err := sonic.UnmarshalString(nodeRawStr, &firstChoice); err != nil {
+					return nil, err
+				}
+				if firstChoice.Message != nil {
+					populateSchemaMessageFields(msg, firstChoice.Message)
+				}
+			}
+		}
+
 		return msg, nil
 	}
 }
@@ -334,42 +344,58 @@ func (cm *ChatModel) buildResponseMessageModifier() openai.ResponseMessageModifi
 func (cm *ChatModel) buildResponseChunkMessageModifier() openai.ResponseChunkMessageModifier {
 	return func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error) {
 		const reasonError = "error"
-
+		if len(rawBody) == 0 {
+			return msg, nil
+		}
 		if msg.ResponseMeta != nil && msg.ResponseMeta.FinishReason == reasonError {
-			tError := jsoniter.Get(rawBody, reasonError)
-			if len(tError.ToString()) > 0 {
-				err := setStreamTerminatedError(msg, tError.ToString())
-				if err != nil {
-					return nil, err
+			node, err := sonic.GetWithOptions(rawBody, sonicSearchOptions, reasonError)
+			if err != nil {
+				if err == ast.ErrNotExist {
+					return msg, nil
 				}
+				return nil, err
+			}
+			nodeRawStr, err := node.Raw()
+			if err != nil {
+				return nil, err
+			}
+			err = setStreamTerminatedError(msg, nodeRawStr)
+			if err != nil {
+				return nil, err
 			}
 			return msg, nil
 		}
 
-		choices := make([]*responseChoice, 0)
-		if choicesString := jsoniter.Get(rawBody, "choices").ToString(); choicesString != "" {
-			err := sonic.UnmarshalString(choicesString, &choices)
-			if err != nil {
-				return nil, err
-			}
-			var firstChoice *responseChoice
-			for _, choice := range choices {
-				if choice.Index == 0 {
-					firstChoice = choice
-					break
-				}
-			}
-			if firstChoice == nil {
+		choicesNode, err := sonic.GetWithOptions(rawBody, sonicSearchOptions, "choices")
+		if err != nil {
+			if err == ast.ErrNotExist {
 				return msg, nil
 			}
-
-			if firstChoice.Delta != nil {
-				populateSchemaMessageFields(msg, firstChoice.Delta)
+			return nil, err
+		}
+		if choicesNode.Exists() {
+			if choicesNode.TypeSafe() == ast.V_NULL {
+				return msg, nil
 			}
-
+			if choicesNode.TypeSafe() != ast.V_ARRAY {
+				return nil, fmt.Errorf("invalid choices type")
+			}
+			first := choicesNode.Index(0)
+			if first != nil && first.Valid() {
+				nodeRawStr, err := first.Raw()
+				if err != nil {
+					return nil, err
+				}
+				var firstChoice responseChoice
+				if err := sonic.UnmarshalString(nodeRawStr, &firstChoice); err != nil {
+					return nil, err
+				}
+				if firstChoice.Delta != nil {
+					populateSchemaMessageFields(msg, firstChoice.Delta)
+				}
+			}
 		}
 		return msg, nil
-
 	}
 }
 
@@ -416,7 +442,6 @@ func (cm *ChatModel) buildOptions(_ context.Context, isStream bool, opts ...mode
 	}
 
 	return options
-
 }
 
 const typ = "OpenRouter"
