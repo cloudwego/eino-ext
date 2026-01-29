@@ -793,6 +793,11 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 		Role: responses.MessageRole_assistant,
 	}
 
+	if getPartial(msg) {
+		b := true
+		inputItemMessage.Partial = &b
+	}
+
 	if len(msg.UserInputMultiContent) > 0 {
 		return nil, fmt.Errorf("if assistant role, UserInputMultiContent cannot be set")
 	}
