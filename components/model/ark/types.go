@@ -115,3 +115,46 @@ type UserLocation struct {
 	Region   *string `json:"region,omitempty"`
 	Timezone *string `json:"timezone,omitempty"`
 }
+
+// ContextManagement help models effectively utilize context windows.
+type ContextManagement struct {
+	// Supported contextual editing strategies for managing the content of think blocks and tool calls in context.
+	ThinkingEdits []ThinkingEdit `json:"thinking_edits,omitempty"`
+	ToolEdits     []ToolCallEdit `json:"tool_edits,omitempty"`
+}
+
+type ThinkingEdit struct {
+	// ThinkingKeeps is a thought chain retention strategy.
+	Keeps *ThinkingKeeps `json:"keeps,omitempty"`
+}
+
+type ThinkingKeeps struct {
+	// Keep the most recent N rounds of thinking chains. Default: 1.
+	Value *uint32 `json:"value,omitempty"`
+}
+
+type ToolCallEdit struct {
+	// ToolCallKeeps is a tool call retention strategy.
+	Keeps *ToolCallKeeps `json:"keeps,omitempty"`
+	// ClearToolNames is a list of tool names that will be purged to clear the context.
+	ClearToolNames []string `json:"clear_tool_names,omitempty"`
+	// ExcludeTools is a list of tool names that will not be purged to preserve important context.
+	ExcludeTools []string `json:"exclude_tools,omitempty"`
+	// Is need to clear tool call parameters.Default: false.
+	ClearToolInput bool `json:"clear_tool_input,omitempty"`
+	// Trigger is a threshold that triggers tools to invoke content cleanup policies
+	Trigger *Trigger `json:"trigger,omitempty"`
+}
+
+type ToolCallKeeps struct {
+	// thinking chain: Keep the most recent N rounds of thinking chains. Default: 1.
+	// tool calls: Keep the contents of the most recent N rounds of tool calls. Default:3
+	Value uint32 `json:"value,omitempty"`
+}
+
+type Trigger struct {
+	// Type is trigger tool to invoke content cleanup policy type.Default: tool_uses.
+	Type string `json:"type,omitempty"`
+	// Value is the cleanup strategy is triggered when tool invocation reaches N rounds.
+	Value uint32 `json:"value,omitempty"`
+}

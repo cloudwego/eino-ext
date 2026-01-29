@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/contextmanagement"
 	"io"
 	"net/http"
 	"runtime/debug"
@@ -135,7 +136,8 @@ type ResponsesAPIConfig struct {
 	// The default value for the Web Search tool is 3.
 	// For more details, see https://www.volcengine.com/docs/82379/1569618?lang=zh
 	// Optional.
-	MaxToolCalls *int64 `json:"max_tool_calls,omitempty"`
+	MaxToolCalls      *int64             `json:"max_tool_calls,omitempty"`
+	ContextManagement *ContextManagement `json:"context_management"`
 }
 
 func NewResponsesAPIChatModel(_ context.Context, config *ResponsesAPIConfig) (*ResponsesAPIChatModel, error) {
@@ -191,6 +193,7 @@ func NewResponsesAPIChatModel(_ context.Context, config *ResponsesAPIConfig) (*R
 
 		enableToolWebSearch: config.EnableToolWebSearch,
 		maxToolCalls:        config.MaxToolCalls,
+		contextManagement:   config.ContextManagement,
 	}, nil
 }
 
@@ -213,7 +216,8 @@ type ResponsesAPIChatModel struct {
 
 	enableToolWebSearch *ToolWebSearch
 
-	maxToolCalls *int64
+	maxToolCalls      *int64
+	contextManagement *ContextManagement
 }
 type cacheConfig struct {
 	Enabled  bool
@@ -498,6 +502,8 @@ func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 
 	err = cm.populateTools(responseReq, options, specOptions.enableWebSearch, specOptions.maxToolCalls)
 
+	err = cm.populateContextManagement(responseReq)
+
 	if err != nil {
 		return nil, err
 	}
@@ -710,7 +716,76 @@ func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesR
 
 	return nil
 }
+func (cm *ResponsesAPIChatModel) populateContextManagement(responseReq *responses.ResponsesRequest) (err error) {
+	if cm.contextManagement == nil || (len(cm.contextManagement.ThinkingEdits) == 0 && len(cm.contextManagement.ToolEdits) == 0) {
+		return
+	}
 
+	responseReq.ContextManagement = &contextmanagement.ContextManagement{
+		Edits: make([]*contextmanagement.Edit, 0),
+	}
+
+	for _, edit := range cm.contextManagement.ToolEdits {
+
+		editTool := &contextmanagement.Edit_ClearToolUses{
+			ClearToolUses: &contextmanagement.ClearToolUses{
+				Type:         contextmanagement.EditType_clear_tool_uses,
+				ExcludeTools: edit.ExcludeTools,
+				Trigger:      nil,
+			},
+		}
+
+		if edit.Keeps != nil {
+			editTool.ClearToolUses.Keep.Type = contextmanagement.ToolUsesKeepType_tool_uses
+			editTool.ClearToolUses.Keep.Value = edit.Keeps.Value
+		}
+
+		if edit.ClearToolInput {
+			editTool.ClearToolUses.ClearToolInputs.Union = &contextmanagement.ClearToolUsesInputs_ClearAll{ClearAll: true}
+		} else {
+			editTool.ClearToolUses.ClearToolInputs.Union = &contextmanagement.ClearToolUsesInputs_ToolNameList{
+				ToolNameList: &contextmanagement.ToolNameList{
+					ClearToolNames: edit.ClearToolNames,
+				},
+			}
+		}
+
+		if edit.Trigger != nil {
+			editTool.ClearToolUses.Trigger = &contextmanagement.ToolUsesTrigger{
+				Type:  contextmanagement.ToolUsesTriggerType_tool_uses,
+				Value: edit.Trigger.Value,
+			}
+		}
+
+		e := &contextmanagement.Edit{
+			Union: editTool,
+		}
+		responseReq.ContextManagement.Edits = append(responseReq.ContextManagement.Edits, e)
+	}
+
+	for _, edit := range cm.contextManagement.ThinkingEdits {
+		editTool := &contextmanagement.Edit_ClearThinking{
+			ClearThinking: &contextmanagement.ClearThinking{
+				Type: contextmanagement.EditType_clear_tool_uses,
+			},
+		}
+		if edit.Keeps != nil {
+			if edit.Keeps.Value != nil {
+				editTool.ClearThinking.Keep.Union = &contextmanagement.ClearThinkingKeep_ThinkingTurnParams{
+					ThinkingTurnParams: &contextmanagement.ThinkingTurnsParam{
+						Type:  contextmanagement.ThinkingTurnsParamType_thinking_turns,
+						Value: *edit.Keeps.Value,
+					},
+				}
+			} else {
+				editTool.ClearThinking.Keep.Union = &contextmanagement.ClearThinkingKeep_All{All: contextmanagement.StringAll_all}
+			}
+
+		}
+	}
+
+	return nil
+}
 func convToolWebSearch(enableToolWebSearch *ToolWebSearch) (*responses.ToolWebSearch, error) {
 	tl := &responses.ToolWebSearch{
 		Type:       responses.ToolType_web_search,
