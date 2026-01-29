@@ -50,24 +50,41 @@ const (
 func main() {
 	ctx := context.Background()
 
-	// ES 支持多种连接方式
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 
+	// 1. 创建 ES 客户端
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{"http://localhost:9200"},
 		Username:  username,
 		Password:  password,
 	})
 
-	// 使用 Volcengine ARK 创建 embedding 组件
+	// 2. 定义 Index Spec（选填：如果索引不存在，将自动创建）
+	indexSpec := &es7.IndexSpec{
+		Settings: map[string]any{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				fieldContentVector: map[string]any{
+					"type": "dense_vector",
+					"dims": 1536,
+				},
+			},
+		},
+	}
+
+	// 3. 使用 Volcengine ARK 创建 embedding 组件
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Region: os.Getenv("ARK_REGION"),
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// 加载文档
+	// 4. 准备文档
+	// 文档通常包含 ID 和 Content。也可以添加额外的元数据用于过滤等用途。
 	docs := []*schema.Document{
 		{
 			ID:      "1",
@@ -85,10 +102,11 @@ func main() {
 		},
 	}
 
-	// 创建 ES 索引器组件
+	// 5. 创建 ES 索引器组件
 	indexer, _ := es7.NewIndexer(ctx, &es7.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
+		IndexSpec: indexSpec, // 添加此项以启用自动索引创建
 		BatchSize: 10,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]es7.FieldValue, err error) {
 			return map[string]es7.FieldValue{
@@ -104,6 +122,7 @@ func main() {
 		Embedding: emb,
 	})
 
+	// 6. 索引文档
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)
@@ -119,15 +138,25 @@ func main() {
 
 ```go
 type IndexerConfig struct {
-    Client *elasticsearch.Client // 必填：Elasticsearch 客户端实例
-    Index  string                // 必填：存储文档的索引名称
-    BatchSize int                // 选填：最大文本嵌入批次大小（默认：5）
+    Client *elasticsearch.Client // 必填: ES 客户端实例
+    Index  string                // 必填: 存储文档的索引名称
+    IndexSpec *IndexSpec         // 选填: 用于自动创建索引的设置和映射。
+                                 // 如果提供，索引器将在初始化（NewIndexer）时检查索引是否存在。
+                                 // 如果不存在，将使用提供的 Spec 创建索引；如果已存在，则不执行任何操作。
+    BatchSize int                // 选填: 用于 embedding 的最大文本数量 (默认: 5)
 
     // 必填：将 Document 字段映射到 Elasticsearch 字段的函数
     DocumentToFields func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error)
 
     // 选填：仅在需要向量化时必填
     Embedding embedding.Embedder
+}
+
+// IndexSpec 定义了索引的设置和映射
+type IndexSpec struct {
+    Settings map[string]any `json:"settings,omitempty"`
+    Mappings map[string]any `json:"mappings,omitempty"`
+    Aliases  map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue 定义了字段应如何存储和向量化
