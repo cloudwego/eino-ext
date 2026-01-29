@@ -3,6 +3,7 @@ module github.com/cloudwego/eino-ext/components/tool/commandline
 go 1.23.0
 
 require (
+	github.com/agent-infra/sandbox-sdk-go v0.0.3
 	github.com/bytedance/mockey v1.2.14
 	github.com/cloudwego/eino v0.6.0
 	github.com/docker/docker v28.0.4+incompatible
