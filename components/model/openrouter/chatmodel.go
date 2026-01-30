@@ -269,8 +269,6 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 								return nil, err
 							}
 						}
-					} else {
-						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageInputPart', but got part type '%s'", part.Type)
 					}
 				}
 			} else if len(msg.AssistantGenMultiContent) > 0 {
@@ -282,8 +280,6 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 								return nil, err
 							}
 						}
-					} else {
-						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageOutputPart', but got part type '%s'", part.Type)
 					}
 				}
 			} else if msg.Content != "" {
