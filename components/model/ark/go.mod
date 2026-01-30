@@ -9,7 +9,7 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.11.1
-	github.com/volcengine/volcengine-go-sdk v1.1.49
+	github.com/volcengine/volcengine-go-sdk v1.2.9
 
 )
 
