@@ -31,52 +31,114 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	
 	"github.com/cloudwego/eino/schema"
 	opensearch "github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/indexer/opensearch3"
+)
+
+const (
+	indexName          = "eino_example"
+	fieldContent       = "content"
+	fieldContentVector = "content_vector"
+	fieldExtraLocation = "location"
+	docExtraLocation   = "location"
 )
 
 func main() {
 	ctx := context.Background()
+	username := os.Getenv("OPENSEARCH_USERNAME")
+	password := os.Getenv("OPENSEARCH_PASSWORD")
 
+	// 1. 创建 OpenSearch 客户端
 	client, err := opensearchapi.NewClient(opensearchapi.Config{
 		Client: opensearch.Config{
 			Addresses: []string{"http://localhost:9200"},
-			// ... auth config
+			Username:  username,
+			Password:  password,
 		},
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// 创建 embedding 组件
-	emb := createYourEmbedding()
+	// 2. 定义 Index Spec（选填：如果索引不存在，将自动创建）
+	indexSpec := &opensearch3.IndexSpec{
+		Settings: map[string]any{
+			"number_of_shards": 1,
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				fieldContentVector: map[string]any{
+					"type":      "knn_vector",
+					"dimension": 1536,
+					"method": map[string]any{
+						"name":       "hnsw",
+						"engine":     "nmslib",
+						"space_type": "l2",
+					},
+				},
+			},
+		},
+	}
 
-	// 创建 opensearch indexer 组件
+	// 3. 使用 Volcengine ARK 创建 embedding 组件
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
+
+	// 4. 创建 opensearch 索引器组件
 	indexer, _ := opensearch3.NewIndexer(ctx, &opensearch3.IndexerConfig{
 		Client:    client,
-		Index:     "your_index_name",
+		Index:     indexName,
+		IndexSpec: indexSpec, // 添加此项以启用自动索引创建
 		BatchSize: 10,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]opensearch3.FieldValue, error) {
 			return map[string]opensearch3.FieldValue{
-				"content": {
+				fieldContent: {
 					Value:    doc.Content,
-					EmbedKey: "content_vector",
+					EmbedKey: fieldContentVector, // 向量化文档内容并保存到 "content_vector" 字段
+				},
+				fieldExtraLocation: {
+					Value: doc.MetaData[docExtraLocation],
 				},
 			}, nil
 		},
 		Embedding: emb,
 	})
 
+	// 5. 准备文档
+	// 文档通常包含 ID 和 Content。也可以添加额外的元数据用于过滤等用途。
 	docs := []*schema.Document{
-		{ID: "1", Content: "example content"},
+		{
+			ID:      "1",
+			Content: "Eiffel Tower: Located in Paris, France.",
+			MetaData: map[string]any{
+				docExtraLocation: "France",
+			},
+		},
+		{
+			ID:      "2",
+			Content: "The Great Wall: Located in China.",
+			MetaData: map[string]any{
+				docExtraLocation: "China",
+			},
+		},
 	}
 
-	ids, _ := indexer.Store(ctx, docs)
-	fmt.Println(ids)
+	// 6. 索引文档
+	ids, err := indexer.Store(ctx, docs)
+	if err != nil {
+		fmt.Printf("index error: %v\n", err)
+		return
+	}
+	fmt.Println("indexed ids:", ids)
 }
 ```
 
@@ -88,6 +150,9 @@ func main() {
 type IndexerConfig struct {
     Client *opensearchapi.Client // 必填：OpenSearch 客户端实例
     Index  string             // 必填：用于存储文档的索引名称
+    IndexSpec *IndexSpec       // 选填：用于自动创建索引的设置和映射。
+                               // 如果提供，索引器将在初始化（NewIndexer）时检查索引是否存在。
+                               // 如果不存在，将使用提供的 Spec 创建索引；如果已存在，则不执行任何操作。
     BatchSize int             // 选填：最大文本嵌入批次大小（默认：5）
 
     // 必填：将 Document 字段映射到 OpenSearch 字段的函数
@@ -95,6 +160,13 @@ type IndexerConfig struct {
 
     // 选填：仅当需要向量化时必填
     Embedding embedding.Embedder
+}
+
+// IndexSpec 定义了索引的设置和映射
+type IndexSpec struct {
+    Settings map[string]any `json:"settings,omitempty"`
+    Mappings map[string]any `json:"mappings,omitempty"`
+    Aliases  map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue 定义字段应如何存储和向量化

@@ -28,6 +28,7 @@ Here's a quick example of how to use the indexer, you could read components/inde
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/cloudwego/eino/components/embedding"
@@ -48,19 +49,21 @@ const (
 
 func main() {
 	ctx := context.Background()
-	// es supports multiple ways to connect
 	username := os.Getenv("ES_USERNAME")
 	password := os.Getenv("ES_PASSWORD")
 
-	// 1. Create ES client
+	// Prepare CA certificate (ES8 enables TLS by default, provide CA for custom certs)
 	httpCACertPath := os.Getenv("ES_HTTP_CA_CERT_PATH")
+	var cert []byte
 	if httpCACertPath != "" {
-		cert, err := os.ReadFile(httpCACertPath)
+		var err error
+		cert, err = os.ReadFile(httpCACertPath)
 		if err != nil {
 			log.Fatalf("read file failed, err=%v", err)
 		}
 	}
 
+	// 1. Create ES client
 	client, _ := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{"https://localhost:9200"},
 		Username:  username,
@@ -68,7 +71,25 @@ func main() {
 		CACert:    cert,
 	})
 
-	// 2. Create embedding component using ARK
+	// 2. Define Index Specification (Optional: automatically creates index if it doesn't exist)
+	indexSpec := &es8.IndexSpec{
+		Settings: map[string]any{
+			"number_of_shards":   1,
+			"number_of_replicas": 0,
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				fieldContentVector: map[string]any{
+					"type":            "dense_vector",
+					"dims":            1536,
+					"index":           true,
+					"similarity":      "l2_norm",
+				},
+			},
+		},
+	}
+
+	// 3. Create embedding component using ARK
 	// Replace "ARK_API_KEY", "ARK_REGION", "ARK_MODEL" with your actual config
 	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
@@ -76,7 +97,7 @@ func main() {
 		Model:  os.Getenv("ARK_MODEL"),
 	})
 
-	// 3. Prepare documents
+	// 4. Prepare documents
 	// Documents usually contain at least an ID and Content.
 	// You can also add extra metadata for filtering or other purposes.
 	docs := []*schema.Document{
@@ -96,10 +117,11 @@ func main() {
 		},
 	}
 
-	// 4. Create ES indexer component
+	// 5. Create ES indexer component
 	indexer, _ := es8.NewIndexer(ctx, &es8.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
+		IndexSpec: indexSpec, // Add this to enable automatic index creation
 		BatchSize: 10,
 		// DocumentToFields specifies how to map document fields to ES fields
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]es8.FieldValue, err error) {
@@ -118,7 +140,7 @@ func main() {
 		Embedding: emb,
 	})
 
-	// 5. Index documents
+	// 6. Index documents
 	ids, err := indexer.Store(ctx, docs)
 	if err != nil {
 		fmt.Printf("index error: %v\n", err)
@@ -136,6 +158,10 @@ The indexer can be configured using the `IndexerConfig` struct:
 type IndexerConfig struct {
     Client *elasticsearch.Client // Required: Elasticsearch client instance
     Index  string                // Required: Index name to store documents
+    IndexSpec *IndexSpec         // Optional: Settings and mappings for automatic index creation.
+                                 // If provided, the indexer will check if the index exists during initialization (NewIndexer).
+                                 // If it doesn't exist, it will be created with the provided specification.
+                                 // If it already exists, no action is taken.
     BatchSize int                // Optional: Max texts size for embedding (default: 5)
 
     // Required: Function to map Document fields to Elasticsearch fields
@@ -143,6 +169,13 @@ type IndexerConfig struct {
 
     // Optional: Required only if vectorization is needed
     Embedding embedding.Embedder
+}
+
+// IndexSpec defines the settings and mappings for the index
+type IndexSpec struct {
+    Settings map[string]any `json:"settings,omitempty"`
+    Mappings map[string]any `json:"mappings,omitempty"`
+    Aliases  map[string]any `json:"aliases,omitempty"`
 }
 
 // FieldValue defines how a field should be stored and vectorized
