@@ -33,14 +33,16 @@ func main() {
 	ctx := context.Background()
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
-	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
-		APIKey: os.Getenv("ARK_API_KEY"),
-		Model:  os.Getenv("ARK_MODEL_ID"),
-	})
-
+	chatModel, err := NewChatModel(ctx)
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
 	}
+
+	// You can also use ResponsesAPIChatModel
+	//chatModel, err := NewResponsesAPIChatModel(ctx)
+	//if err != nil {
+	//	log.Fatalf("NewResponsesAPIChatModel failed, err=%v", err)
+	//}
 
 	inMsgs := []*schema.Message{
 		{
@@ -86,4 +88,18 @@ func main() {
 	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
 	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
+}
+
+func NewChatModel(ctx context.Context) (*ark.ChatModel, error) {
+	return ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
+	})
+}
+
+func NewResponsesAPIChatModel(ctx context.Context) (*ark.ResponsesAPIChatModel, error) {
+	return ark.NewResponsesAPIChatModel(ctx, &ark.ResponsesAPIConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
+	})
 }
