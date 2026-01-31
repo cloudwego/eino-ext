@@ -301,6 +301,8 @@ func TestTavilySearch_Search_ContextCancelled(t *testing.T) {
 		MaxRetries: 1,
 	}
 
+	err := config.validate()
+	require.NoError(t, err)
 	ts, err := newTavilySearch(config)
 	require.NoError(t, err)
 
