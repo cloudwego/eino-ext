@@ -111,4 +111,12 @@ func Test_OpenAIOptions_Setters(t *testing.T) {
 			assert.Equal(t, 123, *spec.MaxCompletionTokens)
 		}
 	})
+
+	t.Run("WithResponseFormat", func(t *testing.T) {
+		opts := []model.Option{WithResponseFormat(&ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText})}
+		spec := model.GetImplSpecificOptions(&openaiOptions{}, opts...)
+		if assert.NotNil(t, spec.ResponseFormat) {
+			assert.Equal(t, ChatCompletionResponseFormatTypeText, spec.ResponseFormat.Type)
+		}
+	})
 }
