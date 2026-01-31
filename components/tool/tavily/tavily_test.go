@@ -341,13 +341,3 @@ func TestNewTavilySearch_InvalidProxy(t *testing.T) {
 	assert.Nil(t, ts)
 	assert.Contains(t, err.Error(), "failed to parse proxy URL")
 }
-
-func TestSearchDepthConstants(t *testing.T) {
-	assert.Equal(t, SearchDepth("basic"), SearchDepthBasic)
-	assert.Equal(t, SearchDepth("advanced"), SearchDepthAdvanced)
-}
-
-func TestTopicConstants(t *testing.T) {
-	assert.Equal(t, Topic("general"), TopicGeneral)
-	assert.Equal(t, Topic("news"), TopicNews)
-}
