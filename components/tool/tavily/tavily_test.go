@@ -275,6 +275,7 @@ func TestTavilySearch_Search_WithRetry(t *testing.T) {
 		MaxRetries: 3,
 	}
 
+	require.NoError(t, config.validate())
 	ts, err := newTavilySearch(config)
 	require.NoError(t, err)
 
