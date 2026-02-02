@@ -38,9 +38,9 @@ func TestResponsesAPIChatModel_UsageExtractionFromEventResponse(t *testing.T) {
 					Response: &responses.ResponseEvent{
 						Response: &responses.ResponseObject{
 							Usage: &responses.Usage{
-								PromptTokens:      49,
-								CompletionTokens:  130,
-								TotalTokens:       179,
+								PromptTokens:     49,
+								CompletionTokens: 130,
+								TotalTokens:      179,
 								InputTokensDetails: &responses.InputTokensDetails{
 									CachedTokens: 10,
 								},
