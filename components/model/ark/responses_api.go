@@ -1103,8 +1103,16 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				continue
 			}
 			msg := &schema.Message{Role: schema.Assistant}
-			cm.setStreamChunkDefaultExtra(msg, ev.Response.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.Response.Response.Model, msg)
+			respObj := ev.Response.Response
+			// Extract Usage information from Event_Response if available
+			// ARK Responses API may include token usage in stream events
+			if respObj.Usage != nil {
+				msg.ResponseMeta = &schema.ResponseMeta{
+					Usage: cm.toEinoTokenUsage(respObj.Usage),
+				}
+			}
+			cm.setStreamChunkDefaultExtra(msg, respObj, cacheConfig)
+			cm.sendCallbackOutput(sw, config, respObj.Model, msg)
 
 		case *responses.Event_ResponseCompleted:
 			if ev.ResponseCompleted == nil || ev.ResponseCompleted.Response == nil {
