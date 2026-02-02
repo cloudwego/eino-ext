@@ -25,8 +25,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/smartystreets/goconvey/convey"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
-
-	"github.com/cloudwego/eino-ext/components/model/ark/utils"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 // TestResponsesAPIChatModel_UsageExtractionFromEventResponse tests that Usage information
