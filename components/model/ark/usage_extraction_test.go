@@ -21,8 +21,6 @@ import (
 	"testing"
 
 	. "github.com/bytedance/mockey"
-	"github.com/cloudwego/eino/schema"
-	"github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
@@ -58,7 +56,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_EventResponseWithUsage(t *t
 				Event: &responses.Event_ResponseCompleted{
 					ResponseCompleted: &responses.ResponseCompletedEvent{
 						Response: &responses.ResponseObject{
-							Status: responses.ResponseObject_completed,
+							Status: responses.ResponseStatus_completed,
 							Usage:  nil,
 						},
 					},
