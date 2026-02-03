@@ -1035,6 +1035,9 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 }
 
 func (cm *ResponsesAPIChatModel) toEinoTokenUsage(usage *responses.Usage) *schema.TokenUsage {
+	if usage == nil {
+		return nil
+	}
 	tokenUsage := &schema.TokenUsage{
 		PromptTokens:     int(usage.InputTokens),
 		CompletionTokens: int(usage.OutputTokens),

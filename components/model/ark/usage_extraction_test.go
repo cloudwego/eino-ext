@@ -69,7 +69,9 @@ func TestResponsesAPIChatModelReceivedStreamResponse_EventResponseWithUsage(t *t
 		// Call receivedStreamResponse which should extract Usage from Event_Response
 		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
 
-		// Verify sendCallbackOutput was called (meaning Usage was processed)
-		assert.Equal(t, 1, mocker.Times())
+		// Verify sendCallbackOutput was called twice:
+		// 1. For Event_Response with Usage information
+		// 2. For Event_ResponseCompleted with FinishReason
+		assert.Equal(t, 2, mocker.Times())
 	})
 }
