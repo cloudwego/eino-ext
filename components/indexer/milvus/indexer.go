@@ -200,9 +200,9 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	totalDocs := len(docs)
 	batchSize := i.config.BatchSize
 	concurrency := i.config.MaxConcurrency
-	// 用于收集所有生成的 ID
+	// collect all generated IDs
 	allIDs := make([]string, totalDocs)
-	// 用于收集并发过程中的错误
+	// collect errors during concurrent processing
 	errCh := make(chan error, totalDocs/batchSize+1)
 
 	sem := make(chan struct{}, concurrency)
@@ -214,24 +214,24 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 			end = totalDocs
 		}
 
-		// 切分批次
+		// split batch
 		batchDocs := docs[idx:end]
 		startIdx := idx
 
 		wg.Add(1)
 		go func(bDocs []*schema.Document, sIdx int) {
 			defer wg.Done()
-			// 获取信号量
+			// acquire semaphore
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			// 1. 提取文本
+			// 1. extract text
 			texts := make([]string, len(bDocs))
 			for k, doc := range bDocs {
 				texts[k] = doc.Content
 			}
 
-			// 2. Embedding (注意：要在在这里做 embedding，而不是在外面做完再传进来，这样可以节省内存并利用并发)
+			// 2. Embedding (note: perform embedding here instead of outside to save memory and utilize concurrency)
 			vectors, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), texts)
 			if err != nil {
 				errCh <- fmt.Errorf("batch embedding failed: %w", err)
@@ -243,32 +243,32 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 				return
 			}
 
-			// 3. 转换数据 (Convert)
+			// 3. convert data
 			rows, err := i.config.DocumentConverter(ctx, bDocs, vectors)
 			if err != nil {
-				errCh <- fmt.Errorf("document convert failed: %w", err)
+				errCh <- fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
 				return
 			}
 
-			// 4. 插入 Milvus (注意：这里不 Flush！)
-			// 使用配置中的 Partition
+			// 4. insert to Milvus
+			// use partition from config
 			results, err := i.config.Client.InsertRows(ctx, i.config.Collection, io.Partition, rows)
 			if err != nil {
-				errCh <- fmt.Errorf("insert rows failed: %w", err)
+				errCh <- fmt.Errorf("[Indexer.Store] failed to insert rows: %w", err)
 				return
 			}
 
-			// 5. 收集 IDs (保证顺序对应)
+			// 5. collect IDs (maintain order)
 			for k := 0; k < results.Len(); k++ {
 				id, err := results.Get(k)
 				if err != nil {
 					errCh <- fmt.Errorf("get id failed: %w", err)
 					return
 				}
-				// 假设 ID 是字符串，如果不是需转换
+				// assume ID is string, convert if not
 				strID, ok := id.(string)
 				if !ok {
-					// 如果 ID 不是 string，根据实际情况处理，或者简单 fmt.Sprint
+					// if ID is not string, handle according to actual situation, or simply use fmt.Sprint
 					strID = fmt.Sprintf("%v", id)
 				}
 				if sIdx+k < len(allIDs) {
@@ -278,16 +278,16 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 		}(batchDocs, startIdx)
 	}
 
-	// 等待所有批次完成
+	// wait for all batches to complete
 	wg.Wait()
 	close(errCh)
 
-	// 检查是否有错误发生
+	// check if any error occurred
 	if len(errCh) > 0 {
-		// 返回第一个错误
+		// return the first error
 		return nil, <-errCh
 	}
-	// 最后：执行一次全局 Flush
+	// finally: execute a global flush
 	// flush collection to make sure the data is visible
 	if err := i.config.Client.Flush(ctx, i.config.Collection, false); err != nil {
 		return nil, fmt.Errorf("[Indexer.Store] failed to flush collection: %w", err)
@@ -300,9 +300,9 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	}
 
 	callbacks.OnEnd(ctx, &indexer.CallbackOutput{
-		IDs: ids,
+		IDs: allIDs,
 	})
-	return ids, nil
+	return allIDs, nil
 }
 
 func (i *Indexer) GetType() string {
@@ -466,10 +466,10 @@ func (i *IndexerConfig) check() error {
 	}
 
 	if i.BatchSize <= 0 {
-		i.BatchSize = 10 // 默认每批 10 条
+		i.BatchSize = 10 // default 10 documents per batch
 	}
 	if i.MaxConcurrency <= 0 {
-		i.MaxConcurrency = 10 // 默认 10 个并发
+		i.MaxConcurrency = 10 // default 10 concurrent goroutines
 	}
 	return nil
 }

@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -135,14 +134,14 @@ func UseSplitter(filePath string) []*schema.Document {
 	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("文件不存在: %v", err)
+			log.Printf("文件不存在: %v", err)
 		}
-		fmt.Printf("无法访问文件: %v", err)
+		log.Printf("无法访问文件: %v", err)
 	}
 	// 检查文件权限
 	mode := fileInfo.Mode()
 	if mode&0400 == 0 { // 检查所有者读权限
-		fmt.Printf("没有读取权限")
+		log.Printf("没有读取权限")
 	}
 	bytes, err := os.ReadFile(filePath)
 	if err != nil {
