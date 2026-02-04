@@ -33,10 +33,7 @@ func main() {
 	ctx := context.Background()
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
-	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
-		APIKey: os.Getenv("ARK_API_KEY"),
-		Model:  os.Getenv("ARK_MODEL_ID"), // the model needs to support image input, such as Doubao-Seed-1.6.
-	})
+	chatModel, err := NewChatModel(ctx)
 	if err != nil {
 		log.Printf("NewChatModel failed, err=%v", err)
 		return
@@ -46,6 +43,15 @@ func main() {
 	textToolCall(ctx, chatModel)
 	fmt.Printf("\n==========image tool call==========\n")
 	imageToolCall(ctx, chatModel)
+
+	fmt.Printf("\n==========web search tool call==========\n")
+	// Generate a ResponsesAPIChatModel that supports tool web search
+	responsesAPIChatModel, err := NewResponsesAPIChatModel(ctx)
+	if err != nil {
+		log.Printf("NewResponsesAPIChatModel failed, err=%v", err)
+	}
+	toolWebSearchCall(ctx, responsesAPIChatModel)
+
 }
 
 func textToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
@@ -178,4 +184,42 @@ func imageToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
 	fmt.Printf("output: \n%v", resp)
+}
+
+func toolWebSearchCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
+	// You can also enable the built-in web search tool by passing Options during Generate or Stream
+	//limit := int64(1)
+	//options := make([]model.Option,0)
+	//options = append(options, ark.WithEnableToolWebSearch(&ark.EnableToolWebSearch{
+	//	Limit:   &limit,
+	//	Sources: []ark.Source{ark.SourceOfMoji},
+	//}))
+
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		{Role: schema.User, Content: "What's the weather like today?"},
+	})
+	if err != nil {
+		log.Fatalf("WithTools failed, err=%v", err)
+	}
+
+	fmt.Printf("output: \n%v", resp)
+}
+
+func NewChatModel(ctx context.Context) (*ark.ChatModel, error) {
+	return ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
+	})
+}
+
+func NewResponsesAPIChatModel(ctx context.Context) (*ark.ResponsesAPIChatModel, error) {
+	limit := int64(1)
+	return ark.NewResponsesAPIChatModel(ctx, &ark.ResponsesAPIConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
+		EnableToolWebSearch: &ark.EnableToolWebSearch{
+			Limit:   &limit,
+			Sources: []ark.Source{ark.SourceOfMoji},
+		},
+	})
 }
