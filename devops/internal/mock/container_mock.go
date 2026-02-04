@@ -130,6 +130,21 @@ func (mr *MockContainerServiceMockRecorder) GetDevGraph(graphID, fromNode any) *
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetDevGraph", reflect.TypeOf((*MockContainerService)(nil).GetDevGraph), graphID, fromNode)
 }
 
+// GetNodeInfo mocks base method.
+func (m *MockContainerService) GetNodeInfo(graphID, nodeKey string) (*model0.Node, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeInfo", graphID, nodeKey)
+	ret0, _ := ret[0].(*model0.Node)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// GetNodeInfo indicates an expected call of GetNodeInfo.
+func (mr *MockContainerServiceMockRecorder) GetNodeInfo(graphID, nodeKey any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeInfo", reflect.TypeOf((*MockContainerService)(nil).GetNodeInfo), graphID, nodeKey)
+}
+
 // ListGraphs mocks base method.
 func (m *MockContainerService) ListGraphs() map[string]string {
 	m.ctrl.T.Helper()

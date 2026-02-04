@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/matoous/go-nanoid"
@@ -105,7 +106,14 @@ func (d *debugServiceImpl) DebugRun(ctx context.Context, rm *model.DebugRunMeta,
 		inputType = fromNode.InputType
 	}
 
-	input, err := model.UnmarshalJson([]byte(userInput), inputType)
+	// get input from user code input
+	var input reflect.Value
+	nodeInfo, ok := ContainerSVC.GetNodeInfo(rm.GraphID, rm.FromNode)
+	if !ok {
+		return "", nil, nil, fmt.Errorf("graph %s, node_key %s not found", rm.GraphID, rm.FromNode)
+	}
+
+	input, err = model.ConvertCodeToValue(userInput, nodeInfo.ComponentSchema.InputType, inputType)
 	if err != nil {
 		return "", nil, nil, err
 	}

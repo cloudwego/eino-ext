@@ -16,7 +16,7 @@
 
 package types
 
-const Version = "0.1.7" // devops version needs to be consistent with module tag
+const Version = "0.1.8" // devops version needs to be consistent with module tag
 
 type ListGraphsResponse struct {
 	Graphs []*GraphMeta `json:"graphs,omitempty"`
