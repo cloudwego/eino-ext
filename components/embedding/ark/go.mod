@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.2.12
 	github.com/cloudwego/eino v0.6.0
 	github.com/smartystreets/goconvey v1.8.1
-	github.com/volcengine/volcengine-go-sdk v1.0.181
+	github.com/volcengine/volcengine-go-sdk v1.2.10
 	golang.org/x/sync v0.16.0
 )
 
@@ -43,6 +43,7 @@ require (
 	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
 	golang.org/x/sys v0.33.0 // indirect
+	google.golang.org/protobuf v1.31.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
