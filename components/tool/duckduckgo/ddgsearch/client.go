@@ -157,13 +157,17 @@ func (d *DDGS) sendRequestWithRetry(ctx context.Context, req *http.Request, para
 
 		break
 	}
-
 	defer resp.Body.Close()
 
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("request duckduckgo failed with status code: %d, msg=%v",
+			resp.StatusCode, string(body))
 	}
 
 	// Parse search response
