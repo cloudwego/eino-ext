@@ -52,8 +52,8 @@ func TestLsInfo(t *testing.T) {
 		files, err := s.LsInfo(ctx, req)
 		assert.NoError(t, err)
 		assert.Len(t, files, 2)
-		assert.Equal(t, "file1.txt", files[0].Path)
-		assert.Equal(t, "subdir", files[1].Path)
+		assert.Equal(t, filepath.Join(dir, "file1.txt"), files[0].Path)
+		assert.Equal(t, filepath.Join(dir, "subdir"), files[1].Path)
 	})
 
 	t.Run("list non-existent directory", func(t *testing.T) {
@@ -442,7 +442,7 @@ func TestPathCleaning(t *testing.T) {
 		// Should find test.txt and write_test.txt
 		found := false
 		for _, f := range files {
-			if f.Path == filename {
+			if f.Path == filepath.Join(dir, filename) {
 				found = true
 				break
 			}

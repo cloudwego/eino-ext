@@ -61,7 +61,7 @@ try:
     with os.scandir(path) as it:
         for entry in sorted(it, key=lambda e: e.name):
             result = {{
-                'path': entry.name,
+                'path': os.path.join(path, entry.name),
                 'is_dir': entry.is_dir(follow_symlinks=False)
             }}
             print(json.dumps(result))

@@ -28,8 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestNewArkSandbox tests the constructor for ArkSandbox.
-func TestNewArkSandbox(t *testing.T) {
+// TestNewSandboxToolSandbox tests the constructor for ArkSandbox.
+func TestNewSandboxToolSandbox(t *testing.T) {
 	t.Run("Success: ValidConfig", func(t *testing.T) {
 		config := &Config{
 			AccessKeyID:      "test-ak",
@@ -176,7 +176,7 @@ func createMockResponse(t *testing.T, success bool, outputText, eName, eValue st
 	return finalResBytes
 }
 
-func TestArkSandbox_FileSystemMethods(t *testing.T) {
+func TestSandboxToolFileSystemMethods(t *testing.T) {
 	s, server := setupTest(t)
 	defer server.Close()
 

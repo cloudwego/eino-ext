@@ -98,7 +98,7 @@ func (s *backend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]
 	var files []filesystem.FileInfo
 	for _, entry := range entries {
 		files = append(files, filesystem.FileInfo{
-			Path: entry.Name(),
+			Path: filepath.Join(path, entry.Name()),
 		})
 	}
 
