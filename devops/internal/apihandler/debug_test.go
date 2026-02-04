@@ -81,10 +81,10 @@ func (d *debugTestSuite) Test_GetCanvasInfo() {
 		mockey.Mock(getPathParam).Return(mockGraphID).Build()
 
 		d.mockContainerSVC.EXPECT().GetCanvas(mockGraphID).Return(devmodel.CanvasInfo{
-			GraphSchema: &devmodel.GraphSchema{},
+			MainGraph: &devmodel.GraphSchema{},
 		}, false).Times(1)
 		d.mockContainerSVC.EXPECT().CreateCanvas(mockGraphID).Return(devmodel.CanvasInfo{
-			GraphSchema: &devmodel.GraphSchema{
+			MainGraph: &devmodel.GraphSchema{
 				Name: "mock_canvas",
 			},
 		}, nil).Times(1)
@@ -102,7 +102,7 @@ func (d *debugTestSuite) Test_GetCanvasInfo() {
 		var data *types.GetCanvasInfoResponse
 		err = json.Unmarshal(b, &data)
 		assert.Nil(d.t, err)
-		assert.Equal(d.t, "mock_canvas", data.CanvasInfo.Name)
+		assert.Equal(d.t, "mock_canvas", data.CanvasInfo.MainGraph.Name)
 	})
 }
 

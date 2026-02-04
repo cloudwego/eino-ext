@@ -1810,13 +1810,13 @@ func Test_parseReflectTypeToTypeSchema(t *testing.T) {
 	data := parseReflectTypeToJsonSchema(reflectType)
 
 	assert.Len(t, data.Properties, 12)
-	assert.Equal(t, data.Properties["child"].Type, devmodel.JsonTypeOfNull)
-	assert.Equal(t, data.Properties["child2"].Type, devmodel.JsonTypeOfArray)
-	assert.Equal(t, data.Properties["child4"].Title, "*model.DemoV2")
-	assert.Equal(t, data.Properties["child5"].Title, "*model.DemoV2")
+	assert.Equal(t, *data.Properties["child"].Type, devmodel.JsonTypeOfNull)
+	assert.Equal(t, *data.Properties["child2"].Type, devmodel.JsonTypeOfArray)
+	assert.Equal(t, *data.Properties["child4"].Title, "*model.DemoV2")
+	assert.Equal(t, *data.Properties["child5"].Title, "*model.DemoV2")
 
-	assert.Equal(t, data.Properties["child12"].Title, "**model.DemoV2")
-	assert.Equal(t, data.Properties["child9"].Title, "***map[string]string")
-	assert.Equal(t, data.Properties["child10"].Title, "***string")
-	assert.Equal(t, data.Properties["child11"].Title, "***map[string]***model.DemoV1")
+	assert.Equal(t, *data.Properties["child12"].Title, "**model.DemoV2")
+	assert.Equal(t, *data.Properties["child9"].Title, "***map[string]string")
+	assert.Equal(t, *data.Properties["child10"].Title, "***string")
+	assert.Equal(t, *data.Properties["child11"].Title, "***map[string]***model.DemoV1")
 }
