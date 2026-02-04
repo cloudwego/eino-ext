@@ -702,11 +702,18 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 
 	req.Messages = msgs
 
+	var responseFormat *ChatCompletionResponseFormat
 	if c.config.ResponseFormat != nil {
+		responseFormat = c.config.ResponseFormat
+	}
+	if specOptions.ResponseFormat != nil {
+		responseFormat = specOptions.ResponseFormat
+	}
+	if responseFormat != nil {
 		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatType(c.config.ResponseFormat.Type),
+			Type: openai.ChatCompletionResponseFormatType(responseFormat.Type),
 		}
-		if js := c.config.ResponseFormat.JSONSchema; js != nil {
+		if js := responseFormat.JSONSchema; js != nil {
 			req.ResponseFormat.JSONSchema = &openai.ChatCompletionResponseFormatJSONSchema{
 				Name:        js.Name,
 				Schema:      js.JSONSchema,
