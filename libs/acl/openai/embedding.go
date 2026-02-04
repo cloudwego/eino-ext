@@ -20,10 +20,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/meguminnnnnnnnn/go-openai"
-
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/embedding"
+	"github.com/meguminnnnnnnnn/go-openai"
 )
 
 type EmbeddingEncodingFormat string
@@ -77,6 +76,10 @@ type EmbeddingConfig struct {
 	// User is a unique identifier representing your end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
+
+	// BatchSize specifies the number of texts to embed in a single request
+	// Optional.
+	BatchSize int `json:"batch_size,omitempty"`
 }
 
 var _ embedding.Embedder = (*EmbeddingClient)(nil)
@@ -131,7 +134,6 @@ func (e *EmbeddingClient) EmbedStrings(ctx context.Context, texts []string, opts
 	options = embedding.GetCommonOptions(options, opts...)
 
 	req := &openai.EmbeddingRequest{
-		Input:          texts,
 		Model:          openai.EmbeddingModel(*options.Model),
 		User:           dereferenceOrZero(e.config.User),
 		EncodingFormat: openai.EmbeddingEncodingFormat(dereferenceOrDefault(e.config.EncodingFormat, EmbeddingEncodingFormatFloat)),
@@ -143,29 +145,50 @@ func (e *EmbeddingClient) EmbedStrings(ctx context.Context, texts []string, opts
 		EncodingFormat: string(req.EncodingFormat),
 	}
 
+	embeddings = make([][]float64, 0, len(texts))
+	usage := &embedding.TokenUsage{
+		PromptTokens:     0,
+		CompletionTokens: 0,
+		TotalTokens:      0,
+	}
+
+	var batchSize int
+	if e.config.BatchSize == 0 {
+		batchSize = len(texts)
+	} else {
+		batchSize = e.config.BatchSize
+	}
+
 	ctx = callbacks.OnStart(ctx, &embedding.CallbackInput{
 		Texts:  texts,
 		Config: conf,
 	})
 
-	resp, err := e.cli.CreateEmbeddings(ctx, *req)
-	if err != nil {
-		return nil, err
-	}
-
-	embeddings = make([][]float64, len(resp.Data))
-	for i, d := range resp.Data {
-		res := make([]float64, len(d.Embedding))
-		for j, emb := range d.Embedding {
-			res[j] = float64(emb)
+	for i := 0; i < len(texts); i += batchSize {
+		idx := i
+		var end int
+		if idx+batchSize > len(texts) {
+			end = len(texts)
+		} else {
+			end = idx + batchSize
 		}
-		embeddings[i] = res
-	}
+		req.Input = texts[idx:end]
+		resp, err2 := e.cli.CreateEmbeddings(ctx, *req)
+		if err2 != nil {
+			return nil, err2
+		}
 
-	usage := &embedding.TokenUsage{
-		PromptTokens:     resp.Usage.PromptTokens,
-		CompletionTokens: resp.Usage.CompletionTokens,
-		TotalTokens:      resp.Usage.TotalTokens,
+		for _, d := range resp.Data {
+			res := make([]float64, len(d.Embedding))
+			for k, emb := range d.Embedding {
+				res[k] = float64(emb)
+			}
+			embeddings = append(embeddings, res)
+		}
+
+		usage.PromptTokens += resp.Usage.PromptTokens
+		usage.CompletionTokens += resp.Usage.CompletionTokens
+		usage.TotalTokens += resp.Usage.TotalTokens
 	}
 
 	_ = callbacks.OnEnd(ctx, &embedding.CallbackOutput{
