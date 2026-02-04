@@ -62,11 +62,24 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewClient of es8 failed, err=%v", err)
 	}
-
-	// create index if needed.
-	// comment out the code if index has been created.
-	if err = createIndex(ctx, client); err != nil {
-		log.Fatalf("createIndex of es8 failed, err=%v", err)
+	// define index specification (optional: automatically creates index if it doesn't exist)
+	indexSpec := &es8.IndexSpec{
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				fieldContent: map[string]any{
+					"type": "text",
+				},
+				fieldExtraLocation: map[string]any{
+					"type": "text",
+				},
+				fieldContentVector: map[string]any{
+					"type":       "dense_vector",
+					"dims":       1024,
+					"index":      true,
+					"similarity": "cosine",
+				},
+			},
+		},
 	}
 
 	// load embeddings from local
@@ -82,6 +95,7 @@ func main() {
 	indexer, err := es8.NewIndexer(ctx, &es8.IndexerConfig{
 		Client:    client,
 		Index:     indexName,
+		IndexSpec: indexSpec,
 		BatchSize: 10,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]es8.FieldValue, err error) {
 			return map[string]es8.FieldValue{

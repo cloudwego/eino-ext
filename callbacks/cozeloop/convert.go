@@ -18,6 +18,8 @@ package cozeloop
 
 import (
 	"context"
+	"fmt"
+	"log"
 
 	"github.com/bytedance/sonic"
 	"github.com/coze-dev/cozeloop-go/spec/tracespec"
@@ -76,21 +78,16 @@ func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
 		ToolCallID:       message.ToolCallID,
 		ReasoningContent: message.ReasoningContent,
 	}
+	if message.Role == schema.Tool {
+		msg.Name = message.ToolName
+	}
 
-	for i := range message.MultiContent {
-		part := message.MultiContent[i]
-
-		msg.Parts[i] = &tracespec.ModelMessagePart{
-			Type: tracespec.ModelMessagePartType(part.Type),
-			Text: part.Text,
-		}
-
-		if part.ImageURL != nil {
-			msg.Parts[i].ImageURL = &tracespec.ModelImageURL{
-				URL:    part.ImageURL.URL,
-				Detail: string(part.ImageURL.Detail),
-			}
-		}
+	if len(message.UserInputMultiContent) > 0 {
+		msg.Parts = convertUserInputMultiContent(message.UserInputMultiContent)
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		msg.Parts = convertAssistantGenMultiContent(message.AssistantGenMultiContent)
+	} else {
+		msg.Parts = convertMultiContent(message.MultiContent)
 	}
 
 	for i := range message.ToolCalls {
@@ -116,6 +113,140 @@ func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
 	}
 
 	return msg
+}
+
+func convertUserInputMultiContent(parts []schema.MessageInputPart) []*tracespec.ModelMessagePart {
+	var result []*tracespec.ModelMessagePart
+	for _, part := range parts {
+		sign := GetBase64ThoughtSignatureFromExtra(part.Extra)
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			result = append(result, &tracespec.ModelMessagePart{
+				Type:      tracespec.ModelMessagePartType(part.Type),
+				Text:      part.Text,
+				Signature: sign,
+			})
+
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				continue
+			}
+
+			if part.Image.MessagePartCommon.URL != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL:    *part.Image.MessagePartCommon.URL,
+						Detail: string(part.Image.Detail),
+					},
+					Signature: sign,
+				})
+			}
+			if part.Image.MessagePartCommon.Base64Data != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL:    fmt.Sprintf("data:%s;base64,%s", part.Image.MessagePartCommon.MIMEType, *part.Image.MessagePartCommon.Base64Data),
+						Detail: string(part.Image.Detail),
+					},
+					Signature: sign,
+				})
+			}
+
+		case schema.ChatMessagePartTypeFileURL:
+			if part.File == nil {
+				continue
+			}
+			if part.File.MessagePartCommon.URL != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					FileURL: &tracespec.ModelFileURL{
+						URL: *part.File.MessagePartCommon.URL,
+					},
+					Signature: sign,
+				})
+			}
+			if part.File.MessagePartCommon.Base64Data != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					FileURL: &tracespec.ModelFileURL{
+						URL: fmt.Sprintf("data:%s;base64,%s", part.File.MessagePartCommon.MIMEType, *part.File.MessagePartCommon.Base64Data),
+					},
+					Signature: sign,
+				})
+			}
+
+		default:
+			log.Printf("unknown part type: %s", part.Type)
+		}
+	}
+	return result
+}
+
+func convertAssistantGenMultiContent(parts []schema.MessageOutputPart) []*tracespec.ModelMessagePart {
+	var result []*tracespec.ModelMessagePart
+	for _, part := range parts {
+		sign := GetBase64ThoughtSignatureFromExtra(part.Extra)
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			result = append(result, &tracespec.ModelMessagePart{
+				Type:      tracespec.ModelMessagePartType(part.Type),
+				Text:      part.Text,
+				Signature: sign,
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				continue
+			}
+			if part.Image.MessagePartCommon.URL != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL: *part.Image.MessagePartCommon.URL,
+					},
+					Signature: sign,
+				})
+			}
+			if part.Image.MessagePartCommon.Base64Data != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL: *part.Image.MessagePartCommon.Base64Data,
+					},
+					Signature: sign,
+				})
+			}
+		default:
+			log.Printf("unknown part type: %s", part.Type)
+		}
+	}
+	return result
+}
+
+func convertMultiContent(parts []schema.ChatMessagePart) []*tracespec.ModelMessagePart {
+	result := make([]*tracespec.ModelMessagePart, len(parts))
+	for i := range parts {
+		part := parts[i]
+
+		result[i] = &tracespec.ModelMessagePart{
+			Type: tracespec.ModelMessagePartType(part.Type),
+			Text: part.Text,
+		}
+
+		if part.ImageURL != nil {
+			result[i].ImageURL = &tracespec.ModelImageURL{
+				URL:    part.ImageURL.URL,
+				Detail: string(part.ImageURL.Detail),
+			}
+		}
+
+		if part.FileURL != nil {
+			result[i].FileURL = &tracespec.ModelFileURL{
+				URL: part.FileURL.URL,
+			}
+		}
+	}
+	return result
 }
 
 func addToolName(ctx context.Context, message *tracespec.ModelMessage) *tracespec.ModelMessage {

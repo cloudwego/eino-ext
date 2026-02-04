@@ -382,6 +382,10 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	return outStream, err
 }
 
+func (cm *ResponsesAPIChatModel) IsCallbacksEnabled() bool {
+	return true
+}
+
 func (cm *ResponsesAPIChatModel) prePopulateConfig(responseReq *responses.ResponsesRequest, options *model.Options,
 	specOptions *arkOptions) error {
 
@@ -787,6 +791,11 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 	inputItemMessage := &responses.ItemInputMessage{
 		Type: responses.ItemType_message.Enum(),
 		Role: responses.MessageRole_assistant,
+	}
+
+	if getPartial(msg) {
+		b := true
+		inputItemMessage.Partial = &b
 	}
 
 	if len(msg.UserInputMultiContent) > 0 {
