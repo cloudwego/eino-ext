@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	
+
+	"sync"
+
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -37,7 +39,7 @@ type IndexerConfig struct {
 	// It requires the milvus-sdk-go client of version 2.4.x
 	// Required
 	Client client.Client
-	
+
 	// Default Collection config
 	// Collection is the collection name in milvus database
 	// Optional, and the default value is "eino_collection"
@@ -67,19 +69,27 @@ type IndexerConfig struct {
 	// Optional, and the default value is false
 	// Enable to dynamic schema it could affect milvus performance
 	EnableDynamicSchema bool
-	
+
 	// DocumentConverter is the function to convert the schema.Document to the row data
 	// Optional, and the default value is defaultDocumentConverter
 	DocumentConverter func(ctx context.Context, docs []*schema.Document, vectors [][]float64) ([]interface{}, error)
-	
+
 	// Index config to the vector column
 	// MetricType the metric type for vector
 	// Optional and default type is HAMMING
 	MetricType MetricType
-	
+
 	// Embedding vectorization method for values needs to be embedded from schema.Document's content.
 	// Required
 	Embedding embedding.Embedder
+
+	// BatchSize is the number of documents to process in one batch
+	// Optional, and the default value is 100
+	BatchSize int
+
+	// MaxConcurrency is the maximum number of concurrent batches
+	// Optional, and the default value is 10
+	MaxConcurrency int
 }
 
 type Indexer struct {
@@ -92,7 +102,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	if err := conf.check(); err != nil {
 		return nil, err
 	}
-	
+
 	// check the collection whether to be created
 	ok, err := conf.Client.HasCollection(ctx, conf.Collection)
 	if err != nil {
@@ -119,7 +129,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 			return nil, fmt.Errorf("[NewIndexer] failed to create collection: %w", errToCreate)
 		}
 	}
-	
+
 	// load collection info
 	collection, err := conf.Client.DescribeCollection(ctx, conf.Collection)
 	if err != nil {
@@ -136,7 +146,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 			return nil, err
 		}
 	}
-	
+
 	if conf.PartitionNum == 0 && conf.PartitionName != "" {
 		ok, err = conf.Client.HasPartition(ctx, conf.Collection, conf.PartitionName)
 		if err != nil {
@@ -152,7 +162,7 @@ func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 			return nil, fmt.Errorf("[NewIndexer] failed to load partition: %w", err)
 		}
 	}
-	
+
 	// create indexer
 	return &Indexer{
 		config: *conf,
@@ -170,7 +180,7 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	if io.Partition == "" {
 		io.Partition = i.config.PartitionName
 	}
-	
+
 	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	// callback info on start
 	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{
@@ -181,58 +191,118 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	
+
 	emb := co.Embedding
 	if emb == nil {
 		return nil, fmt.Errorf("[Indexer.Store] embedding not provided")
 	}
-	
+
+	totalDocs := len(docs)
+	batchSize := i.config.BatchSize
+	concurrency := i.config.MaxConcurrency
+	// collect all generated IDs
+	allIDs := make([]string, totalDocs)
+	// collect errors during concurrent processing
+	errCh := make(chan error, totalDocs/batchSize+1)
+
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	for idx := 0; idx < totalDocs; idx += batchSize {
+		end := idx + batchSize
+		if end > totalDocs {
+			end = totalDocs
+		}
+
+		// split batch
+		batchDocs := docs[idx:end]
+		startIdx := idx
+
+		wg.Add(1)
+		go func(bDocs []*schema.Document, sIdx int) {
+			defer wg.Done()
+			// acquire semaphore
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// 1. extract text
+			texts := make([]string, len(bDocs))
+			for k, doc := range bDocs {
+				texts[k] = doc.Content
+			}
+
+			// 2. Embedding (note: perform embedding here instead of outside to save memory and utilize concurrency)
+			vectors, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), texts)
+			if err != nil {
+				errCh <- fmt.Errorf("batch embedding failed: %w", err)
+				return
+			}
+
+			if len(vectors) != len(bDocs) {
+				errCh <- fmt.Errorf("embedding result length mismatch")
+				return
+			}
+
+			// 3. convert data
+			rows, err := i.config.DocumentConverter(ctx, bDocs, vectors)
+			if err != nil {
+				errCh <- fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
+				return
+			}
+
+			// 4. insert to Milvus
+			// use partition from config
+			results, err := i.config.Client.InsertRows(ctx, i.config.Collection, io.Partition, rows)
+			if err != nil {
+				errCh <- fmt.Errorf("[Indexer.Store] failed to insert rows: %w", err)
+				return
+			}
+
+			// 5. collect IDs (maintain order)
+			for k := 0; k < results.Len(); k++ {
+				id, err := results.Get(k)
+				if err != nil {
+					errCh <- fmt.Errorf("get id failed: %w", err)
+					return
+				}
+				// assume ID is string, convert if not
+				strID, ok := id.(string)
+				if !ok {
+					// if ID is not string, handle according to actual situation, or simply use fmt.Sprint
+					strID = fmt.Sprintf("%v", id)
+				}
+				if sIdx+k < len(allIDs) {
+					allIDs[sIdx+k] = strID
+				}
+			}
+		}(batchDocs, startIdx)
+	}
+
+	// wait for all batches to complete
+	wg.Wait()
+	close(errCh)
+
+	// check if any error occurred
+	if len(errCh) > 0 {
+		// return the first error
+		return nil, <-errCh
+	}
+	// finally: execute a global flush
+	// flush collection to make sure the data is visible
+	if err := i.config.Client.Flush(ctx, i.config.Collection, false); err != nil {
+		return nil, fmt.Errorf("[Indexer.Store] failed to flush collection: %w", err)
+	}
+
 	// load documents content
 	texts := make([]string, 0, len(docs))
 	for _, doc := range docs {
 		texts = append(texts, doc.Content)
 	}
-	
-	// embedding
-	vectors, err := emb.EmbedStrings(makeEmbeddingCtx(ctx, emb), texts)
-	if err != nil {
-		return nil, err
-	}
-	
-	if len(vectors) != len(docs) {
-		return nil, fmt.Errorf("[Indexer.Store] embedding result length not match need: %d, got: %d", len(docs), len(vectors))
-	}
-	
-	// load documents content
-	rows, err := i.config.DocumentConverter(ctx, docs, vectors)
-	if err != nil {
-		return nil, fmt.Errorf("[Indexer.Store] failed to convert documents: %w", err)
-	}
-	
-	// store documents into milvus
-	results, err := i.config.Client.InsertRows(ctx, i.config.Collection, io.Partition, rows)
-	if err != nil {
-		return nil, fmt.Errorf("[Indexer.Store] failed to insert rows: %w", err)
-	}
-	
-	// flush collection to make sure the data is visible
-	if err := i.config.Client.Flush(ctx, i.config.Collection, false); err != nil {
-		return nil, fmt.Errorf("[Indexer.Store] failed to flush collection: %w", err)
-	}
-	
-	// callback info on end
-	ids = make([]string, results.Len())
-	for idx := 0; idx < results.Len(); idx++ {
-		ids[idx], err = results.GetAsString(idx)
-		if err != nil {
-			return nil, fmt.Errorf("[Indexer.Store] failed to get id: %w", err)
-		}
-	}
-	
+
 	callbacks.OnEnd(ctx, &indexer.CallbackOutput{
-		IDs: ids,
+		IDs: allIDs,
 	})
-	return ids, nil
+	return allIDs, nil
 }
 
 func (i *Indexer) GetType() string {
@@ -259,7 +329,7 @@ func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, do
 		em := make([]defaultSchema, 0, len(docs))
 		texts := make([]string, 0, len(docs))
 		rows := make([]interface{}, 0, len(docs))
-		
+
 		for _, doc := range docs {
 			metadata, err := sonic.Marshal(doc.MetaData)
 			if err != nil {
@@ -273,7 +343,7 @@ func (i *IndexerConfig) getDefaultDocumentConvert() func(ctx context.Context, do
 			})
 			texts = append(texts, doc.Content)
 		}
-		
+
 		// build embedding documents for storing
 		for idx, vec := range vectors {
 			em[idx].Vector = vector2Bytes(vec)
@@ -393,6 +463,13 @@ func (i *IndexerConfig) check() error {
 	}
 	if i.DocumentConverter == nil {
 		i.DocumentConverter = i.getDefaultDocumentConvert()
+	}
+
+	if i.BatchSize <= 0 {
+		i.BatchSize = 10 // default 10 documents per batch
+	}
+	if i.MaxConcurrency <= 0 {
+		i.MaxConcurrency = 10 // default 10 concurrent goroutines
 	}
 	return nil
 }
