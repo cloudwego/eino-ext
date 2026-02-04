@@ -553,8 +553,8 @@ func buildMessageFromMultiContent(inMsg *schema.Message) (openai.ChatCompletionM
 }
 
 func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...model.Option) (
-	*openai.ChatCompletionRequest, *model.CallbackInput, []openai.ChatCompletionRequestOption, *openaiOptions, error) {
-
+	*openai.ChatCompletionRequest, *model.CallbackInput, []openai.ChatCompletionRequestOption, *openaiOptions, error,
+) {
 	options := model.GetCommonOptions(&model.Options{
 		Temperature: c.config.Temperature,
 		MaxTokens:   c.config.MaxTokens,
@@ -691,7 +691,6 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 				ToolCalls:  toOpenAIToolCalls(inMsg.ToolCalls),
 				ToolCallID: inMsg.ToolCallID,
 			}
-
 		}
 
 		if err != nil {
@@ -732,8 +731,8 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 }
 
 func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
-	outMsg *schema.Message, err error) {
-
+	outMsg *schema.Message, err error,
+) {
 	req, cbInput, reqOpts, specOptions, err := c.genRequest(ctx, in, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
@@ -831,7 +830,8 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 }
 
 func (c *Client) Stream(ctx context.Context, in []*schema.Message,
-	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
+	opts ...model.Option,
+) (outStream *schema.StreamReader[*schema.Message], err error) {
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -912,7 +912,6 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			// skip empty message
 			// when openai return parallel tool calls, first frame can be empty
 			// skip empty frame in stream, then stream first frame could know whether is tool call msg.
-			rc, ok := GetReasoningContent(msg)
 			if lastEmptyMsg != nil {
 				cMsg, cErr := schema.ConcatMessages([]*schema.Message{lastEmptyMsg, msg})
 				if cErr != nil {
@@ -923,13 +922,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 				msg = cMsg
 			}
 
-			if msg.Content == "" && len(msg.ToolCalls) == 0 && !(ok && len(rc) > 0) {
-				lastEmptyMsg = msg
-				continue
-			}
-
-			lastEmptyMsg = nil
-
+			// Run modifier before empty-check so it can attach extra content (e.g., images) to otherwise empty chunks.
 			if specOptions.ResponseChunkMessageModifier != nil {
 				var err_ error
 				msg, err_ = specOptions.ResponseChunkMessageModifier(ctx_, msg, chunk.RawBody, false)
@@ -938,6 +931,15 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 					return
 				}
 			}
+
+			// Modifier may populate reasoning content via extras, so check after modification.
+			rc, ok := GetReasoningContent(msg)
+			if msg.Content == "" && len(msg.ToolCalls) == 0 && !(ok && len(rc) > 0) && len(msg.AssistantGenMultiContent) == 0 {
+				lastEmptyMsg = msg
+				continue
+			}
+
+			lastEmptyMsg = nil
 
 			closed := sw.Send(&model.CallbackOutput{
 				Message:    msg,
@@ -949,7 +951,6 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 				return
 			}
 		}
-
 	}(ctx)
 
 	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
@@ -1071,6 +1072,7 @@ func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice
 		return fmt.Errorf("unsupported tool_choice: %s", *tc)
 	}
 }
+
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
 	if probs == nil {
 		return nil
@@ -1177,7 +1179,6 @@ func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, au
 		message.AssistantGenMultiContent = append(message.AssistantGenMultiContent, messageOutputPart)
 	}
 	return nil
-
 }
 
 func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) {
