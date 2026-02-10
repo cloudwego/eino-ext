@@ -181,10 +181,11 @@ type CallbackHandler struct {
 }
 
 type langfuseStateKey struct{}
+
 type langfuseState struct {
 	traceID       string
 	observationID string
-	startTime     time.Time // 用于计算 duration
+	startTime     time.Time // startTime is used to calculate duration in milliseconds
 }
 
 func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
@@ -290,7 +291,7 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 			}
 		}
 
-		// 计算 duration（毫秒）
+		// Calculate duration in milliseconds
 		if !state.startTime.IsZero() {
 			duration := int64(endTime.Sub(state.startTime).Milliseconds())
 			body.Duration = &duration
@@ -314,12 +315,12 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 			BaseEventBody: langfuse.BaseEventBody{
 				ID: state.observationID,
 			},
-			Output:   out,
-			StartTime: state.startTime, // ← 必须保留原始 startTime
+			Output:    out,
+			StartTime: state.startTime, // Must preserve the original startTime for correct latency calculation
 		},
 		EndTime: endTime,
 	}
-	// 计算 duration（毫秒）
+	// Calculate duration in milliseconds
 	if !state.startTime.IsZero() {
 		duration := int64(endTime.Sub(state.startTime).Milliseconds())
 		spanBody.Duration = &duration

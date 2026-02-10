@@ -227,7 +227,7 @@ type SpanEventBody struct {
 	BaseObservationEventBody
 
 	EndTime  time.Time `json:"endTime,omitempty"`
-	Duration *int64    `json:"duration,omitempty"` // 毫秒
+	Duration *int64    `json:"duration,omitempty"` // Duration in milliseconds
 }
 
 type Usage struct {
@@ -248,7 +248,7 @@ type GenerationEventBody struct {
 	PromptVersion       int               `json:"promptVersion,omitempty"`
 	ModelParameters     any               `json:"modelParameters,omitempty"`
 	Usage               *Usage            `json:"usage,omitempty"`
-	Duration            *int64            `json:"duration,omitempty"` // 毫秒
+	Duration            *int64            `json:"duration,omitempty"` // Duration in milliseconds
 }
 
 type EventEventBody struct {
