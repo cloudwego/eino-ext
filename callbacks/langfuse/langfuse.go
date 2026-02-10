@@ -184,6 +184,7 @@ type langfuseStateKey struct{}
 type langfuseState struct {
 	traceID       string
 	observationID string
+	startTime     time.Time // 用于计算 duration
 }
 
 func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
@@ -197,6 +198,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	}
 	if info.Component == components.ComponentOfChatModel {
 		mcbi := model.ConvCallbackInput(input)
+		startTime := time.Now()
 
 		body := &langfuse.GenerationEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
@@ -206,7 +208,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 				},
 				TraceID:             state.traceID,
 				ParentObservationID: state.observationID,
-				StartTime:           time.Now(),
+				StartTime:           startTime,
 			},
 			InMessages: mcbi.Messages,
 		}
@@ -222,6 +224,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 		return context.WithValue(ctx, langfuseStateKey{}, &langfuseState{
 			traceID:       state.traceID,
 			observationID: generationID,
+			startTime:     startTime,
 		})
 	}
 
@@ -230,6 +233,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 		log.Printf("marshal input error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
+	startTime := time.Now()
 	spanID, err := c.cli.CreateSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
@@ -238,7 +242,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 			Input:               in,
 			TraceID:             state.traceID,
 			ParentObservationID: state.observationID,
-			StartTime:           time.Now(),
+			StartTime:           startTime,
 		},
 	})
 	if err != nil {
@@ -248,6 +252,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	return context.WithValue(ctx, langfuseStateKey{}, &langfuseState{
 		traceID:       state.traceID,
 		observationID: spanID,
+		startTime:     startTime,
 	})
 }
 
@@ -264,16 +269,18 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 
 	if info.Component == components.ComponentOfChatModel {
 		mcbo := model.ConvCallbackOutput(output)
+		endTime := time.Now()
 
 		body := &langfuse.GenerationEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
 					ID: state.observationID,
 				},
+				StartTime: state.startTime, // ← 必须保留原始 startTime
 			},
 			OutMessage:          mcbo.Message,
-			EndTime:             time.Now(),
-			CompletionStartTime: time.Now(),
+			EndTime:             endTime,
+			CompletionStartTime: endTime,
 		}
 		if mcbo.TokenUsage != nil {
 			body.Usage = &langfuse.Usage{
@@ -281,6 +288,12 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 				CompletionTokens: mcbo.TokenUsage.CompletionTokens,
 				TotalTokens:      mcbo.TokenUsage.TotalTokens,
 			}
+		}
+
+		// 计算 duration（毫秒）
+		if !state.startTime.IsZero() {
+			duration := int64(endTime.Sub(state.startTime).Milliseconds())
+			body.Duration = &duration
 		}
 
 		err := c.cli.EndGeneration(body)
@@ -295,15 +308,24 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 		log.Printf("marshal output error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
-	err = c.cli.EndSpan(&langfuse.SpanEventBody{
+	endTime := time.Now()
+	spanBody := &langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
 				ID: state.observationID,
 			},
-			Output: out,
+			Output:   out,
+			StartTime: state.startTime, // ← 必须保留原始 startTime
 		},
-		EndTime: time.Now(),
-	})
+		EndTime: endTime,
+	}
+	// 计算 duration（毫秒）
+	if !state.startTime.IsZero() {
+		duration := int64(endTime.Sub(state.startTime).Milliseconds())
+		spanBody.Duration = &duration
+	}
+
+	err = c.cli.EndSpan(spanBody)
 	if err != nil {
 		log.Printf("end span fail: %v, runinfo: %+v", err, info)
 	}
