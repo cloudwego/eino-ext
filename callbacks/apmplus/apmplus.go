@@ -37,6 +37,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -59,16 +60,44 @@ type Config struct {
 	// Default: ""
 	// Example: "v1.2.3"
 	Release string
+
+	// ResourceAttributes is custom resource attributes (Optional)
+	ResourceAttributes map[string]string
 }
 
 func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ctx context.Context) error, err error) {
-	p, err := opentelemetry.NewOpenTelemetryProvider(
+	resourceAttributes := []attribute.KeyValue{
+		attribute.String("apmplus.business_type", "gen_ai"),
+	}
+	if len(cfg.ResourceAttributes) > 0 {
+		for k, v := range cfg.ResourceAttributes {
+			resourceAttributes = append(resourceAttributes, attribute.String(k, v))
+		}
+	}
+	res, err := resource.New(context.Background(),
+		resource.WithFromEnv(),
+		resource.WithAttributes(resourceAttributes...),
+	)
+	if err != nil {
+		log.Printf("resource merge error: %v", err)
+	}
+
+	var resourceOpts []opentelemetry.Option
+	for _, attr := range res.Attributes() {
+		resourceOpts = append(resourceOpts,
+			opentelemetry.WithResourceAttribute(attr),
+		)
+	}
+
+	providerOpts := []opentelemetry.Option{
 		opentelemetry.WithServiceName(cfg.ServiceName),
 		opentelemetry.WithExportEndpoint(cfg.Host),
 		opentelemetry.WithInsecure(),
 		opentelemetry.WithHeaders(map[string]string{"x-byteapm-appkey": cfg.AppKey}),
-		opentelemetry.WithResourceAttribute(attribute.String("apmplus.business_type", "gen_ai")),
-	)
+	}
+	providerOpts = append(providerOpts, resourceOpts...)
+
+	p, err := opentelemetry.NewOpenTelemetryProvider(providerOpts...)
 	if p == nil || err != nil {
 		return nil, nil, errors.New("init opentelemetry provider failed")
 	}
