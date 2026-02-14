@@ -20,13 +20,15 @@ import (
 	"context"
 	"log"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino-ext/components/document/transformer/splitter/markdown"
+	"github.com/cloudwego/eino-ext/components/indexer/milvus"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus-sdk-go/v2/client"
-
-	"github.com/cloudwego/eino-ext/components/indexer/milvus"
 )
 
 func main() {
@@ -60,27 +62,34 @@ func main() {
 	log.Printf("Indexer created success")
 
 	// Store documents
-	docs := []*schema.Document{
-		{
-			ID:      "milvus-1",
-			Content: "milvus is an open-source vector database",
-			MetaData: map[string]any{
-				"h1": "milvus",
-				"h2": "open-source",
-				"h3": "vector database",
-			},
-		},
-		{
-			ID:      "milvus-2",
-			Content: "milvus is a distributed vector database",
-		},
-	}
-	ids, err := indexer.Store(ctx, docs)
+	//docs := []*schema.Document{
+	//	{
+	//		ID:      "milvus-1",
+	//		Content: "milvus is an open-source vector database",
+	//		MetaData: map[string]any{
+	//			"h1": "milvus",
+	//			"h2": "open-source",
+	//			"h3": "vector database",
+	//		},
+	//	},
+	//	{
+	//		ID:      "milvus-2",
+	//		Content: "milvus is a distributed vector database",
+	//	},
+	//}
+
+	// 直接调用 store，无需手动分片，由内部方法实现异步分批插入
+	docs := UseSplitter("./examples/test.md")
+	start := time.Now()
+	_, err = indexer.Store(ctx, docs)
 	if err != nil {
 		log.Fatalf("Failed to store: %v", err)
 		return
 	}
-	log.Printf("Store success, ids: %v", ids)
+
+	elapsed := time.Since(start)
+
+	log.Printf(" All docs stored success. Total time: %v", elapsed)
 }
 
 type vector struct {
@@ -105,4 +114,53 @@ func (m *mockEmbedding) EmbedStrings(ctx context.Context, texts []string, opts .
 		res = append(res, data.Embedding)
 	}
 	return res, nil
+}
+
+// UseSplitter 测试用 markdown 分割器
+func UseSplitter(filePath string) []*schema.Document {
+	ctx := context.Background()
+	// 初始化分割器
+	splitter, err := markdown.NewHeaderSplitter(ctx, &markdown.HeaderConfig{
+		Headers: map[string]string{
+			"#":   "h1",
+			"##":  "h2",
+			"###": "h3",
+		},
+		TrimHeaders: false,
+	})
+	if err != nil {
+		panic("Failed to create a Splitter:" + err.Error())
+	}
+	fileInfo, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Printf("文件不存在: %v", err)
+		}
+		log.Printf("无法访问文件: %v", err)
+	}
+	// 检查文件权限
+	mode := fileInfo.Mode()
+	if mode&0400 == 0 { // 检查所有者读权限
+		log.Printf("没有读取权限")
+	}
+	bytes, err := os.ReadFile(filePath)
+	if err != nil {
+		panic(err)
+	}
+	docs := []*schema.Document{
+		{
+			ID:      "doc1",
+			Content: string(bytes),
+		},
+	}
+	results, err := splitter.Transform(ctx, docs)
+	if err != nil {
+		panic(err)
+	}
+	// 处理分割结果
+	for i, doc := range results {
+		//println("片段", i+1, ":", doc.Content)
+		doc.ID = docs[0].ID + "_" + strconv.Itoa(i)
+	}
+	return results
 }
