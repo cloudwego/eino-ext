@@ -37,7 +37,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -74,16 +73,8 @@ func NewApmplusHandler(cfg *Config) (handler callbacks.Handler, shutdown func(ct
 			resourceAttributes = append(resourceAttributes, attribute.String(k, v))
 		}
 	}
-	res, err := resource.New(context.Background(),
-		resource.WithFromEnv(),
-		resource.WithAttributes(resourceAttributes...),
-	)
-	if err != nil {
-		log.Printf("resource merge error: %v", err)
-	}
-
 	var resourceOpts []opentelemetry.Option
-	for _, attr := range res.Attributes() {
+	for _, attr := range resourceAttributes {
 		resourceOpts = append(resourceOpts,
 			opentelemetry.WithResourceAttribute(attr),
 		)
