@@ -662,6 +662,31 @@ func TestExecuteStreaming(t *testing.T) {
 
 		assert.Error(t, lastErr, "should receive error for invalid command")
 	})
+
+	t.Run("ExecuteStreaming with no stdout output", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{Command: "true"}
+		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var receivedResponse bool
+		var exitCode *int
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				receivedResponse = true
+				if resp.ExitCode != nil {
+					exitCode = resp.ExitCode
+				}
+			}
+		}
+
+		assert.True(t, receivedResponse, "should receive at least one response even with no stdout")
+		assert.NotNil(t, exitCode, "should receive exit code in response")
+		assert.Equal(t, 0, *exitCode, "exit code should be 0 for successful command")
+	})
 }
 
 func TestExecute1(t *testing.T) {

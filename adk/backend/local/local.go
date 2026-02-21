@@ -464,9 +464,10 @@ func (s *backend) ExecuteStreaming(ctx context.Context, input *filesystem.Execut
 		}()
 
 		scanner := bufio.NewScanner(stdout)
+		hasOutput := false
 		for scanner.Scan() {
+			hasOutput = true
 			line := scanner.Text() + "\n"
-
 			select {
 			case <-ctx.Done():
 				_ = cmd.Process.Kill()
@@ -500,6 +501,11 @@ func (s *backend) ExecuteStreaming(ctx context.Context, input *filesystem.Execut
 			}
 			return
 		}
+
+		if !hasOutput {
+			w.Send(&filesystem.ExecuteResponse{ExitCode: new(int)}, nil)
+		}
+
 	}()
 
 	return sr, nil
