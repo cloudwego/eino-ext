@@ -18,12 +18,12 @@ package langsmith
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/google/uuid"
 )
 
@@ -116,7 +116,7 @@ func (ft *FlowTrace) SpanToString(ctx context.Context) (string, error) {
 		})
 	}
 	state.MarshalMetadata = tmpMetadata
-	val, err := sonic.Marshal(state)
+	val, err := json.Marshal(state)
 	if err != nil {
 		return "", err
 	}
@@ -129,7 +129,7 @@ func (ft *FlowTrace) StringToSpan(val string) (*LangsmithState, error) {
 		return nil, nil
 	}
 	state := &LangsmithState{}
-	err := sonic.Unmarshal([]byte(val), state)
+	err := json.Unmarshal([]byte(val), state)
 	if err != nil {
 		return nil, err
 	}

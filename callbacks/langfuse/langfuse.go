@@ -18,12 +18,12 @@ package langfuse
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"runtime/debug"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -225,11 +225,12 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 		})
 	}
 
-	in, err := sonic.MarshalString(input)
+	inBytes, err := json.Marshal(input)
 	if err != nil {
 		log.Printf("marshal input error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
+	in := string(inBytes)
 	spanID, err := c.cli.CreateSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
@@ -290,11 +291,12 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 		return ctx
 	}
 
-	out, err := sonic.MarshalString(output)
+	outBytes, err := json.Marshal(output)
 	if err != nil {
 		log.Printf("marshal output error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
+	out := string(outBytes)
 	err = c.cli.EndSpan(&langfuse.SpanEventBody{
 		BaseObservationEventBody: langfuse.BaseObservationEventBody{
 			BaseEventBody: langfuse.BaseEventBody{
@@ -468,11 +470,12 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 			ins = append(ins, chunk)
 		}
 
-		in, err_ := sonic.MarshalString(ins)
+		inBytes, err_ := json.Marshal(ins)
 		if err_ != nil {
 			log.Printf("marshal input error: %v, runinfo: %+v", err_, info)
 			return
 		}
+		in := string(inBytes)
 		err = c.cli.EndSpan(&langfuse.SpanEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
@@ -573,10 +576,11 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 			outs = append(outs, chunk)
 		}
 
-		out, err := sonic.MarshalString(outs)
+		outBytes, err := json.Marshal(outs)
 		if err != nil {
 			log.Printf("marshal stream output error: %v, runinfo: %+v", err, info)
 		}
+		out := string(outBytes)
 		err = c.cli.EndSpan(&langfuse.SpanEventBody{
 			BaseObservationEventBody: langfuse.BaseObservationEventBody{
 				BaseEventBody: langfuse.BaseEventBody{
