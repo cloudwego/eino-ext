@@ -18,6 +18,7 @@ package langsmith
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -25,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/schema"
 	"github.com/google/uuid"
@@ -84,11 +84,12 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	if opts == nil {
 		opts = &traceOptions{}
 	}
-	in, err := sonic.MarshalString(input)
+	inBytes, err := json.Marshal(input)
 	if err != nil {
 		log.Printf("marshal input error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
+	in := string(inBytes)
 	var metaData = SafeDeepCopySyncMapMetadata(opts.Metadata)
 	if input != nil {
 		modelConf, _, _, _ := extractModelInput(convModelCallbackInput([]callbacks.CallbackInput{input}))
@@ -158,11 +159,12 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 		log.Printf("[langsmith] no state in context on OnEnd, runinfo: %+v", info)
 		return ctx
 	}
-	out, err := sonic.MarshalString(output)
+	outBytes, err := json.Marshal(output)
 	if err != nil {
 		log.Printf("marshal output error: %v, runinfo: %+v", err, info)
 		return ctx
 	}
+	out := string(outBytes)
 
 	endTime := time.Now().UTC()
 	patch := &RunPatch{
