@@ -40,7 +40,7 @@ type Config struct {
 	ValidateCommand func(string) error
 }
 
-type Backend struct {
+type Local struct {
 	validateCommand func(string) error
 }
 
@@ -48,14 +48,14 @@ var defaultValidateCommand = func(string) error {
 	return nil
 }
 
-// NewBackend creates a new local filesystem Backend instance.
+// NewBackend creates a new local filesystem Local instance.
 //
 // IMPORTANT - System Compatibility:
 //   - Supported: Unix/MacOS only
-//   - NOT Supported: Windows (requires custom implementation of Backend)
+//   - NOT Supported: Windows (requires custom implementation of filesystem.Backend)
 //   - Command Execution: Uses /bin/sh by default for Execute method
-//   - If /bin/sh does not meet your requirements, please implement your own Backend
-func NewBackend(_ context.Context, cfg *Config) (*Backend, error) {
+//   - If /bin/sh does not meet your requirements, please implement your own filesystem.Backend
+func NewBackend(_ context.Context, cfg *Config) (*Local, error) {
 	if cfg == nil {
 		return nil, errors.New("config is required")
 	}
@@ -65,12 +65,12 @@ func NewBackend(_ context.Context, cfg *Config) (*Backend, error) {
 		validateCommand = cfg.ValidateCommand
 	}
 
-	return &Backend{
+	return &Local{
 		validateCommand: validateCommand,
 	}, nil
 }
 
-func (s *Backend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
+func (s *Local) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
 	if req.Path == "" {
 		req.Path = defaultRootPath
 	}
@@ -105,7 +105,7 @@ func (s *Backend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]
 	return files, nil
 }
 
-func (s *Backend) Read(ctx context.Context, req *filesystem.ReadRequest) (string, error) {
+func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (string, error) {
 	path := filepath.Clean(req.FilePath)
 	if !filepath.IsAbs(path) {
 		return "", fmt.Errorf("path must be an absolute path: %s", path)
@@ -160,7 +160,7 @@ func (s *Backend) Read(ctx context.Context, req *filesystem.ReadRequest) (string
 	return result.String(), nil
 }
 
-func (s *Backend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+func (s *Local) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
 	path := filepath.Clean(req.Path)
 
 	var matches []filesystem.GrepMatch
@@ -232,7 +232,7 @@ func (s *Backend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]f
 	return matches, nil
 }
 
-func (s *Backend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
+func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
 	if req.Path == "" {
 		req.Path = defaultRootPath
 	}
@@ -337,7 +337,7 @@ func globToRegex(pattern string) (*regexp.Regexp, error) {
 	return regexp.Compile(pattern)
 }
 
-func (s *Backend) Write(ctx context.Context, req *filesystem.WriteRequest) error {
+func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 	if !filepath.IsAbs(req.FilePath) {
 		return fmt.Errorf("path must be an absolute path: %s", req.FilePath)
 	}
@@ -364,7 +364,7 @@ func (s *Backend) Write(ctx context.Context, req *filesystem.WriteRequest) error
 	return nil
 }
 
-func (s *Backend) Edit(ctx context.Context, req *filesystem.EditRequest) error {
+func (s *Local) Edit(ctx context.Context, req *filesystem.EditRequest) error {
 	path := filepath.Clean(req.FilePath)
 	if !filepath.IsAbs(path) {
 		return fmt.Errorf("path must be an absolute path: %s", path)
@@ -403,7 +403,7 @@ func (s *Backend) Edit(ctx context.Context, req *filesystem.EditRequest) error {
 	return os.WriteFile(path, []byte(newText), 0644)
 }
 
-func (s *Backend) ExecuteStreaming(ctx context.Context, input *filesystem.ExecuteRequest) (result *schema.StreamReader[*filesystem.ExecuteResponse], err error) {
+func (s *Local) ExecuteStreaming(ctx context.Context, input *filesystem.ExecuteRequest) (result *schema.StreamReader[*filesystem.ExecuteResponse], err error) {
 	if input.Command == "" {
 		return nil, fmt.Errorf("command is required")
 	}

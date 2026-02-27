@@ -115,7 +115,7 @@ func TestNewArkSandbox(t *testing.T) {
 var mockAPIHandler http.HandlerFunc
 
 // setupTest creates a mock server and an ArkSandbox client configured to use it.
-func setupTest(t *testing.T) (*SandboxToolBackend, *httptest.Server) {
+func setupTest(t *testing.T) (*SandboxTool, *httptest.Server) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mockAPIHandler != nil {
 			mockAPIHandler(w, r)
