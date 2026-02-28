@@ -22,10 +22,10 @@ github.com/bytedance/sonic/loader v0.3.0/go.mod h1:N8A3vUdtUebEY2/VQC0MyhYeKUFos
 github.com/certifi/gocertifi v0.0.0-20190105021004-abcd57078448/go.mod h1:GJKEexRPVJrBSOjoqN5VNOIKJ5Q3RViH6eu3puDRwx4=
 github.com/cloudwego/base64x v0.1.6 h1:t11wG9AECkCDk5fMSoxmufanudBtJ+/HemLstXDLI2M=
 github.com/cloudwego/base64x v0.1.6/go.mod h1:OFcloc187FXDaYHvrNIjxSe8ncn0OOM8gEHfghB2IPU=
-github.com/cloudwego/eino v0.7.21 h1:kkq7hlHYzwkGOAMbY4ffym4oBT7e9g5hXpJTsZbhsik=
-github.com/cloudwego/eino v0.7.21/go.mod h1:nA8Vacmuqv3pqKBQbTWENBLQ8MmGmPt/WqiyLeB8ohQ=
-github.com/coze-dev/cozeloop-go v0.1.17 h1:oUd5B7O7BuaFgp8V9JtLui9YfIsDw0jFit8BsII4/qM=
-github.com/coze-dev/cozeloop-go v0.1.17/go.mod h1:lM7cmUEZlnAlQYdwfk4Li0SC3RdZ++QMHX75nvKceSc=
+github.com/cloudwego/eino v0.8.0-alpha.14 h1:7rwp6aIWyUK6KOyXeKqW7/th6spL7jimlMR2nRdPYz4=
+github.com/cloudwego/eino v0.8.0-alpha.14/go.mod h1:R/UcCjduEJKpdX4rSYPmBd61NP/NN8gdqQxh7skdv4c=
+github.com/coze-dev/cozeloop-go v0.1.20 h1:RO/o5cm8Nu71hG+7yoveA53oY9Q24u7NJBYZ9KBEDIo=
+github.com/coze-dev/cozeloop-go v0.1.20/go.mod h1:lM7cmUEZlnAlQYdwfk4Li0SC3RdZ++QMHX75nvKceSc=
 github.com/coze-dev/cozeloop-go/spec v0.1.8 h1:hFVBj/C1B6mUNGH/q52kO2n1pXuTomG578RbKlfYLGk=
 github.com/coze-dev/cozeloop-go/spec v0.1.8/go.mod h1:/f3BrWehffwXIpd4b5rYIqktLd/v5dlLBw0h9F/LQIU=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
