@@ -27,7 +27,37 @@ const (
 type ServerToolName string
 
 const (
-	ServerToolNameWebSearch ServerToolName = "web_search"
+	ServerToolNameWebSearch       ServerToolName = "web_search"
+	ServerToolNameImageProcess    ServerToolName = "image_process"
+	ServerToolNameDoubaoApp       ServerToolName = "doubao_app"
+	ServerToolNameKnowledgeSearch ServerToolName = "knowledge_search"
+)
+
+type ImageProcessAction string
+
+const (
+	ImageProcessActionPoint     ImageProcessAction = "point"
+	ImageProcessActionGrounding ImageProcessAction = "grounding"
+	ImageProcessActionRotate    ImageProcessAction = "rotate"
+	ImageProcessActionZoom      ImageProcessAction = "zoom"
+)
+
+type DoubaoAppFeature string
+
+const (
+	DoubaoAppFeatureChat            DoubaoAppFeature = "chat"
+	DoubaoAppFeatureDeepChat        DoubaoAppFeature = "deep_chat"
+	DoubaoAppFeatureAISearch        DoubaoAppFeature = "ai_search"
+	DoubaoAppFeatureReasoningSearch DoubaoAppFeature = "reasoning_search"
+)
+
+type DoubaoAppBlockType string
+
+const (
+	DoubaoAppBlockTypeOutputText      DoubaoAppBlockType = "output_text"
+	DoubaoAppBlockTypeReasoningText   DoubaoAppBlockType = "reasoning_text"
+	DoubaoAppBlockTypeSearch          DoubaoAppBlockType = "search"
+	DoubaoAppBlockTypeReasoningSearch DoubaoAppBlockType = "reasoning_search"
 )
 
 type TextAnnotationType string
