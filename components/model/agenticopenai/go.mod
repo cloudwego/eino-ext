@@ -4,10 +4,11 @@ go 1.22
 
 require (
 	github.com/bytedance/mockey v1.4.1
-	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.9.0-alpha.2
+	github.com/bytedance/sonic v1.15.0
+	github.com/cloudwego/eino v0.9.0-alpha.4
 	github.com/eino-contrib/jsonschema v1.0.3
-	github.com/openai/openai-go/v3 v3.15.0
+	github.com/mitchellh/mapstructure v1.5.0
+	github.com/openai/openai-go/v3 v3.22.1
 	github.com/stretchr/testify v1.10.0
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	golang.org/x/sync v0.10.0
@@ -19,7 +20,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
-	github.com/bytedance/sonic/loader v0.3.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

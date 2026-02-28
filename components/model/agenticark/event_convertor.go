@@ -52,8 +52,13 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 			*responses.Event_ReasoningTextDone,
 			*responses.Event_FunctionCallArgumentsDone,
 			*responses.Event_ResponseMcpCallArgumentsDone,
-			*responses.Event_ResponseMcpApprovalRequest:
-
+			*responses.Event_ResponseMcpApprovalRequest,
+			*responses.Event_ResponseDoubaoAppCallBlockAdded,
+			*responses.Event_ResponseDoubaoAppCallBlockDone,
+			*responses.Event_ResponseDoubaoAppCallOutputTextDone,
+			*responses.Event_ResponseDoubaoAppCallReasoningTextDone,
+			*responses.Event_ResponseDoubaoAppCallSearchInProgress,
+			*responses.Event_ResponseDoubaoAppCallReasoningSearchInProgress:
 			// Do nothing.
 			continue
 
@@ -83,14 +88,22 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 
 		case *responses.Event_Item:
 			blocks, err := receiver.itemAddedEventToContentBlock(ev.Item)
-			for _, block := range blocks {
-				sender.sendBlock(block, err)
+			if err != nil {
+				sender.sendBlock(nil, err)
+			} else {
+				for _, block := range blocks {
+					sender.sendBlock(block, nil)
+				}
 			}
 
 		case *responses.Event_ItemDone:
 			blocks, err := receiver.itemDoneEventToContentBlocks(ev.ItemDone)
-			for _, block := range blocks {
-				sender.sendBlock(block, err)
+			if err != nil {
+				sender.sendBlock(nil, err)
+			} else {
+				for _, block := range blocks {
+					sender.sendBlock(block, nil)
+				}
 			}
 
 		case *responses.Event_ContentPart:
@@ -161,8 +174,88 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 			block := receiver.webSearchPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_completed)
 			sender.sendBlock(block, nil)
 
+		case *responses.Event_ResponseImageProcessCallInProgress:
+			phase := ev.ResponseImageProcessCallInProgress
+			block := receiver.imageProcessPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_in_progress)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseImageProcessCallProcessing:
+			phase := ev.ResponseImageProcessCallProcessing
+			block := receiver.imageProcessPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_searching) // Use searching as processing state
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseImageProcessCallCompleted:
+			phase := ev.ResponseImageProcessCallCompleted
+			block := receiver.imageProcessPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_completed)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallInProgress:
+			phase := ev.ResponseDoubaoAppCallInProgress
+			block := receiver.doubaoAppPhaseToContentBlock(phase.ItemId, phase.OutputIndex, phase.Feature, responses.ItemStatus_in_progress)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallFailed:
+			phase := ev.ResponseDoubaoAppCallFailed
+			block := receiver.doubaoAppPhaseToContentBlock(phase.ItemId, phase.OutputIndex, "", responses.ItemStatus_failed)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallCompleted:
+			phase := ev.ResponseDoubaoAppCallCompleted
+			block := receiver.doubaoAppPhaseToContentBlock(phase.ItemId, phase.OutputIndex, phase.Feature, responses.ItemStatus_completed)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallOutputTextDelta:
+			phase := ev.ResponseDoubaoAppCallOutputTextDelta
+			block := receiver.doubaoAppOutputTextDeltaToContentBlock(phase)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallReasoningTextDelta:
+			phase := ev.ResponseDoubaoAppCallReasoningTextDelta
+			block := receiver.doubaoAppReasoningTextDeltaToContentBlock(phase)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallSearchSearching:
+			phase := ev.ResponseDoubaoAppCallSearchSearching
+			block := receiver.doubaoAppSearchSearchingToContentBlock(phase)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallSearchCompleted:
+			phase := ev.ResponseDoubaoAppCallSearchCompleted
+			block := receiver.doubaoAppSearchCompletedToContentBlock(phase)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallReasoningSearchSearching:
+			phase := ev.ResponseDoubaoAppCallReasoningSearchSearching
+			block := receiver.doubaoAppReasoningSearchSearchingToContentBlock(phase)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseDoubaoAppCallReasoningSearchCompleted:
+			phase := ev.ResponseDoubaoAppCallReasoningSearchCompleted
+			block := receiver.doubaoAppReasoningSearchCompletedToContentBlock(phase)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseKnowledgeSearchCallInProgress:
+			phase := ev.ResponseKnowledgeSearchCallInProgress
+			block := receiver.knowledgeSearchPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_in_progress)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseKnowledgeSearchCallSearching:
+			phase := ev.ResponseKnowledgeSearchCallSearching
+			block := receiver.knowledgeSearchPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_searching)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseKnowledgeSearchCallCompleted:
+			phase := ev.ResponseKnowledgeSearchCallCompleted
+			block := receiver.knowledgeSearchPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_completed)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ResponseKnowledgeSearchCallFailed:
+			phase := ev.ResponseKnowledgeSearchCallFailed
+			block := receiver.knowledgeSearchPhaseToContentBlock(phase.ItemId, phase.OutputIndex, responses.ItemStatus_failed)
+			sender.sendBlock(block, nil)
+
 		default:
-			sw.Send(nil, fmt.Errorf("invalid event type: %T", ev))
+			sw.Send(nil, fmt.Errorf("unknown event type: %T", ev))
 		}
 	}
 }
@@ -198,6 +291,9 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 		Role:         schema.AgenticRoleTypeAssistant,
 		ResponseMeta: meta,
 	}
+
+	msg = setSelfGenerated(msg)
+
 	if block != nil {
 		msg.ContentBlocks = []*schema.ContentBlock{block}
 	}
@@ -325,12 +421,15 @@ func (r *streamReceiver) itemAddedEventToContentBlock(ev *responses.ItemEvent) (
 
 	case *responses.OutputItem_OutputMessage,
 		*responses.OutputItem_FunctionWebSearch,
+		*responses.OutputItem_FunctionImageProcess,
+		*responses.OutputItem_FunctionDoubaoAppCall,
+		*responses.OutputItem_FunctionKnowledgeSearch,
 		*responses.OutputItem_FunctionMcpApprovalRequest:
 
 		// Do nothing.
 
 	default:
-		return nil, fmt.Errorf("invalid item type %T with 'output_item.added' event", item)
+		return nil, fmt.Errorf("unknown item type %T with 'output_item.added' event", item)
 	}
 
 	return blocks, nil
@@ -364,6 +463,10 @@ func (r *streamReceiver) itemAddedEventReasoningToContentBlock(outputIdx int64, 
 
 func (r *streamReceiver) itemDoneEventToContentBlocks(ev *responses.ItemDoneEvent) (blocks []*schema.ContentBlock, err error) {
 	switch item := ev.Item.Union.(type) {
+	case *responses.OutputItem_FunctionDoubaoAppCall:
+		// Do nothing.
+		return nil, nil
+
 	case *responses.OutputItem_OutputMessage:
 		blocks, err = r.itemDoneEventOutputMessageToContentBlock(item)
 		if err != nil {
@@ -394,6 +497,22 @@ func (r *streamReceiver) itemDoneEventToContentBlocks(ev *responses.ItemDoneEven
 
 		blocks = append(blocks, block)
 
+	case *responses.OutputItem_FunctionImageProcess:
+		bs, err := r.itemDoneEventFunctionImageProcessToContentBlocks(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+
+		blocks = append(blocks, bs...)
+
+	case *responses.OutputItem_FunctionKnowledgeSearch:
+		bs, err := r.itemDoneEventFunctionKnowledgeSearchToContentBlocks(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+
+		blocks = append(blocks, bs...)
+
 	case *responses.OutputItem_FunctionMcpCall:
 		blocks, err = r.itemDoneEventFunctionMCPCallToContentBlocks(ev.OutputIndex, item)
 		if err != nil {
@@ -417,7 +536,7 @@ func (r *streamReceiver) itemDoneEventToContentBlocks(ev *responses.ItemDoneEven
 		blocks = append(blocks, block)
 
 	default:
-		return nil, fmt.Errorf("invalid item type %T with 'output_item.done' event", item)
+		return nil, fmt.Errorf("unknown item type %T with 'output_item.done' event", item)
 	}
 
 	return blocks, nil
@@ -500,6 +619,50 @@ func (r *streamReceiver) itemDoneEventFunctionWebSearchToContentBlock(outputIdx 
 	}
 
 	return block, nil
+}
+
+func (r *streamReceiver) itemDoneEventFunctionImageProcessToContentBlocks(outputIdx int64, item *responses.OutputItem_FunctionImageProcess) (blocks []*schema.ContentBlock, err error) {
+	blocks, err = imageProcessToContentBlocks(item)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, block := range blocks {
+		switch block.Type {
+		case schema.ContentBlockTypeServerToolCall:
+			block.StreamingMeta = &schema.StreamingMeta{
+				Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+			}
+		case schema.ContentBlockTypeServerToolResult:
+			block.StreamingMeta = &schema.StreamingMeta{
+				Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+			}
+		default:
+			return nil, fmt.Errorf("expected server tool call or result block, but got %q", block.Type)
+		}
+	}
+
+	return blocks, nil
+}
+
+func (r *streamReceiver) itemDoneEventFunctionKnowledgeSearchToContentBlocks(outputIdx int64, item *responses.OutputItem_FunctionKnowledgeSearch) (blocks []*schema.ContentBlock, err error) {
+	blocks, err = knowledgeSearchCallToContentBlocks(item)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, block := range blocks {
+		switch block.Type {
+		case schema.ContentBlockTypeServerToolCall:
+			block.StreamingMeta = &schema.StreamingMeta{
+				Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+			}
+		default:
+			return nil, fmt.Errorf("expected server tool call block, but got %q", block.Type)
+		}
+	}
+
+	return blocks, nil
 }
 
 func (r *streamReceiver) itemDoneEventFunctionMCPCallToContentBlocks(outputIdx int64, item *responses.OutputItem_FunctionMcpCall) (blocks []*schema.ContentBlock, err error) {
@@ -590,7 +753,7 @@ func (r *streamReceiver) eventContentPartToContentBlock(itemID string, content *
 	case *responses.OutputContentItem_Text:
 		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
 	default:
-		return nil, fmt.Errorf("invalid content part type: %T", part)
+		return nil, fmt.Errorf("unknown content part type: %T", part)
 	}
 
 	setItemStatus(block, status.String())
@@ -766,6 +929,229 @@ func (r *streamReceiver) webSearchPhaseToContentBlock(itemID string, outputIdx i
 	return block
 }
 
+func (r *streamReceiver) imageProcessPhaseToContentBlock(itemID string, outputIdx int64, status responses.ItemStatus_Enum) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	block := schema.NewContentBlockChunk(&schema.ServerToolCall{
+		Name: string(ServerToolNameImageProcess),
+	}, meta)
+
+	setItemID(block, itemID)
+	setItemStatus(block, status.String())
+
+	return block
+}
+
+func (r *streamReceiver) doubaoAppPhaseToContentBlock(itemID string, outputIdx int64, feature string, status responses.ItemStatus_Enum) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	block := schema.NewContentBlockChunk(&schema.ServerToolCall{
+		Name: string(ServerToolNameDoubaoApp),
+		Arguments: &ServerToolCallArguments{
+			DoubaoApp: &DoubaoAppArguments{
+				Feature: DoubaoAppFeature(feature),
+			},
+		},
+	}, meta)
+
+	setItemID(block, itemID)
+	setItemStatus(block, status.String())
+
+	return block
+}
+
+func (r *streamReceiver) doubaoAppOutputTextDeltaToContentBlock(ev *responses.ResponseDoubaoAppCallOutputTextDeltaEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	result := &DoubaoAppResult{
+		Blocks: []*DoubaoAppBlock{{
+			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
+			Type:          DoubaoAppBlockTypeOutputText,
+			OutputText: &DoubaoAppOutputText{
+				Text: ev.GetDelta(),
+			},
+		}},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{DoubaoApp: result},
+	}, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
+func (r *streamReceiver) knowledgeSearchPhaseToContentBlock(itemID string, outputIdx int64, status responses.ItemStatus_Enum) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	block := schema.NewContentBlockChunk(&schema.ServerToolCall{
+		Name: string(ServerToolNameKnowledgeSearch),
+	}, meta)
+
+	setItemID(block, itemID)
+	setItemStatus(block, status.String())
+
+	return block
+}
+
+func (r *streamReceiver) doubaoAppReasoningTextDeltaToContentBlock(ev *responses.ResponseDoubaoAppCallReasoningTextDeltaEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	result := &DoubaoAppResult{
+		Blocks: []*DoubaoAppBlock{{
+			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
+			Type:          DoubaoAppBlockTypeReasoningText,
+			ReasoningText: &DoubaoAppReasoningText{
+				ReasoningText: ev.GetDelta(),
+			},
+		}},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{DoubaoApp: result},
+	}, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
+func (r *streamReceiver) doubaoAppSearchSearchingToContentBlock(ev *responses.ResponseDoubaoAppCallSearchSearchingEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	result := &DoubaoAppResult{
+		Blocks: []*DoubaoAppBlock{{
+			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
+			Type:          DoubaoAppBlockTypeSearch,
+			Search: &DoubaoAppSearch{
+				SearchingState: ev.GetSearchingState(),
+			},
+		}},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{DoubaoApp: result},
+	}, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
+func (r *streamReceiver) doubaoAppSearchCompletedToContentBlock(ev *responses.ResponseDoubaoAppCallSearchCompletedEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	var results []*DoubaoAppSearchResult
+	for _, res := range ev.Results {
+		if tc := res.GetTextCard(); tc != nil {
+			results = append(results, &DoubaoAppSearchResult{
+				Title:    tc.GetTitle(),
+				URL:      tc.GetUrl(),
+				SiteName: tc.GetSitename(),
+			})
+		}
+	}
+
+	result := &DoubaoAppResult{
+		Blocks: []*DoubaoAppBlock{{
+			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
+			Type:          DoubaoAppBlockTypeSearch,
+			Search: &DoubaoAppSearch{
+				Summary: ev.GetSummary(),
+				Queries: ev.Queries,
+				Results: results,
+			},
+		}},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{DoubaoApp: result},
+	}, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
+func (r *streamReceiver) doubaoAppReasoningSearchSearchingToContentBlock(ev *responses.ResponseDoubaoAppCallReasoningSearchSearchingEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	result := &DoubaoAppResult{
+		Blocks: []*DoubaoAppBlock{{
+			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
+			Type:          DoubaoAppBlockTypeReasoningSearch,
+			ReasoningSearch: &DoubaoAppReasoningSearch{
+				SearchingState: ev.GetSearchingState(),
+			},
+		}},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{DoubaoApp: result},
+	}, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
+func (r *streamReceiver) doubaoAppReasoningSearchCompletedToContentBlock(ev *responses.ResponseDoubaoAppCallReasoningSearchCompletedEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	var results []*DoubaoAppSearchResult
+	for _, res := range ev.Results {
+		if tc := res.GetTextCard(); tc != nil {
+			results = append(results, &DoubaoAppSearchResult{
+				Title:    tc.GetTitle(),
+				URL:      tc.GetUrl(),
+				SiteName: tc.GetSitename(),
+			})
+		}
+	}
+
+	result := &DoubaoAppResult{
+		Blocks: []*DoubaoAppBlock{{
+			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
+			Type:          DoubaoAppBlockTypeReasoningSearch,
+			ReasoningSearch: &DoubaoAppReasoningSearch{
+				Summary: ev.GetSummary(),
+				Queries: ev.Queries,
+				Results: results,
+			},
+		}},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{DoubaoApp: result},
+	}, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
 func makeAssistantGenTextIndexKey(outputIndex, contentIndex int64) string {
 	return fmt.Sprintf("assistant_gen_text:%d:%d", outputIndex, contentIndex)
 }
@@ -780,6 +1166,10 @@ func makeFunctionToolCallIndexKey(outputIndex int64) string {
 
 func makeServerToolCallIndexKey(outputIndex int64) string {
 	return fmt.Sprintf("server_tool_call:%d", outputIndex)
+}
+
+func makeServerToolResultIndexKey(outputIndex int64) string {
+	return fmt.Sprintf("server_tool_result:%d", outputIndex)
 }
 
 func makeMCPListToolsResultIndexKey(outputIndex int64) string {

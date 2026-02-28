@@ -44,3 +44,4 @@ output/*
 # Data files
 *.jsonl
 *.csv
+.DS_Store

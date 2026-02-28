@@ -184,8 +184,13 @@ type Config struct {
     // 可选。
     Cache *CacheConfig
 
-    // CustomHeader 请求模型时传递的 http 标头
-    CustomHeader map[string]string 
+    // ContextManagement 指定上下文管理策略，帮助模型有效利用上下文窗口。
+    // 支持清除思维链内容和工具调用内容。
+    // 可选。
+    ContextManagement *contextmanagement.ContextManagement
+
+    // CustomHeaders 请求模型时传递的 http 标头
+    CustomHeaders map[string]string 
 }
 ```
 

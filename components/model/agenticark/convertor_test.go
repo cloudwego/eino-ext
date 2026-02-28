@@ -567,6 +567,260 @@ func TestWebSearchToContentBlock(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestImageProcessToContentBlocks(t *testing.T) {
+	item := &responses.OutputItem_FunctionImageProcess{
+		FunctionImageProcess: &responses.ItemFunctionImageProcess{
+			Id:     "ip-id",
+			Status: responses.ItemStatus_completed,
+			Arguments: &responses.ResponseImageProcessArgs{
+				Union: &responses.ResponseImageProcessArgs_PointArgs{
+					PointArgs: &responses.ResponseImageProcessPointArgs{
+						ImageIndex: 0,
+						Points:     "[[100,200]]",
+						DrawLine:   true,
+					},
+				},
+			},
+			Action: &responses.ResponseImageProcessAction{
+				Type:           string(ImageProcessActionPoint),
+				ResultImageUrl: ptrOf("http://example.com/result.png"),
+			},
+		},
+	}
+	blocks, err := imageProcessToContentBlocks(item)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(blocks))
+
+	assert.NotNil(t, blocks[0].ServerToolCall)
+	assert.Equal(t, string(ServerToolNameImageProcess), blocks[0].ServerToolCall.Name)
+	args := blocks[0].ServerToolCall.Arguments.(*ServerToolCallArguments)
+	assert.NotNil(t, args.ImageProcess)
+	assert.Equal(t, ImageProcessActionPoint, args.ImageProcess.ActionType)
+	assert.NotNil(t, args.ImageProcess.Point)
+	assert.Equal(t, "[[100,200]]", args.ImageProcess.Point.Points)
+	assert.True(t, args.ImageProcess.Point.DrawLine)
+
+	assert.NotNil(t, blocks[1].ServerToolResult)
+	assert.Equal(t, string(ServerToolNameImageProcess), blocks[1].ServerToolResult.Name)
+	result := blocks[1].ServerToolResult.Result.(*ServerToolResult)
+	assert.NotNil(t, result.ImageProcess)
+	assert.Equal(t, ImageProcessActionPoint, result.ImageProcess.Action.Type)
+	assert.Equal(t, "http://example.com/result.png", result.ImageProcess.Action.ResultImageURL)
+
+	_, err = imageProcessToContentBlocks(&responses.OutputItem_FunctionImageProcess{})
+	assert.Error(t, err)
+}
+
+func TestImageProcessToContentBlocks_AllActionTypes(t *testing.T) {
+	tests := []struct {
+		name       string
+		actionType ImageProcessAction
+		args       *responses.ResponseImageProcessArgs
+	}{
+		{
+			name:       "grounding",
+			actionType: ImageProcessActionGrounding,
+			args: &responses.ResponseImageProcessArgs{
+				Union: &responses.ResponseImageProcessArgs_GroundingArgs{
+					GroundingArgs: &responses.ResponseImageProcessGroundingArgs{
+						ImageIndex: 0,
+						BboxStr:    "[[10,20,30,40]]",
+						Crop:       true,
+					},
+				},
+			},
+		},
+		{
+			name:       "rotate",
+			actionType: ImageProcessActionRotate,
+			args: &responses.ResponseImageProcessArgs{
+				Union: &responses.ResponseImageProcessArgs_RotateArgs{
+					RotateArgs: &responses.ResponseImageProcessRotateArgs{
+						ImageIndex: 0,
+						Degree:     90,
+					},
+				},
+			},
+		},
+		{
+			name:       "zoom",
+			actionType: ImageProcessActionZoom,
+			args: &responses.ResponseImageProcessArgs{
+				Union: &responses.ResponseImageProcessArgs_ZoomArgs{
+					ZoomArgs: &responses.ResponseImageProcessZoomArgs{
+						ImageIndex: 0,
+						BboxStr:    "[[0,0,100,100]]",
+						Scale:      1.5,
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item := &responses.OutputItem_FunctionImageProcess{
+				FunctionImageProcess: &responses.ItemFunctionImageProcess{
+					Id:        "ip-id",
+					Status:    responses.ItemStatus_completed,
+					Arguments: tt.args,
+					Action: &responses.ResponseImageProcessAction{
+						Type:           string(tt.actionType),
+						ResultImageUrl: ptrOf("http://example.com/result.png"),
+					},
+				},
+			}
+			blocks, err := imageProcessToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Equal(t, 2, len(blocks))
+
+			args := blocks[0].ServerToolCall.Arguments.(*ServerToolCallArguments)
+			assert.Equal(t, tt.actionType, args.ImageProcess.ActionType)
+		})
+	}
+}
+
+func TestImageProcessToContentBlocks_WithError(t *testing.T) {
+	item := &responses.OutputItem_FunctionImageProcess{
+		FunctionImageProcess: &responses.ItemFunctionImageProcess{
+			Id:     "ip-id",
+			Status: responses.ItemStatus_failed,
+			Arguments: &responses.ResponseImageProcessArgs{
+				Union: &responses.ResponseImageProcessArgs_PointArgs{
+					PointArgs: &responses.ResponseImageProcessPointArgs{
+						ImageIndex: 0,
+					},
+				},
+			},
+			Action: &responses.ResponseImageProcessAction{
+				Type: string(ImageProcessActionPoint),
+			},
+			Error: &responses.ResponseImageProcessError{
+				Message: "processing failed",
+			},
+		},
+	}
+	blocks, err := imageProcessToContentBlocks(item)
+	assert.NoError(t, err)
+	assert.Equal(t, 2, len(blocks))
+
+	result := blocks[1].ServerToolResult.Result.(*ServerToolResult)
+	assert.NotNil(t, result.ImageProcess.Error)
+	assert.Equal(t, "processing failed", result.ImageProcess.Error.Message)
+}
+
+func TestImageProcessArgumentsToInputItem(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   *ImageProcessArguments
+		errMsg string
+	}{
+		{
+			name: "point",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionPoint,
+				Point: &ImageProcessPoint{
+					ImageIndex: 0,
+					Points:     "[[100,200]]",
+					DrawLine:   true,
+				},
+			},
+		},
+		{
+			name: "grounding",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionGrounding,
+				Grounding: &ImageProcessGrounding{
+					ImageIndex: 0,
+					BboxStr:    "[[10,20,30,40]]",
+					Crop:       true,
+				},
+			},
+		},
+		{
+			name: "rotate",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionRotate,
+				Rotate: &ImageProcessRotate{
+					ImageIndex: 0,
+					Degree:     90,
+				},
+			},
+		},
+		{
+			name: "zoom",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionZoom,
+				Zoom: &ImageProcessZoom{
+					ImageIndex: 0,
+					BboxStr:    "[[0,0,100,100]]",
+					Scale:      1.5,
+				},
+			},
+		},
+		{
+			name:   "nil_args",
+			args:   nil,
+			errMsg: "image process arguments is nil",
+		},
+		{
+			name: "nil_point",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionPoint,
+				Point:      nil,
+			},
+			errMsg: "point arguments is nil",
+		},
+		{
+			name: "nil_grounding",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionGrounding,
+				Grounding:  nil,
+			},
+			errMsg: "grounding arguments is nil",
+		},
+		{
+			name: "nil_rotate",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionRotate,
+				Rotate:     nil,
+			},
+			errMsg: "rotate arguments is nil",
+		},
+		{
+			name: "nil_zoom",
+			args: &ImageProcessArguments{
+				ActionType: ImageProcessActionZoom,
+				Zoom:       nil,
+			},
+			errMsg: "zoom arguments is nil",
+		},
+		{
+			name: "unknown_action",
+			args: &ImageProcessArguments{
+				ActionType: "unknown",
+			},
+			errMsg: "unknown image process action type",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			item, err := imageProcessArgumentsToInputItem("id", "completed", tt.args)
+			if tt.errMsg != "" {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errMsg)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, item)
+				ip := item.GetImageProcess()
+				assert.NotNil(t, ip)
+				assert.Equal(t, "id", ip.Id)
+			}
+		})
+	}
+}
+
 func TestReasoningToContentBlocks(t *testing.T) {
 	id := "id"
 	item := &responses.OutputItem_Reasoning{
@@ -715,4 +969,439 @@ func TestEnsureDataURL(t *testing.T) {
 	assert.Equal(t, "data:image/png;base64,abcd", u)
 	_, err = ensureDataURL("abcd", "")
 	assert.Error(t, err)
+}
+
+func TestDoubaoAppCallToContentBlocks(t *testing.T) {
+	id := "id"
+	feature := "ai_search"
+	item := &responses.OutputItem_FunctionDoubaoAppCall{
+		FunctionDoubaoAppCall: &responses.ItemDoubaoAppCall{
+			Id:      &id,
+			Status:  responses.ItemStatus_completed,
+			Feature: &feature,
+			Blocks: []*responses.DoubaoAppCallBlock{
+				{
+					Union: &responses.DoubaoAppCallBlock_OutputText{
+						OutputText: &responses.DoubaoAppCallBlockOutputText{
+							Id:   ptrOf("text_id"),
+							Text: "output text",
+						},
+					},
+				},
+				{
+					Union: &responses.DoubaoAppCallBlock_ReasoningText{
+						ReasoningText: &responses.DoubaoAppCallBlockReasoningText{
+							Id:            ptrOf("reasoning_id"),
+							ReasoningText: "reasoning text",
+						},
+					},
+				},
+				{
+					Union: &responses.DoubaoAppCallBlock_Search{
+						Search: &responses.DoubaoAppCallBlockSearch{
+							Id:      ptrOf("search_id"),
+							Summary: ptrOf("search summary"),
+							Queries: []string{"query1", "query2"},
+							Results: []*responses.DoubaoAppSearchResult{
+								{
+									TextCard: &responses.DoubaoAppSearchTextItem{
+										Title:    "title",
+										Url:      "url",
+										Sitename: "site",
+									},
+								},
+							},
+						},
+					},
+				},
+				{
+					Union: &responses.DoubaoAppCallBlock_ReasoningSearch{
+						ReasoningSearch: &responses.DoubaoAppCallBlockReasoningSearch{
+							Id:      ptrOf("reasoning_search_id"),
+							Summary: ptrOf("reasoning search summary"),
+							Queries: []string{"rq1"},
+						},
+					},
+				},
+				nil,
+			},
+		},
+	}
+
+	blocks, err := doubaoAppCallToContentBlocks(item)
+	assert.NoError(t, err)
+	assert.Len(t, blocks, 2)
+
+	assert.NotNil(t, blocks[0].ServerToolCall)
+	assert.Equal(t, string(ServerToolNameDoubaoApp), blocks[0].ServerToolCall.Name)
+	args := blocks[0].ServerToolCall.Arguments.(*ServerToolCallArguments)
+	assert.NotNil(t, args.DoubaoApp)
+	assert.Equal(t, DoubaoAppFeature("ai_search"), args.DoubaoApp.Feature)
+
+	assert.NotNil(t, blocks[1].ServerToolResult)
+	result := blocks[1].ServerToolResult.Result.(*ServerToolResult)
+	assert.NotNil(t, result.DoubaoApp)
+	assert.Len(t, result.DoubaoApp.Blocks, 4)
+
+	assert.Equal(t, DoubaoAppBlockTypeOutputText, result.DoubaoApp.Blocks[0].Type)
+	assert.Equal(t, "output text", result.DoubaoApp.Blocks[0].OutputText.Text)
+
+	assert.Equal(t, DoubaoAppBlockTypeReasoningText, result.DoubaoApp.Blocks[1].Type)
+	assert.Equal(t, "reasoning text", result.DoubaoApp.Blocks[1].ReasoningText.ReasoningText)
+
+	assert.Equal(t, DoubaoAppBlockTypeSearch, result.DoubaoApp.Blocks[2].Type)
+	assert.Equal(t, "search summary", result.DoubaoApp.Blocks[2].Search.Summary)
+	assert.Len(t, result.DoubaoApp.Blocks[2].Search.Results, 1)
+	assert.Equal(t, "title", result.DoubaoApp.Blocks[2].Search.Results[0].Title)
+
+	assert.Equal(t, DoubaoAppBlockTypeReasoningSearch, result.DoubaoApp.Blocks[3].Type)
+	assert.Equal(t, "reasoning search summary", result.DoubaoApp.Blocks[3].ReasoningSearch.Summary)
+
+	_, err = doubaoAppCallToContentBlocks(&responses.OutputItem_FunctionDoubaoAppCall{})
+	assert.Error(t, err)
+}
+
+func TestKnowledgeSearchCallToContentBlocks(t *testing.T) {
+	id := "id"
+	item := &responses.OutputItem_FunctionKnowledgeSearch{
+		FunctionKnowledgeSearch: &responses.ItemFunctionKnowledgeSearch{
+			Id:                  &id,
+			Status:              responses.ItemStatus_completed,
+			KnowledgeResourceId: "resource_id",
+			Queries:             []string{"q1", "q2"},
+		},
+	}
+
+	blocks, err := knowledgeSearchCallToContentBlocks(item)
+	assert.NoError(t, err)
+	assert.Len(t, blocks, 1)
+
+	assert.NotNil(t, blocks[0].ServerToolCall)
+	assert.Equal(t, string(ServerToolNameKnowledgeSearch), blocks[0].ServerToolCall.Name)
+	args := blocks[0].ServerToolCall.Arguments.(*ServerToolCallArguments)
+	assert.NotNil(t, args.KnowledgeSearch)
+	assert.Equal(t, "resource_id", args.KnowledgeSearch.KnowledgeResourceID)
+	assert.Equal(t, []string{"q1", "q2"}, args.KnowledgeSearch.Queries)
+
+	_, err = knowledgeSearchCallToContentBlocks(&responses.OutputItem_FunctionKnowledgeSearch{})
+	assert.Error(t, err)
+}
+
+func TestConvertDoubaoAppSearchResults(t *testing.T) {
+	results := []*responses.DoubaoAppSearchResult{
+		{
+			TextCard: &responses.DoubaoAppSearchTextItem{
+				Title:    "title1",
+				Url:      "url1",
+				Sitename: "site1",
+			},
+		},
+		nil,
+		{
+			TextCard: nil,
+		},
+		{
+			TextCard: &responses.DoubaoAppSearchTextItem{
+				Title: "title2",
+				Url:   "url2",
+			},
+		},
+	}
+
+	ret := convertDoubaoAppSearchResults(results)
+	assert.Len(t, ret, 2)
+	assert.Equal(t, "title1", ret[0].Title)
+	assert.Equal(t, "url1", ret[0].URL)
+	assert.Equal(t, "site1", ret[0].SiteName)
+	assert.Equal(t, "title2", ret[1].Title)
+
+	assert.Nil(t, convertDoubaoAppSearchResults(nil))
+	assert.Nil(t, convertDoubaoAppSearchResults([]*responses.DoubaoAppSearchResult{}))
+}
+
+func TestServerToolResultToInputItem_ImageProcess(t *testing.T) {
+	block := schema.NewContentBlock(&schema.ServerToolResult{
+		Name: string(ServerToolNameImageProcess),
+		Result: &ServerToolResult{
+			ImageProcess: &ImageProcessResult{
+				Action: &ImageProcessResultAction{
+					Type:           ImageProcessActionPoint,
+					ResultImageURL: "http://example.com/result.png",
+				},
+			},
+		},
+	})
+	setItemID(block, "ip-id")
+	setItemStatus(block, responses.ItemStatus_completed.String())
+
+	item, err := serverToolResultToInputItem(block)
+	assert.NoError(t, err)
+	ip := item.GetImageProcess()
+	assert.NotNil(t, ip)
+	assert.Equal(t, "ip-id", ip.Id)
+	assert.NotNil(t, ip.Action)
+	assert.Equal(t, string(ImageProcessActionPoint), ip.Action.Type)
+	assert.Equal(t, "http://example.com/result.png", ip.Action.GetResultImageUrl())
+}
+
+func TestServerToolResultToInputItem_ImageProcess_WithError(t *testing.T) {
+	block := schema.NewContentBlock(&schema.ServerToolResult{
+		Name: string(ServerToolNameImageProcess),
+		Result: &ServerToolResult{
+			ImageProcess: &ImageProcessResult{
+				Error: &ImageProcessResultError{
+					Message: "processing failed",
+				},
+			},
+		},
+	})
+	setItemID(block, "ip-id")
+	setItemStatus(block, responses.ItemStatus_failed.String())
+
+	item, err := serverToolResultToInputItem(block)
+	assert.NoError(t, err)
+	ip := item.GetImageProcess()
+	assert.NotNil(t, ip)
+	assert.NotNil(t, ip.Error)
+	assert.Equal(t, "processing failed", ip.Error.Message)
+}
+
+func TestServerToolResultToInputItem_DoubaoApp(t *testing.T) {
+	block := schema.NewContentBlock(&schema.ServerToolResult{
+		Name: string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{
+			DoubaoApp: &DoubaoAppResult{
+				Blocks: []*DoubaoAppBlock{
+					{
+						Type: DoubaoAppBlockTypeOutputText,
+						OutputText: &DoubaoAppOutputText{
+							ID:   "text_id",
+							Text: "output text",
+						},
+					},
+					{
+						Type: DoubaoAppBlockTypeReasoningText,
+						ReasoningText: &DoubaoAppReasoningText{
+							ID:            "reasoning_id",
+							ReasoningText: "reasoning text",
+						},
+					},
+					{
+						Type: DoubaoAppBlockTypeSearch,
+						Search: &DoubaoAppSearch{
+							ID:      "search_id",
+							Summary: "search summary",
+							Queries: []string{"q1"},
+							Results: []*DoubaoAppSearchResult{
+								{Title: "title", URL: "url", SiteName: "site"},
+							},
+						},
+					},
+					{
+						Type: DoubaoAppBlockTypeReasoningSearch,
+						ReasoningSearch: &DoubaoAppReasoningSearch{
+							ID:      "rs_id",
+							Summary: "rs summary",
+							Queries: []string{"rq1"},
+						},
+					},
+				},
+			},
+		},
+	})
+	setItemID(block, "da-id")
+	setItemStatus(block, responses.ItemStatus_completed.String())
+
+	item, err := serverToolResultToInputItem(block)
+	assert.NoError(t, err)
+	da := item.GetFunctionDoubaoAppCall()
+	assert.NotNil(t, da)
+	assert.Equal(t, "da-id", da.GetId())
+	assert.Len(t, da.Blocks, 4)
+
+	assert.Equal(t, "output text", da.Blocks[0].GetOutputText().Text)
+	assert.Equal(t, "reasoning text", da.Blocks[1].GetReasoningText().ReasoningText)
+	assert.Equal(t, "search summary", da.Blocks[2].GetSearch().GetSummary())
+	assert.Len(t, da.Blocks[2].GetSearch().Results, 1)
+	assert.Equal(t, "title", da.Blocks[2].GetSearch().Results[0].TextCard.Title)
+	assert.Equal(t, "rs summary", da.Blocks[3].GetReasoningSearch().GetSummary())
+}
+
+func TestServerToolResultToInputItem_NilResult(t *testing.T) {
+	block := schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   string(ServerToolNameImageProcess),
+		Result: nil,
+	})
+
+	_, err := serverToolResultToInputItem(block)
+	assert.Error(t, err)
+}
+
+func TestServerToolResultToInputItem_UnknownName(t *testing.T) {
+	block := schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   "unknown",
+		Result: &ServerToolResult{},
+	})
+
+	_, err := serverToolResultToInputItem(block)
+	assert.Error(t, err)
+}
+
+func TestImageProcessResultToInputItem_Nil(t *testing.T) {
+	_, err := imageProcessResultToInputItem("id", "completed", nil)
+	assert.Error(t, err)
+}
+
+func TestDoubaoAppResultToInputItem_Nil(t *testing.T) {
+	_, err := doubaoAppResultToInputItem("id", "completed", nil)
+	assert.Error(t, err)
+}
+
+func TestDoubaoAppArgumentsToInputItem(t *testing.T) {
+	item, err := doubaoAppArgumentsToInputItem("da-id", "completed", &DoubaoAppArguments{
+		Feature: DoubaoAppFeature("ai_search"),
+	})
+	assert.NoError(t, err)
+	da := item.GetFunctionDoubaoAppCall()
+	assert.NotNil(t, da)
+	assert.Equal(t, "da-id", da.GetId())
+	assert.Equal(t, "ai_search", da.GetFeature())
+
+	_, err = doubaoAppArgumentsToInputItem("id", "completed", nil)
+	assert.Error(t, err)
+}
+
+func TestKnowledgeSearchArgumentsToInputItem(t *testing.T) {
+	item, err := knowledgeSearchArgumentsToInputItem("ks-id", "completed", &KnowledgeSearchArguments{
+		KnowledgeResourceID: "resource_id",
+		Queries:             []string{"q1", "q2"},
+	})
+	assert.NoError(t, err)
+	ks := item.GetFunctionKnowledgeSearch()
+	assert.NotNil(t, ks)
+	assert.Equal(t, "ks-id", ks.GetId())
+	assert.Equal(t, "resource_id", ks.KnowledgeResourceId)
+	assert.Equal(t, []string{"q1", "q2"}, ks.Queries)
+
+	_, err = knowledgeSearchArgumentsToInputItem("id", "completed", nil)
+	assert.Error(t, err)
+}
+
+func TestPairImageProcessToolCallItems(t *testing.T) {
+	call := &responses.InputItem{
+		Union: &responses.InputItem_ImageProcess{
+			ImageProcess: &responses.ItemFunctionImageProcess{
+				Type: responses.ItemType_image_process,
+				Id:   "ip-id",
+				Arguments: &responses.ResponseImageProcessArgs{
+					Union: &responses.ResponseImageProcessArgs_PointArgs{
+						PointArgs: &responses.ResponseImageProcessPointArgs{
+							ImageIndex: 0,
+							Points:     "[[100,200]]",
+						},
+					},
+				},
+			},
+		},
+	}
+	result := &responses.InputItem{
+		Union: &responses.InputItem_ImageProcess{
+			ImageProcess: &responses.ItemFunctionImageProcess{
+				Type:   responses.ItemType_image_process,
+				Id:     "ip-id",
+				Status: responses.ItemStatus_completed,
+				Action: &responses.ResponseImageProcessAction{
+					Type:           string(ImageProcessActionPoint),
+					ResultImageUrl: ptrOf("http://example.com/result.png"),
+				},
+			},
+		},
+	}
+	other := &responses.InputItem{
+		Union: &responses.InputItem_FunctionWebSearchCall{
+			FunctionWebSearchCall: &responses.ItemFunctionWebSearch{
+				Id: "ws-id",
+			},
+		},
+	}
+
+	items, err := pairImageProcessToolCallItems([]*responses.InputItem{call, other, result})
+	assert.NoError(t, err)
+	assert.Len(t, items, 2)
+
+	ip := items[0].GetImageProcess()
+	assert.NotNil(t, ip)
+	assert.Equal(t, "ip-id", ip.Id)
+	assert.NotNil(t, ip.Arguments)
+	assert.NotNil(t, ip.Action)
+	assert.Equal(t, responses.ItemStatus_completed, ip.Status)
+
+	assert.NotNil(t, items[1].GetFunctionWebSearchCall())
+
+	// Error case: unpaired
+	_, err = pairImageProcessToolCallItems([]*responses.InputItem{call})
+	assert.Error(t, err)
+}
+
+func TestPairDoubaoAppToolCallItems(t *testing.T) {
+	id := "da-id"
+	feature := "ai_search"
+	call := &responses.InputItem{
+		Union: &responses.InputItem_FunctionDoubaoAppCall{
+			FunctionDoubaoAppCall: &responses.ItemDoubaoAppCall{
+				Type:    responses.ItemType_doubao_app_call,
+				Id:      &id,
+				Feature: &feature,
+			},
+		},
+	}
+	result := &responses.InputItem{
+		Union: &responses.InputItem_FunctionDoubaoAppCall{
+			FunctionDoubaoAppCall: &responses.ItemDoubaoAppCall{
+				Type:   responses.ItemType_doubao_app_call,
+				Id:     &id,
+				Status: responses.ItemStatus_completed,
+				Blocks: []*responses.DoubaoAppCallBlock{
+					{
+						Union: &responses.DoubaoAppCallBlock_OutputText{
+							OutputText: &responses.DoubaoAppCallBlockOutputText{
+								Text: "output",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	items, err := pairDoubaoAppToolCallItems([]*responses.InputItem{call, result})
+	assert.NoError(t, err)
+	assert.Len(t, items, 1)
+
+	da := items[0].GetFunctionDoubaoAppCall()
+	assert.NotNil(t, da)
+	assert.Equal(t, "da-id", da.GetId())
+	assert.Equal(t, "ai_search", da.GetFeature())
+	assert.Len(t, da.Blocks, 1)
+	assert.Equal(t, "output", da.Blocks[0].GetOutputText().Text)
+	assert.Equal(t, responses.ItemStatus_completed, da.Status)
+
+	// Error case: unpaired
+	_, err = pairDoubaoAppToolCallItems([]*responses.InputItem{call})
+	assert.Error(t, err)
+}
+
+func TestConvertDoubaoAppSearchResultsToProto(t *testing.T) {
+	results := []*DoubaoAppSearchResult{
+		{Title: "t1", URL: "u1", SiteName: "s1"},
+		nil,
+		{Title: "t2", URL: "u2", SiteName: "s2"},
+	}
+
+	ret := convertDoubaoAppSearchResultsToProto(results)
+	assert.Len(t, ret, 2)
+	assert.Equal(t, "t1", ret[0].TextCard.Title)
+	assert.Equal(t, "u1", ret[0].TextCard.Url)
+	assert.Equal(t, "s1", ret[0].TextCard.Sitename)
+	assert.Equal(t, "t2", ret[1].TextCard.Title)
 }

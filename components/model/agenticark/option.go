@@ -18,6 +18,7 @@ package agenticark
 
 import (
 	"github.com/cloudwego/eino/components/model"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/contextmanagement"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 )
 
@@ -31,8 +32,9 @@ type arkOptions struct {
 	serverTools []*ServerToolConfig
 	mcpTools    []*responses.ToolMcp
 
-	customHeaders map[string]string
-	cache         *CacheOption
+	contextManagement *contextmanagement.ContextManagement
+	customHeaders     map[string]string
+	cache             *CacheOption
 }
 
 type CacheOption struct {
@@ -99,5 +101,11 @@ func WithCustomHeaders(headers map[string]string) model.Option {
 func WithCache(option *CacheOption) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.cache = option
+	})
+}
+
+func WithContextManagement(cm *contextmanagement.ContextManagement) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.contextManagement = cm
 	})
 }

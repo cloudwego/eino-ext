@@ -515,6 +515,81 @@ func TestWebSearchPhaseToContentBlock(t *testing.T) {
 	assert.Equal(t, string(responses.ResponseStatusCompleted), status)
 }
 
+func TestFileSearchPhaseToContentBlock(t *testing.T) {
+	r := newStreamReceiver()
+
+	block := r.fileSearchPhaseToContentBlock("fsid", 9, string(responses.ResponseStatusInProgress))
+	assert.NotNil(t, block.ServerToolCall)
+	assert.Equal(t, string(ServerToolNameFileSearch), block.ServerToolCall.Name)
+
+	id, ok := getItemID(block)
+	assert.True(t, ok)
+	assert.Equal(t, "fsid", id)
+
+	status, ok := GetItemStatus(block)
+	assert.True(t, ok)
+	assert.Equal(t, string(responses.ResponseStatusInProgress), status)
+}
+
+func TestFileSearchPhaseToContentBlockEmptyStatus(t *testing.T) {
+	r := newStreamReceiver()
+
+	block := r.fileSearchPhaseToContentBlock("fsid", 10, "")
+	assert.NotNil(t, block.ServerToolCall)
+	assert.Equal(t, string(ServerToolNameFileSearch), block.ServerToolCall.Name)
+
+	_, ok := GetItemStatus(block)
+	assert.False(t, ok)
+}
+
+func TestItemDoneEventToContentBlocksFileSearch(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventToContentBlocksFileSearch", t, func() {
+		r := newStreamReceiver()
+		ev := responses.ResponseOutputItemDoneEvent{
+			OutputIndex: 11,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseFileSearchToolCall{
+			ID:      "fsid",
+			Status:  responses.ResponseFileSearchToolCallStatusCompleted,
+			Queries: []string{"test query"},
+			Results: []responses.ResponseFileSearchToolCallResult{
+				{
+					FileID:   "file1",
+					Filename: "doc.txt",
+					Score:    0.85,
+					Text:     "matched content",
+				},
+			},
+		}).Build()
+
+		blocks, err := r.itemDoneEventToContentBlocks(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolCall)
+		assert.NotNil(t, blocks[1].ServerToolResult)
+		assert.Equal(t, string(ServerToolNameFileSearch), blocks[0].ServerToolCall.Name)
+		assert.Equal(t, string(ServerToolNameFileSearch), blocks[1].ServerToolResult.Name)
+	})
+}
+
+func TestItemAddedEventToContentBlockIgnoredFileSearch(t *testing.T) {
+	mockey.PatchConvey("TestItemAddedEventToContentBlockIgnoredFileSearch", t, func() {
+		r := newStreamReceiver()
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
+			responses.ResponseFileSearchToolCall{},
+		).Build()
+
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 1,
+		}
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(blocks))
+	})
+}
+
 func TestMakeIndexKeyFunctions(t *testing.T) {
 	assert.Equal(t, "assistant_gen_text:1:2", makeAssistantGenTextIndexKey(1, 2))
 	assert.Equal(t, "reasoning:3", makeReasoningIndexKey(3))
@@ -576,4 +651,300 @@ func TestCallbackSenderSendError(t *testing.T) {
 	_, err := r.Recv()
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "test error")
+}
+
+func TestCodeInterpreterPhaseToContentBlock(t *testing.T) {
+	r := newStreamReceiver()
+
+	block := r.codeInterpreterPhaseToContentBlock("ciid", 9, string(responses.ResponseStatusInProgress))
+	assert.NotNil(t, block.ServerToolResult)
+	assert.Equal(t, string(ServerToolNameCodeInterpreter), block.ServerToolResult.Name)
+
+	id, ok := getItemID(block)
+	assert.True(t, ok)
+	assert.Equal(t, "ciid", id)
+
+	status, ok := GetItemStatus(block)
+	assert.True(t, ok)
+	assert.Equal(t, string(responses.ResponseStatusInProgress), status)
+}
+
+func TestCodeInterpreterPhaseToContentBlockEmptyStatus(t *testing.T) {
+	r := newStreamReceiver()
+
+	block := r.codeInterpreterPhaseToContentBlock("ciid", 10, "")
+	assert.NotNil(t, block.ServerToolResult)
+	assert.Equal(t, string(ServerToolNameCodeInterpreter), block.ServerToolResult.Name)
+
+	_, ok := GetItemStatus(block)
+	assert.False(t, ok)
+}
+
+func TestCodeInterpreterCodeDeltaEventToContentBlock(t *testing.T) {
+	r := newStreamReceiver()
+	ev := responses.ResponseCodeInterpreterCallCodeDeltaEvent{
+		ItemID:      "ciid",
+		OutputIndex: 12,
+		Delta:       "print('hello",
+	}
+
+	block := r.codeInterpreterCodeDeltaEventToContentBlock(ev)
+	assert.NotNil(t, block.ServerToolResult)
+	assert.Equal(t, string(ServerToolNameCodeInterpreter), block.ServerToolResult.Name)
+
+	result, ok := block.ServerToolResult.Result.(*ServerToolResult)
+	assert.True(t, ok)
+	assert.NotNil(t, result.CodeInterpreter)
+	assert.Equal(t, "print('hello", result.CodeInterpreter.Code)
+
+	id, ok := getItemID(block)
+	assert.True(t, ok)
+	assert.Equal(t, "ciid", id)
+}
+
+func TestItemDoneEventCodeInterpreterToContentBlocks(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventCodeInterpreterToContentBlocks", t, func() {
+		r := newStreamReceiver()
+		ev := responses.ResponseOutputItemDoneEvent{
+			OutputIndex: 13,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseCodeInterpreterToolCall{
+			ID:          "ciid",
+			Status:      responses.ResponseCodeInterpreterToolCallStatusCompleted,
+			Code:        "x = 1 + 1\nprint(x)",
+			ContainerID: "container123",
+			Outputs:     []responses.ResponseCodeInterpreterToolCallOutputUnion{},
+		}).Build()
+
+		blocks, err := r.itemDoneEventToContentBlocks(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolCall)
+		assert.NotNil(t, blocks[1].ServerToolResult)
+		assert.Equal(t, string(ServerToolNameCodeInterpreter), blocks[0].ServerToolCall.Name)
+		assert.Equal(t, string(ServerToolNameCodeInterpreter), blocks[1].ServerToolResult.Name)
+	})
+}
+
+func TestItemAddedEventToContentBlockCodeInterpreter(t *testing.T) {
+	mockey.PatchConvey("TestItemAddedEventToContentBlockCodeInterpreter", t, func() {
+		r := newStreamReceiver()
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
+			responses.ResponseCodeInterpreterToolCall{
+				ID:          "ci1",
+				Code:        "print('hello')",
+				ContainerID: "container123",
+				Status:      "in_progress",
+				Outputs: []responses.ResponseCodeInterpreterToolCallOutputUnion{
+					{
+						Type: "logs",
+						Logs: "hello",
+					},
+				},
+			},
+		).Build()
+
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 1,
+		}
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolCall)
+		assert.NotNil(t, blocks[1].ServerToolResult)
+	})
+}
+
+func TestImageGenerationPhaseToContentBlock(t *testing.T) {
+	r := newStreamReceiver()
+
+	block := r.imageGenerationPhaseToContentBlock("igid", 14, string(responses.ResponseStatusInProgress))
+	assert.NotNil(t, block.ServerToolResult)
+	assert.Equal(t, string(ServerToolNameImageGeneration), block.ServerToolResult.Name)
+
+	id, ok := getItemID(block)
+	assert.True(t, ok)
+	assert.Equal(t, "igid", id)
+
+	status, ok := GetItemStatus(block)
+	assert.True(t, ok)
+	assert.Equal(t, string(responses.ResponseStatusInProgress), status)
+}
+
+func TestImageGenerationPartialImageEventToContentBlock(t *testing.T) {
+	r := newStreamReceiver()
+	ev := responses.ResponseImageGenCallPartialImageEvent{
+		ItemID:          "igid",
+		OutputIndex:     15,
+		PartialImageB64: "partial_base64_data",
+	}
+
+	block := r.imageGenerationPartialImageEventToContentBlock(ev)
+	assert.NotNil(t, block.ServerToolResult)
+	assert.Equal(t, string(ServerToolNameImageGeneration), block.ServerToolResult.Name)
+
+	result, ok := block.ServerToolResult.Result.(*ServerToolResult)
+	assert.True(t, ok)
+	assert.NotNil(t, result.ImageGeneration)
+	assert.Equal(t, "partial_base64_data", result.ImageGeneration.ImageBase64)
+
+	id, ok := getItemID(block)
+	assert.True(t, ok)
+	assert.Equal(t, "igid", id)
+}
+
+func TestItemDoneEventImageGenerationToContentBlocks(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventImageGenerationToContentBlocks", t, func() {
+		r := newStreamReceiver()
+		ev := responses.ResponseOutputItemDoneEvent{
+			OutputIndex: 16,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseOutputItemImageGenerationCall{
+			ID:     "igid",
+			Status: "completed",
+			Result: "full_base64_image",
+		}).Build()
+
+		blocks, err := r.itemDoneEventToContentBlocks(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolCall)
+		assert.NotNil(t, blocks[1].ServerToolResult)
+		assert.Equal(t, string(ServerToolNameImageGeneration), blocks[0].ServerToolCall.Name)
+		assert.Equal(t, string(ServerToolNameImageGeneration), blocks[1].ServerToolResult.Name)
+	})
+}
+
+func TestItemAddedEventToContentBlockIgnoredImageGeneration(t *testing.T) {
+	mockey.PatchConvey("TestItemAddedEventToContentBlockIgnoredImageGeneration", t, func() {
+		r := newStreamReceiver()
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
+			responses.ResponseOutputItemImageGenerationCall{},
+		).Build()
+
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 1,
+		}
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(blocks))
+	})
+}
+
+func TestItemDoneEventShellCallToContentBlock(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventShellCallToContentBlock", t, func() {
+		r := newStreamReceiver()
+		ev := responses.ResponseOutputItemDoneEvent{
+			OutputIndex: 20,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseFunctionShellToolCall{
+			ID:     "shell1",
+			Status: "completed",
+			Action: responses.ResponseFunctionShellToolCallAction{
+				Commands: []string{"ls"},
+			},
+			Environment: responses.ResponseFunctionShellToolCallEnvironmentUnion{
+				Type: "local",
+			},
+		}).Build()
+
+		blocks, err := r.itemDoneEventToContentBlocks(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolCall)
+		assert.Equal(t, string(ServerToolNameShell), blocks[0].ServerToolCall.Name)
+	})
+}
+
+func TestItemDoneEventShellOutputToContentBlock(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventShellOutputToContentBlock", t, func() {
+		r := newStreamReceiver()
+		ev := responses.ResponseOutputItemDoneEvent{
+			OutputIndex: 21,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseFunctionShellToolCallOutput{
+			ID:     "shell_out1",
+			Status: "completed",
+			Output: []responses.ResponseFunctionShellToolCallOutputOutput{
+				{
+					Stdout: "output",
+					Outcome: responses.ResponseFunctionShellToolCallOutputOutputOutcomeUnion{
+						Type:     "exit",
+						ExitCode: 0,
+					},
+				},
+			},
+		}).Build()
+
+		blocks, err := r.itemDoneEventToContentBlocks(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolResult)
+		assert.Equal(t, string(ServerToolNameShell), blocks[0].ServerToolResult.Name)
+	})
+}
+
+func TestItemAddedEventToContentBlockShell(t *testing.T) {
+	mockey.PatchConvey("TestItemAddedEventToContentBlockShellCall", t, func() {
+		r := newStreamReceiver()
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
+			responses.ResponseFunctionShellToolCall{
+				ID:     "shell1",
+				CallID: "call_shell1",
+				Status: "in_progress",
+				Action: responses.ResponseFunctionShellToolCallAction{
+					Commands: []string{"ls -la"},
+				},
+				Environment: responses.ResponseFunctionShellToolCallEnvironmentUnion{
+					Type: "local",
+				},
+			},
+		).Build()
+
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 1,
+		}
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolCall)
+		assert.Equal(t, string(ServerToolNameShell), blocks[0].ServerToolCall.Name)
+	})
+
+	mockey.PatchConvey("TestItemAddedEventToContentBlockShellOutput", t, func() {
+		r := newStreamReceiver()
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
+			responses.ResponseFunctionShellToolCallOutput{
+				ID:     "shellout1",
+				CallID: "call_shell1",
+				Status: "in_progress",
+				Output: []responses.ResponseFunctionShellToolCallOutputOutput{
+					{
+						Stdout: "output",
+						Outcome: responses.ResponseFunctionShellToolCallOutputOutputOutcomeUnion{
+							Type:     "exit",
+							ExitCode: 0,
+						},
+					},
+				},
+			},
+		).Build()
+
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 1,
+		}
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolResult)
+		assert.Equal(t, string(ServerToolNameShell), blocks[0].ServerToolResult.Name)
+	})
 }
