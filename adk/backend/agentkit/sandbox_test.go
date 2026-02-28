@@ -40,8 +40,8 @@ func TestNewArkSandbox(t *testing.T) {
 			SessionTTL:       3600,
 			ExecutionTimeout: 60,
 		}
-		ss, err := NewSandboxToolBackend(config)
-		s := ss.(*sandboxToolBackend)
+		s, err := NewSandboxToolBackend(config)
+
 		require.NoError(t, err)
 		require.NotNil(t, s)
 		assert.Equal(t, "test-ak", s.accessKeyID)
@@ -61,8 +61,8 @@ func TestNewArkSandbox(t *testing.T) {
 			ToolID:          "test-tool",
 			UserSessionID:   "test-session",
 		}
-		ss, err := NewSandboxToolBackend(config)
-		s := ss.(*sandboxToolBackend)
+		s, err := NewSandboxToolBackend(config)
+
 		require.NoError(t, err)
 		require.NotNil(t, s)
 		assert.Equal(t, RegionOfBeijing, s.region)
@@ -115,7 +115,7 @@ func TestNewArkSandbox(t *testing.T) {
 var mockAPIHandler http.HandlerFunc
 
 // setupTest creates a mock server and an ArkSandbox client configured to use it.
-func setupTest(t *testing.T) (*sandboxToolBackend, *httptest.Server) {
+func setupTest(t *testing.T) (*SandboxTool, *httptest.Server) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if mockAPIHandler != nil {
 			mockAPIHandler(w, r)
@@ -131,8 +131,7 @@ func setupTest(t *testing.T) (*sandboxToolBackend, *httptest.Server) {
 		UserSessionID:   "test-session",
 		HTTPClient:      server.Client(),
 	}
-	ss, err := NewSandboxToolBackend(config)
-	sandbox := ss.(*sandboxToolBackend)
+	sandbox, err := NewSandboxToolBackend(config)
 	require.NoError(t, err)
 	sandbox.baseURL = server.URL // Override to point to the mock server
 
