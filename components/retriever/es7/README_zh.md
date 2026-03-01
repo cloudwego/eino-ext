@@ -165,3 +165,11 @@ docs, _ := retriever.Retrieve(ctx, "query", es7.WithFilters(filters))
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
 - [Elasticsearch Go 客户端文档](https://github.com/elastic/go-elasticsearch)
 - [Elasticsearch 7.10 Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/7.10/query-dsl.html)
+## 示例
+
+查看以下示例了解更多用法：
+
+- [稠密向量相似度](./examples/dense_vector_similarity/)
+- [精确匹配](./examples/exact_match/)
+- [原始字符串查询](./examples/raw_string/)
+

@@ -38,6 +38,12 @@ Traversing the doc obtained by docs, doc.Metadata contains the following two typ
 where '_row' has a value only if the first row is the header; 
 Of course, you can also go directly through docs, starting with doc.Content: Get the content of the document line directly.
 
+## Examples
+
+See the following examples for more usage:
+
+- [Test Data Example](./examples/testdata/)
+
 ## License
 
 This project is licensed under the [Apache-2.0 License](LICENSE.txt).

@@ -343,18 +343,18 @@ For sparse vectors in BYOV mode, configured the sparse vector as **Precomputed**
 
 ## Examples
 
-See the [examples](./examples) directory for complete working examples:
+See the following examples for more usage:
 
-- [demo](./examples/demo) - Basic collection setup with HNSW index
-- [hnsw](./examples/hnsw) - HNSW index example
-- [ivf_flat](./examples/ivf_flat) - IVF_FLAT index example
-- [rabitq](./examples/rabitq) - IVF_RABITQ index example (Milvus 2.6+)
-- [auto](./examples/auto) - AutoIndex example
-- [diskann](./examples/diskann) - DISKANN index example
-- [hybrid](./examples/hybrid) - Hybrid search setup (Dense + BM25 sparse) (Milvus 2.5+)
-- [hybrid_chinese](./examples/hybrid_chinese) - Hybrid search with Chinese analyzer (Milvus 2.5+)
-- [sparse](./examples/sparse) - Sparse-only index example (BM25)
-- [byov](./examples/byov) - Bring Your Own Vectors example
+- [Auto Index](./examples/auto/)
+- [BYOV (Bring Your Own Vectors)](./examples/byov/)
+- [Demo Example](./examples/demo/)
+- [DiskANN Index](./examples/diskann/)
+- [HNSW Index](./examples/hnsw/)
+- [Hybrid Search](./examples/hybrid/)
+- [Hybrid Chinese Search](./examples/hybrid_chinese/)
+- [IVF_FLAT Index](./examples/ivf_flat/)
+- [RABITQ Index](./examples/rabitq/)
+- [Sparse Vector](./examples/sparse/)
 
 ## License
 
