@@ -219,6 +219,10 @@ handler := ccb.NewLoopHandler(client)
 callbacks.AppendGlobalHandlers(handler)
 ```
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## License
 
 This project is licensed under the Apache License 2.0 - see the LICENSE file for details.

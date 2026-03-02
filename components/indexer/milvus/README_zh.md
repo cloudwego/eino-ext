@@ -187,3 +187,7 @@ return bytes
 在这里，我们的向量又经过了一次8倍的扩展
 
 因此，我们可以得到以 milvus 向量列的 dim 与嵌入模型的输出纬度之间的转换关系, dim = embedding model output * 4 * 8
+
+## 示例
+
+查看 [examples](./examples/) 目录获取完整的使用示例。

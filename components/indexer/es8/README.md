@@ -195,3 +195,10 @@ type FieldValue struct {
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [Elasticsearch Go Client Documentation](https://github.com/elastic/go-elasticsearch)
+## Examples
+
+See the following examples for more usage:
+
+- [Basic Indexer](./examples/indexer/)
+- [Sparse Vector Indexer](./examples/indexer_with_sparse_vector/)
+
