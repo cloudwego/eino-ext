@@ -4,13 +4,14 @@ go 1.18
 
 require (
 	github.com/bytedance/sonic v1.14.2
-	github.com/cloudwego/eino v0.7.27
+	github.com/cloudwego/eino v0.8.0-alpha.14
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f
 	github.com/stretchr/testify v1.11.1
 )
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic/loader v0.4.0 // indirect

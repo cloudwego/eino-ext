@@ -39,14 +39,14 @@ if os.path.getsize(file_path) == 0:
 with open(file_path, 'r') as f:
     lines = f.readlines()
 
-# Apply offset and limit
-start_idx = offset
-end_idx = offset + limit
+# Apply offset and limit (offset is 1-indexed, where 1 means the first line)
+start_idx = offset - 1
+end_idx = start_idx + limit
 selected_lines = lines[start_idx:end_idx]
 
-# Format with line numbers (1-indexed, starting from offset + 1)
+# Format with line numbers (1-indexed, starting from offset)
 for i, line in enumerate(selected_lines):
-    line_num = offset + i + 1
+    line_num = offset + i
     # Remove trailing newline for formatting, then add it back
     line_content = line.rstrip('\n')
     print(f'{{line_num:6d}}\t{{line_content}}')
@@ -126,57 +126,81 @@ with open('{file_path}', 'w') as f:
 
 print(count)
 `
+
 	grepPythonCodeTemplate = `
-import os
-import sys
+import fnmatch
 import json
 import subprocess
+from pathlib import Path
 
+
+fileType = '{fileType}'
+glob = '{glob}'
+afterLines = {afterLines}
+beforeLines = {beforeLines}
 pattern = '{pattern}'
 path = '{path}'
-glob_pattern = '{glob_pattern}'
 
-search_path = path or '.'
+cmd = ["rg", "--json"]
+if {caseInsensitive}:
+    cmd.append("-i")
 
-# Build grep command: recursive, with filename, with line number, fixed-strings (literal)
-grep_cmd = ['grep', '-rHnF']
+if {enableMultiline}:
+    cmd.extend(["-U", "--multiline-dotall"])
 
-if glob_pattern:
-    grep_cmd.extend(['--include', glob_pattern])
+if fileType:
+    cmd.extend(["--type", fileType])
+elif glob:
+    cmd.extend(["--glob", glob])
 
-grep_cmd.extend(['-e', pattern, search_path])
+if afterLines and afterLines > 0:
+    cmd.extend(["-A", str(afterLines)])
 
-try:
-    result = subprocess.run(grep_cmd, capture_output=True, text=True, check=False)
+if beforeLines and beforeLines > 0:
+    cmd.extend(["-B", str(beforeLines)])
+cmd.append(pattern)
+if path:
+    cmd.append(path)
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        if result.returncode not in (0, 1):
+            raise RuntimeError(f"ripgrep failed: {{result.stderr}}")
 
-    # grep exits with 1 if no lines were selected. We can ignore this case.
-    if result.returncode > 1:
-        print(f"Grep error: {{result.stderr}}", file=sys.stderr)
-        sys.exit(result.returncode)
-
-    output = result.stdout.strip()
-    if not output:
-        sys.exit(0)
-
-    for line in output.splitlines():
-        # Format is: path:line_number:content
-        parts = line.split(':', 2)
-        if len(parts) >= 3:
-            try:
-                line_num = int(parts[1])
-                match = {{
-                    'Path': parts[0],
-                    'Line': line_num,
-                    'Content': parts[2]
-                }}
-                print(json.dumps(match))
-            except (ValueError, IndexError):
-                # Ignore malformed lines, e.g., "grep: ...: Is a directory"
-                continue
-except Exception as e:
-    print(f"Error executing grep script: {{e}}", file=sys.stderr)
-    sys.exit(1)
+        responses = []
+        empty_dict = dict()
+        output = result.stdout.strip()
+        if output:
+            for line in output.split("\n"):
+                try:
+                    data = json.loads(line)
+                    if data.get("type") == "match" or data.get("type") == "context":
+                        match_data = data.get("data", empty_dict)
+                        path = match_data.get("path", empty_dict).get("text", "")
+                        lines = match_data.get("lines", empty_dict)
+                        response = dict(
+                            Path=path,
+                            Line=match_data.get("line_number", 0),
+                            Content=lines.get("text", "").rstrip("\n")
+                        )
+                        if fileType and glob:
+                            if fnmatch.fnmatch(path, glob) or fnmatch.fnmatch(Path(path).name, glob):
+                                responses.append(response)
+                        else:
+                            responses.append(response)
+                except json.JSONDecodeError:
+                    continue
+        print(json.dumps(responses))
+    except FileNotFoundError:
+        raise RuntimeError("ripgrep (rg) is not installed or not in PATH")
+else:
+    print("[]")
 `
+
 	globPythonCodeTemplate = `
 import glob
 import os

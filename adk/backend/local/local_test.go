@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/stretchr/testify/assert"
@@ -86,10 +87,24 @@ func TestRead(t *testing.T) {
 		content := "line 1\nline 2\nline 3"
 		assert.NoError(t, os.WriteFile(filePath, []byte(content), 0644))
 
-		req := &filesystem.ReadRequest{FilePath: filePath, Offset: 1, Limit: 1}
+		req := &filesystem.ReadRequest{FilePath: filePath, Offset: 2, Limit: 1}
 		result, err := s.Read(ctx, req)
 		assert.NoError(t, err)
 		assert.Contains(t, result, "line 2")
+	})
+
+	t.Run("read file from first line (offset=1)", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		filePath := filepath.Join(dir, "test.txt")
+		content := "line 1\nline 2\nline 3"
+		assert.NoError(t, os.WriteFile(filePath, []byte(content), 0644))
+
+		req := &filesystem.ReadRequest{FilePath: filePath, Offset: 1, Limit: 1}
+		result, err := s.Read(ctx, req)
+		assert.NoError(t, err)
+		assert.Contains(t, result, "line 1")
+		assert.NotContains(t, result, "line 2")
 	})
 
 	t.Run("read empty file", func(t *testing.T) {
@@ -116,16 +131,13 @@ func TestRead(t *testing.T) {
 		defer os.RemoveAll(dir)
 		filePath := filepath.Join(dir, "large.txt")
 
-		// Create a file with 1000 lines
 		f, err := os.Create(filePath)
 		assert.NoError(t, err)
-		for i := 0; i < 1000; i++ {
+		for i := 1; i <= 1000; i++ {
 			f.WriteString(fmt.Sprintf("line %d\n", i))
 		}
 		f.Close()
 
-		// Read lines 500-505 (5 lines)
-		// Offset is 0-indexed, so offset 500 starts at line 500 (which is the 501st line)
 		req := &filesystem.ReadRequest{FilePath: filePath, Offset: 500, Limit: 5}
 		result, err := s.Read(ctx, req)
 		assert.NoError(t, err)
@@ -685,5 +697,55 @@ func TestExecuteStreaming(t *testing.T) {
 		assert.True(t, receivedResponse, "should receive at least one response even with no stdout")
 		assert.NotNil(t, exitCode, "should receive exit code in response")
 		assert.Equal(t, 0, *exitCode, "exit code should be 0 for successful command")
+	})
+
+	t.Run("ExecuteStreaming with RunInBackendGround", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{
+			Command:            "sleep 10",
+			RunInBackendGround: true,
+		}
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var receivedResponse bool
+		var output string
+		var exitCode *int
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				receivedResponse = true
+				output = resp.Output
+				exitCode = resp.ExitCode
+			}
+		}
+
+		assert.True(t, receivedResponse, "should receive response for background command")
+		assert.Contains(t, output, "background", "should indicate command started in background")
+		assert.NotNil(t, exitCode, "should receive exit code")
+		assert.Equal(t, 0, *exitCode, "exit code should be 0")
+	})
+
+	t.Run("ExecuteStreaming with RunInBackendGround returns immediately", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{
+			Command:            "sleep 5",
+			RunInBackendGround: true,
+		}
+
+		start := time.Now()
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		for {
+			_, err := sr.Recv()
+			if err != nil {
+				break
+			}
+		}
+		elapsed := time.Since(start)
+
+		assert.Less(t, elapsed, 2*time.Second, "background command should return immediately without waiting")
 	})
 }

@@ -3,7 +3,8 @@ module github.com/cloudwego/eino-ext/adk/backend/local
 go 1.18
 
 require (
-	github.com/cloudwego/eino v0.7.27
+	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/cloudwego/eino v0.8.0-beta.1
 	github.com/stretchr/testify v1.11.1
 )
 
