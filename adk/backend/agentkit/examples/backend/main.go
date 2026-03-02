@@ -96,7 +96,7 @@ func main() {
 	fmt.Println("----------------------")
 	fmt.Printf("Reading from: %s\n", testFilePath)
 
-	content, err := backend.Read(ctx, &filesystem.ReadRequest{
+	fContent, err := backend.Read(ctx, &filesystem.ReadRequest{
 		FilePath: testFilePath,
 	})
 	if err != nil {
@@ -105,7 +105,7 @@ func main() {
 
 	fmt.Println("File content:")
 	fmt.Println("─────────────────────────")
-	fmt.Print(content)
+	fmt.Print(fContent.Content)
 	fmt.Println("─────────────────────────")
 	fmt.Println()
 

@@ -216,16 +216,17 @@ func (s *SandboxTool) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest)
 }
 
 // Read reads file content with support for line-based offset and limit.
-func (s *SandboxTool) Read(ctx context.Context, req *filesystem.ReadRequest) (string, error) {
+func (s *SandboxTool) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
 	path, err := formatPath(req.FilePath, "", true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if req.Offset <= 0 {
-		req.Offset = 0
+		req.Offset = 1
 	}
+
 	if req.Limit <= 0 {
-		req.Limit = 200
+		req.Limit = 2000
 	}
 
 	params := map[string]any{
@@ -236,29 +237,46 @@ func (s *SandboxTool) Read(ctx context.Context, req *filesystem.ReadRequest) (st
 
 	script, err := pyfmt.Fmt(readPythonCodeTemplate, params)
 	if err != nil {
-		return "", fmt.Errorf("failed to render read template: %w", err)
+		return nil, fmt.Errorf("failed to render read template: %w", err)
 	}
 
-	output, exitCode, err := s.execute(ctx, script)
+	content, exitCode, err := s.execute(ctx, script)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute read script: %w", err)
+		return nil, fmt.Errorf("failed to execute read script: %w", err)
 	}
 	if exitCode != nil && *exitCode != 0 {
-		return "", fmt.Errorf("read script exited with non-zero code %d: %s", *exitCode, output)
+		return nil, fmt.Errorf("read script exited with non-zero code %d: %s", *exitCode, content)
 	}
 
-	return output, nil
+	return &filesystem.FileContent{
+		Content: content,
+	}, nil
 }
 
 // GrepRaw searches for content matching the specified pattern in files.
 func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+	if req.Pattern == "" {
+		return nil, fmt.Errorf("pattern is required")
+	}
 	path, _ := formatPath(req.Path, "", false)
 	params := map[string]any{
-		"pattern":      req.Pattern,
-		"path":         path,
-		"glob_pattern": req.Glob,
+		"fileType":    req.FileType,
+		"glob":        req.Glob,
+		"afterLines":  req.AfterLines,
+		"beforeLines": req.BeforeLines,
+		"pattern":     req.Pattern,
+		"path":        path,
 	}
-
+	if req.CaseInsensitive {
+		params["caseInsensitive"] = 1
+	} else {
+		params["caseInsensitive"] = 0
+	}
+	if req.EnableMultiline {
+		params["enableMultiline"] = 1
+	} else {
+		params["enableMultiline"] = 0
+	}
 	script, err := pyfmt.Fmt(grepPythonCodeTemplate, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render grep template: %w", err)
@@ -276,16 +294,9 @@ func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) 
 	if output == "" {
 		return matches, nil
 	}
-
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for _, line := range lines {
-		var match filesystem.GrepMatch
-		if err := json.Unmarshal([]byte(line), &match); err != nil {
-			// Log or ignore malformed JSON lines
-			log.Printf("failed to unmarshal grep match line: %v, line: %s", err, line)
-			continue
-		}
-		matches = append(matches, match)
+	err = json.Unmarshal([]byte(output), &matches)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse grep output: %w", err)
 	}
 
 	return matches, nil
@@ -570,6 +581,15 @@ func (s *SandboxTool) Execute(ctx context.Context, input *filesystem.ExecuteRequ
 	script, err := pyfmt.Fmt(executePythonCodeTemplate, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render execute template: %w", err)
+	}
+
+	if input.RunInBackendGround {
+		go func() {
+			_, _, _ = s.execute(ctx, script)
+		}()
+		return &filesystem.ExecuteResponse{
+			Output: "command started in background\n",
+		}, nil
 	}
 
 	output, exitCode, err := s.execute(ctx, script)
