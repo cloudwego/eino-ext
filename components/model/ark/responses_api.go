@@ -1608,11 +1608,9 @@ func (cm *ResponsesAPIChatModel) WithTools(tools []*schema.ToolInfo) (model.Tool
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert to ark responsesAPI tools: %w", err)
 	}
-	tc := schema.ToolChoiceAllowed
 	nrcm := *cm
 	nrcm.rawTools = tools
 	nrcm.tools = respTools
-	nrcm.toolChoice = &tc
 
 	return &nrcm, nil
 }
