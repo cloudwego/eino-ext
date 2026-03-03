@@ -65,15 +65,36 @@ func main() {
 		log.Fatalf("Error creating the client: %s", err)
 	}
 
-	if err := ensureIndex(ctx, client, indexName); err != nil {
-		log.Fatalf("Failed to ensure index: %v", err)
+	// define index specification (optional: automatically creates index if it doesn't exist)
+	indexSpec := &opensearch3.IndexSpec{
+		Settings: map[string]any{
+			"index": map[string]any{
+				"knn": true,
+			},
+		},
+		Mappings: map[string]any{
+			"properties": map[string]any{
+				"content": map[string]any{"type": "text"},
+				"vector": map[string]any{
+					"type":      "knn_vector",
+					"dimension": embDim,
+					"method": map[string]any{
+						"name":       "hnsw",
+						"engine":     "faiss",
+						"space_type": "innerproduct",
+					},
+				},
+				"author": map[string]any{"type": "keyword"},
+			},
+		},
 	}
 
 	mockEmb := &MockEmbedder{}
 
 	idx, err := opensearch3.NewIndexer(ctx, &opensearch3.IndexerConfig{
-		Client: client,
-		Index:  indexName,
+		Client:    client,
+		Index:     indexName,
+		IndexSpec: indexSpec,
 		DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]opensearch3.FieldValue, err error) {
 			return map[string]opensearch3.FieldValue{
 				"content": {
@@ -111,61 +132,6 @@ func main() {
 		log.Fatalf("Failed to store documents: %v", err)
 	}
 	fmt.Printf("Stored documents: %v\n", ids)
-}
-
-func ensureIndex(ctx context.Context, client *opensearchapi.Client, indexName string) error {
-	// Check if index exists
-	existsResp, err := client.Indices.Exists(ctx, opensearchapi.IndicesExistsReq{
-		Indices: []string{indexName},
-	})
-	if err != nil {
-		// If error is 404, it means index doesn't exist, so we can proceed to create it.
-		// opensearch-go v4 might return error for 404 status in Exists?
-		if !strings.Contains(err.Error(), "404") {
-			return err
-		}
-	} else if existsResp.StatusCode == 200 {
-		return nil
-	} else if existsResp.StatusCode != 404 {
-		return fmt.Errorf("error checking index existence: %d", existsResp.StatusCode)
-	}
-
-	mapping := fmt.Sprintf(`{
-		"settings": {
-			"index": {
-				"knn": true
-			}
-		},
-		"mappings": {
-			"properties": {
-				"content": { "type": "text" },
-				"vector": {
-					"type": "knn_vector",
-					"dimension": %d,
-					"method": {
-						"name": "hnsw",
-						"engine": "faiss",
-						"space_type": "innerproduct"
-					}
-				},
-				"author": { "type": "keyword" }
-			}
-		}
-	}`, embDim)
-
-	_, err = client.Indices.Create(ctx, opensearchapi.IndicesCreateReq{
-		Index: indexName,
-		Body:  strings.NewReader(mapping),
-	})
-	if err != nil {
-		return err
-	}
-	// Create returns IndicesCreateResp
-	// But check error?
-	// Assuming Create returns success struct or error.
-
-	fmt.Printf("Created index: %s\n", indexName)
-	return nil
 }
 
 // MockEmbedder produces deterministic vectors based on word content.

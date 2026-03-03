@@ -30,6 +30,7 @@ const (
 	keyOfResponseID            = "ark-response-id"
 	keyOfResponseCacheExpireAt = "ark-response-cache-expire-at"
 	keyOfServiceTier           = "ark-service-tier"
+	keyOfPartial               = "ark-partial"
 	ImageSizeKey               = "seedream-image-size"
 )
 
@@ -162,14 +163,7 @@ func InvalidateMessageCaches(messages []*schema.Message) error {
 			continue
 		}
 
-		// there may be concurrency
-		extra := make(map[string]any, len(msg.Extra))
-		for k, v := range msg.Extra {
-			extra[k] = v
-		}
-
-		delete(extra, keyOfResponseCacheExpireAt)
-		msg.Extra = extra
+		delete(msg.Extra, keyOfResponseCacheExpireAt)
 	}
 	return nil
 }
@@ -379,4 +373,22 @@ func getImageSize(extra map[string]any) (string, bool) {
 		return "", false
 	}
 	return size, true
+}
+
+// SetPartial marks the message as a partial message to enable continuation (prefill) mode.
+// By pre-filling part of the assistant role's content, it guides and controls the model
+// to continue generating from existing text fragments and maintain consistency in role-play scenarios.
+// To use this, set the role of the last message in the input list to assistant and call SetPartial
+// on it. The model will then continue writing based on the message's content.
+// Only available for ResponsesAPI.
+func SetPartial(msg *schema.Message) {
+	setMsgExtra(msg, keyOfPartial, true)
+}
+
+func getPartial(msg *schema.Message) bool {
+	v, ok := getMsgExtraValue[bool](msg, keyOfPartial)
+	if !ok {
+		return false
+	}
+	return v
 }

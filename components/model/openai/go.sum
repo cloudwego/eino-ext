@@ -22,6 +22,10 @@ github.com/cloudwego/eino v0.7.13 h1:Ku7hY+83gGJJjf4On3UgqjC57UcA+DXe0tqAZiNDDew
 github.com/cloudwego/eino v0.7.13/go.mod h1:nA8Vacmuqv3pqKBQbTWENBLQ8MmGmPt/WqiyLeB8ohQ=
 github.com/cloudwego/eino-ext/libs/acl/openai v0.1.11 h1:1Zm1R6WRLwDKLVlaY/ixIwlPnuVE1DvxNv5eAeE53mI=
 github.com/cloudwego/eino-ext/libs/acl/openai v0.1.11/go.mod h1:1xMQZ8eE11pkEoTAEy8UlaAY817qGVMvjpDPGSIO3Ns=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.1.12 h1:WtHyYALwaF5tcCUkThFufGEyyplPFsF0qsoFMBf8Fmo=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.1.12/go.mod h1:1xMQZ8eE11pkEoTAEy8UlaAY817qGVMvjpDPGSIO3Ns=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.1.13 h1:z0bI5TH3nE+uDQiRhxBQMvk2HswlDUM3xP38+VSgpSQ=
+github.com/cloudwego/eino-ext/libs/acl/openai v0.1.13/go.mod h1:1xMQZ8eE11pkEoTAEy8UlaAY817qGVMvjpDPGSIO3Ns=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

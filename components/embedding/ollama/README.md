@@ -102,3 +102,7 @@ type EmbeddingConfig struct {
     Options map[string]any `json:"options,omitempty"`
 }
 ```
+
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.

@@ -88,6 +88,10 @@ embedder 完全支持 Eino 的回调系统，支持：
 - 开始/结束事件监控
 - Token 使用统计
 
+## 示例
+
+查看 [examples](./examples/) 目录获取完整的使用示例。
+
 ## 更多信息
 
 - [腾讯云混元 API 文档](https://cloud.tencent.com/document/product/1729/102832)
