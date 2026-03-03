@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -28,8 +28,6 @@ import (
 )
 
 func main() {
-	accessKey := os.Getenv("OPENAI_API_KEY")
-
 	ctx := context.Background()
 
 	chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
@@ -37,8 +35,16 @@ func main() {
 		// BaseURL: "https://{RESOURCE_NAME}.openai.azure.com",
 		// ByAzure: true,
 		// APIVersion: "2024-06-01",
-		APIKey: accessKey,
-		Model:  "gpt-4o-2024-05-13",
+		APIKey:  os.Getenv("OPENAI_API_KEY"),
+		Model:   os.Getenv("OPENAI_MODEL"),
+		BaseURL: os.Getenv("OPENAI_BASE_URL"),
+		ByAzure: func() bool {
+			if os.Getenv("OPENAI_BY_AZURE") == "true" {
+				return true
+			}
+			return false
+		}(),
+		ReasoningEffort: openai.ReasoningEffortLevelHigh,
 	})
 	if err != nil {
 		log.Fatalf("NewChatModel failed, err=%v", err)
@@ -53,6 +59,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
-
 	fmt.Printf("output: \n%v", resp)
+
 }

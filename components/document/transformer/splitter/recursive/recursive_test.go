@@ -18,6 +18,7 @@ package recursive
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -70,17 +71,20 @@ func TestRecursiveSplitter(t *testing.T) {
 					OverlapSize: 2,
 					Separators:  []string{"a", "b", "c"},
 					KeepType:    KeepTypeStart,
+					IDGenerator: func(ctx context.Context, originalID string, splitIndex int) string {
+						return fmt.Sprintf("%s_part%d", originalID, splitIndex)
+					},
 				},
 				input: input,
 			},
 			wantOutput: []*schema.Document{
-				{Content: "1a23"},
-				{Content: "a45"},
-				{Content: "a67890"},
-				{Content: "c1"},
-				{Content: "a234"},
-				{Content: "b5678"},
-				{Content: "a90"},
+				{ID: "_part0", Content: "1a23"},
+				{ID: "_part1", Content: "a45"},
+				{ID: "_part2", Content: "a67890"},
+				{ID: "_part3", Content: "c1"},
+				{ID: "_part4", Content: "a234"},
+				{ID: "_part5", Content: "b5678"},
+				{ID: "_part6", Content: "a90"},
 			},
 		},
 		{

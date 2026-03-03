@@ -266,4 +266,14 @@ func TestNewTool(t *testing.T) {
 	tool, err := NewTool(ctx, config)
 	assert.NoError(t, err)
 	assert.NotNil(t, tool)
+
+	info, err := tool.Info(ctx)
+	assert.Nil(t, err)
+
+	doc, err := info.ParamsOneOf.ToJSONSchema()
+	assert.Nil(t, err)
+	assert.Equal(t, 2, doc.Properties.Len())
+	for pair := doc.Properties.Oldest(); pair != nil; pair = pair.Next() {
+		assert.NotEqual(t, "", pair.Value.Description)
+	}
 }

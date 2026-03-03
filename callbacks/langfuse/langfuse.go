@@ -605,6 +605,7 @@ func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (c
 		nState, err := initState(ctx, c.cli, traceOpts.(*traceOptions))
 		if err != nil {
 			log.Printf("init state fail: %v", err)
+			return ctx, nil
 		}
 		return context.WithValue(ctx, langfuseStateKey{}, nState), nState
 	}
@@ -623,6 +624,7 @@ func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (c
 	})
 	if err != nil {
 		log.Printf("init state fail: %v", err)
+		return ctx, nil
 	}
 	return context.WithValue(ctx, langfuseStateKey{}, nState), nState
 }

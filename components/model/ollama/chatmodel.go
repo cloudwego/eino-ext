@@ -21,21 +21,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strings"
 	"time"
 
-	"github.com/cloudwego/eino/components"
-	"github.com/ollama/ollama/api"
+	"github.com/eino-contrib/ollama/api"
 
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var CallbackMetricsExtraKey = "ollama_metrics"
+
+type Options = api.Options
+type ThinkValue = api.ThinkValue
 
 // ChatModelConfig stores configuration options specific to Ollama
 type ChatModelConfig struct {
@@ -51,7 +56,9 @@ type ChatModelConfig struct {
 	Format    json.RawMessage `json:"format"`
 	KeepAlive *time.Duration  `json:"keep_alive"`
 
-	Options *api.Options `json:"options"`
+	Options *Options `json:"options"`
+
+	Thinking *ThinkValue `json:"thinking"`
 }
 
 // Check if ChatModel implements model.ChatModel
@@ -66,7 +73,7 @@ type ChatModel struct {
 }
 
 // NewChatModel initializes a new instance of ChatModel with provided configuration.
-func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
+func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
 	if config == nil {
 		return nil, errors.New("config must not be nil")
 	}
@@ -117,6 +124,11 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		cbOutput = &model.CallbackOutput{
 			Message: outMsg,
 			Config:  cbInput.Config,
+			TokenUsage: &model.TokenUsage{
+				PromptTokens:     resp.PromptEvalCount,
+				CompletionTokens: resp.EvalCount,
+				TotalTokens:      resp.PromptEvalCount + resp.EvalCount,
+			},
 			Extra: map[string]any{
 				CallbackMetricsExtraKey: resp.Metrics,
 			},
@@ -226,7 +238,7 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.Message, opts ...model.Option) (
+func (cm *ChatModel) genRequest(_ context.Context, stream bool, in []*schema.Message, opts ...model.Option) (
 	req *api.ChatRequest, cbInput *model.CallbackInput, err error) {
 
 	var (
@@ -280,6 +292,10 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		return nil, nil, fmt.Errorf("error convert messages: %w", err)
 	}
 
+	if len(mo.AllowedToolNames) > 0 {
+		return nil, nil, fmt.Errorf("not support allowed tool names parameter")
+	}
+
 	tools, err := toOllamaTools(mo.Tools)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error convert tools: %w", err)
@@ -294,6 +310,7 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 		Tools: tools,
 
 		Options: reqOptions,
+		Think:   cm.config.Thinking,
 	}
 
 	if cm.config.KeepAlive != nil {
@@ -342,13 +359,101 @@ func toOllamaMessage(einoMsg *schema.Message) (api.Message, error) {
 			},
 		})
 	}
-
-	// Notice: not support ToolCallID, MultiContent
-	return api.Message{
+	om := api.Message{
 		Role:      string(einoMsg.Role),
-		Content:   einoMsg.Content,
+		Thinking:  einoMsg.ReasoningContent,
 		ToolCalls: toolCalls,
-	}, nil
+	}
+
+	if len(einoMsg.UserInputMultiContent) == 0 && len(einoMsg.AssistantGenMultiContent) == 0 && len(einoMsg.MultiContent) == 0 {
+		om.Content = einoMsg.Content
+		return om, nil
+	}
+
+	content := ""
+	var images []api.ImageData
+
+	if len(einoMsg.UserInputMultiContent) > 0 && len(einoMsg.AssistantGenMultiContent) > 0 {
+		return api.Message{}, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
+
+	if len(einoMsg.UserInputMultiContent) > 0 {
+		if einoMsg.Role != schema.User {
+			return api.Message{}, fmt.Errorf("user input multi content only support user role, got %s", einoMsg.Role)
+		}
+		for _, part := range einoMsg.UserInputMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				content += part.Text
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return api.Message{}, fmt.Errorf("image is required in UserInputMultiContent, but got nil")
+				}
+				if part.Image.URL != nil {
+					return api.Message{}, fmt.Errorf("ollama model only supports base64-encoded strings for the raw binary, but got URL: %s", *part.Image.URL)
+				}
+				if part.Image.Base64Data == nil {
+					return api.Message{}, fmt.Errorf("image is required in UserInputMultiContent, but got nil Base64Data")
+				}
+				images = append(images, api.ImageData(*part.Image.Base64Data))
+			default:
+				return api.Message{}, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
+			}
+		}
+	} else if len(einoMsg.AssistantGenMultiContent) > 0 {
+		if einoMsg.Role != schema.Assistant {
+			return api.Message{}, fmt.Errorf("assistant gen multi content only support assistant role, got %s", einoMsg.Role)
+		}
+		for _, part := range einoMsg.AssistantGenMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				content += part.Text
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return api.Message{}, fmt.Errorf("image is required in AssistantGenMultiContent, but got nil")
+				}
+				if part.Image.URL != nil {
+					return api.Message{}, fmt.Errorf("ollama model only supports base64-encoded strings for the raw binary, but got URL: %s", *part.Image.URL)
+				}
+				if part.Image.Base64Data == nil {
+					return api.Message{}, fmt.Errorf("image is required in AssistantGenMultiContent, but got nil Base64Data")
+				}
+				images = append(images, api.ImageData(*part.Image.Base64Data))
+			default:
+				return api.Message{}, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", part.Type)
+			}
+		}
+	} else if len(einoMsg.MultiContent) > 0 {
+		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		for _, mc := range einoMsg.MultiContent {
+			switch mc.Type {
+			case schema.ChatMessagePartTypeText:
+				content += mc.Text
+			case schema.ChatMessagePartTypeImageURL:
+				if mc.ImageURL == nil {
+					return api.Message{}, errors.New("image url is required")
+				}
+				if err := validateImageURL(mc.ImageURL.URL); err != nil {
+					return api.Message{}, err
+				}
+
+				images = append(images, api.ImageData(mc.ImageURL.URL))
+			default:
+				return api.Message{}, fmt.Errorf("unsupported content type: %s", mc.Type)
+			}
+		}
+	}
+
+	om.Content = content
+	om.Images = images
+	return om, nil
+}
+
+func validateImageURL(url string) error {
+	if strings.HasPrefix(url, "http") {
+		return errors.New("ollama model only supports base64-encoded strings for the raw binary")
+	}
+	return nil
 }
 
 func toEinoMessage(resp api.ChatResponse) *schema.Message {
@@ -366,12 +471,17 @@ func toEinoMessage(resp api.ChatResponse) *schema.Message {
 
 	// Notice: not support Images
 	return &schema.Message{
-		Role:      schema.RoleType(resp.Message.Role),
-		Content:   resp.Message.Content,
-		ToolCalls: toolCalls,
+		Role:             schema.RoleType(resp.Message.Role),
+		Content:          resp.Message.Content,
+		ReasoningContent: resp.Message.Thinking,
+		ToolCalls:        toolCalls,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: resp.DoneReason,
-			Usage:        nil,
+			Usage: &schema.TokenUsage{
+				PromptTokens:     resp.PromptEvalCount,
+				CompletionTokens: resp.EvalCount,
+				TotalTokens:      resp.PromptEvalCount + resp.EvalCount,
+			},
 		},
 	}
 }
@@ -379,21 +489,17 @@ func toEinoMessage(resp api.ChatResponse) *schema.Message {
 func parseJSONToObject(jsonStr string) (map[string]any, error) {
 	result := make(map[string]interface{})
 
-	err := json.Unmarshal([]byte(jsonStr), &result) // nolint: byted_json_accuracyloss_unknowstruct
+	err := json.Unmarshal([]byte(jsonStr), &result)
 	return result, err
 }
 
 func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 	var ollamaTools []api.Tool
 	for _, einoTool := range einoTools {
-		properties := make(map[string]struct {
-			Type        string   `json:"type"`
-			Description string   `json:"description"`
-			Enum        []string `json:"enum,omitempty"`
-		})
+		properties := make(map[string]api.ToolProperty)
 		var required []string
 
-		openTool, err := einoTool.ParamsOneOf.ToOpenAPIV3()
+		openTool, err := einoTool.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, err
 		}
@@ -401,24 +507,17 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 		if openTool != nil {
 			required = openTool.Required
 
-			for name, param := range openTool.Properties {
-				enums := make([]string, 0, len(param.Value.Enum))
-				for _, e := range param.Value.Enum {
-					str, ok := e.(string)
-					if !ok {
-						return nil, fmt.Errorf("toOllamaTools: enum must be string, but got %v", e)
-					}
-					enums = append(enums, str)
+			for pair := openTool.Properties.Oldest(); pair != nil; pair = pair.Next() {
+				var typ []string
+				if pair.Value.TypeEnhanced != nil {
+					typ = pair.Value.TypeEnhanced
+				} else {
+					typ = []string{pair.Value.Type}
 				}
-
-				properties[name] = struct {
-					Type        string   `json:"type"`
-					Description string   `json:"description"`
-					Enum        []string `json:"enum,omitempty"`
-				}{
-					Type:        param.Value.Type,
-					Description: param.Value.Description,
-					Enum:        enums,
+				properties[pair.Key] = api.ToolProperty{
+					Type:        typ,
+					Description: pair.Value.Description,
+					Enum:        pair.Value.Enum,
 				}
 			}
 		}
@@ -429,13 +528,11 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 				Name:        einoTool.Name,
 				Description: einoTool.Desc,
 				Parameters: struct {
-					Type       string   `json:"type"`
-					Required   []string `json:"required"`
-					Properties map[string]struct {
-						Type        string   `json:"type"`
-						Description string   `json:"description"`
-						Enum        []string `json:"enum,omitempty"`
-					} `json:"properties"`
+					Type       string                      `json:"type"`
+					Defs       any                         `json:"$defs,omitempty"`
+					Items      any                         `json:"items,omitempty"`
+					Required   []string                    `json:"required"`
+					Properties map[string]api.ToolProperty `json:"properties"`
 				}{
 					Type:       "object",
 					Required:   required,

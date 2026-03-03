@@ -31,15 +31,20 @@ import (
 )
 
 func TestApmplusCallback(t *testing.T) {
+	// optional: add custom resource attributes
+	resourceAttributes := make(map[string]string)
+	resourceAttributes["attr-key"] = "attr-value"
+
 	cbh, _, _ := NewApmplusHandler(&Config{
-		Host:        "apmplus host",
-		AppKey:      "app key",
-		ServiceName: "MyService",
-		Release:     "release",
+		Host:               "apmplus host",
+		AppKey:             "app key",
+		ServiceName:        "MyService",
+		Release:            "release",
+		ResourceAttributes: resourceAttributes,
 	})
 	callbacks.AppendGlobalHandlers(cbh)
 	ctx := context.Background()
-
+	ctx = SetSession(ctx, WithSessionID("test_session_id"), WithUserID("test_user_id"))
 	g := compose.NewGraph[string, string]()
 	err := g.AddLambdaNode("node1", compose.InvokableLambda(func(ctx context.Context, input string) (output string, err error) {
 		return input, nil

@@ -16,15 +16,17 @@
 
 package arkbot
 
-import "github.com/getkin/kin-openapi/openapi3"
+import (
+	"github.com/eino-contrib/jsonschema"
+)
 
 type tool struct {
 	Function *functionDefinition `json:"function,omitempty"`
 }
 
 type functionDefinition struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description,omitempty"`
-	Parameters  *openapi3.Schema `json:"parameters"`
-	Examples    []string         `json:"examples"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Parameters  *jsonschema.Schema `json:"parameters"`
+	Examples    []string           `json:"examples"`
 }

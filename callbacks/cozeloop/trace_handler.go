@@ -18,6 +18,7 @@ package cozeloop
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
@@ -31,7 +32,7 @@ import (
 func newTraceCallbackHandler(client cozeloop.Client, o *options) callbacks.Handler {
 	tracer := &einoTracer{
 		client: client,
-		parser: newDefaultDataParserWithConcatFuncs(o.concatFuncs),
+		parser: newDefaultDataParserWithConcatFuncs(o.concatFuncs, o.enableAggrOutput),
 		logger: o.logger,
 	}
 
@@ -65,10 +66,31 @@ type einoTracer struct {
 	logger  cozeloop.Logger
 }
 
+type AggrMessageOutput struct {
+	Messages []*tracespec.ModelMessage `json:"messages"`
+	mutex    sync.Mutex
+}
+
+func (a *AggrMessageOutput) addMessages(messages ...*tracespec.ModelMessage) {
+	if messages == nil || len(messages) == 0 {
+		return
+	}
+	if a.Messages == nil {
+		a.Messages = make([]*tracespec.ModelMessage, 0)
+	}
+	a.mutex.Lock()
+	defer a.mutex.Unlock()
+	a.Messages = append(a.Messages, messages...)
+}
+
 func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	if info == nil {
 		return ctx
 	}
+
+	ctx = injectAggrMessageOutputHookToCtx(ctx)
+	ctx = injectGraphNodeLevelToCtx(ctx, getGraphNodeLevelFromCtx(ctx)+1)
+	ctx = injectToolIDNameMapToCtx(ctx, info, input)
 
 	spanName := info.Name
 	if spanName == "" {
@@ -78,6 +100,7 @@ func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input
 	ctx, span := l.client.StartSpan(ctx, spanName, parseSpanTypeFromComponent(info.Component))
 
 	l.setRunInfo(ctx, span, info)
+	l.setSpanContext(ctx, span)
 
 	if l.parser != nil {
 		span.SetTags(ctx, l.parser.ParseInput(ctx, info, input))
@@ -145,6 +168,9 @@ func (l *einoTracer) OnStartWithStreamInput(ctx context.Context, info *callbacks
 		return ctx
 	}
 
+	ctx = injectAggrMessageOutputHookToCtx(ctx)
+	ctx = injectGraphNodeLevelToCtx(ctx, getGraphNodeLevelFromCtx(ctx)+1)
+
 	spanName := info.Name
 	if spanName == "" {
 		spanName = string(info.Component)
@@ -155,6 +181,7 @@ func (l *einoTracer) OnStartWithStreamInput(ctx context.Context, info *callbacks
 	ctx = context.WithValue(ctx, async.TraceStreamInputAsyncKey{}, stopCh)
 
 	l.setRunInfo(ctx, span, info)
+	l.setSpanContext(ctx, span)
 
 	if l.parser != nil {
 		go func() {
@@ -229,5 +256,17 @@ func (l *einoTracer) setRunInfo(ctx context.Context, span cozeloop.Span, info *c
 	)
 	if l.runtime != nil {
 		span.SetRuntime(ctx, *l.runtime)
+	}
+}
+
+func (l *einoTracer) setSpanContext(ctx context.Context, span cozeloop.Span) {
+	spanContextImpl := getSpanContextImpl(ctx)
+	if spanContextImpl != nil && !spanContextImpl.isSet {
+		*spanContextImpl = spanContext{
+			spanID:  span.GetSpanID(),
+			traceID: span.GetTraceID(),
+			baggage: span.GetBaggage(),
+			isSet:   true,
+		}
 	}
 }

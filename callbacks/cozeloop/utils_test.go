@@ -17,9 +17,13 @@
 package cozeloop
 
 import (
+	"context"
 	"testing"
 
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 	"github.com/smartystreets/goconvey/convey"
 )
 
@@ -132,6 +136,29 @@ func Test_spanTags_set(t *testing.T) {
 
 			// Assert
 			convey.So(result[key], convey.ShouldEqual, value)
+		})
+	})
+}
+
+func Test_injectToolIDNameMapToCtx(t *testing.T) {
+	mockey.PatchConvey("测试injectToolIDNameMapToCtx函数", t, func() {
+		mockey.PatchConvey("当ctx为nil时", func() {
+			ctx := context.Background()
+			var input callbacks.CallbackInput
+			input = &schema.Message{
+				ToolCalls: []schema.ToolCall{
+					{ID: "tool1", Function: schema.FunctionCall{Name: "name1"}},
+					{ID: "tool2", Function: schema.FunctionCall{Name: "name2"}},
+				},
+			}
+			result := injectToolIDNameMapToCtx(ctx, &callbacks.RunInfo{
+				Component: compose.ComponentOfToolsNode,
+			}, input)
+
+			m := getToolIDNameMapFromCtx(result)
+			convey.So(m, convey.ShouldNotBeNil)
+			convey.So(m["tool1"], convey.ShouldEqual, "name1")
+			convey.So(m["tool2"], convey.ShouldEqual, "name2")
 		})
 	})
 }

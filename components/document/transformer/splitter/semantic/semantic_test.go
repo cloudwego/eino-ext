@@ -17,10 +17,11 @@
 package semantic
 
 import (
+	"context"
+	"fmt"
 	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
-	"context"
 	"math/rand/v2"
 	"reflect"
 	"testing"
@@ -63,6 +64,9 @@ func TestSemanticSplitter(t *testing.T) {
 				Separators:   []string{"."},
 				LenFunc:      nil,
 				Percentile:   0.5,
+				IDGenerator: func(ctx context.Context, originalID string, splitIndex int) string {
+					return fmt.Sprintf("%s_part%d", originalID, splitIndex)
+				},
 			},
 			input: []*schema.Document{{
 				Content: "1234567890.1234567890.1234567890.1234567890.1234567890.1234567890",

@@ -18,6 +18,7 @@ package html
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -75,6 +76,9 @@ func TestHTMLHeaderSplitter(t *testing.T) {
 					"h2": "Header2",
 					"h3": "Header3",
 				},
+				IDGenerator: func(ctx context.Context, originalID string, splitIndex int) string {
+					return fmt.Sprintf("%s_part%d", originalID, splitIndex)
+				},
 			},
 			input: []*schema.Document{{
 				ID:       "id",
@@ -82,20 +86,20 @@ func TestHTMLHeaderSplitter(t *testing.T) {
 				MetaData: map[string]interface{}{},
 			}},
 			want: []*schema.Document{{
-				ID:      "id",
+				ID:      "id_part0",
 				Content: "H1 content1",
 				MetaData: map[string]interface{}{
 					"Header1": "H1",
 				},
 			}, {
-				ID:      "id",
+				ID:      "id_part1",
 				Content: "H2.1 content",
 				MetaData: map[string]interface{}{
 					"Header1": "H1",
 					"Header2": "H2.1",
 				},
 			}, {
-				ID:      "id",
+				ID:      "id_part2",
 				Content: "H3.1 content",
 				MetaData: map[string]interface{}{
 					"Header1": "H1",
@@ -103,7 +107,7 @@ func TestHTMLHeaderSplitter(t *testing.T) {
 					"Header3": "H3.1",
 				},
 			}, {
-				ID:      "id",
+				ID:      "id_part3",
 				Content: "H3.2 content",
 				MetaData: map[string]interface{}{
 					"Header1": "H1",
@@ -111,33 +115,33 @@ func TestHTMLHeaderSplitter(t *testing.T) {
 					"Header3": "H3.2",
 				},
 			}, {
-				ID:      "id",
+				ID:      "id_part4",
 				Content: "H2.2 content",
 				MetaData: map[string]interface{}{
 					"Header1": "H1",
 					"Header2": "H2.2",
 				},
 			}, {
-				ID:      "id",
+				ID:      "id_part5",
 				Content: "H2.3 content",
 				MetaData: map[string]interface{}{
 					"Header1": "H1",
 					"Header2": "H2.3",
 				},
 			}, {
-				ID:      "id",
+				ID:      "id_part6",
 				Content: "H1 content2H1 content3",
 				MetaData: map[string]interface{}{
 					"Header1": "H1",
 				},
 			}, {
-				ID:      "id",
+				ID:      "id_part7",
 				Content: "H2.4 content",
 				MetaData: map[string]interface{}{
 					"Header2": "H2.4",
 				},
 			}, {
-				ID:       "id",
+				ID:       "id_part8",
 				Content:  "content",
 				MetaData: map[string]interface{}{},
 			},

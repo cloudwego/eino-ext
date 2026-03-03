@@ -97,6 +97,22 @@ func TestDockerSandbox_Create(t *testing.T) {
 	assert.Equal(t, "test_container_id", sandbox.containerID)
 }
 
+func TestDockerSandbox_prepareVolumeBindings(t *testing.T) {
+	sandbox := &DockerSandbox{
+		config: Config{
+			WorkDir: "/workspace",
+			VolumeBindings: map[string]string{
+				"/host/custom": "/workspace",
+			},
+		},
+	}
+
+	binds, err := sandbox.prepareVolumeBindings()
+	assert.NoError(t, err)
+	assert.Len(t, binds, 1)
+	assert.Equal(t, "/host/custom:/workspace:rw", binds[0])
+}
+
 func TestDockerSandbox_RunCommand(t *testing.T) {
 	ctx := context.Background()
 
@@ -128,9 +144,9 @@ func TestDockerSandbox_RunCommand(t *testing.T) {
 	}
 
 	// 测试执行命令
-	output, err := sandbox.RunCommand(ctx, "echo 'hello world'")
+	output, err := sandbox.RunCommand(ctx, []string{"echo", "success"})
 	assert.NoError(t, err)
-	assert.Equal(t, "success", output)
+	assert.Equal(t, "success", output.Stdout)
 }
 
 func TestDockerSandbox_IsDirectory(t *testing.T) {

@@ -17,7 +17,7 @@
 package openai
 
 import (
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/eino-contrib/jsonschema"
 )
 
 type tool struct {
@@ -25,7 +25,7 @@ type tool struct {
 }
 
 type functionDefinition struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description,omitempty"`
-	Parameters  *openapi3.Schema `json:"parameters"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Parameters  *jsonschema.Schema `json:"parameters"`
 }

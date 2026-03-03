@@ -26,6 +26,7 @@ import (
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/components/document"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/components/model"
@@ -382,50 +383,73 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddEmbeddingNode(node, ins, newOpts...)
+		
 	case components.ComponentOfRetriever:
 		ins, ok := gni.Instance.(retriever.Retriever)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddRetrieverNode(node, ins, newOpts...)
+
 	case components.ComponentOfIndexer:
 		ins, ok := gni.Instance.(indexer.Indexer)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddIndexerNode(node, ins, newOpts...)
+
 	case components.ComponentOfChatModel:
-		ins, ok := gni.Instance.(model.ChatModel)
+		ins, ok := gni.Instance.(model.BaseChatModel)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddChatModelNode(node, ins, newOpts...)
+
 	case components.ComponentOfPrompt:
 		ins, ok := gni.Instance.(prompt.ChatTemplate)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddChatTemplateNode(node, ins, newOpts...)
+
 	case compose.ComponentOfToolsNode:
 		ins, ok := gni.Instance.(*compose.ToolsNode)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddToolsNode(node, ins, newOpts...)
+
 	case compose.ComponentOfLambda:
 		ins, ok := gni.Instance.(*compose.Lambda)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddLambdaNode(node, ins, newOpts...)
+
 	case compose.ComponentOfPassthrough:
 		return g.AddPassthroughNode(node, newOpts...)
+
+	case components.ComponentOfLoader:
+		ins, ok := gni.Instance.(document.Loader)
+		if !ok {
+			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
+		}
+		return g.AddLoaderNode(node, ins, newOpts...)
+
+	case components.ComponentOfTransformer:
+		ins, ok := gni.Instance.(document.Transformer)
+		if !ok {
+			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
+		}
+		return g.AddDocumentTransformerNode(node, ins, newOpts...)
+
 	case compose.ComponentOfGraph, compose.ComponentOfChain:
 		ins, ok := gni.Instance.(compose.AnyGraph)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddGraphNode(node, ins, newOpts...)
+
 	default:
 		return fmt.Errorf("unsupported component=%s", gni.Component)
 	}

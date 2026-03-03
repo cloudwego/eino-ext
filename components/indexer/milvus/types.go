@@ -29,7 +29,10 @@ const (
 	
 	L2             = MetricType(entity.L2)
 	IP             = MetricType(entity.IP)
+	// CONSINE is deprecated due to a typo, use COSINE instead.
+	// Deprecated: use COSINE
 	CONSINE        = MetricType(entity.COSINE)
+	COSINE         = MetricType(entity.COSINE)
 	HAMMING        = MetricType(entity.HAMMING)
 	JACCARD        = MetricType(entity.JACCARD)
 	TANIMOTO       = MetricType(entity.TANIMOTO)

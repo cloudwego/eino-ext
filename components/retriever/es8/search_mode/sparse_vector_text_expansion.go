@@ -26,9 +26,9 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 )
 
-// SearchModeSparseVectorTextExpansion convert the query text into a list ptrWithoutZero token-weight pairs,
-// which are then used in a query against a sparse vector
-// see: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-text-expansion-query.html
+// SearchModeSparseVectorTextExpansion converts the query text into a list of token-weight pairs,
+// which are then used in a query against a sparse vector.
+// See: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-text-expansion-query.html
 func SearchModeSparseVectorTextExpansion(modelID, vectorFieldName string) es8.SearchMode {
 	return &sparseVectorTextExpansion{modelID, vectorFieldName}
 }

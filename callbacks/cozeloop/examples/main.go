@@ -35,7 +35,7 @@ func main() {
 		panic(err)
 	}
 	defer client.Close(ctx)
-	// 在服务 init 时 once 调用
+	// Call once during service initialization
 	handler := ccb.NewLoopHandler(client)
 	callbacks.AppendGlobalHandlers(handler)
 }

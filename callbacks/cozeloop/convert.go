@@ -17,11 +17,17 @@
 package cozeloop
 
 import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/bytedance/sonic"
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
+
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
-	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 )
 
 const toolTypeFunction = "function"
@@ -30,17 +36,32 @@ const toolTypeFunction = "function"
 
 func convertModelInput(input *model.CallbackInput) *tracespec.ModelInput {
 	return &tracespec.ModelInput{
-		Messages: iterSlice(input.Messages, convertModelMessage),
-		Tools:    iterSlice(input.Tools, convertTool),
+		Messages:        iterSlice(input.Messages, convertModelMessage),
+		Tools:           iterSlice(input.Tools, convertTool),
+		ModelToolChoice: convertToolChoice(input.ToolChoice),
 	}
 }
 
 func convertModelOutput(output *model.CallbackOutput) *tracespec.ModelOutput {
+	if output == nil {
+		return nil
+	}
 	return &tracespec.ModelOutput{
 		Choices: []*tracespec.ModelChoice{
-			{Index: 0, Message: convertModelMessage(output.Message)},
+			{
+				Index:        0,
+				FinishReason: getFinishReason(output.Message),
+				Message:      convertModelMessage(output.Message)},
 		},
 	}
+}
+
+func getFinishReason(msg *schema.Message) string {
+	if msg == nil || msg.ResponseMeta == nil {
+		return ""
+	}
+
+	return msg.ResponseMeta.FinishReason
 }
 
 func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
@@ -49,28 +70,24 @@ func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
 	}
 
 	msg := &tracespec.ModelMessage{
-		Role:       string(message.Role),
-		Content:    message.Content,
-		Parts:      make([]*tracespec.ModelMessagePart, len(message.MultiContent)),
-		Name:       message.Name,
-		ToolCalls:  make([]*tracespec.ModelToolCall, len(message.ToolCalls)),
-		ToolCallID: message.ToolCallID,
+		Role:             string(message.Role),
+		Content:          message.Content,
+		Parts:            make([]*tracespec.ModelMessagePart, len(message.MultiContent)),
+		Name:             message.Name,
+		ToolCalls:        make([]*tracespec.ModelToolCall, len(message.ToolCalls)),
+		ToolCallID:       message.ToolCallID,
+		ReasoningContent: message.ReasoningContent,
+	}
+	if message.Role == schema.Tool {
+		msg.Name = message.ToolName
 	}
 
-	for i := range message.MultiContent {
-		part := message.MultiContent[i]
-
-		msg.Parts[i] = &tracespec.ModelMessagePart{
-			Type: tracespec.ModelMessagePartType(part.Type),
-			Text: part.Text,
-		}
-
-		if part.ImageURL != nil {
-			msg.Parts[i].ImageURL = &tracespec.ModelImageURL{
-				URL:    part.ImageURL.URL,
-				Detail: string(part.ImageURL.Detail),
-			}
-		}
+	if len(message.UserInputMultiContent) > 0 {
+		msg.Parts = convertUserInputMultiContent(message.UserInputMultiContent)
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		msg.Parts = convertAssistantGenMultiContent(message.AssistantGenMultiContent)
+	} else {
+		msg.Parts = convertMultiContent(message.MultiContent)
 	}
 
 	for i := range message.ToolCalls {
@@ -86,7 +103,168 @@ func convertModelMessage(message *schema.Message) *tracespec.ModelMessage {
 		}
 	}
 
+	if message.Extra != nil {
+		msg.Metadata = make(map[string]string, len(message.Extra))
+		for k, v := range message.Extra {
+			if sv, err := sonic.MarshalString(v); err == nil {
+				msg.Metadata[k] = sv
+			}
+		}
+	}
+
 	return msg
+}
+
+func convertUserInputMultiContent(parts []schema.MessageInputPart) []*tracespec.ModelMessagePart {
+	var result []*tracespec.ModelMessagePart
+	for _, part := range parts {
+		sign := GetBase64ThoughtSignatureFromExtra(part.Extra)
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			result = append(result, &tracespec.ModelMessagePart{
+				Type:      tracespec.ModelMessagePartType(part.Type),
+				Text:      part.Text,
+				Signature: sign,
+			})
+
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				continue
+			}
+
+			if part.Image.MessagePartCommon.URL != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL:    *part.Image.MessagePartCommon.URL,
+						Detail: string(part.Image.Detail),
+					},
+					Signature: sign,
+				})
+			}
+			if part.Image.MessagePartCommon.Base64Data != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL:    fmt.Sprintf("data:%s;base64,%s", part.Image.MessagePartCommon.MIMEType, *part.Image.MessagePartCommon.Base64Data),
+						Detail: string(part.Image.Detail),
+					},
+					Signature: sign,
+				})
+			}
+
+		case schema.ChatMessagePartTypeFileURL:
+			if part.File == nil {
+				continue
+			}
+			if part.File.MessagePartCommon.URL != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					FileURL: &tracespec.ModelFileURL{
+						URL: *part.File.MessagePartCommon.URL,
+					},
+					Signature: sign,
+				})
+			}
+			if part.File.MessagePartCommon.Base64Data != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					FileURL: &tracespec.ModelFileURL{
+						URL: fmt.Sprintf("data:%s;base64,%s", part.File.MessagePartCommon.MIMEType, *part.File.MessagePartCommon.Base64Data),
+					},
+					Signature: sign,
+				})
+			}
+
+		default:
+			log.Printf("unknown part type: %s", part.Type)
+		}
+	}
+	return result
+}
+
+func convertAssistantGenMultiContent(parts []schema.MessageOutputPart) []*tracespec.ModelMessagePart {
+	var result []*tracespec.ModelMessagePart
+	for _, part := range parts {
+		sign := GetBase64ThoughtSignatureFromExtra(part.Extra)
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			result = append(result, &tracespec.ModelMessagePart{
+				Type:      tracespec.ModelMessagePartType(part.Type),
+				Text:      part.Text,
+				Signature: sign,
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				continue
+			}
+			if part.Image.MessagePartCommon.URL != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL: *part.Image.MessagePartCommon.URL,
+					},
+					Signature: sign,
+				})
+			}
+			if part.Image.MessagePartCommon.Base64Data != nil {
+				result = append(result, &tracespec.ModelMessagePart{
+					Type: tracespec.ModelMessagePartType(part.Type),
+					ImageURL: &tracespec.ModelImageURL{
+						URL: *part.Image.MessagePartCommon.Base64Data,
+					},
+					Signature: sign,
+				})
+			}
+		default:
+			log.Printf("unknown part type: %s", part.Type)
+		}
+	}
+	return result
+}
+
+func convertMultiContent(parts []schema.ChatMessagePart) []*tracespec.ModelMessagePart {
+	result := make([]*tracespec.ModelMessagePart, len(parts))
+	for i := range parts {
+		part := parts[i]
+
+		result[i] = &tracespec.ModelMessagePart{
+			Type: tracespec.ModelMessagePartType(part.Type),
+			Text: part.Text,
+		}
+
+		if part.ImageURL != nil {
+			result[i].ImageURL = &tracespec.ModelImageURL{
+				URL:    part.ImageURL.URL,
+				Detail: string(part.ImageURL.Detail),
+			}
+		}
+
+		if part.FileURL != nil {
+			result[i].FileURL = &tracespec.ModelFileURL{
+				URL: part.FileURL.URL,
+			}
+		}
+	}
+	return result
+}
+
+func addToolName(ctx context.Context, message *tracespec.ModelMessage) *tracespec.ModelMessage {
+	if message == nil {
+		return message
+	}
+
+	toolIDNameMap := getToolIDNameMapFromCtx(ctx)
+	if toolIDNameMap == nil {
+		return message
+	}
+	toolName, ok := toolIDNameMap[message.ToolCallID]
+	if !ok {
+		return message
+	}
+
+	message.Name = toolName
+	return message
 }
 
 func convertTool(tool *schema.ToolInfo) *tracespec.ModelTool {
@@ -95,7 +273,7 @@ func convertTool(tool *schema.ToolInfo) *tracespec.ModelTool {
 	}
 
 	var params []byte
-	if raw, err := tool.ToOpenAPIV3(); err == nil && raw != nil {
+	if raw, err := tool.ToJSONSchema(); err == nil && raw != nil {
 		params, _ = raw.MarshalJSON()
 	}
 
@@ -109,6 +287,24 @@ func convertTool(tool *schema.ToolInfo) *tracespec.ModelTool {
 	}
 
 	return t
+}
+
+func convertToolChoice(tc *schema.ToolChoice) *tracespec.ModelToolChoice {
+	if tc == nil {
+		return nil
+	}
+	var v string
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		v = tracespec.VToolChoiceNone
+	case schema.ToolChoiceAllowed:
+		v = tracespec.VToolChoiceAuto
+	case schema.ToolChoiceForced:
+		v = tracespec.VToolChoiceRequired
+	default:
+		v = tracespec.VToolChoiceAuto
+	}
+	return &tracespec.ModelToolChoice{Type: v}
 }
 
 func convertModelCallOption(config *model.Config) *tracespec.ModelCallOption {
@@ -224,6 +420,15 @@ func iterSlice[A, B any](sa []A, fb func(a A) B) []B {
 	r := make([]B, len(sa))
 	for i := range sa {
 		r[i] = fb(sa[i])
+	}
+
+	return r
+}
+
+func iterSliceWithCtx[A, B any](ctx context.Context, sa []A, fb func(ctx context.Context, a A) B) []B {
+	r := make([]B, len(sa))
+	for i := range sa {
+		r[i] = fb(ctx, sa[i])
 	}
 
 	return r

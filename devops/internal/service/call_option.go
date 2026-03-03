@@ -24,8 +24,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/cloudwego/eino-ext/devops/internal/model"
-	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/indexer"
@@ -34,6 +32,9 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/devops/internal/model"
+	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 )
 
 func newCallbackOption(nodeKey, threadID string, node compose.GraphNodeInfo, stateCh chan *model.NodeDebugState) compose.Option {
@@ -302,7 +303,7 @@ func (c *callbackHandler) ConvCallbackOutput(src callbacks.CallbackOutput) *eino
 }
 
 func (c *callbackHandler) systemErrorProcess(errorStr string, invokeTime, completionTime int64) {
-	log.Errorf(errorStr)
+	log.Errorf("%v", errorStr)
 	state := &model.NodeDebugState{
 		NodeKey:   c.nodeKey,
 		Error:     errorStr,

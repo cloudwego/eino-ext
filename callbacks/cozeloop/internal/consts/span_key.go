@@ -20,4 +20,6 @@ const (
 	CustomSpanTagKeyName      = "eino_run_info_name"
 	CustomSpanTagKeyType      = "eino_run_info_type"
 	CustomSpanTagKeyComponent = "eino_run_info_component"
+
+	CustomSpanTagKeyExtra = "extra"
 )

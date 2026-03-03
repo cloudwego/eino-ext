@@ -100,7 +100,9 @@ func (f *FileLoader) Load(ctx context.Context, src document.Source, opts ...docu
 		return nil, errors.New("no parser specified")
 	}
 
-	docs, err = f.Parser.Parse(ctx, file, parser.WithURI(src.URI), parser.WithExtraMeta(meta))
+	o := document.GetLoaderCommonOptions(&document.LoaderOptions{}, opts...)
+
+	docs, err = f.Parser.Parse(ctx, file, append([]parser.Option{parser.WithURI(src.URI), parser.WithExtraMeta(meta)}, o.ParserOptions...)...)
 	if err != nil {
 		return nil, fmt.Errorf("file parse err of [%s]: %w", src.URI, err)
 	}

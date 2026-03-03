@@ -48,6 +48,6 @@ func (r *GetRequestTool) Get(ctx context.Context, req *GetRequest) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("failed to read response body: %w", err)
 	}
-	
+
 	return string(body), nil
 }

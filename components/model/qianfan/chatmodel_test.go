@@ -338,3 +338,242 @@ func TestWithTools(t *testing.T) {
 	assert.Equal(t, "test model", ncm.(*ChatModel).config.Model)
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).rawTools[0].Name)
 }
+
+func TestToQianfanMultiModalMessages(t *testing.T) {
+	// 1. test with only content
+	input1 := []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "hello",
+		},
+	}
+	msgs, err := toQianfanMultiModalMessages(input1)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(msgs))
+	assert.Equal(t, "user", msgs[0].Role)
+	assert.Equal(t, 1, len(msgs[0].Content))
+	assert.Equal(t, Text, msgs[0].Content[0].Type)
+	assert.Equal(t, "hello", msgs[0].Content[0].Text)
+
+	// 2. test with UserInputMultiContent
+	input2 := []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "world",
+				},
+			},
+		},
+	}
+	msgs, err = toQianfanMultiModalMessages(input2)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(msgs))
+	assert.Equal(t, "user", msgs[0].Role)
+	assert.Equal(t, 1, len(msgs[0].Content))
+	assert.Equal(t, Text, msgs[0].Content[0].Type)
+	assert.Equal(t, "world", msgs[0].Content[0].Text)
+
+	// 3. test with AssistantGenMultiContent
+	input3 := []*schema.Message{
+		{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "assistant",
+				},
+			},
+		},
+	}
+	msgs, err = toQianfanMultiModalMessages(input3)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(msgs))
+	assert.Equal(t, "assistant", msgs[0].Role)
+	assert.Equal(t, 1, len(msgs[0].Content))
+	assert.Equal(t, Text, msgs[0].Content[0].Type)
+	assert.Equal(t, "assistant", msgs[0].Content[0].Text)
+
+	// 4. test with tool calls
+	input4 := []*schema.Message{
+		{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{
+					ID:   "id",
+					Type: "function",
+					Function: schema.FunctionCall{
+						Name:      "func",
+						Arguments: "args",
+					},
+				},
+			},
+		},
+	}
+	msgs, err = toQianfanMultiModalMessages(input4)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(msgs))
+	assert.Equal(t, "assistant", msgs[0].Role)
+	assert.Equal(t, 1, len(msgs[0].ToolCalls))
+	assert.Equal(t, "id", msgs[0].ToolCalls[0].Id)
+
+	// 5. test with tool call id
+	input5 := []*schema.Message{
+		{
+			Role:       schema.Tool,
+			ToolCallID: "id",
+		},
+	}
+	msgs, err = toQianfanMultiModalMessages(input5)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(msgs))
+	assert.Equal(t, "function", msgs[0].Role)
+	assert.Equal(t, "id", msgs[0].ToolCallId)
+
+	// 6. test with multiple UserInputMultiContent
+	imageUrl := "http://example.com/image.png"
+	input6 := []*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "text part",
+				},
+				{
+					Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageInputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							URL: &imageUrl,
+						},
+					},
+				},
+			},
+		},
+	}
+	msgs, err = toQianfanMultiModalMessages(input6)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(msgs))
+	assert.Equal(t, "user", msgs[0].Role)
+	assert.Equal(t, 2, len(msgs[0].Content))
+	assert.Equal(t, Text, msgs[0].Content[0].Type)
+	assert.Equal(t, "text part", msgs[0].Content[0].Text)
+	assert.Equal(t, ImageURL, msgs[0].Content[1].Type)
+	assert.Equal(t, imageUrl, msgs[0].Content[1].ImageURL.URL)
+
+	// 7. test with multiple AssistantGenMultiContent
+	input7 := []*schema.Message{
+		{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "assistant text part",
+				},
+				{
+					Type: schema.ChatMessagePartTypeImageURL,
+					Image: &schema.MessageOutputImage{
+						MessagePartCommon: schema.MessagePartCommon{
+							URL: &imageUrl,
+						},
+					},
+				},
+			},
+		},
+	}
+	msgs, err = toQianfanMultiModalMessages(input7)
+	assert.Nil(t, err)
+	assert.Equal(t, 1, len(msgs))
+	assert.Equal(t, "assistant", msgs[0].Role)
+	assert.Equal(t, 2, len(msgs[0].Content))
+	assert.Equal(t, Text, msgs[0].Content[0].Type)
+	assert.Equal(t, "assistant text part", msgs[0].Content[0].Text)
+	assert.Equal(t, ImageURL, msgs[0].Content[1].Type)
+	assert.Equal(t, imageUrl, msgs[0].Content[1].ImageURL.URL)
+
+}
+
+func TestPopulateToolChoice(t *testing.T) {
+	PatchConvey("test populateToolChoice", t, func() {
+		req := &qianfan.ChatCompletionV2Request{}
+		options := &fmodel.Options{}
+
+		// 1. ToolChoice is nil
+		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldBeNil)
+
+		// 2. ToolChoice is ToolChoiceForbidden
+		tcForbidden := schema.ToolChoiceForbidden
+		options.ToolChoice = &tcForbidden
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldResemble, toolChoiceNone)
+
+		// 3. ToolChoice is ToolChoiceAllowed
+		tcAllowed := schema.ToolChoiceAllowed
+		options.ToolChoice = &tcAllowed
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldResemble, toolChoiceAuto)
+
+		// 4. ToolChoice is ToolChoiceForced
+		tcForced := schema.ToolChoiceForced
+		options.ToolChoice = &tcForced
+		// 4.1 No tools provided
+		req.Tools = nil
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "tool choice is forced but tool is not provided")
+
+		// 4.2 One tool provided
+		req.Tools = []qianfan.Tool{
+			{Function: qianfan.FunctionV2{Name: "test_tool"}},
+		}
+		options.AllowedToolNames = nil
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		tc, ok := req.ToolChoice.(qianfan.ToolChoice)
+		convey.So(ok, convey.ShouldBeTrue)
+		convey.So(tc.Type, convey.ShouldEqual, "function")
+		convey.So(tc.Function.Name, convey.ShouldEqual, "test_tool")
+
+		// 4.3 Multiple tools provided
+		req.Tools = []qianfan.Tool{
+			{Function: qianfan.FunctionV2{Name: "test_tool_1"}},
+			{Function: qianfan.FunctionV2{Name: "test_tool_2"}},
+		}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		convey.So(req.ToolChoice, convey.ShouldResemble, toolChoiceRequired)
+
+		// 4.4 AllowedToolNames has one tool
+		options.AllowedToolNames = []string{"test_tool_1"}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldBeNil)
+		tc2, ok2 := req.ToolChoice.(qianfan.ToolChoice)
+		convey.So(ok2, convey.ShouldBeTrue)
+		convey.So(tc2.Type, convey.ShouldEqual, "function")
+		convey.So(tc2.Function.Name, convey.ShouldEqual, "test_tool_1")
+
+		// 4.5 AllowedToolNames has more than one tool
+		options.AllowedToolNames = []string{"test_tool_1", "test_tool_2"}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "only one allowed tool name can be configured")
+
+		// 4.6 AllowedToolNames has a tool that is not in the tools list
+		options.AllowedToolNames = []string{"non_exist_tool"}
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "allowed tool name 'non_exist_tool' not found in tools list")
+
+		// 5. Unsupported ToolChoice
+		unsupported := schema.ToolChoice("unsupported")
+		options.ToolChoice = &unsupported
+		err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+		convey.So(err, convey.ShouldNotBeNil)
+		convey.So(err.Error(), convey.ShouldEqual, "[qianfan][genRequest] tool choice=unsupported not support")
+	})
+}

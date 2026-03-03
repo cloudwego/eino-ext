@@ -18,19 +18,22 @@ package deepseek
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"github.com/cohesion-org/deepseek-go"
+	"github.com/eino-contrib/jsonschema"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cohesion-org/deepseek-go"
-	"github.com/getkin/kin-openapi/openapi3"
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
@@ -56,6 +59,10 @@ type ChatModelConfig struct {
 	// Timeout specifies the maximum duration to wait for API responses
 	// Optional. Default: 5 minutes
 	Timeout time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// Optional. Default http.DefaultClient
+	HTTPClient *http.Client `json:"http_client"`
 
 	// BaseURL is your custom deepseek endpoint url
 	// Optional. Default: https://api.deepseek.com/
@@ -133,6 +140,9 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	var opts []deepseek.Option
 	if config.Timeout > 0 {
 		opts = append(opts, deepseek.WithTimeout(config.Timeout))
+	}
+	if config.HTTPClient != nil {
+		opts = append(opts, deepseek.WithHTTPClient(config.HTTPClient))
 	}
 	if len(config.BaseURL) > 0 {
 		baseURL := config.BaseURL
@@ -220,6 +230,10 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 			continue
 		}
 
+		lp, err := extractLogProbs(choice.Logprobs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract log probs: %w", err)
+		}
 		outMsg = &schema.Message{
 			Role:      toMessageRole(choice.Message.Role),
 			Content:   choice.Message.Content,
@@ -227,11 +241,12 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: choice.FinishReason,
 				Usage:        toEinoTokenUsage(&resp.Usage),
-				LogProbs:     toLogProbs(choice.Logprobs),
+				LogProbs:     lp,
 			},
 		}
 		if len(choice.Message.ReasoningContent) > 0 {
 			SetReasoningContent(outMsg, choice.Message.ReasoningContent)
+			outMsg.ReasoningContent = choice.Message.ReasoningContent
 		}
 
 		break
@@ -304,7 +319,10 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 				return
 			}
 
-			msg, found := resolveStreamResponse(chunk)
+			msg, found, err := resolveStreamResponse(chunk)
+			if err != nil {
+				_ = sw.Send(nil, fmt.Errorf("failed to resolve stream response from DeepSeek: %w", err))
+			}
 			if !found {
 				continue
 			}
@@ -419,7 +437,7 @@ func toTools(tis []*schema.ToolInfo) ([]deepseek.Tool, error) {
 			return nil, fmt.Errorf("tool info cannot be nil in BindTools")
 		}
 
-		paramsJSONSchema, err := ti.ParamsOneOf.ToOpenAPIV3()
+		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
@@ -437,7 +455,7 @@ func toTools(tis []*schema.ToolInfo) ([]deepseek.Tool, error) {
 	return tools, nil
 }
 
-func toToolParam(s *openapi3.Schema) *deepseek.FunctionParameters {
+func toToolParam(s *jsonschema.Schema) *deepseek.FunctionParameters {
 	if s == nil {
 		return nil
 	}
@@ -451,8 +469,8 @@ func toToolParam(s *openapi3.Schema) *deepseek.FunctionParameters {
 		copy(required, s.Required)
 		ret.Required = required
 	}
-	for k, v := range s.Properties {
-		ret.Properties[k] = v
+	for pair := s.Properties.Oldest(); pair != nil; pair = pair.Next() {
+		ret.Properties[pair.Key] = pair.Value
 	}
 	return ret
 }
@@ -538,8 +556,9 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 	}
 
 	cbInput := &model.CallbackInput{
-		Messages: in,
-		Tools:    cm.rawTools,
+		Messages:   in,
+		Tools:      cm.rawTools,
+		ToolChoice: options.ToolChoice,
 		Config: &model.Config{
 			Model:       req.Model,
 			MaxTokens:   req.MaxTokens,
@@ -558,50 +577,13 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		cbInput.Tools = options.Tools
 	}
 
-	if len(tools) > 0 {
-		req.Tools = make([]deepseek.Tool, len(tools))
-		for i := range tools {
-			req.Tools[i] = tools[i]
-		}
+	req.Tools = make([]deepseek.Tool, len(tools))
+	copy(req.Tools, tools)
+
+	err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	if options.ToolChoice != nil {
-		/*
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
-
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
-
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
-		*/
-
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = deepseek.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: deepseek.ToolChoiceFunction{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
-		}
-	}
-
 	msgs := make([]deepseek.ChatCompletionMessage, 0, len(in))
 	for _, inMsg := range in {
 		msg, e := toDeepSeekMessage(inMsg)
@@ -623,6 +605,69 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 	return req, cbInput, nil
 }
 
+func populateToolChoice(req *deepseek.ChatCompletionRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	/*
+		tool_choice is string or object
+		Controls which (if any) tool is called by the model.
+		"none" means the model will not call any tool and instead generates a message.
+		"auto" means the model can pick between generating a message or calling one or more tools.
+		"required" means the model must call one or more tools.
+
+		Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
+
+		"none" is the default when no tools are present.
+		"auto" is the default if tools are present.
+	*/
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+	case schema.ToolChoiceAllowed:
+		req.ToolChoice = toolChoiceAuto
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+
+		onlyOneToolName := ""
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+			onlyOneToolName = allowedToolName
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+		if onlyOneToolName != "" {
+			req.ToolChoice = deepseek.ToolChoice{
+				Type: "function",
+				Function: deepseek.ToolChoiceFunction{
+					Name: onlyOneToolName,
+				},
+			}
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+	default:
+		return fmt.Errorf("tool choice=%s not support", *tc)
+	}
+
+	return nil
+}
+
 const (
 	roleAssistant = "assistant"
 	roleSystem    = "system"
@@ -634,6 +679,15 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	if len(m.MultiContent) > 0 {
 		return nil, fmt.Errorf("multi content is not supported in deepseek")
 	}
+
+	if len(m.UserInputMultiContent) > 0 {
+		return nil, fmt.Errorf("user input multi content is not supported in deepseek")
+	}
+
+	if len(m.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("assistan gen multi content is not supported in deepseek")
+	}
+
 	var role string
 	switch m.Role {
 	case schema.Assistant:
@@ -656,11 +710,15 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	if ret.Role != roleAssistant && ret.Prefix {
 		return nil, fmt.Errorf("prefix only supported for assistant message")
 	}
-	if ret.Prefix {
-		if reasoning, ok := GetReasoningContent(m); ok {
-			ret.ReasoningContent = reasoning
-		}
+
+	if m.ReasoningContent != "" {
+		ret.ReasoningContent = m.ReasoningContent
+
+	} else if reasoning, ok := GetReasoningContent(m); ok {
+		// Backward compatibility: support `reasoning_content` in message.Extra when `ReasoningContent` is missing.
+		ret.ReasoningContent = reasoning
 	}
+
 	if ret.Role == roleTool && m.ToolCallID != "" {
 		ret.ToolCallID = m.ToolCallID
 	}
@@ -718,19 +776,26 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		return nil
 	}
 	return &model.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}
 }
 
-func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *schema.Message, found bool) {
+func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
 		if choice.Index != 0 {
 			continue
 		}
 
+		lp, err := extractLogProbs(choice.Logprobs)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to extract log probs: %w", err)
+		}
 		found = true
 		msg = &schema.Message{
 			Role:      toMessageRole(choice.Delta.Role),
@@ -739,11 +804,12 @@ func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *sc
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: choice.FinishReason,
 				Usage:        streamToEinoTokenUsage(resp.Usage),
-				LogProbs:     toLogProbs(&choice.Logprobs),
+				LogProbs:     lp,
 			},
 		}
 		if len(choice.Delta.ReasoningContent) > 0 {
 			SetReasoningContent(msg, choice.Delta.ReasoningContent)
+			msg.ReasoningContent = choice.Delta.ReasoningContent
 		}
 
 		break
@@ -758,7 +824,7 @@ func resolveStreamResponse(resp *deepseek.StreamChatCompletionResponse) (msg *sc
 		found = true
 	}
 
-	return msg, found
+	return msg, found, nil
 }
 
 func streamToEinoTokenUsage(usage *deepseek.StreamUsage) *schema.TokenUsage {
@@ -771,9 +837,10 @@ func streamToEinoTokenUsage(usage *deepseek.StreamUsage) *schema.TokenUsage {
 		return nil
 	}
 	return toEinoTokenUsage(&deepseek.Usage{
-		PromptTokens:     usage.PromptTokens,
-		CompletionTokens: usage.CompletionTokens,
-		TotalTokens:      usage.TotalTokens,
+		PromptTokens:         usage.PromptTokens,
+		PromptCacheHitTokens: usage.PromptCacheHitTokens,
+		CompletionTokens:     usage.CompletionTokens,
+		TotalTokens:          usage.TotalTokens,
 	})
 }
 
@@ -782,7 +849,10 @@ func toEinoTokenUsage(usage *deepseek.Usage) *schema.TokenUsage {
 		return nil
 	}
 	return &schema.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: usage.PromptCacheHitTokens,
+		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}
@@ -793,10 +863,34 @@ func toCallbackUsage(usage *schema.TokenUsage) *model.TokenUsage {
 		return nil
 	}
 	return &model.TokenUsage{
-		PromptTokens:     usage.PromptTokens,
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
 	}
+}
+
+func extractLogProbs(in any) (*schema.LogProbs, error) {
+	if in == nil {
+		return nil, nil
+	}
+	m, ok := in.(map[string]any)
+	if !ok {
+		// unreachable
+		return nil, fmt.Errorf("logprobs are expected to map[string]any, actually %T", in)
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	ret := &schema.LogProbs{}
+	err = json.Unmarshal(b, ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
 }
 
 type panicErr struct {

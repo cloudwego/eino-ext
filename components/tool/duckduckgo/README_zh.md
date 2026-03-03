@@ -1,6 +1,8 @@
-# DuckDuckGo 搜索工具
+# (已废弃) DuckDuckGo 搜索工具
 
 [English](README.md) | 简体中文
+
+请注意，此实现已**废弃**。请使用 [DuckDuckGo V2](https://github.com/cloudwego/eino-ext/tree/main/components/tool/duckduckgo/v2)。
 
 这是一个为 [Eino](https://github.com/cloudwego/eino) 实现的 DuckDuckGo 搜索工具。该工具实现了 `InvokableTool` 接口，可以与 Eino 的 ChatModel 交互系统和 `ToolsNode` 无缝集成。
 
@@ -74,23 +76,27 @@ type Config struct {
 ### 请求 Schema
 ```go
 type SearchRequest struct {
-    Query string `json:"query" jsonschema_description:"要搜索的查询内容"`
-    Page  int    `json:"page" jsonschema_description:"要搜索的页码，默认：1"`
+    Query string `json:"query" jsonschema_description:"the query content to search for"`
+    Page  int    `json:"page" jsonschema_description:"Page number to search, default: 1"`
 }
 ```
 
 ### 响应 Schema
 ```go
 type SearchResponse struct {
-    Results []SearchResult `json:"results" jsonschema_description:"搜索结果列��"`
+    Results []SearchResult `json:"results" jsonschema_description:"Search results list"`
 }
 
 type SearchResult struct {
-    Title       string `json:"title" jsonschema_description:"搜索结果的标题"`
-    Description string `json:"description" jsonschema_description:"搜索结果的描述"`
-    Link        string `json:"link" jsonschema_description:"搜索结果的链接"`
+    Title       string `json:"title" jsonschema_description:"The title of the search result"`
+    Description string `json:"description" jsonschema_description:"Description of the search results"`
+    Link        string `json:"link" jsonschema_description:"Links to search results"`
 }
 ```
+
+## 示例
+
+查看 [examples](./examples/) 目录获取完整的使用示例。
 
 ## 更多详情
 

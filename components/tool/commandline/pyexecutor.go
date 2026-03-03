@@ -22,10 +22,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/eino-contrib/jsonschema"
+	"github.com/google/uuid"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/google/uuid"
 )
 
 const defaultPythonCommand = "python3"
@@ -51,17 +53,22 @@ func NewPyExecutor(_ context.Context, cfg *PyExecutorConfig) (*PyExecutor, error
 		info: &schema.ToolInfo{
 			Name: "python_execute",
 			Desc: "Executes Python code string. Note: Only print outputs are visible, function return values are not captured. Use print statements to see results.",
-			ParamsOneOf: schema.NewParamsOneOfByOpenAPIV3(&openapi3.Schema{
-				Type: openapi3.TypeObject,
-				Properties: map[string]*openapi3.SchemaRef{
-					"code": {
-						Value: &openapi3.Schema{
-							Type:        openapi3.TypeString,
-							Description: "The Python code to execute.",
-						},
-					},
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(
+				&jsonschema.Schema{
+					Type: string(schema.Object),
+					Properties: orderedmap.New[string, *jsonschema.Schema](
+						orderedmap.WithInitialData[string, *jsonschema.Schema](
+							orderedmap.Pair[string, *jsonschema.Schema]{
+								Key: "code",
+								Value: &jsonschema.Schema{
+									Type:        string(schema.String),
+									Description: "The Python code to execute.",
+								},
+							},
+						),
+					),
 				},
-			}),
+			),
 		},
 		command:  command,
 		operator: cfg.Operator,
@@ -82,19 +89,19 @@ type Input struct {
 	Code string `json:"code"`
 }
 
-func (p *PyExecutor) Execute(ctx context.Context, args *Input) (string, error) {
+func (p *PyExecutor) Execute(ctx context.Context, args *Input) (*CommandOutput, error) {
 	fileName := uuid.New().String() + ".py"
 	err := p.operator.WriteFile(ctx, fileName, args.Code)
 	if err != nil {
-		return "", fmt.Errorf("failed to create python file: %w", err)
+		return nil, fmt.Errorf("failed to create python file: %w", err)
 	}
 
-	result, err := p.operator.RunCommand(ctx, p.command+" "+fileName)
+	cmdOutput, err := p.operator.RunCommand(ctx, []string{p.command, fileName})
 	if err != nil {
-		return "", fmt.Errorf("execute error: %w", err)
+		return nil, fmt.Errorf("execute error: %w", err)
 	}
 
-	return result, nil
+	return cmdOutput, nil
 }
 
 func (p *PyExecutor) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
@@ -107,8 +114,8 @@ func (p *PyExecutor) InvokableRun(ctx context.Context, argumentsInJSON string, _
 	if err != nil {
 		return "", fmt.Errorf("execute error: %w", err)
 	}
-	if len(result) == 0 {
+	if len(result.Stdout) == 0 {
 		return "", errors.New("execute result is empty")
 	}
-	return result, nil
+	return result.Stdout, nil
 }

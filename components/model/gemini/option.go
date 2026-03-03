@@ -17,13 +17,19 @@
 package gemini
 
 import (
+	"github.com/eino-contrib/jsonschema"
+	"google.golang.org/genai"
+
 	"github.com/cloudwego/eino/components/model"
-	"github.com/getkin/kin-openapi/openapi3"
 )
 
 type options struct {
-	TopK           *int32
-	ResponseSchema *openapi3.Schema
+	TopK               *int32
+	ResponseJSONSchema *jsonschema.Schema
+	ThinkingConfig     *genai.ThinkingConfig
+	ResponseModalities []GeminiResponseModality
+	ImageConfig        *genai.ImageConfig
+	CachedContentName  string
 }
 
 func WithTopK(k int32) model.Option {
@@ -32,8 +38,37 @@ func WithTopK(k int32) model.Option {
 	})
 }
 
-func WithResponseSchema(s *openapi3.Schema) model.Option {
+func WithResponseJSONSchema(s *jsonschema.Schema) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.ResponseSchema = s
+		o.ResponseJSONSchema = s
+	})
+}
+
+func WithThinkingConfig(t *genai.ThinkingConfig) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ThinkingConfig = t
+	})
+}
+
+func WithResponseModalities(m []GeminiResponseModality) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseModalities = m
+	})
+}
+
+// WithCachedContentName the name of the content cached to use as context to serve the prediction.
+// Format: cachedContents/{cachedContent}
+func WithCachedContentName(name string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.CachedContentName = name
+	})
+}
+
+// WithImageConfig sets the image generation configuration.
+// Note: an error will be returned for a model that does not support the configuration options.
+// Optional.
+func WithImageConfig(cfg *genai.ImageConfig) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ImageConfig = cfg
 	})
 }

@@ -21,15 +21,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
 	"github.com/anthropics/anthropic-sdk-go/option"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+
 	"github.com/cloudwego/eino/components"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -57,19 +62,29 @@ var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 //	    MaxTokens: 2000,
 //	})
 func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
-	var cli *anthropic.Client
-	if !config.ByBedrock {
-		var opts []option.RequestOption
-		if config.BaseURL != nil {
-			opts = append(opts, option.WithBaseURL(*config.BaseURL), option.WithAPIKey(config.APIKey))
-		} else {
-			opts = append(opts, option.WithAPIKey(config.APIKey))
+	var cli anthropic.Client
+	if config.ByVertex {
+		// Use Google Vertex AI
+		// Auto-detect project ID from config or environment variables
+		projectID := config.VertexProjectID
+		if projectID == "" {
+			projectID = getEnvWithFallbacks("ANTHROPIC_VERTEX_PROJECT_ID", "GOOGLE_CLOUD_PROJECT", "GCLOUD_PROJECT")
 		}
-		if config.HTTPClient != nil {
-			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		if projectID == "" {
+			return nil, errors.New("ByVertex is true but no project ID provided; set VertexProjectID or ANTHROPIC_VERTEX_PROJECT_ID")
 		}
-		cli = anthropic.NewClient(opts...)
-	} else {
+
+		// Auto-detect region from config or environment variable
+		region := config.VertexRegion
+		if region == "" {
+			region = os.Getenv("CLOUD_ML_REGION")
+		}
+		if region == "" {
+			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
+		}
+		cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+	} else if config.ByBedrock {
+		// Use AWS Bedrock
 		var opts []func(*awsConfig.LoadOptions) error
 		if config.Region != "" {
 			opts = append(opts, awsConfig.WithRegion(config.Region))
@@ -88,15 +103,50 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
 		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+	} else {
+		// Use direct Anthropic API
+		var opts []option.RequestOption
+
+		opts = append(opts, option.WithAPIKey(config.APIKey))
+
+		if config.BaseURL != nil {
+			opts = append(opts, option.WithBaseURL(*config.BaseURL))
+		}
+
+		if config.HTTPClient != nil {
+			opts = append(opts, option.WithHTTPClient(config.HTTPClient))
+		}
+
+		for key, value := range config.AdditionalHeaderFields {
+			opts = append(opts, option.WithHeaderAdd(key, value))
+		}
+
+		for key, value := range config.AdditionalRequestFields {
+			opts = append(opts, option.WithJSONSet(key, value))
+		}
+
+		cli = anthropic.NewClient(opts...)
 	}
+
+	// Auto-detect model from config or environment variable
+	model := config.Model
+	if model == "" {
+		model = os.Getenv("ANTHROPIC_MODEL")
+	}
+	if model == "" {
+		return nil, errors.New("no model specified; set Model config or ANTHROPIC_MODEL environment variable")
+	}
+
 	return &ChatModel{
-		cli:           cli,
-		maxTokens:     config.MaxTokens,
-		model:         config.Model,
-		stopSequences: config.StopSequences,
-		temperature:   config.Temperature,
-		topK:          config.TopK,
-		topP:          config.TopP,
+		cli:                    cli,
+		maxTokens:              config.MaxTokens,
+		model:                  model,
+		stopSequences:          config.StopSequences,
+		temperature:            config.Temperature,
+		thinking:               config.Thinking,
+		topK:                   config.TopK,
+		topP:                   config.TopP,
+		disableParallelToolUse: config.DisableParallelToolUse,
 	}, nil
 }
 
@@ -132,6 +182,19 @@ type Config struct {
 	// Optional for Bedrock
 	Region string
 
+	// ByVertex indicates whether to use Google Vertex AI
+	ByVertex bool
+
+	// VertexProjectID is your Google Cloud project ID.
+	// If not set, auto-detected from environment variables:
+	// ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT
+	VertexProjectID string
+
+	// VertexRegion is the Vertex AI region (e.g., "us-east5").
+	// If not set, auto-detected from CLOUD_ML_REGION environment variable.
+	// See: https://claude.ai/docs/en/google-vertex-ai
+	VertexRegion string
+
 	// BaseURL is the custom API endpoint URL
 	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
 	// Optional. Example: "https://custom-claude-api.example.com"
@@ -142,8 +205,8 @@ type Config struct {
 	// Required
 	APIKey string
 
-	// Model specifies which Claude model to use
-	// Required
+	// Model specifies which Claude model to use.
+	// If not set, auto-detected from ANTHROPIC_MODEL environment variable.
 	Model string
 
 	// MaxTokens limits the maximum number of tokens in the response
@@ -170,22 +233,40 @@ type Config struct {
 	// Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
 	StopSequences []string
 
+	Thinking *Thinking
+
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
+
+	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
+
+	// Additional fields to set in the HTTP request header.
+	AdditionalHeaderFields map[string]string `json:"additional_header_fields"`
+
+	// Additional fields to set in the API request.
+	// The values of the map must be JSON serializable.
+	AdditionalRequestFields map[string]any `json:"additional_request_fields"`
+}
+
+type Thinking struct {
+	Enable       bool `json:"enable"`
+	BudgetTokens int  `json:"budget_tokens"`
 }
 
 type ChatModel struct {
-	cli *anthropic.Client
+	cli anthropic.Client
 
-	maxTokens     int
-	model         string
-	stopSequences []string
-	temperature   *float32
-	topK          *int32
-	topP          *float32
-	tools         []anthropic.ToolParam
-	origTools     []*schema.ToolInfo
-	toolChoice    *schema.ToolChoice
+	maxTokens              int
+	model                  string
+	stopSequences          []string
+	temperature            *float32
+	topK                   *int32
+	topP                   *float32
+	thinking               *Thinking
+	tools                  []anthropic.ToolUnionParam
+	origTools              []*schema.ToolInfo
+	toolChoice             *schema.ToolChoice
+	disableParallelToolUse *bool
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -197,19 +278,23 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		}
 	}()
 
-	param, err := cm.genMessageNewParams(input, opts...)
+	msgParam, err := cm.genMessageNewParams(input, opts...)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := cm.cli.Messages.New(ctx, param)
+
+	resp, err := cm.cli.Messages.New(ctx, msgParam)
 	if err != nil {
 		return nil, fmt.Errorf("create new message fail: %w", err)
 	}
+
 	message, err = convOutputMessage(resp)
 	if err != nil {
 		return nil, fmt.Errorf("convert response to schema message fail: %w", err)
 	}
+
 	callbacks.OnEnd(ctx, cm.getCallbackOutput(message))
+
 	return message, nil
 }
 
@@ -222,21 +307,25 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		}
 	}()
 
-	param, err := cm.genMessageNewParams(input, opts...)
+	msgParam, err := cm.genMessageNewParams(input, opts...)
 	if err != nil {
 		return nil, err
 	}
-	stream := cm.cli.Messages.NewStreaming(ctx, param)
+	stream := cm.cli.Messages.NewStreaming(ctx, msgParam)
+	// the stream error that occurred at this time should be terminated and returned.
+	if stream.Err() != nil {
+		return nil, fmt.Errorf("create new streaming message fail: %w", stream.Err())
+	}
 
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func() {
 		defer func() {
-			panicErr := recover()
-
-			if panicErr != nil {
-				_ = sw.Send(nil, newPanicErr(panicErr, debug.Stack()))
+			pe := recover()
+			if pe != nil {
+				_ = sw.Send(nil, newPanicErr(pe, debug.Stack()))
 			}
-			stream.Close()
+
+			_ = stream.Close()
 			sw.Close()
 		}()
 		var waitList []*schema.Message
@@ -254,6 +343,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				waitList = append(waitList, message)
 				continue
 			}
+
 			if len(waitList) != 0 {
 				message, err = schema.ConcatMessages(append(waitList, message))
 				if err != nil {
@@ -262,26 +352,32 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				}
 				waitList = []*schema.Message{}
 			}
+
 			closed := sw.Send(cm.getCallbackOutput(message), nil)
 			if closed {
 				return
 			}
 		}
+
 		if len(waitList) > 0 {
 			message, err_ := schema.ConcatMessages(waitList)
 			if err_ != nil {
 				_ = sw.Send(nil, fmt.Errorf("concat empty message fail: %w", err_))
 				return
-			} else {
-				closed := sw.Send(cm.getCallbackOutput(message), nil)
-				if closed {
-					return
-				}
+			}
+
+			closed := sw.Send(cm.getCallbackOutput(message), nil)
+			if closed {
+				return
 			}
 		}
+
+		// the loop may terminate due to a stream error.
 		if stream.Err() != nil {
 			_ = sw.Send(nil, stream.Err())
+			return
 		}
+
 	}()
 	_, sr = callbacks.OnEndWithStreamOutput(ctx, sr)
 	return schema.StreamReaderWithConvert(sr, func(t *model.CallbackOutput) (*schema.Message, error) {
@@ -338,30 +434,74 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return nil
 }
 
-func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolParam, error) {
+func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam, error) {
 	if len(tools) == 0 {
 		return nil, nil
 	}
 
-	result := make([]anthropic.ToolParam, 0, len(tools))
+	result := make([]anthropic.ToolUnionParam, 0, len(tools))
 	for _, tool := range tools {
-		s, err := tool.ToOpenAPIV3()
+		s, err := tool.ToJSONSchema()
 		if err != nil {
-			return nil, fmt.Errorf("convert to openapi v3 schema fail: %w", err)
+			return nil, fmt.Errorf("convert to json schema fail: %w", err)
 		}
-		result = append(result, anthropic.ToolParam{
-			Name:        anthropic.F(tool.Name),
-			Description: anthropic.F(tool.Desc),
-			InputSchema: anthropic.F[any](s),
-		})
+
+		var inputSchema anthropic.ToolInputSchemaParam
+		if s != nil {
+			inputSchema = anthropic.ToolInputSchemaParam{
+				Properties: s.Properties,
+				Required:   s.Required,
+			}
+		}
+
+		toolParam := &anthropic.ToolParam{
+			Name:        tool.Name,
+			Description: param.NewOpt(tool.Desc),
+			InputSchema: inputSchema,
+		}
+
+		if isBreakpointTool(tool) {
+			toolParam.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
+
+		result = append(result, anthropic.ToolUnionParam{OfTool: toolParam})
 	}
 
 	return result, nil
 }
 
-func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (anthropic.MessageNewParams, error) {
+func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.Message, error) {
+	userMsgIdx := -1
+	for i, msg := range input {
+		if msg.Role != schema.System {
+			if msg.Role != schema.User {
+				// claude requires first message to be user msg
+				// as specified in https://docs.anthropic.com/en/api/messages:
+				// 'You can specify a single user-role message,
+				// or you can include multiple user and assistant messages.'
+				return nil, nil, errors.New("first non-system message should be user message")
+			}
+			userMsgIdx = i
+			break
+		}
+	}
+
+	if userMsgIdx == -1 {
+		return nil, nil, errors.New("only system message in input, require at least 1 user message")
+	}
+
+	return input[:userMsgIdx], input[userMsgIdx:], nil
+}
+
+func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (
+	anthropic.MessageNewParams, error) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
+	}
+
+	system, msgs, err := preProcessMessages(input)
+	if err != nil {
+		return anthropic.MessageNewParams{}, err
 	}
 
 	commonOptions := model.GetCommonOptions(&model.Options{
@@ -373,96 +513,208 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		Tools:       nil,
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
-	claudeOptions := model.GetImplSpecificOptions(&options{TopK: cm.topK}, opts...)
+	specOptions := model.GetImplSpecificOptions(&options{
+		TopK:                   cm.topK,
+		Thinking:               cm.thinking,
+		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
 
-	param := anthropic.MessageNewParams{}
+	params := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
-		param.Model = anthropic.F(*commonOptions.Model)
+		params.Model = anthropic.Model(*commonOptions.Model)
 	}
 	if commonOptions.MaxTokens != nil {
-		param.MaxTokens = anthropic.F(int64(*commonOptions.MaxTokens))
+		params.MaxTokens = int64(*commonOptions.MaxTokens)
 	}
 	if commonOptions.Temperature != nil {
-		param.Temperature = anthropic.F(float64(*commonOptions.Temperature))
+		params.Temperature = param.NewOpt(float64(*commonOptions.Temperature))
 	}
 	if commonOptions.TopP != nil {
-		param.TopP = anthropic.F(float64(*commonOptions.TopP))
+		params.TopP = param.NewOpt(float64(*commonOptions.TopP))
 	}
 	if len(commonOptions.Stop) > 0 {
-		param.StopSequences = anthropic.F(commonOptions.Stop)
+		params.StopSequences = commonOptions.Stop
 	}
-	if claudeOptions.TopK != nil {
-		param.TopK = anthropic.F(int64(*claudeOptions.TopK))
+	if specOptions.TopK != nil {
+		params.TopK = param.NewOpt(int64(*specOptions.TopK))
 	}
 
+	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+				Type:         "enabled",
+				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
+			},
+		}
+	}
+
+	if err = cm.populateTools(&params, commonOptions, specOptions); err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
+	if err = cm.populateInput(&params, system, msgs, specOptions); err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
+	return params, nil
+}
+
+func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []*schema.Message, msgs []*schema.Message, specOptions *options) error {
+	// populate system messages
+	hasSetSysBreakPoint := false
+	for _, m := range system {
+		block := anthropic.TextBlockParam{Text: m.Content}
+		if isBreakpointMessage(m) {
+			hasSetSysBreakPoint = true
+			block.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
+		params.System = append(params.System, block)
+	}
+
+	// if no breakpoint has been set, a breakpoint will be set for the last system message
+	if len(params.System) > 0 && !hasSetSysBreakPoint && fromOrDefault(specOptions.EnableAutoCache, false) {
+		params.System[len(params.System)-1].CacheControl = anthropic.NewCacheControlEphemeralParam()
+	}
+
+	msgParams := make([]anthropic.MessageParam, 0, len(msgs))
+	hasSetMsgBreakPoint := false
+
+	for _, msg := range msgs {
+		msgParam, err := convSchemaMessage(msg)
+		if err != nil {
+			return fmt.Errorf("convert schema message fail: %w", err)
+		}
+
+		if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
+			hasSetMsgBreakPoint = true
+		}
+
+		msgParams = append(msgParams, msgParam)
+	}
+
+	if !hasSetMsgBreakPoint && fromOrDefault(specOptions.EnableAutoCache, false) {
+		lastMsgParam := msgParams[len(msgParams)-1]
+		lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
+		populateContentBlockBreakPoint(lastBlock)
+	}
+
+	params.Messages = msgParams
+
+	return nil
+}
+
+func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOptions *model.Options, specOptions *options) error {
 	tools := cm.tools
+
 	if commonOptions.Tools != nil {
 		var err error
 		if tools, err = toAnthropicToolParam(commonOptions.Tools); err != nil {
-			return anthropic.MessageNewParams{}, err
+			return err
 		}
 	}
 
-	if len(tools) > 0 {
-		param.Tools = anthropic.F(tools)
-	}
-
-	if commonOptions.ToolChoice != nil {
-		switch *commonOptions.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			param.Tools = anthropic.F([]anthropic.ToolParam{}) // act like forbid tools
-		case schema.ToolChoiceAllowed:
-			param.ToolChoice = anthropic.F(anthropic.ToolChoiceUnionParam(anthropic.ToolChoiceAutoParam{
-				Type: anthropic.F(anthropic.ToolChoiceAutoTypeAuto),
-			}))
-		case schema.ToolChoiceForced:
-			if len(tools) == 0 {
-				return anthropic.MessageNewParams{}, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(tools) == 1 {
-				param.ToolChoice = anthropic.F(anthropic.ToolChoiceUnionParam(anthropic.ToolChoiceToolParam{
-					Name: tools[0].Name,
-					Type: anthropic.F(anthropic.ToolChoiceToolTypeTool),
-				}))
-			} else {
-				param.ToolChoice = anthropic.F(anthropic.ToolChoiceUnionParam(anthropic.ToolChoiceAnyParam{
-					Type: anthropic.F(anthropic.ToolChoiceAnyTypeAny),
-				}))
+	if len(tools) > 0 && fromOrDefault(specOptions.EnableAutoCache, false) {
+		hasBreakpoint := false
+		for _, tool := range tools {
+			if ctrl := tool.GetCacheControl(); ctrl != nil && ctrl.Type != "" {
+				hasBreakpoint = true
+				break
 			}
-		default:
-			return anthropic.MessageNewParams{}, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
+		}
+		// if no breakpoint has been set, a breakpoint will be set for the last tool
+		if !hasBreakpoint {
+			tools[len(tools)-1].OfTool.CacheControl = anthropic.NewCacheControlEphemeralParam()
 		}
 	}
 
-	// Convert messages
-	var systemTextBlocks []anthropic.TextBlockParam
-	for len(input) > 1 && input[0].Role == schema.System {
-		systemTextBlocks = append(systemTextBlocks, anthropic.NewTextBlock(input[0].Content))
-		input = input[1:]
+	params.Tools = tools
+
+	err := populateToolChoice(params, commonOptions.ToolChoice, commonOptions.AllowedToolNames, specOptions.DisableParallelToolUse)
+	if err != nil {
+		return err
 	}
-	if len(systemTextBlocks) > 0 {
-		param.System = anthropic.F(systemTextBlocks)
+	return nil
+}
+
+func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoice, allowedToolNames []string, disableParallelToolUse *bool) error {
+	if tc == nil {
+		return nil
 	}
 
-	messages := make([]anthropic.MessageParam, 0, len(input))
-	for _, msg := range input {
-		message, err := convSchemaMessage(msg)
-		if err != nil {
-			return anthropic.MessageNewParams{}, fmt.Errorf("convert schema message fail: %w", err)
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		ofNone := anthropic.NewToolChoiceNoneParam()
+		params.ToolChoice = anthropic.ToolChoiceUnionParam{
+			OfNone: &ofNone,
 		}
-		messages = append(messages, *message)
-	}
-	param.Messages = anthropic.F(messages)
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			return fmt.Errorf("tool_choice 'allowed' is not supported when allowed tool names are present")
+		}
+		ofAuto := &anthropic.ToolChoiceAutoParam{}
+		if disableParallelToolUse != nil {
+			ofAuto.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
+		}
+		params.ToolChoice = anthropic.ToolChoiceUnionParam{
+			OfAuto: ofAuto,
+		}
+	case schema.ToolChoiceForced:
+		if len(params.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
 
-	return param, nil
+		var onlyOneToolName = ""
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(params.Tools))
+			for _, t := range params.Tools {
+				if t.GetName() != nil {
+					toolsMap[*t.GetName()] = true
+				}
+			}
+
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+
+			onlyOneToolName = allowedToolName
+		} else if len(params.Tools) == 1 {
+			onlyOneToolName = *params.Tools[0].GetName()
+		}
+
+		if onlyOneToolName != "" {
+			params.ToolChoice = anthropic.ToolChoiceParamOfTool(onlyOneToolName)
+		} else {
+			ofAny := &anthropic.ToolChoiceAnyParam{}
+			if disableParallelToolUse != nil {
+				ofAny.DisableParallelToolUse = param.NewOpt[bool](*disableParallelToolUse)
+			}
+			params.ToolChoice = anthropic.ToolChoiceUnionParam{
+				OfAny: ofAny,
+			}
+		}
+
+	default:
+		return fmt.Errorf("tool choice=%s not support", *tc)
+	}
+
+	return nil
+
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
+	co := model.GetCommonOptions(&model.Options{
+		Tools:      cm.origTools,
+		ToolChoice: cm.toolChoice,
+	}, opts...)
+
 	result := &model.CallbackInput{
-		Messages: input,
-		Tools: model.GetCommonOptions(&model.Options{
-			Tools: cm.origTools,
-		}, opts...).Tools,
-		Config: cm.getConfig(),
+		Messages:   input,
+		Tools:      co.Tools,
+		ToolChoice: co.ToolChoice,
+		Config:     cm.getConfig(),
 	}
 	return result
 }
@@ -474,7 +726,10 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 	}
 	if output.ResponseMeta != nil && output.ResponseMeta.Usage != nil {
 		result.TokenUsage = &model.TokenUsage{
-			PromptTokens:     output.ResponseMeta.Usage.PromptTokens,
+			PromptTokens: output.ResponseMeta.Usage.PromptTokens,
+			PromptTokenDetails: model.PromptTokenDetails{
+				CachedTokens: output.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+			},
 			CompletionTokens: output.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      output.ResponseMeta.Usage.TotalTokens,
 		}
@@ -505,21 +760,109 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func convSchemaMessage(message *schema.Message) (*anthropic.MessageParam, error) {
-	result := &anthropic.MessageParam{}
-	if message.Role == schema.Assistant {
-		result.Role = anthropic.F(anthropic.MessageParamRoleAssistant)
-	} else {
-		result.Role = anthropic.F(anthropic.MessageParamRoleUser)
-	}
+func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err error) {
 	var messageParams []anthropic.ContentBlockParamUnion
-	if len(message.Content) > 0 {
-		if len(message.ToolCallID) > 0 {
+
+	if message.Role == schema.Assistant {
+		thinkingContent, hasThinking := GetThinking(message)
+		if hasThinking && thinkingContent != "" {
+			signature, hasSignature := getThinkingSignature(message)
+			if hasSignature && signature != "" {
+				messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
+			}
+		}
+	}
+
+	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
+		return mp, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
+
+	if len(message.UserInputMultiContent) > 0 {
+		if message.Role != schema.User && message.Role != schema.Tool {
+			return mp, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
+		}
+		if message.Role == schema.Tool {
+			m, err := convToolMultiContent(message.ToolCallID, message.UserInputMultiContent)
+			if err != nil {
+				return mp, err
+			}
+			messageParams = append(messageParams, m)
+		} else {
+			for i := range message.UserInputMultiContent {
+				switch message.UserInputMultiContent[i].Type {
+				case schema.ChatMessagePartTypeText:
+					messageParams = append(messageParams, anthropic.NewTextBlock(message.UserInputMultiContent[i].Text))
+				case schema.ChatMessagePartTypeImageURL:
+					if message.UserInputMultiContent[i].Image == nil {
+						return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+					}
+					image := message.UserInputMultiContent[i].Image
+					if image.URL != nil && *image.URL != "" {
+						messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+							URL: *image.URL,
+						}))
+					} else if image.Base64Data != nil && *image.Base64Data != "" {
+						if image.MIMEType == "" {
+							return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+						}
+						if strings.HasPrefix(*image.Base64Data, "data:") {
+							return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+						}
+						messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
+					} else {
+						return mp, fmt.Errorf("image part must have either a URL or Base64Data")
+					}
+				default:
+					return mp, fmt.Errorf("anthropic message type not supported: %s", message.UserInputMultiContent[i].Type)
+				}
+			}
+		}
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		if message.Role != schema.Assistant {
+			return mp, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
+		}
+		for i := range message.AssistantGenMultiContent {
+			switch message.AssistantGenMultiContent[i].Type {
+			case schema.ChatMessagePartTypeText:
+				messageParams = append(messageParams, anthropic.NewTextBlock(message.AssistantGenMultiContent[i].Text))
+			case schema.ChatMessagePartTypeImageURL:
+				if message.AssistantGenMultiContent[i].Image == nil {
+					return mp, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+				}
+				image := message.AssistantGenMultiContent[i].Image
+				if image.URL != nil && *image.URL != "" {
+					messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+						URL: *image.URL,
+					}))
+				} else if image.Base64Data != nil && *image.Base64Data != "" {
+					if image.MIMEType == "" {
+						return mp, fmt.Errorf("image part must have MIMEType when use Base64Data")
+					}
+					if strings.HasPrefix(*image.Base64Data, "data:") {
+						return mp, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+					}
+					messageParams = append(messageParams, anthropic.NewImageBlockBase64(image.MIMEType, *image.Base64Data))
+				} else {
+					return mp, fmt.Errorf("image part must have either a URL or Base64Data")
+				}
+			default:
+				return mp, fmt.Errorf("anthropic message type not supported: %s", message.AssistantGenMultiContent[i].Type)
+			}
+		}
+
+	} else if len(message.Content) > 0 {
+		if message.Role == schema.Tool {
 			messageParams = append(messageParams, anthropic.NewToolResultBlock(message.ToolCallID, message.Content, false))
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
 		}
 	} else {
+		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
+		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
+		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
+		if len(message.MultiContent) > 0 {
+			log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		}
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:
@@ -528,53 +871,151 @@ func convSchemaMessage(message *schema.Message) (*anthropic.MessageParam, error)
 				if message.MultiContent[i].ImageURL == nil {
 					continue
 				}
-				mediaType, data, err := convImageBase64(message.MultiContent[i].ImageURL.URL)
-				if err != nil {
-					return nil, fmt.Errorf("extract base64 image fail: %w", err)
+				if strings.HasPrefix(message.MultiContent[i].ImageURL.URL, "http") {
+					messageParams = append(messageParams, anthropic.NewImageBlock(anthropic.URLImageSourceParam{
+						URL: message.MultiContent[i].ImageURL.URL,
+					}))
+					continue
+				}
+				mediaType, data, err_ := convImageBase64(message.MultiContent[i].ImageURL.URL)
+				if err_ != nil {
+					return mp, fmt.Errorf("extract base64 image fail: %w", err_)
 				}
 				messageParams = append(messageParams, anthropic.NewImageBlockBase64(mediaType, data))
 			default:
-				return nil, fmt.Errorf("anthropic message type not supported: %s", message.MultiContent[i].Type)
+				return mp, fmt.Errorf("anthropic message type not supported: %s", message.MultiContent[i].Type)
 			}
 		}
 	}
 
 	for i := range message.ToolCalls {
-		messageParams = append(messageParams, anthropic.NewToolUseBlockParam(message.ToolCalls[i].ID, message.ToolCalls[i].Function.Name, json.RawMessage(message.ToolCalls[i].Function.Arguments)))
+		tc := message.ToolCalls[i]
+
+		args := tc.Function.Arguments
+		if args == "" {
+			args = "{}"
+		}
+		// Arguments are limited to object type.
+		// Since json marshaling will be performed before the request,
+		// and arguments are already a json string, marshaling should not be performed,
+		// so it needs to be forcibly converted to json.RawMessage.
+		messageParams = append(messageParams, anthropic.NewToolUseBlock(tc.ID, json.RawMessage(args), tc.Function.Name))
 	}
 
-	result.Content = anthropic.F(messageParams)
+	if len(messageParams) > 0 && isBreakpointMessage(message) {
+		populateContentBlockBreakPoint(messageParams[len(messageParams)-1])
+	}
 
+	switch message.Role {
+	case schema.Assistant:
+		mp = anthropic.NewAssistantMessage(messageParams...)
+	case schema.User, schema.Tool:
+		mp = anthropic.NewUserMessage(messageParams...)
+	default:
+		mp = anthropic.NewUserMessage(messageParams...)
+	}
+
+	return mp, nil
+}
+
+func convToolMultiContent(callID string, parts []schema.MessageInputPart) (anthropic.ContentBlockParamUnion, error) {
+	result := anthropic.ContentBlockParamUnion{OfToolResult: &anthropic.ToolResultBlockParam{
+		ToolUseID: callID,
+		IsError:   param.Opt[bool]{},
+		Content:   make([]anthropic.ToolResultBlockParamContentUnion, 0, len(parts)),
+	}}
+	for _, part := range parts {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+				OfText: &anthropic.TextBlockParam{
+					Text: part.Text,
+				},
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				return result, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+			}
+			image := part.Image
+			if image.URL != nil && *image.URL != "" {
+				result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+					OfImage: &anthropic.ImageBlockParam{
+						Source: anthropic.ImageBlockParamSourceUnion{
+							OfURL: &anthropic.URLImageSourceParam{
+								URL: *image.URL,
+							},
+						},
+					},
+				})
+			} else if image.Base64Data != nil && *image.Base64Data != "" {
+				if image.MIMEType == "" {
+					return result, fmt.Errorf("image part must have MIMEType when use Base64Data")
+				}
+				if strings.HasPrefix(*image.Base64Data, "data:") {
+					return result, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+				}
+				result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+					OfImage: &anthropic.ImageBlockParam{
+						Source: anthropic.ImageBlockParamSourceUnion{
+							OfBase64: &anthropic.Base64ImageSourceParam{
+								Data:      *image.Base64Data,
+								MediaType: anthropic.Base64ImageSourceMediaType(image.MIMEType),
+							},
+						},
+					},
+				})
+			} else {
+				return result, fmt.Errorf("image part must have either a URL or Base64Data")
+			}
+		default:
+			return result, fmt.Errorf("anthropic message type not supported: %s", part.Type)
+		}
+	}
 	return result, nil
 }
 
+func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion) {
+	if block.OfText != nil {
+		block.OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
+	if block.OfImage != nil {
+		block.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
+	if block.OfToolResult != nil {
+		block.OfToolResult.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
+	if block.OfToolUse != nil {
+		block.OfToolUse.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		return
+	}
+}
+
 func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
+	promptTokens := int(resp.Usage.InputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens)
+
 	message := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.StopReason),
 			Usage: &schema.TokenUsage{
-				PromptTokens:     int(resp.Usage.InputTokens),
+				PromptTokens: promptTokens,
+				PromptTokenDetails: schema.PromptTokenDetails{
+					CachedTokens: int(resp.Usage.CacheReadInputTokens),
+				},
 				CompletionTokens: int(resp.Usage.OutputTokens),
-				TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
+				TotalTokens:      promptTokens + int(resp.Usage.OutputTokens),
 			},
 		},
 	}
 
+	streamCtx := &streamContext{}
 	for _, item := range resp.Content {
-		switch item.Type {
-		case anthropic.ContentBlockTypeText:
-			message.Content += item.Text
-		case anthropic.ContentBlockTypeToolUse:
-			message.ToolCalls = append(message.ToolCalls, schema.ToolCall{
-				ID: item.ID,
-				Function: schema.FunctionCall{
-					Name:      item.Name,
-					Arguments: string(item.Input),
-				},
-			})
-		default:
-			return nil, fmt.Errorf("unknown anthropic content block type: %s", item.Type)
+		err := convContentBlockToEinoMsg(item.AsAny(), message, streamCtx)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -585,15 +1026,51 @@ type streamContext struct {
 	toolIndex *int
 }
 
-func convStreamEvent(event anthropic.MessageStreamEvent, streamCtx *streamContext) (*schema.Message, error) {
-	result := &schema.Message{
-		Role: schema.Assistant,
+func convContentBlockToEinoMsg(
+	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext) error {
+	//	case anthropic.TextBlock:
+	//	case anthropic.ToolUseBlock:
+	//	case anthropic.ServerToolUseBlock:
+	//	case anthropic.WebSearchToolResultBlock:
+	//	case anthropic.ThinkingBlock:
+	//	case anthropic.RedactedThinkingBlock:
+	switch block := contentBlock.(type) {
+	case anthropic.TextBlock:
+		dstMsg.Content += block.Text
+	case anthropic.ToolUseBlock:
+		dstMsg.ToolCalls = append(dstMsg.ToolCalls,
+			toolEvent(true, block.ID, block.Name, block.Input, streamCtx))
+	case anthropic.ServerToolUseBlock:
+		return fmt.Errorf("server_tool_use not supported")
+	case anthropic.WebSearchToolResultBlock:
+		return fmt.Errorf("web_search tool not supported")
+	case anthropic.ThinkingBlock:
+		setThinking(dstMsg, block.Thinking)
+		dstMsg.ReasoningContent = block.Thinking
+		setThinkingSignature(dstMsg, block.Signature)
+	case anthropic.RedactedThinkingBlock:
+	default:
+		return fmt.Errorf("unknown anthropic content block type: %T", block)
 	}
 
-	switch e := event.AsUnion().(type) {
+	return nil
+}
+
+func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamContext) (*schema.Message, error) {
+	result := &schema.Message{
+		Role:  schema.Assistant,
+		Extra: make(map[string]any),
+	}
+
+	//	case anthropic.MessageStartEvent:
+	//	case anthropic.MessageDeltaEvent:
+	//	case anthropic.MessageStopEvent:
+	//	case anthropic.ContentBlockStartEvent:
+	//	case anthropic.ContentBlockDeltaEvent:
+	//	case anthropic.ContentBlockStopEvent:
+	switch e := event.AsAny().(type) {
 	case anthropic.MessageStartEvent:
 		return convOutputMessage(&e.Message)
-
 	case anthropic.MessageDeltaEvent:
 		result.ResponseMeta = &schema.ResponseMeta{
 			FinishReason: string(e.Delta.StopReason),
@@ -606,51 +1083,41 @@ func convStreamEvent(event anthropic.MessageStreamEvent, streamCtx *streamContex
 	case anthropic.MessageStopEvent, anthropic.ContentBlockStopEvent:
 		return nil, nil
 	case anthropic.ContentBlockStartEvent:
-		content := &anthropic.ContentBlock{}
-		err := content.UnmarshalJSON([]byte(e.ContentBlock.JSON.RawJSON()))
+		//	case anthropic.TextBlock:
+		//	case anthropic.ToolUseBlock:
+		//	case anthropic.ServerToolUseBlock:
+		//	case anthropic.WebSearchToolResultBlock:
+		//	case anthropic.ThinkingBlock:
+		//	case anthropic.RedactedThinkingBlock:
+		err := convContentBlockToEinoMsg(e.ContentBlock.AsAny(), result, streamCtx)
 		if err != nil {
-			return nil, fmt.Errorf("unmarshal content block start event fail: %w", err)
-		}
-		switch content.Type {
-		case anthropic.ContentBlockTypeText:
-			result.Content = content.Text
-		case anthropic.ContentBlockTypeToolUse:
-			num := 0
-			if streamCtx.toolIndex != nil {
-				num = *streamCtx.toolIndex + 1
-			}
-			streamCtx.toolIndex = &num
-
-			arguments := string(content.Input)
-			if arguments == "{}" {
-				arguments = ""
-			}
-			result.ToolCalls = append(result.ToolCalls, schema.ToolCall{
-				Index: streamCtx.toolIndex,
-				ID:    content.ID,
-				Function: schema.FunctionCall{
-					Name:      content.Name,
-					Arguments: arguments,
-				},
-			})
-		default:
-			return nil, fmt.Errorf("unknown anthropic content block type: %s", content.Type)
+			return nil, err
 		}
 		return result, nil
 
 	case anthropic.ContentBlockDeltaEvent:
-		switch delta := e.Delta.AsUnion().(type) {
+		//	case anthropic.TextDelta:
+		//	case anthropic.InputJSONDelta:
+		//	case anthropic.CitationsDelta:
+		//	case anthropic.ThinkingDelta:
+		//	case anthropic.SignatureDelta:
+		switch delta := e.Delta.AsAny().(type) {
 		case anthropic.TextDelta:
 			result.Content = delta.Text
-
+		case anthropic.ThinkingDelta:
+			setThinking(result, delta.Thinking)
+			result.ReasoningContent = delta.Thinking
 		case anthropic.InputJSONDelta:
-			result.ToolCalls = append(result.ToolCalls, schema.ToolCall{
-				Index: streamCtx.toolIndex,
-				Function: schema.FunctionCall{
-					Arguments: delta.PartialJSON,
-				},
-			})
+			result.ToolCalls = append(result.ToolCalls,
+				toolEvent(false, "", "", delta.PartialJSON, streamCtx))
+		case anthropic.SignatureDelta:
+			if currentSig, hasSig := getThinkingSignature(result); hasSig {
+				setThinkingSignature(result, currentSig+delta.Signature)
+			} else {
+				setThinkingSignature(result, delta.Signature)
+			}
 		}
+
 		return result, nil
 
 	default:
@@ -680,10 +1147,48 @@ func convImageBase64(data string) (string, string, error) {
 }
 
 func isMessageEmpty(message *schema.Message) bool {
-	if len(message.Content) == 0 && len(message.ToolCalls) == 0 && len(message.MultiContent) == 0 {
+	_, ok := GetThinking(message)
+	if len(message.Content) == 0 && len(message.ToolCalls) == 0 && len(message.MultiContent) == 0 && !ok {
 		return true
 	}
 	return false
+}
+
+func toolEvent(isStart bool, toolCallID, toolName string, input any, sc *streamContext) schema.ToolCall {
+	// count tool call index for stream
+	if isStart {
+		if sc.toolIndex == nil {
+			sc.toolIndex = of(-1)
+		}
+		sc.toolIndex = of(*sc.toolIndex + 1)
+	} else if sc.toolIndex == nil {
+		sc.toolIndex = of(0)
+	}
+
+	toolIndex := sc.toolIndex
+
+	arguments := ""
+	if rm, ok := input.(json.RawMessage); ok {
+		arguments = string(rm)
+	} else if arg, ok_ := input.(string); ok_ {
+		arguments = arg
+	}
+
+	// If the arguments of the tool call are empty,
+	// Claude will repeatedly output multiple identical streaming chunks, and the arguments are all "{}"
+	// There will be problems when concat streaming chunks.
+	if arguments == "{}" {
+		arguments = ""
+	}
+
+	return schema.ToolCall{
+		Index: toolIndex,
+		ID:    toolCallID,
+		Function: schema.FunctionCall{
+			Name:      toolName,
+			Arguments: arguments,
+		},
+	}
 }
 
 type panicErr struct {
@@ -700,4 +1205,15 @@ func newPanicErr(info any, stack []byte) error {
 		info:  info,
 		stack: stack,
 	}
+}
+
+// getEnvWithFallbacks returns the first non-empty environment variable value
+// from the given list of variable names.
+func getEnvWithFallbacks(keys ...string) string {
+	for _, key := range keys {
+		if val := os.Getenv(key); val != "" {
+			return val
+		}
+	}
+	return ""
 }

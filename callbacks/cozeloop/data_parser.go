@@ -23,6 +23,9 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
@@ -32,7 +35,6 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 )
 
 // CallbackDataParser tag parser for trace
@@ -44,25 +46,29 @@ type CallbackDataParser interface {
 	ParseStreamOutput(ctx context.Context, info *callbacks.RunInfo, output *schema.StreamReader[callbacks.CallbackOutput]) map[string]any
 }
 
-func NewDefaultDataParser() CallbackDataParser {
-	return &defaultDataParser{concatFuncs: make(map[reflect.Type]any)}
+func NewDefaultDataParser(enableAggrMessageOutput bool) CallbackDataParser {
+	return &defaultDataParser{concatFuncs: make(map[reflect.Type]any), enableAggrMessageOutput: enableAggrMessageOutput}
 }
 
-func newDefaultDataParserWithConcatFuncs(concatFuncs map[reflect.Type]any) CallbackDataParser {
+func newDefaultDataParserWithConcatFuncs(concatFuncs map[reflect.Type]any, enableAggrMessageOutput bool) CallbackDataParser {
 	if concatFuncs == nil {
-		return NewDefaultDataParser()
+		return NewDefaultDataParser(enableAggrMessageOutput)
 	}
-	return &defaultDataParser{concatFuncs: concatFuncs}
+	return &defaultDataParser{concatFuncs: concatFuncs, enableAggrMessageOutput: enableAggrMessageOutput}
 }
 
 type defaultDataParser struct {
-	concatFuncs map[reflect.Type]any
+	concatFuncs             map[reflect.Type]any
+	enableAggrMessageOutput bool
 }
 
 func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) map[string]any {
 	if info == nil {
 		return nil
 	}
+
+	level := getGraphNodeLevelFromCtx(ctx)
+	collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
 
 	tags := make(spanTags)
 
@@ -71,6 +77,7 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 		cbInput := model.ConvCallbackInput(input)
 		if cbInput != nil {
 			tags.set(tracespec.Input, convertModelInput(cbInput))
+			tags.set(consts.CustomSpanTagKeyExtra, cbInput.Extra)
 
 			if cbInput.Config != nil {
 				tags.set(tracespec.ModelName, cbInput.Config.Model)
@@ -126,6 +133,10 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 		tags.set(tracespec.Input, parseAny(ctx, input, false))
 
 	default:
+		messages, ok := input.([]*schema.Message)
+		if ok && level == 1 {
+			collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
+		}
 		tags.set(tracespec.Input, parseAny(ctx, input, false))
 	}
 
@@ -139,16 +150,27 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 
 	tags := make(spanTags)
 
+	level := getGraphNodeLevelFromCtx(ctx)
+	collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+
 	switch info.Component {
 	case components.ComponentOfChatModel:
 		cbOutput := model.ConvCallbackOutput(output)
 		if cbOutput != nil {
-			tags.set(tracespec.Output, convertModelOutput(cbOutput))
+			finalOutput := convertModelOutput(cbOutput)
+			if level == 2 {
+				if len(finalOutput.Choices) > 0 {
+					collectOutput.addMessages(finalOutput.Choices[0].Message)
+				}
+			}
+			tags.set(tracespec.Output, finalOutput)
+			tags.set(consts.CustomSpanTagKeyExtra, cbOutput.Extra)
 
 			if cbOutput.TokenUsage != nil {
 				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
 					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
-					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens)
+					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
+					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens)
 			}
 		}
 
@@ -161,7 +183,11 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 	case components.ComponentOfPrompt:
 		cbOutput := prompt.ConvCallbackOutput(output)
 		if cbOutput != nil {
-			tags.set(tracespec.Output, convertPromptOutput(cbOutput))
+			finalOutput := convertPromptOutput(cbOutput)
+			if level == 2 {
+				collectOutput.addMessages(finalOutput.Prompts...)
+			}
+			tags.set(tracespec.Output, finalOutput)
 		}
 
 	case components.ComponentOfEmbedding:
@@ -193,12 +219,36 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			tags.set(tracespec.Output, convertRetrieverOutput(cbOutput))
 		}
 
+	case components.ComponentOfTool:
+		toolCallID := compose.GetToolCallID(ctx)
+		if toolCallID != "" {
+			tags.set(tracespec.ToolCallID, toolCallID)
+		}
+		tags.set(tracespec.Output, parseAny(ctx, output, false))
+
 	case compose.ComponentOfLambda:
+		messages, ok := output.([]*schema.Message)
+		if ok && level == 2 {
+			collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
+		}
 		tags.set(tracespec.Output, parseAny(ctx, output, false))
 
+	case compose.ComponentOfToolsNode:
+		messages, ok := output.([]*schema.Message)
+		if ok && level == 2 {
+			collectOutput.addMessages(iterSliceWithCtx(ctx, iterSlice(messages, convertModelMessage), addToolName)...)
+		}
+		tags.set(tracespec.Output, parseAny(ctx, output, false))
 	default:
-		tags.set(tracespec.Output, parseAny(ctx, output, false))
-
+		if level == 1 && d.enableAggrMessageOutput {
+			tags.set(tracespec.Output, collectOutput)
+		} else {
+			messages, ok := output.([]*schema.Message)
+			if ok && level == 2 {
+				collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
+			}
+			tags.set(tracespec.Output, parseAny(ctx, output, false))
+		}
 	}
 
 	return tags
@@ -274,6 +324,9 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 		usage   *model.TokenUsage
 	)
 
+	level := getGraphNodeLevelFromCtx(ctx)
+	collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+
 	for {
 		item, recvErr := output.Recv()
 		if recvErr != nil {
@@ -311,15 +364,26 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 	}
 
 	if msg, concatErr := schema.ConcatMessages(chunks); concatErr != nil { // unexpected
-		tags.set(tracespec.Output, parseAny(ctx, chunks, true))
+		finalOutput := parseAny(ctx, chunks, true)
+		tags.set(tracespec.Output, finalOutput)
+		if level == 2 {
+			collectOutput.addMessages(&tracespec.ModelMessage{
+				Role:    string(schema.Assistant),
+				Content: parseAny(ctx, chunks, true),
+			})
+		}
 	} else {
 		tags.set(tracespec.Output, convertModelOutput(&model.CallbackOutput{Message: msg}))
+		if level == 2 {
+			collectOutput.addMessages(convertModelMessage(msg))
+		}
 	}
 
 	if usage != nil {
 		tags.set(tracespec.Tokens, usage.TotalTokens).
 			set(tracespec.InputTokens, usage.PromptTokens).
-			set(tracespec.OutputTokens, usage.CompletionTokens)
+			set(tracespec.OutputTokens, usage.CompletionTokens).
+			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens)
 	}
 
 	return tags
@@ -486,7 +550,10 @@ func parseSpanTypeFromComponent(c components.Component) string {
 		return "loader"
 
 	case components.ComponentOfTool:
-		return "function"
+		return "tool"
+
+	case compose.ComponentOfGraph:
+		return "graph"
 
 	default:
 		return string(c)

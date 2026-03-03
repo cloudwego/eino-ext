@@ -21,15 +21,64 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/libs/acl/openai"
 )
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
+var _ model.ChatModel = (*ChatModel)(nil)
+
+const (
+	ChatCompletionResponseFormatTypeJSONObject = openai.ChatCompletionResponseFormatTypeJSONObject
+	ChatCompletionResponseFormatTypeJSONSchema = openai.ChatCompletionResponseFormatTypeJSONSchema
+	ChatCompletionResponseFormatTypeText       = openai.ChatCompletionResponseFormatTypeText
+)
+
+type ChatCompletionResponseFormat = openai.ChatCompletionResponseFormat
+type ChatCompletionResponseFormatJSONSchema = openai.ChatCompletionResponseFormatJSONSchema
+
+type Modality = openai.Modality
+
+type AudioFormat string
+
+const (
+	TextModality  Modality = openai.TextModality
+	AudioModality Modality = openai.AudioModality
+)
+
+const (
+	AudioFormatMp3   AudioFormat = "mp3"
+	AudioFormatWav   AudioFormat = "wav"
+	AudioFormatFlac  AudioFormat = "flac"
+	AudioFormatOpus  AudioFormat = "opus"
+	AudioFormatPcm16 AudioFormat = "pcm16"
+)
+
+type AudioVoice string
+
+const (
+	AudioVoiceAlloy   AudioVoice = "alloy"
+	AudioVoiceAsh     AudioVoice = "ash"
+	AudioVoiceBallad  AudioVoice = "ballad"
+	AudioVoiceCoral   AudioVoice = "coral"
+	AudioVoiceEcho    AudioVoice = "echo"
+	AudioVoiceFable   AudioVoice = "fable"
+	AudioVoiceNova    AudioVoice = "nova"
+	AudioVoiceOnyx    AudioVoice = "onyx"
+	AudioVoiceSage    AudioVoice = "sage"
+	AudioVoiceShimmer AudioVoice = "shimmer"
+)
+
+// Audio specifies the audio output settings
+type Audio struct {
+	// Format specifies the output audio format.
+	Format AudioFormat `json:"format"`
+	// Voice specifies the voice the model uses to respond.
+	Voice AudioVoice `json:"voice"`
+}
 
 type ChatModelConfig struct {
 	// APIKey is your authentication key
@@ -54,6 +103,11 @@ type ChatModelConfig struct {
 	// Required for Azure
 	ByAzure bool `json:"by_azure"`
 
+	// AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
+	// This is useful when the model name is different from the deployment name.
+	// Optional for Azure, remove [,:] from the model name by default.
+	AzureModelMapperFunc func(model string) string
+
 	// BaseURL is the Azure OpenAI endpoint URL
 	// Format: https://{YOUR_RESOURCE_NAME}.openai.azure.com. YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
 	// Required for Azure
@@ -72,7 +126,12 @@ type ChatModelConfig struct {
 
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
+	// Deprecated: use MaxCompletionTokens. Not compatible with o1-series models.
+	// refs: https://platform.openai.com/docs/api-reference/chat/create#chat-create-max_tokens
 	MaxTokens *int `json:"max_tokens,omitempty"`
+
+	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
 
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both.
@@ -97,7 +156,7 @@ type ChatModelConfig struct {
 
 	// ResponseFormat specifies the format of the model's response
 	// Optional. Use for structured outputs
-	ResponseFormat *openai.ChatCompletionResponseFormat `json:"response_format,omitempty"`
+	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
 
 	// Seed enables deterministic sampling for consistent outputs
 	// Optional. Set for reproducible results
@@ -115,9 +174,22 @@ type ChatModelConfig struct {
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
 	User *string `json:"user,omitempty"`
-}
 
-var _ model.ChatModel = (*ChatModel)(nil)
+	// ExtraFields will override any existing fields with the same key.
+	// Optional. Useful for experimental features not yet officially supported.
+	ExtraFields map[string]any `json:"extra_fields,omitempty"`
+
+	// ReasoningEffort will override the default reasoning level of "medium"
+	// Optional. Useful for fine tuning response latency vs. accuracy
+	ReasoningEffort ReasoningEffortLevel
+
+	// Modalities are output types that you would like the model to generate. Most models are capable of generating text, which is the default: ["text"]
+	// The gpt-4o-audio-preview model can also be used to generate audio. To request that this model generate both text and audio responses, you can use: ["text", "audio"]
+	Modalities []Modality `json:"modalities,omitempty"`
+
+	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
+	Audio *Audio `json:"audio,omitempty"`
+}
 
 type ChatModel struct {
 	cli *openai.Client
@@ -135,23 +207,35 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		}
 
 		nConf = &openai.Config{
-			ByAzure:          config.ByAzure,
-			BaseURL:          config.BaseURL,
-			APIVersion:       config.APIVersion,
-			APIKey:           config.APIKey,
-			HTTPClient:       httpClient,
-			Model:            config.Model,
-			MaxTokens:        config.MaxTokens,
-			Temperature:      config.Temperature,
-			TopP:             config.TopP,
-			Stop:             config.Stop,
-			PresencePenalty:  config.PresencePenalty,
-			ResponseFormat:   config.ResponseFormat,
-			Seed:             config.Seed,
-			FrequencyPenalty: config.FrequencyPenalty,
-			LogitBias:        config.LogitBias,
-			User:             config.User,
+			ByAzure:              config.ByAzure,
+			BaseURL:              config.BaseURL,
+			APIVersion:           config.APIVersion,
+			APIKey:               config.APIKey,
+			HTTPClient:           httpClient,
+			Model:                config.Model,
+			MaxTokens:            config.MaxTokens,
+			MaxCompletionTokens:  config.MaxCompletionTokens,
+			Temperature:          config.Temperature,
+			TopP:                 config.TopP,
+			Stop:                 config.Stop,
+			PresencePenalty:      config.PresencePenalty,
+			ResponseFormat:       config.ResponseFormat,
+			Seed:                 config.Seed,
+			FrequencyPenalty:     config.FrequencyPenalty,
+			LogitBias:            config.LogitBias,
+			User:                 config.User,
+			AzureModelMapperFunc: config.AzureModelMapperFunc,
+			ExtraFields:          config.ExtraFields,
+			ReasoningEffort:      openai.ReasoningEffortLevel(config.ReasoningEffort),
+			Modalities:           config.Modalities,
 		}
+
+		if config.Audio != nil {
+			nConf.Audio = &openai.Audio{
+				Format: string(config.Audio.Format),
+				Voice:  string(config.Audio.Voice)}
+		}
+
 	}
 	cli, err := openai.NewClient(ctx, nConf)
 	if err != nil {
@@ -166,12 +250,20 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	return cm.cli.Generate(ctx, in, opts...)
+	out, err := cm.cli.Generate(ctx, in, opts...)
+	if err != nil {
+		return nil, convOrigAPIError(err)
+	}
+	return out, nil
 }
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	return cm.cli.Stream(ctx, in, opts...)
+	out, err := cm.cli.Stream(ctx, in, opts...)
+	if err != nil {
+		return nil, convOrigAPIError(err)
+	}
+	return out, nil
 }
 
 func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {

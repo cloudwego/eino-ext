@@ -6,7 +6,8 @@ A Volcengine APMPlus callback implementation for [Eino](https://github.com/cloud
 
 ## Features
 
-- Implements `github.com/cloudwego/eino/internel/callbacks.Handler`
+- Implements `github.com/cloudwego/eino/internel/callbacks.Handler` interface
+- Implements session functionality to associate multiple requests in a single session
 - Easy integration with Eino's application
 
 ## Installation
@@ -48,7 +49,15 @@ func main() {
 	/*
 	 * compose and run graph
 	 */
-	
+	runner, _ := g.Compile(ctx)
+	// To set session information, use apmplus.SetSession method
+	ctx = apmplus.SetSession(ctx, apmplus.WithSessionID("your_session_id"), apmplus.WithUserID("your_user_id"))
+	// Execute the runner
+	result, _ := runner.Invoke(ctx, "input")
+	/*
+	 * Process the result
+	 */
+	 
 	// Exit after all trace and metrics reporting is complete
 	showdown(ctx)
 }
@@ -79,7 +88,11 @@ type Config struct {
 }
 ```
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 
 - [Volcengine APMPlus Documentation](https://www.volcengine.com/docs/6431/69092)
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

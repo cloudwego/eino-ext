@@ -26,8 +26,9 @@ import (
 	"github.com/chromedp/cdproto/page"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
-	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/ddgsearch"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2"
 )
 
 func TestNewBrowserUseTool(t *testing.T) {
@@ -100,9 +101,14 @@ func TestExecute(t *testing.T) {
 	})
 
 	mockey.PatchConvey("web search", t, func() {
-		tool.searchTool = &ddgsearch.DDGS{}
-		defer mockey.Mock((*ddgsearch.DDGS).Search).Return(&ddgsearch.SearchResponse{
-			Results: []ddgsearch.SearchResult{
+		tl, err := duckduckgo.NewSearch(context.Background(), nil)
+		assert.NoError(t, err)
+		tool.searchTool = tl
+
+		mocker := mockey.GetMethod(tl, "TextSearch")
+
+		defer mockey.Mock(mocker).Return(&duckduckgo.TextSearchResponse{
+			Results: []*duckduckgo.TextSearchResult{
 				{URL: "https://example.com/search"},
 			},
 		}, nil).Build().UnPatch()

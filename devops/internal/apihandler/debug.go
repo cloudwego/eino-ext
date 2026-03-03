@@ -22,13 +22,14 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/cloudwego/eino/compose"
+
 	"github.com/cloudwego/eino-ext/devops/internal/apihandler/types"
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 	"github.com/cloudwego/eino-ext/devops/internal/service"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/log"
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
-	"github.com/cloudwego/eino/compose"
 )
 
 func InitDebug(opt *model.DevOpt) {
@@ -118,7 +119,7 @@ func StreamDebugRun(res http.ResponseWriter, req *http.Request) {
 
 	rs, err := validateDebugRunRequest(req)
 	if err != nil {
-		log.Errorf(err.Error())
+		log.Errorf("validateDebugRunRequest err: %v", err)
 		return
 	}
 
@@ -138,7 +139,7 @@ func StreamDebugRun(res http.ResponseWriter, req *http.Request) {
 
 	debugID, stateCh, errCh, err := service.DebugSVC.DebugRun(ctx, m, rs.Input)
 	if err != nil {
-		log.Errorf(err.Error())
+		log.Errorf("DebugRun err: %v", err)
 		return
 	}
 

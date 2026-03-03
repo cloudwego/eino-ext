@@ -39,6 +39,7 @@ type Config struct {
 	DDGConfig *ddgsearch.Config `json:"ddg_config"`
 }
 
+// Deprecated: use NewTextSearchTool in V2 instead.
 func NewTool(ctx context.Context, config *Config) (tool.InvokableTool, error) {
 	ddgs, err := newDDGS(ctx, config)
 	if err != nil {
@@ -141,7 +142,7 @@ type SearchResponse struct {
 func (d *ddgs) Search(ctx context.Context, request *SearchRequest) (*SearchResponse, error) {
 	results, err := d.ddg.Search(ctx, &ddgsearch.SearchParams{
 		Query:      request.Query,
-		Region:     ddgsearch.Region(d.config.Region),
+		Region:     d.config.Region,
 		MaxResults: d.config.MaxResults,
 		Page:       request.Page,
 		SafeSearch: d.config.SafeSearch,

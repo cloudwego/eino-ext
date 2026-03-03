@@ -83,3 +83,55 @@ func Test_EmbedStrings(t *testing.T) {
 		})
 	})
 }
+
+func TestAPITypeMultiModal(t *testing.T) {
+	PatchConvey("test APITypeMultiModal", t, func() {
+		ctx := context.Background()
+
+		PatchConvey("test buildClient", func() {
+			cfg := &EmbeddingConfig{APIType: nil}
+			buildClient(cfg)
+			convey.So(*cfg.APIType, convey.ShouldEqual, APITypeText)
+
+			at := APITypeMultiModal
+			cfg = &EmbeddingConfig{APIType: &at}
+			buildClient(cfg)
+			convey.So(*cfg.MaxConcurrentRequests, convey.ShouldEqual, 5)
+		})
+
+		PatchConvey("test EmbedStrings", func() {
+			at := APITypeMultiModal
+			mcr := 5
+			cfg := &EmbeddingConfig{APIType: &at, MaxConcurrentRequests: &mcr}
+			mockCli := &arkruntime.Client{}
+			emb := &Embedder{client: mockCli, conf: cfg}
+
+			PatchConvey("test CreateMultiModalEmbeddings error", func() {
+				e := fmt.Errorf("mock err")
+				Mock(GetMethod(mockCli, "CreateMultiModalEmbeddings")).Return(model.MultimodalEmbeddingResponse{}, e).Build()
+				res, err := emb.EmbedStrings(ctx, []string{"asd", "qwe"})
+				convey.So(err, convey.ShouldBeError, fmt.Errorf("[Ark] CreateMultiModalEmbeddings error: %w", e))
+				convey.So(res, convey.ShouldBeNil)
+			})
+
+			PatchConvey("test CreateMultiModalEmbeddings success", func() {
+				v := []float32{0.1, 0.2, 0.3}
+				Mock(GetMethod(mockCli, "CreateMultiModalEmbeddings")).Return(model.MultimodalEmbeddingResponse{
+					Data: model.MultimodalEmbedding{
+						Embedding: v,
+						Object:    "embedding",
+					},
+					Usage: model.MultimodalEmbeddingUsage{
+						PromptTokens: 1,
+						TotalTokens:  3,
+					},
+				}, nil).Build()
+				res, err := emb.EmbedStrings(ctx, []string{"asd", "qwe"})
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(len(res), convey.ShouldEqual, 2)
+				convey.So(res[0], convey.ShouldEqual, toFloat64(v))
+				convey.So(res[1], convey.ShouldEqual, toFloat64(v))
+			})
+		})
+	})
+}
