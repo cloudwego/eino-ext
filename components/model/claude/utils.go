@@ -16,6 +16,24 @@
 
 package claude
 
+import (
+	"encoding/json"
+
+	"github.com/eino-contrib/jsonschema"
+)
+
+func jsonSchemaToMap(s *jsonschema.Schema) (map[string]any, error) {
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err = json.Unmarshal(b, &m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
 func of[T any](v T) *T {
 	return &v
 }
