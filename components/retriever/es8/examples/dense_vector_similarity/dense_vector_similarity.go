@@ -95,7 +95,7 @@ func main() {
 
 				case fieldContentVector:
 					var v []float64
-					for _, item := range val.([]interface{}) {
+					for _, item := range val.([]any) {
 						v = append(v, item.(float64))
 					}
 					doc.WithDenseVector(v)

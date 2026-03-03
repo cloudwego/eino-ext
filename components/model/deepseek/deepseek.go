@@ -556,8 +556,9 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 	}
 
 	cbInput := &model.CallbackInput{
-		Messages: in,
-		Tools:    cm.rawTools,
+		Messages:   in,
+		Tools:      cm.rawTools,
+		ToolChoice: options.ToolChoice,
 		Config: &model.Config{
 			Model:       req.Model,
 			MaxTokens:   req.MaxTokens,
@@ -576,50 +577,13 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		cbInput.Tools = options.Tools
 	}
 
-	if len(tools) > 0 {
-		req.Tools = make([]deepseek.Tool, len(tools))
-		for i := range tools {
-			req.Tools[i] = tools[i]
-		}
+	req.Tools = make([]deepseek.Tool, len(tools))
+	copy(req.Tools, tools)
+
+	err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	if options.ToolChoice != nil {
-		/*
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
-
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
-
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
-		*/
-
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = deepseek.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: deepseek.ToolChoiceFunction{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
-		}
-	}
-
 	msgs := make([]deepseek.ChatCompletionMessage, 0, len(in))
 	for _, inMsg := range in {
 		msg, e := toDeepSeekMessage(inMsg)
@@ -641,6 +605,69 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 	return req, cbInput, nil
 }
 
+func populateToolChoice(req *deepseek.ChatCompletionRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	/*
+		tool_choice is string or object
+		Controls which (if any) tool is called by the model.
+		"none" means the model will not call any tool and instead generates a message.
+		"auto" means the model can pick between generating a message or calling one or more tools.
+		"required" means the model must call one or more tools.
+
+		Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
+
+		"none" is the default when no tools are present.
+		"auto" is the default if tools are present.
+	*/
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+	case schema.ToolChoiceAllowed:
+		req.ToolChoice = toolChoiceAuto
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+
+		onlyOneToolName := ""
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+			onlyOneToolName = allowedToolName
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+		if onlyOneToolName != "" {
+			req.ToolChoice = deepseek.ToolChoice{
+				Type: "function",
+				Function: deepseek.ToolChoiceFunction{
+					Name: onlyOneToolName,
+				},
+			}
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+	default:
+		return fmt.Errorf("tool choice=%s not support", *tc)
+	}
+
+	return nil
+}
+
 const (
 	roleAssistant = "assistant"
 	roleSystem    = "system"
@@ -652,6 +679,15 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	if len(m.MultiContent) > 0 {
 		return nil, fmt.Errorf("multi content is not supported in deepseek")
 	}
+
+	if len(m.UserInputMultiContent) > 0 {
+		return nil, fmt.Errorf("user input multi content is not supported in deepseek")
+	}
+
+	if len(m.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("assistan gen multi content is not supported in deepseek")
+	}
+
 	var role string
 	switch m.Role {
 	case schema.Assistant:
@@ -674,11 +710,15 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	if ret.Role != roleAssistant && ret.Prefix {
 		return nil, fmt.Errorf("prefix only supported for assistant message")
 	}
-	if ret.Prefix {
-		if reasoning, ok := GetReasoningContent(m); ok {
-			ret.ReasoningContent = reasoning
-		}
+
+	if m.ReasoningContent != "" {
+		ret.ReasoningContent = m.ReasoningContent
+
+	} else if reasoning, ok := GetReasoningContent(m); ok {
+		// Backward compatibility: support `reasoning_content` in message.Extra when `ReasoningContent` is missing.
+		ret.ReasoningContent = reasoning
 	}
+
 	if ret.Role == roleTool && m.ToolCallID != "" {
 		ret.ToolCallID = m.ToolCallID
 	}

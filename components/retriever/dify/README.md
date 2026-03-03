@@ -105,7 +105,11 @@ docName := dify.GetOrgDocName(doc)
 keywords := dify.GetKeywords(doc)
 ```
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 
 - [Dify API Documentation](https://github.com/langgenius/dify)
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

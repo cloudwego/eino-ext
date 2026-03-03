@@ -88,7 +88,11 @@ The embedder fully supports Eino's callback system, enabling:
 - Start/End event monitoring
 - Token usage statistics
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 
 - [Tencent Cloud Hunyuan API Documentation](https://cloud.tencent.com/document/product/1729/102832)
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

@@ -24,7 +24,7 @@ import (
 )
 
 type DeleteRequest struct {
-	URL string `json:"url" jsonschema:"description=The URL to make the DELETE request"`
+	URL string `json:"url" jsonschema_description:"The URL to make the DELETE request"`
 }
 
 func (r *DeleteRequestTool) Delete(ctx context.Context, req *DeleteRequest) (string, error) {

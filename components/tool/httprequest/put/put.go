@@ -25,8 +25,8 @@ import (
 )
 
 type PutRequest struct {
-	URL  string `json:"url" jsonschema:"description=The URL to make the PUT request"`
-	Body string `json:"body" jsonschema:"description=The body to send in the PUT request"`
+	URL  string `json:"url" jsonschema_description:"The URL to make the PUT request"`
+	Body string `json:"body" jsonschema_description:"The body to send in the PUT request"`
 }
 
 func (r *PutRequestTool) Put(ctx context.Context, req *PutRequest) (string, error) {

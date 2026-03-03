@@ -89,12 +89,13 @@ func TestOpenAIGenerate(t *testing.T) {
 				ToolCallID: "tool call id",
 			},
 		},
-		MaxTokens:       1,
-		Temperature:     &temperature,
-		TopP:            0.2,
-		Stream:          false,
-		Stop:            []string{"stop"},
-		PresencePenalty: 0.3,
+		MaxTokens:           1,
+		MaxCompletionTokens: 1,
+		Temperature:         &temperature,
+		TopP:                0.2,
+		Stream:              false,
+		Stop:                []string{"stop"},
+		PresencePenalty:     0.3,
 		ResponseFormat: &openai.ChatCompletionResponseFormat{
 			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
 		},
@@ -123,6 +124,7 @@ func TestOpenAIGenerate(t *testing.T) {
 		ToolChoice: "required",
 	}
 	mockOpenAIResponse := openai.ChatCompletionResponse{
+		ID: "request id",
 		Choices: []openai.ChatCompletionChoice{
 			{
 				Index: 0,
@@ -172,19 +174,23 @@ func TestOpenAIGenerate(t *testing.T) {
 				TotalTokens:      3,
 			},
 		},
+		Extra: map[string]any{
+			"openai-request-id": "request id",
+		},
 	}
 	config := &ChatModelConfig{
-		ByAzure:         false,
-		BaseURL:         "",
-		APIVersion:      "",
-		APIKey:          "",
-		Timeout:         0,
-		Model:           "gpt-4",
-		MaxTokens:       &expectedRequestBody.MaxTokens,
-		Temperature:     expectedRequestBody.Temperature,
-		TopP:            &expectedRequestBody.TopP,
-		Stop:            expectedRequestBody.Stop,
-		PresencePenalty: &expectedRequestBody.PresencePenalty,
+		ByAzure:             false,
+		BaseURL:             "",
+		APIVersion:          "",
+		APIKey:              "",
+		Timeout:             0,
+		Model:               "gpt-4",
+		MaxTokens:           &expectedRequestBody.MaxTokens,
+		MaxCompletionTokens: &expectedRequestBody.MaxCompletionTokens,
+		Temperature:         expectedRequestBody.Temperature,
+		TopP:                &expectedRequestBody.TopP,
+		Stop:                expectedRequestBody.Stop,
+		PresencePenalty:     &expectedRequestBody.PresencePenalty,
 		ResponseFormat: &protocol.ChatCompletionResponseFormat{
 			Type: protocol.ChatCompletionResponseFormatTypeJSONObject,
 		},
@@ -257,6 +263,8 @@ func TestOpenAIGenerate(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// 手动处理result中的openaiResultID类型
+		result.Extra["openai-request-id"] = protocol.GetRequestID(result)
 		if !reflect.DeepEqual(result, expectedMessages) {
 			resultData, _ := json.Marshal(result)
 			expectMsgData, _ := json.Marshal(expectedMessages)

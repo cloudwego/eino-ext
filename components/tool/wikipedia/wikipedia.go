@@ -176,18 +176,18 @@ type wikipedia struct {
 
 // Result is the page search result.
 type Result struct {
-	Title   string `json:"title" jsonschema:"description=The title of the search result"`
-	URL     string `json:"url" jsonschema:"description=The url of the search result"`
-	Extract string `json:"extract" jsonschema:"description=The extract of the search result"`
-	Snippet string `json:"snippet" jsonschema:"description=The snippet of the search result"`
+	Title   string `json:"title" jsonschema_description:"The title of the search result"`
+	URL     string `json:"url" jsonschema_description:"The url of the search result"`
+	Extract string `json:"extract" jsonschema_description:"The extract of the search result"`
+	Snippet string `json:"snippet" jsonschema_description:"The snippet of the search result"`
 }
 
 // SearchRequest is the search request.
 type SearchRequest struct {
-	Query string `json:"query" jsonschema:"description=The query to search the web for"`
+	Query string `json:"query" jsonschema_description:"The query to search the web for"`
 }
 
 // SearchResponse is the search response.
 type SearchResponse struct {
-	Results []*Result `json:"results" jsonschema:"description=The results of the search"`
+	Results []*Result `json:"results" jsonschema_description:"The results of the search"`
 }

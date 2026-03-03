@@ -1,21 +1,21 @@
-# Langsmith 回调
+# Langsmith Callbacks
 
-简体中文
+English | [简体中文](README_zh.md)
 
-这是一个为 [langsmith](https://www.langchain.com/langsmith) 实现的 Trace 回调。该工具实现了 `Handler` 接口，可以与 Eino 的应用无缝集成以提供增强的可观测能力。
+A Langsmith callback implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Handler` interface. This enables seamless integration with Eino's application for enhanced observability and tracing.
 
-## 特性
+## Features
 
-- 实现了 `github.com/cloudwego/eino/internel/callbacks.Handler` 接口
-- 易于与 Eino 应用集成
+- Implements `github.com/cloudwego/eino/internel/callbacks.Handler` interface
+- Easy integration with Eino's application
 
-## 安装
+## Installation
 
 ```bash
 go get github.com/cloudwego/eino-ext/callbacks/langsmith
 ```
 
-## 快速开始
+## Quick Start
 
 ```go
 package main
@@ -46,12 +46,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// 设置全局上报handler
+	// Set global callback handler
 	callbacks.AppendGlobalHandlers(cbh)
 	
 	ctx := context.Background()
 	ctx = langsmith.SetTrace(ctx,
-		langsmith.WithSessionName("your session name"), // 设置langsmith上报项目名称
+		langsmith.WithSessionName("your session name"), // Set langsmith project name for reporting
 	)
 
 	g := compose.NewGraph[string, string]()
@@ -81,3 +81,12 @@ func main() {
 	
 }
 ```
+
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
+## For More Details
+
+- [Langsmith Documentation](https://www.langchain.com/langsmith)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

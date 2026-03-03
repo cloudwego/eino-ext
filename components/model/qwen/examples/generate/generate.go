@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 CloudWeGo Authors
+ * Copyright 2025 CloudWeGo Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,39 +22,38 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino/schema"
-
 	"github.com/cloudwego/eino-ext/components/model/qwen"
+	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
 	ctx := context.Background()
 	// get api key: https://help.aliyun.com/zh/model-studio/developer-reference/get-api-key?spm=a2c4g.11186623.help-menu-2400256.d_3_0.1ebc47bb0ClCgF
 	apiKey := os.Getenv("DASHSCOPE_API_KEY")
-	cm, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
+	modelName := os.Getenv("MODEL_NAME")
+	chatModel, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
 		BaseURL:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
 		APIKey:      apiKey,
 		Timeout:     0,
-		Model:       "qwen-max",
+		Model:       modelName,
 		MaxTokens:   of(2048),
 		Temperature: of(float32(0.7)),
 		TopP:        of(float32(0.7)),
 	})
+
 	if err != nil {
 		log.Fatalf("NewChatModel of qwen failed, err=%v", err)
 	}
 
-	ir, err := cm.Generate(ctx, []*schema.Message{
-		schema.UserMessage("你好"),
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
+		schema.UserMessage("as a machine, how do you answer user's question?"),
 	})
 	if err != nil {
 		log.Fatalf("Generate of qwen failed, err=%v", err)
 	}
 
-	fmt.Println(ir)
-	// assistant: 你好！有什么我可以帮助你的吗？
-	// finish_reason: stop
-	// usage: &{9 8 17}
+	fmt.Printf("output: \n%v", resp)
+
 }
 
 func of[T any](t T) *T {

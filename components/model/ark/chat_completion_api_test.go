@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
@@ -230,6 +231,9 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 						CompletionTokens: 1,
 						PromptTokens:     2,
 						TotalTokens:      3,
+						CompletionTokensDetails: model.CompletionTokensDetails{
+							ReasoningTokens: 10,
+						},
 					},
 					Choices: []*model.ChatCompletionChoice{
 						{
@@ -259,6 +263,57 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 				fmodel.WithTopP(123))
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(outMsg, convey.ShouldNotBeNil)
+			convey.So(outMsg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens, convey.ShouldEqual, 10)
+			convey.So(outMsg.ResponseMeta.Usage.PromptTokens, convey.ShouldEqual, 2)
+			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
+			convey.So(len(outMsg.ToolCalls), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("test use batch success", func() {
+			Mock(GetMethod(cli, "CreateBatchChatCompletion")).Return(
+				model.ChatCompletionResponse{
+					Usage: model.Usage{
+						CompletionTokens: 1,
+						PromptTokens:     2,
+						TotalTokens:      3,
+					},
+					Choices: []*model.ChatCompletionChoice{
+						{
+							Message: model.ChatCompletionMessage{
+								Content:    &model.ChatCompletionMessageContent{StringValue: ptrOf("test_content")},
+								Role:       model.ChatMessageRoleAssistant,
+								ToolCallID: "",
+								ToolCalls: []*model.ToolCall{
+									{
+										Function: model.FunctionCall{
+											Arguments: "ccc",
+											Name:      "qqq",
+										},
+										ID:   "123",
+										Type: model.ToolTypeFunction,
+									},
+								},
+							},
+						},
+					},
+				}, nil).Build()
+			bm, err := NewChatModel(ctx, &ChatModelConfig{
+				APIKey: "asd",
+				Model:  "asd",
+				BatchChat: &BatchChatConfig{
+					EnableBatchChat:            true,
+					BatchChatAsyncRetryTimeout: 2 * time.Hour,
+					BatchMaxParallel:           ptrOf(3000),
+				},
+				Timeout: ptrOf(10 * time.Second),
+			})
+			outMsg, err := bm.Generate(ctx, msgs,
+				fmodel.WithTemperature(1),
+				fmodel.WithMaxTokens(321),
+				fmodel.WithModel("asd"),
+				fmodel.WithTopP(123))
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(outMsg, convey.ShouldNotBeNil)
 			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
 			convey.So(len(outMsg.ToolCalls), convey.ShouldEqual, 1)
 		})
@@ -280,7 +335,7 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 				},
 			}
 
-			req, err := m.chatModel.toArkContent(multiModalMsg.Content, multiModalMsg.MultiContent)
+			req, err := m.chatModel.toArkContent(multiModalMsg)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(req.StringValue, convey.ShouldBeNil)
 			convey.So(req.ListValue, convey.ShouldHaveLength, 2)
@@ -329,4 +384,330 @@ func TestChatCompletionAPILogProbs(t *testing.T) {
 			},
 		},
 	}}))
+}
+
+func TestCompletionAPIChatModel_toArkContent(t *testing.T) {
+	cm := &completionAPIChatModel{}
+	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+	httpURL := "https://example.com/image.png"
+	videoURL := "https://example.com/video.mp4"
+
+	PatchConvey("Test toArkContent Comprehensive", t, func() {
+		PatchConvey("Pure Text Content", func() {
+			msg := &schema.Message{Content: "just text"}
+			content, err := cm.toArkContent(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(*content.StringValue, convey.ShouldEqual, "just text")
+		})
+
+		PatchConvey("UserInputMultiContent", func() {
+			PatchConvey("Success with all types", func() {
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeText, Text: "some text"},
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+						{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 3)
+			})
+			PatchConvey("Error on nil image", func() {
+				msg := &schema.Message{UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on empty image data", func() {
+				msg := &schema.Message{UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on nil video", func() {
+				msg := &schema.Message{UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on empty video data", func() {
+				msg := &schema.Message{UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("Error on missing MIMEType for image", func() {
+				msg := &schema.Message{UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("Error on missing MIMEType for video", func() {
+				msg := &schema.Message{UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+		})
+
+		PatchConvey("AssistantGenMultiContent", func() {
+			PatchConvey("Success with image and video", func() {
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{
+						{Type: schema.ChatMessagePartTypeText, Text: "some text"},
+						{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+						{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: &videoURL}}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 3)
+			})
+			PatchConvey("Error on wrong role", func() {
+				msg := &schema.Message{Role: schema.User, AssistantGenMultiContent: []schema.MessageOutputPart{{}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on nil image", func() {
+				msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on empty image data", func() {
+				msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on nil video", func() {
+				msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on empty video data", func() {
+				msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on unsupported type", func() {
+				msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: "unsupported"}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("Error on missing MIMEType for image", func() {
+				msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+
+			PatchConvey("Error on missing MIMEType for video", func() {
+				msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+		})
+
+		PatchConvey("MultiContent (Legacy)", func() {
+			PatchConvey("Success with all types", func() {
+				msg := &schema.Message{
+					MultiContent: []schema.ChatMessagePart{
+						{Type: schema.ChatMessagePartTypeText, Text: "some text"},
+						{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: httpURL}},
+						{Type: schema.ChatMessagePartTypeVideoURL, VideoURL: &schema.ChatMessageVideoURL{URL: videoURL}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 3)
+			})
+			PatchConvey("Error on nil ImageURL", func() {
+				msg := &schema.Message{MultiContent: []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeImageURL, ImageURL: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+			PatchConvey("Error on nil VideoURL", func() {
+				msg := &schema.Message{MultiContent: []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeVideoURL, VideoURL: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+			})
+		})
+
+		PatchConvey("Error on both UserInputMultiContent and AssistantGenMultiContent", func() {
+			msg := &schema.Message{
+				UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "user"}},
+				AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "assistant"}},
+			}
+			_, err := cm.toArkContent(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+		})
+	})
+}
+
+func Test_completionAPIChatModel_genRequest(t *testing.T) {
+	chatModel := &completionAPIChatModel{
+		frequencyPenalty: ptrOf(float32(1)),
+	}
+	req, err := chatModel.genRequest([]*schema.Message{
+		{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
+			{Type: schema.ChatMessagePartTypeText, Text: "ok"},
+		}, Extra: map[string]any{
+			keyOfReasoningContent: "keyOfReasoningContent",
+		}},
+	}, &fmodel.Options{
+		Temperature: ptrOf(float32(1)),
+	}, &arkOptions{})
+	assert.Nil(t, err)
+	assert.Len(t, req.Messages, 1)
+	assert.Equal(t, *req.Messages[0].ReasoningContent, "keyOfReasoningContent")
+}
+
+func Test_populateCompletionAPIToolChoice(t *testing.T) {
+
+	convey.Convey("Test_populateCompletionAPIToolChoice", t, func() {
+		convey.Convey("no tool choice", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool choice forbidden", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForbidden),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceNone)
+		})
+
+		convey.Convey("tool choice allowed", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceAllowed),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceAuto)
+		})
+
+		convey.Convey("tool choice forced with one tool", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldResemble, model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: "test_tool",
+				},
+			})
+		})
+
+		convey.Convey("tool choice forced with one allowed tool name", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+					{
+						Function: &model.FunctionDefinition{
+							Name: "another_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"test_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldResemble, model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: "test_tool",
+				},
+			})
+		})
+
+		convey.Convey("tool choice forced with multiple tools", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+					{
+						Function: &model.FunctionDefinition{
+							Name: "another_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceRequired)
+		})
+
+		convey.Convey("tool choice forced with no tools", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "tool_choice is forced but no tools are provided")
+		})
+
+		convey.Convey("tool choice forced with multiple allowed tool names", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"test_tool", "another_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "only one allowed tool name can be configured")
+		})
+
+		convey.Convey("tool choice forced with allowed tool name not in tools list", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"non_existent_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "allowed tool name 'non_existent_tool' not found in tools list")
+		})
+	})
 }

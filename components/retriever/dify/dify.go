@@ -104,6 +104,7 @@ type Segment struct {
 	Position      int       `json:"position"`
 	DocumentID    string    `json:"document_id"`
 	Content       string    `json:"content"`
+	SignContent   string    `json:"sign_content"`
 	WordCount     int       `json:"word_count"`
 	Tokens        int       `json:"tokens"`
 	Keywords      []string  `json:"keywords"`
@@ -199,9 +200,14 @@ func (x *Record) toDoc() *schema.Document {
 	if x == nil || x.Segment == nil {
 		return nil
 	}
+
+	content := x.Segment.Content
+	if x.Segment.SignContent != "" {
+		content = x.Segment.SignContent
+	}
 	doc := &schema.Document{
 		ID:       x.Segment.ID,
-		Content:  x.Segment.Content,
+		Content:  content,
 		MetaData: map[string]any{},
 	}
 	doc.WithScore(x.Score)

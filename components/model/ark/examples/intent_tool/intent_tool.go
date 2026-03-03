@@ -18,11 +18,15 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/model/ark"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/ark"
 )
 
 func main() {
@@ -31,65 +35,147 @@ func main() {
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
 	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
-		Model:  os.Getenv("ARK_MODEL_ID"),
+		Model:  os.Getenv("ARK_MODEL_ID"), // the model needs to support image input, such as Doubao-Seed-1.6.
 	})
 	if err != nil {
 		log.Printf("NewChatModel failed, err=%v", err)
 		return
 	}
 
-	err = chatModel.BindTools([]*schema.ToolInfo{
+	fmt.Printf("\n==========text tool call==========\n")
+	textToolCall(ctx, chatModel)
+	fmt.Printf("\n==========image tool call==========\n")
+	imageToolCall(ctx, chatModel)
+}
+
+func textToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
+	chatModel, err := chatModel.WithTools([]*schema.ToolInfo{
 		{
 			Name: "user_company",
-			Desc: "根据用户的姓名和邮箱，查询用户的公司和职位信息",
+			Desc: "Query the user's company and position information based on their name and email",
 			ParamsOneOf: schema.NewParamsOneOfByParams(
 				map[string]*schema.ParameterInfo{
 					"name": {
 						Type: "string",
-						Desc: "用户的姓名",
+						Desc: "The user's name",
 					},
 					"email": {
 						Type: "string",
-						Desc: "用户的邮箱",
+						Desc: "The user's email",
 					},
 				}),
 		},
 		{
 			Name: "user_salary",
-			Desc: "根据用户的姓名和邮箱，查询用户的薪酬信息",
+			Desc: "Query the user's salary information based on their name and email",
 			ParamsOneOf: schema.NewParamsOneOfByParams(
 				map[string]*schema.ParameterInfo{
 					"name": {
 						Type: "string",
-						Desc: "用户的姓名",
+						Desc: "The user's name",
 					},
 					"email": {
 						Type: "string",
-						Desc: "用户的邮箱",
+						Desc: "The user's email",
 					},
 				}),
 		},
 	})
 	if err != nil {
-		log.Printf("BindForcedTools failed, err=%v", err)
+		log.Fatalf("WithTools failed, err=%v", err)
 		return
 	}
 
 	resp, err := chatModel.Generate(ctx, []*schema.Message{
 		{
 			Role:    schema.System,
-			Content: "你是一名房产经纪人，结合用户的薪酬和工作，使用 user_company、user_salary 两个 API，为其提供相关的房产信息。邮箱是必须的",
+			Content: "You are a real estate agent. Use the user_company and user_salary APIs to provide relevant property information based on the user's salary and job. Email is required",
 		},
 		{
 			Role:    schema.User,
-			Content: "我的姓名是 zhangsan，我的邮箱是 zhangsan@bytedance.com，请帮我推荐一些适合我的房子。",
+			Content: "My name is zhangsan, and my email is zhangsan@bytedance.com. Please recommend some suitable houses for me.",
 		},
 	})
 
 	if err != nil {
-		log.Printf("Generate failed, err=%v", err)
+		log.Fatalf("Generate failed, err=%v", err)
 		return
 	}
 
-	log.Printf("output: \n%v", resp)
+	fmt.Printf("output: \n%v", resp)
+}
+
+func imageToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
+	image, err := os.ReadFile("./examples/intent_tool/img.png")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	imageStr := base64.StdEncoding.EncodeToString(image)
+
+	chatModel, err = chatModel.WithTools([]*schema.ToolInfo{
+		{
+			Name: "image_generator",
+			Desc: "a tool can generate images",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"description": {
+						Type: "string",
+						Desc: "The description of the image",
+					},
+				}),
+		},
+	})
+	if err != nil {
+		log.Fatalf("WithTools failed, err=%v", err)
+		return
+	}
+
+	query := []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "You are a helpful assistant. If the user needs to generate an image, call the image_generator tool to generate the image.",
+		},
+		{
+			Role:    schema.User,
+			Content: "Generator a cat image",
+		},
+	}
+
+	resp, err := chatModel.Generate(ctx, query)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+		return
+	}
+
+	if len(resp.ToolCalls) == 0 {
+		log.Fatalf("No tool calls found")
+		return
+	}
+
+	fmt.Printf("output: \n%v", resp)
+
+	resp, err = chatModel.Generate(ctx, append(query, resp, &schema.Message{
+		Role:       schema.Tool,
+		ToolCallID: resp.ToolCalls[0].ID,
+		UserInputMultiContent: []schema.MessageInputPart{
+			{
+				Type: schema.ChatMessagePartTypeText,
+				Text: "Image generation successful.",
+			},
+			{
+				Type: schema.ChatMessagePartTypeImageURL,
+				Image: &schema.MessageInputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						Base64Data: &imageStr,
+						MIMEType:   "image/png",
+					},
+				},
+			},
+		},
+	}))
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+	fmt.Printf("output: \n%v", resp)
 }

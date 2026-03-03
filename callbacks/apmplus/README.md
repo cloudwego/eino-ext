@@ -88,7 +88,11 @@ type Config struct {
 }
 ```
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 
 - [Volcengine APMPlus Documentation](https://www.volcengine.com/docs/6431/69092)
-- [Eino Documentation](https://github.com/cloudwego/eino)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

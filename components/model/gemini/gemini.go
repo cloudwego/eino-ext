@@ -18,13 +18,17 @@ package gemini
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"runtime/debug"
+	"strings"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/uuid"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -55,15 +59,25 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 	return &ChatModel{
 		cli: cfg.Client,
 
-		model:               cfg.Model,
-		maxTokens:           cfg.MaxTokens,
-		temperature:         cfg.Temperature,
-		topP:                cfg.TopP,
-		topK:                cfg.TopK,
-		responseSchema:      cfg.ResponseSchema,
-		enableCodeExecution: cfg.EnableCodeExecution,
-		safetySettings:      cfg.SafetySettings,
-		thinkingConfig:      cfg.ThinkingConfig,
+		model:                       cfg.Model,
+		maxTokens:                   cfg.MaxTokens,
+		temperature:                 cfg.Temperature,
+		topP:                        cfg.TopP,
+		topK:                        cfg.TopK,
+		responseJSONSchema:          cfg.ResponseJSONSchema,
+		enableCodeExecution:         cfg.EnableCodeExecution,
+		enableGoogleSearch:          cfg.EnableGoogleSearch,
+		enableGoogleSearchRetrieval: cfg.EnableGoogleSearchRetrieval,
+		enableComputerUse:           cfg.EnableComputerUse,
+		enableURLContext:            cfg.EnableURLContext,
+		enableFileSearch:            cfg.EnableFileSearch,
+		enableGoogleMaps:            cfg.EnableGoogleMaps,
+		safetySettings:              cfg.SafetySettings,
+		thinkingConfig:              cfg.ThinkingConfig,
+		imageConfig:                 cfg.ImageConfig,
+		responseModalities:          cfg.ResponseModalities,
+		mediaResolution:             cfg.MediaResolution,
+		cache:                       cfg.Cache,
 	}, nil
 }
 
@@ -95,14 +109,21 @@ type Config struct {
 	// Optional. Example: topK := int32(40)
 	TopK *int32
 
-	// ResponseSchema defines the structure for JSON responses
+	// ResponseJSONSchema defines the structure for JSON responses
 	// Optional. Used when you want structured output in JSON format
-	ResponseSchema *openapi3.Schema
+	ResponseJSONSchema *jsonschema.Schema
 
 	// EnableCodeExecution allows the model to execute code
 	// Warning: Be cautious with code execution in production
 	// Optional. Default: false
 	EnableCodeExecution bool
+
+	EnableGoogleSearch          *genai.GoogleSearch
+	EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
+	EnableComputerUse           *genai.ComputerUse
+	EnableURLContext            *genai.URLContext
+	EnableFileSearch            *genai.FileSearch
+	EnableGoogleMaps            *genai.GoogleMaps
 
 	// SafetySettings configures content filtering for different harm categories
 	// Controls the model's filtering behavior for potentially harmful content
@@ -110,23 +131,56 @@ type Config struct {
 	SafetySettings []*genai.SafetySetting
 
 	ThinkingConfig *genai.ThinkingConfig
+
+	// ImageConfig is the image generation configuration.
+	// Note: an error will be returned if this field is set for a model that does not support the configuration options.
+	// Optional.
+	ImageConfig *genai.ImageConfig
+
+	// ResponseModalities specifies the modalities the model can return.
+	// Optional.
+	ResponseModalities []GeminiResponseModality
+
+	MediaResolution genai.MediaResolution
+
+	// Cache controls prefix cache settings for the model.
+	// Optional. used to CreatePrefixCache for reused inputs.
+	Cache *CacheConfig
+}
+
+// CacheConfig controls prefix cache settings for the model.
+type CacheConfig struct {
+	// TTL specifies how long cached resources remain valid (now + TTL).
+	TTL time.Duration `json:"ttl,omitempty"`
+	// ExpireTime sets the absolute expiration timestamp for cached resources.
+	ExpireTime time.Time `json:"expireTime,omitempty"`
 }
 
 type ChatModel struct {
 	cli *genai.Client
 
-	model               string
-	maxTokens           *int
-	topP                *float32
-	temperature         *float32
-	topK                *int32
-	responseSchema      *openapi3.Schema
-	tools               []*genai.FunctionDeclaration
-	origTools           []*schema.ToolInfo
-	toolChoice          *schema.ToolChoice
-	enableCodeExecution bool
-	safetySettings      []*genai.SafetySetting
-	thinkingConfig      *genai.ThinkingConfig
+	model                       string
+	maxTokens                   *int
+	topP                        *float32
+	temperature                 *float32
+	topK                        *int32
+	responseJSONSchema          *jsonschema.Schema
+	tools                       []*genai.FunctionDeclaration
+	origTools                   []*schema.ToolInfo
+	toolChoice                  *schema.ToolChoice
+	enableCodeExecution         bool
+	enableGoogleSearch          *genai.GoogleSearch
+	enableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
+	enableComputerUse           *genai.ComputerUse
+	enableURLContext            *genai.URLContext
+	enableFileSearch            *genai.FileSearch
+	enableGoogleMaps            *genai.GoogleMaps
+	safetySettings              []*genai.SafetySetting
+	thinkingConfig              *genai.ThinkingConfig
+	imageConfig                 *genai.ImageConfig
+	responseModalities          []GeminiResponseModality
+	mediaResolution             genai.MediaResolution
+	cache                       *CacheConfig
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -134,11 +188,19 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	modelName, nInput, genaiConf, cbConf, err := cm.genInputAndConf(input, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("genInputAndConf for Generate failed: %w", err)
+	}
 
+	co := model.GetCommonOptions(&model.Options{
+		Tools:      cm.origTools,
+		ToolChoice: cm.toolChoice,
+	}, opts...)
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    model.GetCommonOptions(&model.Options{Tools: cm.origTools}, opts...).Tools,
-		Config:   cbConf,
+		Messages:   input,
+		Tools:      co.Tools,
+		ToolChoice: co.ToolChoice,
+		Config:     cbConf,
 	})
 	defer func() {
 		if err != nil {
@@ -149,22 +211,24 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 	if len(input) == 0 {
 		return nil, fmt.Errorf("gemini input is empty")
 	}
-	contents, err := cm.convSchemaMessages(nInput)
+	contents, err := convSchemaMessages(nInput)
 	if err != nil {
 		return nil, err
 	}
 
+	// Generate content using the Gemini API
 	result, err := cm.cli.Models.GenerateContent(ctx, modelName, contents, genaiConf)
 	if err != nil {
 		return nil, fmt.Errorf("send message fail: %w", err)
 	}
 
-	message, err = cm.convResponse(result)
+	// Convert the API response to schema.Message format
+	message, err = convResponse(result)
 	if err != nil {
 		return nil, fmt.Errorf("convert response fail: %w", err)
 	}
 
-	callbacks.OnEnd(ctx, cm.convCallbackOutput(message, cbConf))
+	callbacks.OnEnd(ctx, convCallbackOutput(message, cbConf))
 	return message, nil
 }
 
@@ -174,12 +238,18 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 
 	modelName, nInput, genaiConf, cbConf, err := cm.genInputAndConf(input, opts...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("genInputAndConf for Stream failed: %w", err)
 	}
+
+	co := model.GetCommonOptions(&model.Options{
+		Tools:      cm.origTools,
+		ToolChoice: cm.toolChoice,
+	}, opts...)
 	ctx = callbacks.OnStart(ctx, &model.CallbackInput{
-		Messages: input,
-		Tools:    model.GetCommonOptions(&model.Options{Tools: cm.origTools}, opts...).Tools,
-		Config:   cbConf,
+		Messages:   input,
+		Tools:      co.Tools,
+		ToolChoice: co.ToolChoice,
+		Config:     cbConf,
 	})
 	defer func() {
 		if err != nil {
@@ -191,7 +261,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		return nil, fmt.Errorf("gemini input is empty")
 	}
 
-	contents, err := cm.convSchemaMessages(nInput)
+	contents, err := convSchemaMessages(nInput)
 	if err != nil {
 		return nil, fmt.Errorf("convert schema message fail: %w", err)
 	}
@@ -212,12 +282,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				sw.Send(nil, err_)
 				return
 			}
-			message, err_ := cm.convResponse(resp)
+			message, err_ := convResponse(resp)
 			if err_ != nil {
 				sw.Send(nil, err_)
 				return
 			}
-			closed := sw.Send(cm.convCallbackOutput(message, cbConf), nil)
+			closed := sw.Send(convCallbackOutput(message, cbConf), nil)
 			if closed {
 				return
 			}
@@ -279,6 +349,110 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return nil
 }
 
+// CreatePrefixCache assembles inputs the same as Generate/Stream and writes
+// the final system instruction, tools, and messages into a reusable prefix cache.
+func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema.Message, opts ...model.Option) (
+	*genai.CachedContent, error) {
+
+	modelName, inputMsgs, genaiConf, _, err := cm.genInputAndConf(prefixMsgs, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("genInputAndConf for CreatePrefixCache failed: %w", err)
+	}
+
+	contents, err := convSchemaMessages(inputMsgs)
+	if err != nil {
+		return nil, err
+	}
+
+	cachedContent, err := cm.cli.Caches.Create(ctx, modelName, &genai.CreateCachedContentConfig{
+		Contents:          contents,
+		SystemInstruction: genaiConf.SystemInstruction,
+		Tools:             genaiConf.Tools,
+		ToolConfig:        genaiConf.ToolConfig,
+		TTL: func() time.Duration {
+			if cm.cache != nil {
+				return cm.cache.TTL
+			}
+			return 0
+		}(),
+		ExpireTime: func() time.Time {
+			if cm.cache != nil {
+				return cm.cache.ExpireTime
+			}
+			return time.Time{}
+		}(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create cache failed: %w", err)
+	}
+
+	return cachedContent, nil
+}
+
+func populateToolChoice(m *genai.GenerateContentConfig, toolChoice *schema.ToolChoice, allowedToolNames []string) error {
+	if toolChoice == nil {
+		return nil
+	}
+
+	validateAllowedToolNames := func() error {
+		if len(allowedToolNames) > 0 {
+			toolsMap := make(map[string]bool, len(m.Tools))
+			for _, tools := range m.Tools {
+				for _, functions := range tools.FunctionDeclarations {
+					toolsMap[functions.Name] = true
+				}
+			}
+			for _, name := range allowedToolNames {
+				if !toolsMap[name] {
+					return fmt.Errorf("allowed tool %s not found in request tools", name)
+				}
+			}
+		}
+		return nil
+	}
+	switch *toolChoice {
+	case schema.ToolChoiceForbidden:
+		m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+			Mode: genai.FunctionCallingConfigModeNone,
+		}}
+		return nil
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedToolNames(); err != nil {
+				return err
+			}
+			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+				Mode:                 genai.FunctionCallingConfigModeValidated,
+				AllowedFunctionNames: allowedToolNames,
+			}}
+			return nil
+		}
+		m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+			Mode: genai.FunctionCallingConfigModeAuto,
+		}}
+		return nil
+	case schema.ToolChoiceForced:
+		if len(m.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedToolNames(); err != nil {
+				return err
+			}
+		}
+
+		m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
+			Mode:                 genai.FunctionCallingConfigModeAny,
+			AllowedFunctionNames: allowedToolNames,
+		}}
+		return nil
+	default:
+		return fmt.Errorf("unknown tool choice %s", *toolChoice)
+	}
+
+}
+
 func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Option) (string, []*schema.Message, *genai.GenerateContentConfig, *model.Config, error) {
 	commonOptions := model.GetCommonOptions(&model.Options{
 		Temperature: cm.temperature,
@@ -288,8 +462,10 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 	geminiOptions := model.GetImplSpecificOptions(&options{
-		TopK:           cm.topK,
-		ResponseSchema: cm.responseSchema,
+		TopK:               cm.topK,
+		ResponseJSONSchema: cm.responseJSONSchema,
+		ResponseModalities: cm.responseModalities,
+		ImageConfig:        cm.imageConfig,
 	}, opts...)
 	conf := &model.Config{}
 
@@ -322,6 +498,38 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 			CodeExecution: &genai.ToolCodeExecution{},
 		})
 	}
+	if cm.enableGoogleSearch != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			GoogleSearch: cm.enableGoogleSearch,
+		})
+	}
+	if cm.enableGoogleSearchRetrieval != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			GoogleSearchRetrieval: cm.enableGoogleSearchRetrieval,
+		})
+	}
+	if cm.enableComputerUse != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			ComputerUse: cm.enableComputerUse,
+		})
+	}
+	if cm.enableURLContext != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			URLContext: cm.enableURLContext,
+		})
+	}
+	if cm.enableFileSearch != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			FileSearch: cm.enableFileSearch,
+		})
+	}
+	if cm.enableGoogleMaps != nil {
+		m.Tools = append(m.Tools, &genai.Tool{
+			GoogleMaps: cm.enableGoogleMaps,
+		})
+	}
+
+	m.MediaResolution = cm.mediaResolution
 
 	if commonOptions.MaxTokens != nil {
 		conf.MaxTokens = *commonOptions.MaxTokens
@@ -335,43 +543,25 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		conf.Temperature = *commonOptions.Temperature
 		m.Temperature = commonOptions.Temperature
 	}
-	if commonOptions.ToolChoice != nil {
-		switch *commonOptions.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode: genai.FunctionCallingConfigModeNone,
-			}}
-		case schema.ToolChoiceAllowed:
-			m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-				Mode: genai.FunctionCallingConfigModeAuto,
-			}}
-		case schema.ToolChoiceForced:
-			// The predicted function call will be any one of the provided "functionDeclarations".
-			if len(m.Tools) == 0 {
-				return "", nil, nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else {
-				m.ToolConfig = &genai.ToolConfig{FunctionCallingConfig: &genai.FunctionCallingConfig{
-					Mode: genai.FunctionCallingConfigModeAny,
-				}}
-			}
-		default:
-			return "", nil, nil, nil, fmt.Errorf("tool choice=%s not support", *commonOptions.ToolChoice)
-		}
-	}
 	if geminiOptions.TopK != nil {
 		topK := float32(*geminiOptions.TopK)
 		m.TopK = &topK
 	}
-	if geminiOptions.ResponseSchema != nil {
+
+	err := populateToolChoice(m, commonOptions.ToolChoice, commonOptions.AllowedToolNames)
+	if err != nil {
+		return "", nil, nil, nil, err
+	}
+
+	if geminiOptions.ResponseJSONSchema != nil {
 		m.ResponseMIMEType = "application/json"
-		var err error
-		if geminiOptions.ResponseJSONSchema != nil {
-			m.ResponseJsonSchema = geminiOptions.ResponseJSONSchema
-		} else if geminiOptions.ResponseSchema != nil {
-			m.ResponseSchema, err = cm.convOpenAPIV3SchemaGeminiSchema(geminiOptions.ResponseSchema)
-		}
-		if err != nil {
-			return "", nil, nil, nil, fmt.Errorf("convert response schema fail: %w", err)
+		m.ResponseJsonSchema = geminiOptions.ResponseJSONSchema
+	}
+
+	if len(geminiOptions.ResponseModalities) > 0 {
+		m.ResponseModalities = make([]string, len(geminiOptions.ResponseModalities))
+		for i, v := range geminiOptions.ResponseModalities {
+			m.ResponseModalities[i] = string(v)
 		}
 	}
 
@@ -379,7 +569,7 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	copy(nInput, input)
 	if len(input) > 1 && input[0].Role == schema.System {
 		var err error
-		m.SystemInstruction, err = cm.convSchemaMessage(input[0])
+		m.SystemInstruction, err = convSchemaMessage(input[0])
 		if err != nil {
 			return "", nil, nil, nil, fmt.Errorf("failed to convert system instruction: %w", err)
 		}
@@ -387,6 +577,22 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 	}
 
 	m.ThinkingConfig = cm.thinkingConfig
+	if geminiOptions.ThinkingConfig != nil {
+		m.ThinkingConfig = geminiOptions.ThinkingConfig
+	}
+
+	if geminiOptions.ImageConfig != nil {
+		m.ImageConfig = geminiOptions.ImageConfig
+	}
+
+	if len(geminiOptions.CachedContentName) > 0 {
+		m.CachedContent = geminiOptions.CachedContentName
+		// remove system instruction and tools when using cached content
+		m.SystemInstruction = nil
+		m.Tools = nil
+		m.ToolConfig = nil
+	}
+
 	return conf.Model, nInput, m, conf, nil
 }
 
@@ -398,13 +604,10 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 			Description: tool.Desc,
 		}
 
-		js, err := tool.ToJSONSchema()
+		var err error
+		funcDecl.ParametersJsonSchema, err = tool.ToJSONSchema()
 		if err != nil {
-			return nil, fmt.Errorf("get open schema fail: %w", err)
-		}
-		funcDecl.Parameters, err = cm.convJSONSchemaToGeminiSchema(js)
-		if err != nil {
-			return nil, fmt.Errorf("convert open schema fail: %w", err)
+			return nil, fmt.Errorf("convert to json schema fail: %w", err)
 		}
 
 		gTools[i] = funcDecl
@@ -413,236 +616,412 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 	return gTools, nil
 }
 
-func (cm *ChatModel) convJSONSchemaToGeminiSchema(js *jsonschema.Schema) (*genai.Schema, error) {
-	if js == nil {
-		return nil, nil
+// convToolMessageToPart converts a tool response message into a Gemini part.
+func convToolMessageToPart(toolName string, msg *schema.Message) (*genai.Part, error) {
+	if len(msg.UserInputMultiContent) > 0 {
+		return convMultiModalToolMessageToPart(toolName, msg.UserInputMultiContent)
+	}
+	response := make(map[string]any)
+	err := sonic.UnmarshalString(msg.Content, &response)
+	if err != nil {
+		response = map[string]any{"output": msg.Content}
 	}
 
-	oType := genai.Type("")
-	switch js.Type {
-	case string(schema.String):
-		oType = genai.TypeString
-	case string(schema.Number):
-		oType = genai.TypeNumber
-	case string(schema.Integer):
-		oType = genai.TypeInteger
-	case string(schema.Boolean):
-		oType = genai.TypeBoolean
-	case string(schema.Object):
-		oType = genai.TypeObject
-	case string(schema.Array):
-		oType = genai.TypeArray
-	case string(schema.Null):
-		oType = genai.TypeNULL
-	}
+	return genai.NewPartFromFunctionResponse(toolName, response), nil
+}
 
-	sc := &genai.Schema{
-		Type:        oType,
-		Title:       js.Title,
-		Format:      js.Format,
-		Description: js.Description,
-		Default:     js.Default,
-		Pattern:     js.Pattern,
-	}
+func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInputPart) (*genai.Part, error) {
+	var text *string
+	var parts []*genai.FunctionResponsePart
+	for _, input := range inputs {
+		displayName := getMultiModalToolResultDisplayName(input)
+		switch input.Type {
+		case schema.ChatMessagePartTypeText:
+			if text != nil {
+				return nil, fmt.Errorf("multi-modal tool result only allows one text part, parts: %+v", inputs)
+			}
+			text = &input.Text
 
-	if js.MaxLength != nil {
-		sc.MaxLength = genai.Ptr(int64(*js.MaxLength))
-	}
-
-	if js.MinLength != nil {
-		sc.MinLength = genai.Ptr(int64(*js.MinLength))
-	}
-
-	if js.MaxItems != nil {
-		sc.MaxItems = genai.Ptr(int64(*js.MaxItems))
-	}
-
-	if js.MinItems != nil {
-		sc.MinItems = genai.Ptr(int64(*js.MinItems))
-	}
-
-	if js.MinProperties != nil {
-		sc.MinProperties = genai.Ptr(int64(*js.MinProperties))
-	}
-
-	if js.MaxProperties != nil {
-		sc.MaxProperties = genai.Ptr(int64(*js.MaxProperties))
-	}
-
-	if len(js.Examples) > 0 {
-		sc.Example = js.Examples[0]
-	}
-
-	if js.AnyOf != nil {
-		sc.AnyOf = make([]*genai.Schema, len(js.AnyOf))
-		for i, anyOf := range js.AnyOf {
-			v, err := cm.convJSONSchemaToGeminiSchema(anyOf)
+		case schema.ChatMessagePartTypeImageURL:
+			if input.Image == nil {
+				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in tool message")
+			}
+			part, err := toFunctionResponsePart(input.Image.Base64Data, input.Image.URL, input.Image.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
 			}
-			sc.AnyOf[i] = v
-		}
-	}
+			parts = append(parts, part)
 
-	if js.Enum != nil {
-		sc.Enum = make([]string, len(js.Enum))
-		for i, enum := range js.Enum {
-			enum_, ok := enum.(string)
-			if !ok {
-				return nil, fmt.Errorf("enum must be string")
+		case schema.ChatMessagePartTypeVideoURL:
+			if input.Video == nil {
+				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in tool message")
 			}
-			sc.Enum[i] = enum_
+			part, err := toFunctionResponsePart(input.Video.Base64Data, input.Video.URL, input.Video.MIMEType, input.Type, displayName)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+
+		case schema.ChatMessagePartTypeAudioURL:
+			if input.Audio == nil {
+				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in tool message")
+			}
+			part, err := toFunctionResponsePart(input.Audio.Base64Data, input.Audio.URL, input.Audio.MIMEType, input.Type, displayName)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+
+		case schema.ChatMessagePartTypeFileURL:
+			if input.File == nil {
+				return nil, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in tool message")
+			}
+			part, err := toFunctionResponsePart(input.File.Base64Data, input.File.URL, input.File.MIMEType, input.Type, displayName)
+			if err != nil {
+				return nil, err
+			}
+			parts = append(parts, part)
+
+		default:
+			return nil, fmt.Errorf("unknown part type: %s", input.Type)
+		}
+	}
+	response := make(map[string]any)
+	if text != nil {
+		err := sonic.UnmarshalString(*text, &response)
+		if err != nil {
+			response = map[string]any{"output": *text}
 		}
 	}
 
-	if js.Items != nil {
-		v, err := cm.convJSONSchemaToGeminiSchema(js.Items)
+	return genai.NewPartFromFunctionResponseWithParts(toolName, response, parts), nil
+}
+
+func convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
+	var result []*genai.Content
+
+	for i := 0; i < len(messages); i++ {
+		message := messages[i]
+		if message == nil {
+			continue
+		}
+
+		content, err := convSchemaMessage(message)
+		if err != nil {
+			return nil, fmt.Errorf("convert schema message fail at index %d: %w", i, err)
+		}
+		if content != nil {
+			result = append(result, content)
+		}
+	}
+
+	return mergeAdjacentToolContents(result), nil
+}
+
+// mergeAdjacentToolContents merges adjacent tool response contents into a single content.
+// Gemini requires all tool responses to be in a single message when responding to parallel tool calls.
+func mergeAdjacentToolContents(contents []*genai.Content) []*genai.Content {
+	if len(contents) <= 1 {
+		return contents
+	}
+
+	result := make([]*genai.Content, 0, len(contents))
+
+	for _, content := range contents {
+		// Check if current content is a tool response (has FunctionResponse parts)
+		if len(result) > 0 && isToolResponseContent(content) && isToolResponseContent(result[len(result)-1]) {
+			// Merge into the previous content
+			result[len(result)-1].Parts = append(result[len(result)-1].Parts, content.Parts...)
+		} else {
+			result = append(result, content)
+		}
+	}
+
+	return result
+}
+
+// isToolResponseContent checks if a content contains tool response parts.
+func isToolResponseContent(content *genai.Content) bool {
+	if content == nil || len(content.Parts) == 0 {
+		return false
+	}
+	// Check if the first part is a FunctionResponse
+	return content.Parts[0].FunctionResponse != nil
+}
+
+func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
+	if message == nil {
+		return nil, nil
+	}
+
+	if message.Role == schema.Tool {
+		toolName := message.ToolName
+		if len(toolName) == 0 {
+			// For compatibility with Gemini, which does not provide a tool call id, this wrapper assigns the tool name to the tool call id field,
+			// falling back to the original toolCallId if tool name is empty.
+			toolName = message.ToolCallID
+		}
+		part, err := convToolMessageToPart(toolName, message)
 		if err != nil {
 			return nil, err
 		}
-		sc.Items = v
-	}
-
-	if js.Properties != nil {
-		sc.Properties = make(map[string]*genai.Schema, js.Properties.Len())
-		for pair := js.Properties.Oldest(); pair != nil; pair = pair.Next() {
-			v, err := cm.convJSONSchemaToGeminiSchema(pair.Value)
-			if err != nil {
-				return nil, err
-			}
-			sc.Properties[pair.Key] = v
-		}
-	}
-
-	if js.Required != nil {
-		sc.Required = make([]string, len(js.Required))
-		for i, required := range js.Required {
-			sc.Required[i] = required
-		}
-	}
-
-	return sc, nil
-}
-
-func (cm *ChatModel) convOpenAPIV3SchemaGeminiSchema(schema *openapi3.Schema) (*genai.Schema, error) {
-	if schema == nil {
-		return nil, nil
-	}
-	var err error
-
-	result := &genai.Schema{
-		Format:      schema.Format,
-		Description: schema.Description,
-	}
-	if schema.Nullable {
-		result.Nullable = &schema.Nullable
-	}
-
-	switch schema.Type {
-	case openapi3.TypeObject:
-		result.Type = genai.TypeObject
-		if schema.Properties != nil {
-			properties := make(map[string]*genai.Schema)
-			for name, prop := range schema.Properties {
-				if prop == nil || prop.Value == nil {
-					continue
-				}
-				properties[name], err = cm.convOpenAPIV3SchemaGeminiSchema(prop.Value)
-				if err != nil {
-					return nil, err
-				}
-			}
-			result.Properties = properties
-		}
-		if schema.Required != nil {
-			result.Required = schema.Required
-		}
-
-	case openapi3.TypeArray:
-		result.Type = genai.TypeArray
-		if schema.Items != nil && schema.Items.Value != nil {
-			result.Items, err = cm.convOpenAPIV3SchemaGeminiSchema(schema.Items.Value)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-	case openapi3.TypeString:
-		result.Type = genai.TypeString
-		if schema.Enum != nil {
-			enums := make([]string, 0, len(schema.Enum))
-			for _, e := range schema.Enum {
-				if str, ok := e.(string); ok {
-					enums = append(enums, str)
-				} else {
-					return nil, fmt.Errorf("enum value must be a string, schema: %+v", schema)
-				}
-			}
-			result.Enum = enums
-		}
-
-	case openapi3.TypeNumber:
-		result.Type = genai.TypeNumber
-	case openapi3.TypeInteger:
-		result.Type = genai.TypeInteger
-	case openapi3.TypeBoolean:
-		result.Type = genai.TypeBoolean
-	default:
-		result.Type = genai.TypeUnspecified
-	}
-
-	return result, nil
-}
-
-func (cm *ChatModel) convSchemaMessages(messages []*schema.Message) ([]*genai.Content, error) {
-	result := make([]*genai.Content, len(messages))
-	for i, message := range messages {
-		content, err := cm.convSchemaMessage(message)
-		if err != nil {
-			return nil, fmt.Errorf("convert schema message fail: %w", err)
-		}
-		result[i] = content
-	}
-	return result, nil
-}
-
-func (cm *ChatModel) convSchemaMessage(message *schema.Message) (*genai.Content, error) {
-	if message == nil {
-		return nil, nil
+		return &genai.Content{
+			Role:  roleUser,
+			Parts: []*genai.Part{part},
+		}, nil
 	}
 
 	content := &genai.Content{
 		Role: toGeminiRole(message.Role),
 	}
 
-	if message.ToolCalls != nil {
-		for _, call := range message.ToolCalls {
-			args := make(map[string]any)
-			err := sonic.UnmarshalString(call.Function.Arguments, &args)
-			if err != nil {
-				return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
-			}
-			content.Parts = append(content.Parts, genai.NewPartFromFunctionCall(call.Function.Name, args))
+	// Restore reasoning content as a thought part (required for gemini-3-pro-preview and later)
+	if message.ReasoningContent != "" {
+		thoughtPart := &genai.Part{
+			Text:    message.ReasoningContent,
+			Thought: true,
 		}
+		content.Parts = append(content.Parts, thoughtPart)
 	}
 
-	if message.Role == schema.Tool {
-		response := make(map[string]any)
-		err := sonic.UnmarshalString(message.Content, &response)
+	for i := range message.ToolCalls {
+		call := &message.ToolCalls[i]
+		args := make(map[string]any)
+		err := sonic.UnmarshalString(call.Function.Arguments, &args)
 		if err != nil {
-			response["output"] = message.Content
+			return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
 		}
-		content.Parts = append(content.Parts, genai.NewPartFromFunctionResponse(message.ToolCallID, response))
-	} else {
-		if message.Content != "" {
-			content.Parts = append(content.Parts, genai.NewPartFromText(message.Content))
+
+		part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+		// Restore thought signature on the functionCall part if present.
+		// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+		// - Signatures must be returned exactly as received on functionCall parts
+		// - For parallel calls: only first functionCall has signature
+		// - For sequential calls: each functionCall has its own signature
+		// - Omitting required signature causes 400 error on Gemini 3 Pro
+		if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
+			part.ThoughtSignature = sig
 		}
-		content.Parts = append(content.Parts, cm.convMedia(message.MultiContent)...)
+		content.Parts = append(content.Parts, part)
+	}
+
+	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
+		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
+	if len(message.UserInputMultiContent) > 0 {
+		if message.Role != schema.User {
+			return nil, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
+		}
+		parts, err := convInputMedia(message.UserInputMultiContent)
+		if err != nil {
+			return nil, err
+		}
+		content.Parts = append(content.Parts, parts...)
+		return content, nil
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		if message.Role != schema.Assistant {
+			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", message.Role)
+		}
+		parts, err := convOutputMedia(message.AssistantGenMultiContent)
+		if err != nil {
+			return nil, err
+		}
+		content.Parts = append(content.Parts, parts...)
+		return content, nil
+	}
+	if message.Content != "" {
+		textPart := genai.NewPartFromText(message.Content)
+		// For non-functionCall responses, restore thought signature on the final text part.
+		// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+		// - The final Part (text, inlineData, etc.) may contain a thought_signature
+		// - Returning this signature is recommended for best performance but not strictly required
+		if len(message.ToolCalls) == 0 {
+			if sig := getMessageThoughtSignature(message); len(sig) > 0 {
+				textPart.ThoughtSignature = sig
+			}
+		}
+		content.Parts = append(content.Parts, textPart)
+	}
+	if len(message.MultiContent) > 0 {
+		log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		parts, err := convMedia(message.MultiContent)
+		if err != nil {
+			return nil, err
+		}
+		content.Parts = parts
 	}
 	return content, nil
 }
 
-func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) []*genai.Part {
+func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
+	result := make([]*genai.Part, 0, len(contents))
+	for _, content := range contents {
+		switch content.Type {
+		case schema.ChatMessagePartTypeText:
+			result = append(result, genai.NewPartFromText(content.Text))
+		case schema.ChatMessagePartTypeImageURL:
+			if content.Image == nil {
+				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
+			}
+			p, err := toGenAIDataPart(content.Image.Base64Data, content.Image.URL, content.Image.MIMEType, schema.ChatMessagePartTypeImageURL)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, p)
+
+		case schema.ChatMessagePartTypeAudioURL:
+			if content.Audio == nil {
+				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in user message")
+			}
+			p, err := toGenAIDataPart(content.Audio.Base64Data, content.Audio.URL, content.Audio.MIMEType, schema.ChatMessagePartTypeAudioURL)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, p)
+
+		case schema.ChatMessagePartTypeVideoURL:
+			if content.Video == nil {
+				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in user message")
+			}
+
+			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
+			if err != nil {
+				return nil, err
+			}
+
+			if content.Video.Extra != nil {
+				if videoMetaData := GetInputVideoMetaData(content.Video); videoMetaData != nil {
+					p.VideoMetadata = videoMetaData
+				}
+			}
+
+			result = append(result, p)
+
+		case schema.ChatMessagePartTypeFileURL:
+			if content.File == nil {
+				return nil, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in user message")
+			}
+			p, err := toGenAIDataPart(content.File.Base64Data, content.File.URL, content.File.MIMEType, schema.ChatMessagePartTypeFileURL)
+			if err != nil {
+				return nil, err
+			}
+			result = append(result, p)
+		}
+	}
+	return result, nil
+}
+
+func convOutputMedia(contents []schema.MessageOutputPart) ([]*genai.Part, error) {
+	result := make([]*genai.Part, 0, len(contents))
+	for _, content := range contents {
+		sig, ok := GetThoughtSignatureFromExtra(content.Extra)
+		switch content.Type {
+		case schema.ChatMessagePartTypeText:
+			p := tryRestoreSpecialPart(content)
+			if p == nil {
+				p = genai.NewPartFromText(content.Text)
+			}
+			if ok {
+				p.ThoughtSignature = sig
+			}
+			result = append(result, p)
+
+		case schema.ChatMessagePartTypeImageURL:
+			if content.Image == nil {
+				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
+			}
+			p, err := toGenAIDataPart(content.Image.Base64Data, content.Image.URL, content.Image.MIMEType, schema.ChatMessagePartTypeImageURL)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				p.ThoughtSignature = sig
+			}
+			result = append(result, p)
+
+		case schema.ChatMessagePartTypeAudioURL:
+			if content.Audio == nil {
+				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in assistant message")
+			}
+			p, err := toGenAIDataPart(content.Audio.Base64Data, content.Audio.URL, content.Audio.MIMEType, schema.ChatMessagePartTypeAudioURL)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				p.ThoughtSignature = sig
+			}
+			result = append(result, p)
+
+		case schema.ChatMessagePartTypeVideoURL:
+			if content.Video == nil {
+				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in assistant message")
+			}
+			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				p.ThoughtSignature = sig
+			}
+			result = append(result, p)
+		}
+	}
+	return result, nil
+}
+
+func toGenAIDataPart(b64 *string, url *string, mimeType string, partType schema.ChatMessagePartType) (*genai.Part, error) {
+	if b64 != nil {
+		data, err := decodeBase64Data(*b64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode [%s] base64 data: %w", partType, err)
+		}
+		return genai.NewPartFromBytes(data, mimeType), nil
+	} else if url != nil {
+		return genai.NewPartFromFile(genai.File{URI: *url, MIMEType: mimeType}), nil
+	}
+	return nil, fmt.Errorf("[%s] is empty", partType)
+}
+
+func toFunctionResponsePart(b64 *string, url *string, mimeType string, partType schema.ChatMessagePartType, displayName string) (*genai.FunctionResponsePart, error) {
+	if b64 != nil {
+		data, err := decodeBase64Data(*b64)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode [%s] base64 data: %w", partType, err)
+		}
+		return &genai.FunctionResponsePart{
+			InlineData: &genai.FunctionResponseBlob{
+				Data:        data,
+				MIMEType:    mimeType,
+				DisplayName: displayName,
+			},
+		}, nil
+	} else if url != nil {
+		return &genai.FunctionResponsePart{
+			FileData: &genai.FunctionResponseFileData{
+				FileURI:     *url,
+				MIMEType:    mimeType,
+				DisplayName: displayName,
+			},
+		}, nil
+	}
+	return nil, fmt.Errorf("[%s] is empty", partType)
+}
+
+func tryRestoreSpecialPart(part schema.MessageOutputPart) *genai.Part {
+	if sp, ok := part.Extra[specialParteKey]; ok && sp != nil {
+		switch v := sp.(type) {
+		case *genai.ExecutableCode:
+			return &genai.Part{ExecutableCode: v}
+		case *genai.CodeExecutionResult:
+			return &genai.Part{CodeExecutionResult: v}
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
+func convMedia(contents []schema.ChatMessagePart) ([]*genai.Part, error) {
 	result := make([]*genai.Part, 0, len(contents))
 	for _, content := range contents {
 		switch content.Type {
@@ -650,31 +1029,101 @@ func (cm *ChatModel) convMedia(contents []schema.ChatMessagePart) []*genai.Part 
 			result = append(result, genai.NewPartFromText(content.Text))
 		case schema.ChatMessagePartTypeImageURL:
 			if content.ImageURL != nil {
-				result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.ImageURL.MIMEType))
+				if content.ImageURL.URI != "" {
+					result = append(result, genai.NewPartFromURI(content.ImageURL.URI, content.ImageURL.MIMEType))
+				} else {
+					data, err := decodeBase64Data(content.ImageURL.URL)
+					if err != nil {
+						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
+					}
+					result = append(result, genai.NewPartFromBytes(data, content.ImageURL.MIMEType))
+				}
 			}
 		case schema.ChatMessagePartTypeAudioURL:
 			if content.AudioURL != nil {
-				result = append(result, genai.NewPartFromURI(content.AudioURL.URI, content.AudioURL.MIMEType))
+				if content.AudioURL.URI != "" {
+					result = append(result, genai.NewPartFromURI(content.AudioURL.URI, content.AudioURL.MIMEType))
+				} else {
+					data, err := decodeBase64Data(content.AudioURL.URL)
+					if err != nil {
+						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
+					}
+					result = append(result, genai.NewPartFromBytes(data, content.AudioURL.MIMEType))
+				}
 			}
 		case schema.ChatMessagePartTypeVideoURL:
 			if content.VideoURL != nil {
-				result = append(result, genai.NewPartFromURI(content.VideoURL.URI, content.VideoURL.MIMEType))
+				if content.VideoURL.Extra != nil {
+					videoMetaData := GetVideoMetaData(content.VideoURL)
+					if videoMetaData != nil {
+						result = append(result, &genai.Part{
+							VideoMetadata: videoMetaData,
+						})
+					}
+				}
+				if content.VideoURL.URI != "" {
+					result = append(result, genai.NewPartFromURI(content.VideoURL.URI, content.VideoURL.MIMEType))
+				} else {
+					data, err := decodeBase64Data(content.VideoURL.URL)
+					if err != nil {
+						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
+					}
+					result = append(result, genai.NewPartFromBytes(data, content.VideoURL.MIMEType))
+				}
 			}
 		case schema.ChatMessagePartTypeFileURL:
 			if content.FileURL != nil {
-				result = append(result, genai.NewPartFromURI(content.FileURL.URI, content.FileURL.MIMEType))
+				if content.FileURL.URI != "" {
+					result = append(result, genai.NewPartFromURI(content.FileURL.URI, content.FileURL.MIMEType))
+				} else {
+					data, err := decodeBase64Data(content.FileURL.URL)
+					if err != nil {
+						return nil, fmt.Errorf("failed to decode base64 data URL: %w", err)
+					}
+					result = append(result, genai.NewPartFromBytes(data, content.FileURL.MIMEType))
+				}
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
-func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) {
+// decodeBase64Data decodes a base64 data URL string into raw bytes.
+// It correctly handles the "data:[<mediatype>];base64," prefix.
+func decodeBase64Data(dataURL string) ([]byte, error) {
+	// Check if a web URL is passed by mistake.
+	if strings.HasPrefix(dataURL, "http") {
+		return nil, fmt.Errorf("invalid input: expected base64 data or data URL, but got a web URL starting with 'http'. Please fetch the content from the URL first")
+	}
+	// Find the comma that separates the prefix from the data
+	commaIndex := strings.Index(dataURL, ",")
+	if commaIndex == -1 {
+		// If no comma, assume it's a raw base64 string and try to decode it directly.
+		decoded, err := base64.StdEncoding.DecodeString(dataURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode raw base64 data: %w", err)
+		}
+		return decoded, nil
+	}
+
+	// Extract the base64 part of the data URL
+	base64Data := dataURL[commaIndex+1:]
+
+	// Decode the base64 string
+	decoded, err := base64.StdEncoding.DecodeString(base64Data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 data from data URL: %w", err)
+	}
+
+	return decoded, nil
+}
+
+func convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) {
 	if len(resp.Candidates) == 0 {
 		return nil, fmt.Errorf("gemini result is empty")
 	}
 
-	message, err := cm.convCandidate(resp.Candidates[0])
+	message, err := convCandidate(resp.Candidates[0])
 	if err != nil {
 		return nil, fmt.Errorf("convert candidate fail: %w", err)
 	}
@@ -690,47 +1139,108 @@ func (cm *ChatModel) convResponse(resp *genai.GenerateContentResponse) (*schema.
 			},
 			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
 			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
+			CompletionTokensDetails: schema.CompletionTokensDetails{
+				ReasoningTokens: int(resp.UsageMetadata.ThoughtsTokenCount),
+			},
 		}
 	}
 	return message, nil
 }
 
-func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
-	result := &schema.Message{}
-	result.ResponseMeta = &schema.ResponseMeta{
-		FinishReason: string(candidate.FinishReason),
+func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
+	result := &schema.Message{
+		ResponseMeta: &schema.ResponseMeta{
+			FinishReason: string(candidate.FinishReason),
+		},
 	}
+
+	if candidate.GroundingMetadata != nil {
+		setGroundMetadata(result, candidate.GroundingMetadata)
+	}
+
 	if candidate.Content != nil {
-		if candidate.Content.Role == roleModel {
-			result.Role = schema.Assistant
-		} else {
+		if candidate.Content.Role == roleUser {
 			result.Role = schema.User
+		} else {
+			result.Role = schema.Assistant
 		}
 
-		var texts []string
+		var (
+			texts          []string
+			outParts       []schema.MessageOutputPart
+			contentBuilder strings.Builder
+		)
+		// Process parts and extract thought signatures per Gemini docs:
+		// https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
+		//
+		// Signature placement rules:
+		// - functionCall parts: signature stored on ToolCall.Extra (required for Gemini 3 Pro)
+		// - output parts (text/inlineData/...): signature stored on MessageOutputPart.Extra
+		// - message.Extra is only used when output parts are absent
 		for _, part := range candidate.Content.Parts {
+			// Store thought signature at message level for non-functionCall parts
+			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil {
+				setMessageThoughtSignature(result, part.ThoughtSignature)
+			}
+
 			if part.Thought {
 				result.ReasoningContent = part.Text
 			} else if len(part.Text) > 0 {
 				texts = append(texts, part.Text)
+				contentBuilder.WriteString(part.Text)
+				outPart := schema.MessageOutputPart{
+					Type: schema.ChatMessagePartTypeText,
+					Text: part.Text,
+				}
+				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
+				outParts = append(outParts, outPart)
 			}
 			if part.FunctionCall != nil {
-				fc, err := convFC(part.FunctionCall)
+				fc, err := convFC(part)
 				if err != nil {
 					return nil, err
+				}
+				// Store thought signature on the tool call if present
+				// Per Gemini docs: for parallel calls, only first functionCall has signature;
+				// for sequential calls, each functionCall has its own signature
+				if len(part.ThoughtSignature) > 0 {
+					setToolCallThoughtSignature(fc, part.ThoughtSignature)
 				}
 				result.ToolCalls = append(result.ToolCalls, *fc)
 			}
 			if part.CodeExecutionResult != nil {
-				texts = append(texts, part.CodeExecutionResult.Output)
+				p := schema.MessageOutputPart{
+					Type: schema.ChatMessagePartTypeText,
+					Text: part.CodeExecutionResult.Output,
+					Extra: map[string]any{
+						specialParteKey: part.CodeExecutionResult,
+					},
+				}
+				setMessageOutputPartThoughtSignature(&p, part.ThoughtSignature)
+				outParts = append(outParts, p)
 			}
 			if part.ExecutableCode != nil {
-				texts = append(texts, part.ExecutableCode.Code)
+				p := schema.MessageOutputPart{
+					Type: schema.ChatMessagePartTypeText,
+					Text: part.ExecutableCode.Code,
+					Extra: map[string]any{
+						specialParteKey: part.ExecutableCode,
+					},
+				}
+				setMessageOutputPartThoughtSignature(&p, part.ThoughtSignature)
+				outParts = append(outParts, p)
+			}
+			if part.InlineData != nil && part.InlineData.Data != nil {
+				outPart, err := toMultiOutPart(part)
+				if err != nil {
+					return nil, err
+				}
+				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
+				outParts = append(outParts, outPart)
 			}
 		}
-		if len(texts) == 1 {
-			result.Content = texts[0]
-		} else if len(texts) > 1 {
+		result.Content = contentBuilder.String()
+		if len(texts) > 1 {
 			for _, text := range texts {
 				result.MultiContent = append(result.MultiContent, schema.ChatMessagePart{
 					Type: schema.ChatMessagePartTypeText,
@@ -738,25 +1248,70 @@ func (cm *ChatModel) convCandidate(candidate *genai.Candidate) (*schema.Message,
 				})
 			}
 		}
+		if len(outParts) > 0 {
+			if result.Extra != nil {
+				delete(result.Extra, thoughtSignatureKey)
+				if len(result.Extra) == 0 {
+					result.Extra = nil
+				}
+			}
+			result.AssistantGenMultiContent = outParts
+		}
 	}
 	return result, nil
 }
 
-func convFC(tp *genai.FunctionCall) (*schema.ToolCall, error) {
+func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
+	if part == nil {
+		return schema.MessageOutputPart{}, nil
+	}
+	res := schema.MessageOutputPart{}
+	if part.InlineData != nil {
+		mimeType := part.InlineData.MIMEType
+		multiMediaData := part.InlineData.Data
+		encodedStr := base64.StdEncoding.EncodeToString(multiMediaData)
+		switch {
+		case strings.HasPrefix(mimeType, "image/"):
+			res.Type = schema.ChatMessagePartTypeImageURL
+			res.Image = &schema.MessageOutputImage{
+				MessagePartCommon: schema.MessagePartCommon{
+					Base64Data: &encodedStr,
+					MIMEType:   mimeType,
+				},
+			}
+		default:
+			return schema.MessageOutputPart{}, fmt.Errorf("unsupported media type from Gemini model response: MIMEType=%s", mimeType)
+		}
+	}
+
+	return res, nil
+}
+
+// convFC converts a Gemini function call part to a schema.ToolCall.
+// Note: Gemini does not provide tool call IDs, so we generate a UUID for compatibility.
+func convFC(part *genai.Part) (*schema.ToolCall, error) {
+	if part == nil || part.FunctionCall == nil {
+		return nil, fmt.Errorf("part or function call is nil")
+	}
+
+	tp := part.FunctionCall
 	args, err := sonic.MarshalString(tp.Args)
 	if err != nil {
 		return nil, fmt.Errorf("marshal gemini tool call arguments fail: %w", err)
 	}
-	return &schema.ToolCall{
-		ID: tp.Name,
+
+	toolCall := &schema.ToolCall{
+		ID: uuid.NewString(),
 		Function: schema.FunctionCall{
 			Name:      tp.Name,
 			Arguments: args,
 		},
-	}, nil
+	}
+
+	return toolCall, nil
 }
 
-func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {
+func convCallbackOutput(message *schema.Message, conf *model.Config) *model.CallbackOutput {
 	callbackOutput := &model.CallbackOutput{
 		Message: message,
 		Config:  conf,
@@ -769,6 +1324,9 @@ func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Con
 			},
 			CompletionTokens: message.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      message.ResponseMeta.Usage.TotalTokens,
+			CompletionTokensDetails: model.CompletionTokensDetails{
+				ReasoningTokens: message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens,
+			},
 		}
 	}
 	return callbackOutput
@@ -777,6 +1335,14 @@ func (cm *ChatModel) convCallbackOutput(message *schema.Message, conf *model.Con
 func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
+
+type GeminiResponseModality string
+
+const (
+	GeminiResponseModalityText  GeminiResponseModality = "TEXT"
+	GeminiResponseModalityImage GeminiResponseModality = "IMAGE"
+	GeminiResponseModalityAudio GeminiResponseModality = "AUDIO"
+)
 
 const (
 	roleModel = "model"

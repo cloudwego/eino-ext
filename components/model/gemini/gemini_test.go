@@ -18,13 +18,16 @@ package gemini
 
 import (
 	"context"
+	"encoding/base64"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/genai"
@@ -49,6 +52,11 @@ func TestGemini(t *testing.T) {
 					},
 				},
 			},
+			UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+				TotalTokenCount:      100,
+				ThoughtsTokenCount:   50,
+				CandidatesTokenCount: 50,
+			},
 		}, nil).Build().UnPatch()
 
 		resp, err := model.Generate(ctx, []*schema.Message{
@@ -60,6 +68,8 @@ func TestGemini(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "Hello, how can I help you?", resp.Content)
 		assert.Equal(t, schema.Assistant, resp.Role)
+		assert.Equal(t, 100, resp.ResponseMeta.Usage.TotalTokens)
+		assert.Equal(t, 50, resp.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 	mockey.PatchConvey("stream", t, func() {
 		respList := []*genai.GenerateContentResponse{
@@ -102,8 +112,8 @@ func TestGemini(t *testing.T) {
 				Role:    schema.User,
 				Content: "Hi",
 			},
-		}, WithTopK(0), WithResponseSchema(&openapi3.Schema{
-			Type: openapi3.TypeString,
+		}, WithTopK(0), WithResponseJSONSchema(&jsonschema.Schema{
+			Type: "string",
 			Enum: []any{"1", "2"},
 		}))
 		assert.NoError(t, err)
@@ -120,22 +130,26 @@ func TestGemini(t *testing.T) {
 	})
 
 	mockey.PatchConvey("structure", t, func() {
-		responseSchema := &openapi3.Schema{
+		responseSchema := &jsonschema.Schema{
 			Type: "object",
-			Properties: map[string]*openapi3.SchemaRef{
-				"name": {
-					Value: &openapi3.Schema{
-						Type: "string",
+			Properties: orderedmap.New[string, *jsonschema.Schema](
+				orderedmap.WithInitialData[string, *jsonschema.Schema](
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "name",
+						Value: &jsonschema.Schema{
+							Type: string(schema.String),
+						},
 					},
-				},
-				"age": {
-					Value: &openapi3.Schema{
-						Type: "integer",
+					orderedmap.Pair[string, *jsonschema.Schema]{
+						Key: "age",
+						Value: &jsonschema.Schema{
+							Type: string(schema.Integer),
+						},
 					},
-				},
-			},
+				),
+			),
 		}
-		model.responseSchema = responseSchema
+		model.responseJSONSchema = responseSchema
 
 		// Mock Gemini API 响应
 		defer mockey.Mock(genai.Models.GenerateContent).Return(&genai.GenerateContentResponse{
@@ -269,49 +283,1215 @@ func TestWithTools(t *testing.T) {
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
 }
 
-func TestChatModelConvMedia(t *testing.T) {
-	cm := &ChatModel{model: "test model"}
-	contents := []schema.ChatMessagePart{
+func Test_toMultiOutPart(t *testing.T) {
+	t.Run("nil part", func(t *testing.T) {
+		part, err := toMultiOutPart(nil)
+		assert.NoError(t, err)
+		assert.Empty(t, part)
+	})
+
+	t.Run("nil inline data", func(t *testing.T) {
+		part, err := toMultiOutPart(&genai.Part{InlineData: nil})
+		assert.NoError(t, err)
+		assert.Empty(t, part)
+	})
+
+	t.Run("image part", func(t *testing.T) {
+		data := []byte("fake-image-data")
+		encoded := base64.StdEncoding.EncodeToString(data)
+		part, err := toMultiOutPart(&genai.Part{
+			InlineData: &genai.Blob{
+				MIMEType: "image/png",
+				Data:     data,
+			},
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, schema.ChatMessagePartTypeImageURL, part.Type)
+		assert.NotNil(t, part.Image)
+		assert.Equal(t, "image/png", part.Image.MIMEType)
+		assert.Equal(t, encoded, *part.Image.Base64Data)
+	})
+
+	t.Run("unsupported type", func(t *testing.T) {
+		part, err := toMultiOutPart(&genai.Part{
+			InlineData: &genai.Blob{
+				MIMEType: "application/pdf",
+				Data:     []byte("fake-pdf-data"),
+			},
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported media type")
+		assert.Empty(t, part)
+	})
+}
+
+func TestChatModel_convMedia(t *testing.T) {
+	t.Run("convMedia", func(t *testing.T) {
+		base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+		dataURL := "data:image/png;base64," + base64Data
+		t.Run("success", func(t *testing.T) {
+			contents := []schema.ChatMessagePart{
+				{
+					Type: schema.ChatMessagePartTypeText,
+					Text: "test text",
+				},
+				{
+					Type:     schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{URL: dataURL, MIMEType: "image/png"},
+				},
+				{
+					Type:    schema.ChatMessagePartTypeFileURL,
+					FileURL: &schema.ChatMessageFileURL{URL: dataURL, MIMEType: "application/pdf"},
+				},
+				{
+					Type:     schema.ChatMessagePartTypeAudioURL,
+					AudioURL: &schema.ChatMessageAudioURL{URL: dataURL, MIMEType: "audio/mp3"},
+				},
+				{
+					Type:     schema.ChatMessagePartTypeVideoURL,
+					VideoURL: &schema.ChatMessageVideoURL{URL: dataURL, MIMEType: "video/mp4"},
+				},
+			}
+
+			parts, err := convMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 5)
+			assert.Equal(t, "test text", parts[0].Text)
+
+			decodedData, err := base64.StdEncoding.DecodeString(base64Data)
+			assert.NoError(t, err)
+
+			assert.Equal(t, "image/png", parts[1].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[1].InlineData.Data)
+			assert.Equal(t, "application/pdf", parts[2].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[2].InlineData.Data)
+			assert.Equal(t, "audio/mp3", parts[3].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[3].InlineData.Data)
+			assert.Equal(t, "video/mp4", parts[4].InlineData.MIMEType)
+			assert.Equal(t, decodedData, parts[4].InlineData.Data)
+		})
+
+		t.Run("with video metadata", func(t *testing.T) {
+			videoPart := &schema.ChatMessageVideoURL{URL: dataURL, MIMEType: "video/mp4"}
+			SetVideoMetaData(videoPart, &genai.VideoMetadata{
+				StartOffset: time.Second,
+				EndOffset:   time.Second * 5,
+			})
+			contents := []schema.ChatMessagePart{
+				{
+					Type:     schema.ChatMessagePartTypeVideoURL,
+					VideoURL: videoPart,
+				},
+			}
+			parts, err := convMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 2)
+			assert.NotNil(t, parts[0].VideoMetadata)
+			assert.Equal(t, time.Second, parts[0].VideoMetadata.StartOffset)
+			assert.Equal(t, time.Second*5, parts[0].VideoMetadata.EndOffset)
+		})
+
+		t.Run("with invalid data url", func(t *testing.T) {
+			contents := []schema.ChatMessagePart{
+				{
+					Type:     schema.ChatMessagePartTypeImageURL,
+					ImageURL: &schema.ChatMessageImageURL{URL: "data:image/png;base64,invalid"},
+				},
+			}
+			_, err := convMedia(contents)
+			assert.Error(t, err)
+		})
+	})
+	base64Data := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+
+	t.Run("convInputMedia", func(t *testing.T) {
+		t.Run("success", func(t *testing.T) {
+			contents := []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "hello"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+				{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "audio/mp3"}}},
+				{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}},
+				{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "application/pdf"}}},
+			}
+			parts, err := convInputMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 5)
+			assert.Equal(t, "hello", parts[0].Text)
+			assert.Equal(t, "image/png", parts[1].InlineData.MIMEType)
+			assert.Equal(t, "audio/mp3", parts[2].InlineData.MIMEType)
+			assert.Equal(t, "video/mp4", parts[3].InlineData.MIMEType)
+			assert.Equal(t, "application/pdf", parts[4].InlineData.MIMEType)
+			// check data
+			decodedData, err := base64.StdEncoding.DecodeString(base64Data)
+			assert.NoError(t, err)
+			assert.Equal(t, decodedData, parts[1].InlineData.Data)
+		})
+
+		t.Run("with video metadata", func(t *testing.T) {
+			videoPart := &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}
+			SetInputVideoMetaData(videoPart, &genai.VideoMetadata{
+				StartOffset: time.Second,
+				EndOffset:   time.Second * 5,
+			})
+			contents := []schema.MessageInputPart{
+				{
+					Type:  schema.ChatMessagePartTypeVideoURL,
+					Video: videoPart,
+				},
+			}
+			parts, err := convInputMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 1)
+			assert.NotNil(t, parts[0].VideoMetadata)
+			assert.Equal(t, time.Second, parts[0].VideoMetadata.StartOffset)
+			assert.Equal(t, time.Second*5, parts[0].VideoMetadata.EndOffset)
+		})
+
+		t.Run("error cases", func(t *testing.T) {
+			invalidBase64 := "invalid-base64"
+			testCases := []struct {
+				name    string
+				content schema.MessageInputPart
+			}{
+				{name: "Image with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Audio with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Video with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "File with invalid base64", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Image with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: nil}},
+				{name: "Audio with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}},
+				{name: "Video with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}},
+				{name: "File with nil media", content: schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: nil}},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					_, err := convInputMedia([]schema.MessageInputPart{tc.content})
+					assert.Error(t, err)
+				})
+			}
+		})
+	})
+
+	t.Run("convOutputMedia", func(t *testing.T) {
+		t.Run("success", func(t *testing.T) {
+			contents := []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "hello"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+				{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "audio/mp3"}}},
+				{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "video/mp4"}}},
+			}
+			parts, err := convOutputMedia(contents)
+			assert.NoError(t, err)
+			assert.Len(t, parts, 4)
+			assert.Equal(t, "hello", parts[0].Text)
+			assert.Equal(t, "image/png", parts[1].InlineData.MIMEType)
+			assert.Equal(t, "audio/mp3", parts[2].InlineData.MIMEType)
+			assert.Equal(t, "video/mp4", parts[3].InlineData.MIMEType)
+			// check data
+			decodedData, err := base64.StdEncoding.DecodeString(base64Data)
+			assert.NoError(t, err)
+			assert.Equal(t, decodedData, parts[1].InlineData.Data)
+		})
+
+		t.Run("error cases", func(t *testing.T) {
+			invalidBase64 := "invalid-base64"
+			testCases := []struct {
+				name    string
+				content schema.MessageOutputPart
+			}{
+				{name: "Image with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Audio with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageOutputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Video with invalid base64", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidBase64}}}},
+				{name: "Image with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeImageURL, Image: nil}},
+				{name: "Audio with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}},
+				{name: "Video with nil media", content: schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: nil}},
+			}
+
+			for _, tc := range testCases {
+				t.Run(tc.name, func(t *testing.T) {
+					_, err := convOutputMedia([]schema.MessageOutputPart{tc.content})
+					assert.Error(t, err)
+				})
+			}
+		})
+	})
+}
+
+func TestThoughtSignatureRoundTrip(t *testing.T) {
+	t.Run("convToolMessageToPart", func(t *testing.T) {
+		part, err := convToolMessageToPart("tool_1", schema.ToolMessage(`{"result":"ok"}`, ""))
+		assert.NoError(t, err)
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "tool_1", part.FunctionResponse.Name)
+		assert.Equal(t, "ok", part.FunctionResponse.Response["result"])
+	})
+
+	t.Run("convToolMessageToPart fallback to output", func(t *testing.T) {
+		part, err := convToolMessageToPart("tool_2", schema.ToolMessage("raw-response", ""))
+		assert.NoError(t, err)
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "tool_2", part.FunctionResponse.Name)
+		assert.Equal(t, "raw-response", part.FunctionResponse.Response["output"])
+	})
+
+	t.Run("convSchemaMessages merges consecutive tool responses", func(t *testing.T) {
+		messages := []*schema.Message{
+			{
+				Role: schema.Assistant,
+				ToolCalls: []schema.ToolCall{
+					{
+						ID: "call_a",
+						Function: schema.FunctionCall{
+							Name:      "fn_a",
+							Arguments: `{"x":1}`,
+						},
+					},
+					{
+						ID: "call_b",
+						Function: schema.FunctionCall{
+							Name:      "fn_b",
+							Arguments: `{"y":2}`,
+						},
+					},
+				},
+			},
+			{Role: schema.Tool, ToolCallID: "call_a", Content: `{"res":"A"}`},
+			{Role: schema.Tool, ToolCallID: "call_b", Content: `{"res":"B"}`},
+		}
+
+		contents, err := convSchemaMessages(messages)
+		assert.NoError(t, err)
+		assert.Len(t, contents, 2)
+		assert.Equal(t, roleModel, contents[0].Role)
+		assert.Equal(t, roleUser, contents[1].Role)
+		if assert.Len(t, contents[1].Parts, 2) {
+			assert.Equal(t, "call_a", contents[1].Parts[0].FunctionResponse.Name)
+			assert.Equal(t, "A", contents[1].Parts[0].FunctionResponse.Response["res"])
+			assert.Equal(t, "call_b", contents[1].Parts[1].FunctionResponse.Name)
+			assert.Equal(t, "B", contents[1].Parts[1].FunctionResponse.Response["res"])
+		}
+	})
+
+	t.Run("convSchemaMessage without thought signature", func(t *testing.T) {
+		toolCall := &schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: `{"param":"value"}`,
+			},
+		}
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{*toolCall},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// Verify no thought signature in the Part when none was stored
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+	})
+
+	// Test that reasoning content thought signature is preserved through the round-trip
+	// Per Gemini docs, signature should be on the final part (text), not the thought part
+	t.Run("convSchemaMessage restores reasoning content with thought signature on final part", func(t *testing.T) {
+		signature := []byte("reasoning_thought_signature")
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "final answer",
+			ReasoningContent: "thinking process",
+		}
+		setMessageThoughtSignature(message, signature)
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		// Should have 2 parts: thought part + text part
+		assert.Len(t, content.Parts, 2)
+
+		// First part should be the thought (without signature)
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "thinking process", content.Parts[0].Text)
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
+
+		// Second part should be the text content with signature (final part per Gemini docs)
+		assert.False(t, content.Parts[1].Thought)
+		assert.Equal(t, "final answer", content.Parts[1].Text)
+		assert.Equal(t, signature, content.Parts[1].ThoughtSignature)
+	})
+
+	t.Run("convSchemaMessage restores reasoning content without thought signature", func(t *testing.T) {
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "final answer",
+			ReasoningContent: "thinking process",
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		// Should have 2 parts: thought part + text part
+		assert.Len(t, content.Parts, 2)
+
+		// First part should be the thought without signature
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "thinking process", content.Parts[0].Text)
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
+	})
+
+	t.Run("convSchemaMessage with reasoning content and tool calls with signature on functionCall", func(t *testing.T) {
+		fcSignature := []byte("function_call_signature")
+
+		toolCall := schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "test_function",
+				Arguments: `{"param":"value"}`,
+			},
+		}
+		// Per Gemini docs, signature should be on the functionCall part
+		setToolCallThoughtSignature(&toolCall, fcSignature)
+
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			ReasoningContent: "thinking before calling tool",
+			ToolCalls:        []schema.ToolCall{toolCall},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		// Should have 2 parts: thought part + function call part
+		assert.Len(t, content.Parts, 2)
+
+		// First part should be the thought (without signature)
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "thinking before calling tool", content.Parts[0].Text)
+		assert.Nil(t, content.Parts[0].ThoughtSignature)
+
+		// Second part should be the function call with signature
+		assert.NotNil(t, content.Parts[1].FunctionCall)
+		assert.Equal(t, "test_function", content.Parts[1].FunctionCall.Name)
+		assert.Equal(t, fcSignature, content.Parts[1].ThoughtSignature)
+	})
+
+	// Test functionCall part with thought signature (per Gemini 3 Pro docs)
+	t.Run("convSchemaMessage with tool call signature on functionCall part", func(t *testing.T) {
+		signature := []byte("function_call_signature")
+
+		toolCall := schema.ToolCall{
+			ID: "test_call",
+			Function: schema.FunctionCall{
+				Name:      "check_flight",
+				Arguments: `{"flight":"AA100"}`,
+			},
+		}
+		setToolCallThoughtSignature(&toolCall, signature)
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{toolCall},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// The functionCall part should have the signature attached
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+		assert.Equal(t, "check_flight", content.Parts[0].FunctionCall.Name)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+	})
+
+	// Test parallel function calls - only first has signature
+	t.Run("convSchemaMessage with parallel tool calls (first has signature)", func(t *testing.T) {
+		signature := []byte("parallel_signature")
+
+		toolCall1 := schema.ToolCall{
+			ID: "call_1",
+			Function: schema.FunctionCall{
+				Name:      "get_weather",
+				Arguments: `{"location":"Paris"}`,
+			},
+		}
+		setToolCallThoughtSignature(&toolCall1, signature)
+
+		toolCall2 := schema.ToolCall{
+			ID: "call_2",
+			Function: schema.FunctionCall{
+				Name:      "get_weather",
+				Arguments: `{"location":"London"}`,
+			},
+		}
+		// Second tool call has no signature (per Gemini docs for parallel calls)
+
+		message := &schema.Message{
+			Role:      schema.Assistant,
+			ToolCalls: []schema.ToolCall{toolCall1, toolCall2},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 2)
+
+		// First functionCall should have signature
+		assert.NotNil(t, content.Parts[0].FunctionCall)
+		assert.Equal(t, "get_weather", content.Parts[0].FunctionCall.Name)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+
+		// Second functionCall should not have signature
+		assert.NotNil(t, content.Parts[1].FunctionCall)
+		assert.Equal(t, "get_weather", content.Parts[1].FunctionCall.Name)
+		assert.Nil(t, content.Parts[1].ThoughtSignature)
+	})
+
+	// Test text part with signature (non-function-call response)
+	t.Run("convSchemaMessage with text part signature", func(t *testing.T) {
+		signature := []byte("text_signature")
+
+		message := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "This is the response",
+		}
+		setMessageThoughtSignature(message, signature)
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+
+		// Text part should have signature for non-function-call response
+		assert.Equal(t, "This is the response", content.Parts[0].Text)
+		assert.Equal(t, signature, content.Parts[0].ThoughtSignature)
+	})
+
+	// Test convCandidate extracts signature from functionCall part
+	t.Run("convCandidate extracts signature from functionCall part", func(t *testing.T) {
+		signature := []byte("extracted_signature")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "check_flight",
+							Args: map[string]any{"flight": "AA100"},
+						},
+						ThoughtSignature: signature,
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 1)
+
+		// Signature should be stored on the tool call
+		sig, ok := GetThoughtSignatureFromExtra(message.ToolCalls[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, signature, sig)
+		// Message-level signature should be nil (signature is on functionCall)
+		sig, ok = GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, sig)
+	})
+
+	// Test convCandidate extracts signature from text part (non-function-call)
+	t.Run("convCandidate extracts signature from text part", func(t *testing.T) {
+		signature := []byte("text_part_signature")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						Text:             "Final response",
+						ThoughtSignature: signature,
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Equal(t, "Final response", message.Content)
+		assert.Len(t, message.AssistantGenMultiContent, 1)
+
+		sig, ok := GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, signature, sig)
+
+		sig, ok = GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, sig)
+	})
+
+	t.Run("convCandidate stores signatures on output parts and convSchemaMessage restores them", func(t *testing.T) {
+		sigA := []byte("sig_A")
+		sigB := []byte("sig_B")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{Text: "A", ThoughtSignature: sigA},
+					{Text: "B", ThoughtSignature: sigB},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.AssistantGenMultiContent, 2)
+
+		sig, ok := GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigA, sig)
+		sig, ok = GetThoughtSignatureFromExtra(message.AssistantGenMultiContent[1].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigB, sig)
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.Len(t, content.Parts, 2)
+		assert.Equal(t, sigA, content.Parts[0].ThoughtSignature)
+		assert.Equal(t, sigB, content.Parts[1].ThoughtSignature)
+	})
+
+	// Test sequential function calls - each step has its own signature
+	t.Run("sequential function call signatures are preserved separately", func(t *testing.T) {
+		sigA := []byte("signature_A")
+		sigB := []byte("signature_B")
+
+		// Simulate step 1 response
+		candidate1 := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "check_flight",
+							Args: map[string]any{"flight": "AA100"},
+						},
+						ThoughtSignature: sigA,
+					},
+				},
+			},
+		}
+
+		msg1, err := convCandidate(candidate1)
+		assert.NoError(t, err)
+		sig, ok := GetThoughtSignatureFromExtra(msg1.ToolCalls[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigA, sig)
+
+		// Simulate step 2 response
+		candidate2 := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "book_taxi",
+							Args: map[string]any{"time": "10 AM"},
+						},
+						ThoughtSignature: sigB,
+					},
+				},
+			},
+		}
+
+		msg2, err := convCandidate(candidate2)
+		assert.NoError(t, err)
+		sig, ok = GetThoughtSignatureFromExtra(msg2.ToolCalls[0].Extra)
+		assert.True(t, ok)
+		assert.Equal(t, sigB, sig)
+
+		// Verify both signatures can be restored correctly
+		content1, err := convSchemaMessage(msg1)
+		assert.NoError(t, err)
+		assert.Equal(t, sigA, content1.Parts[0].ThoughtSignature)
+
+		content2, err := convSchemaMessage(msg2)
+		assert.NoError(t, err)
+		assert.Equal(t, sigB, content2.Parts[0].ThoughtSignature)
+	})
+}
+
+func TestCreatePrefixCache(t *testing.T) {
+	t.Run("basic", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		defer mockey.Mock(genai.Caches.Create).Return(&genai.CachedContent{Name: "cached/basic"}, nil).Build().UnPatch()
+
+		prefixMsgs := []*schema.Message{{Role: schema.User, Content: "Hello"}}
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs)
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+	})
+
+	t.Run("cache_instruction_tools_messages", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		cm.cache = &CacheConfig{TTL: time.Minute}
+		cm.enableCodeExecution = true
+
+		var cacheConfig *genai.CreateCachedContentConfig
+		defer mockey.Mock(genai.Caches.Create).
+			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
+				cacheConfig = config
+				return &genai.CachedContent{Name: "cached/cache_instruction_tools_messages"}, nil
+			}).Build().Patch().UnPatch()
+
+		prefixMsgs := []*schema.Message{
+			{Role: schema.System, Content: "sys"},
+			{Role: schema.User, Content: "hello"},
+		}
+
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs,
+			model.WithTools([]*schema.ToolInfo{
+				{
+					Name:        "tool_a",
+					Desc:        "desc",
+					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+				},
+			}))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+		assert.Equal(t, "cached/cache_instruction_tools_messages", cache.Name)
+		assert.Equal(t, time.Minute, cacheConfig.TTL)
+
+		assert.Equal(t, "hello", cacheConfig.Contents[0].Parts[0].Text)
+
+		assert.NotNil(t, cacheConfig.SystemInstruction)
+		assert.Equal(t, "sys", cacheConfig.SystemInstruction.Parts[0].Text)
+
+		assert.NotNil(t, cacheConfig.Tools)
+		assert.Len(t, cacheConfig.Tools, 2)
+		assert.Equal(t, "tool_a", cacheConfig.Tools[0].FunctionDeclarations[0].Name)
+		assert.NotNil(t, cacheConfig.Tools[1].CodeExecution)
+
+	})
+
+	t.Run("cache_and_generate", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{
+			Models: &genai.Models{},
+			Caches: &genai.Caches{}},
+			Model: "test-model"})
+		assert.Nil(t, err)
+
+		cm.cache = &CacheConfig{TTL: time.Minute}
+		cm.enableCodeExecution = true
+
+		defer mockey.Mock(genai.Caches.Create).
+			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
+				return &genai.CachedContent{Name: "cached/cache_and_generate"}, nil
+			}).Build().Patch().UnPatch()
+
+		var generateConf *genai.GenerateContentConfig
+		defer mockey.Mock(genai.Models.GenerateContent).
+			To(func(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (
+				*genai.GenerateContentResponse, error) {
+				generateConf = config
+				return &genai.GenerateContentResponse{
+					Candidates: []*genai.Candidate{
+						{
+							Content: &genai.Content{
+								Role: "model",
+								Parts: []*genai.Part{
+									genai.NewPartFromText("bye too"),
+								},
+							},
+						},
+					},
+				}, nil
+			}).Build().Patch().UnPatch()
+
+		prefixMsgs := []*schema.Message{
+			{Role: schema.System, Content: "sys"},
+			{Role: schema.User, Content: "hello"},
+		}
+
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs,
+			model.WithTools([]*schema.ToolInfo{
+				{
+					Name:        "tool_a",
+					Desc:        "desc",
+					ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{}),
+				},
+			}))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+
+		_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("bye")},
+			WithCachedContentName(cache.Name))
+		assert.NoError(t, err)
+
+		assert.Equal(t, "cached/cache_and_generate", generateConf.CachedContent)
+		assert.Nil(t, generateConf.SystemInstruction)
+		assert.Len(t, generateConf.Tools, 0)
+	})
+}
+
+func TestSpecialPart(t *testing.T) {
+	msg, err := convCandidate(&genai.Candidate{
+		Content: &genai.Content{
+			Parts: []*genai.Part{
+				genai.NewPartFromExecutableCode("code", "language"),
+				genai.NewPartFromCodeExecutionResult("outcome", "output"),
+			},
+			Role: genai.RoleModel,
+		},
+	})
+	assert.Nil(t, err)
+
+	content, err := convSchemaMessage(msg)
+	assert.Nil(t, err)
+	assert.Equal(t, content.Parts[0].ExecutableCode.Code, "code")
+	assert.Equal(t, content.Parts[0].ExecutableCode.Language, genai.Language("language"))
+	assert.Equal(t, content.Parts[1].CodeExecutionResult.Output, "output")
+	assert.Equal(t, content.Parts[1].CodeExecutionResult.Outcome, genai.Outcome("outcome"))
+}
+
+func TestPopulateToolChoice(t *testing.T) {
+	toolChoiceForbidden := schema.ToolChoiceForbidden
+	toolChoiceAllowed := schema.ToolChoiceAllowed
+	toolChoiceRequired := schema.ToolChoiceForced
+	emptyToolChoice := schema.ToolChoice("")
+
+	testCases := []struct {
+		name      string
+		m         *genai.GenerateContentConfig
+		options   *model.Options
+		wantErr   bool
+		expectedM *genai.GenerateContentConfig
+	}{
 		{
-			Type: schema.ChatMessagePartTypeText,
-			Text: "test text",
+			name:      "nil options",
+			m:         &genai.GenerateContentConfig{},
+			options:   &model.Options{},
+			wantErr:   false,
+			expectedM: &genai.GenerateContentConfig{},
 		},
 		{
-			Type: schema.ChatMessagePartTypeImageURL,
-			ImageURL: &schema.ChatMessageImageURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
+			name:      "nil tool choice",
+			m:         &genai.GenerateContentConfig{},
+			options:   &model.Options{},
+			wantErr:   false,
+			expectedM: &genai.GenerateContentConfig{},
+		},
+		{
+			name: "allowed tool not found",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice:       &toolChoiceAllowed,
+				AllowedToolNames: []string{"tool2"},
+			},
+			wantErr: true,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
 			},
 		},
 		{
-			Type: schema.ChatMessagePartTypeFileURL,
-			FileURL: &schema.ChatMessageFileURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
+			name: "tool choice forbidden",
+			m:    &genai.GenerateContentConfig{},
+			options: &model.Options{
+				ToolChoice: &toolChoiceForbidden,
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode: genai.FunctionCallingConfigModeNone,
+					},
+				},
 			},
 		},
 		{
-			Type: schema.ChatMessagePartTypeAudioURL,
-			AudioURL: &schema.ChatMessageAudioURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
+			name: "tool choice allowed",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice: &toolChoiceAllowed,
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode: genai.FunctionCallingConfigModeAuto,
+					},
+				},
 			},
 		},
 		{
-			Type: schema.ChatMessagePartTypeVideoURL,
-			VideoURL: &schema.ChatMessageVideoURL{
-				URI:      "test uri",
-				MIMEType: "test mime type",
+			name: "tool choice allowed with allowed_tools",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
 			},
+			options: &model.Options{
+				ToolChoice:       &toolChoiceAllowed,
+				AllowedToolNames: []string{"tool1"},
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode:                 genai.FunctionCallingConfigModeValidated,
+						AllowedFunctionNames: []string{"tool1"},
+					},
+				},
+			},
+		},
+		{
+			name: "tool choice required",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice: &toolChoiceRequired,
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode: genai.FunctionCallingConfigModeAny,
+					},
+				},
+			},
+		},
+		{
+			name: "tool choice required with allowed_tools",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice:       &toolChoiceRequired,
+				AllowedToolNames: []string{"tool1"},
+			},
+			wantErr: false,
+			expectedM: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+				ToolConfig: &genai.ToolConfig{
+					FunctionCallingConfig: &genai.FunctionCallingConfig{
+						Mode:                 genai.FunctionCallingConfigModeAny,
+						AllowedFunctionNames: []string{"tool1"},
+					},
+				},
+			},
+		},
+		{
+			name: "empty tool choice",
+			m: &genai.GenerateContentConfig{
+				Tools: []*genai.Tool{
+					{FunctionDeclarations: []*genai.FunctionDeclaration{{Name: "tool1"}}},
+				},
+			},
+			options: &model.Options{
+				ToolChoice: &emptyToolChoice,
+			},
+			wantErr: true,
 		},
 	}
 
-	parts := cm.convMedia(contents)
-	assert.Equal(t, 5, len(parts))
-	assert.Equal(t, "test text", parts[0].Text)
-
-	for i := 1; i < len(parts); i++ {
-		assert.Equal(t, "test uri", parts[i].FileData.FileURI)
-		assert.Equal(t, "test mime type", parts[i].FileData.MIMEType)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := populateToolChoice(tc.m, tc.options.ToolChoice, tc.options.AllowedToolNames)
+			if tc.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tc.expectedM, tc.m)
+			}
+		})
 	}
+}
+
+// isValidUUID checks if a string is a valid UUID format
+func isValidUUID(u string) bool {
+	_, err := uuid.Parse(u)
+	return err == nil
+}
+
+func TestUniqueToolCallIDs(t *testing.T) {
+	t.Run("single tool call gets UUID as ID", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 1)
+		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID should be a valid UUID")
+		assert.Equal(t, "get_weather", message.ToolCalls[0].Function.Name)
+	})
+
+	t.Run("multiple calls to same function get unique UUID IDs", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "London"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Tokyo"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 3)
+		
+		// Verify all IDs are valid UUIDs
+		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID 0 should be a valid UUID")
+		assert.True(t, isValidUUID(message.ToolCalls[1].ID), "ID 1 should be a valid UUID")
+		assert.True(t, isValidUUID(message.ToolCalls[2].ID), "ID 2 should be a valid UUID")
+		
+		// Verify all IDs are unique
+		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[1].ID, "IDs should be unique")
+		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[2].ID, "IDs should be unique")
+		assert.NotEqual(t, message.ToolCalls[1].ID, message.ToolCalls[2].ID, "IDs should be unique")
+
+		// Verify arguments are preserved correctly
+		var args1, args2, args3 map[string]interface{}
+		err = sonic.UnmarshalString(message.ToolCalls[0].Function.Arguments, &args1)
+		assert.NoError(t, err)
+		assert.Equal(t, "Paris", args1["city"])
+
+		err = sonic.UnmarshalString(message.ToolCalls[1].Function.Arguments, &args2)
+		assert.NoError(t, err)
+		assert.Equal(t, "London", args2["city"])
+
+		err = sonic.UnmarshalString(message.ToolCalls[2].Function.Arguments, &args3)
+		assert.NoError(t, err)
+		assert.Equal(t, "Tokyo", args3["city"])
+	})
+
+	t.Run("multiple calls to different functions get unique UUID IDs", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_time",
+							Args: map[string]any{"timezone": "UTC"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "calculate",
+							Args: map[string]any{"expression": "2+2"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 3)
+		
+		// Verify all IDs are valid UUIDs
+		for i, tc := range message.ToolCalls {
+			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
+		}
+		
+		// Verify all IDs are unique
+		ids := make(map[string]bool)
+		for _, tc := range message.ToolCalls {
+			assert.False(t, ids[tc.ID], "ID %s should be unique", tc.ID)
+			ids[tc.ID] = true
+		}
+	})
+
+	t.Run("mixed scenario with multiple function calls", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "1"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "2"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_b",
+							Args: map[string]any{"param": "3"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "4"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "5"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 5)
+		
+		// Verify all IDs are valid UUIDs and unique
+		ids := make(map[string]bool)
+		for i, tc := range message.ToolCalls {
+			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
+			assert.False(t, ids[tc.ID], "ID %s should be unique", tc.ID)
+			ids[tc.ID] = true
+		}
+	})
+
+	t.Run("multiple responses generate unique UUIDs", func(t *testing.T) {
+		resp1 := &genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "first"},
+								},
+							},
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "second"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		message1, err := convResponse(resp1)
+		assert.NoError(t, err)
+		assert.NotNil(t, message1)
+		assert.Len(t, message1.ToolCalls, 2)
+		assert.True(t, isValidUUID(message1.ToolCalls[0].ID))
+		assert.True(t, isValidUUID(message1.ToolCalls[1].ID))
+		assert.NotEqual(t, message1.ToolCalls[0].ID, message1.ToolCalls[1].ID)
+
+		resp2 := &genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "third"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		message2, err := convResponse(resp2)
+		assert.NoError(t, err)
+		assert.NotNil(t, message2)
+		assert.Len(t, message2.ToolCalls, 1)
+		assert.True(t, isValidUUID(message2.ToolCalls[0].ID))
+		
+		// Verify IDs across responses are unique
+		assert.NotEqual(t, message1.ToolCalls[0].ID, message2.ToolCalls[0].ID)
+		assert.NotEqual(t, message1.ToolCalls[1].ID, message2.ToolCalls[0].ID)
+	})
 }

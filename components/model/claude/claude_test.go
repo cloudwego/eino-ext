@@ -22,8 +22,10 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -339,4 +341,424 @@ func TestWithTools(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, "test model", ncm.(*ChatModel).model)
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
+}
+
+func TestPopulateContentBlockBreakPoint(t *testing.T) {
+	block := anthropic.NewTextBlock("input")
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfText.CacheControl.Type)
+
+	block = anthropic.NewImageBlock[anthropic.URLImageSourceParam](anthropic.URLImageSourceParam{})
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfImage.CacheControl.Type)
+
+	block = anthropic.NewToolResultBlock("userID", "input", false)
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfToolResult.CacheControl.Type)
+
+	block = anthropic.NewToolUseBlock("123", "input", "test_tool")
+	populateContentBlockBreakPoint(block)
+	assert.NotEmpty(t, block.OfToolUse.CacheControl.Type)
+}
+
+func Test_convSchemaMessage_MultiContent(t *testing.T) {
+	rawBase64 := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII="
+	invalidDataURL := "data:image/png;base64," + rawBase64
+	httpURL := "https://example.com/image.png"
+
+	t.Run("UserInputMultiContent", func(t *testing.T) {
+		t.Run("success with base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeText, Text: "hello"},
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawBase64, MIMEType: "image/png"}}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 2)
+			assert.Equal(t, "hello", result.Content[0].OfText.Text)
+			assert.Equal(t, anthropic.Base64ImageSourceMediaType("image/png"), result.Content[1].OfImage.Source.OfBase64.MediaType)
+		})
+
+		t.Run("success with url", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 1)
+			assert.Equal(t, httpURL, result.Content[0].OfImage.Source.OfURL.URL)
+		})
+
+		t.Run("error with data url prefix", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidDataURL, MIMEType: "image/png"}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "Base64Data should be a raw base64 string")
+		})
+
+		t.Run("error with no mime type for base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawBase64}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have MIMEType when use Base64Data")
+		})
+
+		t.Run("error with no url or base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have either a URL or Base64Data")
+		})
+	})
+
+	t.Run("AssistantGenMultiContent", func(t *testing.T) {
+		t.Run("success with image", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageOutputImage{
+							MessagePartCommon: schema.MessagePartCommon{
+								Base64Data: &rawBase64,
+								MIMEType:   "image/png",
+							},
+						},
+					},
+					{Type: schema.ChatMessagePartTypeText, Text: "some text"},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 2)
+			assert.Equal(t, anthropic.Base64ImageSourceMediaType("image/png"), result.Content[0].OfImage.Source.OfBase64.MediaType)
+			assert.Equal(t, "some text", result.Content[1].OfText.Text)
+		})
+
+		t.Run("success with url", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{URL: &httpURL}}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 1)
+			assert.Equal(t, httpURL, result.Content[0].OfImage.Source.OfURL.URL)
+		})
+
+		t.Run("error with wrong role", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeText, Text: "some text"},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "assistant gen multi content only support assistant role")
+		})
+
+		t.Run("error with data url prefix", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidDataURL, MIMEType: "image/png"}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "Base64Data should be a raw base64 string")
+		})
+
+		t.Run("error with no mime type for base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawBase64}}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have MIMEType when use Base64Data")
+		})
+
+		t.Run("error with no url or base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{
+					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.Error(t, err)
+			assert.ErrorContains(t, err, "image part must have either a URL or Base64Data")
+		})
+	})
+
+	t.Run("MultiContent backward compatibility", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.User,
+			MultiContent: []schema.ChatMessagePart{
+				{Type: schema.ChatMessagePartTypeText, Text: "legacy"},
+				{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: invalidDataURL}},
+			},
+		}
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+		assert.Len(t, result.Content, 2)
+		assert.Equal(t, "legacy", result.Content[0].OfText.Text)
+		assert.Equal(t, anthropic.Base64ImageSourceMediaType("image/png"), result.Content[1].OfImage.Source.OfBase64.MediaType)
+	})
+
+	t.Run("MultiContent backward compatibility with http url", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.User,
+			MultiContent: []schema.ChatMessagePart{
+				{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: httpURL}},
+			},
+		}
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+		assert.Len(t, result.Content, 1)
+		assert.Equal(t, httpURL, result.Content[0].OfImage.Source.OfURL.URL)
+	})
+
+	t.Run("error with both UserInputMultiContent and AssistantGenMultiContent", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:                     schema.User,
+			UserInputMultiContent:    []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText, Text: "user"}},
+			AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "assistant"}},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	})
+
+	t.Run("error with nil image in UserInputMultiContent", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
+			},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "image field must not be nil")
+	})
+
+	t.Run("error with nil image in AssistantGenMultiContent", func(t *testing.T) {
+		msg := &schema.Message{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeImageURL, Image: nil},
+			},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "image field must not be nil")
+	})
+}
+
+func TestPopulateToolChoice(t *testing.T) {
+	t.Run("nil tool choice", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		options := &model.Options{}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+
+	})
+
+	t.Run("tool choice forbidden", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceForbidden
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfNone)
+	})
+
+	t.Run("tool choice allowed", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceAllowed
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAuto)
+	})
+
+	t.Run("tool choice allowed with disable parallel tool use", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceAllowed
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		disableParallelToolUse := true
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, &disableParallelToolUse)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAuto)
+		assert.Equal(t, param.NewOpt(true), params.ToolChoice.OfAuto.DisableParallelToolUse)
+	})
+
+	t.Run("tool choice forced with no tools", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "tool choice is forced but tool is not provided", err.Error())
+	})
+
+	t.Run("tool choice forced with one tool", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.Equal(t, "test_tool", params.ToolChoice.OfTool.Name)
+	})
+
+	t.Run("tool choice forced with multiple tools", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_2",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAny)
+	})
+
+	t.Run("tool choice forced with allowed tool name", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_2",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"test_tool_1"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.Equal(t, "test_tool_1", params.ToolChoice.OfTool.Name)
+	})
+
+	t.Run("tool choice forced with non-existent allowed tool name", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"non_existent_tool"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "allowed tool name 'non_existent_tool' not found in tools list", err.Error())
+	})
+
+	t.Run("tool choice forced with multiple allowed tool names", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"test_tool_1", "test_tool_2"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "only one allowed tool name can be configured", err.Error())
+	})
+
+	t.Run("unsupported tool choice", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		unsupportedToolChoice := schema.ToolChoice("unsupported")
+		options := &model.Options{
+			ToolChoice: &unsupportedToolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "tool choice=unsupported not support", err.Error())
+	})
 }

@@ -21,12 +21,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"runtime/debug"
+	"strings"
 	"time"
 
-	"github.com/ollama/ollama/api"
+	"github.com/eino-contrib/ollama/api"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -36,6 +38,9 @@ import (
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var CallbackMetricsExtraKey = "ollama_metrics"
+
+type Options = api.Options
+type ThinkValue = api.ThinkValue
 
 // ChatModelConfig stores configuration options specific to Ollama
 type ChatModelConfig struct {
@@ -51,9 +56,9 @@ type ChatModelConfig struct {
 	Format    json.RawMessage `json:"format"`
 	KeepAlive *time.Duration  `json:"keep_alive"`
 
-	Options *api.Options `json:"options"`
+	Options *Options `json:"options"`
 
-	Thinking *api.ThinkValue `json:"thinking"`
+	Thinking *ThinkValue `json:"thinking"`
 }
 
 // Check if ChatModel implements model.ChatModel
@@ -68,7 +73,7 @@ type ChatModel struct {
 }
 
 // NewChatModel initializes a new instance of ChatModel with provided configuration.
-func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
+func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error) {
 	if config == nil {
 		return nil, errors.New("config must not be nil")
 	}
@@ -233,7 +238,7 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return true
 }
 
-func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.Message, opts ...model.Option) (
+func (cm *ChatModel) genRequest(_ context.Context, stream bool, in []*schema.Message, opts ...model.Option) (
 	req *api.ChatRequest, cbInput *model.CallbackInput, err error) {
 
 	var (
@@ -285,6 +290,10 @@ func (cm *ChatModel) genRequest(ctx context.Context, stream bool, in []*schema.M
 	msgs, err := toOllamaMessages(in)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error convert messages: %w", err)
+	}
+
+	if len(mo.AllowedToolNames) > 0 {
+		return nil, nil, fmt.Errorf("not support allowed tool names parameter")
 	}
 
 	tools, err := toOllamaTools(mo.Tools)
@@ -355,34 +364,96 @@ func toOllamaMessage(einoMsg *schema.Message) (api.Message, error) {
 		Thinking:  einoMsg.ReasoningContent,
 		ToolCalls: toolCalls,
 	}
-	if len(einoMsg.MultiContent) == 0 {
+
+	if len(einoMsg.UserInputMultiContent) == 0 && len(einoMsg.AssistantGenMultiContent) == 0 && len(einoMsg.MultiContent) == 0 {
 		om.Content = einoMsg.Content
 		return om, nil
 	}
 
 	content := ""
 	var images []api.ImageData
-	for _, mc := range einoMsg.MultiContent {
-		switch mc.Type {
-		case schema.ChatMessagePartTypeText:
-			content += mc.Text
-		case schema.ChatMessagePartTypeImageURL:
-			if mc.ImageURL == nil {
-				return api.Message{}, errors.New("image url is required")
+
+	if len(einoMsg.UserInputMultiContent) > 0 && len(einoMsg.AssistantGenMultiContent) > 0 {
+		return api.Message{}, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	}
+
+	if len(einoMsg.UserInputMultiContent) > 0 {
+		if einoMsg.Role != schema.User {
+			return api.Message{}, fmt.Errorf("user input multi content only support user role, got %s", einoMsg.Role)
+		}
+		for _, part := range einoMsg.UserInputMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				content += part.Text
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return api.Message{}, fmt.Errorf("image is required in UserInputMultiContent, but got nil")
+				}
+				if part.Image.URL != nil {
+					return api.Message{}, fmt.Errorf("ollama model only supports base64-encoded strings for the raw binary, but got URL: %s", *part.Image.URL)
+				}
+				if part.Image.Base64Data == nil {
+					return api.Message{}, fmt.Errorf("image is required in UserInputMultiContent, but got nil Base64Data")
+				}
+				images = append(images, api.ImageData(*part.Image.Base64Data))
+			default:
+				return api.Message{}, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
 			}
-			images = append(images, api.ImageData(mc.ImageURL.URL))
-		default:
-			return api.Message{}, fmt.Errorf("unsupported content type: %s", mc.Type)
+		}
+	} else if len(einoMsg.AssistantGenMultiContent) > 0 {
+		if einoMsg.Role != schema.Assistant {
+			return api.Message{}, fmt.Errorf("assistant gen multi content only support assistant role, got %s", einoMsg.Role)
+		}
+		for _, part := range einoMsg.AssistantGenMultiContent {
+			switch part.Type {
+			case schema.ChatMessagePartTypeText:
+				content += part.Text
+			case schema.ChatMessagePartTypeImageURL:
+				if part.Image == nil {
+					return api.Message{}, fmt.Errorf("image is required in AssistantGenMultiContent, but got nil")
+				}
+				if part.Image.URL != nil {
+					return api.Message{}, fmt.Errorf("ollama model only supports base64-encoded strings for the raw binary, but got URL: %s", *part.Image.URL)
+				}
+				if part.Image.Base64Data == nil {
+					return api.Message{}, fmt.Errorf("image is required in AssistantGenMultiContent, but got nil Base64Data")
+				}
+				images = append(images, api.ImageData(*part.Image.Base64Data))
+			default:
+				return api.Message{}, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", part.Type)
+			}
+		}
+	} else if len(einoMsg.MultiContent) > 0 {
+		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
+		for _, mc := range einoMsg.MultiContent {
+			switch mc.Type {
+			case schema.ChatMessagePartTypeText:
+				content += mc.Text
+			case schema.ChatMessagePartTypeImageURL:
+				if mc.ImageURL == nil {
+					return api.Message{}, errors.New("image url is required")
+				}
+				if err := validateImageURL(mc.ImageURL.URL); err != nil {
+					return api.Message{}, err
+				}
+
+				images = append(images, api.ImageData(mc.ImageURL.URL))
+			default:
+				return api.Message{}, fmt.Errorf("unsupported content type: %s", mc.Type)
+			}
 		}
 	}
 
-	return api.Message{
-		Role:      string(einoMsg.Role),
-		Content:   content,
-		Images:    images,
-		Thinking:  einoMsg.ReasoningContent,
-		ToolCalls: toolCalls,
-	}, nil
+	om.Content = content
+	om.Images = images
+	return om, nil
+}
+
+func validateImageURL(url string) error {
+	if strings.HasPrefix(url, "http") {
+		return errors.New("ollama model only supports base64-encoded strings for the raw binary")
+	}
+	return nil
 }
 
 func toEinoMessage(resp api.ChatResponse) *schema.Message {

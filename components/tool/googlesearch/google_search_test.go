@@ -220,7 +220,7 @@ func TestGooGleSearchTool(t *testing.T) {
       "type" : "string"
     },
     "num" : {
-      "description" : "number of search results to return",
+      "description" : "number of search results to return, valid values are between 1 and 10, inclusive",
       "type" : "integer"
     },
     "offset" : {
@@ -228,7 +228,7 @@ func TestGooGleSearchTool(t *testing.T) {
       "type" : "integer"
     },
     "lang" : {
-      "description" : "sets the user interface language",
+      "description" : "sets the user interface language, default english. usually represented by a 2-4 letter code in ISO 639-1. e.g. en, ja, zh-CN",
       "type" : "string"
     }
   },

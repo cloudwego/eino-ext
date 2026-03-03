@@ -27,8 +27,8 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 )
 
-// SearchModeDenseVectorSimilarity calculate embedding similarity between dense_vector field and query
-// see: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/query-dsl-script-score-query.html#vector-functions
+// SearchModeDenseVectorSimilarity calculates the embedding similarity between a dense_vector field and the query.
+// See: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/query-dsl-script-score-query.html#vector-functions
 func SearchModeDenseVectorSimilarity(typ DenseVectorSimilarityType, vectorFieldName string) es8.SearchMode {
 	return &denseVectorSimilarity{fmt.Sprintf(denseVectorScriptMap[typ], vectorFieldName)}
 }
@@ -95,6 +95,7 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 	return req, nil
 }
 
+// DenseVectorSimilarityType represents the type of dense vector similarity.
 type DenseVectorSimilarityType string
 
 const (
@@ -107,7 +108,7 @@ const (
 var denseVectorScriptMap = map[DenseVectorSimilarityType]string{
 	DenseVectorSimilarityTypeCosineSimilarity: `cosineSimilarity(params.embedding, '%s') + 1.0`,
 	DenseVectorSimilarityTypeDotProduct: `
-    double value = dotProduct(params.query_vector, '%s');
+    double value = dotProduct(params.embedding, '%s');
     return sigmoid(1, Math.E, -value);
     `,
 	DenseVectorSimilarityTypeL1Norm: `1 / (1 + l1norm(params.embedding, '%s'))`,

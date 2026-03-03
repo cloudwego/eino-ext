@@ -25,6 +25,7 @@ import (
 
 	"github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/schema"
+	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 )
 
 func main() {
@@ -45,7 +46,7 @@ func main() {
 			Role:    schema.User,
 			Content: "as a machine, how do you answer user's question?",
 		},
-	})
+	}, ark.WithReasoningEffort(arkModel.ReasoningEffortHigh))
 
 	if err != nil {
 		log.Printf("Generate failed, err=%v", err)

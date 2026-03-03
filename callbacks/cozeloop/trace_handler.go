@@ -100,6 +100,7 @@ func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input
 	ctx, span := l.client.StartSpan(ctx, spanName, parseSpanTypeFromComponent(info.Component))
 
 	l.setRunInfo(ctx, span, info)
+	l.setSpanContext(ctx, span)
 
 	if l.parser != nil {
 		span.SetTags(ctx, l.parser.ParseInput(ctx, info, input))
@@ -180,6 +181,7 @@ func (l *einoTracer) OnStartWithStreamInput(ctx context.Context, info *callbacks
 	ctx = context.WithValue(ctx, async.TraceStreamInputAsyncKey{}, stopCh)
 
 	l.setRunInfo(ctx, span, info)
+	l.setSpanContext(ctx, span)
 
 	if l.parser != nil {
 		go func() {
@@ -254,5 +256,17 @@ func (l *einoTracer) setRunInfo(ctx context.Context, span cozeloop.Span, info *c
 	)
 	if l.runtime != nil {
 		span.SetRuntime(ctx, *l.runtime)
+	}
+}
+
+func (l *einoTracer) setSpanContext(ctx context.Context, span cozeloop.Span) {
+	spanContextImpl := getSpanContextImpl(ctx)
+	if spanContextImpl != nil && !spanContextImpl.isSet {
+		*spanContextImpl = spanContext{
+			spanID:  span.GetSpanID(),
+			traceID: span.GetTraceID(),
+			baggage: span.GetBaggage(),
+			isSet:   true,
+		}
 	}
 }

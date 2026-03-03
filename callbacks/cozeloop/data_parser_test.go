@@ -270,6 +270,18 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 			mockParseAny.UnPatch()
 		})
 
+		mockey.PatchConvey("当 info.Component 为 compose.ComponentOfTool 时", func() {
+			info := &callbacks.RunInfo{
+				Component: components.ComponentOfTool,
+			}
+			mockParseAny := mockey.Mock(parseAny).Return("test_output").Build()
+			result := d.ParseOutput(ctx, info, outputs)
+
+			convey.So(result, convey.ShouldNotBeNil)
+			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+			mockParseAny.UnPatch()
+		})
+
 		mockey.PatchConvey("当 info.Component 为 compose.ComponentOfLambda 时，且为2级节点", func() {
 			info := &callbacks.RunInfo{
 				Component: compose.ComponentOfLambda,
