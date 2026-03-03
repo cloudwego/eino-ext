@@ -34,6 +34,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/eino-contrib/jsonschema"
 
 	"github.com/cloudwego/eino/components"
 
@@ -152,6 +153,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		thinking:               config.Thinking,
 		topK:                   config.TopK,
 		topP:                   config.TopP,
+		responseFormat:         config.ResponseFormat,
 		disableParallelToolUse: config.DisableParallelToolUse,
 		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
 	}, nil
@@ -255,6 +257,10 @@ type Config struct {
 	// "bm25" or "regex". Default "bm25" when WithDeferredTools is used.
 	ToolSearchAlgorithm ToolSearchAlgorithm `json:"tool_search_algorithm"`
 
+	// ResponseFormat specifies the format of the model's response
+	// Optional. Use for structured outputs
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+
 	// Additional fields to set in the HTTP request header.
 	AdditionalHeaderFields map[string]string `json:"additional_header_fields"`
 
@@ -275,6 +281,12 @@ type Thinking struct {
 	BudgetTokens int  `json:"budget_tokens"`
 }
 
+// ResponseFormat configures structured JSON output using a JSON schema.
+type ResponseFormat struct {
+	// Schema is the JSON schema that the model's response must conform to.
+	Schema *jsonschema.Schema `json:"schema"`
+}
+
 type ChatModel struct {
 	cli anthropic.Client
 
@@ -285,6 +297,7 @@ type ChatModel struct {
 	topK                   *int32
 	topP                   *float32
 	thinking               *Thinking
+	responseFormat         *ResponseFormat
 	tools                  []anthropic.ToolUnionParam
 	origTools              []*schema.ToolInfo
 	toolChoice             *schema.ToolChoice
@@ -421,7 +434,6 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			_ = sw.Send(nil, stream.Err())
 			return
 		}
-
 	}()
 	_, sr = callbacks.OnEndWithStreamOutput(ctx, sr)
 	return schema.StreamReaderWithConvert(sr, func(t *model.CallbackOutput) (*schema.Message, error) {
@@ -562,7 +574,8 @@ func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.M
 }
 
 func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (
-	anthropic.MessageNewParams, error) {
+	anthropic.MessageNewParams, error,
+) {
 	if len(input) == 0 {
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
 	}
@@ -585,7 +598,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	specOptions := model.GetImplSpecificOptions(&options{
 		TopK:                   cm.topK,
 		Thinking:               cm.thinking,
-		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
+		DisableParallelToolUse: cm.disableParallelToolUse,
+		ResponseFormat:         cm.responseFormat,
+	}, opts...)
 
 	params := anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
@@ -612,6 +627,18 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
 				Type:         "enabled",
 				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
+			},
+		}
+	}
+
+	if specOptions.ResponseFormat != nil && specOptions.ResponseFormat.Schema != nil {
+		schemaMap, mErr := jsonSchemaToMap(specOptions.ResponseFormat.Schema)
+		if mErr != nil {
+			return anthropic.MessageNewParams{}, fmt.Errorf("failed to marshal response format schema: %w", mErr)
+		}
+		params.OutputConfig = anthropic.OutputConfigParam{
+			Format: anthropic.JSONOutputFormatParam{
+				Schema: schemaMap,
 			},
 		}
 	}
@@ -851,7 +878,7 @@ func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoic
 			return fmt.Errorf("tool choice is forced but tool is not provided")
 		}
 
-		var onlyOneToolName = ""
+		onlyOneToolName := ""
 		if len(allowedToolNames) > 0 {
 			if len(allowedToolNames) > 1 {
 				return fmt.Errorf("only one allowed tool name can be configured")
@@ -890,7 +917,6 @@ func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoic
 	}
 
 	return nil
-
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
@@ -1329,7 +1355,8 @@ type streamContext struct {
 }
 
 func convContentBlockToEinoMsg(
-	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext) error {
+	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext,
+) error {
 	//	case anthropic.TextBlock:
 	//	case anthropic.ToolUseBlock:
 	//	case anthropic.ServerToolUseBlock:
