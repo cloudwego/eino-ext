@@ -35,6 +35,10 @@ func WithValue(ctx context.Context, key, val string) context.Context {
 	return context.WithValue(ctx, metadataKey{}, newMd)
 }
 
+func ClearValue(ctx context.Context) context.Context {
+	return context.WithValue(ctx, metadataKey{}, metadata{})
+}
+
 // GetValue extracts related val with key.
 // If key does not exist, would return "", false
 func GetValue(ctx context.Context, key string) (string, bool) {
