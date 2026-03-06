@@ -36,10 +36,19 @@ import (
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/utils"
 )
 
+var (
+	disablePrevHeaderForwarding = false
+)
+
+func DisablePrevHeaderForwarding() {
+	disablePrevHeaderForwarding = true
+}
+
 type ClientTransportBuilderOptions struct {
-	hCli       *client.Client
-	cli        *http.Client
-	sseBufSize *int
+	hCli                        *client.Client
+	cli                         *http.Client
+	sseBufSize                  *int
+	disablePrevHeaderForwarding bool
 }
 type ClientTransportBuilderOption func(*ClientTransportBuilderOptions)
 
@@ -55,6 +64,12 @@ func WithHTTPClient(cli *http.Client) ClientTransportBuilderOption {
 	}
 }
 
+func WithDisablePrevHeaderForwarding() ClientTransportBuilderOption {
+	return func(o *ClientTransportBuilderOptions) {
+		o.disablePrevHeaderForwarding = true
+	}
+}
+
 // WithSSEBufferSize specifies the maximum buffer size will be used in SSE Reader Processing.
 // if size <= 0, then default maximum size (64 * 1024) would be used.
 func WithSSEBufferSize(size int) ClientTransportBuilderOption {
@@ -64,9 +79,10 @@ func WithSSEBufferSize(size int) ClientTransportBuilderOption {
 }
 
 type clientTransportHandler struct {
-	hCli       *client.Client
-	cli        *http.Client
-	sseBufSize *int
+	hCli                        *client.Client
+	cli                         *http.Client
+	sseBufSize                  *int
+	disablePrevHeaderForwarding bool
 }
 
 func NewClientTransportHandler(opts ...ClientTransportBuilderOption) transport.ClientTransportHandler {
@@ -75,9 +91,10 @@ func NewClientTransportHandler(opts ...ClientTransportBuilderOption) transport.C
 		opt(o)
 	}
 	h := &clientTransportHandler{
-		hCli:       o.hCli,
-		cli:        o.cli,
-		sseBufSize: o.sseBufSize,
+		hCli:                        o.hCli,
+		cli:                         o.cli,
+		sseBufSize:                  o.sseBufSize,
+		disablePrevHeaderForwarding: o.disablePrevHeaderForwarding,
 	}
 	if h.hCli == nil && h.cli == nil {
 		cli, _ := client.NewClient(client.WithDialTimeout(consts.DefaultDialTimeout))
@@ -90,9 +107,9 @@ func (c *clientTransportHandler) NewTransport(ctx context.Context, peer conninfo
 	addr := peer.Address()
 	var r rounder
 	if c.hCli != nil {
-		r = newHertzClientRounder(addr, c.hCli, c.sseBufSize)
+		r = newHertzClientRounder(addr, c.hCli, c.sseBufSize, c.disablePrevHeaderForwarding)
 	} else {
-		r = newHTTPClientRounder(addr, c.cli, c.sseBufSize)
+		r = newHTTPClientRounder(addr, c.cli, c.sseBufSize, c.disablePrevHeaderForwarding)
 	}
 	return &httpClientTransport{rounder: r}, nil
 }
@@ -106,16 +123,18 @@ type sseReaderInt interface {
 }
 
 type httpClientRounder struct {
-	cli        *http.Client
-	addr       string
-	sseBufSize *int
+	cli                         *http.Client
+	addr                        string
+	sseBufSize                  *int
+	disablePrevHeaderForwarding bool
 }
 
-func newHTTPClientRounder(addr string, cli *http.Client, sseBufSize *int) *httpClientRounder {
+func newHTTPClientRounder(addr string, cli *http.Client, sseBufSize *int, disablePrevHeaderForwarding bool) *httpClientRounder {
 	return &httpClientRounder{
-		cli:        cli,
-		addr:       addr,
-		sseBufSize: sseBufSize,
+		cli:                         cli,
+		addr:                        addr,
+		sseBufSize:                  sseBufSize,
+		disablePrevHeaderForwarding: disablePrevHeaderForwarding,
 	}
 }
 
@@ -129,10 +148,12 @@ func (c *httpClientRounder) Round(ctx context.Context, msg core.Message) (core.M
 		return nil, fmt.Errorf("failed to create http request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json,text/event-stream")
-	md, ok := metadata.GetAllValues(ctx)
-	if ok {
-		for k, v := range md {
-			req.Header.Set(k, v)
+	if !c.disablePrevHeaderForwarding && !disablePrevHeaderForwarding {
+		md, ok := metadata.GetAllValues(ctx)
+		if ok {
+			for k, v := range md {
+				req.Header.Set(k, v)
+			}
 		}
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -185,16 +206,18 @@ func (c *httpClientRounder) Round(ctx context.Context, msg core.Message) (core.M
 }
 
 type hertzClientRounder struct {
-	cli        *client.Client
-	addr       string
-	sseBufSize *int
+	cli                         *client.Client
+	addr                        string
+	sseBufSize                  *int
+	disablePrevHeaderForwarding bool
 }
 
-func newHertzClientRounder(addr string, cli *client.Client, sseBufSize *int) *hertzClientRounder {
+func newHertzClientRounder(addr string, cli *client.Client, sseBufSize *int, disablePrevHeaderForwarding bool) *hertzClientRounder {
 	return &hertzClientRounder{
-		addr:       addr,
-		cli:        cli,
-		sseBufSize: sseBufSize,
+		addr:                        addr,
+		cli:                         cli,
+		sseBufSize:                  sseBufSize,
+		disablePrevHeaderForwarding: disablePrevHeaderForwarding,
 	}
 }
 
@@ -208,10 +231,12 @@ func (c *hertzClientRounder) Round(ctx context.Context, msg core.Message) (core.
 	req.SetMethod(consts.MethodPost)
 	req.SetRequestURI(c.addr)
 	req.SetHeader("Accept", "application/json,text/event-stream")
-	md, ok := metadata.GetAllValues(ctx)
-	if ok {
-		for k, v := range md {
-			req.SetHeader(k, v)
+	if !c.disablePrevHeaderForwarding && !disablePrevHeaderForwarding {
+		md, ok := metadata.GetAllValues(ctx)
+		if ok {
+			for k, v := range md {
+				req.SetHeader(k, v)
+			}
 		}
 	}
 	req.Header.SetContentTypeBytes([]byte("application/json"))
