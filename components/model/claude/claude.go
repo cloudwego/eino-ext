@@ -102,7 +102,14 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		if config.HTTPClient != nil {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
-		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+
+		// AWS config HTTP client is used for credential/signing requests;
+		// option.WithHTTPClient is used for actual Anthropic API calls via Bedrock.
+		clientOpts := []option.RequestOption{bedrock.WithLoadDefaultConfig(ctx, opts...)}
+		if config.HTTPClient != nil {
+			clientOpts = append(clientOpts, option.WithHTTPClient(config.HTTPClient))
+		}
+		cli = anthropic.NewClient(clientOpts...)
 	} else {
 		// Use direct Anthropic API
 		var opts []option.RequestOption
