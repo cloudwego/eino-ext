@@ -104,7 +104,7 @@ type Config struct {
 	ExecutionTimeout int
 }
 
-type sandboxToolBackend struct {
+type SandboxTool struct {
 	secretAccessKey  string
 	accessKeyID      string
 	baseURL          string
@@ -117,14 +117,14 @@ type sandboxToolBackend struct {
 	executionTimeout int
 }
 
-// NewSandboxToolBackend creates a new sandboxToolBackend instance.
-// sandboxToolBackend refers to the sandbox running instance created by the sandbox tool in Volcengine.
+// NewSandboxToolBackend creates a new SandboxTool instance.
+// SandboxTool refers to the sandbox running instance created by the sandbox tool in Volcengine.
 // For creating a sandbox tool environment, please refer to: https://www.volcengine.com/docs/86681/1847934?lang=zh;
 // For creating a sandbox tool running instance, please refer to: https://www.volcengine.com/docs/86681/1860266?lang=zh.
 // Note: The execution paths within the sandbox environment may be subject to permission restrictions (read, write, execute, etc.).
 // Improper path selection can result in operation failures or permission errors.
 // It is recommended to perform operations within paths where the sandbox environment has explicit permissions to mitigate permission-related risks.
-func NewSandboxToolBackend(config *Config) (filesystem.Backend, error) {
+func NewSandboxToolBackend(config *Config) (*SandboxTool, error) {
 	if config.AccessKeyID == "" {
 		return nil, fmt.Errorf("AccessKeyID is required")
 	}
@@ -159,7 +159,7 @@ func NewSandboxToolBackend(config *Config) (filesystem.Backend, error) {
 		return nil, fmt.Errorf("invalid region: %s", region)
 	}
 
-	return &sandboxToolBackend{
+	return &SandboxTool{
 		accessKeyID:      config.AccessKeyID,
 		secretAccessKey:  config.SecretAccessKey,
 		httpClient:       httpClient,
@@ -174,7 +174,7 @@ func NewSandboxToolBackend(config *Config) (filesystem.Backend, error) {
 }
 
 // LsInfo lists file information under the given path.
-func (s *sandboxToolBackend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
+func (s *SandboxTool) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
 	path, err := formatPath(req.Path, "/", true)
 	if err != nil {
 		return nil, err
@@ -216,7 +216,7 @@ func (s *sandboxToolBackend) LsInfo(ctx context.Context, req *filesystem.LsInfoR
 }
 
 // Read reads file content with support for line-based offset and limit.
-func (s *sandboxToolBackend) Read(ctx context.Context, req *filesystem.ReadRequest) (string, error) {
+func (s *SandboxTool) Read(ctx context.Context, req *filesystem.ReadRequest) (string, error) {
 	path, err := formatPath(req.FilePath, "", true)
 	if err != nil {
 		return "", err
@@ -251,7 +251,7 @@ func (s *sandboxToolBackend) Read(ctx context.Context, req *filesystem.ReadReque
 }
 
 // GrepRaw searches for content matching the specified pattern in files.
-func (s *sandboxToolBackend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
 	path, _ := formatPath(req.Path, "", false)
 	params := map[string]any{
 		"pattern":      req.Pattern,
@@ -292,7 +292,7 @@ func (s *sandboxToolBackend) GrepRaw(ctx context.Context, req *filesystem.GrepRe
 }
 
 // GlobInfo returns file information matching the glob pattern.
-func (s *sandboxToolBackend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
+func (s *SandboxTool) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
 	path, _ := formatPath(req.Path, "/", false)
 	params := map[string]any{
 		"path_b64":    base64.StdEncoding.EncodeToString([]byte(path)),
@@ -330,7 +330,7 @@ func (s *sandboxToolBackend) GlobInfo(ctx context.Context, req *filesystem.GlobI
 }
 
 // Write creates file content.
-func (s *sandboxToolBackend) Write(ctx context.Context, req *filesystem.WriteRequest) error {
+func (s *SandboxTool) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 	path, err := formatPath(req.FilePath, "", true)
 	if err != nil {
 		return err
@@ -358,7 +358,7 @@ func (s *sandboxToolBackend) Write(ctx context.Context, req *filesystem.WriteReq
 }
 
 // Edit replaces string occurrences in a file.
-func (s *sandboxToolBackend) Edit(ctx context.Context, req *filesystem.EditRequest) error {
+func (s *SandboxTool) Edit(ctx context.Context, req *filesystem.EditRequest) error {
 	path, err := formatPath(req.FilePath, "", true)
 	if err != nil {
 		return err
@@ -401,7 +401,7 @@ func (s *sandboxToolBackend) Edit(ctx context.Context, req *filesystem.EditReque
 }
 
 // execute executes a command in the sandbox.
-func (s *sandboxToolBackend) execute(ctx context.Context, command string) (text string, exitCode *int, err error) {
+func (s *SandboxTool) execute(ctx context.Context, command string) (text string, exitCode *int, err error) {
 	var operationPayload string
 	if s.executionTimeout <= 0 {
 		operationPayload, err = sonic.MarshalString(map[string]any{
@@ -473,7 +473,7 @@ func (s *sandboxToolBackend) execute(ctx context.Context, command string) (text 
 	return text, exitCode, nil
 }
 
-func (s *sandboxToolBackend) invokeTool(ctx context.Context, method string, body []byte) ([]byte, error) {
+func (s *SandboxTool) invokeTool(ctx context.Context, method string, body []byte) ([]byte, error) {
 	queries := make(url.Values)
 	queries.Set("Action", "InvokeTool")
 	queries.Set("Version", "2025-10-30")
@@ -506,7 +506,7 @@ func (s *sandboxToolBackend) invokeTool(ctx context.Context, method string, body
 	return responseBody, nil
 }
 
-func (s *sandboxToolBackend) signRequest(request *http.Request, queries url.Values, body []byte) {
+func (s *SandboxTool) signRequest(request *http.Request, queries url.Values, body []byte) {
 	now := time.Now()
 	date := now.UTC().Format("20060102T150405Z")
 	authDate := date[:8]
@@ -558,7 +558,7 @@ func (s *sandboxToolBackend) signRequest(request *http.Request, queries url.Valu
 	request.Header.Set("Authorization", authorization)
 }
 
-func (s *sandboxToolBackend) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (result *filesystem.ExecuteResponse, err error) {
+func (s *SandboxTool) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (result *filesystem.ExecuteResponse, err error) {
 	if input.Command == "" {
 		return nil, fmt.Errorf("command is required")
 	}

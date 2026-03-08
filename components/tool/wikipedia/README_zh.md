@@ -131,6 +131,10 @@ type SearchResult struct {
 }
 ```
 
+## 示例
+
+查看 [examples](./examples/) 目录获取完整的使用示例。
+
 ## 更多详情
 
 - [Eino 文档](https://github.com/cloudwego/eino)

@@ -187,3 +187,9 @@ type FieldValue struct {
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [OpenSearch Go Client Documentation](https://github.com/opensearch-project/opensearch-go)
+## Examples
+
+See the following examples for more usage:
+
+- [Basic Indexer](./examples/indexer/)
+

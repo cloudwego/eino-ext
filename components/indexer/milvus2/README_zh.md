@@ -170,13 +170,20 @@ func main() {
 | `NewSparseInvertedIndexBuilder()` | 稀疏向量倒排索引 | `DropRatioBuild` |
 | `NewSparseWANDIndexBuilder()` | 稀疏向量 WAND 算法 | `DropRatioBuild` |
 
-### 示例：HNSW 索引
+### 示例
 
-```go
-indexBuilder := milvus2.NewHNSWIndexBuilder().
-	WithM(16).              // 每个节点的最大连接数 (4-64)
-	WithEfConstruction(200) // 索引构建时的搜索宽度 (8-512)
-```
+查看以下示例了解更多用法：
+
+- [自动索引](./examples/auto/)
+- [BYOV（自带向量）](./examples/byov/)
+- [演示示例](./examples/demo/)
+- [DiskANN 索引](./examples/diskann/)
+- [HNSW 索引](./examples/hnsw/)
+- [混合搜索](./examples/hybrid/)
+- [中文混合搜索](./examples/hybrid_chinese/)
+- [IVF_FLAT 索引](./examples/ivf_flat/)
+- [RABITQ 索引](./examples/rabitq/)
+- [稀疏向量](./examples/sparse/)
 
 ### 示例：IVF_FLAT 索引
 

@@ -94,6 +94,10 @@ type SearchResult struct {
 }
 ```
 
+## 示例
+
+查看 [examples](./examples/) 目录获取完整的使用示例。
+
 ## 更多详情
 
 - [DuckDuckGo 搜索库文档](ddgsearch/README_zh.md)

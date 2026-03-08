@@ -189,3 +189,7 @@ our vector undergoes an additional 8-fold expansion.
 
 Therefore, we can derive the conversion relationship between the `dim` parameter of the Milvus vector column and the
 output dimension of the embedding model: `dim = embedding model output * 4 * 8`
+
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.

@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -465,7 +464,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with echo", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "echo line1 && echo line2 && echo line3"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var outputs []string
@@ -487,7 +486,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with ping", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "ping -c 3 127.0.0.1"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var lineCount int
@@ -506,7 +505,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with seq command", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "seq 1 5"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var numbers []string
@@ -530,7 +529,7 @@ func TestExecuteStreaming(t *testing.T) {
 		defer cancel()
 
 		req := &filesystem.ExecuteRequest{Command: "seq 1 1000000"}
-		sr, err := s.(*backend).ExecuteStreaming(cancelCtx, req)
+		sr, err := s.ExecuteStreaming(cancelCtx, req)
 		assert.NoError(t, err)
 
 		var lineCount int
@@ -552,7 +551,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with command failure", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "echo output && exit 1"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var hasOutput bool
@@ -575,7 +574,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with stderr output", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "echo stdout && echo stderr >&2 && exit 1"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var outputs []string
@@ -600,14 +599,14 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with empty command", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: ""}
-		_, err := s.(*backend).ExecuteStreaming(ctx, req)
+		_, err := s.ExecuteStreaming(ctx, req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "command is required")
 	})
 
 	t.Run("ExecuteStreaming with large output", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "seq 1 100"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var lineCount int
@@ -626,7 +625,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with normal completion", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "echo test"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var receivedOutput bool
@@ -645,7 +644,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with invalid command", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "/nonexistent/command"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var lastErr error
@@ -665,7 +664,7 @@ func TestExecuteStreaming(t *testing.T) {
 
 	t.Run("ExecuteStreaming with no stdout output", func(t *testing.T) {
 		req := &filesystem.ExecuteRequest{Command: "true"}
-		sr, err := s.(*backend).ExecuteStreaming(ctx, req)
+		sr, err := s.ExecuteStreaming(ctx, req)
 		assert.NoError(t, err)
 
 		var receivedResponse bool
@@ -687,11 +686,4 @@ func TestExecuteStreaming(t *testing.T) {
 		assert.NotNil(t, exitCode, "should receive exit code in response")
 		assert.Equal(t, 0, *exitCode, "exit code should be 0 for successful command")
 	})
-}
-
-func TestExecute1(t *testing.T) {
-	fs := strings.Fields("ls -al")
-	bs, err := exec.Command(fs[0], fs[1:]...).Output()
-	assert.NoError(t, err)
-	fmt.Println(string(bs))
 }
