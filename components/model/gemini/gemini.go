@@ -784,25 +784,28 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 		content.Parts = append(content.Parts, thoughtPart)
 	}
 
-	for i := range message.ToolCalls {
-		call := &message.ToolCalls[i]
-		args := make(map[string]any)
-		err := sonic.UnmarshalString(call.Function.Arguments, &args)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
-		}
+	addToolCallPart := func() error {
+		for i := range message.ToolCalls {
+			call := &message.ToolCalls[i]
+			args := make(map[string]any)
+			err := sonic.UnmarshalString(call.Function.Arguments, &args)
+			if err != nil {
+				return fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
+			}
 
-		part := genai.NewPartFromFunctionCall(call.Function.Name, args)
-		// Restore thought signature on the functionCall part if present.
-		// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
-		// - Signatures must be returned exactly as received on functionCall parts
-		// - For parallel calls: only first functionCall has signature
-		// - For sequential calls: each functionCall has its own signature
-		// - Omitting required signature causes 400 error on Gemini 3 Pro
-		if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
-			part.ThoughtSignature = sig
+			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+			// Restore thought signature on the functionCall part if present.
+			// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+			// - Signatures must be returned exactly as received on functionCall parts
+			// - For parallel calls: only first functionCall has signature
+			// - For sequential calls: each functionCall has its own signature
+			// - Omitting required signature causes 400 error on Gemini 3 Pro
+			if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
+				part.ThoughtSignature = sig
+			}
+			content.Parts = append(content.Parts, part)
 		}
-		content.Parts = append(content.Parts, part)
+		return nil
 	}
 
 	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
@@ -827,6 +830,9 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 			return nil, err
 		}
 		content.Parts = append(content.Parts, parts...)
+		if err = addToolCallPart(); err != nil {
+			return nil, err
+		}
 		return content, nil
 	}
 	if message.Content != "" {
@@ -841,6 +847,9 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 			}
 		}
 		content.Parts = append(content.Parts, textPart)
+	}
+	if err := addToolCallPart(); err != nil {
+		return nil, err
 	}
 	if len(message.MultiContent) > 0 {
 		log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
