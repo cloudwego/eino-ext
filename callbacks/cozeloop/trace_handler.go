@@ -134,11 +134,11 @@ func (l *einoTracer) OnEnd(ctx context.Context, info *callbacks.RunInfo, output 
 					if e := recover(); e != nil {
 						l.logger.CtxWarnf(ctx, "[einoTracer][OnEnd] recovered: %s", e)
 					}
+					span.Finish(ctx)
 				}()
 
 				tags := l.parser.ParseOutput(ctx, info, output)
 				span.SetTags(ctx, tags)
-				span.Finish(ctx)
 			}()
 		} else {
 			span.Finish(ctx)

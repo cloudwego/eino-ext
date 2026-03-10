@@ -734,7 +734,8 @@ func serializeInterruptInfo(info *adk.InterruptInfo) map[string]any {
 	result := make(map[string]any)
 
 	if info.Data != nil {
-		if _, ok := info.Data.([]byte); !ok {
+		rv := reflect.ValueOf(info.Data)
+		if rv.Kind() != reflect.Slice || rv.Type().Elem().Kind() != reflect.Uint8 {
 			result["data"] = info.Data
 		}
 	}
