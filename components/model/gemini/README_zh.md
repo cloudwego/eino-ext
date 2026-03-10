@@ -67,11 +67,19 @@ import (
 
 func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
+	baseURL := os.Getenv("GEMINI_BASE_URL")
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+	clientConfig := &genai.ClientConfig{
 		APIKey: apiKey,
-	})
+	}
+	// Optional: route request to custom Gemini-compatible endpoint
+	if baseURL != "" {
+		clientConfig.HTTPOptions = genai.HTTPOptions{
+			BaseURL: baseURL,
+		}
+	}
+	client, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
@@ -137,6 +145,8 @@ func main() {
 	}
 }
 ```
+
+如果需要把请求路由到自定义的 Gemini 兼容端点，请设置 `GEMINI_BASE_URL`
 
 ## 配置
 

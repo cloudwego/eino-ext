@@ -1309,12 +1309,12 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 3)
-		
+
 		// Verify all IDs are valid UUIDs
 		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID 0 should be a valid UUID")
 		assert.True(t, isValidUUID(message.ToolCalls[1].ID), "ID 1 should be a valid UUID")
 		assert.True(t, isValidUUID(message.ToolCalls[2].ID), "ID 2 should be a valid UUID")
-		
+
 		// Verify all IDs are unique
 		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[1].ID, "IDs should be unique")
 		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[2].ID, "IDs should be unique")
@@ -1366,12 +1366,12 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 3)
-		
+
 		// Verify all IDs are valid UUIDs
 		for i, tc := range message.ToolCalls {
 			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
 		}
-		
+
 		// Verify all IDs are unique
 		ids := make(map[string]bool)
 		for _, tc := range message.ToolCalls {
@@ -1423,7 +1423,7 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 5)
-		
+
 		// Verify all IDs are valid UUIDs and unique
 		ids := make(map[string]bool)
 		for i, tc := range message.ToolCalls {
@@ -1489,9 +1489,104 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NotNil(t, message2)
 		assert.Len(t, message2.ToolCalls, 1)
 		assert.True(t, isValidUUID(message2.ToolCalls[0].ID))
-		
+
 		// Verify IDs across responses are unique
 		assert.NotEqual(t, message1.ToolCalls[0].ID, message2.ToolCalls[0].ID)
 		assert.NotEqual(t, message1.ToolCalls[1].ID, message2.ToolCalls[0].ID)
+	})
+}
+
+func TestConvSchemaMessageToolCallOrder(t *testing.T) {
+	t.Run("AssistantGenMultiContent with tool calls - tool calls come after media parts", func(t *testing.T) {
+		base64Data := base64.StdEncoding.EncodeToString([]byte("123"))
+		message := &schema.Message{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "Here's the image:"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+			},
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "analyze_image",
+						Arguments: `{"image_id":"123"}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.Equal(t, "Here's the image:", content.Parts[0].Text)
+		assert.NotNil(t, content.Parts[1].InlineData)
+		assert.Equal(t, "image/png", content.Parts[1].InlineData.MIMEType)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "analyze_image", content.Parts[2].FunctionCall.Name)
+	})
+
+	t.Run("Content with reasoning and tool calls - correct order", func(t *testing.T) {
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "Final answer",
+			ReasoningContent: "Thinking process",
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "tool",
+						Arguments: `{}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "Thinking process", content.Parts[0].Text)
+		assert.Equal(t, "Final answer", content.Parts[1].Text)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "tool", content.Parts[2].FunctionCall.Name)
+	})
+
+	t.Run("Multiple tool calls with content - all tool calls come after text", func(t *testing.T) {
+		message := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "I need to check several things:",
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "tool1",
+						Arguments: `{"a":1}`,
+					},
+				},
+				{
+					ID: "call_2",
+					Function: schema.FunctionCall{
+						Name:      "tool2",
+						Arguments: `{"b":2}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.Equal(t, "I need to check several things:", content.Parts[0].Text)
+		assert.NotNil(t, content.Parts[1].FunctionCall)
+		assert.Equal(t, "tool1", content.Parts[1].FunctionCall.Name)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "tool2", content.Parts[2].FunctionCall.Name)
 	})
 }
