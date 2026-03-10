@@ -176,8 +176,8 @@ func TestWrite(t *testing.T) {
 
 		req := &filesystem.WriteRequest{FilePath: filePath, Content: "new content"}
 		err := s.Write(ctx, req)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "already exists")
+		assert.NoError(t, err)
+
 	})
 }
 

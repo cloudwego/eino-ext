@@ -331,11 +331,8 @@ func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	file, err := os.OpenFile(req.FilePath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	file, err := os.OpenFile(req.FilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		if os.IsExist(err) {
-			return fmt.Errorf("file '%s' already exists", req.FilePath)
-		}
 		return fmt.Errorf("failed to open file for writing: %w", err)
 	}
 	defer file.Close()

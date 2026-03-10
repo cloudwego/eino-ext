@@ -68,15 +68,9 @@ except PermissionError:
 `
 	writePythonCodeTemplate = `
 import os
-import sys
 import base64
 
 file_path = '{file_path}'
-
-# Check if file already exists (atomic with write)
-if os.path.exists(file_path):
-    print(f"Error: File '{{file_path}}' already exists", file=sys.stderr)
-    sys.exit(-1)
 
 # Create parent directory if needed
 parent_dir = os.path.dirname(file_path) or '.'
