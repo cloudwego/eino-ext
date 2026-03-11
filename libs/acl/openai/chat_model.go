@@ -524,7 +524,8 @@ partsLoop:
 				Audio: &openai.Audio{
 					ID: string(audioID),
 				},
-				ToolCalls: toOpenAIToolCalls(inMsg.ToolCalls),
+				ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+				ReasoningContent: inMsg.ReasoningContent,
 			}
 			break partsLoop
 
