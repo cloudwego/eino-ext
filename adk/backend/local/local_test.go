@@ -480,11 +480,20 @@ func TestPathCleaning(t *testing.T) {
 		assert.True(t, found)
 	})
 
-	t.Run("Relative path rejected", func(t *testing.T) {
-		req := &filesystem.ReadRequest{FilePath: "relative/path.txt"}
-		_, err := s.Read(ctx, req)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "path must be an absolute path")
+	t.Run("Relative path allowed", func(t *testing.T) {
+		prevWD, err := os.Getwd()
+		assert.NoError(t, err)
+		t.Cleanup(func() { _ = os.Chdir(prevWD) })
+		assert.NoError(t, os.Chdir(dir))
+
+		relativePath := filepath.Join("relative", "path.txt")
+		assert.NoError(t, os.MkdirAll(filepath.Dir(relativePath), 0755))
+		assert.NoError(t, os.WriteFile(relativePath, []byte(content), 0644))
+
+		req := &filesystem.ReadRequest{FilePath: relativePath}
+		res, err := s.Read(ctx, req)
+		assert.NoError(t, err)
+		assert.Contains(t, res.Content, content)
 	})
 }
 

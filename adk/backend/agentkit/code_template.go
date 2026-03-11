@@ -114,7 +114,7 @@ else:
 with open('{file_path}', 'w') as f:
     f.write(result)
 
-print(count)
+print(count, end="")
 `
 
 	grepPythonCodeTemplate = `
@@ -138,9 +138,10 @@ def build_ripgrep_cmd(file_type, glob_pattern, after_lines, before_lines, patter
         cmd.extend(["-A", str(after_lines)])
     if before_lines and before_lines > 0:
         cmd.extend(["-B", str(before_lines)])
-    cmd.append(pattern)
+
+    cmd.extend(["-e", pattern])
     if search_path:
-        cmd.append(search_path)
+        cmd.extend(["--", search_path])
     return cmd
 
 
@@ -204,7 +205,7 @@ responses = run_ripgrep(
     case_insensitive={caseInsensitive},
     multiline={enableMultiline}
 )
-print(json.dumps(responses))
+print(json.dumps(responses), end="")
 `
 
 	globPythonCodeTemplate = `
@@ -227,7 +228,7 @@ for m in matches:
         'mtime': stat.st_mtime,
         'is_dir': os.path.isdir(m)
     }}
-    print(json.dumps(result))
+    print(json.dumps(result), end="")
 `
 	executePythonCodeTemplate = `
 import sys

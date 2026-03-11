@@ -175,10 +175,7 @@ func NewSandboxToolBackend(config *Config) (*SandboxTool, error) {
 
 // LsInfo lists file information under the given path.
 func (s *SandboxTool) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
-	path, err := formatPath(req.Path, "/", true)
-	if err != nil {
-		return nil, err
-	}
+	path := filepath.Clean(req.Path)
 
 	params := map[string]any{
 		"path": path,
@@ -217,10 +214,7 @@ func (s *SandboxTool) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest)
 
 // Read reads file content with support for line-based offset and limit.
 func (s *SandboxTool) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
-	path, err := formatPath(req.FilePath, "", true)
-	if err != nil {
-		return nil, err
-	}
+	path := filepath.Clean(req.FilePath)
 	if req.Offset <= 0 {
 		req.Offset = 1
 	}
@@ -258,7 +252,7 @@ func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) 
 	if req.Pattern == "" {
 		return nil, fmt.Errorf("pattern is required")
 	}
-	path, _ := formatPath(req.Path, "", false)
+	path := filepath.Clean(req.Path)
 	params := map[string]any{
 		"fileType":    req.FileType,
 		"glob":        req.Glob,
@@ -277,6 +271,7 @@ func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) 
 	} else {
 		params["enableMultiline"] = 0
 	}
+
 	script, err := pyfmt.Fmt(grepPythonCodeTemplate, params)
 	if err != nil {
 		return nil, fmt.Errorf("failed to render grep template: %w", err)
@@ -304,7 +299,7 @@ func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) 
 
 // GlobInfo returns file information matching the glob pattern.
 func (s *SandboxTool) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
-	path, _ := formatPath(req.Path, "/", false)
+	path := filepath.Clean(req.Path)
 	params := map[string]any{
 		"path_b64":    base64.StdEncoding.EncodeToString([]byte(path)),
 		"pattern_b64": base64.StdEncoding.EncodeToString([]byte(req.Pattern)),
@@ -342,10 +337,7 @@ func (s *SandboxTool) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequ
 
 // Write creates file content.
 func (s *SandboxTool) Write(ctx context.Context, req *filesystem.WriteRequest) error {
-	path, err := formatPath(req.FilePath, "", true)
-	if err != nil {
-		return err
-	}
+	path := filepath.Clean(req.FilePath)
 
 	params := map[string]any{
 		"file_path":   path,
@@ -370,10 +362,7 @@ func (s *SandboxTool) Write(ctx context.Context, req *filesystem.WriteRequest) e
 
 // Edit replaces string occurrences in a file.
 func (s *SandboxTool) Edit(ctx context.Context, req *filesystem.EditRequest) error {
-	path, err := formatPath(req.FilePath, "", true)
-	if err != nil {
-		return err
-	}
+	path := filepath.Clean(req.FilePath)
 
 	if req.OldString == "" {
 		return fmt.Errorf("old string is required")
@@ -626,18 +615,4 @@ func hashSHA256(data []byte) []byte {
 		log.Printf("input hash err:%s", err.Error())
 	}
 	return hash.Sum(nil)
-}
-
-// formatPath normalizes a file path with optional default value and absolute path validation.
-// If defaultPath is non-empty and path is empty, defaultPath will be used.
-// If requireAbs is true, returns an error if the cleaned path is not absolute.
-func formatPath(path string, defaultPath string, requireAbs bool) (string, error) {
-	if path == "" && defaultPath != "" {
-		path = defaultPath
-	}
-	path = filepath.Clean(path)
-	if requireAbs && !filepath.IsAbs(path) {
-		return "", fmt.Errorf("path must be an absolute path: %s", path)
-	}
-	return path, nil
 }
