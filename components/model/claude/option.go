@@ -28,6 +28,7 @@ type options struct {
 	DisableParallelToolUse *bool
 
 	EnableAutoCache *bool
+	AutoCacheTTL    CacheTTL
 }
 
 func WithTopK(k int32) model.Option {
@@ -49,11 +50,31 @@ func WithDisableParallelToolUse() model.Option {
 	})
 }
 
+// AutoCacheOption is a functional option for configuring auto cache behavior.
+type AutoCacheOption func(*autoCacheOptions)
+
+type autoCacheOptions struct {
+	TTL CacheTTL
+}
+
+// WithAutoCacheTTL sets the TTL for automatically placed cache breakpoints.
+func WithAutoCacheTTL(ttl CacheTTL) AutoCacheOption {
+	return func(o *autoCacheOptions) {
+		o.TTL = ttl
+	}
+}
+
 // WithEnableAutoCache enables automatic caching in a multi-turn conversation.
 // The caching strategy sets separate breakpoints for tool and system messages.
 // Additionally, a breakpoint is set on the last input message of each turn to cache the session.
-func WithEnableAutoCache(enabled bool) model.Option {
+// Use WithAutoCacheTTL to control the cache duration.
+func WithEnableAutoCache(enabled bool, opts ...AutoCacheOption) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.EnableAutoCache = &enabled
+		ao := &autoCacheOptions{}
+		for _, opt := range opts {
+			opt(ao)
+		}
+		o.AutoCacheTTL = ao.TTL
 	})
 }
