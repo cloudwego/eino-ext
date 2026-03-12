@@ -434,6 +434,14 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) error {
 	return nil
 }
 
+func newCacheControlParam(ttl CacheTTL) anthropic.CacheControlEphemeralParam {
+	p := anthropic.NewCacheControlEphemeralParam()
+	if ttl != "" {
+		p.TTL = ttl
+	}
+	return p
+}
+
 func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam, error) {
 	if len(tools) == 0 {
 		return nil, nil
@@ -461,7 +469,7 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 		}
 
 		if isBreakpointTool(tool) {
-			toolParam.CacheControl = anthropic.NewCacheControlEphemeralParam()
+			toolParam.CacheControl = newCacheControlParam(getToolBreakpointTTL(tool))
 		}
 
 		result = append(result, anthropic.ToolUnionParam{OfTool: toolParam})
@@ -565,14 +573,14 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 		block := anthropic.TextBlockParam{Text: m.Content}
 		if isBreakpointMessage(m) {
 			hasSetSysBreakPoint = true
-			block.CacheControl = anthropic.NewCacheControlEphemeralParam()
+			block.CacheControl = newCacheControlParam(getMessageBreakpointTTL(m))
 		}
 		params.System = append(params.System, block)
 	}
 
 	// if no breakpoint has been set, a breakpoint will be set for the last system message
 	if len(params.System) > 0 && !hasSetSysBreakPoint && fromOrDefault(specOptions.EnableAutoCache, false) {
-		params.System[len(params.System)-1].CacheControl = anthropic.NewCacheControlEphemeralParam()
+		params.System[len(params.System)-1].CacheControl = newCacheControlParam(specOptions.AutoCacheTTL)
 	}
 
 	msgParams := make([]anthropic.MessageParam, 0, len(msgs))
@@ -594,7 +602,7 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 	if !hasSetMsgBreakPoint && fromOrDefault(specOptions.EnableAutoCache, false) {
 		lastMsgParam := msgParams[len(msgParams)-1]
 		lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
-		populateContentBlockBreakPoint(lastBlock)
+		populateContentBlockBreakPoint(lastBlock, specOptions.AutoCacheTTL)
 	}
 
 	params.Messages = msgParams
@@ -622,7 +630,7 @@ func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOpt
 		}
 		// if no breakpoint has been set, a breakpoint will be set for the last tool
 		if !hasBreakpoint {
-			tools[len(tools)-1].OfTool.CacheControl = anthropic.NewCacheControlEphemeralParam()
+			tools[len(tools)-1].OfTool.CacheControl = newCacheControlParam(specOptions.AutoCacheTTL)
 		}
 	}
 
@@ -903,7 +911,7 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	}
 
 	if len(messageParams) > 0 && isBreakpointMessage(message) {
-		populateContentBlockBreakPoint(messageParams[len(messageParams)-1])
+		populateContentBlockBreakPoint(messageParams[len(messageParams)-1], getMessageBreakpointTTL(message))
 	}
 
 	switch message.Role {
@@ -974,21 +982,22 @@ func convToolMultiContent(callID string, parts []schema.MessageInputPart) (anthr
 	return result, nil
 }
 
-func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion) {
+func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion, ttl CacheTTL) {
+	ctrl := newCacheControlParam(ttl)
 	if block.OfText != nil {
-		block.OfText.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		block.OfText.CacheControl = ctrl
 		return
 	}
 	if block.OfImage != nil {
-		block.OfImage.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		block.OfImage.CacheControl = ctrl
 		return
 	}
 	if block.OfToolResult != nil {
-		block.OfToolResult.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		block.OfToolResult.CacheControl = ctrl
 		return
 	}
 	if block.OfToolUse != nil {
-		block.OfToolUse.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		block.OfToolUse.CacheControl = ctrl
 		return
 	}
 }
