@@ -46,7 +46,7 @@ func main() {
     // 1. Create a tool
     searchTool, _ := utils.InferTool("search_book", "Search books by genre",
         func(ctx context.Context, input *struct {
-            Genre string `json:"genre" jsonschema:"description=Book genre"`
+            Genre string `json:"genre" jsonschema_description:"Book genre"`
         }) (string, error) {
             return `{"books": ["The Great Gatsby"]}`, nil
         })

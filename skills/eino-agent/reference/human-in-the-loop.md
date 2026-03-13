@@ -226,7 +226,7 @@ func init() {
 ```go
 // Tool that asks user for clarification
 type askInput struct {
-    Question string `json:"question" jsonschema:"description=Question to ask the user"`
+    Question string `json:"question" jsonschema_description:"Question to ask the user"`
 }
 
 type askOptions struct {

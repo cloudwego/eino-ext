@@ -44,16 +44,13 @@ type ChatModelAgentConfig struct {
     // Use the built-in ExitTool: adk.ExitTool{}
     Exit tool.BaseTool
 
-    // When set, stores the agent's final message content in SessionValues under this key.
-    OutputKey string
-
     // Max ReAct iterations. Default: 20. Agent errors if exceeded.
     MaxIterations int
 
     // Retry config for ChatModel failures. Optional.
     ModelRetryConfig *ModelRetryConfig
 
-    // Middleware list (Handlers replaces deprecated Middlewares field)
+    // Middleware list
     Handlers []ChatModelAgentMiddleware
 }
 ```
@@ -91,7 +88,7 @@ import (
 )
 
 type SearchInput struct {
-    Query string `json:"query" jsonschema:"description=Search query"`
+    Query string `json:"query" jsonschema_description:"Search query"`
 }
 
 type SearchOutput struct {
@@ -145,14 +142,14 @@ func main() {
     // Create tools
     weatherTool, _ := utils.InferTool("get_weather", "Get weather for a city",
         func(ctx context.Context, input *struct {
-            City string `json:"city" jsonschema:"description=City name"`
+            City string `json:"city" jsonschema_description:"City name"`
         }) (string, error) {
             return fmt.Sprintf("25C in %s", input.City), nil
         })
 
     calcTool, _ := utils.InferTool("calculator", "Basic math operations",
         func(ctx context.Context, input *struct {
-            Expression string `json:"expression" jsonschema:"description=Math expression"`
+            Expression string `json:"expression" jsonschema_description:"Math expression"`
         }) (string, error) {
             return "42", nil
         })
@@ -211,31 +208,9 @@ func main() {
 }
 ```
 
-## Transfer (Sub-Agent Delegation)
-
-ChatModelAgent supports transferring control to sub-agents via `SetSubAgents`:
-
-```go
-routerAgent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-    Name:        "Router",
-    Instruction: "Route tasks to the appropriate agent.",
-    Model:       cm,
-})
-
-weatherAgent := createWeatherAgent()
-chatAgent := createChatAgent()
-
-// Register sub-agents -- Router can now transfer to them
-agent, _ := adk.SetSubAgents(ctx, routerAgent, []adk.Agent{weatherAgent, chatAgent})
-
-runner := adk.NewRunner(ctx, adk.RunnerConfig{Agent: agent})
-iter := runner.Query(ctx, "What's the weather in Paris?")
-// Router will transfer to weatherAgent automatically
-```
-
 ## Middleware
 
-Add middleware via the `Middlewares` field (or legacy `Handlers` field):
+Add middleware via the `Handlers` field:
 
 ```go
 agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
@@ -264,7 +239,7 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 
 When a streaming response fails and will be retried, the stream returns a `WillRetryError`. Handle it to show retry status to the user.
 
-## SessionValues and OutputKey
+## SessionValues
 
 SessionValues provide cross-agent key-value storage within a single run:
 
@@ -274,8 +249,4 @@ runner.Run(ctx, msgs, adk.WithSessionValues(map[string]any{"user": "Alice"}))
 
 // Access in Instruction via f-string
 Instruction: "The current user is {user}."
-
-// Store output for downstream agents
-OutputKey: "analysis_result"
-// After agent completes, other agents can read adk.GetSessionValue(ctx, "analysis_result")
 ```

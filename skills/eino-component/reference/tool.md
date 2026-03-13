@@ -167,8 +167,8 @@ tool, err := browseruse.NewTool(ctx, &browseruse.Config{})
 import "github.com/cloudwego/eino/components/tool/utils"
 
 type WeatherInput struct {
-    City string `json:"city" jsonschema:"description=City name,required"`
-    Unit string `json:"unit" jsonschema:"description=Temperature unit,enum=celsius|fahrenheit"`
+    City string `json:"city" jsonschema:"required" jsonschema_description:"City name"`
+    Unit string `json:"unit" jsonschema:"enum=celsius|fahrenheit" jsonschema_description:"Temperature unit"`
 }
 
 weatherTool, _ := utils.InferTool(

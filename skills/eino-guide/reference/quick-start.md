@@ -106,7 +106,7 @@ func getWeather(ctx context.Context, req *WeatherRequest) (string, error) {
 }
 
 type WeatherRequest struct {
-    City string `json:"city" jsonschema:"description=The city to get weather for"`
+    City string `json:"city" jsonschema_description:"The city to get weather for"`
 }
 
 func main() {
