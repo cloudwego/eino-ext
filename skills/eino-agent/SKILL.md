@@ -168,3 +168,4 @@ Read these files on-demand for detailed API, examples, and advanced usage:
 - [reference/runner-and-events.md](reference/runner-and-events.md) -- Runner creation, AgentEvent/AgentOutput, event iteration patterns
 - [reference/agent-as-tool.md](reference/agent-as-tool.md) -- Wrapping an Agent as a Tool for use by another agent
 - [reference/human-in-the-loop.md](reference/human-in-the-loop.md) -- Interrupt APIs, ResumableAgent, CheckPointStore, resume patterns
+- [reference/filesystem.md](reference/filesystem.md) -- Filesystem Backend interface, Local and AgentKit implementations, usage with DeepAgent
