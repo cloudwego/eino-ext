@@ -17,12 +17,40 @@
 package claude
 
 import (
+	"github.com/anthropics/anthropic-sdk-go"
+
 	"github.com/cloudwego/eino/schema"
 )
+
+// CacheTTL is a type alias for the Anthropic SDK's cache control TTL.
+// Supported values: CacheTTL5m ("5m", default) and CacheTTL1h ("1h").
+type CacheTTL = anthropic.CacheControlEphemeralTTL
+
+const (
+	// CacheTTL5m sets the cache TTL to 5 minutes (default).
+	CacheTTL5m CacheTTL = anthropic.CacheControlEphemeralTTLTTL5m
+	// CacheTTL1h sets the cache TTL to 1 hour.
+	CacheTTL1h CacheTTL = anthropic.CacheControlEphemeralTTLTTL1h
+)
+
+// BreakpointOption configures cache breakpoint behavior.
+type BreakpointOption func(*breakpointOptions)
+
+type breakpointOptions struct {
+	TTL CacheTTL
+}
+
+// WithCacheTTL sets the TTL for a cache breakpoint.
+func WithCacheTTL(ttl CacheTTL) BreakpointOption {
+	return func(o *breakpointOptions) {
+		o.TTL = ttl
+	}
+}
 
 const (
 	keyOfThinking          = "_eino_claude_thinking"
 	keyOfBreakPoint        = "_eino_claude_breakpoint"
+	keyOfBreakPointTTL     = "_eino_claude_breakpoint_ttl"
 	keyOfThinkingSignature = "_eino_claude_thinking_signature"
 )
 
@@ -35,7 +63,7 @@ func setThinking(msg *schema.Message, reasoningContent string) {
 	setMsgExtra(msg, keyOfThinking, reasoningContent)
 }
 
-func SetMessageBreakpoint(msg *schema.Message) *schema.Message {
+func SetMessageBreakpoint(msg *schema.Message, opts ...BreakpointOption) *schema.Message {
 	msg_ := *msg
 
 	extra := make(map[string]any, len(msg.Extra))
@@ -47,10 +75,18 @@ func SetMessageBreakpoint(msg *schema.Message) *schema.Message {
 
 	setMsgExtra(&msg_, keyOfBreakPoint, true)
 
+	o := &breakpointOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	if o.TTL != "" {
+		setMsgExtra(&msg_, keyOfBreakPointTTL, string(o.TTL))
+	}
+
 	return &msg_
 }
 
-func SetToolInfoBreakpoint(toolInfo *schema.ToolInfo) *schema.ToolInfo {
+func SetToolInfoBreakpoint(toolInfo *schema.ToolInfo, opts ...BreakpointOption) *schema.ToolInfo {
 	toolInfo_ := *toolInfo
 
 	extra := make(map[string]any, len(toolInfo.Extra))
@@ -61,6 +97,14 @@ func SetToolInfoBreakpoint(toolInfo *schema.ToolInfo) *schema.ToolInfo {
 	toolInfo_.Extra = extra
 
 	setToolInfoExtra(&toolInfo_, keyOfBreakPoint, true)
+
+	o := &breakpointOptions{}
+	for _, opt := range opts {
+		opt(o)
+	}
+	if o.TTL != "" {
+		setToolInfoExtra(&toolInfo_, keyOfBreakPointTTL, string(o.TTL))
+	}
 
 	return &toolInfo_
 }
@@ -120,4 +164,14 @@ func getThinkingSignature(msg *schema.Message) (string, bool) {
 
 func setThinkingSignature(msg *schema.Message, signature string) {
 	setMsgExtra(msg, keyOfThinkingSignature, signature)
+}
+
+func getMessageBreakpointTTL(msg *schema.Message) CacheTTL {
+	ttl, _ := getMsgExtraValue[string](msg, keyOfBreakPointTTL)
+	return CacheTTL(ttl)
+}
+
+func getToolBreakpointTTL(toolInfo *schema.ToolInfo) CacheTTL {
+	ttl, _ := getToolInfoExtraValue[string](toolInfo, keyOfBreakPointTTL)
+	return CacheTTL(ttl)
 }
