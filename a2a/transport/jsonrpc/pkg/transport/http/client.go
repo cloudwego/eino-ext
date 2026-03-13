@@ -315,7 +315,13 @@ func (s *sseReader) Read(ctx context.Context) (core.Message, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
-	data := <-s.buf.PopChan()
+	var data sseData
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case data = <-s.buf.PopChan():
+	}
+
 	defer s.buf.Load()
 	if data.err != nil {
 		s.err = data.err
