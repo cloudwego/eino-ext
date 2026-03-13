@@ -77,6 +77,19 @@ func TestEventBodyUnion(t *testing.T) {
 	assert.Equal(t, observationID, eventUnion.getObservationID())
 	assert.Equal(t, map[string]string{"key": "value"}, eventUnion.getMetadata())
 
+	scoreUnion := &eventBodyUnion{Score: &ScoreEventBody{
+		ID:            "scoreID",
+		TraceID:       traceID,
+		Name:          "accuracy",
+		Value:         0.95,
+		ObservationID: observationID,
+	}}
+	assert.Equal(t, traceID, scoreUnion.getTraceID())
+	assert.Equal(t, observationID, scoreUnion.getObservationID())
+	assert.Equal(t, "", scoreUnion.getInput())
+	assert.Equal(t, "", scoreUnion.getOutput())
+	assert.Nil(t, scoreUnion.getMetadata())
+
 	generationUnion := &eventBodyUnion{Generation: &GenerationEventBody{
 		BaseObservationEventBody: BaseObservationEventBody{
 			BaseEventBody: BaseEventBody{
