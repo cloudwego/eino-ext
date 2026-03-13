@@ -98,6 +98,7 @@ func TestConvAgenticMessage_Text(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.message = setSelfGenerated(tt.message)
 			content, err := convAgenticMessage(tt.message)
 			tt.validate(t, content, err)
 		})
@@ -447,6 +448,7 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.message = setSelfGenerated(tt.message)
 			content, err := convAgenticMessage(tt.message)
 			tt.validate(t, content, err)
 		})
