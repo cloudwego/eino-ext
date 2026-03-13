@@ -229,32 +229,33 @@ type askInput struct {
     Question string `json:"question" jsonschema_description:"Question to ask the user"`
 }
 
-type askOptions struct {
-    UserResponse *string
-}
-
-func WithUserResponse(resp string) tool.Option {
-    return tool.WrapImplSpecificOptFn(func(o *askOptions) { o.UserResponse = &resp })
-}
-
-askTool, _ := utils.InferOptionableTool("ask_user", "Ask user for clarification",
-    func(ctx context.Context, input *askInput, opts ...tool.Option) (string, error) {
-        o := tool.GetImplSpecificOptions[askOptions](nil, opts...)
-        if o.UserResponse == nil {
-            // First call: interrupt to ask user
-            return "", compose.NewInterruptAndRerunErr(input.Question)
-        }
-        // Resume: return user's response
-        return *o.UserResponse, nil
+askTool, _ := utils.InferTool("ask_user", "Ask user for clarification",
+    func(ctx context.Context, input *askInput) (string, error) {
+        // Interrupt to ask user
+        return "", compose.Interrupt(ctx, input.Question)
     })
 
 // ... configure agent with askTool ...
 
 // Handle interrupt
-// ... get interrupt info ...
+iter := runner.Query(ctx, "Recommend me some books", adk.WithCheckPointID("session-1"))
+var interruptID string
+for {
+    event, ok := iter.Next()
+    if !ok {
+        break
+    }
+    if event.Action != nil && event.Action.Interrupted != nil {
+        interruptID = event.Action.Interrupted.InterruptContexts[0].ID
+        fmt.Printf("Agent asks: %v\n", event.Action.Interrupted.InterruptContexts[0].Info)
+        break
+    }
+}
 
 // Resume with user's answer
-iter, _ := runner.Resume(ctx, "checkpoint-1",
-    adk.WithToolOptions([]tool.Option{WithUserResponse("I want fiction books")}),
-)
+iter, _ = runner.ResumeWithParams(ctx, "session-1", &adk.ResumeParams{
+    Targets: map[string]any{
+        interruptID: "I want fiction books",
+    },
+})
 ```

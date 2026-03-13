@@ -9,17 +9,17 @@ description: Eino component selection, configuration, and usage. Use when a user
 
 ### ChatModel -- LLM inference
 
-| Provider | Package | Tool Calling | Streaming | Notes |
-|----------|---------|:---:|:---:|-------|
-| OpenAI | `model/openai` | Yes | Yes | Also supports Azure via `ByAzure: true` |
-| Claude | `model/claude` | Yes | Yes | Also supports AWS Bedrock via `ByBedrock: true` |
-| Gemini | `model/gemini` | Yes | Yes | Requires `genai.Client` |
-| Ark (Volcengine) | `model/ark` | Yes | Yes | Doubao models |
-| Ollama | `model/ollama` | Yes | Yes | Local models |
-| DeepSeek | `model/deepseek` | Yes | Yes | Reasoning support |
-| Qwen | `model/qwen` | Yes | Yes | Alibaba DashScope API |
-| Qianfan | `model/qianfan` | Yes | Yes | Baidu ERNIE models |
-| OpenRouter | `model/openrouter` | Yes | Yes | Multi-provider routing |
+| Provider | Package | Notes |
+|----------|---------|-------|
+| OpenAI | `model/openai` | Also supports Azure via `ByAzure: true` |
+| Claude | `model/claude` | Also supports AWS Bedrock via `ByBedrock: true` |
+| Gemini | `model/gemini` | Requires `genai.Client` |
+| Ark (Volcengine) | `model/ark` | Doubao models |
+| Ollama | `model/ollama` | Local models |
+| DeepSeek | `model/deepseek` | Reasoning support |
+| Qwen | `model/qwen` | Alibaba DashScope API |
+| Qianfan | `model/qianfan` | Baidu ERNIE models |
+| OpenRouter | `model/openrouter` | Multi-provider routing |
 
 ### Embedding -- text to vector
 
@@ -90,30 +90,24 @@ type Indexer interface {
     Store(ctx context.Context, docs []*schema.Document, opts ...Option) (ids []string, err error)
 }
 
-// Document: Loader, Transformer
-// Tool: InvokableTool (Info + InvokableRun)
-// Prompt: ChatTemplate (Format)
-```
+// Document
+type Loader interface {
+    Load(ctx context.Context, src Source, opts ...LoaderOption) ([]*schema.Document, error)
+}
+type Transformer interface {
+    Transform(ctx context.Context, src []*schema.Document, opts ...TransformerOption) ([]*schema.Document, error)
+}
 
-## Common Configuration Pattern
+// Tool
+type InvokableTool interface {
+    Info(ctx context.Context) (*schema.ToolInfo, error)
+    InvokableRun(ctx context.Context, argumentsInJSON string, opts ...Option) (string, error)
+}
 
-All components follow `NewXxx(ctx, &XxxConfig{...})`:
-
-```go
-chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-    APIKey: os.Getenv("OPENAI_API_KEY"),
-    Model:  "gpt-4o",
-})
-
-embedder, err := openai.NewEmbedder(ctx, &openai.EmbeddingConfig{
-    APIKey: "your-key",
-    Model:  "text-embedding-3-small",
-})
-
-retriever, err := redis.NewRetriever(ctx, &redis.RetrieverConfig{
-    Client: redisClient,
-    Index:  "my_index",
-})
+// Prompt
+type ChatTemplate interface {
+    Format(ctx context.Context, vs map[string]any, opts ...Option) ([]*schema.Message, error)
+}
 ```
 
 ## Installation
@@ -192,19 +186,20 @@ Implement `Info()` and `InvokableRun()` to create a custom tool.
 
 ## Instructions to Agent
 
-- Always check the component README in `eino-ext/components/{type}/{impl}/` for the full Config struct and examples.
-- Provide the complete Config struct with required fields filled in.
+- Constructor signatures and Config struct names vary across implementations. Always read the provider's reference file in `reference/{type}/{impl}.md` before generating initialization code.
 - Use `ToolCallingChatModel` (not deprecated `ChatModel`) for tool binding.
 - For RAG, ensure the same Embedder model is used for both indexing and retrieval.
 - See reference files for detailed per-component documentation.
 
 ## Reference Files
 
-Read these files on-demand for detailed API, examples, and advanced usage:
+Read files on-demand for detailed API, config, and examples. Each `{type}/` directory contains an `overview.md` (interfaces + common patterns) and per-implementation files:
 
-- [reference/chat-model.md](reference/chat-model.md) -- All ChatModel implementations with config fields and examples
-- [reference/embedding-and-retrieval.md](reference/embedding-and-retrieval.md) -- Embedder and Retriever interfaces, implementations, RAG example
-- [reference/indexer.md](reference/indexer.md) -- Indexer interface, implementations, indexing pipeline
-- [reference/document-pipeline.md](reference/document-pipeline.md) -- Loader, Parser, Transformer interfaces and implementations
-- [reference/tool.md](reference/tool.md) -- Tool interfaces, MCP integration, search/utility tools, custom tool creation
-- [reference/prompt-and-callback.md](reference/prompt-and-callback.md) -- ChatTemplate, FString templates, callback handlers
+- `reference/model/*.md` -- ChatModel interfaces, tool binding, streaming, and per-provider config (openai, claude, gemini, ark, ollama, deepseek, qwen, qianfan, openrouter)
+- `reference/embedding/*.md` -- Embedder interface and per-provider config (openai, ark, ollama, etc.)
+- `reference/retriever/*.md` -- Retriever interface, RAG example, and per-backend config (redis, milvus2, es8)
+- `reference/indexer/*.md` -- Indexer interface, indexing pipeline, and per-backend config (redis, milvus2, es8, qdrant)
+- `reference/tool/*.md` -- Tool interfaces, custom tool creation, MCP integration, search tools, utility tools
+- `reference/document/pipeline.md` -- Loader, Parser, Transformer interfaces and full pipeline example
+- `reference/prompt.md` -- ChatTemplate, FString/GoTemplate/Jinja2 formats, message helpers
+- `reference/callback/*.md` -- Callback handler interface, registration patterns, and per-provider config (cozeloop, apmplus, langfuse, langsmith)

@@ -105,7 +105,7 @@ import "github.com/cloudwego/eino/adk/middlewares/reduction"
 mw, err := reduction.New(ctx, &reduction.Config{
     Backend:           myBackend,     // Required: storage for offloaded content
     MaxLengthForTrunc: 50000,         // Default: 50000 chars
-    MaxTokensForClear: 30000,         // Default: 30000 tokens
+    MaxTokensForClear: 128000,        // 128000 tokens
     SkipTruncation:    false,         // Set true to skip truncation
     SkipClear:         false,         // Set true to skip clearing
 })

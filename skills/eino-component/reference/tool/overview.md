@@ -1,6 +1,6 @@
-# Tool Reference
+# Tool Overview
 
-Tools are functions that a ChatModel can invoke. Eino provides several tool interfaces and pre-built tool implementations.
+Tools are functions that a ChatModel can invoke.
 
 ## Interfaces
 
@@ -40,128 +40,15 @@ toolInfo := &schema.ToolInfo{
     Name: "get_weather",
     Desc: "Get current weather for a city",
     ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-        "city": {
-            Type:     "string",
-            Desc:     "City name",
-            Required: true,
-        },
-        "unit": {
-            Type:     "string",
-            Desc:     "Temperature unit",
-            Enum:     []string{"celsius", "fahrenheit"},
-            Required: false,
-        },
+        "city": {Type: "string", Desc: "City name", Required: true},
+        "unit": {Type: "string", Desc: "Temperature unit", Enum: []string{"celsius", "fahrenheit"}},
     }),
 }
 ```
 
-## MCP Tool Integration
+## Custom Tool Creation
 
-The MCP (Model Context Protocol) component converts MCP server tools into Eino tools.
-
-```go
-import (
-    "github.com/mark3labs/mcp-go/client"
-    "github.com/mark3labs/mcp-go/mcp"
-    mcpp "github.com/cloudwego/eino-ext/components/tool/mcp"
-)
-
-// 1. Create and initialize MCP client
-cli, _ := client.NewSSEMCPClient("http://localhost:12345/sse")
-cli.Start(ctx)
-
-initReq := mcp.InitializeRequest{}
-initReq.Params.ProtocolVersion = mcp.LATEST_PROTOCOL_VERSION
-initReq.Params.ClientInfo = mcp.Implementation{Name: "my-app", Version: "1.0.0"}
-cli.Initialize(ctx, initReq)
-
-// 2. Get tools from MCP server
-tools, err := mcpp.GetTools(ctx, &mcpp.Config{
-    Cli: cli,
-    // ToolNameList: []string{"calculate"},  // Optional: filter specific tools
-})
-
-// 3. Each tool implements InvokableTool -- use with ToolsNode or ChatModel
-for _, t := range tools {
-    info, _ := t.Info(ctx)
-    fmt.Println(info.Name, info.Desc)
-}
-```
-
-For stdio-based MCP servers:
-
-```go
-cli, _ := client.NewStdioMCPClient("npx", nil, "-y", "@modelcontextprotocol/server-xxx")
-```
-
-## Search Tools
-
-### Google Search
-
-```go
-import "github.com/cloudwego/eino-ext/components/tool/googlesearch"
-
-tool, err := googlesearch.NewTool(ctx, &googlesearch.Config{
-    APIKey:         "your-google-api-key",
-    SearchEngineID: "your-cse-id",
-    NumResults:     5,
-})
-// Implements InvokableTool
-```
-
-### DuckDuckGo Search (v2)
-
-```go
-import "github.com/cloudwego/eino-ext/components/tool/duckduckgo/v2"
-
-tool, err := duckduckgo.NewTool(ctx, &duckduckgo.Config{
-    MaxResults: 5,
-})
-```
-
-### Bing Search
-
-```go
-import "github.com/cloudwego/eino-ext/components/tool/bingsearch"
-
-tool, err := bingsearch.NewTool(ctx, &bingsearch.Config{
-    APIKey:     "your-bing-api-key",
-    MaxResults: 5,
-})
-```
-
-## Utility Tools
-
-### HTTP Request
-
-```go
-import "github.com/cloudwego/eino-ext/components/tool/httprequest"
-
-tool, err := httprequest.NewTool(ctx, &httprequest.Config{})
-// Makes HTTP requests based on model-generated parameters
-```
-
-### Command Line
-
-```go
-import "github.com/cloudwego/eino-ext/components/tool/commandline"
-
-tool, err := commandline.NewTool(ctx, &commandline.Config{})
-// Executes shell commands
-```
-
-### Browser Use
-
-```go
-import "github.com/cloudwego/eino-ext/components/tool/browseruse"
-
-tool, err := browseruse.NewTool(ctx, &browseruse.Config{})
-// Browser automation tool
-```
-
-## Custom Tool Implementation
-
-### Using utils.NewTool (recommended)
+### Using utils.InferTool (recommended)
 
 ```go
 import "github.com/cloudwego/eino/components/tool/utils"
@@ -220,10 +107,8 @@ resp, _ := modelWithTools.Generate(ctx, messages)
 
 // 4. Handle tool calls
 for _, tc := range resp.ToolCalls {
-    // Find and execute the matching tool
     result, _ := matchingTool.InvokableRun(ctx, tc.Function.Arguments)
-    // Append tool result as a message and call Generate again
-    messages = append(messages, resp) // assistant message with tool calls
+    messages = append(messages, resp)
     messages = append(messages, &schema.Message{
         Role:       schema.Tool,
         Content:    result,

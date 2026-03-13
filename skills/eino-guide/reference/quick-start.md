@@ -2,7 +2,7 @@ Three complete working examples: ChatModel Generate, ChatModelAgent with Runner,
 
 ## Prerequisites
 
-- Go 1.21+
+- Go 1.18+
 - An API key for OpenAI (or Ark, Ollama, etc.)
 
 ```bash
@@ -189,7 +189,7 @@ func main() {
 ```
 
 Key points:
-- `toolutils.InferTool` creates a tool from a Go function with automatic JSON schema inference.
+- `tool/utils.InferTool` creates a tool from a Go function with automatic JSON schema inference.
 - `Runner.Run()` returns an `AsyncIterator[*AgentEvent]` for streaming consumption.
 - The agent handles the ReAct loop internally: model -> tool call -> tool result -> model -> response.
 - Multi-turn is achieved by maintaining a `history` slice across `Run()` calls.
@@ -278,14 +278,3 @@ Key points:
 - `AppendChatTemplate` and `AppendChatModel` are convenience methods for adding component nodes.
 - Compiled chains/graphs support all four execution modes: Invoke, Stream, Collect, Transform.
 - Template variables are passed as `map[string]any` and rendered using Jinja2 syntax.
-
-## Choosing Your Approach
-
-| Scenario | Approach | Package |
-|---|---|---|
-| Simple model call | `model.Generate()` / `model.Stream()` | `components/model` |
-| Multi-turn agent with tools | `ChatModelAgent` + `Runner` | `adk` |
-| Linear pipeline | `compose.NewChain` | `compose` |
-| Complex DAG with branching | `compose.NewGraph` | `compose` |
-| Field-level data mapping | `compose.NewWorkflow` | `compose` |
-| Production agent with filesystem | `deep.New` (DeepAgent) | `adk/prebuilt/deep` |
