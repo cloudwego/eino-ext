@@ -8,23 +8,25 @@ The EinoExt project hosts various extensions for the [Eino](https://github.com/c
 
 - **component implementations**: official implementations for Eino's component types.
 
-| component type       | official implementations               |
-|----------------------|----------------------------------------|
-| ChatModel            | OpenAI, Claude, Gemini, Ark, Ollama... |
-| Tool                 | Google Search, Duck Duck Go...         |
-| Retriever            | Elastic Search, Volc VikingDB...       |
-| ChatTemplate         | DefaultChatTemplate...                 |
-| Document Loader      | WebURL, Amazon S3, File...             |
-| Document Transformer | HTMLSplitter, ScoreReranker...         |
-| Indexer              | Elastic Search, Volc VikingDB...       |
-| Embedding            | OpenAI, Ark...                         |
-| Lambda               | JSONMessageParser...                   |
+### Component Summary
+
+| Component Type | Count | Official Implementations |
+|----------------|-------|--------------------------|
+| **ChatModel** | 10 | OpenAI, Claude, Gemini, Ark, ArkBot, Ollama, Qwen, Qianfan, DeepSeek, OpenRouter |
+| **Embedding** | 8 | OpenAI, Ark, Gemini, Ollama, Qianfan, DashScope, TencentCloud, Cache |
+| **Indexer** | 10 | Elasticsearch (7/8/9), OpenSearch (2/3), Milvus, Milvus2, Qdrant, Redis, Volc VikingDB |
+| **Retriever** | 12 | Elasticsearch (7/8/9), OpenSearch (2/3), Milvus, Milvus2, Qdrant, Redis, Dify, Volc VikingDB, Volc Knowledge |
+| **Tool** | 10 | Bing Search, DuckDuckGo, Google Search, Wikipedia, SearXNG, BrowserUse, Command Line, HTTP Request, MCP, Sequential Thinking |
+| **Prompt** | 2 | CozeLoop, MCP |
+| **Document** | 12 | File/URL/S3 Loaders, HTML/PDF/DOCX/XLSX Parsers, Recursive/HTML/Markdown/Semantic Splitters, Score Reranker |
+| **Callback Handler** | 4 | APMPlus, CozeLoop, Langfuse, Langsmith |
+
+📋 **For detailed component information (import paths, descriptions, features, and GitHub links), see [components.md](components.md)**
 
 For more details about component types, please refer to the [Eino component documentation.](https://www.cloudwego.io/zh/docs/eino/core_modules/components/)
 
 For more details about component implementations, please refer to the [Eino ecosystem documentation.](https://www.cloudwego.io/zh/docs/eino/ecosystem_integration/)
 
-- **callback handlers**: official callback handlers implementing Eino's CallbackHandler interface, such as [Langfuse tracing](https://langfuse.com/docs/tracing) callback.
 - **DevOps tools**: IDE plugin for Eino that enables visualized debugging, UI based graph editing and more. For more details, please refer to the  [Eino Dev tooling documentation.](https://www.cloudwego.io/zh/docs/eino/core_modules/devops/)
 
 ## Security

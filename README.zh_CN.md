@@ -8,24 +8,25 @@ EinoExt 项目为 [Eino](https://github.com/cloudwego/eino) 框架提供了各�
 
 - **组件实现**: Eino 组件类型的官方实现。
 
-| 组件类型                 | 官方组件实现                                 |
-|----------------------|----------------------------------------|
-| ChatModel            | OpenAI, Claude, Gemini, Ark, Ollama... |
-| Tool                 | Google Search, Duck Duck Go...         |
-| Retriever            | Elastic Search, Volc VikingDB...       |
-| ChatTemplate         | DefaultChatTemplate...                 |
-| Document Loader      | WebURL, Amazon S3, File...             |
-| Document Transformer | HTMLSplitter, ScoreReranker...         |
-| Indexer              | Elastic Search, Volc VikingDB...       |
-| Embedding            | OpenAI, Ark...                         |
-| Lambda               | JSONMessageParser...                   |
+### 组件概览
 
+| 组件类型 | 数量 | 官方实现 |
+|---------|------|---------|
+| **ChatModel** | 10 | OpenAI, Claude, Gemini, Ark, ArkBot, Ollama, Qwen, Qianfan, DeepSeek, OpenRouter |
+| **Embedding** | 8 | OpenAI, Ark, Gemini, Ollama, Qianfan, DashScope, TencentCloud, Cache |
+| **Indexer** | 10 | Elasticsearch (7/8/9), OpenSearch (2/3), Milvus, Milvus2, Qdrant, Redis, Volc VikingDB |
+| **Retriever** | 12 | Elasticsearch (7/8/9), OpenSearch (2/3), Milvus, Milvus2, Qdrant, Redis, Dify, Volc VikingDB, Volc Knowledge |
+| **Tool** | 10 | Bing Search, DuckDuckGo, Google Search, Wikipedia, SearXNG, BrowserUse, Command Line, HTTP Request, MCP, Sequential Thinking |
+| **Prompt** | 2 | CozeLoop, MCP |
+| **Document** | 12 | File/URL/S3 加载器, HTML/PDF/DOCX/XLSX 解析器, Recursive/HTML/Markdown/Semantic 分割器, Score Reranker |
+| **Callback Handler** | 4 | APMPlus, CozeLoop, Langfuse, Langsmith |
+
+📋 **查看详细的组件信息（导入路径、描述、功能特性和 GitHub 链接），请参阅 [components.md](components.md)**
 
 有关组件类型的更多详细信息，请参阅 [Eino 组件文档.](https://www.cloudwego.io/zh/docs/eino/core_modules/components/)
 
 有关组件实现的更多详细信息，请参阅 [Eino 生态系统文档.](https://www.cloudwego.io/zh/docs/eino/ecosystem_integration/)
 
-- **callback handlers**: 实现 Eino 的 callbacks.Handler 接口的官方 callback handler，例如[Langfuse tracing](https://langfuse.com/docs/tracing) 回调.
 - **DevOps 工具**: 用于 Eino 的 IDE 插件，支持可视化调试、基于 UI 的图形编辑等功能。更多详细信息，请参阅 [Eino Dev 工具文档.](https://www.cloudwego.io/zh/docs/eino/core_modules/devops/)
 
 ## 安全
