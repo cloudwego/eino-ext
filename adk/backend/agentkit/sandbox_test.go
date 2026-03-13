@@ -203,10 +203,17 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		assert.Contains(t, err.Error(), "ls script exited with non-zero code -1: Permission denied")
 	})
 
-	t.Run("LsInfo: Failure - Invalid Path", func(t *testing.T) {
-		_, err := s.LsInfo(context.Background(), &filesystem.LsInfoRequest{Path: "relative/path"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "path must be an absolute path")
+	t.Run("LsInfo: Relative Path Allowed", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			lsOutput := `{"path": "file1.txt", "is_dir": false}` + "\n" + `{"path": "dir1", "is_dir": true}`
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, lsOutput, "", ""))
+		}
+		res, err := s.LsInfo(context.Background(), &filesystem.LsInfoRequest{Path: "relative/path"})
+		require.NoError(t, err)
+		require.Len(t, res, 2)
+		assert.Equal(t, "file1.txt", res[0].Path)
+		assert.Equal(t, "dir1", res[1].Path)
 	})
 
 	// Read Tests
