@@ -17,6 +17,8 @@
 package ark
 
 import (
+	"strings"
+
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -24,6 +26,7 @@ import (
 const (
 	keyOfRequestID             = "ark-request-id"
 	keyOfReasoningContent      = "ark-reasoning-content"
+	keyOfReasoningID           = "ark-reasoning-id"
 	keyOfModelName             = "ark-model-name"
 	videoURLFPS                = "ark-model-video-url-fps"
 	keyOfContextID             = "ark-context-id"
@@ -32,6 +35,7 @@ const (
 	keyOfServiceTier           = "ark-service-tier"
 	keyOfPartial               = "ark-partial"
 	ImageSizeKey               = "seedream-image-size"
+	keyOfOutputItemsOrder      = "ark-output-items-order"
 )
 
 type arkRequestID string
@@ -40,8 +44,46 @@ type arkServiceTier string
 type arkResponseID string
 type arkContextID string
 type arkResponseCacheExpireAt int64
+type arkOutputItemsOrder string
+
+// outputItemType represents the type of an output item in the responses API.
+type outputItemType string
+
+const (
+	// outputItemTypeMessage represents a message output item.
+	outputItemTypeMessage outputItemType = "message"
+	// outputItemTypeReasoning represents a reasoning output item.
+	outputItemTypeReasoning outputItemType = "reasoning"
+	// outputItemTypeFunctionCall represents a function call output item.
+	outputItemTypeFunctionCall outputItemType = "function_call"
+)
 
 func init() {
+	compose.RegisterStreamChunkConcatFunc(func(ts []arkOutputItemsOrder) (arkOutputItemsOrder, error) {
+		if len(ts) == 0 {
+			return "", nil
+		}
+		if len(ts) == 1 {
+			return ts[0], nil
+		}
+		var ret []outputItemType
+		var lastType outputItemType
+		for _, t := range ts {
+			if len(t) == 0 {
+				continue
+			}
+			itemTypes := parseOutputItemsOrder(t)
+			for _, it := range itemTypes {
+				if it != lastType {
+					ret = append(ret, it)
+					lastType = it
+				}
+			}
+		}
+		return encodeOutputItemsOrder(ret), nil
+	})
+	schema.RegisterName[arkOutputItemsOrder]("_eino_ext_ark_output_items_order")
+
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkRequestID) (final arkRequestID, err error) {
 		if len(chunks) == 0 {
 			return "", nil
@@ -118,6 +160,14 @@ func GetReasoningContent(msg *schema.Message) (string, bool) {
 
 func setReasoningContent(msg *schema.Message, reasoningContent string) {
 	setMsgExtra(msg, keyOfReasoningContent, reasoningContent)
+}
+
+func getReasoningID(msg *schema.Message) (string, bool) {
+	return getMsgExtraValue[string](msg, keyOfReasoningID)
+}
+
+func setReasoningID(msg *schema.Message, id string) {
+	setMsgExtra(msg, keyOfReasoningID, id)
 }
 
 func GetModelName(msg *schema.Message) (string, bool) {
@@ -391,4 +441,55 @@ func getPartial(msg *schema.Message) bool {
 		return false
 	}
 	return v
+}
+
+// getOutputItemsOrder returns the output items order from the message.
+// This records the original order of items (message, reasoning, function_call) in the responses API output,
+// so that when converting back to InputItem list, the original order can be preserved.
+// Only available for ResponsesAPI.
+//
+// The order is stored as a comma-separated string in Extra, e.g. "message,reasoning,function_call,function_call".
+func getOutputItemsOrder(msg *schema.Message) ([]outputItemType, bool) {
+	orderStr, ok := getMsgExtraValue[arkOutputItemsOrder](msg, keyOfOutputItemsOrder)
+	if !ok {
+		// Fallback for deserialized string type.
+		s, ok := getMsgExtraValue[string](msg, keyOfOutputItemsOrder)
+		if !ok || s == "" {
+			return nil, false
+		}
+		orderStr = arkOutputItemsOrder(s)
+	}
+	result := parseOutputItemsOrder(orderStr)
+	return result, len(result) > 0
+}
+
+func setOutputItemsOrder(msg *schema.Message, order []outputItemType) {
+	setMsgExtra(msg, keyOfOutputItemsOrder, arkOutputItemsOrder(encodeOutputItemsOrder(order)))
+}
+
+// encodeOutputItemsOrder encodes the order entries into a comma-separated string.
+// e.g. "message,reasoning,function_call,function_call"
+func encodeOutputItemsOrder(order []outputItemType) arkOutputItemsOrder {
+	parts := make([]string, 0, len(order))
+	for _, entry := range order {
+		parts = append(parts, string(entry))
+	}
+	return arkOutputItemsOrder(strings.Join(parts, ","))
+}
+
+// parseOutputItemsOrder parses a comma-separated order string back into entries.
+func parseOutputItemsOrder(s arkOutputItemsOrder) []outputItemType {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(string(s), ",")
+	entries := make([]outputItemType, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		entries = append(entries, outputItemType(part))
+	}
+	return entries
 }
