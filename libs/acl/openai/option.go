@@ -54,6 +54,7 @@ type openaiOptions struct {
 	ResponseMessageModifier      ResponseMessageModifier
 	ResponseChunkMessageModifier ResponseChunkMessageModifier
 	MaxCompletionTokens          *int
+	ResponseFormat               *ChatCompletionResponseFormat
 }
 
 func WithExtraFields(extraFields map[string]any) model.Option {
@@ -110,5 +111,11 @@ func WithExtraHeader(header map[string]string) model.Option {
 func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.MaxCompletionTokens = &maxCompletionTokens
+	})
+}
+
+func WithResponseFormat(responseFormat *ChatCompletionResponseFormat) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ResponseFormat = responseFormat
 	})
 }
