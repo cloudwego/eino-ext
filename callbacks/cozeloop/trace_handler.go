@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/schema"
 	"github.com/coze-dev/cozeloop-go"
@@ -102,6 +103,10 @@ func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input
 	l.setRunInfo(ctx, span, info)
 	l.setSpanContext(ctx, span)
 
+	if info.Component == adk.ComponentOfAgent {
+		span.SetBaggage(ctx, map[string]string{attrKeyAgentName: info.Name})
+	}
+
 	if l.parser != nil {
 		span.SetTags(ctx, l.parser.ParseInput(ctx, info, input))
 	}
@@ -119,6 +124,25 @@ func (l *einoTracer) OnEnd(ctx context.Context, info *callbacks.RunInfo, output 
 	span := l.client.GetSpanFromContext(ctx)
 	if span == nil {
 		l.logger.CtxWarnf(ctx, "[einoTracer][OnEnd] span not found in callback ctx")
+		return ctx
+	}
+
+	if info.Component == adk.ComponentOfAgent {
+		if l.parser != nil {
+			go func() {
+				defer func() {
+					if e := recover(); e != nil {
+						l.logger.CtxWarnf(ctx, "[einoTracer][OnEnd] recovered: %s", e)
+					}
+					span.Finish(ctx)
+				}()
+
+				tags := l.parser.ParseOutput(ctx, info, output)
+				span.SetTags(ctx, tags)
+			}()
+		} else {
+			span.Finish(ctx)
+		}
 		return ctx
 	}
 
@@ -182,6 +206,10 @@ func (l *einoTracer) OnStartWithStreamInput(ctx context.Context, info *callbacks
 
 	l.setRunInfo(ctx, span, info)
 	l.setSpanContext(ctx, span)
+
+	if info.Component == adk.ComponentOfAgent {
+		span.SetBaggage(ctx, map[string]string{attrKeyAgentName: info.Name})
+	}
 
 	if l.parser != nil {
 		go func() {

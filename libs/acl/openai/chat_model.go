@@ -499,9 +499,10 @@ func buildMessageFromAssistantGenMultiContent(inMsg *schema.Message) (openai.Cha
 	}
 	// Initialize the message with role and name.
 	comMessage := openai.ChatCompletionMessage{
-		Role:      toOpenAIRole(inMsg.Role),
-		Name:      inMsg.Name,
-		ToolCalls: toOpenAIToolCalls(inMsg.ToolCalls),
+		Role:             toOpenAIRole(inMsg.Role),
+		Name:             inMsg.Name,
+		ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+		ReasoningContent: inMsg.ReasoningContent,
 	}
 
 partsLoop:
@@ -523,7 +524,8 @@ partsLoop:
 				Audio: &openai.Audio{
 					ID: string(audioID),
 				},
-				ToolCalls: toOpenAIToolCalls(inMsg.ToolCalls),
+				ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+				ReasoningContent: inMsg.ReasoningContent,
 			}
 			break partsLoop
 
@@ -685,13 +687,13 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 			msg, err = buildMessageFromMultiContent(inMsg)
 		} else {
 			msg = openai.ChatCompletionMessage{
-				Role:       toOpenAIRole(inMsg.Role),
-				Content:    inMsg.Content,
-				Name:       inMsg.Name,
-				ToolCalls:  toOpenAIToolCalls(inMsg.ToolCalls),
-				ToolCallID: inMsg.ToolCallID,
+				Role:             toOpenAIRole(inMsg.Role),
+				Content:          inMsg.Content,
+				Name:             inMsg.Name,
+				ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+				ToolCallID:       inMsg.ToolCallID,
+				ReasoningContent: inMsg.ReasoningContent,
 			}
-
 		}
 
 		if err != nil {

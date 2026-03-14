@@ -203,10 +203,17 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		assert.Contains(t, err.Error(), "ls script exited with non-zero code -1: Permission denied")
 	})
 
-	t.Run("LsInfo: Failure - Invalid Path", func(t *testing.T) {
-		_, err := s.LsInfo(context.Background(), &filesystem.LsInfoRequest{Path: "relative/path"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "path must be an absolute path")
+	t.Run("LsInfo: Relative Path Allowed", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			lsOutput := `{"path": "file1.txt", "is_dir": false}` + "\n" + `{"path": "dir1", "is_dir": true}`
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, lsOutput, "", ""))
+		}
+		res, err := s.LsInfo(context.Background(), &filesystem.LsInfoRequest{Path: "relative/path"})
+		require.NoError(t, err)
+		require.Len(t, res, 2)
+		assert.Equal(t, "file1.txt", res[0].Path)
+		assert.Equal(t, "dir1", res[1].Path)
 	})
 
 	// Read Tests
@@ -217,7 +224,7 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		}
 		res, err := s.Read(context.Background(), &filesystem.ReadRequest{FilePath: "/data/file.txt"})
 		require.NoError(t, err)
-		assert.Equal(t, "hello world", res)
+		assert.Equal(t, "hello world", res.Content)
 	})
 
 	t.Run("Read: Failure - API Error", func(t *testing.T) {
@@ -232,7 +239,7 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 	// GrepRaw Tests
 	t.Run("GrepRaw: Success", func(t *testing.T) {
 		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
-			grepOutput := `{"Path": "/data/file.txt", "Line": 1, "Content": "hello world"}`
+			grepOutput := `[{"Path": "/data/file.txt", "Line": 1, "Content": "hello world"}]`
 			w.WriteHeader(http.StatusOK)
 			w.Write(createMockResponse(t, true, grepOutput, "", ""))
 		}
@@ -317,5 +324,18 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		_, err := s.Execute(context.Background(), &filesystem.ExecuteRequest{Command: "exit 1"})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "command exited with non-zero code -1: command failed")
+	})
+
+	t.Run("Execute: RunInBackendGround returns immediately", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, "command output", "", ""))
+		}
+		res, err := s.Execute(context.Background(), &filesystem.ExecuteRequest{
+			Command:            "sleep 10",
+			RunInBackendGround: true,
+		})
+		require.NoError(t, err)
+		assert.Contains(t, res.Output, "background")
 	})
 }
