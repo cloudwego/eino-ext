@@ -75,7 +75,7 @@ type Config struct {
     // Optional: custom TaskTool description generator
     TaskToolDescriptionGenerator func(ctx context.Context, agents []adk.Agent) string
 
-    // Optional: middleware (Handlers replaces deprecated Middlewares field)
+    // Optional: middleware
     Handlers []adk.ChatModelAgentMiddleware
 }
 ```
