@@ -375,13 +375,16 @@ func (s *A2AServer) executeHandler(ctx context.Context, detachedCtx context.Cont
 		Input:    &input.Message,
 		Metadata: input.Metadata,
 	})
+	s.logger(detachedCtx, "message handler returned")
 	if err != nil {
 		return nil, err
 	}
 	resp.EnsureRequiredFields()
 
 	t = loadTaskContext(t, resp)
+	s.logger(detachedCtx, "begin to save")
 	err = s.taskStore.Save(detachedCtx, t)
+	s.logger(detachedCtx, "save completed")
 	if err != nil {
 		return nil, fmt.Errorf("failed to save task: %w", err)
 	}
@@ -401,6 +404,7 @@ func (s *A2AServer) executeHandler(ctx context.Context, detachedCtx context.Cont
 			}
 		}()
 	}
+	s.logger(detachedCtx, "return frame")
 	return frame, nil
 }
 
