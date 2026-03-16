@@ -35,7 +35,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-ext/components/agentic/gemini"
+	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 )
 
 func main() {
@@ -91,74 +91,74 @@ func main() {
 ```go
 // Config 包含 Gemini agentic 模型的配置选项
 type Config struct {
-// Client 是 Gemini API 客户端实例
-// 必需，用于调用 Gemini API
-Client *genai.Client
+    // Client 是 Gemini API 客户端实例
+    // 必需，用于调用 Gemini API
+    Client *genai.Client
 
-// Model 指定使用的 Gemini 模型
-// 示例："gemini-pro"、"gemini-pro-vision"、"gemini-1.5-flash"
-Model string
-
-// MaxTokens 限制响应中的最大 token 数量
-// 可选。示例：maxTokens := 100
-MaxTokens *int
-
-// Temperature 控制响应的随机性
-// 范围：[0.0, 1.0]，0.0 更加专注，1.0 更具创造性
-// 可选。示例：temperature := float32(0.7)
-Temperature *float32
-
-// TopP 通过核采样控制多样性
-// 范围：[0.0, 1.0]，1.0 表示禁用核采样
-// 可选。示例：topP := float32(0.95)
-TopP *float32
-
-// TopK 通过限制采样的前 K 个 token 来控制多样性
-// 可选。示例：topK := int32(40)
-TopK *int32
-
-// ResponseJSONSchema 定义 JSON 响应的结构
-// 可选。当需要 JSON 格式的结构化输出时使用
-ResponseJSONSchema *jsonschema.Schema
-
-// EnableCodeExecution 允许模型使用服务端工具 CodeExecution
-// 可选。
-EnableCodeExecution *genai.ToolCodeExecution
-// EnableGoogleSearch 允许模型使用服务端工具 GoogleSearch
-// 可选。
-EnableGoogleSearch *genai.GoogleSearch
-// EnableGoogleSearchRetrieval 允许模型使用服务端工具 GoogleSearchRetrieval
-// 可选。
-EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
-// EnableComputerUse 允许模型使用服务端工具 ComputerUse
-// 可选。
-EnableComputerUse *genai.ComputerUse
-// EnableURLContext 允许模型使用服务端工具 URLContext
-// 可选。
-EnableURLContext *genai.URLContext
-// EnableFileSearch 允许模型使用服务端工具 FileSearch
-// 可选。
-EnableFileSearch *genai.FileSearch
-// EnableGoogleMaps 允许模型使用服务端工具 GoogleMaps
-// 可选。
-EnableGoogleMaps *genai.GoogleMaps
-
-// SafetySettings 配置不同危害类别的内容过滤
-// 控制模型对潜在有害内容的过滤行为
-// 可选。
-SafetySettings []*genai.SafetySetting
-
-ThinkingConfig *genai.ThinkingConfig
-
-// ResponseModalities 指定模型可以返回的模态类型
-// 可选。
-ResponseModalities []ResponseModality
-
-MediaResolution genai.MediaResolution
-
-// Cache 控制模型的前缀缓存设置
-// 可选。用于为重复使用的输入创建前缀缓存
-Cache *CacheConfig
+    // Model 指定使用的 Gemini 模型
+    // 示例："gemini-pro"、"gemini-pro-vision"、"gemini-1.5-flash"
+    Model string
+    
+    // MaxTokens 限制响应中的最大 token 数量
+    // 可选。示例：maxTokens := 100
+    MaxTokens *int
+    
+    // Temperature 控制响应的随机性
+    // 范围：[0.0, 1.0]，0.0 更加专注，1.0 更具创造性
+    // 可选。示例：temperature := float32(0.7)
+    Temperature *float32
+    
+    // TopP 通过核采样控制多样性
+    // 范围：[0.0, 1.0]，1.0 表示禁用核采样
+    // 可选。示例：topP := float32(0.95)
+    TopP *float32
+    
+    // TopK 通过限制采样的前 K 个 token 来控制多样性
+    // 可选。示例：topK := int32(40)
+    TopK *int32
+    
+    // ResponseJSONSchema 定义 JSON 响应的结构
+    // 可选。当需要 JSON 格式的结构化输出时使用
+    ResponseJSONSchema *jsonschema.Schema
+    
+    // EnableCodeExecution 允许模型使用服务端工具 CodeExecution
+    // 可选。
+    EnableCodeExecution *genai.ToolCodeExecution
+    // EnableGoogleSearch 允许模型使用服务端工具 GoogleSearch
+    // 可选。
+    EnableGoogleSearch *genai.GoogleSearch
+    // EnableGoogleSearchRetrieval 允许模型使用服务端工具 GoogleSearchRetrieval
+    // 可选。
+    EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
+    // EnableComputerUse 允许模型使用服务端工具 ComputerUse
+    // 可选。
+    EnableComputerUse *genai.ComputerUse
+    // EnableURLContext 允许模型使用服务端工具 URLContext
+    // 可选。
+    EnableURLContext *genai.URLContext
+    // EnableFileSearch 允许模型使用服务端工具 FileSearch
+    // 可选。
+    EnableFileSearch *genai.FileSearch
+    // EnableGoogleMaps 允许模型使用服务端工具 GoogleMaps
+    // 可选。
+    EnableGoogleMaps *genai.GoogleMaps
+    
+    // SafetySettings 配置不同危害类别的内容过滤
+    // 控制模型对潜在有害内容的过滤行为
+    // 可选。
+    SafetySettings []*genai.SafetySetting
+    
+    ThinkingConfig *genai.ThinkingConfig
+    
+    // ResponseModalities 指定模型可以返回的模态类型
+    // 可选。
+    ResponseModalities []ResponseModality
+    
+    MediaResolution genai.MediaResolution
+    
+    // Cache 控制模型的前缀缓存设置
+    // 可选。用于为重复使用的输入创建前缀缓存
+    Cache *CacheConfig
 }
 ```
 

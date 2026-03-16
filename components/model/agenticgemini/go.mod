@@ -1,4 +1,4 @@
-module github.com/cloudwego/eino-ext/components/agentic/gemini
+module github.com/cloudwego/eino-ext/components/model/agenticgemini
 
 go 1.24
 
