@@ -253,7 +253,7 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 	// GlobInfo Tests
 	t.Run("GlobInfo: Success", func(t *testing.T) {
 		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
-			globOutput := `{"path": "file.go", "is_dir": false}`
+			globOutput := `[{"path": "file.go", "is_dir": false}]`
 			w.WriteHeader(http.StatusOK)
 			w.Write(createMockResponse(t, true, globOutput, "", ""))
 		}

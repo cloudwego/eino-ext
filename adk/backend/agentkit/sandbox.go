@@ -323,16 +323,12 @@ func (s *SandboxTool) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequ
 		return files, nil
 	}
 
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	for _, line := range lines {
-		var fi filesystem.FileInfo
-		if err := json.Unmarshal([]byte(line), &fi); err != nil {
-			continue
-		}
-		files = append(files, fi)
+	err = json.Unmarshal([]byte(output), &files)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse glob output: %w", err)
 	}
-
 	return files, nil
+	
 }
 
 // Write creates file content.
