@@ -595,21 +595,25 @@ func TestExecuteStreaming(t *testing.T) {
 		assert.NoError(t, err)
 
 		var hasOutput bool
-		var lastErr error
+		var lastResp *filesystem.ExecuteResponse
 		for {
 			resp, err := sr.Recv()
 			if err != nil {
-				lastErr = err
 				break
 			}
-			if resp != nil && resp.Output != "" {
-				hasOutput = true
+			if resp != nil {
+				if resp.Output != "" {
+					hasOutput = true
+				}
+				lastResp = resp
 			}
 		}
 
-		assert.True(t, hasOutput, "should receive output before error")
-		assert.Error(t, lastErr, "should receive error when command fails")
-		assert.Contains(t, lastErr.Error(), "non-zero code")
+		assert.True(t, hasOutput, "should receive output before final response")
+		assert.NotNil(t, lastResp)
+		assert.NotNil(t, lastResp.ExitCode)
+		assert.Equal(t, 1, *lastResp.ExitCode)
+		assert.Contains(t, lastResp.Output, "non-zero code")
 	})
 
 	t.Run("ExecuteStreaming with stderr output", func(t *testing.T) {
@@ -618,23 +622,28 @@ func TestExecuteStreaming(t *testing.T) {
 		assert.NoError(t, err)
 
 		var outputs []string
-		var lastErr error
+		var lastResp *filesystem.ExecuteResponse
 		for {
 			resp, err := sr.Recv()
 			if err != nil {
-				lastErr = err
 				break
 			}
-			if resp != nil && resp.Output != "" {
-				outputs = append(outputs, strings.TrimSpace(resp.Output))
+			if resp != nil {
+				if resp.Output != "" {
+					outputs = append(outputs, strings.TrimSpace(resp.Output))
+				}
+				lastResp = resp
 			}
 		}
 
-		assert.Len(t, outputs, 1)
-		assert.Equal(t, "stdout", outputs[0])
-		assert.Error(t, lastErr)
-		assert.Contains(t, lastErr.Error(), "stderr")
-		assert.Contains(t, lastErr.Error(), "non-zero code")
+		assert.NotNil(t, lastResp)
+		assert.NotNil(t, lastResp.ExitCode)
+		assert.Equal(t, 1, *lastResp.ExitCode)
+		assert.Contains(t, lastResp.Output, "non-zero code")
+		assert.Contains(t, lastResp.Output, "stderr")
+		// stdout is streamed separately
+		assert.True(t, len(outputs) >= 1)
+		assert.Contains(t, outputs, "stdout")
 	})
 
 	t.Run("ExecuteStreaming with empty command", func(t *testing.T) {
@@ -775,5 +784,83 @@ func TestExecuteStreaming(t *testing.T) {
 		elapsed := time.Since(start)
 
 		assert.Less(t, elapsed, 2*time.Second, "background command should return immediately without waiting")
+	})
+}
+
+func TestExecute(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	t.Run("simple echo", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{Command: "echo hello"})
+		assert.NoError(t, err)
+		assert.Equal(t, "hello\n", resp.Output)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 0, *resp.ExitCode)
+	})
+
+	t.Run("multi-line output", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{Command: "echo line1 && echo line2 && echo line3"})
+		assert.NoError(t, err)
+		assert.Equal(t, "line1\nline2\nline3\n", resp.Output)
+		assert.Equal(t, 0, *resp.ExitCode)
+	})
+
+	t.Run("empty command", func(t *testing.T) {
+		_, err := s.Execute(ctx, &filesystem.ExecuteRequest{Command: ""})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "command is required")
+	})
+
+	t.Run("non-zero exit code", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{Command: "exit 1"})
+		assert.NoError(t, err)
+		assert.NotNil(t, resp)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 1, *resp.ExitCode)
+		assert.Contains(t, resp.Output, "non-zero code")
+	})
+
+	t.Run("non-zero exit code with stderr", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{Command: "echo fail >&2 && exit 2"})
+		assert.NoError(t, err)
+		assert.NotNil(t, resp)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 2, *resp.ExitCode)
+		assert.Contains(t, resp.Output, "non-zero code 2")
+		assert.Contains(t, resp.Output, "fail")
+	})
+
+	t.Run("command not found", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{Command: "nonexistent_command_xyz"})
+		assert.NoError(t, err)
+		assert.NotNil(t, resp)
+		assert.NotNil(t, resp.ExitCode)
+		assert.NotEqual(t, 0, *resp.ExitCode)
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		cancelCtx, cancel := context.WithCancel(ctx)
+		cancel()
+		_, err := s.Execute(cancelCtx, &filesystem.ExecuteRequest{Command: "sleep 10"})
+		assert.Error(t, err)
+	})
+
+	t.Run("context cancellation during execution", func(t *testing.T) {
+		cancelCtx, cancel := context.WithCancel(ctx)
+		go func() {
+			time.Sleep(100 * time.Millisecond)
+			cancel()
+		}()
+		resp, err := s.Execute(cancelCtx, &filesystem.ExecuteRequest{Command: "sleep 10"})
+		// Process killed by context cancellation produces an ExitError, returned as response
+		if err != nil {
+			// Non-ExitError case is also acceptable
+			return
+		}
+		assert.NotNil(t, resp)
+		assert.NotNil(t, resp.ExitCode)
+		assert.NotEqual(t, 0, *resp.ExitCode)
 	})
 }

@@ -328,7 +328,7 @@ func (s *SandboxTool) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequ
 		return nil, fmt.Errorf("failed to parse glob output: %w", err)
 	}
 	return files, nil
-	
+
 }
 
 // Write creates file content.
@@ -582,12 +582,9 @@ func (s *SandboxTool) Execute(ctx context.Context, input *filesystem.ExecuteRequ
 		return nil, fmt.Errorf("failed to execute command script: %w", err)
 	}
 
-	if exitCode != nil && *exitCode != 0 {
-		return nil, fmt.Errorf("command exited with non-zero code %d: %s", *exitCode, output)
-	}
-
 	return &filesystem.ExecuteResponse{
-		Output: output,
+		Output:   output,
+		ExitCode: exitCode,
 	}, nil
 }
 

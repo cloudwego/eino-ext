@@ -396,6 +396,49 @@ func (s *Local) ExecuteStreaming(ctx context.Context, input *filesystem.ExecuteR
 	return sr, nil
 }
 
+func (s *Local) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (result *filesystem.ExecuteResponse, err error) {
+	if input.Command == "" {
+		return nil, fmt.Errorf("command is required")
+	}
+
+	if err := s.validateCommand(input.Command); err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", input.Command)
+
+	var stdoutBuf, stderrBuf strings.Builder
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	exitCode := 0
+	if err := cmd.Run(); err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			exitCode = exitError.ExitCode()
+			stdoutStr := stdoutBuf.String()
+			stderrStr := stderrBuf.String()
+			parts := []string{fmt.Sprintf("command exited with non-zero code %d", exitCode)}
+			if stdoutStr != "" {
+				parts = append(parts, "[stdout]:\n"+strings.TrimSuffix(stdoutStr, ""))
+			}
+			if stderrStr != "" {
+				parts = append(parts, "[stderr]:\n"+strings.TrimSuffix(stderrStr, ""))
+			}
+			return &filesystem.ExecuteResponse{
+				Output:   strings.Join(parts, "\n"),
+				ExitCode: &exitCode,
+			}, nil
+		}
+		return nil, fmt.Errorf("failed to execute command: %w", err)
+	}
+
+	return &filesystem.ExecuteResponse{
+		Output:   stdoutBuf.String(),
+		ExitCode: &exitCode,
+	}, nil
+}
+
 // initStreamingCmd creates command with stdout and stderr pipes.
 func (s *Local) initStreamingCmd(ctx context.Context, command string) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
@@ -512,23 +555,27 @@ func (s *Local) readStderrAsync(stderr io.Reader) (*[]byte, <-chan error) {
 
 // streamStdout streams stdout line by line to the writer.
 func (s *Local) streamStdout(ctx context.Context, cmd *exec.Cmd, stdout io.Reader, w *schema.StreamWriter[*filesystem.ExecuteResponse]) (bool, error) {
-	scanner := bufio.NewScanner(stdout)
+	reader := bufio.NewReader(stdout)
 	hasOutput := false
 
-	for scanner.Scan() {
-		hasOutput = true
-		line := scanner.Text() + "\n"
-		select {
-		case <-ctx.Done():
-			_ = cmd.Process.Kill()
-			return hasOutput, ctx.Err()
-		default:
-			w.Send(&filesystem.ExecuteResponse{Output: line}, nil)
+	for {
+		line, err := reader.ReadString('\n')
+		if line != "" {
+			hasOutput = true
+			select {
+			case <-ctx.Done():
+				_ = cmd.Process.Kill()
+				return hasOutput, ctx.Err()
+			default:
+				w.Send(&filesystem.ExecuteResponse{Output: line}, nil)
+			}
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return hasOutput, fmt.Errorf("error reading stdout: %w", err)
+		if err != nil {
+			if err != io.EOF {
+				return hasOutput, fmt.Errorf("error reading stdout: %w", err)
+			}
+			break
+		}
 	}
 
 	return hasOutput, nil
@@ -537,16 +584,21 @@ func (s *Local) streamStdout(ctx context.Context, cmd *exec.Cmd, stdout io.Reade
 // handleCmdCompletion handles command completion and sends final response.
 func (s *Local) handleCmdCompletion(cmd *exec.Cmd, stderrData *[]byte, hasOutput bool, w *schema.StreamWriter[*filesystem.ExecuteResponse]) {
 	if err := cmd.Wait(); err != nil {
-		exitCode := 0
 		var exitError *exec.ExitError
 		if errors.As(err, &exitError) {
-			exitCode = exitError.ExitCode()
-		}
-		if len(*stderrData) > 0 {
-			w.Send(nil, fmt.Errorf("command exited with non-zero code %d: %s", exitCode, string(*stderrData)))
+			exitCode := exitError.ExitCode()
+			parts := []string{fmt.Sprintf("command exited with non-zero code %d", exitCode)}
+			if stderrStr := string(*stderrData); stderrStr != "" {
+				parts = append(parts, "[stderr]:\n"+stderrStr)
+			}
+			w.Send(&filesystem.ExecuteResponse{
+				Output:   strings.Join(parts, "\n"),
+				ExitCode: &exitCode,
+			}, nil)
 			return
 		}
-		w.Send(nil, fmt.Errorf("command exited with non-zero code %d", exitCode))
+
+		w.Send(nil, fmt.Errorf("command failed: %w", err))
 		return
 	}
 

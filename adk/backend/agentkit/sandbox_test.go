@@ -321,9 +321,9 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 			w.Write(createMockResponse(t, false, "command failed", "Error", "1"))
 		}
-		_, err := s.Execute(context.Background(), &filesystem.ExecuteRequest{Command: "exit 1"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "command exited with non-zero code -1: command failed")
+		resp, err := s.Execute(context.Background(), &filesystem.ExecuteRequest{Command: "exit 1"})
+		require.Nil(t, err)
+		assert.Contains(t, resp.Output, "command failed")
 	})
 
 	t.Run("Execute: RunInBackendGround returns immediately", func(t *testing.T) {

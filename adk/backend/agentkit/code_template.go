@@ -246,7 +246,11 @@ try:
 
     # Check for stderr
     if result.stderr:
-        print(f"Error executing command: {{result.stderr}}", file=sys.stderr)
+        output_parts = []
+        if result.stdout:
+            output_parts.append(f"[stdout]:\n{{result.stdout.rstrip()}}")
+        output_parts.append(f"[stderr]:\n{{result.stderr.rstrip()}}")
+        print('\n'.join(output_parts), end='')
         sys.exit(result.returncode if result.returncode != 0 else 1)
     
     # Print stdout
