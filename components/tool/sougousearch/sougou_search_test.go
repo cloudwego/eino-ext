@@ -94,17 +94,9 @@ func TestSougouSearch(t *testing.T) {
 		}
 
 		// Success format
-		itemJSON := `{"title":"Result 1","url":"https://example.com/1","passage":"Snippet 1"}`
-		res := map[string]interface{}{
-			"Response": map[string]interface{}{
-				"Query":     query,
-				"Pages":     []string{itemJSON},
-				"RequestId": "mock-req-id",
-			},
-		}
-
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(res)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"Response":{"Query":"` + query + `","Pages":["{\"title\":\"Result 1\",\"url\":\"https://example.com/1\",\"passage\":\"Snippet 1\"}"],"RequestId":"mock-req-id"}}`))
 	}))
 	defer mockServer.Close()
 
