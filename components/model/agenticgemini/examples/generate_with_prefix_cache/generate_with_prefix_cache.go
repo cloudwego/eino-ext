@@ -29,7 +29,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 
-	"github.com/cloudwego/eino-ext/components/agentic/gemini"
+	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 )
 
 func main() {

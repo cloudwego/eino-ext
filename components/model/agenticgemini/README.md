@@ -35,7 +35,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-ext/components/agentic/gemini"
+	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 )
 
 func main() {
@@ -91,74 +91,74 @@ The model can be configured using the `agenticgemini.Config` struct:
 ```go
 // Config contains the configuration options for the Gemini agentic model
 type Config struct {
-// Client is the Gemini API client instance
-// Required for making API calls to Gemini
-Client *genai.Client
-
-// Model specifies which Gemini model to use
-// Examples: "gemini-pro", "gemini-pro-vision", "gemini-1.5-flash"
-Model string
-
-// MaxTokens limits the maximum number of tokens in the response
-// Optional. Example: maxTokens := 100
-MaxTokens *int
-
-// Temperature controls randomness in responses
-// Range: [0.0, 1.0], where 0.0 is more focused and 1.0 is more creative
-// Optional. Example: temperature := float32(0.7)
-Temperature *float32
-
-// TopP controls diversity via nucleus sampling
-// Range: [0.0, 1.0], where 1.0 disables nucleus sampling
-// Optional. Example: topP := float32(0.95)
-TopP *float32
-
-// TopK controls diversity by limiting the top K tokens to sample from
-// Optional. Example: topK := int32(40)
-TopK *int32
-
-// ResponseJSONSchema defines the structure for JSON responses
-// Optional. Used when you want structured output in JSON format
-ResponseJSONSchema *jsonschema.Schema
-
-// EnableCodeExecution allows the model to use the server tool CodeExecution
-// Optional.
-EnableCodeExecution *genai.ToolCodeExecution
-// EnableGoogleSearch allows the model to use the server tool GoogleSearch
-// Optional.
-EnableGoogleSearch *genai.GoogleSearch
-// EnableGoogleSearchRetrieval allows the model to use the server tool GoogleSearchRetrieval
-// Optional.
-EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
-// EnableComputerUse allows the model to use the server tool ComputerUse
-// Optional.
-EnableComputerUse *genai.ComputerUse
-// EnableURLContext allows the model to use the server tool URLContext
-// Optional.
-EnableURLContext *genai.URLContext
-// EnableFileSearch allows the model to use the server tool FileSearch
-// Optional.
-EnableFileSearch *genai.FileSearch
-// EnableGoogleMaps allows the model to use the server tool GoogleMaps
-// Optional.
-EnableGoogleMaps *genai.GoogleMaps
-
-// SafetySettings configures content filtering for different harm categories
-// Controls the model's filtering behavior for potentially harmful content
-// Optional.
-SafetySettings []*genai.SafetySetting
-
-ThinkingConfig *genai.ThinkingConfig
-
-// ResponseModalities specifies the modalities the model can return.
-// Optional.
-ResponseModalities []ResponseModality
-
-MediaResolution genai.MediaResolution
-
-// Cache controls prefix cache settings for the model.
-// Optional. used to CreatePrefixCache for reused inputs.
-Cache *CacheConfig
+    // Client is the Gemini API client instance
+    // Required for making API calls to Gemini
+    Client *genai.Client
+    
+    // Model specifies which Gemini model to use
+    // Examples: "gemini-pro", "gemini-pro-vision", "gemini-1.5-flash"
+    Model string
+    
+    // MaxTokens limits the maximum number of tokens in the response
+    // Optional. Example: maxTokens := 100
+    MaxTokens *int
+    
+    // Temperature controls randomness in responses
+    // Range: [0.0, 1.0], where 0.0 is more focused and 1.0 is more creative
+    // Optional. Example: temperature := float32(0.7)
+    Temperature *float32
+    
+    // TopP controls diversity via nucleus sampling
+    // Range: [0.0, 1.0], where 1.0 disables nucleus sampling
+    // Optional. Example: topP := float32(0.95)
+    TopP *float32
+    
+    // TopK controls diversity by limiting the top K tokens to sample from
+    // Optional. Example: topK := int32(40)
+    TopK *int32
+    
+    // ResponseJSONSchema defines the structure for JSON responses
+    // Optional. Used when you want structured output in JSON format
+    ResponseJSONSchema *jsonschema.Schema
+    
+    // EnableCodeExecution allows the model to use the server tool CodeExecution
+    // Optional.
+    EnableCodeExecution *genai.ToolCodeExecution
+    // EnableGoogleSearch allows the model to use the server tool GoogleSearch
+    // Optional.
+    EnableGoogleSearch *genai.GoogleSearch
+    // EnableGoogleSearchRetrieval allows the model to use the server tool GoogleSearchRetrieval
+    // Optional.
+    EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
+    // EnableComputerUse allows the model to use the server tool ComputerUse
+    // Optional.
+    EnableComputerUse *genai.ComputerUse
+    // EnableURLContext allows the model to use the server tool URLContext
+    // Optional.
+    EnableURLContext *genai.URLContext
+    // EnableFileSearch allows the model to use the server tool FileSearch
+    // Optional.
+    EnableFileSearch *genai.FileSearch
+    // EnableGoogleMaps allows the model to use the server tool GoogleMaps
+    // Optional.
+    EnableGoogleMaps *genai.GoogleMaps
+    
+    // SafetySettings configures content filtering for different harm categories
+    // Controls the model's filtering behavior for potentially harmful content
+    // Optional.
+    SafetySettings []*genai.SafetySetting
+    
+    ThinkingConfig *genai.ThinkingConfig
+    
+    // ResponseModalities specifies the modalities the model can return.
+    // Optional.
+    ResponseModalities []ResponseModality
+    
+    MediaResolution genai.MediaResolution
+    
+    // Cache controls prefix cache settings for the model.
+    // Optional. used to CreatePrefixCache for reused inputs.
+    Cache *CacheConfig
 }
 ```
 

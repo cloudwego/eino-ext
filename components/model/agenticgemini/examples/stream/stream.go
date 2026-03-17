@@ -27,7 +27,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/cloudwego/eino-ext/components/agentic/gemini"
+	"github.com/cloudwego/eino-ext/components/model/agenticgemini"
 )
 
 func main() {
