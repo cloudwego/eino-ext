@@ -80,6 +80,11 @@ func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 	cpf := profile.NewClientProfile()
 	cpf.HttpProfile.Endpoint = endpoint
 
+	// Set Scheme to HTTP if testing with local mock server
+	if endpoint != "wsa.tencentcloudapi.com" {
+		cpf.HttpProfile.Scheme = "HTTP"
+	}
+
 	client, err := wsa.NewClient(credential, "", cpf)
 	if err != nil {
 		return nil, fmt.Errorf("create wsa client failed: %w", err)
