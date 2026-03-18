@@ -61,7 +61,15 @@ func toSystemRoleInputItems(msg *schema.AgenticMessage) (items []*responses.Inpu
 func toAssistantRoleInputItems(msg *schema.AgenticMessage) (items []*responses.InputItem, err error) {
 	items = make([]*responses.InputItem, 0, len(msg.ContentBlocks))
 
+	isSelfGenerated := isSelfGeneratedMessage(msg)
+
 	for _, block := range msg.ContentBlocks {
+		// For non-self-generated messages, skip block types that are not in the whitelist.
+		// These types are model-specific and cannot be safely converted.
+		if !isSelfGenerated && !isAllowedNonSelfGeneratedBlockType(block.Type) {
+			continue
+		}
+
 		var item *responses.InputItem
 
 		switch block.Type {
@@ -87,6 +95,12 @@ func toAssistantRoleInputItems(msg *schema.AgenticMessage) (items []*responses.I
 			item, err = serverToolCallToInputItem(block)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert server tool call to input item: %w", err)
+			}
+
+		case schema.ContentBlockTypeServerToolResult:
+			item, err = serverToolResultToInputItem(block)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert server tool result to input item: %w", err)
 			}
 
 		case schema.ContentBlockTypeMCPToolApprovalRequest:
@@ -120,9 +134,28 @@ func toAssistantRoleInputItems(msg *schema.AgenticMessage) (items []*responses.I
 		items = append(items, item)
 	}
 
+	items, err = pairToolCallItems(items)
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func pairToolCallItems(items []*responses.InputItem) (newItems []*responses.InputItem, err error) {
 	items, err = pairMCPToolCallItems(items)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pair MCP tool call items: %w", err)
+	}
+
+	items, err = pairImageProcessToolCallItems(items)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pair image process tool call items: %w", err)
+	}
+
+	items, err = pairDoubaoAppToolCallItems(items)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pair doubao app tool call items: %w", err)
 	}
 
 	return items, nil
@@ -130,23 +163,21 @@ func toAssistantRoleInputItems(msg *schema.AgenticMessage) (items []*responses.I
 
 func pairMCPToolCallItems(items []*responses.InputItem) (newItems []*responses.InputItem, err error) {
 	processed := make(map[int]bool)
-	mcpCallItemIDIndices := make(map[string][]int)
+	itemIDIndices := make(map[string][]int)
 
 	for i, item := range items {
-		mcpCall := item.GetFunctionMcpCall()
-		if mcpCall == nil {
+		call := item.GetFunctionMcpCall()
+		if call == nil {
 			continue
 		}
-
-		id := mcpCall.GetId()
+		id := call.GetId()
 		if id == "" {
 			return nil, fmt.Errorf("found MCP tool call item with empty ID at index %d", i)
 		}
-
-		mcpCallItemIDIndices[id] = append(mcpCallItemIDIndices[id], i)
+		itemIDIndices[id] = append(itemIDIndices[id], i)
 	}
 
-	for id, indices := range mcpCallItemIDIndices {
+	for id, indices := range itemIDIndices {
 		if len(indices) != 2 {
 			return nil, fmt.Errorf("MCP tool call %q should have exactly 2 items (call and result), "+
 				"but found %d", id, len(indices))
@@ -158,14 +189,14 @@ func pairMCPToolCallItems(items []*responses.InputItem) (newItems []*responses.I
 			continue
 		}
 
-		mcpCall := item.GetFunctionMcpCall()
-		if mcpCall == nil {
+		call := item.GetFunctionMcpCall()
+		if call == nil {
 			newItems = append(newItems, item)
 			continue
 		}
 
-		id := mcpCall.GetId()
-		indices := mcpCallItemIDIndices[id]
+		id := call.GetId()
+		indices := itemIDIndices[id]
 
 		var pairIndex int
 		if indices[0] == i {
@@ -181,12 +212,145 @@ func pairMCPToolCallItems(items []*responses.InputItem) (newItems []*responses.I
 				FunctionMcpCall: &responses.ItemFunctionMcpCall{
 					Type:              responses.ItemType_mcp_call,
 					Id:                &id,
-					ServerLabel:       mcpCall.ServerLabel,
-					ApprovalRequestId: coalesce(mcpCall.ApprovalRequestId, pairMcpCall.ApprovalRequestId),
-					Name:              mcpCall.Name,
-					Arguments:         coalesce(mcpCall.Arguments, pairMcpCall.Arguments),
-					Output:            coalesce(mcpCall.Output, pairMcpCall.Output),
-					Error:             coalesce(mcpCall.Error, pairMcpCall.Error),
+					ServerLabel:       call.ServerLabel,
+					ApprovalRequestId: coalesce(call.ApprovalRequestId, pairMcpCall.ApprovalRequestId),
+					Name:              call.Name,
+					Arguments:         coalesce(call.Arguments, pairMcpCall.Arguments),
+					Output:            coalesce(call.Output, pairMcpCall.Output),
+					Error:             coalesce(call.Error, pairMcpCall.Error),
+				},
+			},
+		}
+
+		newItems = append(newItems, mergedItem)
+
+		processed[i] = true
+		processed[pairIndex] = true
+	}
+
+	return newItems, nil
+}
+
+func pairImageProcessToolCallItems(items []*responses.InputItem) (newItems []*responses.InputItem, err error) {
+	processed := make(map[int]bool)
+	itemIDIndices := make(map[string][]int)
+
+	for i, item := range items {
+		call := item.GetImageProcess()
+		if call == nil {
+			continue
+		}
+		if call.Id == "" {
+			return nil, fmt.Errorf("found image process tool call item with empty ID at index %d", i)
+		}
+		itemIDIndices[call.Id] = append(itemIDIndices[call.Id], i)
+	}
+
+	for id, indices := range itemIDIndices {
+		if len(indices) != 2 {
+			return nil, fmt.Errorf("image process tool call %q should have exactly 2 items (call and result), "+
+				"but found %d", id, len(indices))
+		}
+	}
+
+	for i, item := range items {
+		if processed[i] {
+			continue
+		}
+
+		call := item.GetImageProcess()
+		if call == nil {
+			newItems = append(newItems, item)
+			continue
+		}
+
+		indices := itemIDIndices[call.Id]
+
+		var pairIndex int
+		if indices[0] == i {
+			pairIndex = indices[1]
+		} else {
+			pairIndex = indices[0]
+		}
+
+		pairCall := items[pairIndex].GetImageProcess()
+
+		mergedItem := &responses.InputItem{
+			Union: &responses.InputItem_ImageProcess{
+				ImageProcess: &responses.ItemFunctionImageProcess{
+					Type:      responses.ItemType_image_process,
+					Id:        call.Id,
+					Status:    coalesce(call.Status, pairCall.Status),
+					Arguments: coalesce(call.Arguments, pairCall.Arguments),
+					Action:    coalesce(call.Action, pairCall.Action),
+					Error:     coalesce(call.Error, pairCall.Error),
+				},
+			},
+		}
+
+		newItems = append(newItems, mergedItem)
+
+		processed[i] = true
+		processed[pairIndex] = true
+	}
+
+	return newItems, nil
+}
+
+func pairDoubaoAppToolCallItems(items []*responses.InputItem) (newItems []*responses.InputItem, err error) {
+	processed := make(map[int]bool)
+	itemIDIndices := make(map[string][]int)
+
+	for i, item := range items {
+		call := item.GetFunctionDoubaoAppCall()
+		if call == nil {
+			continue
+		}
+		id := call.GetId()
+		if id == "" {
+			return nil, fmt.Errorf("found doubao app tool call item with empty ID at index %d", i)
+		}
+		itemIDIndices[id] = append(itemIDIndices[id], i)
+	}
+
+	for id, indices := range itemIDIndices {
+		if len(indices) != 2 {
+			return nil, fmt.Errorf("doubao app tool call %q should have exactly 2 items (call and result), "+
+				"but found %d", id, len(indices))
+		}
+	}
+
+	for i, item := range items {
+		if processed[i] {
+			continue
+		}
+
+		call := item.GetFunctionDoubaoAppCall()
+		if call == nil {
+			newItems = append(newItems, item)
+			continue
+		}
+
+		id := call.GetId()
+		indices := itemIDIndices[id]
+
+		var pairIndex int
+		if indices[0] == i {
+			pairIndex = indices[1]
+		} else {
+			pairIndex = indices[0]
+		}
+
+		pairCall := items[pairIndex].GetFunctionDoubaoAppCall()
+
+		mergedItem := &responses.InputItem{
+			Union: &responses.InputItem_FunctionDoubaoAppCall{
+				FunctionDoubaoAppCall: &responses.ItemDoubaoAppCall{
+					Type:    responses.ItemType_doubao_app_call,
+					Id:      call.Id,
+					Status:  coalesce(call.Status, pairCall.Status),
+					Feature: coalesce(call.Feature, pairCall.Feature),
+					Blocks:  coalesce(call.Blocks, pairCall.Blocks),
 				},
 			},
 		}
@@ -511,7 +675,171 @@ func serverToolCallToInputItem(block *schema.ContentBlock) (item *responses.Inpu
 		return nil, err
 	}
 
-	ws := arguments.WebSearch
+	switch ServerToolName(content.Name) {
+	case ServerToolNameWebSearch:
+		return webSearchArgumentsToInputItem(id, status, arguments.WebSearch)
+	case ServerToolNameImageProcess:
+		return imageProcessArgumentsToInputItem(id, status, arguments.ImageProcess)
+	case ServerToolNameDoubaoApp:
+		return doubaoAppArgumentsToInputItem(id, status, arguments.DoubaoApp)
+	case ServerToolNameKnowledgeSearch:
+		return knowledgeSearchArgumentsToInputItem(id, status, arguments.KnowledgeSearch)
+	default:
+		return nil, fmt.Errorf("unknown server tool name: %s", content.Name)
+	}
+}
+
+func serverToolResultToInputItem(block *schema.ContentBlock) (item *responses.InputItem, err error) {
+	content := block.ServerToolResult
+	if content == nil {
+		return item, fmt.Errorf("server tool result is nil")
+	}
+
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	result, err := getServerToolResult(content)
+	if err != nil {
+		return nil, err
+	}
+
+	switch ServerToolName(content.Name) {
+	case ServerToolNameImageProcess:
+		return imageProcessResultToInputItem(id, status, result.ImageProcess)
+	case ServerToolNameDoubaoApp:
+		return doubaoAppResultToInputItem(id, status, result.DoubaoApp)
+	default:
+		return nil, fmt.Errorf("unknown server tool result name: %s", content.Name)
+	}
+}
+
+func imageProcessResultToInputItem(id string, status string, result *ImageProcessResult) (item *responses.InputItem, err error) {
+	if result == nil {
+		return nil, fmt.Errorf("image process result is nil")
+	}
+
+	var action *responses.ResponseImageProcessAction
+	if result.Action != nil {
+		action = &responses.ResponseImageProcessAction{
+			Type:           string(result.Action.Type),
+			ResultImageUrl: &result.Action.ResultImageURL,
+		}
+	}
+
+	var ipError *responses.ResponseImageProcessError
+	if result.Error != nil {
+		ipError = &responses.ResponseImageProcessError{
+			Message: result.Error.Message,
+		}
+	}
+
+	item = &responses.InputItem{
+		Union: &responses.InputItem_ImageProcess{
+			ImageProcess: &responses.ItemFunctionImageProcess{
+				Type:   responses.ItemType_image_process,
+				Id:     id,
+				Status: responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
+				Action: action,
+				Error:  ipError,
+			},
+		},
+	}
+
+	return item, nil
+}
+
+func doubaoAppResultToInputItem(id string, status string, result *DoubaoAppResult) (item *responses.InputItem, err error) {
+	if result == nil {
+		return nil, fmt.Errorf("doubao app result is nil")
+	}
+
+	blocks := make([]*responses.DoubaoAppCallBlock, 0, len(result.Blocks))
+	for _, b := range result.Blocks {
+		if b == nil {
+			continue
+		}
+
+		block := &responses.DoubaoAppCallBlock{}
+
+		switch b.Type {
+		case DoubaoAppBlockTypeOutputText:
+			block.Union = &responses.DoubaoAppCallBlock_OutputText{
+				OutputText: &responses.DoubaoAppCallBlockOutputText{
+					Id:       ptrIfNonZero(b.OutputText.ID),
+					ParentId: ptrIfNonZero(b.OutputText.ParentID),
+					Type:     responses.DoubaoAppBlockType_output_text,
+					Text:     b.OutputText.Text,
+				},
+			}
+		case DoubaoAppBlockTypeReasoningText:
+			block.Union = &responses.DoubaoAppCallBlock_ReasoningText{
+				ReasoningText: &responses.DoubaoAppCallBlockReasoningText{
+					Id:            ptrIfNonZero(b.ReasoningText.ID),
+					ParentId:      ptrIfNonZero(b.ReasoningText.ParentID),
+					Type:          responses.DoubaoAppBlockType_reasoning_text,
+					ReasoningText: b.ReasoningText.ReasoningText,
+				},
+			}
+		case DoubaoAppBlockTypeSearch:
+			block.Union = &responses.DoubaoAppCallBlock_Search{
+				Search: &responses.DoubaoAppCallBlockSearch{
+					Id:       ptrIfNonZero(b.Search.ID),
+					ParentId: ptrIfNonZero(b.Search.ParentID),
+					Type:     responses.DoubaoAppBlockType_search,
+					Summary:  ptrIfNonZero(b.Search.Summary),
+					Queries:  b.Search.Queries,
+					Results:  convertDoubaoAppSearchResultsToProto(b.Search.Results),
+				},
+			}
+		case DoubaoAppBlockTypeReasoningSearch:
+			block.Union = &responses.DoubaoAppCallBlock_ReasoningSearch{
+				ReasoningSearch: &responses.DoubaoAppCallBlockReasoningSearch{
+					Id:       ptrIfNonZero(b.ReasoningSearch.ID),
+					ParentId: ptrIfNonZero(b.ReasoningSearch.ParentID),
+					Type:     responses.DoubaoAppBlockType_reasoning_search,
+					Summary:  ptrIfNonZero(b.ReasoningSearch.Summary),
+					Queries:  b.ReasoningSearch.Queries,
+					Results:  convertDoubaoAppSearchResultsToProto(b.ReasoningSearch.Results),
+				},
+			}
+		default:
+			return nil, fmt.Errorf("unknown doubao app block type: %s", b.Type)
+		}
+		blocks = append(blocks, block)
+	}
+
+	item = &responses.InputItem{
+		Union: &responses.InputItem_FunctionDoubaoAppCall{
+			FunctionDoubaoAppCall: &responses.ItemDoubaoAppCall{
+				Type:   responses.ItemType_doubao_app_call,
+				Id:     ptrIfNonZero(id),
+				Status: responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
+				Blocks: blocks,
+			},
+		},
+	}
+
+	return item, nil
+}
+
+func convertDoubaoAppSearchResultsToProto(results []*DoubaoAppSearchResult) []*responses.DoubaoAppSearchResult {
+	ret := make([]*responses.DoubaoAppSearchResult, 0, len(results))
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		ret = append(ret, &responses.DoubaoAppSearchResult{
+			TextCard: &responses.DoubaoAppSearchTextItem{
+				Title:    r.Title,
+				Url:      r.URL,
+				Sitename: r.SiteName,
+			},
+		})
+	}
+	return ret
+}
+
+func webSearchArgumentsToInputItem(id string, status string, ws *WebSearchArguments) (item *responses.InputItem, err error) {
 	if ws == nil {
 		return nil, fmt.Errorf("web search arguments is nil")
 	}
@@ -523,9 +851,8 @@ func serverToolCallToInputItem(block *schema.ContentBlock) (item *responses.Inpu
 			Type:  responses.ActionType_search,
 			Query: ws.Search.Query,
 		}
-
 	default:
-		return nil, fmt.Errorf("invalid web search action type: %s", ws.ActionType)
+		return nil, fmt.Errorf("unknown web search action type: %s", ws.ActionType)
 	}
 
 	item = &responses.InputItem{
@@ -535,6 +862,121 @@ func serverToolCallToInputItem(block *schema.ContentBlock) (item *responses.Inpu
 				Id:     id,
 				Status: responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
 				Action: action,
+			},
+		},
+	}
+
+	return item, nil
+}
+
+func imageProcessArgumentsToInputItem(id string, status string, ip *ImageProcessArguments) (item *responses.InputItem, err error) {
+	if ip == nil {
+		return nil, fmt.Errorf("image process arguments is nil")
+	}
+
+	var args *responses.ResponseImageProcessArgs
+	switch ip.ActionType {
+	case ImageProcessActionPoint:
+		if ip.Point == nil {
+			return nil, fmt.Errorf("point arguments is nil")
+		}
+		args = &responses.ResponseImageProcessArgs{
+			Union: &responses.ResponseImageProcessArgs_PointArgs{
+				PointArgs: &responses.ResponseImageProcessPointArgs{
+					ImageIndex: ip.Point.ImageIndex,
+					Points:     ip.Point.Points,
+					DrawLine:   ip.Point.DrawLine,
+				},
+			},
+		}
+	case ImageProcessActionGrounding:
+		if ip.Grounding == nil {
+			return nil, fmt.Errorf("grounding arguments is nil")
+		}
+		args = &responses.ResponseImageProcessArgs{
+			Union: &responses.ResponseImageProcessArgs_GroundingArgs{
+				GroundingArgs: &responses.ResponseImageProcessGroundingArgs{
+					ImageIndex: ip.Grounding.ImageIndex,
+					BboxStr:    ip.Grounding.BboxStr,
+					Crop:       ip.Grounding.Crop,
+				},
+			},
+		}
+	case ImageProcessActionRotate:
+		if ip.Rotate == nil {
+			return nil, fmt.Errorf("rotate arguments is nil")
+		}
+		args = &responses.ResponseImageProcessArgs{
+			Union: &responses.ResponseImageProcessArgs_RotateArgs{
+				RotateArgs: &responses.ResponseImageProcessRotateArgs{
+					ImageIndex: ip.Rotate.ImageIndex,
+					Degree:     ip.Rotate.Degree,
+				},
+			},
+		}
+	case ImageProcessActionZoom:
+		if ip.Zoom == nil {
+			return nil, fmt.Errorf("zoom arguments is nil")
+		}
+		args = &responses.ResponseImageProcessArgs{
+			Union: &responses.ResponseImageProcessArgs_ZoomArgs{
+				ZoomArgs: &responses.ResponseImageProcessZoomArgs{
+					ImageIndex: ip.Zoom.ImageIndex,
+					BboxStr:    ip.Zoom.BboxStr,
+					Scale:      ip.Zoom.Scale,
+				},
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unknown image process action type: %s", ip.ActionType)
+	}
+
+	item = &responses.InputItem{
+		Union: &responses.InputItem_ImageProcess{
+			ImageProcess: &responses.ItemFunctionImageProcess{
+				Type:      responses.ItemType_image_process,
+				Id:        id,
+				Status:    responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
+				Arguments: args,
+			},
+		},
+	}
+
+	return item, nil
+}
+
+func doubaoAppArgumentsToInputItem(id string, status string, da *DoubaoAppArguments) (item *responses.InputItem, err error) {
+	if da == nil {
+		return nil, fmt.Errorf("doubao app arguments is nil")
+	}
+
+	item = &responses.InputItem{
+		Union: &responses.InputItem_FunctionDoubaoAppCall{
+			FunctionDoubaoAppCall: &responses.ItemDoubaoAppCall{
+				Type:    responses.ItemType_doubao_app_call,
+				Id:      ptrIfNonZero(id),
+				Status:  responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
+				Feature: ptrIfNonZero(string(da.Feature)),
+			},
+		},
+	}
+
+	return item, nil
+}
+
+func knowledgeSearchArgumentsToInputItem(id string, status string, ks *KnowledgeSearchArguments) (item *responses.InputItem, err error) {
+	if ks == nil {
+		return nil, fmt.Errorf("knowledge search arguments is nil")
+	}
+
+	item = &responses.InputItem{
+		Union: &responses.InputItem_FunctionKnowledgeSearch{
+			FunctionKnowledgeSearch: &responses.ItemFunctionKnowledgeSearch{
+				Type:                responses.ItemType_knowledge_search_call,
+				Id:                  ptrIfNonZero(id),
+				Status:              responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
+				Queries:             ks.Queries,
+				KnowledgeResourceId: ks.KnowledgeResourceID,
 			},
 		},
 	}
@@ -741,8 +1183,32 @@ func toOutputMessage(resp *responses.ResponseObject) (msg *schema.AgenticMessage
 
 			tmpBlocks = append(tmpBlocks, block)
 
+		case *responses.OutputItem_FunctionImageProcess:
+			bs, err := imageProcessToContentBlocks(t)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert image process to content blocks: %w", err)
+			}
+
+			tmpBlocks = append(tmpBlocks, bs...)
+
+		case *responses.OutputItem_FunctionDoubaoAppCall:
+			bs, err := doubaoAppCallToContentBlocks(t)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert doubao app call to content blocks: %w", err)
+			}
+
+			tmpBlocks = append(tmpBlocks, bs...)
+
+		case *responses.OutputItem_FunctionKnowledgeSearch:
+			bs, err := knowledgeSearchCallToContentBlocks(t)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert knowledge search call to content blocks: %w", err)
+			}
+
+			tmpBlocks = append(tmpBlocks, bs...)
+
 		default:
-			return nil, fmt.Errorf("invalid output item type: %T", t)
+			return nil, fmt.Errorf("unknown output item type: %T", t)
 		}
 
 		blocks = append(blocks, tmpBlocks...)
@@ -753,6 +1219,8 @@ func toOutputMessage(resp *responses.ResponseObject) (msg *schema.AgenticMessage
 		ContentBlocks: blocks,
 		ResponseMeta:  responseObjectToResponseMeta(resp),
 	}
+
+	msg = setSelfGenerated(msg)
 
 	return msg, nil
 }
@@ -776,7 +1244,7 @@ func outputMessageToContentBlocks(item *responses.OutputItem_OutputMessage) (blo
 			}
 
 		default:
-			return nil, fmt.Errorf("invalid output content item type: %T", t)
+			return nil, fmt.Errorf("unknown output content item type: %T", t)
 		}
 
 		setItemID(block, outputMsg.Id)
@@ -853,7 +1321,7 @@ func outputTextAnnotationToTextAnnotation(anno *responses.Annotation) (*TextAnno
 		}
 
 	default:
-		return nil, fmt.Errorf("invalid annotation type: %s", anno.Type.String())
+		return nil, fmt.Errorf("unknown annotation type: %s", anno.Type.String())
 	}
 
 	return ta, nil
@@ -881,6 +1349,213 @@ func functionToolCallToContentBlock(item *responses.OutputItem_FunctionToolCall)
 	return block, nil
 }
 
+func imageProcessToContentBlocks(item *responses.OutputItem_FunctionImageProcess) (blocks []*schema.ContentBlock, err error) {
+	ip := item.FunctionImageProcess
+	if ip == nil {
+		return nil, fmt.Errorf("received empty function image process")
+	}
+
+	var args *ImageProcessArguments
+	if ipArgs := ip.Arguments; ipArgs != nil {
+		args = &ImageProcessArguments{}
+		switch t := ipArgs.Union.(type) {
+		case *responses.ResponseImageProcessArgs_PointArgs:
+			args.ActionType = ImageProcessActionPoint
+			if t.PointArgs != nil {
+				args.Point = &ImageProcessPoint{
+					ImageIndex: t.PointArgs.ImageIndex,
+					Points:     t.PointArgs.Points,
+					DrawLine:   t.PointArgs.DrawLine,
+				}
+			}
+		case *responses.ResponseImageProcessArgs_GroundingArgs:
+			args.ActionType = ImageProcessActionGrounding
+			if t.GroundingArgs != nil {
+				args.Grounding = &ImageProcessGrounding{
+					ImageIndex: t.GroundingArgs.ImageIndex,
+					BboxStr:    t.GroundingArgs.BboxStr,
+					Crop:       t.GroundingArgs.Crop,
+				}
+			}
+		case *responses.ResponseImageProcessArgs_RotateArgs:
+			args.ActionType = ImageProcessActionRotate
+			if t.RotateArgs != nil {
+				args.Rotate = &ImageProcessRotate{
+					ImageIndex: t.RotateArgs.ImageIndex,
+					Degree:     t.RotateArgs.Degree,
+				}
+			}
+		case *responses.ResponseImageProcessArgs_ZoomArgs:
+			args.ActionType = ImageProcessActionZoom
+			if t.ZoomArgs != nil {
+				args.Zoom = &ImageProcessZoom{
+					ImageIndex: t.ZoomArgs.ImageIndex,
+					BboxStr:    t.ZoomArgs.BboxStr,
+					Scale:      t.ZoomArgs.Scale,
+				}
+			}
+		default:
+			return nil, fmt.Errorf("unknown image process args type: %T", t)
+		}
+	}
+
+	callBlock := schema.NewContentBlock(&schema.ServerToolCall{
+		Name:      string(ServerToolNameImageProcess),
+		Arguments: &ServerToolCallArguments{ImageProcess: args},
+	})
+
+	result := &ImageProcessResult{
+		Action: &ImageProcessResultAction{
+			Type:           ImageProcessAction(ip.Action.GetType()),
+			ResultImageURL: ip.Action.GetResultImageUrl(),
+		},
+		Error: func() *ImageProcessResultError {
+			if ip.Error == nil {
+				return nil
+			}
+			return &ImageProcessResultError{
+				Message: ip.Error.Message,
+			}
+		}(),
+	}
+
+	resultBlock := schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   string(ServerToolNameImageProcess),
+		Result: &ServerToolResult{ImageProcess: result},
+	})
+
+	setItemID(callBlock, ip.Id)
+	setItemID(resultBlock, ip.Id)
+	setItemStatus(callBlock, ip.Status.String())
+	setItemStatus(resultBlock, ip.Status.String())
+
+	blocks = []*schema.ContentBlock{callBlock, resultBlock}
+
+	return blocks, nil
+}
+
+func doubaoAppCallToContentBlocks(item *responses.OutputItem_FunctionDoubaoAppCall) (blocks []*schema.ContentBlock, err error) {
+	dac := item.FunctionDoubaoAppCall
+	if dac == nil {
+		return nil, fmt.Errorf("received empty doubao app call")
+	}
+
+	callBlock := schema.NewContentBlock(&schema.ServerToolCall{
+		Name: string(ServerToolNameDoubaoApp),
+		Arguments: &ServerToolCallArguments{
+			DoubaoApp: &DoubaoAppArguments{
+				Feature: DoubaoAppFeature(dac.GetFeature()),
+			},
+		},
+	})
+
+	result := &DoubaoAppResult{
+		Blocks: make([]*DoubaoAppBlock, 0, len(dac.Blocks)),
+	}
+
+	for _, block := range dac.Blocks {
+		if block == nil {
+			continue
+		}
+		daBlock := &DoubaoAppBlock{}
+		switch b := block.Union.(type) {
+		case *responses.DoubaoAppCallBlock_OutputText:
+			daBlock.Type = DoubaoAppBlockTypeOutputText
+			daBlock.OutputText = &DoubaoAppOutputText{
+				ID:       b.OutputText.GetId(),
+				ParentID: b.OutputText.GetParentId(),
+				Text:     b.OutputText.GetText(),
+				Status:   b.OutputText.GetStatus().String(),
+			}
+		case *responses.DoubaoAppCallBlock_ReasoningText:
+			daBlock.Type = DoubaoAppBlockTypeReasoningText
+			daBlock.ReasoningText = &DoubaoAppReasoningText{
+				ID:            b.ReasoningText.GetId(),
+				ParentID:      b.ReasoningText.GetParentId(),
+				ReasoningText: b.ReasoningText.GetReasoningText(),
+				Status:        b.ReasoningText.GetStatus().String(),
+			}
+		case *responses.DoubaoAppCallBlock_Search:
+			daBlock.Type = DoubaoAppBlockTypeSearch
+			daBlock.Search = &DoubaoAppSearch{
+				ID:       b.Search.GetId(),
+				ParentID: b.Search.GetParentId(),
+				Summary:  b.Search.GetSummary(),
+				Queries:  b.Search.GetQueries(),
+				Results:  convertDoubaoAppSearchResults(b.Search.GetResults()),
+				Status:   b.Search.GetStatus().String(),
+			}
+		case *responses.DoubaoAppCallBlock_ReasoningSearch:
+			daBlock.Type = DoubaoAppBlockTypeReasoningSearch
+			daBlock.ReasoningSearch = &DoubaoAppReasoningSearch{
+				ID:       b.ReasoningSearch.GetId(),
+				ParentID: b.ReasoningSearch.GetParentId(),
+				Summary:  b.ReasoningSearch.GetSummary(),
+				Queries:  b.ReasoningSearch.GetQueries(),
+				Results:  convertDoubaoAppSearchResults(b.ReasoningSearch.GetResults()),
+				Status:   b.ReasoningSearch.GetStatus().String(),
+			}
+		default:
+			continue
+		}
+		result.Blocks = append(result.Blocks, daBlock)
+	}
+
+	resultBlock := schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   string(ServerToolNameDoubaoApp),
+		Result: &ServerToolResult{DoubaoApp: result},
+	})
+
+	setItemID(callBlock, dac.GetId())
+	setItemID(resultBlock, dac.GetId())
+	setItemStatus(callBlock, dac.Status.String())
+	setItemStatus(resultBlock, dac.Status.String())
+
+	return []*schema.ContentBlock{callBlock, resultBlock}, nil
+}
+
+func convertDoubaoAppSearchResults(results []*responses.DoubaoAppSearchResult) []*DoubaoAppSearchResult {
+	if len(results) == 0 {
+		return nil
+	}
+	ret := make([]*DoubaoAppSearchResult, 0, len(results))
+	for _, r := range results {
+		if r == nil || r.TextCard == nil {
+			continue
+		}
+		ret = append(ret, &DoubaoAppSearchResult{
+			Title:    r.TextCard.Title,
+			URL:      r.TextCard.Url,
+			SiteName: r.TextCard.Sitename,
+		})
+	}
+	return ret
+}
+
+func knowledgeSearchCallToContentBlocks(item *responses.OutputItem_FunctionKnowledgeSearch) (blocks []*schema.ContentBlock, err error) {
+	ks := item.FunctionKnowledgeSearch
+	if ks == nil {
+		return nil, fmt.Errorf("received empty knowledge search call")
+	}
+
+	args := &KnowledgeSearchArguments{
+		KnowledgeResourceID: ks.KnowledgeResourceId,
+		Queries:             ks.Queries,
+	}
+
+	block := schema.NewContentBlock(&schema.ServerToolCall{
+		Name: string(ServerToolNameKnowledgeSearch),
+		Arguments: &ServerToolCallArguments{
+			KnowledgeSearch: args,
+		},
+	})
+
+	setItemID(block, ks.GetId())
+	setItemStatus(block, ks.Status.String())
+
+	return []*schema.ContentBlock{block}, nil
+}
+
 func webSearchToContentBlock(item *responses.OutputItem_FunctionWebSearch) (block *schema.ContentBlock, err error) {
 	webSearch := item.FunctionWebSearch
 	if webSearch == nil {
@@ -901,7 +1576,7 @@ func webSearchToContentBlock(item *responses.OutputItem_FunctionWebSearch) (bloc
 			}
 
 		default:
-			return nil, fmt.Errorf("invalid web search action type: %s", action_)
+			return nil, fmt.Errorf("unknown web search action type: %s", action_)
 		}
 	}
 

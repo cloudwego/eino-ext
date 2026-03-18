@@ -27,10 +27,12 @@ func init() {
 	schema.RegisterName[*ResponseMetaExtension]("_eino_ext_ark_response_meta_extension")
 	schema.RegisterName[*AssistantGenTextExtension]("_eino_ext_ark_assistant_gen_text_extension")
 	schema.RegisterName[*ServerToolCallArguments]("_eino_ext_ark_server_tool_call_arguments")
+	schema.RegisterName[*ServerToolResult]("_eino_ext_ark_server_tool_result")
 
 	compose.RegisterStreamChunkConcatFunc(concatFirstNonZero[blockExtraItemID])
 	compose.RegisterStreamChunkConcatFunc(concatLast[blockExtraItemStatus])
 	compose.RegisterStreamChunkConcatFunc(concatResponseMetaExtensions)
 	compose.RegisterStreamChunkConcatFunc(concatAssistantGenTextExtensions)
 	compose.RegisterStreamChunkConcatFunc(concatServerToolCallArguments)
+	compose.RegisterStreamChunkConcatFunc(concatServerToolResult)
 }

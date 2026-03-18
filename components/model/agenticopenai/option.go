@@ -28,6 +28,7 @@ type openaiOptions struct {
 	text              *responses.ResponseTextConfigParam
 	store             *bool
 	promptCacheKey    *string
+	truncation        *responses.ResponseNewParamsTruncation
 
 	serverTools []*ServerToolConfig
 	mcpTools    []*responses.ToolMcpParam
@@ -93,5 +94,11 @@ func WithCustomHeaders(headers map[string]string) model.Option {
 func WithExtraFields(fields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.extraFields = fields
+	})
+}
+
+func WithTruncation(truncation responses.ResponseNewParamsTruncation) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.truncation = &truncation
 	})
 }

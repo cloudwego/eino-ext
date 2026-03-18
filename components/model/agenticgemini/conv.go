@@ -53,6 +53,8 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 		return nil, nil
 	}
 
+	isSelfGenerated := isSelfGeneratedMessage(message)
+
 	var err error
 	content := &genai.Content{
 		Role: toGeminiRole(message.Role),
@@ -62,6 +64,11 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 		if block == nil {
 			continue
 		}
+
+		if !isSelfGenerated && !isAllowedNonSelfGeneratedBlockType(block.Type) {
+			continue
+		}
+
 		var part *genai.Part
 		switch block.Type {
 		case schema.ContentBlockTypeReasoning:
@@ -167,6 +174,7 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 					return nil, fmt.Errorf("invalid server tool call name: %s", block.ServerToolCall.Name)
 				}
 			}
+
 		case schema.ContentBlockTypeServerToolResult:
 			if block.ServerToolResult != nil {
 				switch block.ServerToolResult.Name {
@@ -181,6 +189,7 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 					part = genai.NewPartFromCodeExecutionResult(genai.Outcome(result.CodeExecutionResult.Outcome), result.CodeExecutionResult.Output)
 				}
 			}
+
 		default:
 			return nil, fmt.Errorf("unsupported content block type: %s", block.Type)
 		}
@@ -332,6 +341,9 @@ func convAgenticResponse(resp *genai.GenerateContentResponse, lastType schema.Co
 			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
 		}
 	}
+
+	message = setSelfGenerated(message)
+
 	return message, nil
 }
 

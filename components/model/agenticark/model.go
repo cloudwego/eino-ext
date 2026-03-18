@@ -26,6 +26,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/contextmanagement"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -138,10 +139,15 @@ type Config struct {
 	// Optional.
 	Cache *CacheConfig
 
-	// CustomHeader specifies custom HTTP headers to include in API requests.
-	// CustomHeader allows passing additional metadata or authentication information.
+	// ContextManagement specifies context management strategies to help the model utilize the context window effectively.
+	// Supports clearing thinking blocks and tool call content.
 	// Optional.
-	CustomHeader map[string]string
+	ContextManagement *contextmanagement.ContextManagement
+
+	// CustomHeaders specifies custom HTTP headers to include in API requests.
+	// CustomHeaders allows passing additional metadata or authentication information.
+	// Optional.
+	CustomHeaders map[string]string
 }
 
 type CacheConfig struct {
@@ -162,7 +168,10 @@ type SessionCacheConfig struct {
 }
 
 type ServerToolConfig struct {
-	WebSearch *responses.ToolWebSearch
+	WebSearch       *responses.ToolWebSearch
+	ImageProcess    *responses.ToolImageProcess
+	DoubaoApp       *responses.ToolDoubaoApp
+	KnowledgeSearch *responses.ToolKnowledgeSearch
 }
 
 func New(_ context.Context, config *Config) (*Model, error) {
@@ -222,7 +231,8 @@ func buildClient(config *Config) (*Model, error) {
 		serverTools:             config.ServerTools,
 		mcpTools:                config.MCPTools,
 		cache:                   config.Cache,
-		customHeader:            config.CustomHeader,
+		contextManagement:       config.ContextManagement,
+		customHeaders:           config.CustomHeaders,
 	}
 
 	return cm, nil
@@ -248,8 +258,9 @@ type Model struct {
 	mcpTools          []*responses.ToolMcp
 
 	cache                   *CacheConfig
+	contextManagement       *contextmanagement.ContextManagement
 	enablePassBackReasoning *bool
-	customHeader            map[string]string
+	customHeaders           map[string]string
 }
 
 func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (
@@ -535,6 +546,27 @@ func (m *Model) toServerTools(serverTools []*ServerToolConfig) (tools []*respons
 				},
 			}
 
+		case ti.ImageProcess != nil:
+			tools[i] = &responses.ResponsesTool{
+				Union: &responses.ResponsesTool_ToolImageProcess{
+					ToolImageProcess: ti.ImageProcess,
+				},
+			}
+
+		case ti.DoubaoApp != nil:
+			tools[i] = &responses.ResponsesTool{
+				Union: &responses.ResponsesTool_ToolDoubaoApp{
+					ToolDoubaoApp: ti.DoubaoApp,
+				},
+			}
+
+		case ti.KnowledgeSearch != nil:
+			tools[i] = &responses.ResponsesTool{
+				Union: &responses.ResponsesTool_ToolKnowledgeSearch{
+					ToolKnowledgeSearch: ti.KnowledgeSearch,
+				},
+			}
+
 		default:
 			continue
 		}
@@ -572,7 +604,8 @@ func (m *Model) getOptions(opts []model.Option) (*model.Options, *arkOptions, er
 		parallelToolCalls: m.parallelToolCalls,
 		serverTools:       m.serverTools,
 		mcpTools:          m.mcpTools,
-		customHeaders:     m.customHeader,
+		contextManagement: m.contextManagement,
+		customHeaders:     m.customHeaders,
 	}, opts...)
 
 	err := m.checkOptions(options)
@@ -653,6 +686,7 @@ func (m *Model) prePopulateConfig(responseReq *responses.ResponsesRequest, optio
 	responseReq.Text = specOptions.text
 	responseReq.MaxToolCalls = specOptions.maxToolCalls
 	responseReq.ParallelToolCalls = specOptions.parallelToolCalls
+	responseReq.ContextManagement = specOptions.contextManagement
 
 	return nil
 }
@@ -938,8 +972,16 @@ func toForcedToolChoice(tool *schema.AllowedTool) (*responses.ResponsesToolChoic
 					},
 				},
 			}, nil
+		case string(ServerToolNameKnowledgeSearch):
+			return &responses.ResponsesToolChoice{
+				Union: &responses.ResponsesToolChoice_KnowledgeSearchToolChoice{
+					KnowledgeSearchToolChoice: &responses.KnowledgeSearchToolChoice{
+						Type: responses.ToolType_knowledge_search,
+					},
+				},
+			}, nil
 		default:
-			return nil, fmt.Errorf("invalid server tool name: %s", tool.ServerTool.Name)
+			return nil, fmt.Errorf("unsupported server tool for forced tool choice: %s", tool.ServerTool.Name)
 		}
 
 	default:

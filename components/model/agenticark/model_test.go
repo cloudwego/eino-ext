@@ -559,6 +559,12 @@ func TestToForcedToolChoice(t *testing.T) {
 			assert.Equal(t, responses.ToolType_web_search, res.Union.(*responses.ResponsesToolChoice_WebSearchToolChoice).WebSearchToolChoice.Type)
 		})
 
+		mockey.PatchConvey("server tool - knowledge search", func() {
+			res, err := toForcedToolChoice(&schema.AllowedTool{ServerTool: &schema.AllowedServerTool{Name: string(ServerToolNameKnowledgeSearch)}})
+			assert.NoError(t, err)
+			assert.Equal(t, responses.ToolType_knowledge_search, res.Union.(*responses.ResponsesToolChoice_KnowledgeSearchToolChoice).KnowledgeSearchToolChoice.Type)
+		})
+
 		mockey.PatchConvey("unknown", func() {
 			_, err := toForcedToolChoice(&schema.AllowedTool{})
 			assert.Error(t, err)
