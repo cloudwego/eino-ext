@@ -119,10 +119,14 @@ type Config struct {
 	// Optional.
 	MCPTools []*responses.ToolMcpParam
 
-	// CustomHeader specifies custom HTTP headers to include in API requests.
-	// CustomHeader allows passing additional metadata or authentication information.
+	// Truncation specifies how to handle context that exceeds the model's context window.
 	// Optional.
-	CustomHeader map[string]string
+	Truncation *responses.ResponseNewParamsTruncation
+
+	// CustomHeaders specifies custom HTTP headers to include in API requests.
+	// CustomHeaders allows passing additional metadata or authentication information.
+	// Optional.
+	CustomHeaders map[string]string
 
 	// ExtraFields specifies additional fields that will be directly added to the HTTP request body.
 	// This allows for vendor-specific or future parameters not yet explicitly supported.
@@ -131,7 +135,10 @@ type Config struct {
 }
 
 type ServerToolConfig struct {
-	WebSearch *responses.WebSearchToolParam
+	WebSearch       *responses.WebSearchToolParam
+	FileSearch      *responses.FileSearchToolParam
+	CodeInterpreter *responses.ToolCodeInterpreterParam
+	Shell           *responses.FunctionShellToolParam
 }
 
 func New(_ context.Context, config *Config) (*Model, error) {
@@ -187,7 +194,8 @@ func buildClient(config *Config) (*Model, error) {
 		include:           config.Include,
 		serverTools:       config.ServerTools,
 		mcpTools:          config.MCPTools,
-		customHeader:      config.CustomHeader,
+		truncation:        config.Truncation,
+		customHeader:      config.CustomHeaders,
 		extraFields:       config.ExtraFields,
 	}
 
@@ -213,6 +221,7 @@ type Model struct {
 	include           []responses.ResponseIncludable
 	serverTools       []*ServerToolConfig
 	mcpTools          []*responses.ToolMcpParam
+	truncation        *responses.ResponseNewParamsTruncation
 
 	customHeader map[string]string
 	extraFields  map[string]any
@@ -428,7 +437,18 @@ func toServerTools(serverTools []*ServerToolConfig) ([]responses.ToolUnionParam,
 			tools[i] = responses.ToolUnionParam{
 				OfWebSearch: ti.WebSearch,
 			}
-
+		case ti.FileSearch != nil:
+			tools[i] = responses.ToolUnionParam{
+				OfFileSearch: ti.FileSearch,
+			}
+		case ti.CodeInterpreter != nil:
+			tools[i] = responses.ToolUnionParam{
+				OfCodeInterpreter: ti.CodeInterpreter,
+			}
+		case ti.Shell != nil:
+			tools[i] = responses.ToolUnionParam{
+				OfShell: ti.Shell,
+			}
 		default:
 			return nil, fmt.Errorf("unknown server tool type")
 		}
@@ -454,6 +474,7 @@ func (m *Model) getOptions(opts []model.Option) (*model.Options, *openaiOptions,
 		parallelToolCalls: m.parallelToolCalls,
 		serverTools:       m.serverTools,
 		mcpTools:          m.mcpTools,
+		truncation:        m.truncation,
 		customHeaders:     m.customHeader,
 	}, opts...)
 
@@ -549,6 +570,9 @@ func (m *Model) prePopulateConfig(responseReq *responses.ResponseNewParams, opti
 	responseReq.ParallelToolCalls = newOpenaiOpt(specOptions.parallelToolCalls)
 	responseReq.PromptCacheKey = newOpenaiOpt(specOptions.promptCacheKey)
 	responseReq.Store = newOpenaiOpt(specOptions.store)
+	if specOptions.truncation != nil {
+		responseReq.Truncation = *specOptions.truncation
+	}
 
 	return nil
 }

@@ -184,10 +184,10 @@ type Config struct {
     // Optional.
     MCPTools []*responses.ToolMcpParam
     
-    // CustomHeader specifies custom HTTP headers to include in API requests.
-    // CustomHeader allows passing additional metadata or authentication information.
+    // CustomHeaders specifies custom HTTP headers to include in API requests.
+    // CustomHeaders allows passing additional metadata or authentication information.
     // Optional.
-    CustomHeader map[string]string
+    CustomHeaders map[string]string
     
     // ExtraFields specifies additional fields that will be directly added to the HTTP request body.
     // This allows for vendor-specific or future parameters not yet explicitly supported.

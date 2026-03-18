@@ -18,6 +18,16 @@ package agenticopenai
 
 const implType = "OpenAI"
 
+type ServerToolName string
+
+const (
+	ServerToolNameWebSearch       ServerToolName = "web_search"
+	ServerToolNameFileSearch      ServerToolName = "file_search"
+	ServerToolNameCodeInterpreter ServerToolName = "code_interpreter"
+	ServerToolNameImageGeneration ServerToolName = "image_generation"
+	ServerToolNameShell           ServerToolName = "shell"
+)
+
 type WebSearchAction string
 
 const (
@@ -26,8 +36,23 @@ const (
 	WebSearchActionFind     WebSearchAction = "find"
 )
 
-type ServerToolName string
+type ShellOutputOutcomeType string
 
 const (
-	ServerToolNameWebSearch ServerToolName = "web_search"
+	ShellOutputOutcomeTypeTimeout ShellOutputOutcomeType = "timeout"
+	ShellOutputOutcomeTypeExit    ShellOutputOutcomeType = "exit"
+)
+
+type ShellEnvironmentType string
+
+const (
+	ShellEnvironmentTypeLocal              ShellEnvironmentType = "local"
+	ShellEnvironmentTypeContainerReference ShellEnvironmentType = "container_reference"
+)
+
+type CodeInterpreterOutputType string
+
+const (
+	CodeInterpreterOutputTypeLogs  CodeInterpreterOutputType = "logs"
+	CodeInterpreterOutputTypeImage CodeInterpreterOutputType = "image"
 )

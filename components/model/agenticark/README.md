@@ -170,10 +170,15 @@ type Config struct {
     // Optional.
     Cache *CacheConfig
     
-    // CustomHeader specifies custom HTTP headers to include in API requests.
-    // CustomHeader allows passing additional metadata or authentication information.
+    // ContextManagement specifies context management strategies to help the model utilize the context window effectively.
+    // Supports clearing thinking blocks and tool call content.
     // Optional.
-    CustomHeader map[string]string
+    ContextManagement *contextmanagement.ContextManagement
+    
+    // CustomHeaders specifies custom HTTP headers to include in API requests.
+    // CustomHeaders allows passing additional metadata or authentication information.
+    // Optional.
+    CustomHeaders map[string]string
 }
 ```
 

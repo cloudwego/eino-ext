@@ -62,7 +62,15 @@ func toSystemRoleInputItems(msg *schema.AgenticMessage) (items []responses.Respo
 func toAssistantRoleInputItems(msg *schema.AgenticMessage) (items []responses.ResponseInputItemUnionParam, err error) {
 	items = make([]responses.ResponseInputItemUnionParam, 0, len(msg.ContentBlocks))
 
+	isSelfGenerated := isSelfGeneratedMessage(msg)
+
 	for _, block := range msg.ContentBlocks {
+		// For non-self-generated messages, skip block types that are not in the whitelist.
+		// These types are model-specific and cannot be safely converted.
+		if !isSelfGenerated && !isAllowedNonSelfGeneratedBlockType(block.Type) {
+			continue
+		}
+
 		var item responses.ResponseInputItemUnionParam
 
 		switch block.Type {
@@ -127,14 +135,38 @@ func toAssistantRoleInputItems(msg *schema.AgenticMessage) (items []responses.Re
 		items = append(items, item)
 	}
 
+	items, err = pairToolCallItems(items)
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func pairToolCallItems(items []responses.ResponseInputItemUnionParam) (newItems []responses.ResponseInputItemUnionParam, err error) {
 	items, err = pairMCPToolCallItems(items)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pair MCP tool call items: %w", err)
 	}
 
-	items, err = pairWebServerToolCallItems(items)
+	items, err = pairWebSearchServerToolCallItems(items)
 	if err != nil {
 		return nil, fmt.Errorf("failed to pair web server tool call items: %w", err)
+	}
+
+	items, err = pairFileSearchToolCallItems(items)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pair file search tool call items: %w", err)
+	}
+
+	items, err = pairCodeInterpreterToolCallItems(items)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pair code interpreter tool call items: %w", err)
+	}
+
+	items, err = pairImageGenerationToolCallItems(items)
+	if err != nil {
+		return nil, fmt.Errorf("failed to pair image generation tool call items: %w", err)
 	}
 
 	return items, nil
@@ -210,25 +242,22 @@ func pairMCPToolCallItems(items []responses.ResponseInputItemUnionParam) (newIte
 	return newItems, nil
 }
 
-func pairWebServerToolCallItems(items []responses.ResponseInputItemUnionParam) (newItems []responses.ResponseInputItemUnionParam, err error) {
+func pairWebSearchServerToolCallItems(items []responses.ResponseInputItemUnionParam) (newItems []responses.ResponseInputItemUnionParam, err error) {
 	processed := make(map[int]bool)
-	serverCallItemIDIndices := make(map[string][]int)
+	itemIDIndices := make(map[string][]int)
 
 	for i, item := range items {
-		serverCall := item.OfWebSearchCall
-		if serverCall == nil {
+		call := item.OfWebSearchCall
+		if call == nil {
 			continue
 		}
-
-		id := serverCall.ID
-		if id == "" {
+		if call.ID == "" {
 			return nil, fmt.Errorf("found server tool call item with empty ID at index %d", i)
 		}
-
-		serverCallItemIDIndices[id] = append(serverCallItemIDIndices[id], i)
+		itemIDIndices[call.ID] = append(itemIDIndices[call.ID], i)
 	}
 
-	for id, indices := range serverCallItemIDIndices {
+	for id, indices := range itemIDIndices {
 		if len(indices) != 2 {
 			return nil, fmt.Errorf("server tool call %q should have exactly 2 items (call and result), "+
 				"but found %d", id, len(indices))
@@ -240,14 +269,13 @@ func pairWebServerToolCallItems(items []responses.ResponseInputItemUnionParam) (
 			continue
 		}
 
-		serverCall := item.OfWebSearchCall
-		if serverCall == nil {
+		call := item.OfWebSearchCall
+		if call == nil {
 			newItems = append(newItems, item)
 			continue
 		}
 
-		id := serverCall.ID
-		indices := serverCallItemIDIndices[id]
+		indices := itemIDIndices[call.ID]
 
 		var pairIndex int
 		if indices[0] == i {
@@ -256,13 +284,13 @@ func pairWebServerToolCallItems(items []responses.ResponseInputItemUnionParam) (
 			pairIndex = indices[0]
 		}
 
-		pairServerCall := items[pairIndex].OfWebSearchCall
+		pairCall := items[pairIndex].OfWebSearchCall
 
 		mergedItem := responses.ResponseInputItemUnionParam{
 			OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{
-				ID:     serverCall.ID,
-				Action: pairWebSearchAction(serverCall.Action, pairServerCall.Action),
-				Status: coalesce(serverCall.Status, pairServerCall.Status),
+				ID:     call.ID,
+				Action: pairWebSearchAction(call.Action, pairCall.Action),
+				Status: coalesce(call.Status, pairCall.Status),
 			},
 		}
 
@@ -298,8 +326,8 @@ func pairWebSearchAction(action, pairAction responses.ResponseFunctionWebSearchA
 	}
 	if action.OfSearch != nil && pairAction.OfSearch != nil {
 		ret.OfSearch = action.OfSearch
-		if pairAction.OfSearch.Query != "" {
-			ret.OfSearch.Query = pairAction.OfSearch.Query
+		if len(pairAction.OfSearch.Queries) > 0 {
+			ret.OfSearch.Queries = pairAction.OfSearch.Queries
 		}
 		if len(pairAction.OfSearch.Sources) > 0 {
 			ret.OfSearch.Sources = pairAction.OfSearch.Sources
@@ -307,6 +335,192 @@ func pairWebSearchAction(action, pairAction responses.ResponseFunctionWebSearchA
 	}
 
 	return ret
+}
+
+func pairFileSearchToolCallItems(items []responses.ResponseInputItemUnionParam) (newItems []responses.ResponseInputItemUnionParam, err error) {
+	processed := make(map[int]bool)
+	itemIDIndices := make(map[string][]int)
+
+	for i, item := range items {
+		call := item.OfFileSearchCall
+		if call == nil {
+			continue
+		}
+		if call.ID == "" {
+			return nil, fmt.Errorf("found file search tool call item with empty ID at index %d", i)
+		}
+		itemIDIndices[call.ID] = append(itemIDIndices[call.ID], i)
+	}
+
+	for id, indices := range itemIDIndices {
+		if len(indices) != 2 {
+			return nil, fmt.Errorf("file search tool call %q should have exactly 2 items (call and result), "+
+				"but found %d", id, len(indices))
+		}
+	}
+
+	for i, item := range items {
+		if processed[i] {
+			continue
+		}
+
+		call := item.OfFileSearchCall
+		if call == nil {
+			newItems = append(newItems, item)
+			continue
+		}
+
+		indices := itemIDIndices[call.ID]
+
+		var pairIndex int
+		if indices[0] == i {
+			pairIndex = indices[1]
+		} else {
+			pairIndex = indices[0]
+		}
+
+		pairCall := items[pairIndex].OfFileSearchCall
+
+		mergedItem := responses.ResponseInputItemUnionParam{
+			OfFileSearchCall: &responses.ResponseFileSearchToolCallParam{
+				ID:      call.ID,
+				Status:  coalesce(call.Status, pairCall.Status),
+				Queries: coalesce(call.Queries, pairCall.Queries),
+				Results: coalesce(call.Results, pairCall.Results),
+			},
+		}
+
+		newItems = append(newItems, mergedItem)
+
+		processed[i] = true
+		processed[pairIndex] = true
+	}
+
+	return newItems, nil
+}
+
+func pairCodeInterpreterToolCallItems(items []responses.ResponseInputItemUnionParam) (newItems []responses.ResponseInputItemUnionParam, err error) {
+	processed := make(map[int]bool)
+	itemIDIndices := make(map[string][]int)
+
+	for i, item := range items {
+		call := item.OfCodeInterpreterCall
+		if call == nil {
+			continue
+		}
+		if call.ID == "" {
+			return nil, fmt.Errorf("found code interpreter tool call item with empty ID at index %d", i)
+		}
+		itemIDIndices[call.ID] = append(itemIDIndices[call.ID], i)
+	}
+
+	for id, indices := range itemIDIndices {
+		if len(indices) != 2 {
+			return nil, fmt.Errorf("code interpreter tool call %q should have exactly 2 items (call and result), "+
+				"but found %d", id, len(indices))
+		}
+	}
+
+	for i, item := range items {
+		if processed[i] {
+			continue
+		}
+
+		call := item.OfCodeInterpreterCall
+		if call == nil {
+			newItems = append(newItems, item)
+			continue
+		}
+
+		indices := itemIDIndices[call.ID]
+
+		var pairIndex int
+		if indices[0] == i {
+			pairIndex = indices[1]
+		} else {
+			pairIndex = indices[0]
+		}
+
+		pairCall := items[pairIndex].OfCodeInterpreterCall
+
+		mergedItem := responses.ResponseInputItemUnionParam{
+			OfCodeInterpreterCall: &responses.ResponseCodeInterpreterToolCallParam{
+				ID:          call.ID,
+				ContainerID: coalesce(call.ContainerID, pairCall.ContainerID),
+				Status:      coalesce(call.Status, pairCall.Status),
+				Code:        coalesce(call.Code, pairCall.Code),
+				Outputs:     coalesce(call.Outputs, pairCall.Outputs),
+			},
+		}
+
+		newItems = append(newItems, mergedItem)
+
+		processed[i] = true
+		processed[pairIndex] = true
+	}
+
+	return newItems, nil
+}
+
+func pairImageGenerationToolCallItems(items []responses.ResponseInputItemUnionParam) (newItems []responses.ResponseInputItemUnionParam, err error) {
+	processed := make(map[int]bool)
+	itemIDIndices := make(map[string][]int)
+
+	for i, item := range items {
+		call := item.OfImageGenerationCall
+		if call == nil {
+			continue
+		}
+		if call.ID == "" {
+			return nil, fmt.Errorf("found image generation tool call item with empty ID at index %d", i)
+		}
+		itemIDIndices[call.ID] = append(itemIDIndices[call.ID], i)
+	}
+
+	for id, indices := range itemIDIndices {
+		if len(indices) != 2 {
+			return nil, fmt.Errorf("image generation tool call %q should have exactly 2 items (call and result), "+
+				"but found %d", id, len(indices))
+		}
+	}
+
+	for i, item := range items {
+		if processed[i] {
+			continue
+		}
+
+		call := item.OfImageGenerationCall
+		if call == nil {
+			newItems = append(newItems, item)
+			continue
+		}
+
+		indices := itemIDIndices[call.ID]
+
+		var pairIndex int
+		if indices[0] == i {
+			pairIndex = indices[1]
+		} else {
+			pairIndex = indices[0]
+		}
+
+		pairCall := items[pairIndex].OfImageGenerationCall
+
+		mergedItem := responses.ResponseInputItemUnionParam{
+			OfImageGenerationCall: &responses.ResponseInputItemImageGenerationCallParam{
+				ID:     call.ID,
+				Status: coalesce(call.Status, pairCall.Status),
+				Result: coalesce(call.Result, pairCall.Result),
+			},
+		}
+
+		newItems = append(newItems, mergedItem)
+
+		processed[i] = true
+		processed[pairIndex] = true
+	}
+
+	return newItems, nil
 }
 
 func toUserRoleInputItems(msg *schema.AgenticMessage) (items []responses.ResponseInputItemUnionParam, err error) {
@@ -617,21 +831,32 @@ func serverToolCallToInputItem(block *schema.ContentBlock) (item responses.Respo
 		return item, fmt.Errorf("server tool call is nil")
 	}
 
-	id, _ := getItemID(block)
-	status, _ := GetItemStatus(block)
-
 	arguments, err := getServerToolCallArguments(content)
 	if err != nil {
 		return item, err
 	}
 
-	var action responses.ResponseFunctionWebSearchActionUnionParam
 	switch {
 	case arguments.WebSearch != nil:
-		action, err = getWebSearchToolCallActionParam(arguments.WebSearch)
+		return webSearchToolCallToInputItem(arguments.WebSearch, block)
+	case arguments.FileSearch != nil:
+		return fileSearchToolCallToInputItem(arguments.FileSearch, block)
+	case arguments.CodeInterpreter != nil:
+		return codeInterpreterToolCallToInputItem(arguments.CodeInterpreter, block)
+	case arguments.ImageGeneration != nil:
+		return imageGenerationToolCallToInputItem(arguments.ImageGeneration, block)
+	case arguments.Shell != nil:
+		return shellToolCallToInputItem(arguments.Shell, block)
 	default:
 		return item, fmt.Errorf("server tool call arguments are nil")
 	}
+}
+
+func webSearchToolCallToInputItem(args *WebSearchArguments, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	action, err := getWebSearchToolCallActionParam(args)
 	if err != nil {
 		return item, err
 	}
@@ -652,14 +877,14 @@ func getWebSearchToolCallActionParam(ws *WebSearchArguments) (action responses.R
 	case WebSearchActionSearch:
 		return responses.ResponseFunctionWebSearchActionUnionParam{
 			OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{
-				Query: ws.Search.Query,
+				Queries: ws.Search.Queries,
 			},
 		}, nil
 
 	case WebSearchActionOpenPage:
 		return responses.ResponseFunctionWebSearchActionUnionParam{
 			OfOpenPage: &responses.ResponseFunctionWebSearchActionOpenPageParam{
-				URL: ws.OpenPage.URL,
+				URL: newOpenaiStrOpt(ws.OpenPage.URL),
 			},
 		}, nil
 
@@ -672,8 +897,107 @@ func getWebSearchToolCallActionParam(ws *WebSearchArguments) (action responses.R
 		}, nil
 
 	default:
-		return action, fmt.Errorf("invalid web search action type: %s", ws.ActionType)
+		return action, fmt.Errorf("unknown web search action type: %s", ws.ActionType)
 	}
+}
+
+func fileSearchToolCallToInputItem(args *FileSearchArguments, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	item = responses.ResponseInputItemUnionParam{
+		OfFileSearchCall: &responses.ResponseFileSearchToolCallParam{
+			ID:      id,
+			Status:  responses.ResponseFileSearchToolCallStatus(status),
+			Queries: args.Queries,
+		},
+	}
+
+	return item, nil
+}
+
+func codeInterpreterToolCallToInputItem(args *CodeInterpreterArguments, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	item = responses.ResponseInputItemUnionParam{
+		OfCodeInterpreterCall: &responses.ResponseCodeInterpreterToolCallParam{
+			ID:     id,
+			Status: responses.ResponseCodeInterpreterToolCallStatus(status),
+		},
+	}
+
+	return item, nil
+}
+
+func imageGenerationToolCallToInputItem(args *ImageGenerationArguments, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	item = responses.ResponseInputItemUnionParam{
+		OfImageGenerationCall: &responses.ResponseInputItemImageGenerationCallParam{
+			ID:     id,
+			Status: status,
+		},
+	}
+
+	return item, nil
+}
+
+func shellToolCallToInputItem(args *ShellArguments, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+	callID := block.ServerToolCall.CallID
+
+	action := responses.ResponseInputItemShellCallActionParam{
+		Commands: args.Action.Commands,
+	}
+	if args.Action.TimeoutMs > 0 {
+		action.TimeoutMs = param.NewOpt(args.Action.TimeoutMs)
+	}
+	if args.Action.MaxOutputLength > 0 {
+		action.MaxOutputLength = param.NewOpt(args.Action.MaxOutputLength)
+	}
+
+	var env responses.ResponseInputItemShellCallEnvironmentUnionParam
+	if args.Environment != nil {
+		switch args.Environment.Type {
+		case ShellEnvironmentTypeLocal:
+			skills := make([]responses.LocalSkillParam, 0, len(args.Environment.Local.Skills))
+			for _, s := range args.Environment.Local.Skills {
+				skills = append(skills, responses.LocalSkillParam{
+					Name:        s.Name,
+					Description: s.Description,
+					Path:        s.Path,
+				})
+			}
+			env = responses.ResponseInputItemShellCallEnvironmentUnionParam{
+				OfLocal: &responses.LocalEnvironmentParam{
+					Skills: skills,
+				},
+			}
+		case ShellEnvironmentTypeContainerReference:
+			env = responses.ResponseInputItemShellCallEnvironmentUnionParam{
+				OfContainerReference: &responses.ContainerReferenceParam{
+					ContainerID: args.Environment.ContainerReference.ContainerID,
+				},
+			}
+		default:
+			return item, fmt.Errorf("unknown shell environment type: %s", args.Environment.Type)
+		}
+	}
+
+	item = responses.ResponseInputItemUnionParam{
+		OfShellCall: &responses.ResponseInputItemShellCallParam{
+			ID:          newOpenaiStrOpt(id),
+			CallID:      callID,
+			Status:      status,
+			Action:      action,
+			Environment: env,
+		},
+	}
+
+	return item, nil
 }
 
 func serverToolResultToInputItem(block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
@@ -682,21 +1006,32 @@ func serverToolResultToInputItem(block *schema.ContentBlock) (item responses.Res
 		return item, fmt.Errorf("server tool result is nil")
 	}
 
-	id, _ := getItemID(block)
-	status, _ := GetItemStatus(block)
-
 	result, err := getServerToolResult(content)
 	if err != nil {
 		return item, err
 	}
 
-	var action responses.ResponseFunctionWebSearchActionUnionParam
 	switch {
 	case result.WebSearch != nil:
-		action, err = getWebSearchToolResultActionParam(result.WebSearch)
+		return webSearchToolResultToInputItem(result.WebSearch, block)
+	case result.FileSearch != nil:
+		return fileSearchToolResultToInputItem(result.FileSearch, block)
+	case result.CodeInterpreter != nil:
+		return codeInterpreterToolResultToInputItem(result.CodeInterpreter, block)
+	case result.ImageGeneration != nil:
+		return imageGenerationToolResultToInputItem(result.ImageGeneration, block)
+	case result.Shell != nil:
+		return shellToolResultToInputItem(result.Shell, block)
 	default:
 		return item, fmt.Errorf("server tool result is nil")
 	}
+}
+
+func webSearchToolResultToInputItem(result *WebSearchResult, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	action, err := getWebSearchToolResultActionParam(result)
 	if err != nil {
 		return item, err
 	}
@@ -728,8 +1063,150 @@ func getWebSearchToolResultActionParam(ws *WebSearchResult) (action responses.Re
 		}, nil
 
 	default:
-		return action, fmt.Errorf("invalid web search result action type: %s", ws.ActionType)
+		return action, fmt.Errorf("unknown web search result action type: %s", ws.ActionType)
 	}
+}
+
+func fileSearchToolResultToInputItem(fs *FileSearchResult, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	results := make([]responses.ResponseFileSearchToolCallResultParam, 0, len(fs.Results))
+	for _, r := range fs.Results {
+		attrs := make(map[string]responses.ResponseFileSearchToolCallResultAttributeUnionParam, len(r.Attributes))
+		for k, v := range r.Attributes {
+			attrs[k] = responses.ResponseFileSearchToolCallResultAttributeUnionParam{
+				OfString: newOpenaiOpt(v.OfString),
+				OfFloat:  newOpenaiOpt(v.OfFloat),
+				OfBool:   newOpenaiOpt(v.OfBool),
+			}
+		}
+
+		results = append(results, responses.ResponseFileSearchToolCallResultParam{
+			FileID:     newOpenaiStrOpt(r.FileID),
+			Filename:   newOpenaiStrOpt(r.FileName),
+			Score:      param.NewOpt(r.Score),
+			Text:       newOpenaiStrOpt(r.Text),
+			Attributes: attrs,
+		})
+	}
+
+	item = responses.ResponseInputItemUnionParam{
+		OfFileSearchCall: &responses.ResponseFileSearchToolCallParam{
+			ID:      id,
+			Status:  responses.ResponseFileSearchToolCallStatus(status),
+			Results: results,
+		},
+	}
+
+	return item, nil
+}
+
+func codeInterpreterToolResultToInputItem(result *CodeInterpreterResult, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	outputs := make([]responses.ResponseCodeInterpreterToolCallOutputUnionParam, 0, len(result.Outputs))
+	for _, o := range result.Outputs {
+		switch o.Type {
+		case CodeInterpreterOutputTypeLogs:
+			if o.Logs != nil {
+				outputs = append(outputs, responses.ResponseCodeInterpreterToolCallOutputUnionParam{
+					OfLogs: &responses.ResponseCodeInterpreterToolCallOutputLogsParam{
+						Logs: o.Logs.Logs,
+					},
+				})
+			}
+		case CodeInterpreterOutputTypeImage:
+			if o.Image != nil {
+				outputs = append(outputs, responses.ResponseCodeInterpreterToolCallOutputUnionParam{
+					OfImage: &responses.ResponseCodeInterpreterToolCallOutputImageParam{
+						URL: o.Image.URL,
+					},
+				})
+			}
+		default:
+			return item, fmt.Errorf("unknown code interpreter output type: %s", o.Type)
+		}
+	}
+
+	item = responses.ResponseInputItemUnionParam{
+		OfCodeInterpreterCall: &responses.ResponseCodeInterpreterToolCallParam{
+			ID:          id,
+			ContainerID: result.ContainerID,
+			Status:      responses.ResponseCodeInterpreterToolCallStatus(status),
+			Code:        newOpenaiStrOpt(result.Code),
+			Outputs:     outputs,
+		},
+	}
+
+	return item, nil
+}
+
+func imageGenerationToolResultToInputItem(result *ImageGenerationResult, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	item = responses.ResponseInputItemUnionParam{
+		OfImageGenerationCall: &responses.ResponseInputItemImageGenerationCallParam{
+			ID:     id,
+			Status: status,
+			Result: newOpenaiStrOpt(result.ImageBase64),
+		},
+	}
+
+	return item, nil
+}
+
+func shellToolResultToInputItem(result *ShellResult, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+	callID := block.ServerToolResult.CallID
+
+	output := make([]responses.ResponseFunctionShellCallOutputContentParam, 0, len(result.Outputs))
+	for _, o := range result.Outputs {
+		var outcome responses.ResponseFunctionShellCallOutputContentOutcomeUnionParam
+		if o.Outcome != nil {
+			switch o.Outcome.Type {
+			case ShellOutputOutcomeTypeTimeout:
+				outcome = responses.ResponseFunctionShellCallOutputContentOutcomeUnionParam{
+					OfTimeout: &responses.ResponseFunctionShellCallOutputContentOutcomeTimeoutParam{},
+				}
+			case ShellOutputOutcomeTypeExit:
+				if o.Outcome.Exit != nil {
+					outcome = responses.ResponseFunctionShellCallOutputContentOutcomeUnionParam{
+						OfExit: &responses.ResponseFunctionShellCallOutputContentOutcomeExitParam{
+							ExitCode: o.Outcome.Exit.ExitCode,
+						},
+					}
+				}
+			default:
+				return item, fmt.Errorf("unknown shell output outcome type: %s", o.Outcome.Type)
+			}
+		}
+
+		output = append(output, responses.ResponseFunctionShellCallOutputContentParam{
+			Stdout:  o.Stdout,
+			Stderr:  o.Stderr,
+			Outcome: outcome,
+		})
+	}
+
+	shellOutput := &responses.ResponseInputItemShellCallOutputParam{
+		ID:     newOpenaiStrOpt(id),
+		CallID: callID,
+		Status: status,
+		Output: output,
+	}
+	if result.MaxOutputLength > 0 {
+		shellOutput.MaxOutputLength = param.NewOpt(result.MaxOutputLength)
+	}
+
+	item = responses.ResponseInputItemUnionParam{
+		OfShellCallOutput: shellOutput,
+	}
+
+	return item, nil
 }
 
 func mcpToolApprovalRequestToInputItem(block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
@@ -903,8 +1380,40 @@ func toOutputMessage(resp *responses.Response) (msg *schema.AgenticMessage, err 
 				return nil, fmt.Errorf("failed to convert web search to content block: %w", err)
 			}
 
+		case responses.ResponseFileSearchToolCall:
+			tmpBlocks, err = fileSearchToContentBlocks(variant)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert file search to content block: %w", err)
+			}
+
+		case responses.ResponseCodeInterpreterToolCall:
+			tmpBlocks, err = codeInterpreterToContentBlocks(variant)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert code interpreter to content block: %w", err)
+			}
+
+		case responses.ResponseOutputItemImageGenerationCall:
+			tmpBlocks, err = imageGenerationToContentBlocks(variant)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert image generation to content block: %w", err)
+			}
+
+		case responses.ResponseFunctionShellToolCall:
+			block, err := shellCallToContentBlock(variant)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert function shell call to content block: %w", err)
+			}
+			tmpBlocks = []*schema.ContentBlock{block}
+
+		case responses.ResponseFunctionShellToolCallOutput:
+			block, err := shellOutputToContentBlock(variant)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert function shell output to content block: %w", err)
+			}
+			tmpBlocks = []*schema.ContentBlock{block}
+
 		default:
-			return nil, fmt.Errorf("invalid output item type: %T", variant)
+			return nil, fmt.Errorf("unknown output item type: %T", variant)
 		}
 
 		blocks = append(blocks, tmpBlocks...)
@@ -915,6 +1424,8 @@ func toOutputMessage(resp *responses.Response) (msg *schema.AgenticMessage, err 
 		ContentBlocks: blocks,
 		ResponseMeta:  responseObjectToResponseMeta(resp),
 	}
+
+	msg = setSelfGenerated(msg)
 
 	return msg, nil
 }
@@ -942,7 +1453,7 @@ func outputMessageToContentBlocks(item responses.ResponseOutputMessage) (blocks 
 			})
 
 		default:
-			return nil, fmt.Errorf("invalid output message content type: %s", content.Type)
+			return nil, fmt.Errorf("unknown output message content type: %s", content.Type)
 		}
 
 		setItemID(block, item.ID)
@@ -1021,7 +1532,7 @@ func outputTextAnnotationToTextAnnotation(anno responses.ResponseOutputTextAnnot
 		}, nil
 
 	default:
-		return nil, fmt.Errorf("invalid annotation type: %s", anno.Type)
+		return nil, fmt.Errorf("unknown annotation type: %s", anno.Type)
 	}
 }
 
@@ -1052,7 +1563,7 @@ func webSearchToContentBlocks(item responses.ResponseFunctionWebSearch) (blocks 
 			WebSearch: &WebSearchArguments{
 				ActionType: WebSearchActionSearch,
 				Search: &WebSearchQuery{
-					Query: variant.Query,
+					Queries: variant.Queries,
 				},
 			},
 		}
@@ -1094,7 +1605,7 @@ func webSearchToContentBlocks(item responses.ResponseFunctionWebSearch) (blocks 
 		}
 
 	default:
-		return nil, fmt.Errorf("invalid web search variant type: %s", item.Type)
+		return nil, fmt.Errorf("unknown web search variant type: %s", item.Type)
 	}
 
 	callBlock := schema.NewContentBlock(&schema.ServerToolCall{
@@ -1118,6 +1629,266 @@ func webSearchToContentBlocks(item responses.ResponseFunctionWebSearch) (blocks 
 	blocks = []*schema.ContentBlock{callBlock, resBlock}
 
 	return blocks, nil
+}
+
+func fileSearchToContentBlocks(item responses.ResponseFileSearchToolCall) (blocks []*schema.ContentBlock, err error) {
+	args := &ServerToolCallArguments{
+		FileSearch: &FileSearchArguments{
+			Queries: item.Queries,
+		},
+	}
+
+	results := make([]*FileSearchResultItem, 0, len(item.Results))
+	for _, res := range item.Results {
+		attrs := make(map[string]*FileSearchAttribute, len(res.Attributes))
+		for k, v := range res.Attributes {
+			switch {
+			case !param.IsNull(v.OfString):
+				attrs[k] = &FileSearchAttribute{
+					OfString: ptrOf(v.AsString()),
+				}
+			case !param.IsNull(v.OfFloat):
+				attrs[k] = &FileSearchAttribute{
+					OfFloat: ptrOf(v.AsFloat()),
+				}
+			case !param.IsNull(v.OfBool):
+				attrs[k] = &FileSearchAttribute{
+					OfBool: ptrOf(v.AsBool()),
+				}
+			}
+		}
+
+		results = append(results, &FileSearchResultItem{
+			FileID:     res.FileID,
+			FileName:   res.Filename,
+			Score:      res.Score,
+			Text:       res.Text,
+			Attributes: attrs,
+		})
+	}
+
+	res := &ServerToolResult{
+		FileSearch: &FileSearchResult{
+			Results: results,
+		},
+	}
+
+	callBlock := schema.NewContentBlock(&schema.ServerToolCall{
+		Name:      string(ServerToolNameFileSearch),
+		Arguments: args,
+	})
+	setItemID(callBlock, item.ID)
+	if s := string(item.Status); s != "" {
+		setItemStatus(callBlock, s)
+	}
+
+	resBlock := schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   string(ServerToolNameFileSearch),
+		Result: res,
+	})
+	setItemID(resBlock, item.ID)
+	if s := string(item.Status); s != "" {
+		setItemStatus(resBlock, s)
+	}
+
+	blocks = []*schema.ContentBlock{callBlock, resBlock}
+
+	return blocks, nil
+}
+
+func codeInterpreterToContentBlocks(item responses.ResponseCodeInterpreterToolCall) (blocks []*schema.ContentBlock, err error) {
+	args := &ServerToolCallArguments{
+		CodeInterpreter: &CodeInterpreterArguments{},
+	}
+
+	outputs := make([]*CodeInterpreterOutput, 0, len(item.Outputs))
+	for _, out := range item.Outputs {
+		switch CodeInterpreterOutputType(out.Type) {
+		case "":
+			// empty type in streaming events, output is nil
+		case CodeInterpreterOutputTypeLogs:
+			outputs = append(outputs, &CodeInterpreterOutput{
+				Type: CodeInterpreterOutputTypeLogs,
+				Logs: &CodeInterpreterOutputLogs{
+					Logs: out.Logs,
+				},
+			})
+		case CodeInterpreterOutputTypeImage:
+			outputs = append(outputs, &CodeInterpreterOutput{
+				Type: CodeInterpreterOutputTypeImage,
+				Image: &CodeInterpreterOutputImage{
+					URL: out.URL,
+				},
+			})
+		default:
+			return nil, fmt.Errorf("unknown code interpreter output type: %s", out.Type)
+		}
+	}
+
+	res := &ServerToolResult{
+		CodeInterpreter: &CodeInterpreterResult{
+			Code:        item.Code,
+			ContainerID: item.ContainerID,
+			Outputs:     outputs,
+		},
+	}
+
+	callBlock := schema.NewContentBlock(&schema.ServerToolCall{
+		Name:      string(ServerToolNameCodeInterpreter),
+		Arguments: args,
+	})
+	setItemID(callBlock, item.ID)
+	if s := string(item.Status); s != "" {
+		setItemStatus(callBlock, s)
+	}
+
+	resBlock := schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   string(ServerToolNameCodeInterpreter),
+		Result: res,
+	})
+	setItemID(resBlock, item.ID)
+	if s := string(item.Status); s != "" {
+		setItemStatus(resBlock, s)
+	}
+
+	blocks = []*schema.ContentBlock{callBlock, resBlock}
+
+	return blocks, nil
+}
+
+func imageGenerationToContentBlocks(item responses.ResponseOutputItemImageGenerationCall) (blocks []*schema.ContentBlock, err error) {
+	args := &ServerToolCallArguments{
+		ImageGeneration: &ImageGenerationArguments{},
+	}
+
+	res := &ServerToolResult{
+		ImageGeneration: &ImageGenerationResult{
+			ImageBase64: item.Result,
+		},
+	}
+
+	callBlock := schema.NewContentBlock(&schema.ServerToolCall{
+		Name:      string(ServerToolNameImageGeneration),
+		Arguments: args,
+	})
+	setItemID(callBlock, item.ID)
+	if item.Status != "" {
+		setItemStatus(callBlock, item.Status)
+	}
+
+	resBlock := schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   string(ServerToolNameImageGeneration),
+		Result: res,
+	})
+	setItemID(resBlock, item.ID)
+	if item.Status != "" {
+		setItemStatus(resBlock, item.Status)
+	}
+
+	blocks = []*schema.ContentBlock{callBlock, resBlock}
+
+	return blocks, nil
+}
+
+func shellCallToContentBlock(item responses.ResponseFunctionShellToolCall) (block *schema.ContentBlock, err error) {
+	var env *ShellEnvironment
+	switch ShellEnvironmentType(item.Environment.Type) {
+	case "":
+		// empty type in streaming events, env is nil
+	case ShellEnvironmentTypeLocal:
+		env = &ShellEnvironment{
+			Type: ShellEnvironmentTypeLocal,
+		}
+	case ShellEnvironmentTypeContainerReference:
+		env = &ShellEnvironment{
+			Type: ShellEnvironmentTypeContainerReference,
+			ContainerReference: &ShellEnvironmentContainerReference{
+				ContainerID: item.Environment.ContainerID,
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unknown shell environment type: %s", item.Environment.Type)
+	}
+
+	var action *ShellAction
+	if len(item.Action.Commands) > 0 {
+		action = &ShellAction{
+			Commands:        item.Action.Commands,
+			TimeoutMs:       item.Action.TimeoutMs,
+			MaxOutputLength: item.Action.MaxOutputLength,
+		}
+	}
+
+	args := &ServerToolCallArguments{
+		Shell: &ShellArguments{
+			Action:      action,
+			Environment: env,
+			CreatedBy:   item.CreatedBy,
+		},
+	}
+
+	block = schema.NewContentBlock(&schema.ServerToolCall{
+		Name:      string(ServerToolNameShell),
+		CallID:    item.CallID,
+		Arguments: args,
+	})
+	setItemID(block, item.ID)
+	if item.Status != "" {
+		setItemStatus(block, string(item.Status))
+	}
+
+	return block, nil
+}
+
+func shellOutputToContentBlock(item responses.ResponseFunctionShellToolCallOutput) (block *schema.ContentBlock, err error) {
+	outputs := make([]*ShellOutputItem, 0, len(item.Output))
+	for _, o := range item.Output {
+		var outcome *ShellOutputOutcome
+		switch ShellOutputOutcomeType(o.Outcome.Type) {
+		case "":
+			// empty type in streaming events, outcome is nil
+		case ShellOutputOutcomeTypeTimeout:
+			outcome = &ShellOutputOutcome{
+				Type: ShellOutputOutcomeTypeTimeout,
+			}
+		case ShellOutputOutcomeTypeExit:
+			outcome = &ShellOutputOutcome{
+				Type: ShellOutputOutcomeTypeExit,
+				Exit: &ShellOutputOutcomeExit{
+					ExitCode: o.Outcome.ExitCode,
+				},
+			}
+		default:
+			return nil, fmt.Errorf("unknown shell output outcome type: %s", o.Outcome.Type)
+		}
+
+		outputs = append(outputs, &ShellOutputItem{
+			Stdout:    o.Stdout,
+			Stderr:    o.Stderr,
+			Outcome:   outcome,
+			CreatedBy: o.CreatedBy,
+		})
+	}
+
+	res := &ServerToolResult{
+		Shell: &ShellResult{
+			MaxOutputLength: item.MaxOutputLength,
+			Outputs:         outputs,
+			CreatedBy:       item.CreatedBy,
+		},
+	}
+
+	block = schema.NewContentBlock(&schema.ServerToolResult{
+		Name:   string(ServerToolNameShell),
+		CallID: item.CallID,
+		Result: res,
+	})
+	setItemID(block, item.ID)
+	if item.Status != "" {
+		setItemStatus(block, string(item.Status))
+	}
+
+	return block, nil
 }
 
 func reasoningToContentBlocks(item responses.ResponseReasoningItem) (block *schema.ContentBlock, err error) {

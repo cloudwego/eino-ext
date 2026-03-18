@@ -50,7 +50,8 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 			responses.ResponseReasoningSummaryTextDoneEvent,
 			responses.ResponseFunctionCallArgumentsDoneEvent,
 			responses.ResponseMcpCallArgumentsDoneEvent,
-			responses.ResponseRefusalDoneEvent:
+			responses.ResponseRefusalDoneEvent,
+			responses.ResponseCodeInterpreterCallCodeDoneEvent:
 
 			// Do nothing.
 			continue
@@ -159,8 +160,55 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 			block := receiver.webSearchPhaseToContentBlock(variant.ItemID, variant.OutputIndex, string(responses.ResponseStatusCompleted))
 			sender.sendBlock(block, nil)
 
+		case responses.ResponseFileSearchCallInProgressEvent:
+			block := receiver.fileSearchPhaseToContentBlock(variant.ItemID, variant.OutputIndex, string(responses.ResponseStatusInProgress))
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseFileSearchCallSearchingEvent:
+			const phase = "searching"
+			block := receiver.fileSearchPhaseToContentBlock(variant.ItemID, variant.OutputIndex, phase)
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseFileSearchCallCompletedEvent:
+			block := receiver.fileSearchPhaseToContentBlock(variant.ItemID, variant.OutputIndex, string(responses.ResponseStatusCompleted))
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseCodeInterpreterCallInProgressEvent:
+			block := receiver.codeInterpreterPhaseToContentBlock(variant.ItemID, variant.OutputIndex, string(responses.ResponseStatusInProgress))
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseCodeInterpreterCallInterpretingEvent:
+			const phase = "interpreting"
+			block := receiver.codeInterpreterPhaseToContentBlock(variant.ItemID, variant.OutputIndex, phase)
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseCodeInterpreterCallCodeDeltaEvent:
+			block := receiver.codeInterpreterCodeDeltaEventToContentBlock(variant)
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseCodeInterpreterCallCompletedEvent:
+			block := receiver.codeInterpreterPhaseToContentBlock(variant.ItemID, variant.OutputIndex, string(responses.ResponseStatusCompleted))
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseImageGenCallInProgressEvent:
+			block := receiver.imageGenerationPhaseToContentBlock(variant.ItemID, variant.OutputIndex, string(responses.ResponseStatusInProgress))
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseImageGenCallGeneratingEvent:
+			const phase = "generating"
+			block := receiver.imageGenerationPhaseToContentBlock(variant.ItemID, variant.OutputIndex, phase)
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseImageGenCallPartialImageEvent:
+			block := receiver.imageGenerationPartialImageEventToContentBlock(variant)
+			sender.sendBlock(block, nil)
+
+		case responses.ResponseImageGenCallCompletedEvent:
+			block := receiver.imageGenerationPhaseToContentBlock(variant.ItemID, variant.OutputIndex, string(responses.ResponseStatusCompleted))
+			sender.sendBlock(block, nil)
+
 		default:
-			sw.Send(nil, fmt.Errorf("invalid event type: %s", event.Type))
+			sw.Send(nil, fmt.Errorf("unknown event type: %s", event.Type))
 		}
 	}
 
@@ -201,6 +249,9 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 		Role:         schema.AgenticRoleTypeAssistant,
 		ResponseMeta: meta,
 	}
+
+	msg = setSelfGenerated(msg)
+
 	if block != nil {
 		msg.ContentBlocks = []*schema.ContentBlock{block}
 	}
@@ -314,14 +365,36 @@ func (r *streamReceiver) itemAddedEventToContentBlock(ev responses.ResponseOutpu
 		k := makeMCPListToolsItemAddedEventCacheKey(item.ID, ev.OutputIndex)
 		r.ItemAddedEventCache[k] = item
 
+	case responses.ResponseCodeInterpreterToolCall:
+		bs, err := r.itemAddedEventCodeInterpreterToContentBlocks(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, bs...)
+
+	case responses.ResponseFunctionShellToolCall:
+		block, err := r.itemAddedEventShellCallToContentBlock(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, block)
+
+	case responses.ResponseFunctionShellToolCallOutput:
+		block, err := r.itemAddedEventShellOutputToContentBlock(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, block)
+
 	case responses.ResponseOutputMessage,
 		responses.ResponseFunctionWebSearch,
+		responses.ResponseFileSearchToolCall,
+		responses.ResponseOutputItemImageGenerationCall,
 		responses.ResponseOutputItemMcpApprovalRequest:
-
 		// Do nothing.
 
 	default:
-		return nil, fmt.Errorf("invalid item type %T with 'output_item.added' event", item)
+		return nil, fmt.Errorf("unknown item type %T with 'output_item.added' event", item)
 	}
 
 	return blocks, nil
@@ -348,6 +421,48 @@ func (r *streamReceiver) itemAddedEventReasoningToContentBlock(outputIdx int64, 
 
 	block.StreamingMeta = &schema.StreamingMeta{
 		Index: r.getBlockIndex(makeReasoningIndexKey(outputIdx)),
+	}
+
+	return block, nil
+}
+
+func (r *streamReceiver) itemAddedEventCodeInterpreterToContentBlocks(outputIdx int64, item responses.ResponseCodeInterpreterToolCall) (blocks []*schema.ContentBlock, err error) {
+	bs, err := codeInterpreterToContentBlocks(item)
+	if err != nil {
+		return nil, err
+	}
+
+	bs[0].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	bs[1].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+
+	return bs, nil
+}
+
+func (r *streamReceiver) itemAddedEventShellCallToContentBlock(outputIdx int64, item responses.ResponseFunctionShellToolCall) (block *schema.ContentBlock, err error) {
+	block, err = shellCallToContentBlock(item)
+	if err != nil {
+		return nil, err
+	}
+
+	block.StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+
+	return block, nil
+}
+
+func (r *streamReceiver) itemAddedEventShellOutputToContentBlock(outputIdx int64, item responses.ResponseFunctionShellToolCallOutput) (block *schema.ContentBlock, err error) {
+	block, err = shellOutputToContentBlock(item)
+	if err != nil {
+		return nil, err
+	}
+
+	block.StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
 	}
 
 	return block, nil
@@ -383,6 +498,24 @@ func (r *streamReceiver) itemDoneEventToContentBlocks(ev responses.ResponseOutpu
 			return nil, err
 		}
 
+	case responses.ResponseFileSearchToolCall:
+		blocks, err = r.itemDoneEventFileSearchToContentBlocks(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+
+	case responses.ResponseCodeInterpreterToolCall:
+		blocks, err = r.itemDoneEventCodeInterpreterToContentBlocks(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+
+	case responses.ResponseOutputItemImageGenerationCall:
+		blocks, err = r.itemDoneEventImageGenerationToContentBlocks(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+
 	case responses.ResponseOutputItemMcpCall:
 		blocks, err = r.itemDoneEventFunctionMCPCallToContentBlocks(ev.OutputIndex, item)
 		if err != nil {
@@ -405,8 +538,24 @@ func (r *streamReceiver) itemDoneEventToContentBlocks(ev responses.ResponseOutpu
 
 		blocks = append(blocks, block)
 
+	case responses.ResponseFunctionShellToolCall:
+		block, err := r.itemDoneEventShellCallToContentBlock(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+
+		blocks = append(blocks, block)
+
+	case responses.ResponseFunctionShellToolCallOutput:
+		block, err := r.itemDoneEventShellOutputToContentBlock(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+
+		blocks = append(blocks, block)
+
 	default:
-		return nil, fmt.Errorf("invalid item type %T with 'output_item.done' event", item)
+		return nil, fmt.Errorf("unknown item type %T with 'output_item.done' event", item)
 	}
 
 	return blocks, nil
@@ -480,6 +629,54 @@ func (r *streamReceiver) itemDoneEventFunctionWebSearchToContentBlocks(outputIdx
 	return blocks, nil
 }
 
+func (r *streamReceiver) itemDoneEventFileSearchToContentBlocks(outputIdx int64, item responses.ResponseFileSearchToolCall) (blocks []*schema.ContentBlock, err error) {
+	blocks, err = fileSearchToContentBlocks(item)
+	if err != nil {
+		return nil, err
+	}
+
+	blocks[0].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	blocks[1].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+
+	return blocks, nil
+}
+
+func (r *streamReceiver) itemDoneEventCodeInterpreterToContentBlocks(outputIdx int64, item responses.ResponseCodeInterpreterToolCall) (blocks []*schema.ContentBlock, err error) {
+	blocks, err = codeInterpreterToContentBlocks(item)
+	if err != nil {
+		return nil, err
+	}
+
+	blocks[0].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	blocks[1].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+
+	return blocks, nil
+}
+
+func (r *streamReceiver) itemDoneEventImageGenerationToContentBlocks(outputIdx int64, item responses.ResponseOutputItemImageGenerationCall) (blocks []*schema.ContentBlock, err error) {
+	blocks, err = imageGenerationToContentBlocks(item)
+	if err != nil {
+		return nil, err
+	}
+
+	blocks[0].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	blocks[1].StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+
+	return blocks, nil
+}
+
 func (r *streamReceiver) itemDoneEventFunctionMCPCallToContentBlocks(outputIdx int64, item responses.ResponseOutputItemMcpCall) (blocks []*schema.ContentBlock, err error) {
 	blocks, err = mcpCallToContentBlocks(item)
 	if err != nil {
@@ -530,6 +727,32 @@ func (r *streamReceiver) itemDoneEventFunctionMCPApprovalRequestToContentBlock(o
 	return block, nil
 }
 
+func (r *streamReceiver) itemDoneEventShellCallToContentBlock(outputIdx int64, item responses.ResponseFunctionShellToolCall) (block *schema.ContentBlock, err error) {
+	block, err = shellCallToContentBlock(item)
+	if err != nil {
+		return nil, err
+	}
+
+	block.StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+
+	return block, nil
+}
+
+func (r *streamReceiver) itemDoneEventShellOutputToContentBlock(outputIdx int64, item responses.ResponseFunctionShellToolCallOutput) (block *schema.ContentBlock, err error) {
+	block, err = shellOutputToContentBlock(item)
+	if err != nil {
+		return nil, err
+	}
+
+	block.StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+
+	return block, nil
+}
+
 func (r *streamReceiver) contentPartAddedEventToContentBlock(ev responses.ResponseContentPartAddedEvent) (block *schema.ContentBlock, err error) {
 	key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
 	blockIdx := r.getBlockIndex(key)
@@ -548,7 +771,7 @@ func (r *streamReceiver) contentPartAddedEventToContentBlock(ev responses.Respon
 	case responses.ResponseOutputText, responses.ResponseOutputRefusal:
 		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
 	default:
-		return nil, fmt.Errorf("invalid content part type: %T", ev.Part)
+		return nil, fmt.Errorf("unknown content part type: %T", ev.Part)
 	}
 
 	setItemStatus(block, string(responses.ResponseStatusInProgress))
@@ -574,7 +797,7 @@ func (r *streamReceiver) contentPartDoneEventToContentBlock(ev responses.Respons
 	case responses.ResponseOutputText:
 		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
 	default:
-		return nil, fmt.Errorf("invalid content part type: %T", ev.Part)
+		return nil, fmt.Errorf("unknown content part type: %T", ev.Part)
 	}
 
 	block.StreamingMeta = &schema.StreamingMeta{
@@ -764,6 +987,96 @@ func (r *streamReceiver) webSearchPhaseToContentBlock(itemID string, outputIdx i
 	if status != "" {
 		setItemStatus(block, status)
 	}
+
+	return block
+}
+
+func (r *streamReceiver) fileSearchPhaseToContentBlock(itemID string, outputIdx int64, status string) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+	block := schema.NewContentBlockChunk(&schema.ServerToolCall{
+		Name: string(ServerToolNameFileSearch),
+	}, meta)
+
+	setItemID(block, itemID)
+	if status != "" {
+		setItemStatus(block, status)
+	}
+
+	return block
+}
+
+func (r *streamReceiver) codeInterpreterPhaseToContentBlock(itemID string, outputIdx int64, status string) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name: string(ServerToolNameCodeInterpreter),
+	}, meta)
+
+	setItemID(block, itemID)
+	if status != "" {
+		setItemStatus(block, status)
+	}
+
+	return block
+}
+
+func (r *streamReceiver) codeInterpreterCodeDeltaEventToContentBlock(ev responses.ResponseCodeInterpreterCallCodeDeltaEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	result := &ServerToolResult{
+		CodeInterpreter: &CodeInterpreterResult{
+			Code: ev.Delta,
+		},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameCodeInterpreter),
+		Result: result,
+	}, meta)
+
+	setItemID(block, ev.ItemID)
+
+	return block
+}
+
+func (r *streamReceiver) imageGenerationPhaseToContentBlock(itemID string, outputIdx int64, status string) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name: string(ServerToolNameImageGeneration),
+	}, meta)
+
+	setItemID(block, itemID)
+	if status != "" {
+		setItemStatus(block, status)
+	}
+
+	return block
+}
+
+func (r *streamReceiver) imageGenerationPartialImageEventToContentBlock(ev responses.ResponseImageGenCallPartialImageEvent) *schema.ContentBlock {
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(ev.OutputIndex)),
+	}
+
+	result := &ServerToolResult{
+		ImageGeneration: &ImageGenerationResult{
+			ImageBase64: ev.PartialImageB64,
+		},
+	}
+
+	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
+		Name:   string(ServerToolNameImageGeneration),
+		Result: result,
+	}, meta)
+
+	setItemID(block, ev.ItemID)
 
 	return block
 }
