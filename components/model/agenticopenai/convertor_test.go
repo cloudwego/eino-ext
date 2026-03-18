@@ -54,6 +54,134 @@ func TestToSystemRoleInputItems(t *testing.T) {
 	})
 }
 
+func TestShellCallToContentBlock(t *testing.T) {
+	mockey.PatchConvey("shellCallToContentBlock", t, func() {
+		mockey.PatchConvey("with_commands", func() {
+			item := responses.ResponseFunctionShellToolCall{
+				ID:     "shell1",
+				CallID: "call_shell1",
+				Status: "completed",
+				Action: responses.ResponseFunctionShellToolCallAction{
+					Commands:        []string{"ls -la", "pwd"},
+					TimeoutMs:       30000,
+					MaxOutputLength: 1024,
+				},
+				Environment: responses.ResponseFunctionShellToolCallEnvironmentUnion{
+					Type: "local",
+				},
+				CreatedBy: "user123",
+			}
+
+			block, err := shellCallToContentBlock(item)
+			assert.NoError(t, err)
+
+			id, ok := getItemID(block)
+			assert.True(t, ok)
+			assert.Equal(t, "shell1", id)
+			assert.NotNil(t, block.ServerToolCall)
+			assert.Equal(t, string(ServerToolNameShell), block.ServerToolCall.Name)
+			assert.Equal(t, "call_shell1", block.ServerToolCall.CallID)
+
+			args, ok := block.ServerToolCall.Arguments.(*ServerToolCallArguments)
+			assert.True(t, ok)
+			assert.NotNil(t, args.Shell)
+			assert.NotNil(t, args.Shell.Action)
+			assert.Equal(t, []string{"ls -la", "pwd"}, args.Shell.Action.Commands)
+			assert.Equal(t, int64(30000), args.Shell.Action.TimeoutMs)
+			assert.Equal(t, int64(1024), args.Shell.Action.MaxOutputLength)
+			assert.NotNil(t, args.Shell.Environment)
+			assert.Equal(t, ShellEnvironmentTypeLocal, args.Shell.Environment.Type)
+			assert.Equal(t, "user123", args.Shell.CreatedBy)
+		})
+
+		mockey.PatchConvey("with_container_environment", func() {
+			item := responses.ResponseFunctionShellToolCall{
+				ID:     "shell2",
+				CallID: "call_shell2",
+				Status: "completed",
+				Action: responses.ResponseFunctionShellToolCallAction{
+					Commands: []string{"echo hello"},
+				},
+				Environment: responses.ResponseFunctionShellToolCallEnvironmentUnion{
+					Type:        "container_reference",
+					ContainerID: "container123",
+				},
+			}
+
+			block, err := shellCallToContentBlock(item)
+			assert.NoError(t, err)
+
+			args, ok := block.ServerToolCall.Arguments.(*ServerToolCallArguments)
+			assert.True(t, ok)
+			assert.NotNil(t, args.Shell.Environment)
+			assert.Equal(t, ShellEnvironmentTypeContainerReference, args.Shell.Environment.Type)
+			assert.NotNil(t, args.Shell.Environment.ContainerReference)
+			assert.Equal(t, "container123", args.Shell.Environment.ContainerReference.ContainerID)
+		})
+	})
+}
+
+func TestShellOutputToContentBlock(t *testing.T) {
+	mockey.PatchConvey("shellOutputToContentBlock", t, func() {
+		mockey.PatchConvey("with_exit_outcome", func() {
+			item := responses.ResponseFunctionShellToolCallOutput{
+				ID:     "shell_out1",
+				Status: "completed",
+				Output: []responses.ResponseFunctionShellToolCallOutputOutput{
+					{
+						Stdout: "file1.txt\nfile2.txt",
+						Stderr: "",
+						Outcome: responses.ResponseFunctionShellToolCallOutputOutputOutcomeUnion{
+							Type:     "exit",
+							ExitCode: 0,
+						},
+					},
+				},
+			}
+
+			block, err := shellOutputToContentBlock(item)
+			assert.NoError(t, err)
+
+			id, ok := getItemID(block)
+			assert.True(t, ok)
+			assert.Equal(t, "shell_out1", id)
+			assert.NotNil(t, block.ServerToolResult)
+			assert.Equal(t, string(ServerToolNameShell), block.ServerToolResult.Name)
+
+			result, ok := block.ServerToolResult.Result.(*ServerToolResult)
+			assert.True(t, ok)
+			assert.NotNil(t, result.Shell)
+			assert.Len(t, result.Shell.Outputs, 1)
+			assert.Equal(t, "file1.txt\nfile2.txt", result.Shell.Outputs[0].Stdout)
+			assert.NotNil(t, result.Shell.Outputs[0].Outcome.Exit)
+			assert.Equal(t, int64(0), result.Shell.Outputs[0].Outcome.Exit.ExitCode)
+		})
+
+		mockey.PatchConvey("with_timeout_outcome", func() {
+			item := responses.ResponseFunctionShellToolCallOutput{
+				ID:     "shell_out2",
+				Status: "completed",
+				Output: []responses.ResponseFunctionShellToolCallOutputOutput{
+					{
+						Stdout: "",
+						Stderr: "timeout",
+						Outcome: responses.ResponseFunctionShellToolCallOutputOutputOutcomeUnion{
+							Type: "timeout",
+						},
+					},
+				},
+			}
+
+			block, err := shellOutputToContentBlock(item)
+			assert.NoError(t, err)
+
+			result, ok := block.ServerToolResult.Result.(*ServerToolResult)
+			assert.True(t, ok)
+			assert.Nil(t, result.Shell.Outputs[0].Outcome.Exit)
+		})
+	})
+}
+
 func TestToAssistantRoleInputItems(t *testing.T) {
 	mockey.PatchConvey("toAssistantRoleInputItems", t, func() {
 		msg := &schema.AgenticMessage{ContentBlocks: []*schema.ContentBlock{}}
@@ -75,7 +203,7 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 
 		wsCall := schema.NewContentBlock(&schema.ServerToolCall{
 			Name:      string(ServerToolNameWebSearch),
-			Arguments: &ServerToolCallArguments{WebSearch: &WebSearchArguments{ActionType: WebSearchActionSearch, Search: &WebSearchQuery{Query: "q"}}},
+			Arguments: &ServerToolCallArguments{WebSearch: &WebSearchArguments{ActionType: WebSearchActionSearch, Search: &WebSearchQuery{Queries: []string{"q"}}}},
 		})
 		setItemID(wsCall, "ws1")
 		setItemStatus(wsCall, "in_progress")
@@ -98,6 +226,8 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 		setItemID(mcpRes, "m1")
 		setItemStatus(mcpRes, "completed")
 		msg.ContentBlocks = append(msg.ContentBlocks, mcpRes)
+
+		msg = setSelfGenerated(msg)
 
 		items, err := toAssistantRoleInputItems(msg)
 		assert.NoError(t, err)
@@ -124,7 +254,7 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 		if assert.NotNil(t, gotWS) {
 			assert.Equal(t, "ws1", gotWS.ID)
 			assert.NotNil(t, gotWS.Action.OfSearch)
-			assert.Equal(t, "q", gotWS.Action.OfSearch.Query)
+			assert.Equal(t, []string{"q"}, gotWS.Action.OfSearch.Queries)
 			assert.Len(t, gotWS.Action.OfSearch.Sources, 1)
 			assert.Equal(t, "u", gotWS.Action.OfSearch.Sources[0].URL)
 		}
@@ -158,19 +288,19 @@ func TestPairMCPToolCallItems(t *testing.T) {
 }
 
 func TestPairWebServerToolCallItems(t *testing.T) {
-	mockey.PatchConvey("pairWebServerToolCallItems", t, func() {
+	mockey.PatchConvey("pairWebSearchServerToolCallItems", t, func() {
 		mockey.PatchConvey("merge_call_and_result", func() {
 			items := []responses.ResponseInputItemUnionParam{
-				{OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{ID: "ws1", Action: responses.ResponseFunctionWebSearchActionUnionParam{OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{Query: "q"}}}},
+				{OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{ID: "ws1", Action: responses.ResponseFunctionWebSearchActionUnionParam{OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{Queries: []string{"q"}}}}},
 				{OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{ID: "ws1", Action: responses.ResponseFunctionWebSearchActionUnionParam{OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{Sources: []responses.ResponseFunctionWebSearchActionSearchSourceParam{{URL: "u"}}}}}},
 			}
-			newItems, err := pairWebServerToolCallItems(items)
+			newItems, err := pairWebSearchServerToolCallItems(items)
 			assert.NoError(t, err)
 			if assert.Len(t, newItems, 1) {
 				ws := newItems[0].OfWebSearchCall
 				assert.NotNil(t, ws)
 				assert.NotNil(t, ws.Action.OfSearch)
-				assert.Equal(t, "q", ws.Action.OfSearch.Query)
+				assert.Equal(t, []string{"q"}, ws.Action.OfSearch.Queries)
 				assert.Len(t, ws.Action.OfSearch.Sources, 1)
 				assert.Equal(t, "u", ws.Action.OfSearch.Sources[0].URL)
 			}
@@ -178,7 +308,7 @@ func TestPairWebServerToolCallItems(t *testing.T) {
 
 		mockey.PatchConvey("missing_pair", func() {
 			items := []responses.ResponseInputItemUnionParam{{OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{ID: "ws1"}}}
-			_, err := pairWebServerToolCallItems(items)
+			_, err := pairWebSearchServerToolCallItems(items)
 			assert.Error(t, err)
 		})
 	})
@@ -186,11 +316,11 @@ func TestPairWebServerToolCallItems(t *testing.T) {
 
 func TestPairWebSearchAction(t *testing.T) {
 	mockey.PatchConvey("pairWebSearchAction", t, func() {
-		a := responses.ResponseFunctionWebSearchActionUnionParam{OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{Query: "q"}}
-		b := responses.ResponseFunctionWebSearchActionUnionParam{OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{Query: "q2", Sources: []responses.ResponseFunctionWebSearchActionSearchSourceParam{{URL: "u"}}}}
+		a := responses.ResponseFunctionWebSearchActionUnionParam{OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{Queries: []string{"q"}}}
+		b := responses.ResponseFunctionWebSearchActionUnionParam{OfSearch: &responses.ResponseFunctionWebSearchActionSearchParam{Queries: []string{"q2"}, Sources: []responses.ResponseFunctionWebSearchActionSearchSourceParam{{URL: "u"}}}}
 		merged := pairWebSearchAction(a, b)
 		assert.NotNil(t, merged.OfSearch)
-		assert.Equal(t, "q2", merged.OfSearch.Query)
+		assert.Equal(t, []string{"q2"}, merged.OfSearch.Queries)
 		assert.Len(t, merged.OfSearch.Sources, 1)
 		assert.Equal(t, "u", merged.OfSearch.Sources[0].URL)
 	})
@@ -398,7 +528,7 @@ func TestServerToolCallToInputItem(t *testing.T) {
 	mockey.PatchConvey("serverToolCallToInputItem", t, func() {
 		block := schema.NewContentBlock(&schema.ServerToolCall{
 			Name:      string(ServerToolNameWebSearch),
-			Arguments: &ServerToolCallArguments{WebSearch: &WebSearchArguments{ActionType: WebSearchActionSearch, Search: &WebSearchQuery{Query: "q"}}},
+			Arguments: &ServerToolCallArguments{WebSearch: &WebSearchArguments{ActionType: WebSearchActionSearch, Search: &WebSearchQuery{Queries: []string{"q"}}}},
 		})
 		setItemID(block, "ws1")
 		setItemStatus(block, "searching")
@@ -407,7 +537,7 @@ func TestServerToolCallToInputItem(t *testing.T) {
 		assert.NotNil(t, item.OfWebSearchCall)
 		assert.Equal(t, "ws1", item.OfWebSearchCall.ID)
 		assert.NotNil(t, item.OfWebSearchCall.Action.OfSearch)
-		assert.Equal(t, "q", item.OfWebSearchCall.Action.OfSearch.Query)
+		assert.Equal(t, []string{"q"}, item.OfWebSearchCall.Action.OfSearch.Queries)
 	})
 }
 
@@ -801,6 +931,905 @@ func TestEnsureDataURL(t *testing.T) {
 			u, err := ensureDataURL("abc", "text/plain")
 			assert.NoError(t, err)
 			assert.Equal(t, "data:text/plain;base64,abc", u)
+		})
+	})
+}
+
+func TestFileSearchToolCallToInputItem(t *testing.T) {
+	mockey.PatchConvey("fileSearchToolCallToInputItem", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:      string(ServerToolNameFileSearch),
+			Arguments: &ServerToolCallArguments{FileSearch: &FileSearchArguments{Queries: []string{"query1", "query2"}}},
+		})
+		setItemID(block, "fs1")
+		setItemStatus(block, "searching")
+
+		item, err := fileSearchToolCallToInputItem(&FileSearchArguments{Queries: []string{"query1", "query2"}}, block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfFileSearchCall)
+		assert.Equal(t, "fs1", item.OfFileSearchCall.ID)
+		assert.Equal(t, responses.ResponseFileSearchToolCallStatus("searching"), item.OfFileSearchCall.Status)
+		assert.Equal(t, []string{"query1", "query2"}, item.OfFileSearchCall.Queries)
+	})
+}
+
+func TestFileSearchToolResultToInputItem(t *testing.T) {
+	mockey.PatchConvey("fileSearchToolResultToInputItem", t, func() {
+		mockey.PatchConvey("with_results_and_attributes", func() {
+			strVal := "test_string"
+			floatVal := 0.95
+			boolVal := true
+			result := &FileSearchResult{
+				Results: []*FileSearchResultItem{
+					{
+						FileID:   "file1",
+						FileName: "test.txt",
+						Score:    0.85,
+						Text:     "matching text",
+						Attributes: map[string]*FileSearchAttribute{
+							"str_attr":   {OfString: &strVal},
+							"float_attr": {OfFloat: &floatVal},
+							"bool_attr":  {OfBool: &boolVal},
+						},
+					},
+				},
+			}
+			block := schema.NewContentBlock(&schema.ServerToolResult{
+				Name:   string(ServerToolNameFileSearch),
+				Result: &ServerToolResult{FileSearch: result},
+			})
+			setItemID(block, "fs1")
+			setItemStatus(block, "completed")
+
+			item, err := fileSearchToolResultToInputItem(result, block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfFileSearchCall)
+			assert.Equal(t, "fs1", item.OfFileSearchCall.ID)
+			assert.Equal(t, responses.ResponseFileSearchToolCallStatus("completed"), item.OfFileSearchCall.Status)
+			if assert.Len(t, item.OfFileSearchCall.Results, 1) {
+				r := item.OfFileSearchCall.Results[0]
+				assert.True(t, r.FileID.Valid())
+				assert.Equal(t, "file1", r.FileID.Value)
+				assert.True(t, r.Filename.Valid())
+				assert.Equal(t, "test.txt", r.Filename.Value)
+				assert.Equal(t, 0.85, r.Score.Value)
+				assert.True(t, r.Text.Valid())
+				assert.Equal(t, "matching text", r.Text.Value)
+				assert.Len(t, r.Attributes, 3)
+			}
+		})
+
+		mockey.PatchConvey("empty_results", func() {
+			result := &FileSearchResult{Results: []*FileSearchResultItem{}}
+			block := schema.NewContentBlock(&schema.ServerToolResult{
+				Name:   string(ServerToolNameFileSearch),
+				Result: &ServerToolResult{FileSearch: result},
+			})
+			setItemID(block, "fs2")
+			setItemStatus(block, "completed")
+
+			item, err := fileSearchToolResultToInputItem(result, block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfFileSearchCall)
+			assert.Len(t, item.OfFileSearchCall.Results, 0)
+		})
+	})
+}
+
+func TestServerToolCallToInputItemFileSearch(t *testing.T) {
+	mockey.PatchConvey("serverToolCallToInputItem_fileSearch", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:      string(ServerToolNameFileSearch),
+			Arguments: &ServerToolCallArguments{FileSearch: &FileSearchArguments{Queries: []string{"search query"}}},
+		})
+		setItemID(block, "fs1")
+		setItemStatus(block, "in_progress")
+
+		item, err := serverToolCallToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfFileSearchCall)
+		assert.Equal(t, "fs1", item.OfFileSearchCall.ID)
+		assert.Equal(t, []string{"search query"}, item.OfFileSearchCall.Queries)
+	})
+}
+
+func TestServerToolResultToInputItemFileSearch(t *testing.T) {
+	mockey.PatchConvey("serverToolResultToInputItem_fileSearch", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolResult{
+			Name: string(ServerToolNameFileSearch),
+			Result: &ServerToolResult{FileSearch: &FileSearchResult{
+				Results: []*FileSearchResultItem{
+					{FileID: "f1", FileName: "doc.pdf", Score: 0.9, Text: "content"},
+				},
+			}},
+		})
+		setItemID(block, "fs1")
+		setItemStatus(block, "completed")
+
+		item, err := serverToolResultToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfFileSearchCall)
+		assert.Equal(t, "fs1", item.OfFileSearchCall.ID)
+		if assert.Len(t, item.OfFileSearchCall.Results, 1) {
+			assert.True(t, item.OfFileSearchCall.Results[0].FileID.Valid())
+			assert.Equal(t, "f1", item.OfFileSearchCall.Results[0].FileID.Value)
+		}
+	})
+}
+
+func TestFileSearchToContentBlocks(t *testing.T) {
+	mockey.PatchConvey("fileSearchToContentBlocks", t, func() {
+		mockey.PatchConvey("with_results", func() {
+			item := responses.ResponseFileSearchToolCall{
+				ID:      "fs1",
+				Status:  "completed",
+				Queries: []string{"query1"},
+				Results: []responses.ResponseFileSearchToolCallResult{
+					{
+						FileID:   "file1",
+						Filename: "test.txt",
+						Score:    0.85,
+						Text:     "matched text",
+						Attributes: map[string]responses.ResponseFileSearchToolCallResultAttributeUnion{
+							"attr1": {OfString: "val1"},
+						},
+					},
+				},
+			}
+
+			blocks, err := fileSearchToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+
+			callBlock := blocks[0]
+			id, ok := getItemID(callBlock)
+			assert.True(t, ok)
+			assert.Equal(t, "fs1", id)
+			assert.NotNil(t, callBlock.ServerToolCall)
+			assert.Equal(t, string(ServerToolNameFileSearch), callBlock.ServerToolCall.Name)
+
+			resBlock := blocks[1]
+			id, ok = getItemID(resBlock)
+			assert.True(t, ok)
+			assert.Equal(t, "fs1", id)
+			assert.NotNil(t, resBlock.ServerToolResult)
+			assert.Equal(t, string(ServerToolNameFileSearch), resBlock.ServerToolResult.Name)
+		})
+
+		mockey.PatchConvey("empty_results", func() {
+			item := responses.ResponseFileSearchToolCall{
+				ID:      "fs2",
+				Status:  "completed",
+				Queries: []string{"query2"},
+				Results: []responses.ResponseFileSearchToolCallResult{},
+			}
+
+			blocks, err := fileSearchToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+		})
+
+		mockey.PatchConvey("with_float_attribute", func() {
+			item := responses.ResponseFileSearchToolCall{
+				ID:      "fs3",
+				Status:  "completed",
+				Queries: []string{"q"},
+				Results: []responses.ResponseFileSearchToolCallResult{
+					{
+						FileID: "f1",
+						Attributes: map[string]responses.ResponseFileSearchToolCallResultAttributeUnion{
+							"score_attr": {OfFloat: 0.95},
+						},
+					},
+				},
+			}
+
+			blocks, err := fileSearchToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+		})
+
+		mockey.PatchConvey("with_bool_attribute", func() {
+			item := responses.ResponseFileSearchToolCall{
+				ID:      "fs4",
+				Status:  "completed",
+				Queries: []string{"q"},
+				Results: []responses.ResponseFileSearchToolCallResult{
+					{
+						FileID: "f1",
+						Attributes: map[string]responses.ResponseFileSearchToolCallResultAttributeUnion{
+							"is_valid": {OfBool: true},
+						},
+					},
+				},
+			}
+
+			blocks, err := fileSearchToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+		})
+	})
+}
+
+func TestCodeInterpreterToContentBlocks(t *testing.T) {
+	mockey.PatchConvey("codeInterpreterToContentBlocks", t, func() {
+		mockey.PatchConvey("with_logs_output", func() {
+			item := responses.ResponseCodeInterpreterToolCall{
+				ID:          "ci1",
+				Status:      "completed",
+				Code:        "print('hello world')",
+				ContainerID: "container123",
+				Outputs: []responses.ResponseCodeInterpreterToolCallOutputUnion{
+					{
+						Type: "logs",
+						Logs: "print('hello world')",
+					},
+				},
+			}
+
+			blocks, err := codeInterpreterToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+
+			callBlock := blocks[0]
+			id, ok := getItemID(callBlock)
+			assert.True(t, ok)
+			assert.Equal(t, "ci1", id)
+			assert.NotNil(t, callBlock.ServerToolCall)
+			assert.Equal(t, string(ServerToolNameCodeInterpreter), callBlock.ServerToolCall.Name)
+
+			resBlock := blocks[1]
+			id, ok = getItemID(resBlock)
+			assert.True(t, ok)
+			assert.Equal(t, "ci1", id)
+			assert.NotNil(t, resBlock.ServerToolResult)
+			assert.Equal(t, string(ServerToolNameCodeInterpreter), resBlock.ServerToolResult.Name)
+		})
+
+		mockey.PatchConvey("with_image_output", func() {
+			item := responses.ResponseCodeInterpreterToolCall{
+				ID:          "ci2",
+				Status:      "completed",
+				Code:        "import matplotlib.pyplot as plt; plt.plot([1,2,3]); plt.show()",
+				ContainerID: "container456",
+				Outputs: []responses.ResponseCodeInterpreterToolCallOutputUnion{
+					{
+						Type: "image",
+						URL:  "https://example.com/image.png",
+					},
+				},
+			}
+
+			blocks, err := codeInterpreterToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+		})
+
+		mockey.PatchConvey("empty_outputs", func() {
+			item := responses.ResponseCodeInterpreterToolCall{
+				ID:          "ci3",
+				Status:      "completed",
+				Code:        "x = 1 + 1",
+				ContainerID: "container789",
+				Outputs:     []responses.ResponseCodeInterpreterToolCallOutputUnion{},
+			}
+
+			blocks, err := codeInterpreterToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+
+			resBlock := blocks[1]
+			result, ok := resBlock.ServerToolResult.Result.(*ServerToolResult)
+			assert.True(t, ok)
+			assert.NotNil(t, result.CodeInterpreter)
+			assert.Equal(t, "x = 1 + 1", result.CodeInterpreter.Code)
+			assert.Equal(t, "container789", result.CodeInterpreter.ContainerID)
+			assert.Empty(t, result.CodeInterpreter.Outputs)
+		})
+	})
+}
+
+func TestImageGenerationToContentBlocks(t *testing.T) {
+	mockey.PatchConvey("imageGenerationToContentBlocks", t, func() {
+		mockey.PatchConvey("with_result", func() {
+			item := responses.ResponseOutputItemImageGenerationCall{
+				ID:     "ig1",
+				Status: "completed",
+				Result: "base64_image_data_here",
+			}
+
+			blocks, err := imageGenerationToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+
+			callBlock := blocks[0]
+			id, ok := getItemID(callBlock)
+			assert.True(t, ok)
+			assert.Equal(t, "ig1", id)
+			assert.NotNil(t, callBlock.ServerToolCall)
+			assert.Equal(t, string(ServerToolNameImageGeneration), callBlock.ServerToolCall.Name)
+
+			resBlock := blocks[1]
+			id, ok = getItemID(resBlock)
+			assert.True(t, ok)
+			assert.Equal(t, "ig1", id)
+			assert.NotNil(t, resBlock.ServerToolResult)
+			assert.Equal(t, string(ServerToolNameImageGeneration), resBlock.ServerToolResult.Name)
+
+			result, ok := resBlock.ServerToolResult.Result.(*ServerToolResult)
+			assert.True(t, ok)
+			assert.NotNil(t, result.ImageGeneration)
+			assert.Equal(t, "base64_image_data_here", result.ImageGeneration.ImageBase64)
+		})
+
+		mockey.PatchConvey("in_progress_status", func() {
+			item := responses.ResponseOutputItemImageGenerationCall{
+				ID:     "ig2",
+				Status: "in_progress",
+				Result: "",
+			}
+
+			blocks, err := imageGenerationToContentBlocks(item)
+			assert.NoError(t, err)
+			assert.Len(t, blocks, 2)
+
+			status, ok := GetItemStatus(blocks[0])
+			assert.True(t, ok)
+			assert.Equal(t, "in_progress", status)
+		})
+	})
+}
+
+func TestCodeInterpreterToolCallToInputItem(t *testing.T) {
+	mockey.PatchConvey("codeInterpreterToolCallToInputItem", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:      string(ServerToolNameCodeInterpreter),
+			Arguments: &ServerToolCallArguments{CodeInterpreter: &CodeInterpreterArguments{}},
+		})
+		setItemID(block, "ci1")
+		setItemStatus(block, "completed")
+
+		item, err := codeInterpreterToolCallToInputItem(&CodeInterpreterArguments{}, block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfCodeInterpreterCall)
+		assert.Equal(t, "ci1", item.OfCodeInterpreterCall.ID)
+		assert.Equal(t, responses.ResponseCodeInterpreterToolCallStatus("completed"), item.OfCodeInterpreterCall.Status)
+	})
+}
+
+func TestCodeInterpreterToolResultToInputItem(t *testing.T) {
+	mockey.PatchConvey("codeInterpreterToolResultToInputItem", t, func() {
+		mockey.PatchConvey("with_logs_and_image_outputs", func() {
+			result := &CodeInterpreterResult{
+				Code:        "print('hello')",
+				ContainerID: "ctr1",
+				Outputs: []*CodeInterpreterOutput{
+					{
+						Type: CodeInterpreterOutputTypeLogs,
+						Logs: &CodeInterpreterOutputLogs{Logs: "hello"},
+					},
+					{
+						Type:  CodeInterpreterOutputTypeImage,
+						Image: &CodeInterpreterOutputImage{URL: "https://example.com/img.png"},
+					},
+				},
+			}
+
+			block := schema.NewContentBlock(&schema.ServerToolResult{
+				Name:   string(ServerToolNameCodeInterpreter),
+				Result: &ServerToolResult{CodeInterpreter: result},
+			})
+			setItemID(block, "ci1")
+			setItemStatus(block, "completed")
+
+			item, err := codeInterpreterToolResultToInputItem(result, block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfCodeInterpreterCall)
+			assert.Equal(t, "ci1", item.OfCodeInterpreterCall.ID)
+			assert.Equal(t, "ctr1", item.OfCodeInterpreterCall.ContainerID)
+			assert.True(t, item.OfCodeInterpreterCall.Code.Valid())
+			assert.Equal(t, "print('hello')", item.OfCodeInterpreterCall.Code.Value)
+			assert.Len(t, item.OfCodeInterpreterCall.Outputs, 2)
+			assert.NotNil(t, item.OfCodeInterpreterCall.Outputs[0].OfLogs)
+			assert.Equal(t, "hello", item.OfCodeInterpreterCall.Outputs[0].OfLogs.Logs)
+			assert.NotNil(t, item.OfCodeInterpreterCall.Outputs[1].OfImage)
+			assert.Equal(t, "https://example.com/img.png", item.OfCodeInterpreterCall.Outputs[1].OfImage.URL)
+		})
+
+		mockey.PatchConvey("unknown_output_type", func() {
+			result := &CodeInterpreterResult{
+				Outputs: []*CodeInterpreterOutput{
+					{Type: "unknown_type"},
+				},
+			}
+			block := schema.NewContentBlock(&schema.ServerToolResult{
+				Name:   string(ServerToolNameCodeInterpreter),
+				Result: &ServerToolResult{CodeInterpreter: result},
+			})
+			_, err := codeInterpreterToolResultToInputItem(result, block)
+			assert.Error(t, err)
+		})
+	})
+}
+
+func TestImageGenerationToolCallToInputItem(t *testing.T) {
+	mockey.PatchConvey("imageGenerationToolCallToInputItem", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:      string(ServerToolNameImageGeneration),
+			Arguments: &ServerToolCallArguments{ImageGeneration: &ImageGenerationArguments{}},
+		})
+		setItemID(block, "ig1")
+		setItemStatus(block, "in_progress")
+
+		item, err := imageGenerationToolCallToInputItem(&ImageGenerationArguments{}, block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfImageGenerationCall)
+		assert.Equal(t, "ig1", item.OfImageGenerationCall.ID)
+		assert.Equal(t, "in_progress", item.OfImageGenerationCall.Status)
+	})
+}
+
+func TestImageGenerationToolResultToInputItem(t *testing.T) {
+	mockey.PatchConvey("imageGenerationToolResultToInputItem", t, func() {
+		result := &ImageGenerationResult{ImageBase64: "abc123base64"}
+		block := schema.NewContentBlock(&schema.ServerToolResult{
+			Name:   string(ServerToolNameImageGeneration),
+			Result: &ServerToolResult{ImageGeneration: result},
+		})
+		setItemID(block, "ig1")
+		setItemStatus(block, "completed")
+
+		item, err := imageGenerationToolResultToInputItem(result, block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfImageGenerationCall)
+		assert.Equal(t, "ig1", item.OfImageGenerationCall.ID)
+		assert.Equal(t, "completed", item.OfImageGenerationCall.Status)
+		assert.True(t, item.OfImageGenerationCall.Result.Valid())
+		assert.Equal(t, "abc123base64", item.OfImageGenerationCall.Result.Value)
+	})
+}
+
+func TestShellToolCallToInputItem(t *testing.T) {
+	mockey.PatchConvey("shellToolCallToInputItem", t, func() {
+		mockey.PatchConvey("local_environment_with_skills", func() {
+			args := &ShellArguments{
+				Action: &ShellAction{
+					Commands:        []string{"ls -la", "pwd"},
+					TimeoutMs:       30000,
+					MaxOutputLength: 1024,
+				},
+				Environment: &ShellEnvironment{
+					Type: ShellEnvironmentTypeLocal,
+					Local: &ShellEnvironmentLocal{
+						Skills: []*ShellEnvironmentLocalSkill{
+							{Name: "go", Description: "Go language", Path: "/usr/local/go"},
+						},
+					},
+				},
+				CreatedBy: "user1",
+			}
+			block := schema.NewContentBlock(&schema.ServerToolCall{
+				Name:      string(ServerToolNameShell),
+				CallID:    "call_1",
+				Arguments: &ServerToolCallArguments{Shell: args},
+			})
+			setItemID(block, "sh1")
+			setItemStatus(block, "completed")
+
+			item, err := shellToolCallToInputItem(args, block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfShellCall)
+			assert.True(t, item.OfShellCall.ID.Valid())
+			assert.Equal(t, "sh1", item.OfShellCall.ID.Value)
+			assert.Equal(t, "call_1", item.OfShellCall.CallID)
+			assert.Equal(t, "completed", item.OfShellCall.Status)
+			assert.Equal(t, []string{"ls -la", "pwd"}, item.OfShellCall.Action.Commands)
+			assert.True(t, item.OfShellCall.Action.TimeoutMs.Valid())
+			assert.Equal(t, int64(30000), item.OfShellCall.Action.TimeoutMs.Value)
+			assert.True(t, item.OfShellCall.Action.MaxOutputLength.Valid())
+			assert.Equal(t, int64(1024), item.OfShellCall.Action.MaxOutputLength.Value)
+			assert.NotNil(t, item.OfShellCall.Environment.OfLocal)
+			assert.Len(t, item.OfShellCall.Environment.OfLocal.Skills, 1)
+			assert.Equal(t, "go", item.OfShellCall.Environment.OfLocal.Skills[0].Name)
+		})
+
+		mockey.PatchConvey("container_environment", func() {
+			args := &ShellArguments{
+				Action: &ShellAction{
+					Commands: []string{"echo hello"},
+				},
+				Environment: &ShellEnvironment{
+					Type: ShellEnvironmentTypeContainerReference,
+					ContainerReference: &ShellEnvironmentContainerReference{
+						ContainerID: "ctr123",
+					},
+				},
+			}
+			block := schema.NewContentBlock(&schema.ServerToolCall{
+				Name:      string(ServerToolNameShell),
+				CallID:    "call_2",
+				Arguments: &ServerToolCallArguments{Shell: args},
+			})
+			setItemID(block, "sh2")
+
+			item, err := shellToolCallToInputItem(args, block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfShellCall)
+			assert.NotNil(t, item.OfShellCall.Environment.OfContainerReference)
+			assert.Equal(t, "ctr123", item.OfShellCall.Environment.OfContainerReference.ContainerID)
+		})
+
+		mockey.PatchConvey("unknown_environment_type", func() {
+			args := &ShellArguments{
+				Action: &ShellAction{Commands: []string{"echo"}},
+				Environment: &ShellEnvironment{
+					Type: "unknown",
+				},
+			}
+			block := schema.NewContentBlock(&schema.ServerToolCall{
+				Name:      string(ServerToolNameShell),
+				CallID:    "call_3",
+				Arguments: &ServerToolCallArguments{Shell: args},
+			})
+			_, err := shellToolCallToInputItem(args, block)
+			assert.Error(t, err)
+		})
+	})
+}
+
+func TestShellToolResultToInputItem(t *testing.T) {
+	mockey.PatchConvey("shellToolResultToInputItem", t, func() {
+		mockey.PatchConvey("with_exit_outcome", func() {
+			result := &ShellResult{
+				MaxOutputLength: 2048,
+				CreatedBy:       "user1",
+				Outputs: []*ShellOutputItem{
+					{
+						Stdout: "file.txt",
+						Stderr: "",
+						Outcome: &ShellOutputOutcome{
+							Type: ShellOutputOutcomeTypeExit,
+							Exit: &ShellOutputOutcomeExit{ExitCode: 0},
+						},
+					},
+				},
+			}
+			block := schema.NewContentBlock(&schema.ServerToolResult{
+				Name:   string(ServerToolNameShell),
+				CallID: "call_1",
+				Result: &ServerToolResult{Shell: result},
+			})
+			setItemID(block, "sh1")
+			setItemStatus(block, "completed")
+
+			item, err := shellToolResultToInputItem(result, block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfShellCallOutput)
+			assert.True(t, item.OfShellCallOutput.ID.Valid())
+			assert.Equal(t, "sh1", item.OfShellCallOutput.ID.Value)
+			assert.Equal(t, "call_1", item.OfShellCallOutput.CallID)
+			assert.Equal(t, "completed", item.OfShellCallOutput.Status)
+			assert.True(t, item.OfShellCallOutput.MaxOutputLength.Valid())
+			assert.Equal(t, int64(2048), item.OfShellCallOutput.MaxOutputLength.Value)
+			assert.Len(t, item.OfShellCallOutput.Output, 1)
+			assert.Equal(t, "file.txt", item.OfShellCallOutput.Output[0].Stdout)
+			assert.NotNil(t, item.OfShellCallOutput.Output[0].Outcome.OfExit)
+			assert.Equal(t, int64(0), item.OfShellCallOutput.Output[0].Outcome.OfExit.ExitCode)
+		})
+
+		mockey.PatchConvey("with_timeout_outcome", func() {
+			result := &ShellResult{
+				Outputs: []*ShellOutputItem{
+					{
+						Stdout: "partial",
+						Stderr: "timed out",
+						Outcome: &ShellOutputOutcome{
+							Type: ShellOutputOutcomeTypeTimeout,
+						},
+					},
+				},
+			}
+			block := schema.NewContentBlock(&schema.ServerToolResult{
+				Name:   string(ServerToolNameShell),
+				CallID: "call_2",
+				Result: &ServerToolResult{Shell: result},
+			})
+			setItemID(block, "sh2")
+
+			item, err := shellToolResultToInputItem(result, block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfShellCallOutput)
+			assert.Len(t, item.OfShellCallOutput.Output, 1)
+			assert.NotNil(t, item.OfShellCallOutput.Output[0].Outcome.OfTimeout)
+		})
+
+		mockey.PatchConvey("unknown_outcome_type", func() {
+			result := &ShellResult{
+				Outputs: []*ShellOutputItem{
+					{
+						Outcome: &ShellOutputOutcome{Type: "unknown"},
+					},
+				},
+			}
+			block := schema.NewContentBlock(&schema.ServerToolResult{
+				Name:   string(ServerToolNameShell),
+				CallID: "call_3",
+				Result: &ServerToolResult{Shell: result},
+			})
+			_, err := shellToolResultToInputItem(result, block)
+			assert.Error(t, err)
+		})
+	})
+}
+
+func TestServerToolCallToInputItem_CodeInterpreter(t *testing.T) {
+	mockey.PatchConvey("serverToolCallToInputItem_code_interpreter", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:      string(ServerToolNameCodeInterpreter),
+			Arguments: &ServerToolCallArguments{CodeInterpreter: &CodeInterpreterArguments{}},
+		})
+		setItemID(block, "ci1")
+		item, err := serverToolCallToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfCodeInterpreterCall)
+		assert.Equal(t, "ci1", item.OfCodeInterpreterCall.ID)
+	})
+}
+
+func TestServerToolCallToInputItem_ImageGeneration(t *testing.T) {
+	mockey.PatchConvey("serverToolCallToInputItem_image_generation", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:      string(ServerToolNameImageGeneration),
+			Arguments: &ServerToolCallArguments{ImageGeneration: &ImageGenerationArguments{}},
+		})
+		setItemID(block, "ig1")
+		item, err := serverToolCallToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfImageGenerationCall)
+		assert.Equal(t, "ig1", item.OfImageGenerationCall.ID)
+	})
+}
+
+func TestServerToolCallToInputItem_Shell(t *testing.T) {
+	mockey.PatchConvey("serverToolCallToInputItem_shell", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:   string(ServerToolNameShell),
+			CallID: "call_sh",
+			Arguments: &ServerToolCallArguments{Shell: &ShellArguments{
+				Action: &ShellAction{Commands: []string{"ls"}},
+			}},
+		})
+		setItemID(block, "sh1")
+		item, err := serverToolCallToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfShellCall)
+		assert.Equal(t, "call_sh", item.OfShellCall.CallID)
+	})
+}
+
+func TestServerToolCallToInputItem_Nil(t *testing.T) {
+	mockey.PatchConvey("serverToolCallToInputItem_nil", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			Name:      string(ServerToolNameCodeInterpreter),
+			Arguments: &ServerToolCallArguments{},
+		})
+		_, err := serverToolCallToInputItem(block)
+		assert.Error(t, err)
+	})
+}
+
+func TestServerToolResultToInputItem_CodeInterpreter(t *testing.T) {
+	mockey.PatchConvey("serverToolResultToInputItem_code_interpreter", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolResult{
+			Name: string(ServerToolNameCodeInterpreter),
+			Result: &ServerToolResult{CodeInterpreter: &CodeInterpreterResult{
+				Code:        "x = 1",
+				ContainerID: "ctr1",
+			}},
+		})
+		setItemID(block, "ci1")
+		setItemStatus(block, "completed")
+		item, err := serverToolResultToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfCodeInterpreterCall)
+		assert.Equal(t, "ci1", item.OfCodeInterpreterCall.ID)
+		assert.Equal(t, "ctr1", item.OfCodeInterpreterCall.ContainerID)
+	})
+}
+
+func TestServerToolResultToInputItem_ImageGeneration(t *testing.T) {
+	mockey.PatchConvey("serverToolResultToInputItem_image_generation", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolResult{
+			Name: string(ServerToolNameImageGeneration),
+			Result: &ServerToolResult{ImageGeneration: &ImageGenerationResult{
+				ImageBase64: "abc",
+			}},
+		})
+		setItemID(block, "ig1")
+		item, err := serverToolResultToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfImageGenerationCall)
+		assert.True(t, item.OfImageGenerationCall.Result.Valid())
+		assert.Equal(t, "abc", item.OfImageGenerationCall.Result.Value)
+	})
+}
+
+func TestServerToolResultToInputItem_Shell(t *testing.T) {
+	mockey.PatchConvey("serverToolResultToInputItem_shell", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolResult{
+			Name:   string(ServerToolNameShell),
+			CallID: "call_sh",
+			Result: &ServerToolResult{Shell: &ShellResult{
+				Outputs: []*ShellOutputItem{
+					{Stdout: "ok"},
+				},
+			}},
+		})
+		setItemID(block, "sh1")
+		item, err := serverToolResultToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfShellCallOutput)
+		assert.Equal(t, "call_sh", item.OfShellCallOutput.CallID)
+		assert.Len(t, item.OfShellCallOutput.Output, 1)
+		assert.Equal(t, "ok", item.OfShellCallOutput.Output[0].Stdout)
+	})
+}
+
+func TestServerToolResultToInputItem_Nil(t *testing.T) {
+	mockey.PatchConvey("serverToolResultToInputItem_nil", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolResult{
+			Name:   string(ServerToolNameCodeInterpreter),
+			Result: &ServerToolResult{},
+		})
+		_, err := serverToolResultToInputItem(block)
+		assert.Error(t, err)
+	})
+}
+
+func TestPairFileSearchToolCallItems(t *testing.T) {
+	mockey.PatchConvey("pairFileSearchToolCallItems", t, func() {
+		mockey.PatchConvey("merge_call_and_result", func() {
+			call := responses.ResponseInputItemUnionParam{
+				OfFileSearchCall: &responses.ResponseFileSearchToolCallParam{
+					ID:      "fs1",
+					Status:  "searching",
+					Queries: []string{"query1"},
+				},
+			}
+			result := responses.ResponseInputItemUnionParam{
+				OfFileSearchCall: &responses.ResponseFileSearchToolCallParam{
+					ID:     "fs1",
+					Status: "completed",
+					Results: []responses.ResponseFileSearchToolCallResultParam{
+						{
+							Filename: param.NewOpt("file.txt"),
+							Score:    param.NewOpt(0.9),
+							Text:     param.NewOpt("content"),
+						},
+					},
+				},
+			}
+			other := responses.ResponseInputItemUnionParam{
+				OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{ID: "ws1"},
+			}
+
+			items, err := pairFileSearchToolCallItems([]responses.ResponseInputItemUnionParam{call, other, result})
+			assert.NoError(t, err)
+			assert.Len(t, items, 2)
+
+			fs := items[0].OfFileSearchCall
+			assert.NotNil(t, fs)
+			assert.Equal(t, "fs1", fs.ID)
+			assert.Equal(t, []string{"query1"}, fs.Queries)
+			assert.Len(t, fs.Results, 1)
+
+			assert.NotNil(t, items[1].OfWebSearchCall)
+		})
+
+		mockey.PatchConvey("unpaired_error", func() {
+			call := responses.ResponseInputItemUnionParam{
+				OfFileSearchCall: &responses.ResponseFileSearchToolCallParam{
+					ID: "fs1",
+				},
+			}
+			_, err := pairFileSearchToolCallItems([]responses.ResponseInputItemUnionParam{call})
+			assert.Error(t, err)
+		})
+	})
+}
+
+func TestPairCodeInterpreterToolCallItems(t *testing.T) {
+	mockey.PatchConvey("pairCodeInterpreterToolCallItems", t, func() {
+		mockey.PatchConvey("merge_call_and_result", func() {
+			call := responses.ResponseInputItemUnionParam{
+				OfCodeInterpreterCall: &responses.ResponseCodeInterpreterToolCallParam{
+					ID: "ci1",
+				},
+			}
+			result := responses.ResponseInputItemUnionParam{
+				OfCodeInterpreterCall: &responses.ResponseCodeInterpreterToolCallParam{
+					ID:          "ci1",
+					Status:      "completed",
+					ContainerID: "ctr1",
+					Code:        param.NewOpt("print('hi')"),
+					Outputs: []responses.ResponseCodeInterpreterToolCallOutputUnionParam{
+						{OfLogs: &responses.ResponseCodeInterpreterToolCallOutputLogsParam{Logs: "hi"}},
+					},
+				},
+			}
+			other := responses.ResponseInputItemUnionParam{
+				OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{ID: "ws1"},
+			}
+
+			items, err := pairCodeInterpreterToolCallItems([]responses.ResponseInputItemUnionParam{call, other, result})
+			assert.NoError(t, err)
+			assert.Len(t, items, 2)
+
+			ci := items[0].OfCodeInterpreterCall
+			assert.NotNil(t, ci)
+			assert.Equal(t, "ci1", ci.ID)
+			assert.Equal(t, "ctr1", ci.ContainerID)
+			assert.True(t, ci.Code.Valid())
+			assert.Equal(t, "print('hi')", ci.Code.Value)
+			assert.Len(t, ci.Outputs, 1)
+			assert.Equal(t, responses.ResponseCodeInterpreterToolCallStatus("completed"), ci.Status)
+
+			assert.NotNil(t, items[1].OfWebSearchCall)
+		})
+
+		mockey.PatchConvey("unpaired_error", func() {
+			call := responses.ResponseInputItemUnionParam{
+				OfCodeInterpreterCall: &responses.ResponseCodeInterpreterToolCallParam{
+					ID: "ci1",
+				},
+			}
+			_, err := pairCodeInterpreterToolCallItems([]responses.ResponseInputItemUnionParam{call})
+			assert.Error(t, err)
+		})
+	})
+}
+
+func TestPairImageGenerationToolCallItems(t *testing.T) {
+	mockey.PatchConvey("pairImageGenerationToolCallItems", t, func() {
+		mockey.PatchConvey("merge_call_and_result", func() {
+			call := responses.ResponseInputItemUnionParam{
+				OfImageGenerationCall: &responses.ResponseInputItemImageGenerationCallParam{
+					ID: "ig1",
+				},
+			}
+			result := responses.ResponseInputItemUnionParam{
+				OfImageGenerationCall: &responses.ResponseInputItemImageGenerationCallParam{
+					ID:     "ig1",
+					Status: "completed",
+					Result: param.NewOpt("base64data"),
+				},
+			}
+			other := responses.ResponseInputItemUnionParam{
+				OfWebSearchCall: &responses.ResponseFunctionWebSearchParam{ID: "ws1"},
+			}
+
+			items, err := pairImageGenerationToolCallItems([]responses.ResponseInputItemUnionParam{call, other, result})
+			assert.NoError(t, err)
+			assert.Len(t, items, 2)
+
+			ig := items[0].OfImageGenerationCall
+			assert.NotNil(t, ig)
+			assert.Equal(t, "ig1", ig.ID)
+			assert.Equal(t, "completed", ig.Status)
+			assert.True(t, ig.Result.Valid())
+			assert.Equal(t, "base64data", ig.Result.Value)
+
+			assert.NotNil(t, items[1].OfWebSearchCall)
+		})
+
+		mockey.PatchConvey("unpaired_error", func() {
+			call := responses.ResponseInputItemUnionParam{
+				OfImageGenerationCall: &responses.ResponseInputItemImageGenerationCallParam{
+					ID: "ig1",
+				},
+			}
+			_, err := pairImageGenerationToolCallItems([]responses.ResponseInputItemUnionParam{call})
+			assert.Error(t, err)
 		})
 	})
 }

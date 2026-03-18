@@ -184,10 +184,10 @@ type Config struct {
 	// 可选。
 	MCPTools []*responses.ToolMcpParam
 
-	// CustomHeader 指定 API 请求中包含的自定义 HTTP 标头。
-	// CustomHeader 允许传递额外的元数据或身份验证信息。
+	// CustomHeaders 指定 API 请求中包含的自定义 HTTP 标头。
+	// CustomHeaders 允许传递额外的元数据或身份验证信息。
 	// 可选。
-	CustomHeader map[string]string
+	CustomHeaders map[string]string
 
 	// ExtraFields 指定将直接添加到 HTTP 请求体的额外字段。
 	// 这允许支持尚未显式支持的供应商特定或未来参数。

@@ -45,10 +45,11 @@ func setItemID(block *schema.ContentBlock, itemID string) {
 
 func getItemID(block *schema.ContentBlock) (string, bool) {
 	itemID, ok := getBlockExtraValue[blockExtraItemID](block, itemIDKey)
-	if !ok {
-		return "", false
+	if ok {
+		return string(itemID), true
 	}
-	return string(itemID), true
+	itemIDStr, ok := getBlockExtraValue[string](block, itemIDKey)
+	return itemIDStr, ok
 }
 
 func setItemStatus(block *schema.ContentBlock, status string) {
@@ -57,10 +58,11 @@ func setItemStatus(block *schema.ContentBlock, status string) {
 
 func GetItemStatus(block *schema.ContentBlock) (string, bool) {
 	itemStatus, ok := getBlockExtraValue[blockExtraItemStatus](block, itemStatusKey)
-	if !ok {
-		return "", false
+	if ok {
+		return string(itemStatus), true
 	}
-	return string(itemStatus), true
+	itemStatusStr, ok := getBlockExtraValue[string](block, itemStatusKey)
+	return itemStatusStr, ok
 }
 
 func setBlockExtraValue[T any](block *schema.ContentBlock, key string, value T) {
