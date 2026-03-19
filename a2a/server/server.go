@@ -591,9 +591,18 @@ func (r *streamResponseWriter) Write(p models.ResponseEvent) (err error) {
 	(&p).EnsureRequiredFields()
 	chunk := wrapSendMessageStreamingResponseUnion(p, r.taskID, r.contextID)
 
-	err = r.s.queue.Push(r.ctx, r.taskID, chunk, nil)
-	if err != nil {
-		return fmt.Errorf("failed to push chunk to queue: %s", err)
+	if oq, ok := r.s.queue.(OffsetEventQueue); ok {
+		var offset int64
+		offset, err = oq.PushWithOffset(r.ctx, r.taskID, chunk, nil)
+		if err != nil {
+			return fmt.Errorf("failed to push chunk to queue: %s", err)
+		}
+		setStreamOffset(chunk, offset)
+	} else {
+		err = r.s.queue.Push(r.ctx, r.taskID, chunk, nil)
+		if err != nil {
+			return fmt.Errorf("failed to push chunk to queue: %s", err)
+		}
 	}
 
 	if r.s.pushNotifier != nil {
@@ -617,6 +626,32 @@ func (r *streamResponseWriter) Write(p models.ResponseEvent) (err error) {
 func (s *A2AServer) resubscribeTask(ctx context.Context, input *models.TaskIDParams, writer models.ResponseWriter) error {
 	// events in queue can only be read once, so if multi clients subscribe one task, the events clients received will be incompleted.
 	defer writer.Close()
+	if input.StartOffset != nil {
+		if oq, ok := s.queue.(OffsetEventQueue); ok {
+			startOffset := *input.StartOffset
+			if startOffset < 0 {
+				startOffset = 0
+			}
+			for {
+				resp, taskErr, currentOffset, closed, err := oq.PopFromOffset(ctx, input.ID, startOffset)
+				if err != nil {
+					return fmt.Errorf("failed to pop task[%s]: %w", input.ID, err)
+				}
+				if closed {
+					return nil
+				}
+				if taskErr != nil {
+					return taskErr
+				}
+				setStreamOffset(resp, currentOffset)
+				err = writer.Write(ctx, resp)
+				if err != nil {
+					return fmt.Errorf("failed to send response: %w", err)
+				}
+				startOffset = currentOffset + 1
+			}
+		}
+	}
 	for {
 		resp, taskErr, closed, err := s.queue.Pop(ctx, input.ID)
 		if err != nil {
@@ -726,6 +761,28 @@ func wrapSendMessageStreamingResponseUnion(sr models.ResponseEvent, taskID, cont
 		}
 	}
 	return nil
+}
+
+func setStreamOffset(u *models.SendMessageStreamingResponseUnion, offset int64) {
+	if u == nil {
+		return
+	}
+	if u.Message != nil {
+		u.Message.StreamOffset = &offset
+		return
+	}
+	if u.Task != nil {
+		u.Task.StreamOffset = &offset
+		return
+	}
+	if u.TaskStatusUpdateEvent != nil {
+		u.TaskStatusUpdateEvent.StreamOffset = &offset
+		return
+	}
+	if u.TaskArtifactUpdateEvent != nil {
+		u.TaskArtifactUpdateEvent.StreamOffset = &offset
+		return
+	}
 }
 
 func loadTaskContext(t *models.Task, tc *models.TaskContent) *models.Task {

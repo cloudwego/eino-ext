@@ -44,6 +44,7 @@ type Message struct {
 	TaskID *string `json:"taskId,omitempty"`
 	// Context identifier the message is associated with
 	ContextID *string `json:"contextId,omitempty"`
+	StreamOffset *int64 `json:"streamOffset,omitempty"`
 }
 
 func (m *Message) EnsureRequiredFields() {

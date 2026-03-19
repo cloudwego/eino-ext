@@ -77,6 +77,7 @@ type Task struct {
 	// Keys SHOULD be strings; values can be any valid JSON type (string, number, boolean, array, object).
 	// This can be used for application-specific data, tracing info, etc.
 	Metadata map[string]any `json:"metadata,omitempty"`
+	StreamOffset *int64 `json:"streamOffset,omitempty"`
 
 	// Kind string = "task" todo
 }
@@ -139,6 +140,7 @@ type TaskStatusUpdateEvent struct {
 	Final bool `json:"final"`
 	// Arbitrary metadata for this specific status update event.
 	Metadata map[string]any `json:"metadata,omitempty"`
+	StreamOffset *int64 `json:"streamOffset,omitempty"`
 }
 
 func (t *TaskStatusUpdateEvent) isSendStreamingMessageResponse() {}
@@ -182,6 +184,7 @@ type TaskArtifactUpdateEvent struct {
 	LastChunk bool `json:"lastChunk,omitempty"` // todo: what's the difference between Append and LastChunk, if LastChunk means all
 	// Arbitrary metadata for this specific artifact update event.
 	Metadata map[string]any `json:"metadata,omitempty"`
+	StreamOffset *int64 `json:"streamOffset,omitempty"`
 	// type discriminator, literal value
 	// Kind string = "artifact-update" todo
 }
@@ -221,6 +224,7 @@ type TaskQueryParams struct {
 type TaskIDParams struct {
 	// The ID of the task to which the operation applies (e.g., cancel, get push notification config).
 	ID string `json:"id"`
+	StartOffset *int64 `json:"startOffset,omitempty"`
 	// Arbitrary metadata for this specific request.
 	Metadata map[string]any `json:"metadata,omitempty"`
 }
