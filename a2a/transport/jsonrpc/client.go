@@ -48,9 +48,10 @@ type ClientConfig struct {
 	// HTTPClient is the standard net/http client to use for requests.
 	// If both HertzClient and HTTPClient are set, only HertzClient will be used.
 	// If neither is set, a default Hertz client will be created.
-	HTTPClient         *std_http.Client
-	SSEBufferSize      *int
-	JSONRPCIDGenerator core.IDGenerator
+	HTTPClient                  *std_http.Client
+	SSEBufferSize               *int
+	JSONRPCIDGenerator          core.IDGenerator
+	DisablePrevHeaderForwarding bool
 }
 
 func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTransport, error) {
@@ -72,6 +73,9 @@ func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTr
 		transOpts = append(transOpts, http.WithSSEBufferSize(*config.SSEBufferSize))
 	} else {
 		transOpts = append(transOpts, http.WithSSEBufferSize(bufio.MaxScanTokenSize))
+	}
+	if config.DisablePrevHeaderForwarding {
+		transOpts = append(transOpts, http.WithDisablePrevHeaderForwarding())
 	}
 	var err error
 	var handlerURL string
