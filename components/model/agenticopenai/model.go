@@ -29,6 +29,7 @@ import (
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/openai/openai-go/v3/azure"
 	"github.com/openai/openai-go/v3/option"
 	"github.com/openai/openai-go/v3/packages/param"
@@ -266,7 +267,7 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 		return nil, fmt.Errorf("failed to create response: %w", err)
 	}
 
-	outMsg, err = toOutputMessage(responseObject)
+	outMsg, err = toOutputMessage(responseObject, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert output to message: %w", err)
 	}
@@ -328,7 +329,7 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 			sw.Close()
 		}()
 
-		receivedStreamingResponse(respStreamReader, config, sw)
+		receivedStreamingResponse(respStreamReader, config, sw, options)
 
 	}()
 
@@ -397,34 +398,78 @@ func toCallbackConfig(req *responses.ResponseNewParams) *model.AgenticConfig {
 func toFunctionTools(functionTools []*schema.ToolInfo) ([]responses.ToolUnionParam, error) {
 	tools := make([]responses.ToolUnionParam, len(functionTools))
 	for i := range functionTools {
-		ti := functionTools[i]
-
-		paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
+		ft, err := toFunctionTool(functionTools[i])
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert tool parameters to JSON schema: %w", err)
+			return nil, err
 		}
-
-		b, err := sonic.Marshal(paramsJSONSchema)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal JSON schema: %w", err)
-		}
-
-		var params map[string]any
-		err = sonic.Unmarshal(b, &params)
-		if err != nil {
-			return nil, fmt.Errorf("failed to unmarshal JSON schema: %w", err)
-		}
-
 		tools[i] = responses.ToolUnionParam{
-			OfFunction: &responses.FunctionToolParam{
-				Name:        ti.Name,
-				Description: newOpenaiStrOpt(ti.Desc),
-				Parameters:  params,
-			},
+			OfFunction: ft,
 		}
 	}
-
 	return tools, nil
+}
+
+func toFunctionTool(ti *schema.ToolInfo) (*responses.FunctionToolParam, error) {
+	paramsJSONSchema, err := ti.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert tool parameters to JSON schema: %w", err)
+	}
+
+	b, err := sonic.Marshal(paramsJSONSchema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal JSON schema: %w", err)
+	}
+
+	var params map[string]any
+	err = sonic.Unmarshal(b, &params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal JSON schema: %w", err)
+	}
+
+	return &responses.FunctionToolParam{
+		Name:        ti.Name,
+		Description: newOpenaiStrOpt(ti.Desc),
+		Parameters:  params,
+	}, nil
+}
+
+func fromFunctionTools(tools []responses.ToolUnion) ([]*schema.ToolInfo, error) {
+	ret := make([]*schema.ToolInfo, 0, len(tools))
+	for _, t := range tools {
+		if t.Type != "function" {
+			continue
+		}
+
+		b, err := sonic.Marshal(t.Parameters)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal JSON schema from function tool: %w", err)
+		}
+		params := &jsonschema.Schema{}
+		err = sonic.Unmarshal(b, &params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal JSON schema from function tool: %w", err)
+		}
+
+		ret = append(ret, &schema.ToolInfo{
+			Name:        t.Name,
+			Desc:        t.Description,
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(params),
+		})
+	}
+	return ret, nil
+}
+
+func toDeferredFunctionTools(tools []*schema.ToolInfo) ([]responses.ToolUnionParam, error) {
+	toolParams, err := toFunctionTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	for _, toolParam := range toolParams {
+		if toolParam.OfFunction != nil {
+			toolParam.OfFunction.DeferLoading = param.NewOpt(true)
+		}
+	}
+	return toolParams, nil
 }
 
 func toServerTools(serverTools []*ServerToolConfig) ([]responses.ToolUnionParam, error) {
@@ -459,11 +504,12 @@ func toServerTools(serverTools []*ServerToolConfig) ([]responses.ToolUnionParam,
 
 func (m *Model) getOptions(opts []model.Option) (*model.Options, *openaiOptions, error) {
 	options := model.GetCommonOptions(&model.Options{
-		Temperature: m.temperature,
-		Model:       &m.model,
-		TopP:        m.topP,
-		MaxTokens:   m.maxTokens,
-		Tools:       nil,
+		Temperature:   m.temperature,
+		Model:         &m.model,
+		TopP:          m.topP,
+		MaxTokens:     m.maxTokens,
+		Tools:         nil,
+		DeferredTools: nil,
 	}, opts...)
 
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
@@ -717,6 +763,33 @@ func (m *Model) populateTools(responseReq *responses.ResponseNewParams, options 
 		}
 	} else {
 		functionTools = m.functionTools
+	}
+
+	if len(options.DeferredTools) > 0 {
+		var deferredTools []responses.ToolUnionParam
+		deferredTools, err = toDeferredFunctionTools(options.DeferredTools)
+		if err != nil {
+			return err
+		}
+		functionTools = append(functionTools, deferredTools...)
+		functionTools = append(functionTools, responses.ToolUnionParam{
+			OfToolSearch: &responses.ToolSearchToolParam{}, // add hosted tool search automatically if deferred tools has been set
+		})
+	}
+
+	if options.ToolSearchTool != nil {
+		var ft *responses.FunctionToolParam
+		ft, err = toFunctionTool(options.ToolSearchTool)
+		if err != nil {
+			return fmt.Errorf("failed to convert tool search tool: %w", err)
+		}
+		functionTools = append(functionTools, responses.ToolUnionParam{
+			OfToolSearch: &responses.ToolSearchToolParam{
+				Description: ft.Description,
+				Parameters:  ft.Parameters,
+				Execution:   responses.ToolSearchToolExecutionClient,
+			},
+		})
 	}
 
 	responseReq.Tools = append(responseReq.Tools, functionTools...)

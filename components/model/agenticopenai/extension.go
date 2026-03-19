@@ -17,6 +17,7 @@
 package agenticopenai
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 
@@ -30,6 +31,7 @@ type ServerToolCallArguments struct {
 	CodeInterpreter *CodeInterpreterArguments `json:"code_interpreter,omitempty" mapstructure:"code_interpreter,omitempty"`
 	ImageGeneration *ImageGenerationArguments `json:"image_generation,omitempty" mapstructure:"image_generation,omitempty"`
 	Shell           *ShellArguments           `json:"shell,omitempty" mapstructure:"shell,omitempty"`
+	ToolSearch      *ToolSearchCall           `json:"tool_search,omitempty"`
 }
 
 type ServerToolResult struct {
@@ -38,6 +40,7 @@ type ServerToolResult struct {
 	CodeInterpreter *CodeInterpreterResult `json:"code_interpreter,omitempty" mapstructure:"code_interpreter,omitempty"`
 	ImageGeneration *ImageGenerationResult `json:"image_generation,omitempty" mapstructure:"image_generation,omitempty"`
 	Shell           *ShellResult           `json:"shell,omitempty" mapstructure:"shell,omitempty"`
+	ToolSearch      *ToolSearchResult      `json:"tool_search,omitempty"`
 }
 
 // WebSearchArguments represents the arguments for a web search tool call.
@@ -260,6 +263,14 @@ type ShellOutputOutcome struct {
 type ShellOutputOutcomeExit struct {
 	// ExitCode is the exit code from the shell process.
 	ExitCode int64 `json:"exit_code,omitempty" mapstructure:"exit_code,omitempty"`
+}
+
+type ToolSearchCall struct {
+	Arguments json.RawMessage `json:"arguments"`
+}
+
+type ToolSearchResult struct {
+	Tools []*schema.ToolInfo `json:"tools"`
 }
 
 func getServerToolCallArguments(call *schema.ServerToolCall) (*ServerToolCallArguments, error) {

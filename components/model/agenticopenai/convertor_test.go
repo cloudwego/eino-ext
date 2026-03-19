@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	openaischema "github.com/cloudwego/eino/schema/openai"
 	"github.com/eino-contrib/jsonschema"
@@ -695,7 +696,7 @@ func TestToOutputMessage(t *testing.T) {
 			Status:  "completed",
 			Summary: []responses.ResponseReasoningItemSummary{{Text: "s"}},
 		})).Build()
-		msg, err := toOutputMessage(resp)
+		msg, err := toOutputMessage(resp, &model.Options{})
 		assert.NoError(t, err)
 		assert.NotNil(t, msg)
 		assert.Equal(t, schema.AgenticRoleTypeAssistant, msg.Role)
@@ -787,6 +788,198 @@ func TestWebSearchToContentBlocks(t *testing.T) {
 			assert.True(t, ok)
 			assert.Equal(t, "ws1", id)
 		}
+	})
+}
+
+func TestToolSearchToolCallToContentBlock(t *testing.T) {
+	mockey.PatchConvey("toolSearchToolCallToContentBlock", t, func() {
+		mockey.PatchConvey("client_execution", func() {
+			item := responses.ResponseToolSearchCall{
+				ID:        "ts1",
+				CallID:    "call1",
+				Status:    "completed",
+				Execution: responses.ResponseToolSearchCallExecutionClient,
+				Arguments: map[string]any{"query": "find tools"},
+			}
+			options := &model.Options{
+				ToolSearchTool: &schema.ToolInfo{Name: "my_tool_search"},
+			}
+			block, err := toolSearchToolCallToContentBlock(item, options)
+			assert.NoError(t, err)
+			assert.NotNil(t, block)
+			assert.Equal(t, schema.ContentBlockTypeFunctionToolCall, block.Type)
+			assert.NotNil(t, block.FunctionToolCall)
+			assert.Equal(t, "call1", block.FunctionToolCall.CallID)
+			assert.Equal(t, "my_tool_search", block.FunctionToolCall.Name)
+			id, ok := getItemID(block)
+			assert.True(t, ok)
+			assert.Equal(t, "ts1", id)
+			assert.True(t, GetToolSearchToolCall(block))
+		})
+
+		mockey.PatchConvey("client_execution_without_tool_search_tool", func() {
+			item := responses.ResponseToolSearchCall{
+				ID:        "ts1",
+				CallID:    "call1",
+				Execution: responses.ResponseToolSearchCallExecutionClient,
+				Arguments: map[string]any{"query": "find tools"},
+			}
+			options := &model.Options{}
+			_, err := toolSearchToolCallToContentBlock(item, options)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "haven't set client tool search tool")
+		})
+
+		mockey.PatchConvey("server_execution", func() {
+			item := responses.ResponseToolSearchCall{
+				ID:        "ts2",
+				CallID:    "call2",
+				Status:    "completed",
+				Execution: responses.ResponseToolSearchCallExecutionServer,
+				Arguments: map[string]any{"query": "find tools"},
+			}
+			options := &model.Options{}
+			block, err := toolSearchToolCallToContentBlock(item, options)
+			assert.NoError(t, err)
+			assert.NotNil(t, block)
+			assert.Equal(t, schema.ContentBlockTypeServerToolCall, block.Type)
+			assert.NotNil(t, block.ServerToolCall)
+			assert.Equal(t, "call2", block.ServerToolCall.CallID)
+			id, ok := getItemID(block)
+			assert.True(t, ok)
+			assert.Equal(t, "ts2", id)
+		})
+
+		mockey.PatchConvey("invalid_execution", func() {
+			item := responses.ResponseToolSearchCall{
+				ID:        "ts3",
+				Execution: "invalid",
+				Arguments: map[string]any{},
+			}
+			_, err := toolSearchToolCallToContentBlock(item, &model.Options{})
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "invalid tool search execution type")
+		})
+	})
+}
+
+func TestToolSearchToolResultToContentBlock(t *testing.T) {
+	mockey.PatchConvey("toolSearchToolResultToContentBlock", t, func() {
+		item := responses.ResponseToolSearchOutputItem{
+			ID:     "tsr1",
+			CallID: "call1",
+			Status: "completed",
+			Tools: []responses.ToolUnion{
+				{Type: "function", Name: "tool1", Description: "desc1", Parameters: map[string]any{"type": "object"}},
+			},
+		}
+		block, err := toolSearchToolResultToContentBlock(item)
+		assert.NoError(t, err)
+		assert.NotNil(t, block)
+		assert.Equal(t, schema.ContentBlockTypeServerToolResult, block.Type)
+		assert.NotNil(t, block.ServerToolResult)
+		assert.Equal(t, "call1", block.ServerToolResult.CallID)
+		result, ok := block.ServerToolResult.Result.(*ServerToolResult)
+		assert.True(t, ok)
+		assert.NotNil(t, result.ToolSearch)
+		assert.Len(t, result.ToolSearch.Tools, 1)
+		assert.Equal(t, "tool1", result.ToolSearch.Tools[0].Name)
+
+		id, ok := getItemID(block)
+		assert.True(t, ok)
+		assert.Equal(t, "tsr1", id)
+	})
+}
+
+func TestToolSearchToolResultToInputItem(t *testing.T) {
+	mockey.PatchConvey("toolSearchToolResultToInputItem", t, func() {
+		mockey.PatchConvey("success", func() {
+			block := &schema.ToolSearchFunctionToolResult{
+				CallID: "call1",
+				Result: &schema.ToolSearchResult{
+					Tools: []*schema.ToolInfo{
+						{Name: "tool1", Desc: "desc1", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+					},
+				},
+			}
+			item, err := toolSearchToolResultToInputItem(block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfToolSearchOutput)
+			assert.True(t, item.OfToolSearchOutput.CallID.Valid())
+			assert.Equal(t, "call1", item.OfToolSearchOutput.CallID.Value)
+			assert.Equal(t, responses.ResponseToolSearchOutputItemParamStatusCompleted, item.OfToolSearchOutput.Status)
+			assert.Equal(t, responses.ResponseToolSearchOutputItemParamExecutionClient, item.OfToolSearchOutput.Execution)
+			assert.Len(t, item.OfToolSearchOutput.Tools, 1)
+		})
+
+		mockey.PatchConvey("nil_result", func() {
+			block := &schema.ToolSearchFunctionToolResult{
+				CallID: "call1",
+				Result: nil,
+			}
+			_, err := toolSearchToolResultToInputItem(block)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "tool search result should not be nil")
+		})
+	})
+}
+
+func TestToolSearchInUserRoleInputItems(t *testing.T) {
+	mockey.PatchConvey("toolSearchInUserRoleInputItems", t, func() {
+		msg := &schema.AgenticMessage{ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.UserInputText{Text: "hi"}),
+			schema.NewContentBlock(&schema.ToolSearchFunctionToolResult{
+				CallID: "call1",
+				Result: &schema.ToolSearchResult{
+					Tools: []*schema.ToolInfo{
+						{Name: "tool1", Desc: "desc1", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+					},
+				},
+			}),
+		}}
+		items, err := toUserRoleInputItems(msg)
+		assert.NoError(t, err)
+		assert.Len(t, items, 2)
+		assert.NotNil(t, items[0].OfMessage)
+		assert.NotNil(t, items[1].OfToolSearchOutput)
+	})
+}
+
+func TestGetToolSearchResultActionParam(t *testing.T) {
+	mockey.PatchConvey("getToolSearchResultActionParam", t, func() {
+		ts := &ToolSearchResult{
+			Tools: []*schema.ToolInfo{
+				{Name: "tool1", Desc: "desc1", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+			},
+		}
+		result, err := getToolSearchResultActionParam(ts)
+		assert.NoError(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, responses.ResponseToolSearchOutputItemParamExecution("server"), result.Execution)
+		assert.Len(t, result.Tools, 1)
+	})
+}
+
+func TestServerToolResultToInputItemWithToolSearch(t *testing.T) {
+	mockey.PatchConvey("serverToolResultToInputItemWithToolSearch", t, func() {
+		block := schema.NewContentBlock(&schema.ServerToolResult{
+			CallID: "call1",
+			Name:   "tool_search",
+			Result: &ServerToolResult{ToolSearch: &ToolSearchResult{
+				Tools: []*schema.ToolInfo{
+					{Name: "tool1", Desc: "desc1", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+				},
+			}},
+		})
+		setItemID(block, "ts1")
+		setItemStatus(block, "completed")
+		item, err := serverToolResultToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfToolSearchOutput)
+		assert.True(t, item.OfToolSearchOutput.CallID.Valid())
+		assert.Equal(t, "call1", item.OfToolSearchOutput.CallID.Value)
+		assert.True(t, item.OfToolSearchOutput.ID.Valid())
+		assert.Equal(t, "ts1", item.OfToolSearchOutput.ID.Value)
 	})
 }
 

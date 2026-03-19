@@ -17,11 +17,13 @@
 package agenticopenai
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/cloudwego/eino/schema/openai"
 	"github.com/eino-contrib/jsonschema"
@@ -554,6 +556,12 @@ func toUserRoleInputItems(msg *schema.AgenticMessage) (items []responses.Respons
 				return nil, fmt.Errorf("failed to convert function tool result to input item: %w", err)
 			}
 
+		case schema.ContentBlockTypeToolSearchResult:
+			item, err = toolSearchToolResultToInputItem(block.ToolSearchFunctionToolResult)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert tool search function tool result to input item: %w", err)
+			}
+
 		case schema.ContentBlockTypeMCPToolApprovalResponse:
 			item, err = mcpToolApprovalResponseToInputItem(block.MCPToolApprovalResponse)
 			if err != nil {
@@ -661,6 +669,25 @@ func userInputFileToInputItem(role responses.EasyInputMessageRole, block *schema
 		},
 	}
 
+	return item, nil
+}
+
+func toolSearchToolResultToInputItem(block *schema.ToolSearchFunctionToolResult) (item responses.ResponseInputItemUnionParam, err error) {
+	if block.Result == nil {
+		return item, fmt.Errorf("tool search result should not be nil")
+	}
+	tools, err := toDeferredFunctionTools(block.Result.Tools)
+	if err != nil {
+		return item, err
+	}
+	item = responses.ResponseInputItemUnionParam{
+		OfToolSearchOutput: &responses.ResponseToolSearchOutputItemParam{
+			Tools:     tools,
+			CallID:    param.NewOpt(block.CallID),
+			Status:    responses.ResponseToolSearchOutputItemParamStatusCompleted,
+			Execution: responses.ResponseToolSearchOutputItemParamExecutionClient,
+		},
+	}
 	return item, nil
 }
 
@@ -788,6 +815,21 @@ func functionToolCallToInputItem(block *schema.ContentBlock) (item responses.Res
 
 	id, _ := getItemID(block)
 	status, _ := GetItemStatus(block)
+	namespace, _ := getNamespace(block)
+
+	if GetToolSearchToolCall(block) {
+		// client tool search call
+		item = responses.ResponseInputItemUnionParam{
+			OfToolSearchCall: &responses.ResponseInputItemToolSearchCallParam{
+				Arguments: json.RawMessage(content.Arguments),
+				ID:        newOpenaiStrOpt(id),
+				CallID:    param.NewOpt(content.CallID),
+				Status:    status,
+				Execution: "client",
+			},
+		}
+		return item, nil
+	}
 
 	item = responses.ResponseInputItemUnionParam{
 		OfFunctionCall: &responses.ResponseFunctionToolCallParam{
@@ -796,6 +838,7 @@ func functionToolCallToInputItem(block *schema.ContentBlock) (item responses.Res
 			CallID:    content.CallID,
 			Name:      content.Name,
 			Arguments: content.Arguments,
+			Namespace: newOpenaiStrOpt(namespace),
 		},
 	}
 
@@ -847,6 +890,20 @@ func serverToolCallToInputItem(block *schema.ContentBlock) (item responses.Respo
 		return imageGenerationToolCallToInputItem(arguments.ImageGeneration, block)
 	case arguments.Shell != nil:
 		return shellToolCallToInputItem(arguments.Shell, block)
+	case arguments.ToolSearch != nil:
+		id, _ := getItemID(block)
+		status, _ := GetItemStatus(block)
+		var action *responses.ResponseInputItemToolSearchCallParam
+		action, err = getToolSearchCallActionParam(arguments.ToolSearch)
+		if err != nil {
+			return item, err
+		}
+		action.CallID = newOpenaiStrOpt(content.CallID)
+		action.ID = param.NewOpt(id)
+		action.Status = status
+		return responses.ResponseInputItemUnionParam{
+			OfToolSearchCall: action,
+		}, nil
 	default:
 		return item, fmt.Errorf("server tool call arguments are nil")
 	}
@@ -1000,6 +1057,13 @@ func shellToolCallToInputItem(args *ShellArguments, block *schema.ContentBlock) 
 	return item, nil
 }
 
+func getToolSearchCallActionParam(ts *ToolSearchCall) (*responses.ResponseInputItemToolSearchCallParam, error) {
+	return &responses.ResponseInputItemToolSearchCallParam{
+		Arguments: ts.Arguments,
+		Execution: "server",
+	}, nil
+}
+
 func serverToolResultToInputItem(block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
 	content := block.ServerToolResult
 	if content == nil {
@@ -1022,6 +1086,21 @@ func serverToolResultToInputItem(block *schema.ContentBlock) (item responses.Res
 		return imageGenerationToolResultToInputItem(result.ImageGeneration, block)
 	case result.Shell != nil:
 		return shellToolResultToInputItem(result.Shell, block)
+	case result.ToolSearch != nil:
+		id, _ := getItemID(block)
+		status, _ := GetItemStatus(block)
+		var action *responses.ResponseToolSearchOutputItemParam
+		action, err = getToolSearchResultActionParam(result.ToolSearch)
+		if err != nil {
+			return item, err
+		}
+		action.CallID = newOpenaiStrOpt(content.CallID)
+		action.ID = param.NewOpt(id)
+		action.Status = responses.ResponseToolSearchOutputItemParamStatus(status)
+
+		return responses.ResponseInputItemUnionParam{
+			OfToolSearchOutput: action,
+		}, nil
 	default:
 		return item, fmt.Errorf("server tool result is nil")
 	}
@@ -1209,6 +1288,17 @@ func shellToolResultToInputItem(result *ShellResult, block *schema.ContentBlock)
 	return item, nil
 }
 
+func getToolSearchResultActionParam(ts *ToolSearchResult) (*responses.ResponseToolSearchOutputItemParam, error) {
+	tools, err := toDeferredFunctionTools(ts.Tools)
+	if err != nil {
+		return nil, err
+	}
+	return &responses.ResponseToolSearchOutputItemParam{
+		Tools:     tools,
+		Execution: "server",
+	}, nil
+}
+
 func mcpToolApprovalRequestToInputItem(block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
 	content := block.MCPToolApprovalRequest
 	if content == nil {
@@ -1323,7 +1413,7 @@ func mcpToolResultToInputItem(block *schema.ContentBlock) (item responses.Respon
 	return item, nil
 }
 
-func toOutputMessage(resp *responses.Response) (msg *schema.AgenticMessage, err error) {
+func toOutputMessage(resp *responses.Response, options *model.Options) (msg *schema.AgenticMessage, err error) {
 	blocks := make([]*schema.ContentBlock, 0, len(resp.Output))
 
 	for _, item := range resp.Output {
@@ -1411,6 +1501,19 @@ func toOutputMessage(resp *responses.Response) (msg *schema.AgenticMessage, err 
 				return nil, fmt.Errorf("failed to convert function shell output to content block: %w", err)
 			}
 			tmpBlocks = []*schema.ContentBlock{block}
+		case responses.ResponseToolSearchCall:
+			block, err := toolSearchToolCallToContentBlock(variant, options)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert tool search call to content block: %w", err)
+			}
+			tmpBlocks = append(tmpBlocks, block)
+
+		case responses.ResponseToolSearchOutputItem:
+			block, err := toolSearchToolResultToContentBlock(variant)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert tool search output item to content block: %w", err)
+			}
+			tmpBlocks = append(tmpBlocks, block)
 
 		default:
 			return nil, fmt.Errorf("unknown output item type: %T", variant)
@@ -1547,6 +1650,9 @@ func functionToolCallToContentBlock(item responses.ResponseFunctionToolCall) (bl
 	if s := string(item.Status); s != "" {
 		setItemStatus(block, s)
 	}
+	if len(item.Namespace) > 0 {
+		setNamespace(block, item.Namespace)
+	}
 
 	return block, nil
 }
@@ -1629,6 +1735,64 @@ func webSearchToContentBlocks(item responses.ResponseFunctionWebSearch) (blocks 
 	blocks = []*schema.ContentBlock{callBlock, resBlock}
 
 	return blocks, nil
+}
+
+func toolSearchToolCallToContentBlock(item responses.ResponseToolSearchCall, options *model.Options) (*schema.ContentBlock, error) {
+	args, err := json.Marshal(item.Arguments)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tool search arguments: %w", err)
+	}
+
+	switch item.Execution {
+	case responses.ResponseToolSearchCallExecutionClient:
+		if options.ToolSearchTool == nil {
+			return nil, fmt.Errorf("haven't set client tool search tool, but get a client tool search tool call")
+		}
+		block := schema.NewContentBlock(&schema.FunctionToolCall{
+			CallID:    item.CallID,
+			Name:      options.ToolSearchTool.Name,
+			Arguments: string(args),
+		})
+		setItemID(block, item.ID)
+		setItemStatus(block, string(item.Status))
+		setToolSearchToolCall(block)
+		return block, nil
+
+	case responses.ResponseToolSearchCallExecutionServer:
+		// server tool call
+		block := schema.NewContentBlock(&schema.ServerToolCall{
+			CallID: item.CallID,
+			Arguments: &ServerToolCallArguments{
+				ToolSearch: &ToolSearchCall{
+					Arguments: args,
+				},
+			},
+		})
+		setItemID(block, item.ID)
+		setItemStatus(block, string(item.Status))
+		return block, nil
+
+	default:
+		return nil, fmt.Errorf("invalid tool search execution type: %s", item.Execution)
+	}
+}
+
+func toolSearchToolResultToContentBlock(item responses.ResponseToolSearchOutputItem) (blocks *schema.ContentBlock, err error) {
+	tools, err := fromFunctionTools(item.Tools)
+	if err != nil {
+		return nil, err
+	}
+	block := schema.NewContentBlock(&schema.ServerToolResult{
+		CallID: item.CallID,
+		Result: &ServerToolResult{
+			ToolSearch: &ToolSearchResult{
+				Tools: tools,
+			},
+		},
+	})
+	setItemID(block, item.ID)
+	setItemStatus(block, string(item.Status))
+	return block, nil
 }
 
 func fileSearchToContentBlocks(item responses.ResponseFileSearchToolCall) (blocks []*schema.ContentBlock, err error) {
