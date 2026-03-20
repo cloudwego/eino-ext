@@ -73,15 +73,7 @@ func NewBackend(_ context.Context, cfg *Config) (*Local, error) {
 }
 
 func (s *Local) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
-	if req.Path == "" {
-		req.Path = defaultRootPath
-	}
-
 	path := filepath.Clean(req.Path)
-	if !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("path must be an absolute path: %s", path)
-	}
-
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -92,10 +84,6 @@ func (s *Local) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]fi
 		}
 		return nil, fmt.Errorf("failed to read directory: %w", err)
 	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
-	})
 
 	var files []filesystem.FileInfo
 	for _, entry := range entries {
@@ -109,9 +97,6 @@ func (s *Local) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]fi
 
 func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
 	path := filepath.Clean(req.FilePath)
-	if !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("path must be an absolute path: %s", path)
-	}
 
 	file, err := os.Open(path)
 	if err != nil {
@@ -212,8 +197,8 @@ func (s *Local) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]fil
 	if req.BeforeLines > 0 {
 		cmd = append(cmd, "-B", fmt.Sprintf("%d", req.BeforeLines))
 	}
-	cmd = append(cmd, req.Pattern)
-	cmd = append(cmd, path)
+
+	cmd = append(cmd, "-e", req.Pattern, "--", path)
 
 	execCmd := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
 	output, err := execCmd.Output()
@@ -322,16 +307,14 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 }
 
 func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
-	if !filepath.IsAbs(req.FilePath) {
-		return fmt.Errorf("path must be an absolute path: %s", req.FilePath)
-	}
+	path := filepath.Clean(req.FilePath)
 
-	parentDir := filepath.Dir(req.FilePath)
+	parentDir := filepath.Dir(path)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory: %w", err)
 	}
 
-	file, err := os.OpenFile(req.FilePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open file for writing: %w", err)
 	}
@@ -347,10 +330,6 @@ func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 
 func (s *Local) Edit(ctx context.Context, req *filesystem.EditRequest) error {
 	path := filepath.Clean(req.FilePath)
-	if !filepath.IsAbs(path) {
-		return fmt.Errorf("path must be an absolute path: %s", path)
-	}
-
 	if req.OldString == "" {
 		return fmt.Errorf("old string is required")
 	}
