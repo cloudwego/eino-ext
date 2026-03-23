@@ -30,7 +30,7 @@ func TestBindTools(t *testing.T) {
 	t.Run("chat model force tool call", func(t *testing.T) {
 		ctx := context.Background()
 
-		chatModel, err := NewChatModel(ctx, &ChatModelConfig{Model: "gpt-3.5-turbo"})
+		chatModel, err := NewChatModel(ctx, &ChatModelConfig{Model: "gpt-3.5-turbo", APIKey: "test"})
 		assert.NoError(t, err)
 
 		doNothingParams := map[string]*schema.ParameterInfo{
@@ -78,7 +78,7 @@ func TestWithTools(t *testing.T) {
 				},
 			},
 		},
-		respChatModel: &responsesAPIChatModel{
+		respChatModel: &ResponsesAPIChatModel{
 			model: "test model",
 			rawTools: []*schema.ToolInfo{
 				{
@@ -102,7 +102,7 @@ func TestWithTools(t *testing.T) {
 func TestCallByResponsesAPI(t *testing.T) {
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{},
+			respChatModel: &ResponsesAPIChatModel{},
 		}
 		opt := WithCache(&CacheOption{
 			APIType: ResponsesAPI,
@@ -115,7 +115,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: ptrOf(ContextAPI),
 				},
@@ -132,7 +132,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: ptrOf(ResponsesAPI),
 				},
@@ -149,7 +149,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: (*APIType)(ptrOf("")),
 				},
@@ -165,7 +165,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: (*APIType)(ptrOf("")),
 				},
@@ -173,13 +173,14 @@ func TestCallByResponsesAPI(t *testing.T) {
 		}
 		opt := WithCache(&CacheOption{})
 
-		_, err := cm.callByResponsesAPI(opt)
-		assert.NotNil(t, err)
+		f, err := cm.callByResponsesAPI(opt)
+		assert.Nil(t, err)
+		assert.False(t, f)
 	})
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{},
 			},
 		}
@@ -193,7 +194,8 @@ func TestCallByResponsesAPI(t *testing.T) {
 func TestBuildResponsesAPIChatModel(t *testing.T) {
 	mockey.PatchConvey("invalid config", t, func() {
 		_, err := buildResponsesAPIChatModel(&ChatModelConfig{
-			Stop: []string{"test"},
+			Stop:   []string{"test"},
+			APIKey: "test",
 			Cache: &CacheConfig{
 				APIType: ptrOf(ResponsesAPI),
 			},
@@ -203,6 +205,7 @@ func TestBuildResponsesAPIChatModel(t *testing.T) {
 
 	mockey.PatchConvey("valid config", t, func() {
 		_, err := buildResponsesAPIChatModel(&ChatModelConfig{
+			APIKey: "test",
 			Cache: &CacheConfig{
 				APIType: ptrOf(ResponsesAPI),
 			},
@@ -213,12 +216,13 @@ func TestBuildResponsesAPIChatModel(t *testing.T) {
 
 func TestBuildChatCompletionAPIChatModel(t *testing.T) {
 	mockey.PatchConvey("invalid config", t, func() {
-		cli := buildChatCompletionAPIChatModel(&ChatModelConfig{
+		cli, err := buildChatCompletionAPIChatModel(&ChatModelConfig{
 			Stop: []string{"test"},
 			Cache: &CacheConfig{
 				APIType: ptrOf(ContextAPI),
 			},
 		})
 		assert.NotNil(t, cli)
+		assert.Nil(t, err)
 	})
 }

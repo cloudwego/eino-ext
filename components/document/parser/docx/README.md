@@ -124,3 +124,9 @@ Each section is preceded by a header line (e.g., "=== MAIN CONTENT ===") to iden
 + Formatting, images, and other rich content are not preserved
 + Complex table structures may not be perfectly represented
 + Note on Comments: The `IncludeComments` option is now deprecated. The underlying DOCX parsing library was switched from an AGPL-licensed dependency to `docx2md` (MIT-licensed) to resolve a license conflict with the project's Apache 2.0 license. The new library does not currently support comment extraction.
+## Examples
+
+See the following examples for more usage:
+
+- [Test Data Example](./examples/testdata/)
+

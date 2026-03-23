@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.14.1
 	github.com/cloudwego/eino v0.6.0
-	github.com/cloudwego/eino-ext/libs/acl/langfuse v0.0.0-20250409060521-ba8646352e4b
+	github.com/cloudwego/eino-ext/libs/acl/langfuse v0.0.0-20251124083837-ce2e7e196f9f
 	github.com/golang/mock v1.6.0
 	github.com/stretchr/testify v1.10.0
 )

@@ -54,7 +54,7 @@ func TestSearchModeDenseVectorSimilarity(t *testing.T) {
 			PatchConvey("test success", func() {
 				typ2Exp := map[DenseVectorSimilarityType]string{
 					DenseVectorSimilarityTypeCosineSimilarity: `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"cosineSimilarity(params.embedding, 'vector_eino_doc_content') + 1.0"}}},"size":10}`,
-					DenseVectorSimilarityTypeDotProduct:       `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"\n    double value = dotProduct(params.query_vector, 'vector_eino_doc_content');\n    return sigmoid(1, Math.E, -value);\n    "}}},"size":10}`,
+					DenseVectorSimilarityTypeDotProduct:       `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"\n    double value = dotProduct(params.embedding, 'vector_eino_doc_content');\n    return sigmoid(1, Math.E, -value);\n    "}}},"size":10}`,
 					DenseVectorSimilarityTypeL1Norm:           `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"1 / (1 + l1norm(params.embedding, 'vector_eino_doc_content'))"}}},"size":10}`,
 					DenseVectorSimilarityTypeL2Norm:           `{"min_score":1.1,"query":{"script_score":{"query":{"bool":{"filter":[{"match":{"label":{"query":"good"}}}]}},"script":{"params":{"embedding":[1.1,1.2]},"source":"1 / (1 + l2norm(params.embedding, 'vector_eino_doc_content'))"}}},"size":10}`,
 				}

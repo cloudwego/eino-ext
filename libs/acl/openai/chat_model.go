@@ -18,6 +18,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -195,6 +196,8 @@ type Client struct {
 	toolChoice *schema.ToolChoice
 }
 
+var otherReasoningKeys = []string{"reasoning"}
+
 var mimeType2AudioFormat = map[string]string{
 	"audio/wav":      "wav",
 	"audio/vnd.wav":  "wav",
@@ -218,7 +221,7 @@ var audioFormat2MimeTypes = map[string]string{
 
 func NewClient(ctx context.Context, config *Config) (*Client, error) {
 	if config == nil {
-		return nil, fmt.Errorf("OpenAI client config cannot be nil")
+		return nil, fmt.Errorf("client config cannot be nil")
 	}
 
 	var clientConf openai.ClientConfig
@@ -238,9 +241,10 @@ func NewClient(ctx context.Context, config *Config) (*Client, error) {
 		}
 	}
 
-	clientConf.HTTPClient = config.HTTPClient
-	if clientConf.HTTPClient == nil {
+	if config.HTTPClient == nil {
 		clientConf.HTTPClient = http.DefaultClient
+	} else {
+		clientConf.HTTPClient = config.HTTPClient
 	}
 
 	return &Client{
@@ -495,8 +499,10 @@ func buildMessageFromAssistantGenMultiContent(inMsg *schema.Message) (openai.Cha
 	}
 	// Initialize the message with role and name.
 	comMessage := openai.ChatCompletionMessage{
-		Role: toOpenAIRole(inMsg.Role),
-		Name: inMsg.Name,
+		Role:             toOpenAIRole(inMsg.Role),
+		Name:             inMsg.Name,
+		ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+		ReasoningContent: inMsg.ReasoningContent,
 	}
 
 partsLoop:
@@ -518,6 +524,8 @@ partsLoop:
 				Audio: &openai.Audio{
 					ID: string(audioID),
 				},
+				ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+				ReasoningContent: inMsg.ReasoningContent,
 			}
 			break partsLoop
 
@@ -546,7 +554,8 @@ func buildMessageFromMultiContent(inMsg *schema.Message) (openai.ChatCompletionM
 	}, nil
 }
 
-func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai.ChatCompletionRequest, *model.CallbackInput, error) {
+func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...model.Option) (
+	*openai.ChatCompletionRequest, *model.CallbackInput, []openai.ChatCompletionRequestOption, *openaiOptions, error) {
 
 	options := model.GetCommonOptions(&model.Options{
 		Temperature: c.config.Temperature,
@@ -557,11 +566,24 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		Tools:       nil,
 		ToolChoice:  c.toolChoice,
 	}, opts...)
+
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:         c.config.ExtraFields,
-		ReasoningEffort:     c.config.ReasoningEffort,
-		MaxCompletionTokens: c.config.MaxCompletionTokens,
+		ExtraFields:                  c.config.ExtraFields,
+		ReasoningEffort:              c.config.ReasoningEffort,
+		MaxCompletionTokens:          c.config.MaxCompletionTokens,
+		RequestBodyModifier:          nil,
+		RequestPayloadModifier:       nil,
+		ResponseMessageModifier:      nil,
+		ResponseChunkMessageModifier: nil,
 	}, opts...)
+	// convert RequestBodyModifier to RequestPayloadModifier
+	if specOptions.RequestPayloadModifier == nil && specOptions.RequestBodyModifier != nil {
+		reqBodyModifier := specOptions.RequestBodyModifier
+		specOptions.RequestPayloadModifier = func(ctx context.Context, msg []*schema.Message, rawBody []byte) ([]byte, error) {
+			return reqBodyModifier(rawBody)
+		}
+		specOptions.RequestBodyModifier = nil
+	}
 
 	req := &openai.ChatCompletionRequest{
 		Model:               *options.Model,
@@ -590,7 +612,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		}
 		specOptions.ExtraFields[modalities] = c.config.Modalities
 		if slices.Contains(c.config.Modalities, AudioModality) && c.config.Audio == nil {
-			return nil, nil, errors.New("audio configuration is mandatory when 'audio' modality is specified")
+			return nil, nil, nil, nil, errors.New("audio configuration is mandatory when 'audio' modality is specified")
 		}
 
 		if c.config.Audio != nil {
@@ -620,7 +642,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 	if options.Tools != nil {
 		var err error
 		if tools, err = toTools(options.Tools); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		cbInput.Tools = options.Tools
 	}
@@ -641,41 +663,9 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		}
 	}
 
-	if options.ToolChoice != nil {
-		/*
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
-
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
-
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
-		*/
-
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = openai.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: openai.ToolFunction{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
-		}
+	err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 
 	msgs := make([]openai.ChatCompletionMessage, 0, len(in))
@@ -686,7 +676,7 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 			err error
 		)
 		if len(inMsg.UserInputMultiContent) > 0 && len(inMsg.AssistantGenMultiContent) > 0 {
-			return nil, nil, errors.New("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+			return nil, nil, nil, nil, errors.New("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 		}
 
 		if len(inMsg.UserInputMultiContent) > 0 {
@@ -697,17 +687,17 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 			msg, err = buildMessageFromMultiContent(inMsg)
 		} else {
 			msg = openai.ChatCompletionMessage{
-				Role:       toOpenAIRole(inMsg.Role),
-				Content:    inMsg.Content,
-				Name:       inMsg.Name,
-				ToolCalls:  toOpenAIToolCalls(inMsg.ToolCalls),
-				ToolCallID: inMsg.ToolCallID,
+				Role:             toOpenAIRole(inMsg.Role),
+				Content:          inMsg.Content,
+				Name:             inMsg.Name,
+				ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+				ToolCallID:       inMsg.ToolCallID,
+				ReasoningContent: inMsg.ReasoningContent,
 			}
-
 		}
 
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		msgs = append(msgs, msg)
 	}
@@ -728,13 +718,25 @@ func (c *Client) genRequest(in []*schema.Message, opts ...model.Option) (*openai
 		}
 	}
 
-	return req, cbInput, nil
+	var reqOpts []openai.ChatCompletionRequestOption
+
+	if specOptions.RequestPayloadModifier != nil {
+		reqOpts = append(reqOpts, openai.WithRequestBodyModifier(func(rawBody []byte) ([]byte, error) {
+			return specOptions.RequestPayloadModifier(ctx, in, rawBody)
+		}))
+	}
+
+	if specOptions.ExtraHeader != nil {
+		reqOpts = append(reqOpts, openai.WithExtraHeader(specOptions.ExtraHeader))
+	}
+
+	return req, cbInput, reqOpts, specOptions, nil
 }
 
 func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
 
-	req, cbInput, err := c.genRequest(in, opts...)
+	req, cbInput, reqOpts, specOptions, err := c.genRequest(ctx, in, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion request: %w", err)
 	}
@@ -745,8 +747,6 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 			callbacks.OnError(ctx, err)
 		}
 	}()
-
-	reqOpts := c.getChatCompletionRequestOptions(opts)
 
 	resp, err := c.cli.CreateChatCompletion(ctx, *req, reqOpts...)
 	if err != nil {
@@ -778,6 +778,8 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		if len(msg.ReasoningContent) > 0 {
 			outMsg.ReasoningContent = msg.ReasoningContent
 			setReasoningContent(outMsg, msg.ReasoningContent)
+		} else if msg.ExtraFields != nil {
+			populateRCFromExtra(msg.ExtraFields, outMsg)
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
@@ -812,6 +814,15 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("invalid response format: choice with index 0 not found")
 	}
 
+	setRequestID(outMsg, resp.ID)
+
+	if specOptions.ResponseMessageModifier != nil {
+		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to modify response message: %w", err)
+		}
+	}
+
 	callbacks.OnEnd(ctx, &model.CallbackOutput{
 		Message:    outMsg,
 		Config:     cbInput.Config,
@@ -829,7 +840,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 		}
 	}()
 
-	req, cbInput, err := c.genRequest(in, opts...)
+	req, cbInput, reqOpts, specOptions, err := c.genRequest(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -839,8 +850,6 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 
 	ctx = callbacks.OnStart(ctx, cbInput)
 
-	reqOpts := c.getChatCompletionRequestOptions(opts)
-
 	stream, err := c.cli.CreateChatCompletionStream(ctx, *req, reqOpts...)
 	if err != nil {
 		return nil, err
@@ -849,7 +858,8 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 
 	builder := newStreamMessageBuilder(c.config.Audio)
-	go func() {
+
+	go func(ctx_ context.Context) {
 		defer func() {
 			panicErr := recover()
 			_ = stream.Close()
@@ -866,6 +876,14 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 		for {
 			chunk, chunkErr := stream.Recv()
 			if errors.Is(chunkErr, io.EOF) {
+				if specOptions.ResponseChunkMessageModifier != nil {
+					var err_ error
+					lastEmptyMsg, err_ = specOptions.ResponseChunkMessageModifier(ctx_, lastEmptyMsg, nil, true)
+					if err_ != nil {
+						sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
+						return
+					}
+				}
 				if lastEmptyMsg != nil {
 					sw.Send(&model.CallbackOutput{
 						Message:    lastEmptyMsg,
@@ -877,7 +895,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			}
 
 			if chunkErr != nil {
-				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk from OpenAI: %w", chunkErr))
+				_ = sw.Send(nil, fmt.Errorf("failed to receive stream chunk: %w", chunkErr))
 				return
 			}
 
@@ -914,6 +932,15 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 
 			lastEmptyMsg = nil
 
+			if specOptions.ResponseChunkMessageModifier != nil {
+				var err_ error
+				msg, err_ = specOptions.ResponseChunkMessageModifier(ctx_, msg, chunk.RawBody, false)
+				if err_ != nil {
+					sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err_))
+					return
+				}
+			}
+
 			closed := sw.Send(&model.CallbackOutput{
 				Message:    msg,
 				Config:     cbInput.Config,
@@ -925,7 +952,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 			}
 		}
 
-	}()
+	}(ctx)
 
 	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
 		func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
@@ -946,25 +973,106 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
-func (c *Client) getChatCompletionRequestOptions(opts []model.Option) []openai.ChatCompletionRequestOption {
-	specOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:     c.config.ExtraFields,
-		ReasoningEffort: c.config.ReasoningEffort,
-	}, opts...)
-
-	var options []openai.ChatCompletionRequestOption
-
-	if specOptions.RequestBodyModifier != nil {
-		options = append(options, openai.WithRequestBodyModifier(specOptions.RequestBodyModifier))
-	}
-
-	if specOptions.ExtraHeader != nil {
-		options = append(options, openai.WithExtraHeader(specOptions.ExtraHeader))
-	}
-
-	return options
+type allowedTools struct {
+	Mode  string              `json:"mode"`
+	Tools []openai.ToolChoice `json:"tools"`
 }
 
+func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	validateAllowedNamesTools := func() error {
+		if len(allowedToolNames) > 0 {
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			for _, name := range allowedToolNames {
+				if !toolsMap[name] {
+					return fmt.Errorf("allowed tool %s not found in request tools", name)
+				}
+			}
+		}
+		return nil
+	}
+
+	buildToolChoices := func() []openai.ToolChoice {
+		choices := make([]openai.ToolChoice, len(allowedToolNames))
+		for i, n := range allowedToolNames {
+			choices[i] = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: n,
+				},
+			}
+		}
+		return choices
+	}
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+		return nil
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedNamesTools(); err != nil {
+				return err
+			}
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceAuto,
+					Tools: buildToolChoices(),
+				},
+			}
+
+		} else {
+			req.ToolChoice = toolChoiceAuto
+		}
+		return nil
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool_choice is forced but no tools are provided")
+		}
+
+		err := validateAllowedNamesTools()
+		if err != nil {
+			return err
+		}
+
+		var onlyOneToolName string
+		if len(allowedToolNames) == 1 {
+			onlyOneToolName = allowedToolNames[0]
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+
+		if onlyOneToolName != "" {
+			req.ToolChoice = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: onlyOneToolName,
+				},
+			}
+		} else if len(allowedToolNames) > 1 {
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceRequired,
+					Tools: buildToolChoices(),
+				},
+			}
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("unsupported tool_choice: %s", *tc)
+	}
+}
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
 	if probs == nil {
 		return nil
@@ -1074,6 +1182,19 @@ func (b *streamMessageBuilder) setOutputMessageAudio(message *schema.Message, au
 
 }
 
+func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) {
+	if extra == nil {
+		return
+	}
+	for _, key := range otherReasoningKeys {
+		if reasoningRawMessage, ok := extra[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
+			msg.ReasoningContent = string(reasoningRawMessage)
+			setReasoningContent(msg, string(reasoningRawMessage))
+			break
+		}
+	}
+}
+
 func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (msg *schema.Message, found bool, err error) {
 	for _, choice := range resp.Choices {
 		// take 0 index as response, rewrite if needed
@@ -1097,8 +1218,9 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 		if len(choice.Delta.ReasoningContent) > 0 {
 			msg.ReasoningContent = choice.Delta.ReasoningContent
 			setReasoningContent(msg, choice.Delta.ReasoningContent)
+		} else if choice.Delta.ExtraFields != nil {
+			populateRCFromExtra(choice.Delta.ExtraFields, msg)
 		}
-
 		if choice.Delta.Audio != nil {
 			err = b.setOutputMessageAudio(msg, choice.Delta.Audio)
 			if err != nil {
@@ -1117,6 +1239,8 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 		}
 		found = true
 	}
+
+	setRequestID(msg, resp.ID)
 
 	return msg, found, nil
 }
@@ -1184,12 +1308,17 @@ func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
 	if usage.PromptTokensDetails != nil {
 		promptTokenDetails.CachedTokens = usage.PromptTokensDetails.CachedTokens
 	}
+	completionTokensDetails := schema.CompletionTokensDetails{}
+	if usage.CompletionTokensDetails != nil {
+		completionTokensDetails.ReasoningTokens = usage.CompletionTokensDetails.ReasoningTokens
+	}
 
 	return &schema.TokenUsage{
-		PromptTokens:       usage.PromptTokens,
-		PromptTokenDetails: promptTokenDetails,
-		CompletionTokens:   usage.CompletionTokens,
-		TotalTokens:        usage.TotalTokens,
+		PromptTokens:            usage.PromptTokens,
+		PromptTokenDetails:      promptTokenDetails,
+		CompletionTokens:        usage.CompletionTokens,
+		TotalTokens:             usage.TotalTokens,
+		CompletionTokensDetails: completionTokensDetails,
 	}
 }
 
@@ -1208,6 +1337,9 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
 	}
 }
 

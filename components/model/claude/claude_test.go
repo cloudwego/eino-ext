@@ -22,8 +22,10 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -577,5 +579,186 @@ func Test_convSchemaMessage_MultiContent(t *testing.T) {
 		_, err := convSchemaMessage(msg)
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "image field must not be nil")
+	})
+}
+
+func TestPopulateToolChoice(t *testing.T) {
+	t.Run("nil tool choice", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		options := &model.Options{}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+
+	})
+
+	t.Run("tool choice forbidden", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceForbidden
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfNone)
+	})
+
+	t.Run("tool choice allowed", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceAllowed
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAuto)
+	})
+
+	t.Run("tool choice allowed with disable parallel tool use", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceAllowed
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		disableParallelToolUse := true
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, &disableParallelToolUse)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAuto)
+		assert.Equal(t, param.NewOpt(true), params.ToolChoice.OfAuto.DisableParallelToolUse)
+	})
+
+	t.Run("tool choice forced with no tools", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "tool choice is forced but tool is not provided", err.Error())
+	})
+
+	t.Run("tool choice forced with one tool", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.Equal(t, "test_tool", params.ToolChoice.OfTool.Name)
+	})
+
+	t.Run("tool choice forced with multiple tools", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_2",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAny)
+	})
+
+	t.Run("tool choice forced with allowed tool name", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_2",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"test_tool_1"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.Equal(t, "test_tool_1", params.ToolChoice.OfTool.Name)
+	})
+
+	t.Run("tool choice forced with non-existent allowed tool name", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"non_existent_tool"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "allowed tool name 'non_existent_tool' not found in tools list", err.Error())
+	})
+
+	t.Run("tool choice forced with multiple allowed tool names", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"test_tool_1", "test_tool_2"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "only one allowed tool name can be configured", err.Error())
+	})
+
+	t.Run("unsupported tool choice", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		unsupportedToolChoice := schema.ToolChoice("unsupported")
+		options := &model.Options{
+			ToolChoice: &unsupportedToolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "tool choice=unsupported not support", err.Error())
 	})
 }

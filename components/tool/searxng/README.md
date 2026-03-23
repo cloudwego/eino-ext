@@ -275,6 +275,10 @@ The tool includes built-in error handling for common scenarios:
 - Empty search results
 - SearXNG instance unavailability
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

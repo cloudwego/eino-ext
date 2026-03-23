@@ -18,16 +18,17 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
-
-	"io"
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/model/claude"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
+
+	"github.com/cloudwego/eino-ext/components/model/claude"
 )
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 	apiKey := os.Getenv("CLAUDE_API_KEY")
 	modelName := os.Getenv("CLAUDE_MODEL")
 	baseURL := os.Getenv("CLAUDE_BASE_URL")
+
 	if apiKey == "" {
 		log.Fatal("CLAUDE_API_KEY environment variable is not set")
 	}
@@ -61,7 +63,14 @@ func main() {
 		log.Fatalf("NewChatModel of claude failed, err=%v", err)
 	}
 
-	_, err = cm.WithTools([]*schema.ToolInfo{
+	fmt.Printf("\n==========text tool call==========\n")
+	textToolCall(ctx, cm)
+	fmt.Printf("\n==========image tool call==========\n")
+	imageToolCall(ctx, cm)
+}
+
+func textToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
+	chatModel, err := chatModel.WithTools([]*schema.ToolInfo{
 		{
 			Name: "get_weather",
 			Desc: "Get current weather information for a city",
@@ -88,49 +97,92 @@ func main() {
 		},
 	})
 	if err != nil {
-		log.Printf("Bind tools error: %v", err)
+		log.Fatalf("Bind tools error: %v", err)
 		return
 	}
 
-	streamResp, err := cm.Stream(ctx, []*schema.Message{
+	resp, err := chatModel.Generate(ctx, []*schema.Message{
 		schema.SystemMessage("You are a helpful AI assistant. Be concise in your responses."),
 		schema.UserMessage("call 'get_weather' to query what's the weather like in Paris today? Please use Celsius."),
 	})
 	if err != nil {
-		log.Printf("Generate error: %v", err)
+		log.Fatalf("Generate error: %v", err)
+		return
+	}
+	fmt.Printf("output: %v", resp)
+}
+
+func imageToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
+	image, err := os.ReadFile("./examples/intent_tool/img.png")
+	if err != nil {
+		log.Fatalf("os.ReadFile failed, err=%v\n", err)
+	}
+
+	imageStr := base64.StdEncoding.EncodeToString(image)
+
+	chatModel, err = chatModel.WithTools([]*schema.ToolInfo{
+		{
+			Name: "image_generator",
+			Desc: "a tool can generate images",
+			ParamsOneOf: schema.NewParamsOneOfByParams(
+				map[string]*schema.ParameterInfo{
+					"description": {
+						Type: "string",
+						Desc: "The description of the image",
+					},
+				}),
+		},
+	})
+	if err != nil {
+		log.Fatalf("WithTools failed, err=%v", err)
 		return
 	}
 
-	msgs := make([]*schema.Message, 0)
-	for {
-		msg, err := streamResp.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatalf("Stream receive error: %v", err)
-		}
-		msgs = append(msgs, msg)
+	query := []*schema.Message{
+		{
+			Role:    schema.System,
+			Content: "You are a helpful assistant. If the user needs to generate an image, call the image_generator tool to generate the image.",
+		},
+		{
+			Role:    schema.User,
+			Content: "Generator a cat image",
+		},
 	}
-	resp, err := schema.ConcatMessages(msgs)
+
+	resp, err := chatModel.Generate(ctx, query)
 	if err != nil {
-		log.Fatalf("Concat error: %v", err)
+		log.Fatalf("Generate failed, err=%v", err)
+		return
 	}
 
-	fmt.Printf("assistant content:\n  %v\n----------\n", resp.Content)
-	if len(resp.ToolCalls) > 0 {
-		fmt.Printf("Function called: %s\n", resp.ToolCalls[0].Function.Name)
-		fmt.Printf("Arguments: %s\n", resp.ToolCalls[0].Function.Arguments)
-
-		weatherResp, err := cm.Generate(ctx, []*schema.Message{
-			schema.UserMessage("What's the weather like in Paris today? Please use Celsius."),
-			resp,
-			schema.ToolMessage(`{"temperature": 18, "condition": "sunny"}`, resp.ToolCalls[0].ID),
-		})
-		if err != nil {
-			log.Printf("Generate error: %v", err)
-			return
-		}
-		fmt.Printf("Final response: %s\n", weatherResp.Content)
+	if len(resp.ToolCalls) == 0 {
+		log.Fatalf("No tool calls found")
+		return
 	}
+
+	fmt.Printf("output: \n%v", resp)
+
+	resp, err = chatModel.Generate(ctx, append(query, resp, &schema.Message{
+		Role:       schema.Tool,
+		ToolCallID: resp.ToolCalls[0].ID,
+		UserInputMultiContent: []schema.MessageInputPart{
+			{
+				Type: schema.ChatMessagePartTypeText,
+				Text: "Image generation successful.",
+			},
+			{
+				Type: schema.ChatMessagePartTypeImageURL,
+				Image: &schema.MessageInputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						Base64Data: &imageStr,
+						MIMEType:   "image/png",
+					},
+				},
+			},
+		},
+	}))
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+	fmt.Printf("output: \n%v", resp)
 }

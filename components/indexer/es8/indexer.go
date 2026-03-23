@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -28,43 +29,69 @@ import (
 	"github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/elastic/go-elasticsearch/v8/esutil"
 )
 
+// IndexerConfig contains configuration for the ES8 indexer.
 type IndexerConfig struct {
+	// Client is the Elasticsearch client used for indexing operations.
 	Client *elasticsearch.Client `json:"client"`
 
+	// Index is the name of the Elasticsearch index.
 	Index string `json:"index"`
-	// BatchSize controls max texts size for embedding.
+	// IndexSpec, if provided, describes the index structure (settings, mappings)
+	// to be used for automatic creation if the index does not exist.
+	IndexSpec *IndexSpec `json:"index_spec"`
+	// BatchSize specifies the maximum number of documents to embed in a single batch.
 	// Default is 5.
 	BatchSize int `json:"batch_size"`
-	// FieldMapping supports customize es fields from eino document.
-	// Each key - FieldValue.Value from field2Value will be saved, and
-	// vector of FieldValue.Value will be saved if FieldValue.EmbedKey is not empty.
+	// DocumentToFields maps an Eino document to Elasticsearch fields.
+	// It allows customization of how documents are stored and vectored.
 	DocumentToFields func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error)
-	// Embedding vectorization method, must provide in two cases
-	// 1. VectorFields contains fields except doc Content
-	// 2. VectorFields contains doc Content and vector not provided in doc extra (see Document.Vector method)
+	// Embedding is the embedding model used for vectorization.
+	// It is required if any field provided by DocumentToFields requires vectorization (specifically, if FieldValue.EmbedKey is not empty).
+	// This typically applies when:
+	// 1. The document content itself needs to be vectorized and does not have a pre-computed vector (see [schema.Document.Vector]).
+	// 2. Additional fields (other than content) need to be vectorized.
 	Embedding embedding.Embedder
 }
 
+// IndexSpec allows defining detailed index settings for auto-creation.
+type IndexSpec struct {
+	// Settings maps to the "settings" section of the Elasticsearch Create Index API.
+	// Use this for "number_of_shards", "analysis", "refresh_interval", etc.
+	Settings map[string]any `json:"settings,omitempty"`
+
+	// Mappings maps to the "mappings" section of the Elasticsearch Create Index API.
+	// Use this to define field properties, dynamic templates, etc.
+	Mappings map[string]any `json:"mappings,omitempty"`
+
+	// Aliases maps to the "aliases" section.
+	Aliases map[string]any `json:"aliases,omitempty"`
+}
+
+// FieldValue represents a single field value in Elasticsearch.
 type FieldValue struct {
-	// Value original Value
+	// Value is the actual data to be stored.
 	Value any
-	// EmbedKey if set, Value will be vectorized and saved to es.
+	// EmbedKey, if set, causes the Value to be vectorized and stored under this key.
 	// If Stringify method is provided, Embedding input text will be Stringify(Value).
 	// If Stringify method not set, retriever will try to assert Value as string.
 	EmbedKey string
-	// Stringify converts Value to string
+	// Stringify converts the Value to a string for embedding.
 	Stringify func(val any) (string, error)
 }
 
+// Indexer implements the [indexer.Indexer] interface for Elasticsearch 8.x.
 type Indexer struct {
 	client *elasticsearch.Client
 	config *IndexerConfig
 }
 
-func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
+// NewIndexer creates a new ES8 indexer with the provided configuration.
+// It returns an error if the client or DocumentToFields mapping is missing.
+func NewIndexer(ctx context.Context, conf *IndexerConfig) (*Indexer, error) {
 	if conf.Client == nil {
 		return nil, fmt.Errorf("[NewIndexer] es client not provided")
 	}
@@ -77,12 +104,51 @@ func NewIndexer(_ context.Context, conf *IndexerConfig) (*Indexer, error) {
 		conf.BatchSize = defaultBatchSize
 	}
 
+	if conf.IndexSpec != nil {
+		existsReq := esapi.IndicesExistsRequest{
+			Index: []string{conf.Index},
+		}
+		existsRes, err := existsReq.Do(ctx, conf.Client)
+		if err != nil {
+			return nil, fmt.Errorf("[NewIndexer] check index existence failed, %w", err)
+		}
+		if existsRes.Body != nil {
+			_ = existsRes.Body.Close()
+		}
+
+		if existsRes.StatusCode == 404 {
+			body, err := json.Marshal(conf.IndexSpec)
+			if err != nil {
+				return nil, fmt.Errorf("[NewIndexer] marshal index spec failed, %w", err)
+			}
+
+			createReq := esapi.IndicesCreateRequest{
+				Index: conf.Index,
+				Body:  bytes.NewReader(body),
+			}
+			createRes, err := createReq.Do(ctx, conf.Client)
+			if err != nil {
+				return nil, fmt.Errorf("[NewIndexer] create index failed, %w", err)
+			}
+			if createRes.Body != nil {
+				_ = createRes.Body.Close()
+			}
+			if createRes.IsError() {
+				return nil, fmt.Errorf("[NewIndexer] create index failed, response: %s", createRes.String())
+			}
+		} else if existsRes.IsError() {
+			return nil, fmt.Errorf("[NewIndexer] check index existence failed, response: %s", existsRes.String())
+		}
+	}
+
 	return &Indexer{
 		client: conf.Client,
 		config: conf,
 	}, nil
 }
 
+// Store adds the provided documents to the Elasticsearch index.
+// It returns the list of IDs for the stored documents or an error.
 func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...indexer.Option) (ids []string, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, i.GetType(), components.ComponentOfIndexer)
 	ctx = callbacks.OnStart(ctx, &indexer.CallbackInput{Docs: docs})
@@ -156,6 +222,13 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 				Action:     "index",
 				DocumentID: t.id,
 				Body:       bytes.NewReader(b),
+				OnFailure: func(ctx context.Context, item esutil.BulkIndexerItem, res esutil.BulkIndexerResponseItem, err error) {
+					if err != nil {
+						log.Printf("ERROR: %s", err)
+					} else {
+						log.Printf("ERROR: %s: %s", res.Error.Type, res.Error.Reason)
+					}
+				},
 			}); err != nil {
 				return err
 			}
@@ -174,7 +247,7 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 			return fmt.Errorf("[bulkAdd] FieldMapping failed, %w", err)
 		}
 
-		rawFields := make(map[string]any)
+		rawFields := make(map[string]any, len(fields))
 		embSize := 0
 		for k, v := range fields {
 			rawFields[k] = v.Value
@@ -254,10 +327,12 @@ func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) 
 	return callbacks.ReuseHandlers(ctx, runInfo)
 }
 
+// GetType returns the type of the indexer.
 func (i *Indexer) GetType() string {
 	return typ
 }
 
+// IsCallbacksEnabled checks if callbacks are enabled for this indexer.
 func (i *Indexer) IsCallbacksEnabled() bool {
 	return true
 }

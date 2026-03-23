@@ -23,34 +23,45 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino/components/model"
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
-	"github.com/cloudwego/eino-ext/components/model/ark"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/ark"
 )
 
 func main() {
 	ctx := context.Background()
 
 	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
-	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+	responsesAPIChatModel, err := ark.NewResponsesAPIChatModel(ctx, &ark.ResponsesAPIConfig{
 		APIKey: os.Getenv("ARK_API_KEY"),
 		Model:  os.Getenv("ARK_MODEL_ID"),
+		SessionCache: &ark.SessionCacheConfig{
+			EnableCache: true,
+			TTL:         86400,
+		},
 	})
 	if err != nil {
-		log.Fatalf("NewChatModel failed, err=%v", err)
+		log.Fatalf("NewResponsesAPIChatModel failed, err=%v", err)
 	}
 
 	thinking := &arkModel.Thinking{
 		Type: arkModel.ThinkingTypeDisabled,
 	}
-	cacheOpt := &ark.CacheOption{
-		APIType: ark.ResponsesAPI,
-		SessionCache: &ark.SessionCacheConfig{
-			EnableCache: true,
-			TTL:         86400,
-		},
-	}
+
+	options := make([]model.Option, 0)
+	options = append(options, ark.WithThinking(thinking))
+
+	// You can also enable Session cache by adding an option at runtime.
+	//cacheOpt := &ark.CacheOption{
+	//	SessionCache: &ark.SessionCacheConfig{
+	//		EnableCache: true,
+	//		TTL:         86400,
+	//	},
+	//}
+	//options = append(options, ark.WithCache(cacheOpt))
 
 	useMsgs := []*schema.Message{
 		schema.UserMessage("Your name is superman"),
@@ -62,9 +73,7 @@ func main() {
 	for _, msg := range useMsgs {
 		input = append(input, msg)
 
-		streamResp, err := chatModel.Stream(ctx, input,
-			ark.WithThinking(thinking),
-			ark.WithCache(cacheOpt))
+		streamResp, err := responsesAPIChatModel.Stream(ctx, input, options...)
 		if err != nil {
 			log.Fatalf("Stream failed, err=%v", err)
 		}

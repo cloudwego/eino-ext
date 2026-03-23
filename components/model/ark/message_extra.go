@@ -30,6 +30,7 @@ const (
 	keyOfResponseID            = "ark-response-id"
 	keyOfResponseCacheExpireAt = "ark-response-cache-expire-at"
 	keyOfServiceTier           = "ark-service-tier"
+	keyOfPartial               = "ark-partial"
 	ImageSizeKey               = "seedream-image-size"
 )
 
@@ -157,19 +158,12 @@ func setContextID(msg *schema.Message, contextID string) {
 // Call this to mark those message caches as invalid.
 func InvalidateMessageCaches(messages []*schema.Message) error {
 	for _, msg := range messages {
-		expireAtSec, ok := getCacheExpiration(msg)
+		expireAtSec, ok := GetCacheExpiration(msg)
 		if !ok || expireAtSec <= 0 {
 			continue
 		}
 
-		// there may be concurrency
-		extra := make(map[string]any, len(msg.Extra))
-		for k, v := range msg.Extra {
-			extra[k] = v
-		}
-
-		delete(extra, keyOfResponseCacheExpireAt)
-		msg.Extra = extra
+		delete(msg.Extra, keyOfResponseCacheExpireAt)
 	}
 	return nil
 }
@@ -194,9 +188,9 @@ func setResponseID(msg *schema.Message, responseID string) {
 	setMsgExtra(msg, keyOfResponseID, arkResponseID(responseID))
 }
 
-// getCacheExpiration returns the cache expiration time in seconds.
+// GetCacheExpiration returns the cache expiration time in seconds.
 // Only available for ResponsesAPI responses.
-func getCacheExpiration(msg *schema.Message) (expireAtSec int64, ok bool) {
+func GetCacheExpiration(msg *schema.Message) (expireAtSec int64, ok bool) {
 	expireAtSec_, ok := getMsgExtraValue[arkResponseCacheExpireAt](msg, keyOfResponseCacheExpireAt)
 	if ok {
 		return int64(expireAtSec_), true
@@ -248,7 +242,7 @@ func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 	return getFPS(part.Extra)
 }
 
-func setInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
+func SetInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
 	if part == nil {
 		return
 	}
@@ -379,4 +373,22 @@ func getImageSize(extra map[string]any) (string, bool) {
 		return "", false
 	}
 	return size, true
+}
+
+// SetPartial marks the message as a partial message to enable continuation (prefill) mode.
+// By pre-filling part of the assistant role's content, it guides and controls the model
+// to continue generating from existing text fragments and maintain consistency in role-play scenarios.
+// To use this, set the role of the last message in the input list to assistant and call SetPartial
+// on it. The model will then continue writing based on the message's content.
+// Only available for ResponsesAPI.
+func SetPartial(msg *schema.Message) {
+	setMsgExtra(msg, keyOfPartial, true)
+}
+
+func getPartial(msg *schema.Message) bool {
+	v, ok := getMsgExtraValue[bool](msg, keyOfPartial)
+	if !ok {
+		return false
+	}
+	return v
 }

@@ -500,6 +500,14 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options) (
 	return req, nil
 }
 
+type toolChoice string
+
+const (
+	toolChoiceNone     toolChoice = "none"
+	toolChoiceAuto     toolChoice = "auto"
+	toolChoiceRequired toolChoice = "required"
+)
+
 func toLogProbs(probs *model.LogProbs) *schema.LogProbs {
 	if probs == nil {
 		return nil
@@ -724,8 +732,8 @@ func toArkContent(msg *schema.Message) (*model.ChatCompletionMessageContent, err
 	}
 
 	if len(msg.UserInputMultiContent) > 0 {
-		if msg.Role != schema.User {
-			return nil, fmt.Errorf("user input multi content only support user role, got %s", msg.Role)
+		if msg.Role != schema.User && msg.Role != schema.Tool {
+			return nil, fmt.Errorf("user input multi content only support user&tool role, got %s", msg.Role)
 		}
 		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.UserInputMultiContent))
 		for _, part := range msg.UserInputMultiContent {

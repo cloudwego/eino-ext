@@ -27,42 +27,47 @@ import (
 	"github.com/cloudwego/eino-ext/components/retriever/es8"
 )
 
-// SearchModeApproximate retrieve with multiple approximate strategy (filter+knn+rrf)
-// knn: https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html
-// rrf: https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html
+// SearchModeApproximate retrieves documents using multiple approximate strategies (filter + KNN + RRF).
+// See:
+//
+//	KNN: https://www.elastic.co/guide/en/elasticsearch/reference/current/knn-search.html
+//	RRF: https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html
 func SearchModeApproximate(config *ApproximateConfig) es8.SearchMode {
 	return &approximate{config}
 }
 
+// ApproximateConfig contains configuration for the Approximate search mode.
 type ApproximateConfig struct {
-	// QueryFieldName the name of query field, required when using Hybrid
+	// QueryFieldName is the name of the query field.
+	// It is required when using Hybrid search.
 	QueryFieldName string
-	// VectorFieldName the name of the vector field to search against, required
+	// VectorFieldName is the name of the vector field to search against.
+	// This field is required.
 	VectorFieldName string
-	// Hybrid if true, add filters and rff to knn query
+	// Hybrid, if true, adds filters and RRF to the KNN query.
 	Hybrid bool
-	// RRF (Reciprocal Rank Fusion) is a method for combining multiple result sets, is used to
-	// even the score from the knn query and text query
-	// RRF only available with specific licenses, see: https://www.elastic.co/subscriptions
+	// RRF (Reciprocal Rank Fusion) is a method for combining multiple result sets.
+	// It is used to balance the score from the KNN query and the text query.
+	// RRF is only available with specific licenses.
+	// See: https://www.elastic.co/subscriptions
 	RRF bool
-	// RRFRankConstant determines how much influence documents in
-	// individual result sets per query have over the final ranked result set
+	// RRFRankConstant determines how much influence documents in individual result sets per query have over the final ranked result set.
 	RRFRankConstant *int64
-	// RRFWindowSize determines the size ptrWithoutZero the individual result sets per query
+	// RRFWindowSize determines the size of the individual result sets per query.
 	RRFWindowSize *int64
-	// QueryVectorBuilderModelID the query vector builder model id
-	// see: https://www.elastic.co/guide/en/machine-learning/8.16/ml-nlp-text-emb-vector-search-example.html
+	// QueryVectorBuilderModelID is the model ID for the query vector builder.
+	// See: https://www.elastic.co/guide/en/machine-learning/8.16/ml-nlp-text-emb-vector-search-example.html
 	QueryVectorBuilderModelID *string
-	// Boost Floating point number used to decrease or increase the relevance scores ptrWithoutZero the query.
-	// Boost values are relative to the default value ptrWithoutZero 1.0.
+	// Boost is a floating-point number used to decrease or increase the relevance scores of the query.
+	// Boost values are relative to the default value of 1.0.
 	// A boost value between 0 and 1.0 decreases the relevance score.
 	// A value greater than 1.0 increases the relevance score.
 	Boost *float32
-	// K The final number ptrWithoutZero nearest neighbors to return as top hits
+	// K is the number of nearest neighbors to return as top hits.
 	K *int
-	// NumCandidates The number ptrWithoutZero nearest neighbor candidates to consider per shard
+	// NumCandidates is the number of nearest neighbor candidates to consider per shard.
 	NumCandidates *int
-	// Similarity The minimum similarity for a vector to be considered a match
+	// Similarity is the minimum similarity for a vector to be considered a match.
 	Similarity *float32
 }
 

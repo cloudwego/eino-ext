@@ -1,0 +1,540 @@
+# Volcengine Ark 模型
+
+一个 [Eino](https://github.com/cloudwego/eino) 的 Volcengine Ark 模型实现，实现了 `ToolCallingChatModel` 接口。这使得与 Eino 的 LLM 功能无缝集成，以增强自然语言处理和生成能力。
+
+该软件包提供了两种不同的模型：
+- **ChatModel**：用于基于文本和多模态的聊天补全。
+- **ImageGenerationModel**：用于从文本提示或图像生成图像。
+- **ResponsesAPIChatModel**：用于与 ResponsesAPI 交互的方法和其他服务。
+
+## 特性
+
+- 实现了 `github.com/cloudwego/eino/components/model.Model`
+- 轻松与 Eino 的模型系统集成
+- 可配置的模型参数
+- 支持聊天补全、图像生成和响应 API
+- 支持流式响应
+- 支持自定义响应解析
+- 灵活的模型配置
+
+## 快速安装
+
+```bash
+go get github.com/cloudwego/eino-ext/components/model/ark@latest
+```
+
+---
+
+## 聊天
+
+该模型用于标准聊天和文本生成任务。
+
+### 快速开始
+
+以下是如何使用 `ChatModel` 的快速示例：
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/ark"
+)
+
+func main() {
+	ctx := context.Background()
+
+	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
+	})
+
+	if err != nil {
+		log.Fatalf("NewChatModel failed, err=%v", err)
+	}
+
+	inMsgs := []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "how do you generate answer for user question as a machine, please answer in short?",
+		},
+	}
+
+	msg, err := chatModel.Generate(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	log.Printf("\ngenerate output: \n")
+	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  body: %s\n", string(respBody))
+
+	sr, err := chatModel.Stream(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Stream failed, err=%v", err)
+	}
+
+	chunks := make([]*schema.Message, 0, 1024)
+	for {
+		msgChunk, err := sr.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Stream Recv failed, err=%v", err)
+		}
+
+		chunks = append(chunks, msgChunk)
+	}
+
+	msg, err = schema.ConcatMessages(chunks)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+
+	log.Printf("stream final output: \n")
+	log.Printf("  request_id: %s\n", ark.GetArkRequestID(msg))
+	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  body: %s\n", string(respBody))
+}
+```
+
+### 配置
+
+`ChatModel` 可以使用 `ark.ChatModelConfig` 结构进行配置：
+
+```go
+type ChatModelConfig struct {
+    // Timeout specifies the maximum duration to wait for API responses
+    // If HTTPClient is set, Timeout will not be used.
+    // Optional. Default: 10 minutes
+    Timeout *time.Duration `json:"timeout"`
+    
+    // HTTPClient specifies the client to send HTTP requests.
+    // If HTTPClient is set, Timeout will not be used.
+    // Optional. Default &http.Client{Timeout: Timeout}
+    HTTPClient *http.Client `json:"http_client"`
+    
+    // RetryTimes specifies the number of retry attempts for failed API calls
+    // Optional. Default: 2
+    RetryTimes *int `json:"retry_times"`
+    
+    // BaseURL specifies the base URL for Ark service
+    // Optional. Default: "https://ark.cn-beijing.volces.com/api/v3"
+    BaseURL string `json:"base_url"`
+    
+    // Region specifies the region where Ark service is located
+    // Optional. Default: "cn-beijing"
+    Region string `json:"region"`
+    
+    // The following three fields are about authentication - either APIKey or AccessKey/SecretKey pair is required
+    // For authentication details, see: https://www.volcengine.com/docs/82379/1298459
+    // APIKey takes precedence if both are provided
+    APIKey string `json:"api_key"`
+    
+    AccessKey string `json:"access_key"`
+    
+    SecretKey string `json:"secret_key"`
+    
+    // The following fields correspond to Ark's chat completion API parameters
+    // Ref: https://www.volcengine.com/docs/82379/1298454
+    
+    // Model specifies the ID of endpoint on ark platform
+    // Required
+    Model string `json:"model"`
+    
+    // MaxTokens 限制聊天完成 API 中的最大输出 token 数量。
+    // 在响应 API 中，对应 `max_output_tokens`，表示模型输出和推理输出的总和。
+    // 可选。在聊天完成中，默认值：4096，在响应 API 中，无默认值。
+    MaxTokens *int `json:"max_tokens,omitempty"`
+    
+    // MaxCompletionTokens 指定聊天完成 API 中的最大 token 数量，
+    // 表示模型输出和推理输出的总和。
+    // 范围：0 到 65,536 个 token。超过最大阈值将导致错误。
+    // 注意：在聊天完成中，MaxCompletionTokens 和 MaxTokens 不能同时设置，在响应 API 中，此字段被忽略；请使用 MaxTokens。
+    // 可选。
+    MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
+    
+    // Temperature specifies what sampling temperature to use
+    // Generally recommend altering this or TopP but not both
+    // Range: 0.0 to 1.0. Higher values make output more random
+    // Optional. Default: 1.0
+    Temperature *float32 `json:"temperature,omitempty"`
+    
+    // TopP controls diversity via nucleus sampling
+    // Generally recommend altering this or Temperature but not both
+    // Range: 0.0 to 1.0. Lower values make output more focused
+    // Optional. Default: 0.7
+    TopP *float32 `json:"top_p,omitempty"`
+    
+    // Stop sequences where the API will stop generating further tokens
+    // Optional. Example: []string{"\n", "User:"}
+    Stop []string `json:"stop,omitempty"`
+    
+    // FrequencyPenalty prevents repetition by penalizing tokens based on frequency
+    // Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
+    // Optional. Default: 0
+    FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+    
+    // LogitBias modifies likelihood of specific tokens appearing in completion
+    // Optional. Map token IDs to bias values from -100 to 100
+    LogitBias map[string]int `json:"logit_bias,omitempty"`
+    
+    // PresencePenalty prevents repetition by penalizing tokens based on presence
+    // Range: -2.0 to 2.0. Positive values increase likelihood of new topics
+    // Optional. Default: 0
+    PresencePenalty *float32 `json:"presence_penalty,omitempty"`
+    
+    // CustomHeader the http header passed to model when requesting model
+    CustomHeader map[string]string `json:"custom_header"`
+    
+    // LogProbs specifies whether to return log probabilities of the output tokens.
+    LogProbs bool `json:"log_probs"`
+    
+    // TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
+    TopLogProbs int `json:"top_log_probs"`
+    
+    // ResponseFormat specifies the format that the model must output.
+    ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+    
+    // Thinking controls whether the model is set to activate the deep thinking mode.
+    // It is set to be enabled by default.
+    Thinking *model.Thinking `json:"thinking,omitempty"`
+    
+    // ServiceTier specifies whether to use the TPM guarantee package. The effective target has purchased the inference access point for the guarantee package.
+    ServiceTier *string `json:"service_tier"`
+    
+    // ReasoningEffort specifies the reasoning effort of the model.
+    // Optional.
+    ReasoningEffort *model.ReasoningEffort `json:"reasoning_effort,omitempty"`
+    
+    // BatchChat ark batch chat config
+    // Optional.
+    BatchChat *BatchChatConfig `json:"batch_chat,omitempty"`
+    
+    Cache *CacheConfig `json:"cache,omitempty"`
+}
+```
+
+---
+
+## 图像生成
+
+该模型专门用于从文本提示生成图像。
+
+### 快速开始
+
+以下是如何使用 `ImageGenerationModel` 的快速示例：
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino-ext/components/model/ark"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Get ARK_API_KEY and an image generation model ID
+	imageGenerationModel, err := ark.NewImageGenerationModel(ctx, &ark.ImageGenerationConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_IMAGE_MODEL_ID"), // Use an appropriate image model ID
+	})
+
+	if err != nil {
+		log.Fatalf("NewImageGenerationModel failed, err=%v", err)
+	}
+
+	inMsgs := []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "a photo of a cat sitting on a table",
+		},
+	}
+
+	msg, err := imageGenerationModel.Generate(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	log.Printf("generate output:")
+	log.Printf("  request_id: %s", ark.GetArkRequestID(msg))
+	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  body: %s", string(respBody))
+
+	sr, err := imageGenerationModel.Stream(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Stream failed, err=%v", err)
+	}
+
+	log.Printf("stream output:")
+	index := 0
+	for {
+		msgChunk, err := sr.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Stream Recv failed, err=%v", err)
+		}
+
+		respBody, _ = json.MarshalIndent(msgChunk, "  ", "  ")
+		log.Printf("stream chunk %d: body: %s \n", index, string(respBody))
+		index++
+	}
+}
+```
+
+### 配置
+
+`ImageGenerationModel` 可以使用 `ark.ImageGenerationConfig` 结构进行配置：
+
+```go
+
+type ImageGenerationConfig struct {
+    // For authentication, APIKey is required as the image generation API only supports API Key authentication.
+    // For authentication details, see: https://www.volcengine.com/docs/82379/1298459
+    // Required
+    APIKey string `json:"api_key"`
+    
+    // Model specifies the ID of endpoint on ark platform
+    // Required
+    Model string `json:"model"`
+    
+    // Timeout specifies the maximum duration to wait for API responses
+    // If HTTPClient is set, Timeout will not be used.
+    // Optional. Default: 10 minutes
+    Timeout *time.Duration `json:"timeout"`
+    
+    // HTTPClient specifies the client to send HTTP requests.
+    // If HTTPClient is set, Timeout will not be used.
+    // Optional. Default &http.Client{Timeout: Timeout}
+    HTTPClient *http.Client `json:"http_client"`
+    
+    // RetryTimes specifies the number of retry attempts for failed API calls
+    // Optional. Default: 2
+    RetryTimes *int `json:"retry_times"`
+    
+    // BaseURL specifies the base URL for Ark service
+    // Optional. Default: "https://ark.cn-beijing.volces.com/api/v3"
+    BaseURL string `json:"base_url"`
+    
+    // Region specifies the region where Ark service is located
+    // Optional. Default: "cn-beijing"
+    Region string `json:"region"`
+    
+    // The following fields correspond to Ark's image generation API parameters
+    // Ref: https://www.volcengine.com/docs/82379/1541523
+    
+    // Size specifies the dimensions of the generated image.
+    // It can be a resolution keyword (e.g., "1K", "2K", "4K") or a custom resolution
+    // in "{width}x{height}" format (e.g., "1920x1080").
+    // When using custom resolutions, the total pixels must be between 1280x720 and 4096x4096,
+    // and the aspect ratio (width/height) must be between 1/16 and 16.
+    // Optional. Defaults to "2048x2048".
+    Size string `json:"size"`
+    
+    // SequentialImageGeneration determines if the model should generate a sequence of images.
+    // Possible values:
+    //  - "auto": The model decides whether to generate multiple images based on the prompt.
+    //  - "disabled": Only a single image is generated.
+    // Optional. Defaults to "disabled".
+    SequentialImageGeneration SequentialImageGeneration `json:"sequential_image_generation"`
+    
+    // SequentialImageGenerationOption sets the maximum number of images to generate when
+    // SequentialImageGeneration is set to "auto".
+    // The value must be between 1 and 15.
+    // Optional. Defaults to 15.
+    SequentialImageGenerationOption *model.SequentialImageGenerationOptions `json:"sequential_image_generation_option"`
+    
+    // ResponseFormat specifies how the generated image data is returned.
+    // Possible values:
+    //  - "url": A temporary URL to download the image (valid for 24 hours).
+    //  - "b64_json": The image data encoded as a Base64 string in the response.
+    // Optional. Defaults to "url".
+    ResponseFormat ImageResponseFormat `json:"response_format"`
+    
+    // DisableWatermark, if set to true, removes the "AI Generated" watermark
+    // from the bottom-right corner of the image.
+    // Optional. Defaults to false.
+    DisableWatermark bool `json:"disable_watermark"`
+
+    // 	BatchMaxParallel specifies the maximum number of parallel requests to send to the chat completion API.
+    //	Optional. Default: 3000.
+    BatchMaxParallel *int `json:"batch_max_parallel,omitempty"`
+
+    // BatchChat ark batch chat config
+    // Optional.
+    BatchChat *BatchChatConfig `json:"batch_chat,omitempty"`
+
+    Cache *CacheConfig `json:"cache,omitempty"`
+}
+```
+
+## 示例
+
+查看以下示例了解更多用法：
+
+- [基础生成](./examples/generate/)
+- [批量对话](./examples/generate_batch_chat/)
+- [图像输入](./examples/generate_with_image/)
+- [图像生成](./examples/image_generate/)
+- [意图识别与工具调用](./examples/intent_tool/)
+- [前缀缓存](./examples/prefixcache/)
+- [会话缓存](./examples/sessioncache/)
+- [流式响应](./examples/stream/)
+
+### 聊天完成示例
+
+- **[generate](./examples/generate)** - 基本的文本生成，包含 Generate() 和 Stream() 方法
+  - 展示如何使用聊天模型进行标准文本生成
+  - 演示非流式和流式响应
+  - 包含请求 ID 跟踪
+
+- **[generate_with_image](./examples/generate_with_image)** - 多模态聊天，支持图像输入
+  - 演示如何处理图像和文本
+  - 展示如何以 base64 格式编码和发送图像
+  - 使用 ChatTemplate 处理图像的示例
+
+- **[stream](./examples/stream)** - 带推理强度的流式响应
+  - 展示打字机风格的流式输出
+  - 演示推理强度选项的使用
+  - 正确的流处理和清理示例
+
+- **[intent_tool](./examples/intent_tool)** - 工具调用和函数执行
+  - 演示函数/工具调用能力
+  - 展示如何定义和注册工具
+  - 处理工具调用和响应的示例
+
+- **[generate_batch_chat](./examples/generate_batch_chat)** - 批量聊天完成
+  - 展示如何批量处理多个聊天会话
+  - 演示批量配置选项
+  - 处理批量结果的示例
+
+### 缓存示例
+
+- **[prefixcache/contextapi](./examples/prefixcache/contextapi)** - 前缀缓存与 Context API
+  - 演示前缀缓存以提高性能
+  - 展示缓存命中/未命中跟踪
+  - Context API 集成示例
+
+- **[prefixcache/responsesapi](./examples/prefixcache/responsesapi)** - 前缀缓存与 Responses API
+  - 与上面相同，但使用 Responses API
+  - 展示不同的 API 集成方式
+
+- **[sessioncache/contextapi](./examples/sessioncache/contextapi)** - 会话缓存与 Context API
+  - 演示会话级缓存
+  - 展示多轮对话缓存
+
+- **[sessioncache/responsesapi](./examples/sessioncache/responsesapi)** - 会话缓存与 Responses API
+  - 与上面相同，但使用 Responses API
+
+### 图像生成示例
+
+- **[image_generate](./examples/image_generate)** - 文本到图像生成
+  - 演示如何使用 ImageGenerationModel
+  - 展示如何配置图像生成参数
+  - 保存生成图像的示例
+
+## 快速示例
+
+这里是一个最简单的入门示例（完整示例请参见上文）：
+
+```go
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"os"
+
+	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/ark"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
+	chatModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
+	})
+
+	if err != nil {
+		log.Fatalf("NewChatModel failed, err=%v", err)
+	}
+
+	inMsgs := []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "how do you generate answer for user question as a machine, please answer in short?",
+		},
+	}
+
+	msg, err := chatModel.Generate(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+	}
+
+	log.Printf("generate output:")
+	log.Printf("  request_id: %s", ark.GetArkRequestID(msg))
+	respBody, _ := json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  body: %s", string(respBody))
+
+	sr, err := chatModel.Stream(ctx, inMsgs)
+	if err != nil {
+		log.Fatalf("Stream failed, err=%v", err)
+	}
+
+	chunks := make([]*schema.Message, 0, 1024)
+	for {
+		msgChunk, err := sr.Recv()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			log.Fatalf("Stream Recv failed, err=%v", err)
+		}
+
+		chunks = append(chunks, msgChunk)
+	}
+
+	msg, err = schema.ConcatMessages(chunks)
+	if err != nil {
+		log.Fatalf("ConcatMessages failed, err=%v", err)
+	}
+
+	log.Printf("stream final output:")
+	log.Printf("  request_id: %s", ark.GetArkRequestID(msg))
+	respBody, _ = json.MarshalIndent(msg, "  ", "  ")
+	log.Printf("  body: %s \n", string(respBody))
+}
+
+```
+
+
+## 更多信息
+
+- [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
+- [火山引擎方舟模型文档](https://www.volcengine.com/docs/82379/1263272)

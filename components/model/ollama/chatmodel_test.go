@@ -237,6 +237,13 @@ func Test_Stream(t *testing.T) {
 			outStream, err := m.Stream(ctx, msgs)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(outStream, convey.ShouldNotBeNil)
+			for {
+				_, err := outStream.Recv()
+				if err != nil {
+					break
+				}
+			}
+			outStream.Close()
 		})
 
 		PatchConvey("test chan success", func() {
@@ -246,6 +253,13 @@ func Test_Stream(t *testing.T) {
 			outStream, err := m.Stream(ctx, msgs)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(outStream, convey.ShouldNotBeNil)
+			for {
+				_, err := outStream.Recv()
+				if err != nil {
+					break
+				}
+			}
+			outStream.Close()
 		})
 
 	})

@@ -292,6 +292,10 @@ func (cm *ChatModel) genRequest(_ context.Context, stream bool, in []*schema.Mes
 		return nil, nil, fmt.Errorf("error convert messages: %w", err)
 	}
 
+	if len(mo.AllowedToolNames) > 0 {
+		return nil, nil, fmt.Errorf("not support allowed tool names parameter")
+	}
+
 	tools, err := toOllamaTools(mo.Tools)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error convert tools: %w", err)

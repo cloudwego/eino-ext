@@ -94,6 +94,10 @@ type SearchResult struct {
 }
 ```
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 
 - [DuckDuckGo Search Library Documentation](ddgsearch/README.md)

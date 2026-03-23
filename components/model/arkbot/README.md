@@ -180,7 +180,12 @@ func WithCustomHeader(m map[string]string) model.Option {}
 ```
 
 
-## examples
+## Examples
+
+See the following examples for more usage:
+
+- [Basic Generation](./examples/generate/)
+- [Streaming Response](./examples/stream/)
 
 ### generate
 

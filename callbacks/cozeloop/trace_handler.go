@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/schema"
 	"github.com/coze-dev/cozeloop-go"
@@ -100,6 +101,11 @@ func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input
 	ctx, span := l.client.StartSpan(ctx, spanName, parseSpanTypeFromComponent(info.Component))
 
 	l.setRunInfo(ctx, span, info)
+	l.setSpanContext(ctx, span)
+
+	if info.Component == adk.ComponentOfAgent {
+		span.SetBaggage(ctx, map[string]string{attrKeyAgentName: info.Name})
+	}
 
 	if l.parser != nil {
 		span.SetTags(ctx, l.parser.ParseInput(ctx, info, input))
@@ -118,6 +124,25 @@ func (l *einoTracer) OnEnd(ctx context.Context, info *callbacks.RunInfo, output 
 	span := l.client.GetSpanFromContext(ctx)
 	if span == nil {
 		l.logger.CtxWarnf(ctx, "[einoTracer][OnEnd] span not found in callback ctx")
+		return ctx
+	}
+
+	if info.Component == adk.ComponentOfAgent {
+		if l.parser != nil {
+			go func() {
+				defer func() {
+					if e := recover(); e != nil {
+						l.logger.CtxWarnf(ctx, "[einoTracer][OnEnd] recovered: %s", e)
+					}
+					span.Finish(ctx)
+				}()
+
+				tags := l.parser.ParseOutput(ctx, info, output)
+				span.SetTags(ctx, tags)
+			}()
+		} else {
+			span.Finish(ctx)
+		}
 		return ctx
 	}
 
@@ -180,6 +205,11 @@ func (l *einoTracer) OnStartWithStreamInput(ctx context.Context, info *callbacks
 	ctx = context.WithValue(ctx, async.TraceStreamInputAsyncKey{}, stopCh)
 
 	l.setRunInfo(ctx, span, info)
+	l.setSpanContext(ctx, span)
+
+	if info.Component == adk.ComponentOfAgent {
+		span.SetBaggage(ctx, map[string]string{attrKeyAgentName: info.Name})
+	}
 
 	if l.parser != nil {
 		go func() {
@@ -254,5 +284,17 @@ func (l *einoTracer) setRunInfo(ctx context.Context, span cozeloop.Span, info *c
 	)
 	if l.runtime != nil {
 		span.SetRuntime(ctx, *l.runtime)
+	}
+}
+
+func (l *einoTracer) setSpanContext(ctx context.Context, span cozeloop.Span) {
+	spanContextImpl := getSpanContextImpl(ctx)
+	if spanContextImpl != nil && !spanContextImpl.isSet {
+		*spanContextImpl = spanContext{
+			spanID:  span.GetSpanID(),
+			traceID: span.GetTraceID(),
+			baggage: span.GetBaggage(),
+			isSet:   true,
+		}
 	}
 }

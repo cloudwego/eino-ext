@@ -43,11 +43,17 @@ func main() {
 
 	// Create a Claude model
 	cm, err := claude.NewChatModel(ctx, &claude.Config{
-		// if you want to use Aws Bedrock Service, set these four field.
+		// If you want to use AWS Bedrock, set these fields:
 		// ByBedrock:       true,
 		// AccessKey:       "",
 		// SecretAccessKey: "",
 		// Region:          "us-west-2",
+
+		// If you want to use Google Vertex AI, set ByVertex: true.
+		// Project ID and region are auto-detected from environment variables.
+		// See: https://claude.ai/docs/en/google-vertex-ai
+		// ByVertex: true,
+
 		APIKey: apiKey,
 		// Model:     "claude-3-5-sonnet-20240620",
 		BaseURL:   baseURLPtr,
