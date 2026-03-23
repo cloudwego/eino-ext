@@ -18,10 +18,12 @@ package http
 
 import (
 	"context"
+	"net"
 	"sync"
 	"testing"
 
 	"github.com/bytedance/sonic"
+	hz_server "github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
@@ -73,7 +75,18 @@ func (hdl *mockServerTransportHandler) SetTestRoundFunc(f func(t *testing.T, ctx
 
 func Test_SSE(t *testing.T) {
 	srvHdl := &mockServerTransportHandler{}
-	builder := NewServerTransportBuilder("/sse")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.Nil(t, err)
+	addr := ln.Addr().String()
+	ln.Close()
+	_, port, err := net.SplitHostPort(addr)
+	assert.Nil(t, err)
+	hostPort := net.JoinHostPort("127.0.0.1", port)
+	hz := hz_server.Default(
+		hz_server.WithSenseClientDisconnection(true),
+		hz_server.WithHostPorts(hostPort),
+	)
+	builder := NewServerTransportBuilder("/sse", WithHertzIns(hz))
 	ctx := context.Background()
 	srvTrans, err := builder.Build(ctx, srvHdl)
 	assert.Nil(t, err)
@@ -106,7 +119,7 @@ func Test_SSE(t *testing.T) {
 			t.Log(err)
 		})
 		cliHdl := NewClientTransportHandler()
-		trans, err := cliHdl.NewTransport(context.Background(), conninfo.NewPeer(conninfo.PeerTypeURL, "http://127.0.0.1:8888/sse"))
+		trans, err := cliHdl.NewTransport(context.Background(), conninfo.NewPeer(conninfo.PeerTypeURL, "http://"+hostPort+"/sse"))
 		assert.Nil(t, err)
 		rounder, ok := trans.ClientCapability()
 		assert.True(t, ok)
