@@ -220,6 +220,7 @@ pattern = base64.b64decode('{pattern_b64}').decode('utf-8')
 
 os.chdir(path)
 matches = sorted(glob.glob(pattern, recursive=True))
+results = []
 for m in matches:
     stat = os.stat(m)
     result = {{
@@ -228,7 +229,8 @@ for m in matches:
         'mtime': stat.st_mtime,
         'is_dir': os.path.isdir(m)
     }}
-    print(json.dumps(result), end="")
+    results.append(result)
+print(json.dumps(results), end="")
 `
 	executePythonCodeTemplate = `
 import sys
@@ -244,7 +246,11 @@ try:
 
     # Check for stderr
     if result.stderr:
-        print(f"Error executing command: {{result.stderr}}", file=sys.stderr)
+        output_parts = []
+        if result.stdout:
+            output_parts.append(f"[stdout]:\n{{result.stdout.rstrip()}}")
+        output_parts.append(f"[stderr]:\n{{result.stderr.rstrip()}}")
+        print('\n'.join(output_parts), end='')
         sys.exit(result.returncode if result.returncode != 0 else 1)
     
     # Print stdout

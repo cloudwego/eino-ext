@@ -79,3 +79,67 @@ func TestSetToolInfoBreakpointOfClaude(t *testing.T) {
 	assert.Len(t, toolInfo.Extra, 1)
 	assert.Len(t, toolInfo_.Extra, 2)
 }
+
+func TestSetMessageCacheControl(t *testing.T) {
+	msg := &schema.Message{
+		Role:    schema.System,
+		Content: "test",
+		Extra: map[string]any{
+			"test": "test",
+		},
+	}
+
+	t.Run("with TTL", func(t *testing.T) {
+		msg_ := SetMessageCacheControl(msg, &CacheControl{TTL: CacheTTL1h})
+		assert.Len(t, msg.Extra, 1)
+		assert.Len(t, msg_.Extra, 3) // test + breakpoint + ttl
+		assert.True(t, isBreakpointMessage(msg_))
+		assert.Equal(t, CacheTTL1h, getMessageBreakpointCacheControl(msg_).TTL)
+	})
+
+	t.Run("with nil ctrl", func(t *testing.T) {
+		msg_ := SetMessageCacheControl(msg, nil)
+		assert.Len(t, msg_.Extra, 2) // test + breakpoint
+		assert.True(t, isBreakpointMessage(msg_))
+		assert.Nil(t, getMessageBreakpointCacheControl(msg_))
+	})
+
+	t.Run("with zero-value ctrl", func(t *testing.T) {
+		msg_ := SetMessageCacheControl(msg, &CacheControl{})
+		assert.Len(t, msg_.Extra, 2) // test + breakpoint
+		assert.True(t, isBreakpointMessage(msg_))
+		assert.Nil(t, getMessageBreakpointCacheControl(msg_))
+	})
+}
+
+func TestSetToolInfoCacheControl(t *testing.T) {
+	toolInfo := &schema.ToolInfo{
+		Name: "test",
+		Desc: "test",
+		Extra: map[string]any{
+			"test": "test",
+		},
+	}
+
+	t.Run("with TTL", func(t *testing.T) {
+		toolInfo_ := SetToolInfoCacheControl(toolInfo, &CacheControl{TTL: CacheTTL5m})
+		assert.Len(t, toolInfo.Extra, 1)
+		assert.Len(t, toolInfo_.Extra, 3)
+		assert.True(t, isBreakpointTool(toolInfo_))
+		assert.Equal(t, CacheTTL5m, getToolBreakpointCacheControl(toolInfo_).TTL)
+	})
+
+	t.Run("with nil ctrl", func(t *testing.T) {
+		toolInfo_ := SetToolInfoCacheControl(toolInfo, nil)
+		assert.Len(t, toolInfo_.Extra, 2)
+		assert.True(t, isBreakpointTool(toolInfo_))
+		assert.Nil(t, getToolBreakpointCacheControl(toolInfo_))
+	})
+
+	t.Run("with zero-value ctrl", func(t *testing.T) {
+		toolInfo_ := SetToolInfoCacheControl(toolInfo, &CacheControl{})
+		assert.Len(t, toolInfo_.Extra, 2)
+		assert.True(t, isBreakpointTool(toolInfo_))
+		assert.Nil(t, getToolBreakpointCacheControl(toolInfo_))
+	})
+}
