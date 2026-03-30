@@ -503,6 +503,13 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 			InputSchema: inputSchema,
 		}
 
+		// Support strict tool use via ToolInfo.Extra["strict"] = true.
+		// When enabled, the API guarantees that tool call inputs conform
+		// to the declared JSON Schema exactly (no type coercion).
+		if strict, ok := tool.Extra["strict"].(bool); ok && strict {
+			toolParam.Strict = param.NewOpt(true)
+		}
+
 		if isBreakpointTool(tool) {
 			toolParam.CacheControl = newCacheControlParam(getToolBreakpointCacheControl(tool))
 		}
