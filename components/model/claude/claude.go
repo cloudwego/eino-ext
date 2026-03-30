@@ -495,6 +495,15 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 				Properties: s.Properties,
 				Required:   s.Required,
 			}
+			// Pass through additionalProperties from the JSON Schema if present.
+			// This is required for strict tool use mode on some providers (e.g. Bedrock).
+			if s.AdditionalProperties != nil {
+				apBytes, _ := json.Marshal(s.AdditionalProperties)
+				var ap any
+				if json.Unmarshal(apBytes, &ap) == nil {
+					inputSchema.ExtraFields = map[string]any{"additionalProperties": ap}
+				}
+			}
 		}
 
 		toolParam := &anthropic.ToolParam{
