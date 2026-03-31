@@ -34,3 +34,13 @@ output/*
 
 # Vscode files
 .vscode
+
+# Trae files
+.trae/
+
+# Claude files
+.claude/
+
+# Data files
+*.jsonl
+*.csv

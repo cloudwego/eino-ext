@@ -28,6 +28,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/google/uuid"
 	"google.golang.org/genai"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -215,11 +216,13 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		return nil, err
 	}
 
+	// Generate content using the Gemini API
 	result, err := cm.cli.Models.GenerateContent(ctx, modelName, contents, genaiConf)
 	if err != nil {
 		return nil, fmt.Errorf("send message fail: %w", err)
 	}
 
+	// Convert the API response to schema.Message format
 	message, err = convResponse(result)
 	if err != nil {
 		return nil, fmt.Errorf("convert response fail: %w", err)
@@ -781,25 +784,28 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 		content.Parts = append(content.Parts, thoughtPart)
 	}
 
-	for i := range message.ToolCalls {
-		call := &message.ToolCalls[i]
-		args := make(map[string]any)
-		err := sonic.UnmarshalString(call.Function.Arguments, &args)
-		if err != nil {
-			return nil, fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
-		}
+	addToolCallPart := func() error {
+		for i := range message.ToolCalls {
+			call := &message.ToolCalls[i]
+			args := make(map[string]any)
+			err := sonic.UnmarshalString(call.Function.Arguments, &args)
+			if err != nil {
+				return fmt.Errorf("unmarshal schema tool call arguments to map[string]any fail: %w", err)
+			}
 
-		part := genai.NewPartFromFunctionCall(call.Function.Name, args)
-		// Restore thought signature on the functionCall part if present.
-		// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
-		// - Signatures must be returned exactly as received on functionCall parts
-		// - For parallel calls: only first functionCall has signature
-		// - For sequential calls: each functionCall has its own signature
-		// - Omitting required signature causes 400 error on Gemini 3 Pro
-		if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
-			part.ThoughtSignature = sig
+			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+			// Restore thought signature on the functionCall part if present.
+			// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
+			// - Signatures must be returned exactly as received on functionCall parts
+			// - For parallel calls: only first functionCall has signature
+			// - For sequential calls: each functionCall has its own signature
+			// - Omitting required signature causes 400 error on Gemini 3 Pro
+			if sig := getToolCallThoughtSignature(call); len(sig) > 0 {
+				part.ThoughtSignature = sig
+			}
+			content.Parts = append(content.Parts, part)
 		}
-		content.Parts = append(content.Parts, part)
+		return nil
 	}
 
 	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
@@ -824,6 +830,9 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 			return nil, err
 		}
 		content.Parts = append(content.Parts, parts...)
+		if err = addToolCallPart(); err != nil {
+			return nil, err
+		}
 		return content, nil
 	}
 	if message.Content != "" {
@@ -838,6 +847,9 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 			}
 		}
 		content.Parts = append(content.Parts, textPart)
+	}
+	if err := addToolCallPart(); err != nil {
+		return nil, err
 	}
 	if len(message.MultiContent) > 0 {
 		log.Printf("MultiContent field is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
@@ -880,15 +892,18 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 			if content.Video == nil {
 				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in user message")
 			}
-			if content.Video.Extra != nil {
-				if videoMetaData := GetInputVideoMetaData(content.Video); videoMetaData != nil {
-					result = append(result, &genai.Part{VideoMetadata: videoMetaData})
-				}
-			}
+
 			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
 			if err != nil {
 				return nil, err
 			}
+
+			if content.Video.Extra != nil {
+				if videoMetaData := GetInputVideoMetaData(content.Video); videoMetaData != nil {
+					p.VideoMetadata = videoMetaData
+				}
+			}
+
 			result = append(result, p)
 
 		case schema.ChatMessagePartTypeFileURL:
@@ -1281,6 +1296,8 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 	return res, nil
 }
 
+// convFC converts a Gemini function call part to a schema.ToolCall.
+// Note: Gemini does not provide tool call IDs, so we generate a UUID for compatibility.
 func convFC(part *genai.Part) (*schema.ToolCall, error) {
 	if part == nil || part.FunctionCall == nil {
 		return nil, fmt.Errorf("part or function call is nil")
@@ -1293,7 +1310,7 @@ func convFC(part *genai.Part) (*schema.ToolCall, error) {
 	}
 
 	toolCall := &schema.ToolCall{
-		ID: tp.Name,
+		ID: uuid.NewString(),
 		Function: schema.FunctionCall{
 			Name:      tp.Name,
 			Arguments: args,

@@ -22,9 +22,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/cloudwego/eino-ext/components/model/claude"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+
+	"github.com/cloudwego/eino-ext/components/model/claude"
 )
 
 func main() {
@@ -56,10 +57,11 @@ func systemCache() {
 		log.Fatalf("NewChatModel of claude failed, err=%v", err)
 	}
 
-	breakpoint := claude.SetMessageBreakpoint(&schema.Message{
+	// SetMessageCacheControl sets a manual cache breakpoint with a 1-hour TTL.
+	breakpoint := claude.SetMessageCacheControl(&schema.Message{
 		Role:    schema.System,
 		Content: "The film Dongji Rescue, based on a true historical event, tells the story of Chinese fishermen braving turbulent seas to save strangers — a testament to the nation's capacity to create miracles in the face of adversity.\n\nEighty-three years ago, in 1942, the Japanese military seized the Lisbon Maru ship to transport 1,816 British prisoners of war from Hong Kong to Japan. Passing through the waters near Zhoushan, Zhejiang province, it was torpedoed by a US submarine. Fishermen from Zhoushan rescued 384 prisoners of war and hid them from Japanese search parties.\n\nActor Zhu Yilong, in an exclusive interview with China Daily, said he was deeply moved by the humanity shown in such extreme conditions when he accepted his role. \"This historical event proves that in dire circumstances, Chinese people can extend their goodness to protect both themselves and others,\" he said.\n\nLast Friday, a themed event for Dongji Rescue was held in Zhoushan, a city close to where the Lisbon Maru sank. Descendants of the British POWs and the rescuing fishermen gathered to watch the film and share their reflections.\n\nIn the film, the British POWs are aided by a group of fishermen from Dongji Island, whose courage and compassion cut a path through treacherous waves. After the screening, many descendants were visibly moved.\n\n\"I want to express my deepest gratitude to the Chinese people and the descendants of Chinese fishermen. When the film is released in the UK, I will bring my family and friends to watch it. Heroic acts like this deserve to be known worldwide,\" said Denise Wynne, a descendant of a British POW.\n\n\"I felt the profound friendship between the Chinese and British people through the film,\" said Li Hui, a descendant of a rescuer. Many audience members were brought to tears — some by the fishermen's bravery, others by the enduring spirit of \"never abandoning those in peril\".\n\n\"In times of sea peril, rescue is a must,\" said Wu Buwei, another rescuer's descendant, noting that this value has long been a part of Dongji fishermen's traditions.\n\nCoincidentally, on the morning of Aug 5, a real-life rescue unfolded on the shores of Dongfushan in Dongji town. Two tourists from Shanghai fell into the sea and were swept away by powerful waves. Without hesitation, two descendants of Dongji fishermen — Wang Yubin and Yang Xiaoping — leaped in to save them, braving a wind force of 9 to 10 before pulling them to safety.\n\n\"Our forebearers once rescued many British POWs here. As their descendants, we should carry forward their bravery,\" Wang said. Both rescuers later joined the film's cast and crew at the Zhoushan event, sharing the stage with actors who portrayed the fishermen in a symbolic \"reunion across 83 years\".\n\nChinese actor Wu Lei, who plays A Dang in the film, expressed his respect for the two rescuing fishermen on-site. In the film, A Dang saves a British POW named Thomas Newman. Though they share no common language, they manage to connect. In an interview with China Daily, Wu said, \"They connected through a small globe. A Dang understood when Newman pointed out his home, the UK, on the globe.\"\n\nThe film's director Fei Zhenxiang noted that the Eastern Front in World War II is often overlooked internationally, despite China's 14 years of resistance tying down large numbers of Japanese troops. \"Every Chinese person is a hero, and their righteousness should not be forgotten,\" he said.\n\nGuan Hu, codirector, said, \"We hope that through this film, silent kindness can be seen by the world\", marking the 80th anniversary of victory in the Chinese People's War of Resistance Against Japanese Aggression (1931-45) and the World Anti-Fascist War.",
-	})
+	}, &claude.CacheControl{TTL: claude.CacheTTL1h})
 
 	for i := 0; i < 2; i++ {
 		now := time.Now()
@@ -107,7 +109,8 @@ func toolInfoCache() {
 		log.Fatalf("NewChatModel of claude failed, err=%v", err)
 	}
 
-	breakpoint := claude.SetToolInfoBreakpoint(&schema.ToolInfo{
+	// SetToolInfoCacheControl sets a manual cache breakpoint on the tool with a 5-minute TTL.
+	breakpoint := claude.SetToolInfoCacheControl(&schema.ToolInfo{
 		Name: "get_time",
 		Desc: "Get the current time in a given time zone",
 		ParamsOneOf: schema.NewParamsOneOfByParams(
@@ -119,7 +122,7 @@ func toolInfoCache() {
 				},
 			},
 		)},
-	)
+		&claude.CacheControl{TTL: claude.CacheTTL5m})
 
 	mockTools := []*schema.ToolInfo{
 		{
@@ -230,8 +233,9 @@ func sessionCache() {
 		log.Fatalf("NewChatModel of claude failed, err=%v", err)
 	}
 
+	// WithAutoCacheControl enables automatic caching with a 1-hour TTL.
 	opts := []model.Option{
-		claude.WithEnableAutoCache(true),
+		claude.WithAutoCacheControl(&claude.CacheControl{TTL: claude.CacheTTL1h}),
 	}
 
 	mockTools := []*schema.ToolInfo{

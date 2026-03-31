@@ -462,18 +462,12 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 		return nil, fmt.Errorf("failed to convert to ark responsesAPI tools: %w", err)
 	}
 
-	tc := schema.ToolChoiceAllowed
-
 	ncm := *cm.chatModel
 	ncm.rawTools = tools
 	ncm.tools = arkTools
-	ncm.toolChoice = &tc
-
 	nrcm := *cm.respChatModel
 	nrcm.rawTools = tools
 	nrcm.tools = respTools
-	nrcm.toolChoice = &tc
-
 	return &ChatModel{
 		chatModel:     &ncm,
 		respChatModel: &nrcm,
@@ -484,11 +478,6 @@ func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) (err error) {
 	if err = cm.tryBindTools(tools); err != nil {
 		return err
 	}
-
-	tc := schema.ToolChoiceAllowed
-	cm.chatModel.toolChoice = &tc
-	cm.respChatModel.toolChoice = &tc
-
 	return nil
 }
 
@@ -496,11 +485,9 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) (err error) {
 	if err = cm.tryBindTools(tools); err != nil {
 		return err
 	}
-
 	tc := schema.ToolChoiceForced
 	cm.chatModel.toolChoice = &tc
 	cm.respChatModel.toolChoice = &tc
-
 	return nil
 }
 

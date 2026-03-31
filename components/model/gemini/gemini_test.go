@@ -27,6 +27,7 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/genai"
@@ -440,7 +441,7 @@ func TestChatModel_convMedia(t *testing.T) {
 			}
 			parts, err := convInputMedia(contents)
 			assert.NoError(t, err)
-			assert.Len(t, parts, 2)
+			assert.Len(t, parts, 1)
 			assert.NotNil(t, parts[0].VideoMetadata)
 			assert.Equal(t, time.Second, parts[0].VideoMetadata.StartOffset)
 			assert.Equal(t, time.Second*5, parts[0].VideoMetadata.EndOffset)
@@ -1245,4 +1246,347 @@ func TestPopulateToolChoice(t *testing.T) {
 			}
 		})
 	}
+}
+
+// isValidUUID checks if a string is a valid UUID format
+func isValidUUID(u string) bool {
+	_, err := uuid.Parse(u)
+	return err == nil
+}
+
+func TestUniqueToolCallIDs(t *testing.T) {
+	t.Run("single tool call gets UUID as ID", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 1)
+		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID should be a valid UUID")
+		assert.Equal(t, "get_weather", message.ToolCalls[0].Function.Name)
+	})
+
+	t.Run("multiple calls to same function get unique UUID IDs", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "London"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Tokyo"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 3)
+
+		// Verify all IDs are valid UUIDs
+		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID 0 should be a valid UUID")
+		assert.True(t, isValidUUID(message.ToolCalls[1].ID), "ID 1 should be a valid UUID")
+		assert.True(t, isValidUUID(message.ToolCalls[2].ID), "ID 2 should be a valid UUID")
+
+		// Verify all IDs are unique
+		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[1].ID, "IDs should be unique")
+		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[2].ID, "IDs should be unique")
+		assert.NotEqual(t, message.ToolCalls[1].ID, message.ToolCalls[2].ID, "IDs should be unique")
+
+		// Verify arguments are preserved correctly
+		var args1, args2, args3 map[string]interface{}
+		err = sonic.UnmarshalString(message.ToolCalls[0].Function.Arguments, &args1)
+		assert.NoError(t, err)
+		assert.Equal(t, "Paris", args1["city"])
+
+		err = sonic.UnmarshalString(message.ToolCalls[1].Function.Arguments, &args2)
+		assert.NoError(t, err)
+		assert.Equal(t, "London", args2["city"])
+
+		err = sonic.UnmarshalString(message.ToolCalls[2].Function.Arguments, &args3)
+		assert.NoError(t, err)
+		assert.Equal(t, "Tokyo", args3["city"])
+	})
+
+	t.Run("multiple calls to different functions get unique UUID IDs", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "get_time",
+							Args: map[string]any{"timezone": "UTC"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "calculate",
+							Args: map[string]any{"expression": "2+2"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 3)
+
+		// Verify all IDs are valid UUIDs
+		for i, tc := range message.ToolCalls {
+			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
+		}
+
+		// Verify all IDs are unique
+		ids := make(map[string]bool)
+		for _, tc := range message.ToolCalls {
+			assert.False(t, ids[tc.ID], "ID %s should be unique", tc.ID)
+			ids[tc.ID] = true
+		}
+	})
+
+	t.Run("mixed scenario with multiple function calls", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "1"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "2"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_b",
+							Args: map[string]any{"param": "3"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "4"},
+						},
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "function_a",
+							Args: map[string]any{"param": "5"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		assert.Len(t, message.ToolCalls, 5)
+
+		// Verify all IDs are valid UUIDs and unique
+		ids := make(map[string]bool)
+		for i, tc := range message.ToolCalls {
+			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
+			assert.False(t, ids[tc.ID], "ID %s should be unique", tc.ID)
+			ids[tc.ID] = true
+		}
+	})
+
+	t.Run("multiple responses generate unique UUIDs", func(t *testing.T) {
+		resp1 := &genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "first"},
+								},
+							},
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "second"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		message1, err := convResponse(resp1)
+		assert.NoError(t, err)
+		assert.NotNil(t, message1)
+		assert.Len(t, message1.ToolCalls, 2)
+		assert.True(t, isValidUUID(message1.ToolCalls[0].ID))
+		assert.True(t, isValidUUID(message1.ToolCalls[1].ID))
+		assert.NotEqual(t, message1.ToolCalls[0].ID, message1.ToolCalls[1].ID)
+
+		resp2 := &genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									Name: "search",
+									Args: map[string]any{"query": "third"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		message2, err := convResponse(resp2)
+		assert.NoError(t, err)
+		assert.NotNil(t, message2)
+		assert.Len(t, message2.ToolCalls, 1)
+		assert.True(t, isValidUUID(message2.ToolCalls[0].ID))
+
+		// Verify IDs across responses are unique
+		assert.NotEqual(t, message1.ToolCalls[0].ID, message2.ToolCalls[0].ID)
+		assert.NotEqual(t, message1.ToolCalls[1].ID, message2.ToolCalls[0].ID)
+	})
+}
+
+func TestConvSchemaMessageToolCallOrder(t *testing.T) {
+	t.Run("AssistantGenMultiContent with tool calls - tool calls come after media parts", func(t *testing.T) {
+		base64Data := base64.StdEncoding.EncodeToString([]byte("123"))
+		message := &schema.Message{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "Here's the image:"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+			},
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "analyze_image",
+						Arguments: `{"image_id":"123"}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.Equal(t, "Here's the image:", content.Parts[0].Text)
+		assert.NotNil(t, content.Parts[1].InlineData)
+		assert.Equal(t, "image/png", content.Parts[1].InlineData.MIMEType)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "analyze_image", content.Parts[2].FunctionCall.Name)
+	})
+
+	t.Run("Content with reasoning and tool calls - correct order", func(t *testing.T) {
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "Final answer",
+			ReasoningContent: "Thinking process",
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "tool",
+						Arguments: `{}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "Thinking process", content.Parts[0].Text)
+		assert.Equal(t, "Final answer", content.Parts[1].Text)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "tool", content.Parts[2].FunctionCall.Name)
+	})
+
+	t.Run("Multiple tool calls with content - all tool calls come after text", func(t *testing.T) {
+		message := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "I need to check several things:",
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "tool1",
+						Arguments: `{"a":1}`,
+					},
+				},
+				{
+					ID: "call_2",
+					Function: schema.FunctionCall{
+						Name:      "tool2",
+						Arguments: `{"b":2}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.Equal(t, "I need to check several things:", content.Parts[0].Text)
+		assert.NotNil(t, content.Parts[1].FunctionCall)
+		assert.Equal(t, "tool1", content.Parts[1].FunctionCall.Name)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "tool2", content.Parts[2].FunctionCall.Name)
+	})
 }

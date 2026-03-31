@@ -39,6 +39,7 @@ func init() {
 		return final, nil
 	})
 	schema.RegisterName[*reasoningDetails]("_eino_ext_openrouter_reasoning_details")
+	schema.RegisterName[[]*reasoningDetails]("_eino_ext_openrouter_reasoning_details_slice")
 
 	compose.RegisterStreamChunkConcatFunc(func(chunks []*StreamTerminatedError) (final *StreamTerminatedError, err error) {
 		if len(chunks) == 0 {

@@ -21,11 +21,13 @@ import (
 	"encoding/json"
 	"io"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/consts"
 	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
@@ -131,6 +133,15 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 
 	case compose.ComponentOfLambda:
 		tags.set(tracespec.Input, parseAny(ctx, input, false))
+
+	case adk.ComponentOfAgent:
+		agentInput := adk.ConvAgentCallbackInput(input)
+		if agentInput != nil {
+			agentTags := d.parseAgentInput(ctx, info, agentInput)
+			for k, v := range agentTags {
+				tags.set(k, v)
+			}
+		}
 
 	default:
 		messages, ok := input.([]*schema.Message)
@@ -239,6 +250,16 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			collectOutput.addMessages(iterSliceWithCtx(ctx, iterSlice(messages, convertModelMessage), addToolName)...)
 		}
 		tags.set(tracespec.Output, parseAny(ctx, output, false))
+
+	case adk.ComponentOfAgent:
+		agentOutput := adk.ConvAgentCallbackOutput(output)
+		if agentOutput != nil {
+			agentTags := d.parseAgentOutput(ctx, info, agentOutput)
+			for k, v := range agentTags {
+				tags.set(k, v)
+			}
+		}
+
 	default:
 		if level == 1 && d.enableAggrMessageOutput {
 			tags.set(tracespec.Output, collectOutput)
@@ -555,7 +576,211 @@ func parseSpanTypeFromComponent(c components.Component) string {
 	case compose.ComponentOfGraph:
 		return "graph"
 
+	case adk.ComponentOfAgent:
+		return spanTypeAgent
+
 	default:
 		return string(c)
 	}
+}
+
+const (
+	spanTypeAgent    = "Agent"
+	attrKeyAgentName = "agent_name"
+	attrKeyRunMode   = "run_mode"
+)
+
+func (d defaultDataParser) parseAgentInput(ctx context.Context, info *callbacks.RunInfo, input *adk.AgentCallbackInput) map[string]any {
+	if info == nil || input == nil {
+		return nil
+	}
+
+	tags := make(spanTags)
+
+	if input.Input != nil {
+		tags.set(attrKeyRunMode, "run")
+		tags.set(tracespec.Input, parseAny(ctx, input.Input.Messages, false))
+		tags.set(tracespec.Stream, input.Input.EnableStreaming)
+	} else if input.ResumeInfo != nil {
+		tags.set(attrKeyRunMode, "resume")
+		tags.set(tracespec.Input, input.ResumeInfo)
+		tags.set(tracespec.Stream, input.ResumeInfo.EnableStreaming)
+	}
+
+	tags.set(attrKeyAgentName, info.Name)
+
+	return tags
+}
+
+func (d defaultDataParser) parseAgentOutput(ctx context.Context, info *callbacks.RunInfo, output *adk.AgentCallbackOutput) map[string]any {
+	if info == nil || output == nil || output.Events == nil {
+		return nil
+	}
+
+	var events []map[string]any
+
+	for {
+		event, ok := output.Events.Next()
+		if !ok {
+			break
+		}
+
+		eventData := serializeAgentEvent(ctx, event)
+		if eventData != nil {
+			events = append(events, eventData)
+		}
+	}
+
+	tags := make(spanTags)
+	if len(events) != 0 {
+		tags.set(tracespec.Output, events)
+	}
+
+	return tags
+}
+
+func serializeAgentEvent(_ context.Context, event *adk.AgentEvent) map[string]any {
+	if event == nil {
+		return nil
+	}
+
+	result := make(map[string]any)
+
+	if event.AgentName != "" {
+		result["agent_name"] = event.AgentName
+	}
+
+	if len(event.RunPath) > 0 {
+		result["run_path"] = serializeRunPath(event.RunPath)
+	}
+
+	if event.Output != nil {
+		if event.Output.MessageOutput != nil {
+			msg, _, err := adk.GetMessage(event)
+			if err != nil {
+				result["message_error"] = err.Error()
+			} else if msg != nil {
+				result["message"] = msg
+			}
+		}
+		if event.Output.CustomizedOutput != nil {
+			result["customized_output"] = event.Output.CustomizedOutput
+		}
+	}
+
+	if event.Action != nil {
+		result["action"] = serializeAgentAction(event.Action)
+	}
+
+	if event.Err != nil {
+		result["error"] = event.Err.Error()
+	}
+
+	if len(result) == 0 {
+		return nil
+	}
+
+	return result
+}
+
+func serializeRunPath(runPath []adk.RunStep) string {
+	if len(runPath) == 0 {
+		return ""
+	}
+
+	var parts []string
+	for _, step := range runPath {
+		parts = append(parts, step.String())
+	}
+
+	return strings.Join(parts, " -> ")
+}
+
+func serializeAgentAction(action *adk.AgentAction) map[string]any {
+	if action == nil {
+		return nil
+	}
+
+	result := make(map[string]any)
+
+	if action.Exit {
+		result["exit"] = true
+	}
+
+	if action.Interrupted != nil {
+		result["interrupted"] = serializeInterruptInfo(action.Interrupted)
+	}
+
+	if action.TransferToAgent != nil {
+		result["transfer_to_agent"] = action.TransferToAgent.DestAgentName
+	}
+
+	if action.BreakLoop != nil {
+		result["break_loop"] = true
+	}
+
+	if action.CustomizedAction != nil {
+		result["customized_action"] = action.CustomizedAction
+	}
+
+	return result
+}
+
+func serializeInterruptInfo(info *adk.InterruptInfo) map[string]any {
+	if info == nil {
+		return nil
+	}
+
+	result := make(map[string]any)
+
+	if info.Data != nil {
+		rv := reflect.ValueOf(info.Data)
+		if rv.Kind() != reflect.Slice || rv.Type().Elem().Kind() != reflect.Uint8 {
+			result["data"] = info.Data
+		}
+	}
+
+	if len(info.InterruptContexts) > 0 {
+		var contexts []map[string]any
+		for _, ctx := range info.InterruptContexts {
+			if ctx != nil {
+				contexts = append(contexts, serializeInterruptCtx(ctx))
+			}
+		}
+		if len(contexts) > 0 {
+			result["interrupt_contexts"] = contexts
+		}
+	}
+
+	return result
+}
+
+func serializeInterruptCtx(ctx *adk.InterruptCtx) map[string]any {
+	if ctx == nil {
+		return nil
+	}
+
+	result := make(map[string]any)
+
+	if ctx.ID != "" {
+		result["id"] = ctx.ID
+	}
+
+	if len(ctx.Address) > 0 {
+		result["address"] = ctx.Address.String()
+	}
+
+	if ctx.Info != nil {
+		result["info"] = ctx.Info
+	}
+
+	if ctx.IsRootCause {
+		result["is_root_cause"] = true
+	}
+
+	if ctx.Parent != nil {
+		result["parent"] = serializeInterruptCtx(ctx.Parent)
+	}
+
+	return result
 }

@@ -72,3 +72,7 @@ func main() {
 	fmt.Println(result)
 }
 ```
+
+## 示例
+
+查看 [examples](./examples/) 目录获取完整的使用示例。
