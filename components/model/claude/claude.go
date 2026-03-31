@@ -595,8 +595,10 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 			return fmt.Errorf("convert schema message fail: %w", err)
 		}
 
-		if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
-			hasSetMsgBreakPoint = true
+		if len(msgParam.Content) > 0 {
+			if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
+				hasSetMsgBreakPoint = true
+			}
 		}
 
 		msgParams = append(msgParams, msgParam)
@@ -604,8 +606,10 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 
 	if !hasSetMsgBreakPoint && specOptions.AutoCacheControl != nil {
 		lastMsgParam := msgParams[len(msgParams)-1]
-		lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
-		populateContentBlockBreakPoint(lastBlock, specOptions.AutoCacheControl)
+		if len(lastMsgParam.Content) > 0 {
+			lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
+			populateContentBlockBreakPoint(lastBlock, specOptions.AutoCacheControl)
+		}
 	}
 
 	params.Messages = msgParams
