@@ -46,6 +46,8 @@ func main() {
 	textToolCall(ctx, chatModel)
 	fmt.Printf("\n==========image tool call==========\n")
 	imageToolCall(ctx, chatModel)
+	fmt.Printf("\n==========web search tool call==========\n")
+	webSearchToolCall(ctx)
 }
 
 func textToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
@@ -177,5 +179,34 @@ func imageToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)
 	}
+	fmt.Printf("output: \n%v", resp)
+}
+
+// webSearchToolCall demonstrates how to use the built-in web search tool with the Responses API.
+// EnableToolWebSearch is a built-in tool exclusive to the Responses API and is not available in ChatModel.
+// Therefore, we need to create a separate ResponsesAPIChatModel instance instead of using the ChatModel above.
+func webSearchToolCall(ctx context.Context) {
+	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
+	responsesModel, err := ark.NewResponsesAPIChatModel(ctx, &ark.ResponsesAPIConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Model:  os.Getenv("ARK_MODEL_ID"),
+		EnableToolWebSearch: &ark.ToolWebSearch{},
+	})
+	if err != nil {
+		log.Fatalf("NewResponsesAPIChatModel failed, err=%v", err)
+		return
+	}
+
+	resp, err := responsesModel.Generate(ctx, []*schema.Message{
+		{
+			Role:    schema.User,
+			Content: "What's the weather like in Beijing today?",
+		},
+	})
+	if err != nil {
+		log.Fatalf("Generate failed, err=%v", err)
+		return
+	}
+
 	fmt.Printf("output: \n%v", resp)
 }
