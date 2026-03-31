@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/bytedance/mockey v1.3.0
 	github.com/cloudwego/eino v0.7.13
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.14
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.15
 	github.com/smartystreets/goconvey v1.8.1
 )
 
@@ -26,7 +26,7 @@ require (
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
-	github.com/meguminnnnnnnnn/go-openai v0.1.1 // indirect
+	github.com/meguminnnnnnnnn/go-openai v0.1.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/nikolalohinski/gonja v1.5.3 // indirect
