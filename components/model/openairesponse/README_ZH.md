@@ -194,6 +194,15 @@ type ResponsesAPIConfig struct {
 | `ChatCompletionResponseFormatTypeJSONObject` | `"json_object"` | JSON 对象输出 |
 | `ChatCompletionResponseFormatTypeJSONSchema` | `"json_schema"` | 基于 JSON Schema 的结构化输出 |
 
+## 示例
+
+更多用法请参考以下示例：
+
+- [基础生成](./examples/generate/)
+- [流式响应](./examples/stream/)
+- [结构化输出](./examples/structured/)
+- [图片输入](./examples/generate_with_image/)
+
 ## 与 Eino ADK 集成（ChatModelAgent）
 
 `ResponsesAPIChatModel` 可直接作为 `adk.NewChatModelAgent` 的模型参数使用。

@@ -194,6 +194,15 @@ type ResponsesAPIConfig struct {
 | `ChatCompletionResponseFormatTypeJSONObject` | `"json_object"` | JSON object output |
 | `ChatCompletionResponseFormatTypeJSONSchema` | `"json_schema"` | Structured output with JSON Schema |
 
+## Examples
+
+See the following examples for more usage:
+
+- [Basic Generation](./examples/generate/)
+- [Streaming Response](./examples/stream/)
+- [Structured Output](./examples/structured/)
+- [Image Input](./examples/generate_with_image/)
+
 ## Use with Eino ADK (ChatModelAgent)
 
 `ResponsesAPIChatModel` can be used directly as the model for `adk.NewChatModelAgent`.
