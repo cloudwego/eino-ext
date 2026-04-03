@@ -10,6 +10,7 @@ require (
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.11.1
 	github.com/volcengine/volcengine-go-sdk v1.2.9
+
 )
 
 require (
