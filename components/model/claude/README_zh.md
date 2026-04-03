@@ -140,11 +140,15 @@ type Config struct {
     // Optional. Example: "https://custom-claude-api.example.com"
     BaseURL *string
     
-    // APIKey is your Anthropic API key
+    // APIKey is your Anthropic API key for direct Anthropic API access.
     // Obtain from: https://console.anthropic.com/account/keys
-    // Required
+    // Optional when AuthToken is set.
     APIKey string
-    
+
+    // AuthToken is your Anthropic auth token for direct Anthropic API access.
+    // Optional when APIKey is set.
+    AuthToken string
+
     // Model specifies which Claude model to use
     // Required
     Model string
@@ -181,6 +185,13 @@ type Config struct {
     DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 }
 ```
+
+对于直连 Anthropic API 的场景，鉴权配置解析规则如下：
+
+- 如果在 `Config` 中配置了 `APIKey` 或 `AuthToken`，则以 `Config` 为准，并忽略环境变量中的鉴权配置
+- 如果 `Config` 中未配置鉴权，则回退使用环境变量中的配置
+- 在被选中的来源内，`APIKey` 和 `AuthToken` 可以同时存在，并会原样一起透传
+- 如果两边都没有配置鉴权，client 仍可创建成功，鉴权错误会在后续实际发请求时暴露
 
 ## 示例
 
