@@ -41,6 +41,9 @@ output/*
 # Claude files
 .claude/
 
+# Opencode files
+.opencode/
+
 # Data files
 *.jsonl
 *.csv
