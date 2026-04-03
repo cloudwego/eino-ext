@@ -312,6 +312,8 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
+	specOptions := model.GetImplSpecificOptions(&options{}, opts...)
+
 	params := anthropic.MessageNewParams{
 		Model: anthropic.Model(*modelOpts.Model),
 		MaxTokens: func() int64 {
@@ -328,6 +330,14 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 
 	if modelOpts.TopP != nil {
 		params.TopP = param.NewOpt(float64(*modelOpts.TopP))
+	}
+
+	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
+			},
+		}
 	}
 
 	if len(input) > 0 {
@@ -495,7 +505,8 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 		case anthropic.TextDelta:
 			result.Content = delta.Text
 		case anthropic.ThinkingDelta:
-			result.Extra["thinking"] = delta.Thinking
+			setThinking(result, delta.Thinking)
+			result.ReasoningContent = delta.Thinking
 		case anthropic.InputJSONDelta:
 			args := string(delta.PartialJSON)
 			result.ToolCalls = append(result.ToolCalls, schema.ToolCall{
@@ -524,13 +535,15 @@ func convContentBlockToEinoMsg(contentBlock any, dstMsg *schema.Message, streamC
 			},
 		})
 	case anthropic.ThinkingBlock:
-		dstMsg.Extra["thinking"] = block.Thinking
+		setThinking(dstMsg, block.Thinking)
+		dstMsg.ReasoningContent = block.Thinking
 	}
 	return nil
 }
 
 func isMessageEmpty(message *schema.Message) bool {
-	return message.Content == "" && len(message.ToolCalls) == 0
+	_, hasThinking := GetThinking(message)
+	return message.Content == "" && len(message.ToolCalls) == 0 && !hasThinking
 }
 
 func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {

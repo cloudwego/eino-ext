@@ -41,6 +41,11 @@ type Config struct {
 	AdditionalRequestFields map[string]any
 }
 
+type Thinking struct {
+	Enable       bool
+	BudgetTokens int
+}
+
 type APIError struct {
 	Type       string `json:"type"`
 	Message    string `json:"message"`
