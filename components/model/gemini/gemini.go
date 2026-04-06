@@ -553,6 +553,18 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		return "", nil, nil, nil, err
 	}
 
+	// When using built-in tools (e.g. GoogleSearch, URLContext) alongside function calling,
+	// the Gemini API requires IncludeServerSideToolInvocations to be enabled.
+	hasBuiltInTools := cm.enableGoogleSearch != nil || cm.enableGoogleSearchRetrieval != nil ||
+		cm.enableCodeExecution || cm.enableComputerUse != nil || cm.enableURLContext != nil ||
+		cm.enableFileSearch != nil || cm.enableGoogleMaps != nil
+	if hasBuiltInTools && len(tools) > 0 {
+		if m.ToolConfig == nil {
+			m.ToolConfig = &genai.ToolConfig{}
+		}
+		m.ToolConfig.IncludeServerSideToolInvocations = genai.Ptr(true)
+	}
+
 	if geminiOptions.ResponseJSONSchema != nil {
 		m.ResponseMIMEType = "application/json"
 		m.ResponseJsonSchema = geminiOptions.ResponseJSONSchema
