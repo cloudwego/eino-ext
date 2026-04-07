@@ -1286,13 +1286,18 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 
 		sortArrayFields(paramsJSONSchema)
 
-		tools[i] = tool{
-			Function: &functionDefinition{
-				Name:        ti.Name,
-				Description: ti.Desc,
-				Parameters:  paramsJSONSchema,
-			},
+		fd := &functionDefinition{
+			Name:        ti.Name,
+			Description: ti.Desc,
+			Parameters:  paramsJSONSchema,
 		}
+		// Support strict tool use via ToolInfo.Extra["strict"] = true.
+		// When enabled, the API guarantees that tool call inputs conform
+		// to the declared JSON Schema exactly (OpenAI strict mode).
+		if strict, ok := ti.Extra["strict"].(bool); ok && strict {
+			fd.Strict = &strict
+		}
+		tools[i] = tool{Function: fd}
 	}
 
 	return tools, nil
