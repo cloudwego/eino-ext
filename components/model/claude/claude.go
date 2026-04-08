@@ -286,10 +286,11 @@ func hasDirectAnthropicConfigAuth(config *Config) bool {
 }
 
 func newDirectAnthropicClient(opts ...option.RequestOption) (r anthropic.Client) {
-	opts = append([]option.RequestOption{option.WithEnvironmentProduction()}, opts...)
+	defaults := []option.RequestOption{option.WithEnvironmentProduction()}
 	if o, ok := os.LookupEnv("ANTHROPIC_BASE_URL"); ok {
-		opts = append(opts, option.WithBaseURL(o))
+		defaults = append(defaults, option.WithBaseURL(o))
 	}
+	opts = append(defaults, opts...)
 
 	r = anthropic.Client{Options: opts}
 	r.Completions = anthropic.NewCompletionService(opts...)
