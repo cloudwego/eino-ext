@@ -566,6 +566,47 @@ func Test_toOllamaMessage(t *testing.T) {
 			convey.So(err.Error(), convey.ShouldEqual, "image is required in AssistantGenMultiContent, but got nil Base64Data")
 		})
 
+		PatchConvey("test UserInputMultiContent with tool role", func() {
+			msg := &schema.Message{
+				Role: schema.Tool,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "tool result",
+					},
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{
+							MessagePartCommon: schema.MessagePartCommon{
+								Base64Data: &base64Data,
+							},
+						},
+					},
+				},
+			}
+			ollamaMsg, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ollamaMsg.Role, convey.ShouldEqual, string(schema.Tool))
+			convey.So(ollamaMsg.Content, convey.ShouldEqual, "tool result")
+			convey.So(len(ollamaMsg.Images), convey.ShouldEqual, 1)
+			convey.So(string(ollamaMsg.Images[0]), convey.ShouldEqual, base64Data)
+		})
+
+		PatchConvey("test UserInputMultiContent with unsupported role", func() {
+			msg := &schema.Message{
+				Role: schema.System,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type: schema.ChatMessagePartTypeText,
+						Text: "hello",
+					},
+				},
+			}
+			_, err := toOllamaMessage(msg)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldContainSubstring, "user input multi content only support user&tool role")
+		})
+
 		PatchConvey("test error on both UserInputMultiContent and AssistantGenMultiContent", func() {
 			msg := &schema.Message{
 				Role:                     schema.User,
