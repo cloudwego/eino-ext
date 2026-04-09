@@ -55,8 +55,9 @@ func WithMetadata(m map[string]string) model.Option {
 }
 
 // WithCacheControl sets the top-level cache_control for the request.
-// This enables automatic prompt caching for supported providers (e.g. Anthropic Claude, Gemini 2.5).
+// This enables automatic prompt caching for supported providers (e.g. Anthropic Claude, Gemini models).
 // When set, it overrides the CacheControl field configured in Config for this specific request.
+// See https://openrouter.ai/docs/guides/best-practices/prompt-caching for details.
 func WithCacheControl(ctrl CacheControl) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openrouterOption) {
 		o.cacheControl = ctrl.toInternal()

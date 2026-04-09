@@ -130,8 +130,9 @@ type Config struct {
 	// CacheControl sets the top-level cache_control for all requests from this model instance.
 	// This enables automatic prompt caching for supported providers:
 	//   - Anthropic Claude: auto-caching (recommended for multi-turn conversations)
-	//   - Gemini 2.5: explicit breakpoints
+	//   - Gemini models: explicit breakpoints
 	// Can be overridden per-request via WithCacheControl option.
+	// See https://openrouter.ai/docs/guides/best-practices/prompt-caching for details.
 	// Optional.
 	CacheControl *CacheControl `json:"cache_control,omitempty"`
 
