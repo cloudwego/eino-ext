@@ -19,6 +19,7 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -33,7 +34,37 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestDirectAnthropicAuthSelection(t *testing.T) {
+	t.Run("config auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key"}))
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{AuthToken: "auth-token"}))
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key", AuthToken: "auth-token"}))
+	})
+
+	t.Run("env auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		t.Setenv("ANTHROPIC_API_KEY", "env-api-key")
+		model, err := NewChatModel(context.Background(), &Config{
+			Model: "claude-3-opus-20240229",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, model)
+	})
+
+	t.Run("missing auth still allows creation", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		model, err := NewChatModel(context.Background(), &Config{
+			Model: "claude-3-opus-20240229",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, model)
+	})
+}
+
 func TestClaude(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+
 	ctx := context.Background()
 	model, err := NewChatModel(ctx, &Config{
 		APIKey: "test-key",
@@ -215,6 +246,21 @@ func TestClaude(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "I see a beautiful sunset image", resp.Content)
 	})
+}
+
+func clearAnthropicAuthEnv(t *testing.T) {
+	t.Helper()
+	// Use os.Unsetenv to truly remove the env vars, since the SDK uses
+	// os.LookupEnv — an empty string is still "present".
+	for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"} {
+		prev, existed := os.LookupEnv(key)
+		os.Unsetenv(key)
+		if existed {
+			t.Cleanup(func() { os.Setenv(key, prev) })
+		} else {
+			t.Cleanup(func() { os.Unsetenv(key) })
+		}
+	}
 }
 
 func TestConvStreamEvent(t *testing.T) {

@@ -199,6 +199,14 @@ type Config struct {
     // Keys are strings with a maximum length of 64 characters. Values are strings with a maximum length of 512 characters.
     Metadata map[string]string `json:"metadata,omitempty"`
     
+    // CacheControl sets the top-level cache_control for all requests from this model instance.
+    // This enables automatic prompt caching for supported providers:
+    //   - Anthropic Claude: auto-caching (recommended for multi-turn conversations)
+    //   - Gemini 2.5: explicit breakpoints
+    // Can be overridden per-request via WithCacheControl option.
+    // Optional.
+    CacheControl *CacheControl `json:"cache_control,omitempty"`
+    
     // ExtraFields will override any existing fields with the same key.
     // Optional. Useful for experimental features not yet officially supported.
     ExtraFields map[string]any `json:"extra_fields,omitempty"`
@@ -268,7 +276,30 @@ type Reasoning struct {
     Enabled *bool `json:"enabled,omitempty"`
 }
 
+type CacheControlTTL string
+
+const (
+    CacheControlTTL5Minutes  CacheControlTTL = "5m"
+    CacheControlTTL1Hour     CacheControlTTL = "1h"
+)
+
+// CacheControl is the cache control configuration for prompt caching.
+// If TTL is empty, it defaults to CacheControlTTL5Minutes.
+type CacheControl struct {
+    TTL CacheControlTTL `json:"ttl,omitempty"`
+}
+
 ```
+
+## 请求级选项
+
+以下选项可在每次请求时覆盖 Config 级别的设置：
+
+- `WithModels(models []string)` — 覆盖模型回退列表
+- `WithReasoning(r *Reasoning)` — 覆盖推理配置
+- `WithMetadata(m map[string]string)` — 覆盖元数据
+- `WithCacheControl(ctrl CacheControl)` — 覆盖缓存控制
+- `WithResponseFormat(rf *ChatCompletionResponseFormat)` — 覆盖响应格式
 
 ## 示例
 

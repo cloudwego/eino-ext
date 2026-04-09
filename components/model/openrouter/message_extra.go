@@ -129,13 +129,31 @@ const (
 	CacheControlTTL1Hour      CacheControlTTL = "1h"
 )
 
+// CacheControl is the exported cache control configuration, used only for Config and WithCacheControl option.
+// Internally it is converted to cacheControl via toInternal().
+// If TTL is empty, it defaults to CacheControlTTL5Minutes. Type is always set to "ephemeral" internally.
+type CacheControl struct {
+	TTL CacheControlTTL `json:"ttl,omitempty"`
+}
+
+func (c *CacheControl) toInternal() *cacheControl {
+	if c == nil {
+		return nil
+	}
+	cc := &cacheControl{Type: cacheControlEphemeralType, TTL: c.TTL}
+	if cc.TTL == "" {
+		cc.TTL = CacheControlTTL5Minutes
+	}
+	return cc
+}
+
+type CacheControlOption func(control *cacheControl)
+
 func WithCacheControlTTL(ttl CacheControlTTL) CacheControlOption {
 	return func(control *cacheControl) {
 		control.TTL = ttl
 	}
 }
-
-type CacheControlOption func(control *cacheControl)
 
 type cacheControl struct {
 	Type string          `json:"type,omitempty"`
@@ -225,7 +243,7 @@ func getMessageContentCacheControl(msg *schema.Message) (*cacheControl, bool) {
 		return nil, false
 	}
 	if msg.Extra == nil {
-		msg.Extra = map[string]any{}
+		return nil, false
 	}
 	ctrl, ok := msg.Extra[openrouterCacheControlKey].(*cacheControl)
 	return ctrl, ok
