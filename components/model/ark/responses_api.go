@@ -508,6 +508,10 @@ func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 
 func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq *responses.ResponsesRequest, arkOpts *arkOptions,
 ) ([]*schema.Message, error) {
+	// ark response api not support cache when use json-schema
+	if cm.responseFormat != nil && cm.responseFormat.Type == arkModel.ResponseFormatJSONSchema {
+		return in, nil
+	}
 
 	var (
 		store       = false
