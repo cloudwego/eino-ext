@@ -104,9 +104,10 @@ type responseChoice struct {
 }
 
 type reasoningDetails struct {
-	Format string `json:"format,omitempty"`
-	Index  int64  `json:"index,omitempty"`
-	Type   string `json:"type,omitempty"`
-	Data   string `json:"data,omitempty"`
-	Text   string `json:"text,omitempty"`
+	Format    string `json:"format,omitempty"`
+	Index     int64  `json:"index,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }
