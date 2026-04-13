@@ -116,9 +116,40 @@ func getReasoningDetails(msg *schema.Message) (details []*reasoningDetails, b bo
 	if msg.Extra == nil {
 		return nil, false
 	}
-	details, b = msg.Extra[openrouterReasoningDetailsKey].([]*reasoningDetails)
-	return
+	val, exists := msg.Extra[openrouterReasoningDetailsKey]
+	if !exists {
+		return nil, false
+	}
+	details, b = val.([]*reasoningDetails)
+	if b {
+		return details, true
+	}
 
+	// After JSON round-trip, []*reasoningDetails degrades to []any containing map[string]any.
+	// Recover the concrete type via direct type assertions to avoid a marshal/unmarshal round-trip.
+	items, ok := val.([]any)
+	if !ok {
+		return nil, false
+	}
+	details = make([]*reasoningDetails, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		d := &reasoningDetails{}
+		d.Format, _ = m["format"].(string)
+		d.Type, _ = m["type"].(string)
+		d.Data, _ = m["data"].(string)
+		d.Text, _ = m["text"].(string)
+		d.Signature, _ = m["signature"].(string)
+		if idx, ok := m["index"].(float64); ok {
+			d.Index = int64(idx)
+		}
+		details = append(details, d)
+	}
+	msg.Extra[openrouterReasoningDetailsKey] = details
+	return details, len(details) > 0
 }
 
 type CacheControlTTL string
