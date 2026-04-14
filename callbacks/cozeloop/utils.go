@@ -33,6 +33,11 @@ import (
 )
 
 func getErrorTags(_ context.Context, err error) spanTags {
+	if _, ok := compose.ExtractInterruptInfo(err); ok {
+		return make(spanTags).
+			set(tracespec.Output, err.Error())
+	}
+
 	return make(spanTags).
 		set(tracespec.Error, err.Error())
 }
