@@ -317,6 +317,7 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		in_, err := cm.populateCache(msgs, reqParams, arkOpts)
 		assert.Nil(t, err)
 		assert.Equal(t, false, *reqParams.Store)
+		assert.Nil(t, reqParams.Caching)
 		assert.Len(t, in_, 1)
 	})
 
@@ -351,6 +352,8 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		assert.Len(t, in_, 1)
 		assert.Equal(t, "World", in_[0].Content)
 		assert.NotNil(t, reqParams.ExpireAt)
+		assert.NotNil(t, reqParams.Caching)
+		assert.Equal(t, responses.CacheType_enabled, *reqParams.Caching.Type)
 	})
 	PatchConvey("option overridden config", t, func() {
 		cm := &ResponsesAPIChatModel{
@@ -393,6 +396,103 @@ func TestResponsesAPIChatModelInjectCache(t *testing.T) {
 		assert.Equal(t, "test-context", *reqParams.PreviousResponseId)
 		assert.Len(t, in_, 2)
 		assert.NotNil(t, reqParams.ExpireAt)
+		assert.NotNil(t, reqParams.Caching)
+		assert.Equal(t, responses.CacheType_enabled, *reqParams.Caching.Type)
+	})
+
+	PatchConvey("config disabled, option not set", t, func() {
+		cm := &ResponsesAPIChatModel{
+			cache: &CacheConfig{
+				SessionCache: &SessionCacheConfig{
+					EnableCache: false,
+					TTL:         300,
+				},
+			},
+		}
+		arkOpts := &arkOptions{}
+		msgs := []*schema.Message{
+			{Role: schema.User, Content: "Hello"},
+		}
+		reqParams := &responses.ResponsesRequest{}
+		in_, err := cm.populateCache(msgs, reqParams, arkOpts)
+		assert.Nil(t, err)
+		assert.Equal(t, false, *reqParams.Store)
+		assert.NotNil(t, reqParams.Caching)
+		assert.Equal(t, responses.CacheType_disabled, *reqParams.Caching.Type)
+		assert.Len(t, in_, 1)
+	})
+
+	PatchConvey("config enabled, option explicitly disables", t, func() {
+		cm := &ResponsesAPIChatModel{
+			cache: &CacheConfig{
+				SessionCache: &SessionCacheConfig{
+					EnableCache: true,
+					TTL:         300,
+				},
+			},
+		}
+		arkOpts := &arkOptions{
+			cache: &CacheOption{
+				SessionCache: &SessionCacheConfig{
+					EnableCache: false,
+					TTL:         600,
+				},
+			},
+		}
+		msgs := []*schema.Message{
+			{Role: schema.User, Content: "Hello"},
+		}
+		reqParams := &responses.ResponsesRequest{}
+		in_, err := cm.populateCache(msgs, reqParams, arkOpts)
+		assert.Nil(t, err)
+		assert.Equal(t, false, *reqParams.Store)
+		assert.NotNil(t, reqParams.Caching)
+		assert.Equal(t, responses.CacheType_disabled, *reqParams.Caching.Type)
+		assert.Len(t, in_, 1)
+	})
+
+	PatchConvey("config not set, option enabled", t, func() {
+		cm := &ResponsesAPIChatModel{}
+		arkOpts := &arkOptions{
+			cache: &CacheOption{
+				SessionCache: &SessionCacheConfig{
+					EnableCache: true,
+					TTL:         300,
+				},
+			},
+		}
+		msgs := []*schema.Message{
+			{Role: schema.User, Content: "Hello"},
+		}
+		reqParams := &responses.ResponsesRequest{}
+		in_, err := cm.populateCache(msgs, reqParams, arkOpts)
+		assert.Nil(t, err)
+		assert.Equal(t, true, *reqParams.Store)
+		assert.NotNil(t, reqParams.Caching)
+		assert.Equal(t, responses.CacheType_enabled, *reqParams.Caching.Type)
+		assert.Len(t, in_, 1)
+	})
+
+	PatchConvey("config not set, option disabled", t, func() {
+		cm := &ResponsesAPIChatModel{}
+		arkOpts := &arkOptions{
+			cache: &CacheOption{
+				SessionCache: &SessionCacheConfig{
+					EnableCache: false,
+					TTL:         300,
+				},
+			},
+		}
+		msgs := []*schema.Message{
+			{Role: schema.User, Content: "Hello"},
+		}
+		reqParams := &responses.ResponsesRequest{}
+		in_, err := cm.populateCache(msgs, reqParams, arkOpts)
+		assert.Nil(t, err)
+		assert.Equal(t, false, *reqParams.Store)
+		assert.NotNil(t, reqParams.Caching)
+		assert.Equal(t, responses.CacheType_disabled, *reqParams.Caching.Type)
+		assert.Len(t, in_, 1)
 	})
 }
 
