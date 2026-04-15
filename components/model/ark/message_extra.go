@@ -191,19 +191,29 @@ func setResponseID(msg *schema.Message, responseID string) {
 // GetCacheExpiration returns the cache expiration time in seconds.
 // Only available for ResponsesAPI responses.
 func GetCacheExpiration(msg *schema.Message) (expireAtSec int64, ok bool) {
-	expireAtSec_, ok := getMsgExtraValue[arkResponseCacheExpireAt](msg, keyOfResponseCacheExpireAt)
-	if ok {
-		return int64(expireAtSec_), true
-	}
-	expireAtSec, ok = getMsgExtraValue[int64](msg, keyOfResponseCacheExpireAt)
-	if ok {
-		return expireAtSec, true
-	}
-	return 0, false
+	return getMsgExtraInt64Value[arkResponseCacheExpireAt](msg, keyOfResponseCacheExpireAt)
 }
 
 func setResponseCacheExpireAt(msg *schema.Message, expireAt arkResponseCacheExpireAt) {
 	setMsgExtra(msg, keyOfResponseCacheExpireAt, expireAt)
+}
+
+// getMsgExtraInt64Value extracts an integer value from message extra, trying T first,
+// then falling back to float64/int64/int to handle JSON unmarshal type loss.
+func getMsgExtraInt64Value[T ~int64](msg *schema.Message, key string) (int64, bool) {
+	if v, ok := getMsgExtraValue[T](msg, key); ok {
+		return int64(v), true
+	}
+	if v, ok := getMsgExtraValue[float64](msg, key); ok {
+		return int64(v), true
+	}
+	if v, ok := getMsgExtraValue[int64](msg, key); ok {
+		return v, true
+	}
+	if v, ok := getMsgExtraValue[int](msg, key); ok {
+		return int64(v), true
+	}
+	return 0, false
 }
 
 func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {
