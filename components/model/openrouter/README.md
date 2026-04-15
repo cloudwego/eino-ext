@@ -200,6 +200,14 @@ type Config struct {
     // Keys are strings with a maximum length of 64 characters. Values are strings with a maximum length of 512 characters.
     Metadata map[string]string `json:"metadata,omitempty"`
     
+    // CacheControl sets the top-level cache_control for all requests from this model instance.
+    // This enables automatic prompt caching for supported providers:
+    //   - Anthropic Claude: auto-caching (recommended for multi-turn conversations)
+    //   - Gemini 2.5: explicit breakpoints
+    // Can be overridden per-request via WithCacheControl option.
+    // Optional.
+    CacheControl *CacheControl `json:"cache_control,omitempty"`
+    
     // ExtraFields will override any existing fields with the same key.
     // Optional. Useful for experimental features not yet officially supported.
     ExtraFields map[string]any `json:"extra_fields,omitempty"`
@@ -269,7 +277,31 @@ type Reasoning struct {
     Enabled *bool `json:"enabled,omitempty"`
 }
 
+type CacheControlTTL string
+
+const (
+    CacheControlTTL5Minutes  CacheControlTTL = "5m"
+    CacheControlTTL1Hour     CacheControlTTL = "1h"
+)
+
+// CacheControl is the cache control configuration for prompt caching.
+// If TTL is empty, it defaults to CacheControlTTL5Minutes.
+type CacheControl struct {
+    TTL CacheControlTTL `json:"ttl,omitempty"`
+}
+
 ```
+
+## Request Options
+
+Per-request options can override Config-level settings:
+
+- `WithModels(models []string)` — Override model fallback list
+- `WithReasoning(r *Reasoning)` — Override reasoning configuration
+- `WithMetadata(m map[string]string)` — Override metadata
+- `WithCacheControl(ctrl CacheControl)` — Override cache control
+- `WithResponseFormat(rf *ChatCompletionResponseFormat)` — Override response format
+
 ## Examples
 
 See the following examples for more usage:

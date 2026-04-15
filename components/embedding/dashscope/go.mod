@@ -3,10 +3,10 @@ module github.com/cloudwego/eino-ext/components/embedding/dashscope
 go 1.23.0
 
 require (
-	github.com/bytedance/mockey v1.2.14
-	github.com/cloudwego/eino v0.6.0
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.2
-	github.com/meguminnnnnnnnn/go-openai v0.1.0
+	github.com/bytedance/mockey v1.3.0
+	github.com/cloudwego/eino v0.7.13
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.15
+	github.com/meguminnnnnnnnn/go-openai v0.1.2
 )
 
 require (
@@ -17,8 +17,9 @@ require (
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.2 // indirect
+	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect

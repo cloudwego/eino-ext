@@ -486,6 +486,7 @@ func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 	if err != nil {
 		return nil, err
 	}
+
 	in, err = cm.populateCache(in, responseReq, specOptions)
 	if err != nil {
 		return nil, err
@@ -511,7 +512,7 @@ func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 
 	var (
 		store       = false
-		cacheStatus = cachingDisabled
+		cacheStatus *caching
 		cacheTTL    *int
 		headRespID  *string
 		contextID   *string
@@ -519,11 +520,15 @@ func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 
 	if cm.cache != nil {
 		if sCache := cm.cache.SessionCache; sCache != nil {
+			cacheTTL = &sCache.TTL
 			if sCache.EnableCache {
 				store = true
-				cacheStatus = cachingEnabled
+				cacheStatus = ptrOf(cachingEnabled)
+			} else {
+				store = false
+				cacheStatus = ptrOf(cachingDisabled)
 			}
-			cacheTTL = &sCache.TTL
+
 		}
 	}
 
@@ -537,10 +542,10 @@ func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 
 			if sCacheOpt.EnableCache {
 				store = true
-				cacheStatus = cachingEnabled
+				cacheStatus = ptrOf(cachingEnabled)
 			} else {
 				store = false
-				cacheStatus = cachingDisabled
+				cacheStatus = ptrOf(cachingDisabled)
 			}
 		}
 	}
@@ -556,7 +561,7 @@ func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 	// ContextID and ResponseID will exist at the same time.
 	// Using ContextID is prioritized to maintain compatibility with the old logic.
 	// In this usage scenario, ResponseID cannot be used.
-	if cacheStatus == cachingEnabled && contextID == nil {
+	if cacheStatus != nil && *cacheStatus == cachingEnabled && contextID == nil {
 		for i := len(in) - 1; i >= 0; i-- {
 			msg := in[i]
 			inputIdx = i
@@ -592,15 +597,17 @@ func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 		responseReq.ExpireAt = ptrOf(now + int64(*cacheTTL))
 	}
 
-	var cacheType *responses.CacheType_Enum
-	if cacheStatus == cachingDisabled {
-		cacheType = responses.CacheType_disabled.Enum()
-	} else {
-		cacheType = responses.CacheType_enabled.Enum()
-	}
-
-	responseReq.Caching = &responses.ResponsesCaching{
-		Type: cacheType,
+	if cacheStatus != nil {
+		switch *cacheStatus {
+		case cachingEnabled:
+			responseReq.Caching = &responses.ResponsesCaching{
+				Type: responses.CacheType_enabled.Enum(),
+			}
+		case cachingDisabled:
+			responseReq.Caching = &responses.ResponsesCaching{
+				Type: responses.CacheType_disabled.Enum(),
+			}
+		}
 	}
 
 	return in, nil

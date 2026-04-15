@@ -1,10 +1,10 @@
 module github.com/cloudwego/eino-ext/components/document/parser/pdf
 
-go 1.23.0
+go 1.24.1
 
 require (
 	github.com/cloudwego/eino v0.6.0
-	github.com/dslipak/pdf v0.0.2
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/stretchr/testify v1.10.0
 )
 

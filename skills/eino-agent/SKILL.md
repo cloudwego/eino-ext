@@ -154,7 +154,7 @@ Key pattern: tool returns `compose.NewInterruptAndRerunErr(info)` to pause, then
 
 - Default to `ChatModelAgent` for most use cases (single agent with tools)
 - Use `Runner` to execute agents -- never call `agent.Run()` directly in production
-- Middleware order matters: PatchToolCalls first, then Summarization, then Reduction
+- Middleware order matters: PatchToolCalls first, then Reduction, then Summarization
 - Use `DeepAgent` (`adk/prebuilt/deep`) when you need built-in planning + filesystem + sub-agents
 - Use `AgentAsTool` or DeepAgents' SubAgents when a sub-agent needs isolated context (no shared history)
 
