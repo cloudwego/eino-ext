@@ -29,7 +29,7 @@ import (
 )
 
 func TestNewStreamReceiverInit(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	assert.NotNil(t, r.ProcessingAssistantGenTextBlockIndex)
 	assert.Equal(t, -1, r.MaxBlockIndex)
 	assert.NotNil(t, r.IndexMapper)
@@ -40,7 +40,7 @@ func TestNewStreamReceiverInit(t *testing.T) {
 }
 
 func TestGetBlockIndexAndReuse(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	a := r.getBlockIndex("k1")
 	b := r.getBlockIndex("k2")
 	c := r.getBlockIndex("k1")
@@ -50,7 +50,7 @@ func TestGetBlockIndexAndReuse(t *testing.T) {
 }
 
 func TestGetReasoningSummaryIndex(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	i1 := r.isNewReasoningSummaryIndex(1, 1)
 	i2 := r.isNewReasoningSummaryIndex(1, 2)
 	i3 := r.isNewReasoningSummaryIndex(2, 1)
@@ -62,7 +62,7 @@ func TestGetReasoningSummaryIndex(t *testing.T) {
 }
 
 func TestGetTextAnnotationIndex(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	i1 := r.getTextAnnotationIndex(1, 1, 1)
 	i2 := r.getTextAnnotationIndex(1, 1, 2)
 	i3 := r.getTextAnnotationIndex(1, 2, 1)
@@ -77,7 +77,7 @@ func TestGetTextAnnotationIndex(t *testing.T) {
 
 func TestItemAddedEventToContentBlockFunctionToolCall(t *testing.T) {
 	mockey.PatchConvey("TestItemAddedEventToContentBlockFunctionToolCall", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemAddedEvent{
 			OutputIndex: 1,
 		}
@@ -98,7 +98,7 @@ func TestItemAddedEventToContentBlockFunctionToolCall(t *testing.T) {
 
 func TestItemAddedEventToContentBlockIgnoredTypes(t *testing.T) {
 	mockey.PatchConvey("TestItemAddedEventToContentBlockIgnoredTypes", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 
 		// Mock AsAny to return different types in sequence
 		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
@@ -130,7 +130,7 @@ func TestItemAddedEventToContentBlockIgnoredTypes(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksOutputMessage(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksOutputMessage", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		r.ProcessingAssistantGenTextBlockIndex["mid"] = map[int]bool{0: true, 2: true}
 
 		ev := responses.ResponseOutputItemDoneEvent{
@@ -153,7 +153,7 @@ func TestItemDoneEventToContentBlocksOutputMessage(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksReasoning(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksReasoning", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 3,
 		}
@@ -172,7 +172,7 @@ func TestItemDoneEventToContentBlocksReasoning(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksFunctionToolCall(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksFunctionToolCall", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 4,
 		}
@@ -192,7 +192,7 @@ func TestItemDoneEventToContentBlocksFunctionToolCall(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksWebSearch(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksWebSearch", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 5,
 		}
@@ -218,7 +218,7 @@ func TestItemDoneEventToContentBlocksWebSearch(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksMCPCall(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksMCPCall", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 6,
 		}
@@ -241,7 +241,7 @@ func TestItemDoneEventToContentBlocksMCPCall(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksMCPListTools(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksMCPListTools", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 7,
 		}
@@ -260,7 +260,7 @@ func TestItemDoneEventToContentBlocksMCPListTools(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksMCPApprovalRequest(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksMCPApprovalRequest", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 8,
 		}
@@ -280,7 +280,7 @@ func TestItemDoneEventToContentBlocksMCPApprovalRequest(t *testing.T) {
 }
 
 func TestItemDoneEventOutputMessageToContentBlockMissingProcessing(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	item := responses.ResponseOutputMessage{
 		ID:     "mid",
 		Status: responses.ResponseOutputMessageStatusCompleted,
@@ -291,7 +291,7 @@ func TestItemDoneEventOutputMessageToContentBlockMissingProcessing(t *testing.T)
 }
 
 func TestItemDoneEventOutputMessageToContentBlockSuccess(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	r.ProcessingAssistantGenTextBlockIndex["mid"] = map[int]bool{0: true, 2: true}
 
 	item := responses.ResponseOutputMessage{
@@ -314,7 +314,7 @@ func TestItemDoneEventOutputMessageToContentBlockSuccess(t *testing.T) {
 
 func TestContentPartAddedEventToContentBlockInvalidType(t *testing.T) {
 	mockey.PatchConvey("TestContentPartAddedEventToContentBlockInvalidType", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseContentPartAddedEvent{}
 
 		mockey.Mock(responses.ResponseOutputMessageContentUnion.AsAny).Return("invalid").Build()
@@ -326,7 +326,7 @@ func TestContentPartAddedEventToContentBlockInvalidType(t *testing.T) {
 
 func TestContentPartDoneEventToContentBlockNoIndex(t *testing.T) {
 	mockey.PatchConvey("TestContentPartDoneEventToContentBlockNoIndex", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseContentPartDoneEvent{
 			ItemID:       "mid",
 			OutputIndex:  1,
@@ -342,7 +342,7 @@ func TestContentPartDoneEventToContentBlockNoIndex(t *testing.T) {
 }
 
 func TestRefusalDeltaEventToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	ev := responses.ResponseRefusalDeltaEvent{
 		ItemID:       "iid",
 		OutputIndex:  1,
@@ -362,7 +362,7 @@ func TestRefusalDeltaEventToContentBlock(t *testing.T) {
 }
 
 func TestOutputTextDeltaEventToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	ev := responses.ResponseTextDeltaEvent{
 		ItemID:       "iid",
 		OutputIndex:  1,
@@ -382,7 +382,7 @@ func TestOutputTextDeltaEventToContentBlock(t *testing.T) {
 
 func TestAnnotationAddedEventToContentBlockFileCitation(t *testing.T) {
 	mockey.PatchConvey("TestAnnotationAddedEventToContentBlockFileCitation", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputTextAnnotationAddedEvent{
 			ItemID:          "iid",
 			OutputIndex:     1,
@@ -415,7 +415,7 @@ func TestAnnotationAddedEventToContentBlockFileCitation(t *testing.T) {
 }
 
 func TestReasoningSummaryTextDeltaEventToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	ev := responses.ResponseReasoningSummaryTextDeltaEvent{
 		ItemID:       "iid",
 		OutputIndex:  2,
@@ -433,7 +433,7 @@ func TestReasoningSummaryTextDeltaEventToContentBlock(t *testing.T) {
 }
 
 func TestFunctionCallArgumentsDeltaEventToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	ev := responses.ResponseFunctionCallArgumentsDeltaEvent{
 		ItemID:      "iid",
 		OutputIndex: 3,
@@ -450,7 +450,7 @@ func TestFunctionCallArgumentsDeltaEventToContentBlock(t *testing.T) {
 }
 
 func TestMcpListToolsPhaseToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.mcpListToolsPhaseToContentBlock("iid", 4, string(responses.ResponseStatusInProgress))
 	assert.NotNil(t, block.MCPListToolsResult)
@@ -466,7 +466,7 @@ func TestMcpListToolsPhaseToContentBlock(t *testing.T) {
 }
 
 func TestMcpListToolsPhaseToContentBlockEmptyStatus(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.mcpListToolsPhaseToContentBlock("iid", 4, "")
 	assert.NotNil(t, block.MCPListToolsResult)
@@ -476,7 +476,7 @@ func TestMcpListToolsPhaseToContentBlockEmptyStatus(t *testing.T) {
 }
 
 func TestMcpCallArgumentsDeltaEventToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	ev := responses.ResponseMcpCallArgumentsDeltaEvent{
 		ItemID:      "iid",
 		OutputIndex: 6,
@@ -493,7 +493,7 @@ func TestMcpCallArgumentsDeltaEventToContentBlock(t *testing.T) {
 }
 
 func TestMcpCallPhaseToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.mcpCallPhaseToContentBlock("iid", 7, string(responses.ResponseStatusFailed))
 	assert.NotNil(t, block.MCPToolCall)
@@ -504,7 +504,7 @@ func TestMcpCallPhaseToContentBlock(t *testing.T) {
 }
 
 func TestWebSearchPhaseToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.webSearchPhaseToContentBlock("iid", 8, string(responses.ResponseStatusCompleted))
 	assert.NotNil(t, block.ServerToolCall)
@@ -516,7 +516,7 @@ func TestWebSearchPhaseToContentBlock(t *testing.T) {
 }
 
 func TestFileSearchPhaseToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.fileSearchPhaseToContentBlock("fsid", 9, string(responses.ResponseStatusInProgress))
 	assert.NotNil(t, block.ServerToolCall)
@@ -532,7 +532,7 @@ func TestFileSearchPhaseToContentBlock(t *testing.T) {
 }
 
 func TestFileSearchPhaseToContentBlockEmptyStatus(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.fileSearchPhaseToContentBlock("fsid", 10, "")
 	assert.NotNil(t, block.ServerToolCall)
@@ -544,7 +544,7 @@ func TestFileSearchPhaseToContentBlockEmptyStatus(t *testing.T) {
 
 func TestItemDoneEventToContentBlocksFileSearch(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventToContentBlocksFileSearch", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 11,
 		}
@@ -575,7 +575,7 @@ func TestItemDoneEventToContentBlocksFileSearch(t *testing.T) {
 
 func TestItemAddedEventToContentBlockIgnoredFileSearch(t *testing.T) {
 	mockey.PatchConvey("TestItemAddedEventToContentBlockIgnoredFileSearch", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 
 		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
 			responses.ResponseFileSearchToolCall{},
@@ -653,8 +653,252 @@ func TestCallbackSenderSendError(t *testing.T) {
 	assert.Contains(t, err.Error(), "test error")
 }
 
+func TestItemDoneEventToContentBlocksToolSearchCall(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventToContentBlocksToolSearchCall", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseOutputItemDoneEvent{
+			OutputIndex: 9,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseToolSearchCall{
+			ID:        "tsid",
+			CallID:    "call1",
+			Status:    "completed",
+			Execution: responses.ResponseToolSearchCallExecutionServer,
+			Arguments: map[string]any{"query": "find tools"},
+		}).Build()
+
+		blocks, err := r.itemDoneEventToContentBlocks(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolCall)
+	})
+}
+
+func TestItemDoneEventToContentBlocksToolSearchOutputItem(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventToContentBlocksToolSearchOutputItem", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseOutputItemDoneEvent{
+			OutputIndex: 10,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseToolSearchOutputItem{
+			ID:     "tsoid",
+			CallID: "call1",
+			Status: "completed",
+			Tools: []responses.ToolUnion{
+				{Type: "function", Name: "tool1", Description: "desc1", Parameters: map[string]any{"type": "object"}},
+			},
+		}).Build()
+
+		blocks, err := r.itemDoneEventToContentBlocks(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blocks))
+		assert.NotNil(t, blocks[0].ServerToolResult)
+	})
+}
+
+func TestItemDoneEventToolSearchCallToContentBlocksStreamingMeta(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventToolSearchCallToContentBlocksStreamingMeta", t, func() {
+		r := newStreamReceiver(&model.Options{})
+
+		item := responses.ResponseToolSearchCall{
+			ID:        "tsid",
+			CallID:    "call1",
+			Status:    "completed",
+			Execution: responses.ResponseToolSearchCallExecutionServer,
+			Arguments: map[string]any{"query": "find tools"},
+		}
+
+		block, err := r.itemDoneEventToolSearchCallToContentBlocks(0, item, &model.Options{})
+		assert.NoError(t, err)
+		assert.NotNil(t, block)
+		assert.NotNil(t, block.StreamingMeta)
+	})
+}
+
+func TestItemDoneEventToolSearchOutputItemToContentBlocksStreamingMeta(t *testing.T) {
+	mockey.PatchConvey("TestItemDoneEventToolSearchOutputItemToContentBlocksStreamingMeta", t, func() {
+		r := newStreamReceiver(&model.Options{})
+
+		item := responses.ResponseToolSearchOutputItem{
+			ID:     "tsoid",
+			CallID: "call1",
+			Status: "completed",
+			Tools: []responses.ToolUnion{
+				{Type: "function", Name: "tool1", Description: "desc1", Parameters: map[string]any{"type": "object"}},
+			},
+		}
+
+		block, err := r.itemDoneEventToolSearchOutputItemToContentBlocks(0, item)
+		assert.NoError(t, err)
+		assert.NotNil(t, block)
+		assert.NotNil(t, block.StreamingMeta)
+	})
+}
+
+func TestMcpListToolsPhaseToContentBlockWithCache(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+
+	k := makeMCPListToolsItemAddedEventCacheKey("iid", 4)
+	r.ItemAddedEventCache[k] = responses.ResponseOutputItemMcpListTools{
+		ID:          "iid",
+		ServerLabel: "srv",
+	}
+
+	block := r.mcpListToolsPhaseToContentBlock("iid", 4, string(responses.ResponseStatusInProgress))
+	assert.NotNil(t, block.MCPListToolsResult)
+	assert.Equal(t, "srv", block.MCPListToolsResult.ServerLabel)
+}
+
+func TestMcpCallPhaseToContentBlockWithCache(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+
+	k := makeMCPToolCallItemAddedEventCacheKey("iid", 7)
+	r.ItemAddedEventCache[k] = responses.ResponseOutputItemMcpCall{
+		ID:                "iid",
+		ServerLabel:       "srv",
+		Name:              "tool_name",
+		ApprovalRequestID: "ar1",
+	}
+
+	block := r.mcpCallPhaseToContentBlock("iid", 7, string(responses.ResponseStatusInProgress))
+	assert.NotNil(t, block.MCPToolCall)
+	assert.Equal(t, "srv", block.MCPToolCall.ServerLabel)
+	assert.Equal(t, "tool_name", block.MCPToolCall.Name)
+	assert.Equal(t, "ar1", block.MCPToolCall.ApprovalRequestID)
+}
+
+func TestWebSearchPhaseToContentBlockEmptyStatus(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+
+	block := r.webSearchPhaseToContentBlock("iid", 8, "")
+	assert.NotNil(t, block.ServerToolCall)
+	assert.Equal(t, string(ServerToolNameWebSearch), block.ServerToolCall.Name)
+
+	_, ok := GetItemStatus(block)
+	assert.False(t, ok)
+}
+
+func TestMcpCallPhaseToContentBlockEmptyStatus(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+
+	block := r.mcpCallPhaseToContentBlock("iid", 7, "")
+	assert.NotNil(t, block.MCPToolCall)
+
+	_, ok := GetItemStatus(block)
+	assert.False(t, ok)
+}
+
+func TestReasoningSummaryTextDeltaEventNewlinePrepend(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+
+	// First delta at summaryIndex 0 — no newline
+	ev1 := responses.ResponseReasoningSummaryTextDeltaEvent{
+		ItemID:       "iid",
+		OutputIndex:  2,
+		SummaryIndex: 0,
+		Delta:        "first",
+	}
+	block1 := r.reasoningSummaryTextDeltaEventToContentBlock(ev1)
+	assert.Equal(t, "first", block1.Reasoning.Text)
+
+	// Second delta at summaryIndex 1 — should prepend newline
+	ev2 := responses.ResponseReasoningSummaryTextDeltaEvent{
+		ItemID:       "iid",
+		OutputIndex:  2,
+		SummaryIndex: 1,
+		Delta:        "second",
+	}
+	block2 := r.reasoningSummaryTextDeltaEventToContentBlock(ev2)
+	assert.Equal(t, "\nsecond", block2.Reasoning.Text)
+
+	// Third delta at summaryIndex 1 again — no newline (not new)
+	ev3 := responses.ResponseReasoningSummaryTextDeltaEvent{
+		ItemID:       "iid",
+		OutputIndex:  2,
+		SummaryIndex: 1,
+		Delta:        "more",
+	}
+	block3 := r.reasoningSummaryTextDeltaEventToContentBlock(ev3)
+	assert.Equal(t, "more", block3.Reasoning.Text)
+}
+
+func TestItemAddedEventToContentBlockReasoning(t *testing.T) {
+	mockey.PatchConvey("TestItemAddedEventToContentBlockReasoning", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 1,
+		}
+
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(responses.ResponseReasoningItem{
+			ID:     "rid",
+			Status: "in_progress",
+		}).Build()
+
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(blocks))
+		assert.NotNil(t, blocks[0].Reasoning)
+		assert.NotNil(t, blocks[0].StreamingMeta)
+	})
+}
+
+func TestItemAddedEventToContentBlockMcpCallCaching(t *testing.T) {
+	mockey.PatchConvey("TestItemAddedEventToContentBlockMcpCallCaching", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 2,
+		}
+
+		mcpCall := responses.ResponseOutputItemMcpCall{
+			ID:          "mcpid",
+			ServerLabel: "srv",
+			Name:        "tool",
+		}
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(mcpCall).Build()
+
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(blocks))
+
+		k := makeMCPToolCallItemAddedEventCacheKey("mcpid", 2)
+		cached, ok := r.ItemAddedEventCache[k]
+		assert.True(t, ok)
+		cachedItem, ok := cached.(responses.ResponseOutputItemMcpCall)
+		assert.True(t, ok)
+		assert.Equal(t, "srv", cachedItem.ServerLabel)
+	})
+}
+
+func TestItemAddedEventToContentBlockMcpListToolsCaching(t *testing.T) {
+	mockey.PatchConvey("TestItemAddedEventToContentBlockMcpListToolsCaching", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseOutputItemAddedEvent{
+			OutputIndex: 3,
+		}
+
+		mcpList := responses.ResponseOutputItemMcpListTools{
+			ID:          "listid",
+			ServerLabel: "srv",
+		}
+		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(mcpList).Build()
+
+		blocks, err := r.itemAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, len(blocks))
+
+		k := makeMCPListToolsItemAddedEventCacheKey("listid", 3)
+		cached, ok := r.ItemAddedEventCache[k]
+		assert.True(t, ok)
+		cachedItem, ok := cached.(responses.ResponseOutputItemMcpListTools)
+		assert.True(t, ok)
+		assert.Equal(t, "srv", cachedItem.ServerLabel)
+	})
+}
+
 func TestCodeInterpreterPhaseToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.codeInterpreterPhaseToContentBlock("ciid", 9, string(responses.ResponseStatusInProgress))
 	assert.NotNil(t, block.ServerToolResult)
@@ -670,7 +914,7 @@ func TestCodeInterpreterPhaseToContentBlock(t *testing.T) {
 }
 
 func TestCodeInterpreterPhaseToContentBlockEmptyStatus(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.codeInterpreterPhaseToContentBlock("ciid", 10, "")
 	assert.NotNil(t, block.ServerToolResult)
@@ -681,7 +925,7 @@ func TestCodeInterpreterPhaseToContentBlockEmptyStatus(t *testing.T) {
 }
 
 func TestCodeInterpreterCodeDeltaEventToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	ev := responses.ResponseCodeInterpreterCallCodeDeltaEvent{
 		ItemID:      "ciid",
 		OutputIndex: 12,
@@ -704,7 +948,7 @@ func TestCodeInterpreterCodeDeltaEventToContentBlock(t *testing.T) {
 
 func TestItemDoneEventCodeInterpreterToContentBlocks(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventCodeInterpreterToContentBlocks", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 13,
 		}
@@ -729,7 +973,7 @@ func TestItemDoneEventCodeInterpreterToContentBlocks(t *testing.T) {
 
 func TestItemAddedEventToContentBlockCodeInterpreter(t *testing.T) {
 	mockey.PatchConvey("TestItemAddedEventToContentBlockCodeInterpreter", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 
 		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
 			responses.ResponseCodeInterpreterToolCall{
@@ -758,7 +1002,7 @@ func TestItemAddedEventToContentBlockCodeInterpreter(t *testing.T) {
 }
 
 func TestImageGenerationPhaseToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 
 	block := r.imageGenerationPhaseToContentBlock("igid", 14, string(responses.ResponseStatusInProgress))
 	assert.NotNil(t, block.ServerToolResult)
@@ -774,7 +1018,7 @@ func TestImageGenerationPhaseToContentBlock(t *testing.T) {
 }
 
 func TestImageGenerationPartialImageEventToContentBlock(t *testing.T) {
-	r := newStreamReceiver()
+	r := newStreamReceiver(&model.Options{})
 	ev := responses.ResponseImageGenCallPartialImageEvent{
 		ItemID:          "igid",
 		OutputIndex:     15,
@@ -797,7 +1041,7 @@ func TestImageGenerationPartialImageEventToContentBlock(t *testing.T) {
 
 func TestItemDoneEventImageGenerationToContentBlocks(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventImageGenerationToContentBlocks", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 16,
 		}
@@ -820,7 +1064,7 @@ func TestItemDoneEventImageGenerationToContentBlocks(t *testing.T) {
 
 func TestItemAddedEventToContentBlockIgnoredImageGeneration(t *testing.T) {
 	mockey.PatchConvey("TestItemAddedEventToContentBlockIgnoredImageGeneration", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 
 		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
 			responses.ResponseOutputItemImageGenerationCall{},
@@ -837,7 +1081,7 @@ func TestItemAddedEventToContentBlockIgnoredImageGeneration(t *testing.T) {
 
 func TestItemDoneEventShellCallToContentBlock(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventShellCallToContentBlock", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 20,
 		}
@@ -863,7 +1107,7 @@ func TestItemDoneEventShellCallToContentBlock(t *testing.T) {
 
 func TestItemDoneEventShellOutputToContentBlock(t *testing.T) {
 	mockey.PatchConvey("TestItemDoneEventShellOutputToContentBlock", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 		ev := responses.ResponseOutputItemDoneEvent{
 			OutputIndex: 21,
 		}
@@ -892,7 +1136,7 @@ func TestItemDoneEventShellOutputToContentBlock(t *testing.T) {
 
 func TestItemAddedEventToContentBlockShell(t *testing.T) {
 	mockey.PatchConvey("TestItemAddedEventToContentBlockShellCall", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 
 		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
 			responses.ResponseFunctionShellToolCall{
@@ -919,7 +1163,7 @@ func TestItemAddedEventToContentBlockShell(t *testing.T) {
 	})
 
 	mockey.PatchConvey("TestItemAddedEventToContentBlockShellOutput", t, func() {
-		r := newStreamReceiver()
+		r := newStreamReceiver(&model.Options{})
 
 		mockey.Mock(responses.ResponseOutputItemUnion.AsAny).Return(
 			responses.ResponseFunctionShellToolCallOutput{
