@@ -169,6 +169,7 @@ For more details about authentication, see the [VolcEngine documentation](https:
 See the following examples for more usage:
 
 - [Text Embedding](./examples/embedding/)
+- [Multi-Modal Embedding](./examples/multimodal_embedding/)
 
 ## License
 

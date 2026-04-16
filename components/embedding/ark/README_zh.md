@@ -169,6 +169,7 @@ embedder 支持两种认证方式：
 查看以下示例了解更多用法：
 
 - [文本嵌入](./examples/embedding/)
+- [多模态嵌入](./examples/multimodal_embedding/)
 
 ## 许可证
 
