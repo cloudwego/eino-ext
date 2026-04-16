@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/openai/openai-go/v3/packages/ssestream"
@@ -211,5 +212,60 @@ func (d *modelTestMockDecoder) Event() ssestream.Event {
 }
 
 func (d *modelTestMockDecoder) Close() error { return nil }
+
+func TestPopulateToolsWithDeferredTools(t *testing.T) {
+	mockey.PatchConvey("populateToolsWithDeferredTools", t, func() {
+		ctx := context.Background()
+		m, err := New(ctx, &Config{APIKey: "test", Model: "gpt-4"})
+		assert.NoError(t, err)
+
+		mockey.PatchConvey("adds_hosted_tool_search_when_deferred_tools_set", func() {
+			deferredTools := []*schema.ToolInfo{
+				{Name: "deferred1", Desc: "d", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+			}
+			options := &model.Options{
+				DeferredTools: deferredTools,
+			}
+			specOptions := &openaiOptions{}
+			req := &responses.ResponseNewParams{}
+			err := m.populateTools(req, options, specOptions)
+			assert.NoError(t, err)
+
+			hasToolSearch := false
+			for _, tool := range req.Tools {
+				if tool.OfToolSearch != nil {
+					hasToolSearch = true
+					break
+				}
+			}
+			assert.True(t, hasToolSearch, "should add hosted tool search when deferred tools are set")
+		})
+
+		mockey.PatchConvey("adds_client_tool_search_when_tool_search_tool_set", func() {
+			toolSearchTool := &schema.ToolInfo{
+				Name:        "my_search",
+				Desc:        "search tools",
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"}),
+			}
+			options := &model.Options{
+				ToolSearchTool: toolSearchTool,
+			}
+			specOptions := &openaiOptions{}
+			req := &responses.ResponseNewParams{}
+			err := m.populateTools(req, options, specOptions)
+			assert.NoError(t, err)
+
+			hasToolSearch := false
+			for _, tool := range req.Tools {
+				if tool.OfToolSearch != nil {
+					hasToolSearch = true
+					assert.Equal(t, responses.ToolSearchToolExecutionClient, tool.OfToolSearch.Execution)
+					break
+				}
+			}
+			assert.True(t, hasToolSearch, "should add client tool search when ToolSearchTool is set")
+		})
+	})
+}
 
 func (d *modelTestMockDecoder) Err() error { return nil }

@@ -28,9 +28,9 @@ import (
 )
 
 func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEventUnion],
-	config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput]) {
+	config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput], options *model.Options) {
 
-	receiver := newStreamReceiver()
+	receiver := newStreamReceiver(options)
 	sender := newCallbackSender(sw, config)
 
 	if sr.Err() != nil {
@@ -263,6 +263,8 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 }
 
 type streamReceiver struct {
+	Options *model.Options
+
 	ProcessingAssistantGenTextBlockIndex map[string]map[int]bool
 
 	MaxBlockIndex int
@@ -277,8 +279,9 @@ type streamReceiver struct {
 	ItemAddedEventCache map[string]any
 }
 
-func newStreamReceiver() *streamReceiver {
+func newStreamReceiver(options *model.Options) *streamReceiver {
 	return &streamReceiver{
+		Options:                              options,
 		ProcessingAssistantGenTextBlockIndex: map[string]map[int]bool{},
 		MaxBlockIndex:                        -1,
 		IndexMapper:                          map[string]int{},
@@ -498,6 +501,20 @@ func (r *streamReceiver) itemDoneEventToContentBlocks(ev responses.ResponseOutpu
 			return nil, err
 		}
 
+	case responses.ResponseToolSearchCall:
+		block, err := r.itemDoneEventToolSearchCallToContentBlocks(ev.OutputIndex, item, r.Options)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, block)
+
+	case responses.ResponseToolSearchOutputItem:
+		block, err := r.itemDoneEventToolSearchOutputItemToContentBlocks(ev.OutputIndex, item)
+		if err != nil {
+			return nil, err
+		}
+		blocks = append(blocks, block)
+
 	case responses.ResponseFileSearchToolCall:
 		blocks, err = r.itemDoneEventFileSearchToContentBlocks(ev.OutputIndex, item)
 		if err != nil {
@@ -629,6 +646,56 @@ func (r *streamReceiver) itemDoneEventFunctionWebSearchToContentBlocks(outputIdx
 	return blocks, nil
 }
 
+func (r *streamReceiver) itemDoneEventToolSearchCallToContentBlocks(outputIdx int64, item responses.ResponseToolSearchCall, options *model.Options) (block *schema.ContentBlock, err error) {
+	block, err = toolSearchToolCallToContentBlock(item, options)
+	if err != nil {
+		return nil, err
+	}
+
+	block.StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolCallIndexKey(outputIdx)),
+	}
+
+	return block, nil
+}
+
+func (r *streamReceiver) itemDoneEventToolSearchOutputItemToContentBlocks(outputIdx int64, item responses.ResponseToolSearchOutputItem) (block *schema.ContentBlock, err error) {
+	block, err = toolSearchToolResultToContentBlock(item)
+	if err != nil {
+		return nil, err
+	}
+
+	block.StreamingMeta = &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
+	}
+
+	return block, nil
+}
+
+func (r *streamReceiver) itemDoneEventFunctionMCPCallToContentBlocks(outputIdx int64, item responses.ResponseOutputItemMcpCall) (blocks []*schema.ContentBlock, err error) {
+	blocks, err = mcpCallToContentBlocks(item)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, block := range blocks {
+		switch block.Type {
+		case schema.ContentBlockTypeMCPToolCall:
+			block.StreamingMeta = &schema.StreamingMeta{
+				Index: r.getBlockIndex(makeMCPToolCallIndexKey(outputIdx)),
+			}
+		case schema.ContentBlockTypeMCPToolResult:
+			block.StreamingMeta = &schema.StreamingMeta{
+				Index: r.getBlockIndex(makeMCPToolResultIndexKey(outputIdx)),
+			}
+		default:
+			return nil, fmt.Errorf("expected MCP tool call or result block, but got %q", block.Type)
+		}
+	}
+
+	return blocks, nil
+}
+
 func (r *streamReceiver) itemDoneEventFileSearchToContentBlocks(outputIdx int64, item responses.ResponseFileSearchToolCall) (blocks []*schema.ContentBlock, err error) {
 	blocks, err = fileSearchToContentBlocks(item)
 	if err != nil {
@@ -672,30 +739,6 @@ func (r *streamReceiver) itemDoneEventImageGenerationToContentBlocks(outputIdx i
 	}
 	blocks[1].StreamingMeta = &schema.StreamingMeta{
 		Index: r.getBlockIndex(makeServerToolResultIndexKey(outputIdx)),
-	}
-
-	return blocks, nil
-}
-
-func (r *streamReceiver) itemDoneEventFunctionMCPCallToContentBlocks(outputIdx int64, item responses.ResponseOutputItemMcpCall) (blocks []*schema.ContentBlock, err error) {
-	blocks, err = mcpCallToContentBlocks(item)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, block := range blocks {
-		switch block.Type {
-		case schema.ContentBlockTypeMCPToolCall:
-			block.StreamingMeta = &schema.StreamingMeta{
-				Index: r.getBlockIndex(makeMCPToolCallIndexKey(outputIdx)),
-			}
-		case schema.ContentBlockTypeMCPToolResult:
-			block.StreamingMeta = &schema.StreamingMeta{
-				Index: r.getBlockIndex(makeMCPToolResultIndexKey(outputIdx)),
-			}
-		default:
-			return nil, fmt.Errorf("expected MCP tool call or result block, but got %q", block.Type)
-		}
 	}
 
 	return blocks, nil

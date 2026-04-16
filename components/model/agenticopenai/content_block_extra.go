@@ -26,8 +26,10 @@ type blockExtraItemID string
 type blockExtraItemStatus string
 
 const (
-	itemIDKey     = "openai-item-id"
-	itemStatusKey = "openai-item-status"
+	itemIDKey            = "openai-item-id"
+	itemStatusKey        = "openai-item-status"
+	isToolSearchToolCall = "openai-tool-search-tool-call"
+	toolCallNamespaceKey = "openai-tool-call-namespace"
 )
 
 func setItemID(block *schema.ContentBlock, itemID string) {
@@ -43,6 +45,14 @@ func getItemID(block *schema.ContentBlock) (string, bool) {
 	return itemIDStr, ok
 }
 
+func setNamespace(block *schema.ContentBlock, namespace string) {
+	setBlockExtraValue(block, toolCallNamespaceKey, namespace)
+}
+
+func getNamespace(block *schema.ContentBlock) (string, bool) {
+	return getBlockExtraValue[string](block, toolCallNamespaceKey)
+}
+
 func setItemStatus(block *schema.ContentBlock, status string) {
 	setBlockExtraValue(block, itemStatusKey, blockExtraItemStatus(status))
 }
@@ -54,6 +64,15 @@ func GetItemStatus(block *schema.ContentBlock) (string, bool) {
 	}
 	itemStatusStr, ok := getBlockExtraValue[string](block, itemStatusKey)
 	return itemStatusStr, ok
+}
+
+func setToolSearchToolCall(block *schema.ContentBlock) {
+	setBlockExtraValue(block, isToolSearchToolCall, true)
+}
+
+func GetToolSearchToolCall(block *schema.ContentBlock) bool {
+	ok, success := getBlockExtraValue[bool](block, isToolSearchToolCall)
+	return success && ok
 }
 
 func setBlockExtraValue[T any](block *schema.ContentBlock, key string, value T) {
