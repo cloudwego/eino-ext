@@ -17,6 +17,7 @@
 package openai
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -64,4 +65,63 @@ func TestSetMsgExtra(t *testing.T) {
 	extraVal, ok := getMsgExtraValue[string](msg, "key")
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "val", extraVal)
+}
+
+func TestPopulateRCFromExtra(t *testing.T) {
+	tests := []struct {
+		name            string
+		extra           map[string]json.RawMessage
+		wantRC          string
+		wantHasRC       bool
+	}{
+		{
+			name:      "normal string value",
+			extra:     map[string]json.RawMessage{"reasoning": json.RawMessage(`"thinking step by step"`)},
+			wantRC:    "thinking step by step",
+			wantHasRC: true,
+		},
+		{
+			name:      "null value",
+			extra:     map[string]json.RawMessage{"reasoning": json.RawMessage(`null`)},
+			wantRC:    "",
+			wantHasRC: false,
+		},
+		{
+			name:      "empty string value",
+			extra:     map[string]json.RawMessage{"reasoning": json.RawMessage(`""`)},
+			wantRC:    "",
+			wantHasRC: false,
+		},
+		{
+			name:      "non-string json type",
+			extra:     map[string]json.RawMessage{"reasoning": json.RawMessage(`{"key":"val"}`)},
+			wantRC:    "",
+			wantHasRC: false,
+		},
+		{
+			name:      "key not present",
+			extra:     map[string]json.RawMessage{"other": json.RawMessage(`"value"`)},
+			wantRC:    "",
+			wantHasRC: false,
+		},
+		{
+			name:      "nil extra",
+			extra:     nil,
+			wantRC:    "",
+			wantHasRC: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &schema.Message{}
+			populateRCFromExtra(tt.extra, msg)
+			assert.Equal(t, tt.wantRC, msg.ReasoningContent)
+			rc, ok := GetReasoningContent(msg)
+			assert.Equal(t, tt.wantHasRC, ok)
+			if tt.wantHasRC {
+				assert.Equal(t, tt.wantRC, rc)
+			}
+		})
+	}
 }
