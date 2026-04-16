@@ -17,6 +17,8 @@
 package claude
 
 import (
+	"encoding/json"
+
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -24,6 +26,7 @@ const (
 	keyOfThinking          = "_eino_claude_thinking"
 	keyOfBreakPoint        = "_eino_claude_breakpoint"
 	keyOfThinkingSignature = "_eino_claude_thinking_signature"
+	keyOfToolSearchEvents  = "_eino_claude_tool_search_events"
 )
 
 func GetThinking(msg *schema.Message) (string, bool) {
@@ -120,4 +123,53 @@ func getThinkingSignature(msg *schema.Message) (string, bool) {
 
 func setThinkingSignature(msg *schema.Message, signature string) {
 	setMsgExtra(msg, keyOfThinkingSignature, signature)
+}
+
+// ToolSearchEvent represents a tool search related event from the Claude API.
+// It stores either a server_tool_use event (the model requesting a tool search)
+// or a tool_search_tool_result event (the search results).
+type ToolSearchEvent struct {
+	// Type is "server_tool_use" or "tool_search_tool_result".
+	Type string
+
+	// ID is the block ID, set when Type is "server_tool_use".
+	ID string
+	// Name is the server tool name (e.g. "tool_search_tool_bm25"), set when Type is "server_tool_use".
+	Name string
+	// Input is the server tool input as raw JSON, set when Type is "server_tool_use".
+	Input json.RawMessage
+
+	// ToolUseID references the server_tool_use block, set when Type is "tool_search_tool_result".
+	ToolUseID string
+	// Content holds the search result or error, set when Type is "tool_search_tool_result".
+	Content *ToolSearchEventContent
+}
+
+// ToolSearchEventContent represents the content of a tool_search_tool_result event.
+type ToolSearchEventContent struct {
+	// Type is "tool_search_tool_search_result" or "tool_search_tool_result_error".
+	Type string
+
+	// ToolReferences lists matched tool names, set when Type is "tool_search_tool_search_result".
+	ToolReferences []ToolSearchEventToolReference
+	// ErrorCode is the error code, set when Type is "tool_search_tool_result_error".
+	ErrorCode string
+	// ErrorMessage is the error message, set when Type is "tool_search_tool_result_error".
+	ErrorMessage string
+}
+
+// ToolSearchEventToolReference represents a single tool reference in a search result.
+type ToolSearchEventToolReference struct {
+	ToolName string
+}
+
+func appendToolSearchEvent(msg *schema.Message, event ToolSearchEvent) {
+	events, _ := getMsgExtraValue[[]ToolSearchEvent](msg, keyOfToolSearchEvents)
+	events = append(events, event)
+	setMsgExtra(msg, keyOfToolSearchEvents, events)
+}
+
+func getToolSearchEvents(msg *schema.Message) []ToolSearchEvent {
+	events, _ := getMsgExtraValue[[]ToolSearchEvent](msg, keyOfToolSearchEvents)
+	return events
 }
