@@ -162,7 +162,7 @@ func StreamDebugRun(res http.ResponseWriter, req *http.Request) {
 				evt := types.DebugRunDataEVT(debugID, state)
 				if err != nil {
 					errEvt := types.DebugRunErrEVT(debugID, err.Error())
-					sseStreamResponseChan <- NewStreamResponse(string(errEvt.Type), string(evt.JsonBytes()))
+					sseStreamResponseChan <- NewStreamResponse(string(errEvt.Type), string(errEvt.JsonBytes()))
 					return
 				}
 				sseStreamResponseChan <- NewStreamResponse(string(evt.Type), string(evt.JsonBytes()))
