@@ -1,0 +1,101 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1776415112885,
+  "projectRoot": "E:\\Github\\eino-ext",
+  "techStack": {
+    "languages": [],
+    "frameworks": [],
+    "packageManager": null,
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": null,
+    "testCommand": null,
+    "lintCommand": null,
+    "devCommand": null,
+    "scripts": {}
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": null,
+    "testPattern": null,
+    "fileOrganization": null
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "components"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "adk": {
+      "path": "adk",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1776415112857,
+      "keyFiles": []
+    },
+    "callbacks": {
+      "path": "callbacks",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1776415112858,
+      "keyFiles": []
+    },
+    "components": {
+      "path": "components",
+      "purpose": "UI components",
+      "fileCount": 0,
+      "lastAccessed": 1776415112858,
+      "keyFiles": []
+    },
+    "devops": {
+      "path": "devops",
+      "purpose": null,
+      "fileCount": 8,
+      "lastAccessed": 1776415112859,
+      "keyFiles": [
+        "dev.go",
+        "dev_test.go",
+        "go.mod",
+        "go.sum",
+        "option.go"
+      ]
+    },
+    "libs": {
+      "path": "libs",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1776415112859,
+      "keyFiles": []
+    },
+    "skills": {
+      "path": "skills",
+      "purpose": null,
+      "fileCount": 0,
+      "lastAccessed": 1776415112860,
+      "keyFiles": []
+    }
+  },
+  "hotPaths": [
+    {
+      "path": "devops\\internal\\service\\call_option.go",
+      "accessCount": 1,
+      "lastAccessed": 1776415196330,
+      "type": "file"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "accessCount": 1,
+      "lastAccessed": 1776415480987,
+      "type": "file"
+    }
+  ],
+  "userDirectives": []
+}

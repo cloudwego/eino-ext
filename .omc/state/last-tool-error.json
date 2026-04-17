@@ -1,0 +1,7 @@
+{
+  "tool_name": "Read",
+  "tool_input_preview": "{\"file_path\":\"E:\\\\Github\\\\eino-ext\\\\devops\\\\call_option.go\",\"offset\":130,\"limit\":30}",
+  "error": "File does not exist. Note: your current working directory is E:\\Github\\eino-ext.",
+  "timestamp": "2026-04-17T08:39:33.618Z",
+  "retry_count": 1
+}
