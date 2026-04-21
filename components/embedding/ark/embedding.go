@@ -80,6 +80,10 @@ type EmbeddingConfig struct {
 	// MaxConcurrentRequests specifies the maximum number of concurrent multi-modal embedding api calls allowed
 	// Optional. Default: 5
 	MaxConcurrentRequests *int `json:"max_concurrent_requests"`
+
+	// Dimensions specifies the dimensions of the embedding vectors to output
+	// Optional. If not specified, the model's default dimensions will be used
+	Dimensions *int `json:"dimensions,omitempty"`
 }
 
 type APIType string
@@ -182,11 +186,15 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	var usage *embedding.TokenUsage
 
 	if e.conf.APIType == nil || *e.conf.APIType == APITypeText {
-		resp, err := e.client.CreateEmbeddings(ctx, model.EmbeddingRequestStrings{
+		req := model.EmbeddingRequestStrings{
 			Input:          texts,
 			Model:          conf.Model,
 			EncodingFormat: encodingFormat,
-		})
+		}
+		if e.conf.Dimensions != nil {
+			req.Dimensions = *e.conf.Dimensions
+		}
+		resp, err := e.client.CreateEmbeddings(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("[Ark] CreateEmbeddings error: %w", err)
 		}
@@ -212,14 +220,18 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 			idx := i
 			text := texts[idx]
 
-			eg.Go(func() error {
-				res, err := e.client.CreateMultiModalEmbeddings(ctx, model.MultiModalEmbeddingRequest{
-					Input: []model.MultimodalEmbeddingInput{
-						{Type: model.MultiModalEmbeddingInputTypeText, Text: &text},
-					},
-					Model:          conf.Model,
-					EncodingFormat: &encodingFormat,
-				})
+		eg.Go(func() error {
+			req := model.MultiModalEmbeddingRequest{
+				Input: []model.MultimodalEmbeddingInput{
+					{Type: model.MultiModalEmbeddingInputTypeText, Text: &text},
+				},
+				Model:          conf.Model,
+				EncodingFormat: &encodingFormat,
+			}
+			if e.conf.Dimensions != nil {
+				req.Dimensions = *e.conf.Dimensions
+			}
+			res, err := e.client.CreateMultiModalEmbeddings(ctx, req)
 				if err != nil {
 					return fmt.Errorf("[Ark] CreateMultiModalEmbeddings error: %w", err)
 				}
