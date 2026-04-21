@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/meguminnnnnnnnn/go-openai"
 
@@ -1185,11 +1186,15 @@ func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) 
 	if extra == nil {
 		return
 	}
+
 	for _, key := range otherReasoningKeys {
-		if reasoningRawMessage, ok := extra[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
-			msg.ReasoningContent = string(reasoningRawMessage)
-			setReasoningContent(msg, string(reasoningRawMessage))
-			break
+		if reasoningRawMessage, ok := extra[key]; ok {
+			var reasoningContent string
+			if err := sonic.Unmarshal(reasoningRawMessage, &reasoningContent); err == nil && reasoningContent != "" {
+				msg.ReasoningContent = reasoningContent
+				setReasoningContent(msg, reasoningContent)
+				break
+			}
 		}
 	}
 }
