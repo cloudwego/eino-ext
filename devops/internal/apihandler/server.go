@@ -36,14 +36,15 @@ var (
 	startOnce sync.Once
 )
 
-// StartHTTPServer init http sever use the specified port.
-func StartHTTPServer(_ context.Context, port string) error {
-	log.Infof("start debug http server at port=%s", port)
+// StartHTTPServer init http sever use the specified ip and port.
+func StartHTTPServer(_ context.Context, ip, port string) error {
+	addr := ip + ":" + port
+	log.Infof("start debug http server at addr=%s", addr)
 	var err error
 	startOnce.Do(func() {
 		r := mux.NewRouter()
 		registerRoutes(r)
-		err = http.ListenAndServe(":"+port, r)
+		err = http.ListenAndServe(addr, r)
 		if err != nil {
 			log.Errorf("start debug http server failed, err=%v", err)
 		}
@@ -57,7 +58,7 @@ func registerRoutes(r *mux.Router) {
 		debugBiz = "/debug/v1"
 	)
 
-	r.Use(recoverMiddleware, corsMiddleware)
+	r.Use(recoverMiddleware)
 
 	rootR := r.PathPrefix(root).Subrouter()
 	rootR.Path("/ping").HandlerFunc(Ping).Methods(http.MethodGet)
