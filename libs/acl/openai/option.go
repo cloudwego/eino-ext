@@ -58,7 +58,12 @@ type openaiOptions struct {
 
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
-		o.ExtraFields = extraFields
+		if o.ExtraFields == nil {
+			o.ExtraFields = make(map[string]any, len(extraFields))
+		}
+		for k, v := range extraFields {
+			o.ExtraFields[k] = v
+		}
 	})
 }
 
