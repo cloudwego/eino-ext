@@ -127,7 +127,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			Model: "test-model",
 		}
 		var in []*schema.Message
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 	})
 
@@ -142,7 +142,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
 		item := req.GetInput().GetListValue().GetListValue()[0].GetInputMessage()
@@ -161,7 +161,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
 
@@ -181,7 +181,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 
 		assert.Nil(t, err)
@@ -205,7 +205,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
 
@@ -224,8 +224,67 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 				Content: "some content",
 			},
 		}
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.NotNil(t, err)
+	})
+}
+
+func TestResponsesAPIChatModelPopulateInputReasoningPassback(t *testing.T) {
+	cm := &ResponsesAPIChatModel{}
+
+	PatchConvey("enabled, no previous_response_id, has reasoning content", t, func() {
+		req := &responses.ResponsesRequest{Model: "test-model"}
+		in := []*schema.Message{
+			{
+				Role:             schema.Assistant,
+				Content:          "Hi",
+				ReasoningContent: "thinking step",
+			},
+		}
+		err := cm.populateInput(in, req, true)
+		assert.Nil(t, err)
+		items := req.GetInput().GetListValue().GetListValue()
+		assert.Equal(t, 2, len(items))
+		reasoning := items[0].GetReasoning()
+		assert.NotNil(t, reasoning)
+		assert.Equal(t, "thinking step", reasoning.GetSummary()[0].Text)
+		msg := items[1].GetInputMessage()
+		assert.Equal(t, responses.MessageRole_assistant, msg.Role)
+	})
+
+	PatchConvey("enabled, has previous_response_id, should skip reasoning passback", t, func() {
+		req := &responses.ResponsesRequest{
+			Model:              "test-model",
+			PreviousResponseId: ptrOf("resp_123"),
+		}
+		in := []*schema.Message{
+			{
+				Role:             schema.Assistant,
+				Content:          "Hi",
+				ReasoningContent: "thinking step",
+			},
+		}
+		err := cm.populateInput(in, req, true)
+		assert.Nil(t, err)
+		items := req.GetInput().GetListValue().GetListValue()
+		assert.Equal(t, 1, len(items))
+		assert.Nil(t, items[0].GetReasoning())
+	})
+
+	PatchConvey("disabled, has reasoning content, should not passback", t, func() {
+		req := &responses.ResponsesRequest{Model: "test-model"}
+		in := []*schema.Message{
+			{
+				Role:             schema.Assistant,
+				Content:          "Hi",
+				ReasoningContent: "thinking step",
+			},
+		}
+		err := cm.populateInput(in, req, false)
+		assert.Nil(t, err)
+		items := req.GetInput().GetListValue().GetListValue()
+		assert.Equal(t, 1, len(items))
+		assert.Nil(t, items[0].GetReasoning())
 	})
 }
 
@@ -1116,6 +1175,8 @@ func TestNewResponsesAPIChatModel(t *testing.T) {
 				},
 				EnableToolWebSearch: &ToolWebSearch{},
 				MaxToolCalls:        ptrOf(int64(5)),
+
+				EnableReasoningContentPassback: true,
 			}
 			m, err := NewResponsesAPIChatModel(ctx, config)
 			assert.NoError(t, err)
@@ -1133,6 +1194,7 @@ func TestNewResponsesAPIChatModel(t *testing.T) {
 			assert.NotNil(t, m.reasoningEffort)
 			assert.NotNil(t, m.enableToolWebSearch)
 			assert.Equal(t, int64(5), *m.maxToolCalls)
+			assert.True(t, m.enableReasoningContentPassback)
 		})
 	})
 }

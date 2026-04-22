@@ -136,6 +136,20 @@ type ResponsesAPIConfig struct {
 	// For more details, see https://www.volcengine.com/docs/82379/1569618?lang=zh
 	// Optional.
 	MaxToolCalls *int64 `json:"max_tool_calls,omitempty"`
+
+	// EnableReasoningContentPassback controls whether reasoning content
+	// from assistant messages is passed back to the model in multi-turn conversations.
+	// When enabled, reasoning content is included as reasoning summary items in the input,
+	// allowing the model to be aware of its prior chain-of-thought.
+	// However, if a valid previous_response_id is set (via session cache), the passback is
+	// automatically skipped because previous_response_id already preserves the full conversation
+	// context including the chain-of-thought on the server side.
+	// Note: This feature requires doubao models v1.8+. Earlier versions (e.g., v1.6) do not
+	// support reasoning items in the input and will return an error.
+	// For more details, see https://www.volcengine.com/docs/82379/1449737
+	// Default: false.
+	// Optional.
+	EnableReasoningContentPassback bool `json:"enable_reasoning_content_passback,omitempty"`
 }
 
 func NewResponsesAPIChatModel(_ context.Context, config *ResponsesAPIConfig) (*ResponsesAPIChatModel, error) {
@@ -191,6 +205,8 @@ func NewResponsesAPIChatModel(_ context.Context, config *ResponsesAPIConfig) (*R
 
 		enableToolWebSearch: config.EnableToolWebSearch,
 		maxToolCalls:        config.MaxToolCalls,
+
+		enableReasoningContentPassback: config.EnableReasoningContentPassback,
 	}, nil
 }
 
@@ -214,6 +230,8 @@ type ResponsesAPIChatModel struct {
 	enableToolWebSearch *ToolWebSearch
 
 	maxToolCalls *int64
+
+	enableReasoningContentPassback bool
 }
 type cacheConfig struct {
 	Enabled  bool
@@ -492,7 +510,7 @@ func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		return nil, err
 	}
 
-	err = cm.populateInput(in, responseReq)
+	err = cm.populateInput(in, responseReq, specOptions.enableReasoningContentPassback)
 	if err != nil {
 		return nil, err
 	}
@@ -613,7 +631,7 @@ func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 	return in, nil
 }
 
-func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq *responses.ResponsesRequest) error {
+func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq *responses.ResponsesRequest, enableReasoningPassback bool) error {
 	itemList := make([]*responses.InputItem, 0, len(in))
 	if len(in) == 0 {
 		return nil
@@ -627,6 +645,16 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
+			if enableReasoningPassback && responseReq.PreviousResponseId == nil && msg.ReasoningContent != "" {
+				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_Reasoning{Reasoning: &responses.ItemReasoning{
+					Type: responses.ItemType_reasoning,
+					Summary: []*responses.ReasoningSummaryPart{
+						{Text: msg.ReasoningContent},
+					},
+				}}})
+
+			}
+
 			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
 			if err != nil {
 				return err
@@ -906,11 +934,12 @@ func (cm *ResponsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 	}, opts...)
 
 	arkOpts := model.GetImplSpecificOptions(&arkOptions{
-		customHeaders:   cm.customHeader,
-		thinking:        cm.thinking,
-		reasoningEffort: cm.reasoningEffort,
-		enableWebSearch: cm.enableToolWebSearch,
-		maxToolCalls:    cm.maxToolCalls,
+		customHeaders:                  cm.customHeader,
+		thinking:                       cm.thinking,
+		reasoningEffort:                cm.reasoningEffort,
+		enableWebSearch:                cm.enableToolWebSearch,
+		maxToolCalls:                   cm.maxToolCalls,
+		enableReasoningContentPassback: cm.enableReasoningContentPassback,
 	}, opts...)
 
 	if err := cm.checkOptions(options, arkOpts); err != nil {
@@ -1673,7 +1702,7 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	if err != nil {
 		return nil, err
 	}
-	err = cm.populateInput(prefix, responseReq)
+	err = cm.populateInput(prefix, responseReq, specOptions.enableReasoningContentPassback)
 	if err != nil {
 		return nil, err
 	}
