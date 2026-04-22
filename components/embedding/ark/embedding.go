@@ -228,9 +228,6 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 				Model:          conf.Model,
 				EncodingFormat: &encodingFormat,
 			}
-			if e.conf.Dimensions != nil {
-				req.Dimensions = *e.conf.Dimensions
-			}
 			res, err := e.client.CreateMultiModalEmbeddings(ctx, req)
 				if err != nil {
 					return fmt.Errorf("[Ark] CreateMultiModalEmbeddings error: %w", err)
