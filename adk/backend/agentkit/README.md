@@ -98,6 +98,7 @@ See the following examples for more usage:
 
 - **`LsInfo(ctx, req)`** - List directory contents
 - **`Read(ctx, req)`** - Read file with optional line offset/limit
+- **`MultiModalRead(ctx, req)`** - Read images/PDFs as structured multimodal parts (non-image/non-PDF files fall back to `Read`). Size limits: image 10 MB, PDF full read 20 MB, PDF paged read 100 MB (up to 20 pages per request).
 - **`Write(ctx, req)`** - Create new file (fails if exists)
 - **`Edit(ctx, req)`** - Search and replace in file
 - **`GrepRaw(ctx, req)`** - Search pattern in files

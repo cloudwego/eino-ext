@@ -184,6 +184,66 @@ func main() {
 	}
 	fmt.Println()
 
+	// ========================================
+	// Example 6: MultiModalRead (image & PDF)
+	// ========================================
+	// MultiModalRead returns structured multimodal parts for images and PDFs.
+	// Non-image/non-PDF files transparently fall back to Read.
+	//
+	// Size limits:
+	//   - image: 10 MB
+	//   - PDF full read (no 'pages'): 20 MB
+	//   - PDF paged read (with 'pages'): 100 MB, up to 20 pages per request
+	//
+	// Prerequisite: upload sample files to the sandbox first (e.g. via Write
+	// with base64-encoded bytes, or by pre-provisioning the sandbox image).
+	fmt.Println("Example 6: MultiModalRead (image & PDF)")
+	fmt.Println("----------------------------------------")
+
+	imagePath := "/home/gem/sample.png"
+	pdfPath := "/home/gem/sample.pdf"
+
+	// 6a) Image: returns a single image part with detected MIME type.
+	imgResult, err := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: imagePath},
+	})
+	if err != nil {
+		log.Printf("⚠ Skip image read (%s): %v", imagePath, err)
+	} else {
+		fmt.Printf("✓ Image %s → %d part(s)\n", imagePath, len(imgResult.Parts))
+		for i, p := range imgResult.Parts {
+			fmt.Printf("    part[%d] type=%s mime=%s bytes=%d\n", i, p.Type, p.MIMEType, len(p.Data))
+		}
+	}
+
+	// 6b) PDF full read: returns a single PDF part with the raw bytes.
+	pdfResult, err := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: pdfPath},
+	})
+	if err != nil {
+		log.Printf("⚠ Skip PDF full read (%s): %v", pdfPath, err)
+	} else {
+		fmt.Printf("✓ PDF %s (full) → %d part(s)\n", pdfPath, len(pdfResult.Parts))
+		for i, p := range pdfResult.Parts {
+			fmt.Printf("    part[%d] type=%s mime=%s bytes=%d\n", i, p.Type, p.MIMEType, len(p.Data))
+		}
+	}
+
+	// 6c) PDF paged read: renders the requested page range into PNG images.
+	pagedResult, err := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: pdfPath},
+		Pages:       "1-3",
+	})
+	if err != nil {
+		log.Printf("⚠ Skip PDF paged read (%s): %v", pdfPath, err)
+	} else {
+		fmt.Printf("✓ PDF %s (pages=1-3) → %d image part(s)\n", pdfPath, len(pagedResult.Parts))
+		for i, p := range pagedResult.Parts {
+			fmt.Printf("    part[%d] type=%s mime=%s bytes=%d\n", i, p.Type, p.MIMEType, len(p.Data))
+		}
+	}
+	fmt.Println()
+
 	fmt.Println("========================================")
 	fmt.Println("✓ All examples completed successfully!")
 	fmt.Println("========================================")
