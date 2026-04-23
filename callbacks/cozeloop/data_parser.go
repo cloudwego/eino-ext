@@ -89,10 +89,33 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 
 		tags.set(tracespec.ModelProvider, info.Type)
 
+	case components.ComponentOfAgenticModel:
+		cbInput := model.ConvAgenticCallbackInput(input)
+		if cbInput != nil {
+			tags.set(tracespec.Input, convertAgenticModelInput(cbInput))
+			tags.set(consts.CustomSpanTagKeyExtra, cbInput.Extra)
+
+			if cbInput.Config != nil {
+				tags.set(tracespec.ModelName, cbInput.Config.Model)
+				tags.set(tracespec.CallOptions, convertAgenticModelCallOption(cbInput.Config))
+			}
+		}
+
+		tags.set(tracespec.ModelProvider, info.Type)
+
 	case components.ComponentOfPrompt:
 		cbInput := prompt.ConvCallbackInput(input)
 		if cbInput != nil {
 			tags.set(tracespec.Input, convertPromptInput(cbInput))
+			tags.setFromExtraIfNotZero(tracespec.PromptKey, cbInput.Extra)
+			tags.setFromExtraIfNotZero(tracespec.PromptVersion, cbInput.Extra)
+			tags.setFromExtraIfNotZero(tracespec.PromptProvider, cbInput.Extra)
+		}
+
+	case components.ComponentOfAgenticPrompt:
+		cbInput := prompt.ConvAgenticCallbackInput(input)
+		if cbInput != nil {
+			tags.set(tracespec.Input, convertAgenticPromptInput(cbInput))
 			tags.setFromExtraIfNotZero(tracespec.PromptKey, cbInput.Extra)
 			tags.setFromExtraIfNotZero(tracespec.PromptVersion, cbInput.Extra)
 			tags.setFromExtraIfNotZero(tracespec.PromptProvider, cbInput.Extra)
@@ -148,6 +171,10 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 		if ok && level == 1 {
 			collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
 		}
+		agenticMessages, aok := input.([]*schema.AgenticMessage)
+		if aok && level == 1 {
+			collectOutput.addMessages(flatExpandAgenticMessages(agenticMessages)...)
+		}
 		tags.set(tracespec.Input, parseAny(ctx, input, false))
 	}
 
@@ -191,10 +218,53 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			tags.set(tracespec.LatencyFirstResp, time.Since(tv.StartTime).Microseconds())
 		}
 
+	case components.ComponentOfAgenticModel:
+		cbOutput := model.ConvAgenticCallbackOutput(output)
+		if cbOutput != nil {
+			finalOutput := convertAgenticModelOutput(cbOutput)
+			if level == 2 {
+				if len(finalOutput.Choices) > 0 {
+					collectOutput.addMessages(finalOutput.Choices[0].Message)
+				}
+			}
+			tags.set(tracespec.Output, finalOutput)
+			tags.set(consts.CustomSpanTagKeyExtra, cbOutput.Extra)
+
+			if cbOutput.TokenUsage != nil {
+				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
+					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
+					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
+					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens).
+					set(tracespec.ReasoningTokens, cbOutput.TokenUsage.CompletionTokensDetails.ReasoningTokens)
+			}
+
+			if cbOutput.Config != nil {
+				if cbOutput.Config.Model != "" {
+					tags.set(tracespec.ModelName, cbOutput.Config.Model)
+				}
+			}
+		}
+
+		tags.set(tracespec.Stream, false)
+
+		if tv, ok := getTraceVariablesValue(ctx); ok {
+			tags.set(tracespec.LatencyFirstResp, time.Since(tv.StartTime).Microseconds())
+		}
+
 	case components.ComponentOfPrompt:
 		cbOutput := prompt.ConvCallbackOutput(output)
 		if cbOutput != nil {
 			finalOutput := convertPromptOutput(cbOutput)
+			if level == 2 {
+				collectOutput.addMessages(finalOutput.Prompts...)
+			}
+			tags.set(tracespec.Output, finalOutput)
+		}
+
+	case components.ComponentOfAgenticPrompt:
+		cbOutput := prompt.ConvAgenticCallbackOutput(output)
+		if cbOutput != nil {
+			finalOutput := convertAgenticPromptOutput(cbOutput)
 			if level == 2 {
 				collectOutput.addMessages(finalOutput.Prompts...)
 			}
@@ -242,12 +312,23 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 		if ok && level == 2 {
 			collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
 		}
+		agenticMessages, aok := output.([]*schema.AgenticMessage)
+		if aok && level == 2 {
+			collectOutput.addMessages(flatExpandAgenticMessages(agenticMessages)...)
+		}
 		tags.set(tracespec.Output, parseAny(ctx, output, false))
 
 	case compose.ComponentOfToolsNode:
 		messages, ok := output.([]*schema.Message)
 		if ok && level == 2 {
 			collectOutput.addMessages(iterSliceWithCtx(ctx, iterSlice(messages, convertModelMessage), addToolName)...)
+		}
+		tags.set(tracespec.Output, parseAny(ctx, output, false))
+
+	case compose.ComponentOfAgenticToolsNode:
+		agenticMessages, ok := output.([]*schema.AgenticMessage)
+		if ok && level == 2 {
+			collectOutput.addMessages(iterSliceWithCtx(ctx, flatExpandAgenticMessages(agenticMessages), addToolName)...)
 		}
 		tags.set(tracespec.Output, parseAny(ctx, output, false))
 
@@ -267,6 +348,10 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			messages, ok := output.([]*schema.Message)
 			if ok && level == 2 {
 				collectOutput.addMessages(iterSlice(messages, convertModelMessage)...)
+			}
+			agenticMessages, aok := output.([]*schema.AgenticMessage)
+			if aok && level == 2 {
+				collectOutput.addMessages(flatExpandAgenticMessages(agenticMessages)...)
 			}
 			tags.set(tracespec.Output, parseAny(ctx, output, false))
 		}
@@ -315,6 +400,12 @@ func (d defaultDataParser) ParseStreamOutput(ctx context.Context, info *callback
 	switch info.Component {
 	case components.ComponentOfChatModel:
 		tags = d.ParseChatModelStreamOutput(ctx, output)
+
+		tags.set(tracespec.Stream, true)
+		tags.set(tracespec.ModelProvider, info.Type)
+
+	case components.ComponentOfAgenticModel:
+		tags = d.ParseAgenticModelStreamOutput(ctx, output)
 
 		tags.set(tracespec.Stream, true)
 		tags.set(tracespec.ModelProvider, info.Type)
@@ -410,6 +501,91 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 	return tags
 }
 
+func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, output *schema.StreamReader[callbacks.CallbackOutput]) map[string]any {
+	var (
+		chunks    []*schema.AgenticMessage
+		onceSet   bool
+		tags      = make(spanTags)
+		usage     *model.TokenUsage
+		modelName string
+	)
+
+	level := getGraphNodeLevelFromCtx(ctx)
+	collectOutput, _ := getAggrMessageOutputHookFromCtx(ctx)
+
+	for {
+		item, recvErr := output.Recv()
+		if recvErr != nil {
+			if recvErr == io.EOF {
+				break
+			}
+
+			return tags.setTags(getErrorTags(ctx, recvErr))
+		}
+
+		cbOutput := model.ConvAgenticCallbackOutput(item)
+		if cbOutput == nil {
+			continue
+		}
+
+		if cbOutput.Message != nil {
+			chunks = append(chunks, cbOutput.Message)
+		}
+
+		if cbOutput.TokenUsage != nil {
+			usage = &model.TokenUsage{
+				PromptTokens:            cbOutput.TokenUsage.PromptTokens,
+				CompletionTokens:        cbOutput.TokenUsage.CompletionTokens,
+				TotalTokens:             cbOutput.TokenUsage.TotalTokens,
+				PromptTokenDetails:      cbOutput.TokenUsage.PromptTokenDetails,
+				CompletionTokensDetails: cbOutput.TokenUsage.CompletionTokensDetails,
+			}
+		}
+
+		if cbOutput.Config != nil && !onceSet {
+			onceSet = true
+
+			if tv, ok := getTraceVariablesValue(ctx); ok {
+				tags.set(tracespec.LatencyFirstResp, time.Since(tv.StartTime).Microseconds())
+			}
+		}
+
+		if cbOutput.Config != nil && cbOutput.Config.Model != "" {
+			modelName = cbOutput.Config.Model
+		}
+	}
+
+	if modelName != "" {
+		tags.set(tracespec.ModelName, modelName)
+	}
+
+	if msg, concatErr := schema.ConcatAgenticMessages(chunks); concatErr != nil {
+		finalOutput := parseAny(ctx, chunks, true)
+		tags.set(tracespec.Output, finalOutput)
+		if level == 2 {
+			collectOutput.addMessages(&tracespec.ModelMessage{
+				Role:    string(schema.AgenticRoleTypeAssistant),
+				Content: parseAny(ctx, chunks, true),
+			})
+		}
+	} else {
+		tags.set(tracespec.Output, convertAgenticModelOutput(&model.AgenticCallbackOutput{Message: msg}))
+		if level == 2 {
+			collectOutput.addMessages(expandAgenticModelMessage(msg)...)
+		}
+	}
+
+	if usage != nil {
+		tags.set(tracespec.Tokens, usage.TotalTokens).
+			set(tracespec.InputTokens, usage.PromptTokens).
+			set(tracespec.OutputTokens, usage.CompletionTokens).
+			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens).
+			set(tracespec.ReasoningTokens, usage.CompletionTokensDetails.ReasoningTokens)
+	}
+
+	return tags
+}
+
 func (d defaultDataParser) ParseDefaultStreamInput(ctx context.Context, input *schema.StreamReader[callbacks.CallbackInput]) (chunks []any, err error) {
 	for {
 		item, recvErr := input.Recv()
@@ -496,6 +672,12 @@ func parseAny(ctx context.Context, v any, bStream bool) string {
 	case *schema.Message:
 		return toJson(t, bStream)
 
+	case []*schema.AgenticMessage:
+		return toJson(t, bStream)
+
+	case *schema.AgenticMessage:
+		return toJson(t, bStream)
+
 	case string:
 		if bStream {
 			return toJson(t, bStream)
@@ -520,6 +702,17 @@ func parseAny(ctx context.Context, v any, bStream bool) string {
 				msgs := make([]*schema.Message, 0, len(t))
 				for i := range t {
 					msg, ok := t[i].(*schema.Message)
+					if ok {
+						msgs = append(msgs, msg)
+					}
+				}
+
+				return parseAny(ctx, msgs, bStream)
+			}
+			if _, ok := t[0].(*schema.AgenticMessage); ok {
+				msgs := make([]*schema.AgenticMessage, 0, len(t))
+				for i := range t {
+					msg, ok := t[i].(*schema.AgenticMessage)
 					if ok {
 						msgs = append(msgs, msg)
 					}
@@ -555,7 +748,13 @@ func parseSpanTypeFromComponent(c components.Component) string {
 	case components.ComponentOfPrompt:
 		return "prompt"
 
+	case components.ComponentOfAgenticPrompt:
+		return "prompt"
+
 	case components.ComponentOfChatModel:
+		return "model"
+
+	case components.ComponentOfAgenticModel:
 		return "model"
 
 	case components.ComponentOfEmbedding:
