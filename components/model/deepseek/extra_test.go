@@ -47,6 +47,56 @@ func TestReasoningContent(t *testing.T) {
 	assert.Equal(t, "reasoning content", rc)
 }
 
+func TestConcatTextParts(t *testing.T) {
+	type part struct {
+		typ  schema.ChatMessagePartType
+		text string
+	}
+	extract := func(p part) (schema.ChatMessagePartType, string) {
+		return p.typ, p.text
+	}
+
+	t.Run("empty parts", func(t *testing.T) {
+		result, err := concatTextParts([]part{}, extract)
+		assert.NoError(t, err)
+		assert.Equal(t, "", result)
+	})
+
+	t.Run("single text part", func(t *testing.T) {
+		result, err := concatTextParts([]part{
+			{typ: schema.ChatMessagePartTypeText, text: "hello"},
+		}, extract)
+		assert.NoError(t, err)
+		assert.Equal(t, "hello", result)
+	})
+
+	t.Run("multiple text parts", func(t *testing.T) {
+		result, err := concatTextParts([]part{
+			{typ: schema.ChatMessagePartTypeText, text: "hello"},
+			{typ: schema.ChatMessagePartTypeText, text: "world"},
+		}, extract)
+		assert.NoError(t, err)
+		assert.Equal(t, "hello\n\nworld", result)
+	})
+
+	t.Run("unsupported type returns error", func(t *testing.T) {
+		_, err := concatTextParts([]part{
+			{typ: schema.ChatMessagePartTypeImageURL, text: ""},
+		}, extract)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "does not support")
+		assert.Contains(t, err.Error(), string(schema.ChatMessagePartTypeImageURL))
+	})
+
+	t.Run("mixed types returns error", func(t *testing.T) {
+		_, err := concatTextParts([]part{
+			{typ: schema.ChatMessagePartTypeText, text: "hello"},
+			{typ: schema.ChatMessagePartTypeImageURL, text: ""},
+		}, extract)
+		assert.Error(t, err)
+	})
+}
+
 func TestPrefix(t *testing.T) {
 	msg := &schema.Message{}
 	assert.False(t, HasPrefix(msg))
