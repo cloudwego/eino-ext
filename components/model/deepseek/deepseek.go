@@ -675,17 +675,52 @@ const (
 	roleTool      = "tool"
 )
 
+func concatTextParts[T any](parts []T, extract func(T) (schema.ChatMessagePartType, string)) (string, error) {
+	var texts []string
+	unsupported := make(map[schema.ChatMessagePartType]struct{})
+	for _, part := range parts {
+		typ, text := extract(part)
+		if typ == schema.ChatMessagePartTypeText {
+			texts = append(texts, text)
+		} else {
+			unsupported[typ] = struct{}{}
+		}
+	}
+	if len(unsupported) > 0 {
+		types := make([]string, 0, len(unsupported))
+		for typ := range unsupported {
+			types = append(types, string(typ))
+		}
+		return "", fmt.Errorf("deepseek does not support %s type", strings.Join(types, ", "))
+	}
+	return strings.Join(texts, "\n\n"), nil
+}
+
 func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, error) {
 	if len(m.MultiContent) > 0 {
 		return nil, fmt.Errorf("multi content is not supported in deepseek")
 	}
 
+	content := m.Content
+
 	if len(m.UserInputMultiContent) > 0 {
-		return nil, fmt.Errorf("user input multi content is not supported in deepseek")
+		var err error
+		content, err = concatTextParts(m.UserInputMultiContent, func(p schema.MessageInputPart) (schema.ChatMessagePartType, string) {
+			return p.Type, p.Text
+		})
+		if err != nil {
+			return nil, fmt.Errorf("user input multi content: %w", err)
+		}
 	}
 
 	if len(m.AssistantGenMultiContent) > 0 {
-		return nil, fmt.Errorf("assistan gen multi content is not supported in deepseek")
+		var err error
+		content, err = concatTextParts(m.AssistantGenMultiContent, func(p schema.MessageOutputPart) (schema.ChatMessagePartType, string) {
+			return p.Type, p.Text
+		})
+		if err != nil {
+			return nil, fmt.Errorf("assistant gen multi content: %w", err)
+		}
 	}
 
 	var role string
@@ -703,7 +738,7 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	}
 	ret := &deepseek.ChatCompletionMessage{
 		Role:    role,
-		Content: m.Content,
+		Content: content,
 		// TODO: tool call id
 		Prefix: HasPrefix(m),
 	}
