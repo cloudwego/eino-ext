@@ -658,6 +658,7 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 					Name:        t.Function.Name,
 					Description: t.Function.Description,
 					Parameters:  t.Function.Parameters,
+					Strict:      t.Function.Strict,
 				},
 			}
 		}
@@ -1291,11 +1292,19 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 
 		sortArrayFields(paramsJSONSchema)
 
+		var strict bool
+		if v, ok := ti.Extra["strict"]; ok {
+			if b, ok := v.(bool); ok {
+				strict = b
+			}
+		}
+
 		tools[i] = tool{
 			Function: &functionDefinition{
 				Name:        ti.Name,
 				Description: ti.Desc,
 				Parameters:  paramsJSONSchema,
+				Strict:      strict,
 			},
 		}
 	}
