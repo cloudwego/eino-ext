@@ -3,7 +3,7 @@
 Utilities for bridging [EINO ADK](https://github.com/cloudwego/eino) agents to the [Agent Client Protocol (ACP)](https://agentclientprotocol.com). Provides two core functions:
 
 - **`AgentEventToSessionUpdate`** — Converts eino `AgentEvent` into ACP `SessionUpdate` notifications for streaming agent output to ACP clients.
-- **`NewACPClientToolsMiddleware`** — Bridges ACP client-side capabilities (filesystem, terminal) to eino's filesystem middleware, so the agent can read/write files and run commands on the client.
+- **`NewClientToolsMiddleware`** — Bridges ACP client-side capabilities (filesystem, terminal) to eino's filesystem middleware, so the agent can read/write files and run commands on the client.
 
 ## Installation
 
@@ -75,12 +75,12 @@ for su, err := range einoacp.AgentEventToSessionUpdate(event, opt) {
 }
 ```
 
-### NewACPClientToolsMiddleware
+### NewClientToolsMiddleware
 
 Creates a `ChatModelAgentMiddleware` that bridges ACP client-side capabilities to eino's filesystem tools.
 
 ```go
-func NewACPClientToolsMiddleware(
+func NewClientToolsMiddleware(
     ctx context.Context,
     sessionID acpproto.SessionID,
     capabilities *acpproto.ClientCapabilities,
@@ -98,7 +98,7 @@ Tools are enabled based on client-advertised capabilities:
 
 ```go
 if clientCapabilities != nil {
-    middleware, err := einoacp.NewACPClientToolsMiddleware(
+    middleware, err := einoacp.NewClientToolsMiddleware(
         ctx, sessionID, clientCapabilities, conn,
     )
     if err != nil {
@@ -114,5 +114,5 @@ if clientCapabilities != nil {
 See [example/main.go](examples/main.go) for a complete ACP server implementation that:
 
 1. Creates an eino `ChatModelAgent` per session
-2. Bridges client filesystem/terminal capabilities via `NewACPClientToolsMiddleware`
+2. Bridges client filesystem/terminal capabilities via `NewClientToolsMiddleware`
 3. Streams `AgentEvent`s back as ACP `SessionUpdate` notifications
