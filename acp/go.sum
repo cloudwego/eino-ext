@@ -55,6 +55,8 @@ github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkp
 github.com/dustin/go-humanize v1.0.1/go.mod h1:Mu1zIs6XwVuF/gI1OepvI0qD18qycQx+mFykh5fBlto=
 github.com/eino-contrib/acp v0.0.0-20260419060338-568c3381b22a h1:+/+K84K34nqgF9OGp6275ChFh4cFQMIL0l8q0KTa3lg=
 github.com/eino-contrib/acp v0.0.0-20260419060338-568c3381b22a/go.mod h1:tXIZVWtmxOg28DmazjYxXT3DdtnBVQvUzqMBXppHoyo=
+github.com/eino-contrib/acp v0.0.1 h1:TegJfCvPzmvUA0kmBW8IjrM/06MnQkbBUR9N9SgC6EM=
+github.com/eino-contrib/acp v0.0.1/go.mod h1:tXIZVWtmxOg28DmazjYxXT3DdtnBVQvUzqMBXppHoyo=
 github.com/eino-contrib/jsonschema v1.0.3 h1:2Kfsm1xlMV0ssY2nuxshS4AwbLFuqmPmzIjLVJ1Fsp0=
 github.com/eino-contrib/jsonschema v1.0.3/go.mod h1:cpnX4SyKjWjGC7iN2EbhxaTdLqGjCi0e9DxpLYxddD4=
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=

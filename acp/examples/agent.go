@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	einoacp "github.com/cloudwego/eino-ext/acp"
 	"github.com/cloudwego/eino-ext/components/model/ark"
@@ -37,8 +38,9 @@ type agent struct {
 	conn               *acpconn.AgentConnection
 	clientCapabilities *acp.ClientCapabilities
 
-	mu       sync.Mutex
-	sessions map[acp.SessionID]*adk.Runner
+	sessionSeq atomic.Uint64
+	mu         sync.Mutex
+	sessions   map[acp.SessionID]*adk.Runner
 }
 
 func newAgent() *agent {
@@ -64,9 +66,7 @@ func (a *agent) Initialize(_ context.Context, req acp.InitializeRequest) (acp.In
 }
 
 func (a *agent) NewSession(ctx context.Context, _ acp.NewSessionRequest) (acp.NewSessionResponse, error) {
-	a.mu.Lock()
-	sessionID := acp.SessionID(fmt.Sprintf("session-%d", len(a.sessions)+1))
-	a.mu.Unlock()
+	sessionID := acp.SessionID(fmt.Sprintf("session-%d", a.sessionSeq.Add(1)))
 
 	chatModel, err := createChatModel(ctx)
 	if err != nil {

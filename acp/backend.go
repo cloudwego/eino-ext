@@ -18,6 +18,7 @@ package acp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/cloudwego/eino/adk"
@@ -28,13 +29,13 @@ import (
 )
 
 // NewACPClientToolsMiddleware creates a ChatModelAgentMiddleware that bridges ACP client-side capabilities
-// (filesystem read/write, terminal execution) to eino's filesystem tools. It inspects the client's advertised
-// capabilities and enables the corresponding tools: read_file, write_file, and terminal commands are
-// proxied through the ACP connection back to the client. Tools not supported by the client are disabled.
+// (filesystem read/write, terminal execution) to eino's filesystem tools. The ACP protocol only exposes
+// read_text_file, write_text_file and terminal capabilities, so ls/edit/glob/grep tools are always disabled;
+// read_file, write_file and terminal are enabled only when the client advertises the corresponding capability.
 func NewACPClientToolsMiddleware(
 	ctx context.Context,
 	sessionID acpproto.SessionID,
-	capacities *acpproto.ClientCapabilities,
+	capabilities *acpproto.ClientCapabilities,
 	conn *acpconn.AgentConnection,
 ) (adk.ChatModelAgentMiddleware, error) {
 	config := &mfs.MiddlewareConfig{
@@ -46,15 +47,15 @@ func NewACPClientToolsMiddleware(
 		GlobToolConfig:      &mfs.ToolConfig{Disable: true},
 		GrepToolConfig:      &mfs.ToolConfig{Disable: true},
 	}
-	if capacities != nil {
-		if capacities.Terminal {
+	if capabilities != nil {
+		if capabilities.Terminal {
 			config.Shell = &shell{conn: conn, sessionID: sessionID}
 		}
-		if capacities.FS != nil {
-			if capacities.FS.WriteTextFile {
+		if capabilities.FS != nil {
+			if capabilities.FS.WriteTextFile {
 				config.WriteFileToolConfig = nil
 			}
-			if capacities.FS.ReadTextFile {
+			if capabilities.FS.ReadTextFile {
 				config.ReadFileToolConfig = nil
 			}
 		}
@@ -67,55 +68,55 @@ type shell struct {
 	sessionID acpproto.SessionID
 }
 
-func (s *shell) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (result *filesystem.ExecuteResponse, err error) {
+func (s *shell) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (*filesystem.ExecuteResponse, error) {
+	if input.RunInBackendGround {
+		// Background execution would require a session-scoped handle for later release,
+		// which is not modeled at this layer yet. Reject explicitly rather than leak terminals.
+		return nil, errors.New("acp.shell: background execution is not supported over ACP")
+	}
+
 	createResp, err := s.conn.CreateTerminal(ctx, acpproto.CreateTerminalRequest{
-		Args:      nil, // todo: if args needed?
 		Command:   input.Command,
 		SessionID: s.sessionID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("acp.createTerminal session=%s: %w", s.sessionID, err)
 	}
-
-	if input.RunInBackendGround {
-		return &filesystem.ExecuteResponse{
-			Output:   "command started in background\n",
-			ExitCode: new(int),
-		}, nil
-	}
+	defer func() {
+		_, _ = s.conn.ReleaseTerminal(ctx, acpproto.ReleaseTerminalRequest{
+			SessionID:  s.sessionID,
+			TerminalID: createResp.TerminalID,
+		})
+	}()
 
 	waitResp, err := s.conn.WaitForTerminalExit(ctx, acpproto.WaitForTerminalExitRequest{
 		SessionID:  s.sessionID,
 		TerminalID: createResp.TerminalID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to wait command executing: %w", err)
+		return nil, fmt.Errorf("acp.waitForTerminalExit session=%s: %w", s.sessionID, err)
 	}
 
-	if waitResp.ExitCode != nil && *waitResp.ExitCode != 0 {
-		code := int(*waitResp.ExitCode)
-		return &filesystem.ExecuteResponse{
-			Output:    waitResp.Signal,
-			ExitCode:  &code,
-			Truncated: false,
-		}, nil
-	}
-
-	resultResp, err := s.conn.TerminalOutput(ctx, acpproto.TerminalOutputRequest{
+	outResp, err := s.conn.TerminalOutput(ctx, acpproto.TerminalOutputRequest{
 		SessionID:  s.sessionID,
 		TerminalID: createResp.TerminalID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to wait get command result: %w", err)
+		return nil, fmt.Errorf("acp.terminalOutput session=%s: %w", s.sessionID, err)
+	}
+
+	output := outResp.Output
+	if waitResp.Signal != "" {
+		output += fmt.Sprintf("\n[terminated by signal: %s]", waitResp.Signal)
 	}
 
 	ret := &filesystem.ExecuteResponse{
-		Output:    resultResp.Output,
+		Output:    output,
 		ExitCode:  nil,
-		Truncated: resultResp.Truncated,
+		Truncated: outResp.Truncated,
 	}
-	if resultResp.ExitStatus != nil && resultResp.ExitStatus.ExitCode != nil {
-		code := int(*resultResp.ExitStatus.ExitCode)
+	if outResp.ExitStatus != nil && outResp.ExitStatus.ExitCode != nil {
+		code := int(*outResp.ExitStatus.ExitCode)
 		ret.ExitCode = &code
 	} else if waitResp.ExitCode != nil {
 		code := int(*waitResp.ExitCode)
@@ -130,7 +131,7 @@ type backend struct {
 	sessionID acpproto.SessionID
 }
 
-func (b backend) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
+func (b *backend) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
 	var limit, line *int64
 	if req.Limit != 0 {
 		tmp := int64(req.Limit)
@@ -147,32 +148,35 @@ func (b backend) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesy
 		SessionID: b.sessionID,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("acp.readTextFile session=%s path=%s: %w", b.sessionID, req.FilePath, err)
 	}
 	return &filesystem.FileContent{Content: resp.Content}, nil
 }
 
-func (b backend) Write(ctx context.Context, req *filesystem.WriteRequest) error {
+func (b *backend) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 	_, err := b.conn.WriteTextFile(ctx, acpproto.WriteTextFileRequest{
 		Content:   req.Content,
 		Path:      req.FilePath,
 		SessionID: b.sessionID,
 	})
-	return err
+	if err != nil {
+		return fmt.Errorf("acp.writeTextFile session=%s path=%s: %w", b.sessionID, req.FilePath, err)
+	}
+	return nil
 }
 
-func (b backend) LsInfo(_ context.Context, _ *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
+func (b *backend) LsInfo(_ context.Context, _ *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
 	return nil, fmt.Errorf("acp client does not support ls info")
 }
 
-func (b backend) GrepRaw(_ context.Context, _ *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+func (b *backend) GrepRaw(_ context.Context, _ *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
 	return nil, fmt.Errorf("acp client does not support grep raw")
 }
 
-func (b backend) GlobInfo(_ context.Context, _ *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
+func (b *backend) GlobInfo(_ context.Context, _ *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
 	return nil, fmt.Errorf("acp client does not support glob info")
 }
 
-func (b backend) Edit(_ context.Context, _ *filesystem.EditRequest) error {
+func (b *backend) Edit(_ context.Context, _ *filesystem.EditRequest) error {
 	return fmt.Errorf("acp client does not support edit")
 }

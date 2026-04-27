@@ -450,9 +450,22 @@ func TestAgentEventToSessionUpdate_ToolMessageNoContent(t *testing.T) {
 			},
 		},
 	}
-	_, errs := collectUpdates(AgentEventToSessionUpdate(event, nil))
-	if len(errs) == 0 {
-		t.Fatal("expected error for tool message with no content")
+	updates, errs := collectUpdates(AgentEventToSessionUpdate(event, nil))
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 ToolCallUpdate, got %d", len(updates))
+	}
+	tcu, ok := updates[0].AsToolCallUpdate()
+	if !ok {
+		t.Fatal("expected ToolCallUpdate for empty tool message")
+	}
+	if string(tcu.ToolCallID) != "tc-empty" {
+		t.Fatalf("tool call id = %q, want %q", tcu.ToolCallID, "tc-empty")
+	}
+	if len(tcu.Content) != 0 {
+		t.Fatalf("expected empty content, got %d", len(tcu.Content))
 	}
 }
 
@@ -888,14 +901,11 @@ func TestMarshalInterruptInfo_NonSerializableData(t *testing.T) {
 	// A channel is not JSON-serializable; should fall back to fmt.Sprintf
 	ch := make(chan int)
 	info := &adk.InterruptInfo{Data: ch}
-	text, meta, err := marshalInterruptInfo(info)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	text, meta := marshalInterruptInfo(info)
 	if text == "" {
 		t.Fatal("expected non-empty fallback text")
 	}
-	if meta["eino:interrupted"] != true {
+	if meta[MetaKeyInterrupted] != true {
 		t.Fatal("expected eino:interrupted = true")
 	}
 }

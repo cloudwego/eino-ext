@@ -21,10 +21,24 @@ import (
 	"fmt"
 	"io"
 	"iter"
+	"strings"
 
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/schema"
 	acpproto "github.com/eino-contrib/acp"
+)
+
+// Metadata keys used on ACP SessionUpdate _meta to carry eino-specific context.
+// These form a cross-process contract with clients; changing them is a breaking change.
+const (
+	MetaKeyInterrupted       = "eino:interrupted"
+	MetaKeyInterruptContexts = "eino:interruptContexts"
+
+	ctxKeyID          = "id"
+	ctxKeyIsRootCause = "isRootCause"
+	ctxKeyAddress     = "address"
+	ctxKeyInfo        = "info"
+	ctxKeyParentID    = "parentId"
 )
 
 // InterruptConverter converts an adk.InterruptInfo into a sequence of ACP SessionUpdates.
@@ -37,6 +51,15 @@ type EventConverterOption struct {
 	// If nil, the default conversion is used: the interrupt data is converted to
 	// an AgentMessageChunk with the interrupt metadata in _meta.
 	InterruptConverter InterruptConverter
+}
+
+// toolCallAccum buffers streaming tool call argument chunks keyed by Index.
+// eino's upstream `concatToolCalls` (schema/message.go) aggregates by Index; ID/Name
+// are only populated on the first chunk. Accumulating by ID silently drops later chunks.
+type toolCallAccum struct {
+	id   string
+	name string
+	args strings.Builder
 }
 
 // AgentEventToSessionUpdate converts an eino AgentEvent into a sequence of ACP SessionUpdate notifications.
@@ -68,24 +91,26 @@ func AgentEventToSessionUpdate(
 			yieldMessageUpdates(mo.Message, yield)
 			return
 		}
+		defer mo.MessageStream.Close()
+
 		var lastRole schema.RoleType
-		// pendingToolCalls accumulates streaming tool call argument chunks.
-		// In streaming mode, models may send partial JSON arguments across
-		// multiple messages. We buffer them and only yield when complete
-		// (i.e. when a new message arrives without continuing the same tool calls,
-		// or when the stream ends).
-		pendingToolCalls := make(map[string]*schema.ToolCall) // keyed by tool call ID
-		var pendingToolCallOrder []string
+		// pendingToolCalls accumulates streaming tool call argument chunks keyed by Index.
+		pendingToolCalls := make(map[int]*toolCallAccum)
+		var pendingOrder []int
 
 		flushToolCalls := func() bool {
-			for _, id := range pendingToolCallOrder {
-				tc := pendingToolCalls[id]
-				if !yield(acpproto.NewSessionUpdateToolCall(fromToolCall(*tc)), nil) {
+			for _, idx := range pendingOrder {
+				a := pendingToolCalls[idx]
+				tc := schema.ToolCall{
+					ID:       a.id,
+					Function: schema.FunctionCall{Name: a.name, Arguments: a.args.String()},
+				}
+				if !yield(acpproto.NewSessionUpdateToolCall(fromToolCall(tc)), nil) {
 					return false
 				}
 			}
-			pendingToolCalls = make(map[string]*schema.ToolCall)
-			pendingToolCallOrder = nil
+			pendingToolCalls = make(map[int]*toolCallAccum)
+			pendingOrder = nil
 			return true
 		}
 
@@ -96,7 +121,7 @@ func AgentEventToSessionUpdate(
 				return
 			}
 			if err != nil {
-				flushToolCalls()
+				// Discard any partially-accumulated tool call buffer — the args may be incomplete JSON.
 				yield(acpproto.SessionUpdate{}, err)
 				return
 			}
@@ -107,34 +132,47 @@ func AgentEventToSessionUpdate(
 				lastRole = msg.Role
 			}
 
-			// Accumulate tool call argument chunks instead of yielding immediately.
-			if len(msg.ToolCalls) > 0 {
-				for _, tc := range msg.ToolCalls {
-					if existing, ok := pendingToolCalls[tc.ID]; ok {
-						existing.Function.Arguments += tc.Function.Arguments
-					} else {
-						tcCopy := tc
-						pendingToolCalls[tc.ID] = &tcCopy
-						pendingToolCallOrder = append(pendingToolCallOrder, tc.ID)
-					}
+			hasNonToolContent := msg.Content != "" || msg.ReasoningContent != "" ||
+				len(msg.AssistantGenMultiContent) > 0 ||
+				len(msg.UserInputMultiContent) > 0 || msg.ToolCallID != ""
+
+			// Preserve intra-message ordering: if this message carries non-tool content and
+			// we have already buffered tool calls from previous chunks, flush them first so
+			// clients see [earlier tool calls] -> [this message's text/reasoning] -> [new tool calls].
+			if hasNonToolContent && len(pendingToolCalls) > 0 {
+				if !flushToolCalls() {
+					return
 				}
-				// Yield non-tool-call parts of this message (text, reasoning, etc.)
-				clone := *msg
-				clone.ToolCalls = nil
-				if clone.Content != "" || clone.ReasoningContent != "" || len(clone.AssistantGenMultiContent) > 0 ||
-					len(clone.UserInputMultiContent) > 0 || clone.ToolCallID != "" {
+			}
+
+			if len(msg.ToolCalls) > 0 {
+				for i, tc := range msg.ToolCalls {
+					idx := i
+					if tc.Index != nil {
+						idx = *tc.Index
+					}
+					a, ok := pendingToolCalls[idx]
+					if !ok {
+						a = &toolCallAccum{}
+						pendingToolCalls[idx] = a
+						pendingOrder = append(pendingOrder, idx)
+					}
+					if tc.ID != "" && a.id == "" {
+						a.id = tc.ID
+					}
+					if tc.Function.Name != "" && a.name == "" {
+						a.name = tc.Function.Name
+					}
+					a.args.WriteString(tc.Function.Arguments)
+				}
+				if hasNonToolContent {
+					clone := *msg
+					clone.ToolCalls = nil
 					if !yieldMessageUpdates(&clone, yield) {
 						return
 					}
 				}
 				continue
-			}
-
-			// Message has no tool calls — flush any pending tool calls first.
-			if len(pendingToolCalls) > 0 {
-				if !flushToolCalls() {
-					return
-				}
 			}
 
 			if !yieldMessageUpdates(msg, yield) {
@@ -146,11 +184,7 @@ func AgentEventToSessionUpdate(
 
 func defaultInterruptConverter(info *adk.InterruptInfo) iter.Seq2[acpproto.SessionUpdate, error] {
 	return func(yield func(acpproto.SessionUpdate, error) bool) {
-		text, meta, err := marshalInterruptInfo(info)
-		if err != nil {
-			yield(acpproto.SessionUpdate{}, fmt.Errorf("failed to marshal interrupt info: %w", err))
-			return
-		}
+		text, meta := marshalInterruptInfo(info)
 		yield(acpproto.NewSessionUpdateAgentMessageChunk(acpproto.ContentChunk{
 			Meta:    meta,
 			Content: acpproto.NewContentBlockText(acpproto.TextContent{Text: text}),
@@ -158,9 +192,9 @@ func defaultInterruptConverter(info *adk.InterruptInfo) iter.Seq2[acpproto.Sessi
 	}
 }
 
-func marshalInterruptInfo(info *adk.InterruptInfo) (text string, meta map[string]any, err error) {
+func marshalInterruptInfo(info *adk.InterruptInfo) (text string, meta map[string]any) {
 	meta = map[string]any{
-		"eino:interrupted": true,
+		MetaKeyInterrupted: true,
 	}
 
 	// Convert Data to text
@@ -185,16 +219,16 @@ func marshalInterruptInfo(info *adk.InterruptInfo) (text string, meta map[string
 			ctx := interruptCtxToMap(ic)
 			contexts = append(contexts, ctx)
 		}
-		meta["eino:interruptContexts"] = contexts
+		meta[MetaKeyInterruptContexts] = contexts
 	}
 
-	return text, meta, nil
+	return text, meta
 }
 
 func interruptCtxToMap(ic *adk.InterruptCtx) map[string]any {
 	m := map[string]any{
-		"id":          ic.ID,
-		"isRootCause": ic.IsRootCause,
+		ctxKeyID:          ic.ID,
+		ctxKeyIsRootCause: ic.IsRootCause,
 	}
 
 	if len(ic.Address) > 0 {
@@ -205,25 +239,25 @@ func interruptCtxToMap(ic *adk.InterruptCtx) map[string]any {
 				"id":   seg.ID,
 			})
 		}
-		m["address"] = segs
+		m[ctxKeyAddress] = segs
 	}
 
 	if ic.Info != nil {
 		switch v := ic.Info.(type) {
 		case string:
-			m["info"] = v
+			m[ctxKeyInfo] = v
 		default:
 			b, err := json.Marshal(v)
 			if err != nil {
-				m["info"] = fmt.Sprintf("%v", v)
+				m[ctxKeyInfo] = fmt.Sprintf("%v", v)
 			} else {
-				m["info"] = json.RawMessage(b)
+				m[ctxKeyInfo] = json.RawMessage(b)
 			}
 		}
 	}
 
 	if ic.Parent != nil {
-		m["parentId"] = ic.Parent.ID
+		m[ctxKeyParentID] = ic.Parent.ID
 	}
 
 	return m
@@ -238,12 +272,12 @@ func yieldMessageUpdates(msg adk.Message, yield func(acpproto.SessionUpdate, err
 			}), nil) {
 				return false
 			}
-			return true
 		}
 		for _, part := range msg.UserInputMultiContent {
 			cb, err := inputPartToContentBlock(part)
 			if err != nil {
-				return yield(acpproto.SessionUpdate{}, err)
+				yield(acpproto.SessionUpdate{}, err)
+				return false
 			}
 			if !yield(acpproto.NewSessionUpdateUserMessageChunk(acpproto.ContentChunk{Content: cb}), nil) {
 				return false
@@ -263,15 +297,15 @@ func yieldMessageUpdates(msg adk.Message, yield func(acpproto.SessionUpdate, err
 			}), nil) {
 				return false
 			}
-		} else {
-			for _, part := range msg.AssistantGenMultiContent {
-				su, err := outputPartToSessionUpdate(part)
-				if err != nil {
-					return yield(acpproto.SessionUpdate{}, err)
-				}
-				if !yield(su, nil) {
-					return false
-				}
+		}
+		for _, part := range msg.AssistantGenMultiContent {
+			su, err := outputPartToSessionUpdate(part)
+			if err != nil {
+				yield(acpproto.SessionUpdate{}, err)
+				return false
+			}
+			if !yield(su, nil) {
+				return false
 			}
 		}
 		for _, tc := range msg.ToolCalls {
@@ -296,22 +330,22 @@ func yieldMessageUpdates(msg adk.Message, yield func(acpproto.SessionUpdate, err
 		for _, part := range msg.UserInputMultiContent {
 			cb, err := inputPartToContentBlock(part)
 			if err != nil {
-				return yield(acpproto.SessionUpdate{}, err)
+				yield(acpproto.SessionUpdate{}, err)
+				return false
 			}
 			contents = append(contents, acpproto.NewToolCallContentContent(acpproto.Content{Content: cb}))
 		}
-		if len(contents) > 0 {
-			if !yield(acpproto.NewSessionUpdateToolCallUpdate(acpproto.ToolCallUpdate{
-				ToolCallID: tcID,
-				Content:    contents,
-			}), nil) {
-				return false
-			}
-		} else {
-			return yield(acpproto.SessionUpdate{}, fmt.Errorf("tool message has no content (ToolCallID: %s)", msg.ToolCallID))
+		// An empty tool result is legitimate (e.g. write_file/mkdir/touch return no output).
+		// Emit a ToolCallUpdate with possibly-empty content rather than an error.
+		if !yield(acpproto.NewSessionUpdateToolCallUpdate(acpproto.ToolCallUpdate{
+			ToolCallID: tcID,
+			Content:    contents,
+		}), nil) {
+			return false
 		}
 	default:
-		return yield(acpproto.SessionUpdate{}, fmt.Errorf("unsupported message role: %s", msg.Role))
+		yield(acpproto.SessionUpdate{}, fmt.Errorf("unsupported message role: %s", msg.Role))
+		return false
 	}
 	return true
 }
@@ -356,7 +390,7 @@ func inputPartToContentBlock(part schema.MessageInputPart) (acpproto.ContentBloc
 			return acpproto.NewContentBlockResourceLink(rl), nil
 		}
 		if part.Video.Base64Data != nil {
-			// todo
+			return acpproto.ContentBlock{}, fmt.Errorf("input part video base64 data is not yet supported, please provide URL")
 		}
 		return acpproto.ContentBlock{}, fmt.Errorf("input part video has neither URL nor base64 data")
 
@@ -369,7 +403,7 @@ func inputPartToContentBlock(part schema.MessageInputPart) (acpproto.ContentBloc
 			return acpproto.NewContentBlockResourceLink(rl), nil
 		}
 		if part.File.Base64Data != nil {
-			// todo
+			return acpproto.ContentBlock{}, fmt.Errorf("input part file base64 data is not yet supported, please provide URL")
 		}
 		return acpproto.ContentBlock{}, fmt.Errorf("input part file has neither URL nor base64 data")
 
@@ -438,7 +472,7 @@ func outputPartToSessionUpdate(part schema.MessageOutputPart) (acpproto.SessionU
 			}), nil
 		}
 		if part.Video.Base64Data != nil {
-			// todo
+			return acpproto.SessionUpdate{}, fmt.Errorf("output part video base64 data is not yet supported, please provide URL")
 		}
 		return acpproto.SessionUpdate{}, fmt.Errorf("output part video has neither URL nor base64 data")
 
@@ -448,9 +482,13 @@ func outputPartToSessionUpdate(part schema.MessageOutputPart) (acpproto.SessionU
 }
 
 func fromToolCall(call schema.ToolCall) acpproto.ToolCall {
+	args := call.Function.Arguments
+	if args == "" || !json.Valid([]byte(args)) {
+		args = "{}"
+	}
 	return acpproto.ToolCall{
 		ToolCallID: acpproto.ToolCallID(call.ID),
 		Title:      call.Function.Name,
-		RawInput:   json.RawMessage(call.Function.Arguments),
+		RawInput:   json.RawMessage(args),
 	}
 }

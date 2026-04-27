@@ -6,7 +6,7 @@ require (
 	github.com/cloudwego/eino v0.8.10
 	github.com/cloudwego/eino-ext/components/model/ark v0.1.66
 	github.com/cloudwego/hertz v0.10.4
-	github.com/eino-contrib/acp v0.0.0-20260419060338-568c3381b22a
+	github.com/eino-contrib/acp v0.0.1
 )
 
 require (
