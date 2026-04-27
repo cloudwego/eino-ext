@@ -246,6 +246,35 @@ func TestClaude(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "I see a beautiful sunset image", resp.Content)
 	})
+
+	mockey.PatchConvey("assistant message with tool calls but empty content should not panic", t, func() {
+		resp, err := model.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("What's the weather in Paris?"),
+			schema.AssistantMessage("", []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "get_weather",
+						Arguments: `{"city":"Paris"}`,
+					},
+				},
+			}),
+			schema.ToolMessage(`{"temperature": 20}`, "call_1"),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, resp.Messages, 3)
+	})
+
+	mockey.PatchConvey("message with empty content should not panic", t, func() {
+		resp, err := model.genMessageNewParams([]*schema.Message{
+			{Role: schema.User, Content: "hello"},
+			{Role: schema.Assistant},
+			{Role: schema.User, Content: "world"},
+		})
+		assert.NoError(t, err)
+		assert.Len(t, resp.Messages, 3)
+		assert.Empty(t, resp.Messages[1].Content)
+	})
 }
 
 func clearAnthropicAuthEnv(t *testing.T) {
