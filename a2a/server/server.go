@@ -243,17 +243,6 @@ func (s *A2AServer) cancelTask(ctx context.Context, input *models.TaskIDParams) 
 	// Context cancellation should be scoped to business processing only and must not affect invocations of service lifecycle control components.
 	detachedCtx := context.WithoutCancel(ctx)
 
-	err = s.taskLocker.Lock(detachedCtx, input.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to acquire lock for new task[%s]: %w", input.ID, err)
-	}
-	defer func() {
-		unlockErr := s.taskLocker.Unlock(detachedCtx, input.ID)
-		if unlockErr != nil {
-			s.logger(detachedCtx, "failed to release lock for task[%s]: %s", input.ID, unlockErr.Error())
-		}
-	}()
-
 	t, ok, err := s.taskStore.Get(detachedCtx, input.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task[%s]: %w", input.ID, err)
