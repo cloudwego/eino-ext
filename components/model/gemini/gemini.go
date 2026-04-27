@@ -1181,6 +1181,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 			outParts       []schema.MessageOutputPart
 			contentBuilder strings.Builder
 		)
+
 		// Process parts and extract thought signatures per Gemini docs:
 		// https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures
 		//
@@ -1188,9 +1189,21 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 		// - functionCall parts: signature stored on ToolCall.Extra (required for Gemini 3 Pro)
 		// - output parts (text/inlineData/...): signature stored on MessageOutputPart.Extra
 		// - message.Extra is only used when output parts are absent
+
+		// There are rare cases that the response contains no thoughtSignature in the first part of parallel functionCall
+		firstFunctionCallIdx := -1
+		fallbackFunctionCallSig := []byte(nil)
 		for _, part := range candidate.Content.Parts {
+			if part.FunctionCall != nil && firstFunctionCallIdx < 0 {
+				firstFunctionCallIdx = len(result.ToolCalls)
+			}
+
 			// Store thought signature at message level for non-functionCall parts
 			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil {
+				// means that we have functionCall but without thoughtSignature
+				if firstFunctionCallIdx >= 0 && len(fallbackFunctionCallSig) == 0 {
+					fallbackFunctionCallSig = part.ThoughtSignature
+				}
 				setMessageThoughtSignature(result, part.ThoughtSignature)
 			}
 
@@ -1248,6 +1261,15 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 				}
 				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
 				outParts = append(outParts, outPart)
+			}
+		}
+
+		// Gemini 3 streaming may place the step thought signature on a trailing empty
+		// non-function part instead of the first functionCall part.
+		if firstFunctionCallIdx >= 0 && len(fallbackFunctionCallSig) > 0 {
+			firstCall := &result.ToolCalls[firstFunctionCallIdx]
+			if len(getToolCallThoughtSignature(firstCall)) == 0 {
+				setToolCallThoughtSignature(firstCall, fallbackFunctionCallSig)
 			}
 		}
 		result.Content = contentBuilder.String()

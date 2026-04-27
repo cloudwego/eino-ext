@@ -927,6 +927,49 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, sigB, content2.Parts[0].ThoughtSignature)
 	})
+
+	t.Run("convCandidate moves trailing step signature onto first function call", func(t *testing.T) {
+		signature := []byte("trailing_function_step_signature")
+
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						Text:    "thinking before tool",
+						Thought: true,
+					},
+					{
+						FunctionCall: &genai.FunctionCall{
+							Name: "fc",
+							Args: map[string]any{},
+						},
+					},
+					{
+						Text:             "",
+						ThoughtSignature: signature,
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		assert.NotNil(t, message)
+		if assert.Len(t, message.ToolCalls, 1) {
+			sig, ok := GetThoughtSignatureFromExtra(message.ToolCalls[0].Extra)
+			assert.True(t, ok)
+			assert.Equal(t, signature, sig)
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		if assert.Len(t, content.Parts, 2) {
+			assert.True(t, content.Parts[0].Thought)
+			assert.NotNil(t, content.Parts[1].FunctionCall)
+			assert.Equal(t, signature, content.Parts[1].ThoughtSignature)
+		}
+	})
 }
 
 func TestCreatePrefixCache(t *testing.T) {
