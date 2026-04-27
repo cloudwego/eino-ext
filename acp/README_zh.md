@@ -3,7 +3,7 @@
 将 [EINO ADK](https://github.com/cloudwego/eino) agent 桥接到 [Agent Client Protocol (ACP)](https://agentclientprotocol.com) 的工具库。提供两个核心函数：
 
 - **`AgentEventToSessionUpdate`** — 将 eino `AgentEvent` 转换为 ACP `SessionUpdate` 通知，用于将 agent 输出流式推送给 ACP 客户端。
-- **`NewACPClientToolsMiddleware`** — 将 ACP 客户端能力（文件读写、终端执行）桥接到 eino 的文件系统中间件，使 agent 能够在客户端上读写文件和执行命令。
+- **`NewClientToolsMiddleware`** — 将 ACP 客户端能力（文件读写、终端执行）桥接到 eino 的文件系统中间件，使 agent 能够在客户端上读写文件和执行命令。
 
 ## 安装
 
@@ -98,12 +98,12 @@ for su, err := range einoacp.AgentEventToSessionUpdate(event, opt) {
 }
 ```
 
-### NewACPClientToolsMiddleware
+### NewClientToolsMiddleware
 
 创建一个 `ChatModelAgentMiddleware`，将 ACP 客户端能力桥接到 eino 的文件系统工具。根据客户端声明的能力自动启用对应工具，未支持的工具会被禁用。
 
 ```go
-func NewACPClientToolsMiddleware(
+func NewClientToolsMiddleware(
     ctx context.Context,
     sessionID acpproto.SessionID,
     capabilities *acpproto.ClientCapabilities,
@@ -125,7 +125,7 @@ func NewACPClientToolsMiddleware(
 
 ```go
 if clientCapabilities != nil {
-    middleware, err := einoacp.NewACPClientToolsMiddleware(
+    middleware, err := einoacp.NewClientToolsMiddleware(
         ctx, sessionID, clientCapabilities, conn,
     )
     if err != nil {
@@ -140,5 +140,5 @@ if clientCapabilities != nil {
 参见 [example/main.go](examples/main.go)，展示了一个完整的 ACP Server 实现：
 
 1. 每个 session 创建独立的 eino `ChatModelAgent`
-2. 通过 `NewACPClientToolsMiddleware` 桥接客户端文件系统和终端能力
+2. 通过 `NewClientToolsMiddleware` 桥接客户端文件系统和终端能力
 3. 通过 `AgentEventToSessionUpdate` 将 agent 事件流式推送给 ACP 客户端
