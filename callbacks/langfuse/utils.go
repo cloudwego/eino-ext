@@ -35,7 +35,7 @@ func convModelCallbackInput(in []callbacks.CallbackInput) []*model.CallbackInput
 func extractModelInput(ins []*model.CallbackInput) (config *model.Config, messages []*schema.Message, extra map[string]interface{}, err error) {
 	var mas [][]*schema.Message
 	for _, in := range ins {
-		if ins == nil {
+		if in == nil {
 			continue
 		}
 		if len(in.Messages) > 0 {
