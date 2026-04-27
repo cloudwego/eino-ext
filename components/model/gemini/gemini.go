@@ -585,6 +585,10 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		m.ImageConfig = geminiOptions.ImageConfig
 	}
 
+	if len(geminiOptions.Labels) > 0 {
+		m.Labels = geminiOptions.Labels
+	}
+
 	if len(geminiOptions.CachedContentName) > 0 {
 		m.CachedContent = geminiOptions.CachedContentName
 		// remove system instruction and tools when using cached content
