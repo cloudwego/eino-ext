@@ -659,19 +659,62 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 			if err != nil {
 				return err
 			}
-			if len(inputMessage.GetContent()) > 0 {
-				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
-			}
 
-			for _, toolCall := range msg.ToolCalls {
-				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{
-					FunctionToolCall: &responses.ItemFunctionToolCall{
-						Type:      responses.ItemType_function_call,
-						CallId:    toolCall.ID,
-						Arguments: toolCall.Function.Arguments,
-						Name:      toolCall.Function.Name,
-					},
-				}})
+			itemsOrder, hasOrder := getOutputItemsOrder(msg)
+			if hasOrder {
+				// Reconstruct items in the original order recorded during output conversion.
+				toolCallIdx := 0
+				for _, entry := range itemsOrder {
+					switch entry {
+					case outputItemTypeMessage:
+						if len(inputMessage.GetContent()) > 0 {
+							itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
+						}
+					case outputItemTypeFunctionCall:
+						if toolCallIdx < len(msg.ToolCalls) {
+							toolCall := msg.ToolCalls[toolCallIdx]
+							itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{
+								FunctionToolCall: &responses.ItemFunctionToolCall{
+									Type:      responses.ItemType_function_call,
+									CallId:    toolCall.ID,
+									Arguments: toolCall.Function.Arguments,
+									Name:      toolCall.Function.Name,
+								},
+							}})
+							toolCallIdx++
+						}
+					case outputItemTypeReasoning:
+						reasoning := &responses.ItemReasoning{
+							Type: responses.ItemType_reasoning,
+							Summary: []*responses.ReasoningSummaryPart{{
+								Type: responses.ContentItemType_input_text,
+								Text: msg.ReasoningContent,
+							}},
+						}
+						if id, ok := getReasoningID(msg); ok && id != "" {
+							reasoning.Id = &id
+						}
+						itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_Reasoning{
+							Reasoning: reasoning,
+						}})
+					}
+				}
+			} else {
+				// Fallback: original behavior when no order metadata is available.
+				if len(inputMessage.GetContent()) > 0 {
+					itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
+				}
+
+				for _, toolCall := range msg.ToolCalls {
+					itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{
+						FunctionToolCall: &responses.ItemFunctionToolCall{
+							Type:      responses.ItemType_function_call,
+							CallId:    toolCall.ID,
+							Arguments: toolCall.Function.Arguments,
+							Name:      toolCall.Function.Name,
+						},
+					}})
+				}
 			}
 		case schema.System:
 			inputMessage, err := cm.toArkSystemRoleItemInputMessage(msg)
@@ -1016,12 +1059,15 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 		return nil, fmt.Errorf("received empty output from ARK")
 	}
 
+	var itemsOrder []outputItemType
+
 	for _, item := range resp.Output {
 		switch asItem := item.GetUnion().(type) {
 		case *responses.OutputItem_OutputMessage:
 			if asItem.OutputMessage == nil {
 				continue
 			}
+			itemsOrder = append(itemsOrder, outputItemTypeMessage)
 			isMultiContent := len(asItem.OutputMessage.Content) > 1
 			for _, content := range asItem.OutputMessage.Content {
 				if content.GetText() == nil {
@@ -1041,6 +1087,10 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 			if asItem.Reasoning == nil {
 				continue
 			}
+			itemsOrder = append(itemsOrder, outputItemTypeReasoning)
+			if asItem.Reasoning.Id != nil {
+				setReasoningID(msg, *asItem.Reasoning.Id)
+			}
 			for _, s := range asItem.Reasoning.GetSummary() {
 				if s.Text == "" {
 					continue
@@ -1056,6 +1106,7 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 			if asItem.FunctionToolCall == nil {
 				continue
 			}
+			itemsOrder = append(itemsOrder, outputItemTypeFunctionCall)
 			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
 				ID:   asItem.FunctionToolCall.CallId,
 				Type: asItem.FunctionToolCall.Type.String(),
@@ -1065,6 +1116,10 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 				},
 			})
 		}
+	}
+
+	if len(itemsOrder) > 0 {
+		setOutputItemsOrder(msg, itemsOrder)
 	}
 
 	return msg, nil
@@ -1122,6 +1177,7 @@ func (cm *ResponsesAPIChatModel) toCallbackConfig(req *responses.ResponsesReques
 func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 	config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
 	var itemFunctionToolCall *responses.ItemFunctionToolCall
+	var reasoningID *string
 
 	for {
 		event, err := streamReader.Recv()
@@ -1193,6 +1249,11 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			if outputItemFuncCall, ok := ev.Item.GetItem().GetUnion().(*responses.OutputItem_FunctionToolCall); ok {
 				itemFunctionToolCall = outputItemFuncCall.FunctionToolCall
 			}
+			if outputItemReasoning, ok := ev.Item.GetItem().GetUnion().(*responses.OutputItem_Reasoning); ok {
+				if outputItemReasoning.Reasoning != nil {
+					reasoningID = outputItemReasoning.Reasoning.Id
+				}
+			}
 
 		case *responses.Event_FunctionCallArguments:
 			if ev.FunctionCallArguments == nil {
@@ -1217,6 +1278,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 						},
 					},
 				}
+				setOutputItemsOrder(msg, []outputItemType{outputItemTypeFunctionCall})
 				cm.sendCallbackOutput(sw, config, "", msg)
 			}
 
@@ -1230,6 +1292,11 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				ReasoningContent: delta,
 			}
 			setReasoningContent(msg, delta)
+			setOutputItemsOrder(msg, []outputItemType{outputItemTypeReasoning})
+			if reasoningID != nil {
+				setReasoningID(msg, *reasoningID)
+				reasoningID = nil // only set once
+			}
 			cm.sendCallbackOutput(sw, config, "", msg)
 
 		case *responses.Event_Text:
@@ -1240,6 +1307,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				Role:    schema.Assistant,
 				Content: *ev.Text.Delta,
 			}
+			setOutputItemsOrder(msg, []outputItemType{outputItemTypeMessage})
 			cm.sendCallbackOutput(sw, config, "", msg)
 
 		}
