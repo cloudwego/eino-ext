@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package acp
+package einoacp
 
 import (
 	"context"
@@ -28,11 +28,11 @@ import (
 	acpconn "github.com/eino-contrib/acp/conn"
 )
 
-// NewACPClientToolsMiddleware creates a ChatModelAgentMiddleware that bridges ACP client-side capabilities
+// NewClientToolsMiddleware creates a ChatModelAgentMiddleware that bridges ACP client-side capabilities
 // (filesystem read/write, terminal execution) to eino's filesystem tools. The ACP protocol only exposes
 // read_text_file, write_text_file and terminal capabilities, so ls/edit/glob/grep tools are always disabled;
 // read_file, write_file and terminal are enabled only when the client advertises the corresponding capability.
-func NewACPClientToolsMiddleware(
+func NewClientToolsMiddleware(
 	ctx context.Context,
 	sessionID acpproto.SessionID,
 	capabilities *acpproto.ClientCapabilities,
