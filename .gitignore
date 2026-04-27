@@ -42,6 +42,9 @@ output/*
 .claude/
 .claude-trace
 
+# Opencode files
+.opencode/
+
 # Data files
 *.jsonl
 *.csv
