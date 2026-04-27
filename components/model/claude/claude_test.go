@@ -389,6 +389,89 @@ func TestWithTools(t *testing.T) {
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
 }
 
+func TestThinkingConfig(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+
+	ctx := context.Background()
+	cm, err := NewChatModel(ctx, &Config{
+		APIKey: "test-key",
+		Model:  "claude-opus-4-7",
+	})
+	assert.NoError(t, err)
+
+	t.Run("legacy enabled mode emits OfEnabled with budget", func(t *testing.T) {
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{schema.UserMessage("hi")},
+			WithThinking(&Thinking{Enable: true, BudgetTokens: 1024}),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.Thinking.OfEnabled)
+		assert.Equal(t, int64(1024), params.Thinking.OfEnabled.BudgetTokens)
+		assert.Nil(t, params.Thinking.OfAdaptive)
+		assert.Empty(t, string(params.OutputConfig.Effort))
+	}) // preserves backward compatibility for callers already in prod
+
+	t.Run("empty mode defaults to OfEnabled", func(t *testing.T) {
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{schema.UserMessage("hi")},
+			WithThinking(&Thinking{Enable: true, BudgetTokens: 512, Mode: ""}),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.Thinking.OfEnabled)
+		assert.Nil(t, params.Thinking.OfAdaptive)
+	})
+
+	t.Run("adaptive mode emits OfAdaptive without budget", func(t *testing.T) {
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{schema.UserMessage("hi")},
+			WithThinking(&Thinking{Enable: true, Mode: ThinkingModeAdaptive}),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.Thinking.OfAdaptive)
+		assert.Equal(t, "adaptive", string(params.Thinking.OfAdaptive.Type))
+		assert.Nil(t, params.Thinking.OfEnabled)
+	})
+
+	t.Run("adaptive mode with Effort sets OutputConfig", func(t *testing.T) {
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{schema.UserMessage("hi")},
+			WithThinking(&Thinking{Enable: true, Mode: ThinkingModeAdaptive, Effort: "medium"}),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.Thinking.OfAdaptive)
+		assert.Equal(t, anthropic.OutputConfigEffortMedium, params.OutputConfig.Effort)
+	})
+
+	t.Run("Effort is case-insensitive and trimmed", func(t *testing.T) {
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{schema.UserMessage("hi")},
+			WithThinking(&Thinking{Enable: true, Mode: ThinkingModeAdaptive, Effort: "  HIGH "}),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, anthropic.OutputConfigEffortHigh, params.OutputConfig.Effort)
+	})
+
+	t.Run("unknown Effort is ignored (no OutputConfig set)", func(t *testing.T) {
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{schema.UserMessage("hi")},
+			WithThinking(&Thinking{Enable: true, Mode: ThinkingModeAdaptive, Effort: "turbo"}),
+		)
+		assert.NoError(t, err)
+		assert.Empty(t, string(params.OutputConfig.Effort))
+	})
+
+	t.Run("Enable=false skips thinking entirely", func(t *testing.T) {
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{schema.UserMessage("hi")},
+			WithThinking(&Thinking{Enable: false, Mode: ThinkingModeAdaptive, Effort: "medium"}),
+		)
+		assert.NoError(t, err)
+		assert.Nil(t, params.Thinking.OfEnabled)
+		assert.Nil(t, params.Thinking.OfAdaptive)
+		assert.Empty(t, string(params.OutputConfig.Effort))
+	})
+}
+
 func TestPopulateContentBlockBreakPoint(t *testing.T) {
 	block := anthropic.NewTextBlock("input")
 	populateContentBlockBreakPoint(block, nil)

@@ -82,6 +82,12 @@ func main() {
 		Enable:       true,
 		BudgetTokens: 1024,
 	}))
+	// 自适应思考（Claude Opus 4.7 及更新模型）：
+	// claude.WithThinking(&claude.Thinking{
+	//     Enable: true,
+	//     Mode:   claude.ThinkingModeAdaptive,
+	//     Effort: "medium", // "low" | "medium" | "high" | "max"
+	// })
 	if err != nil {
 		log.Printf("Generate error: %v", err)
 		return
