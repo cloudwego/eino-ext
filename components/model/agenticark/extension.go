@@ -309,7 +309,7 @@ type DocCitation struct {
 
 func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (ret *ResponseMetaExtension, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no response meta extension found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
@@ -355,7 +355,7 @@ func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (ret *Respons
 
 func concatAssistantGenTextExtensions(chunks []*AssistantGenTextExtension) (ret *AssistantGenTextExtension, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no assistant generated text extension found")
+		return nil, nil
 	}
 
 	ret = &AssistantGenTextExtension{}
@@ -398,7 +398,7 @@ func concatAssistantGenTextExtensions(chunks []*AssistantGenTextExtension) (ret 
 
 func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *ServerToolCallArguments, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool call arguments found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
@@ -492,7 +492,7 @@ func concatDoubaoAppArguments(chunks []*DoubaoAppArguments) *DoubaoAppArguments 
 
 func concatServerToolResult(chunks []*ServerToolResult) (ret *ServerToolResult, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool result found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
