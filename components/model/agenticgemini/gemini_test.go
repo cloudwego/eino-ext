@@ -67,14 +67,6 @@ func TestNewAgenticModel(t *testing.T) {
 
 	assert.Equal(t, "Gemini", model.GetType())
 	assert.True(t, model.IsCallbacksEnabled())
-
-	tm, err := model.WithTools([]*schema.ToolInfo{{}})
-	assert.NoError(t, err)
-	model = tm.(*Gemini)
-	assert.Len(t, model.tools, 1)
-	assert.Len(t, model.origTools, 1)
-	assert.NotNil(t, model.toolChoice)
-	assert.Equal(t, schema.ToolChoiceAllowed, model.toolChoice.Type)
 }
 
 func TestGemini_GenInputAndConf(t *testing.T) {

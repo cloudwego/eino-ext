@@ -18,7 +18,6 @@ package agenticopenai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -353,23 +352,6 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 	)
 
 	return outStream, err
-}
-
-func (m *Model) WithTools(functionTools []*schema.ToolInfo) (model.AgenticModel, error) {
-	if len(functionTools) == 0 {
-		return nil, errors.New("function tools are required")
-	}
-
-	fts, err := toFunctionTools(functionTools)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert function tools: %w", err)
-	}
-
-	m_ := *m
-	m_.rawFunctionTools = functionTools
-	m_.functionTools = fts
-
-	return &m_, nil
 }
 
 func (m *Model) GetType() string {

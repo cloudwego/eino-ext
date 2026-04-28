@@ -153,29 +153,6 @@ func TestModelStream(t *testing.T) {
 	})
 }
 
-func TestModelWithTools(t *testing.T) {
-	mockey.PatchConvey("TestModelWithTools", t, func() {
-		ctx := context.Background()
-		m, err := New(ctx, &Config{APIKey: "test"})
-		assert.NoError(t, err)
-
-		mockey.PatchConvey("success", func() {
-			tools := []*schema.ToolInfo{
-				{Name: "tool1", Desc: "d", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
-			}
-			nm, err := m.WithTools(tools)
-			assert.NoError(t, err)
-			assert.NotNil(t, nm)
-		})
-
-		mockey.PatchConvey("empty tools", func() {
-			nm, err := m.WithTools(nil)
-			assert.Error(t, err)
-			assert.Nil(t, nm)
-		})
-	})
-}
-
 func TestModelGetType(t *testing.T) {
 	mockey.PatchConvey("TestModelGetType", t, func() {
 		m, err := New(context.Background(), &Config{APIKey: "test"})

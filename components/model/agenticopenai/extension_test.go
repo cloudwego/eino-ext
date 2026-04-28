@@ -251,7 +251,7 @@ func TestConcatServerToolCallArguments(t *testing.T) {
 	mockey.PatchConvey("concatServerToolCallArguments", t, func() {
 		mockey.PatchConvey("empty chunks", func() {
 			res, err := concatServerToolCallArguments(nil)
-			assert.Error(t, err)
+			assert.NoError(t, err)
 			assert.Nil(t, res)
 		})
 
@@ -298,7 +298,7 @@ func TestConcatServerToolResult(t *testing.T) {
 	mockey.PatchConvey("concatServerToolResult", t, func() {
 		mockey.PatchConvey("empty chunks", func() {
 			res, err := concatServerToolResult(nil)
-			assert.Error(t, err)
+			assert.NoError(t, err)
 			assert.Nil(t, res)
 		})
 

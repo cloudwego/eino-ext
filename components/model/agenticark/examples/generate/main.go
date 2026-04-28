@@ -23,6 +23,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/components/model/agenticark"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/wk8/go-ordered-map/v2"
@@ -44,7 +45,7 @@ func main() {
 		schema.UserAgenticMessage("what is the weather like in Beijing"),
 	}
 
-	am_, err := am.WithTools([]*schema.ToolInfo{
+	functionTools := []*schema.ToolInfo{
 		{
 			Name: "get_weather",
 			Desc: "get the weather in a city",
@@ -64,12 +65,9 @@ func main() {
 				Required: []string{"city"},
 			}),
 		},
-	})
-	if err != nil {
-		log.Fatalf("failed to create agentic model with tools, err: %v", err)
 	}
 
-	msg, err := am_.Generate(ctx, input)
+	msg, err := am.Generate(ctx, input, model.WithTools(functionTools))
 	if err != nil {
 		log.Fatalf("failed to generate, err: %v", err)
 	}

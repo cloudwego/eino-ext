@@ -319,7 +319,7 @@ func checkExpectedType(expectedType, chunkType reflect.Type) (reflect.Type, erro
 
 func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *ServerToolCallArguments, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool call arguments found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
@@ -427,7 +427,7 @@ func concatShellArguments(chunks []*ShellArguments) *ShellArguments {
 
 func concatServerToolResult(chunks []*ServerToolResult) (ret *ServerToolResult, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool result found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
