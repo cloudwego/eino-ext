@@ -35,6 +35,9 @@ type arkOptions struct {
 	maxToolCalls *int64
 
 	enableReasoningContentPassback bool
+
+	// extraFields are shallow-merged into serialized Responses API JSON after multimodal preprocessing.
+	extraFields map[string]any
 }
 
 // WithCustomHeader sets custom headers for a single request
@@ -151,5 +154,14 @@ func WithMaxToolCalls(n int64) model.Option {
 func WithEnableReasoningContentPassback(enable bool) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.enableReasoningContentPassback = enable
+	})
+}
+
+// WithExtraFields sets extra top-level JSON fields on the Responses API request body.
+// Merged after inputs are built and after multimodal preprocessing; extra keys override existing keys.
+// Requires volcengine-go-sdk with PreprocessResponsesRequest, CreateResponsesFromJSON, CreateResponsesStreamFromJSON.
+func WithExtraFields(extraFields map[string]any) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.extraFields = extraFields
 	})
 }

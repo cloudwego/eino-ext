@@ -35,6 +35,7 @@ import (
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
+	"github.com/volcengine/volcengine-go-sdk/volcengine"
 )
 
 type Thinking = arkModel.Thinking
@@ -283,7 +284,7 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		}
 	}()
 
-	responseObject, err := cm.client.CreateResponses(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	responseObject, err := cm.invokeCreateResponses(ctx, responseReq, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
@@ -350,7 +351,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		}
 	}()
 
-	responseStreamReader, err := cm.client.CreateResponsesStream(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	responseStreamReader, err := cm.invokeCreateResponsesStream(ctx, responseReq, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
@@ -946,6 +947,37 @@ func (cm *ResponsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 		return nil, nil, err
 	}
 	return options, arkOpts, nil
+}
+
+func (cm *ResponsesAPIChatModel) invokeCreateResponses(ctx context.Context, responseReq *responses.ResponsesRequest, spec *arkOptions) (*responses.ResponseObject, error) {
+	h := arkruntime.WithCustomHeaders(spec.customHeaders)
+	if len(spec.extraFields) == 0 {
+		return cm.client.CreateResponses(ctx, responseReq, h)
+	}
+	if err := cm.client.PreprocessResponsesRequest(ctx, responseReq); err != nil {
+		return nil, err
+	}
+	raw, err := mergeResponsesRequestExtraJSON(responseReq, spec.extraFields)
+	if err != nil {
+		return nil, err
+	}
+	return cm.client.CreateResponsesFromJSON(ctx, responseReq.Model, raw, h)
+}
+
+func (cm *ResponsesAPIChatModel) invokeCreateResponsesStream(ctx context.Context, responseReq *responses.ResponsesRequest, spec *arkOptions) (*utils.ResponsesStreamReader, error) {
+	h := arkruntime.WithCustomHeaders(spec.customHeaders)
+	if len(spec.extraFields) == 0 {
+		return cm.client.CreateResponsesStream(ctx, responseReq, h)
+	}
+	responseReq.Stream = volcengine.Bool(true)
+	if err := cm.client.PreprocessResponsesRequest(ctx, responseReq); err != nil {
+		return nil, err
+	}
+	raw, err := mergeResponsesRequestExtraJSON(responseReq, spec.extraFields)
+	if err != nil {
+		return nil, err
+	}
+	return cm.client.CreateResponsesStreamFromJSON(ctx, responseReq.Model, raw, h)
 }
 
 func (cm *ResponsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.ResponsesTool, error) {
@@ -1712,7 +1744,7 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 		return nil, err
 	}
 
-	responseObject, err := cm.client.CreateResponses(ctx, responseReq)
+	responseObject, err := cm.invokeCreateResponses(ctx, responseReq, specOptions)
 	if err != nil {
 		return nil, err
 	}
