@@ -158,8 +158,8 @@ func WithEnableReasoningContentPassback(enable bool) model.Option {
 }
 
 // WithExtraFields sets extra top-level JSON fields on the Responses API request body.
-// Merged after inputs are built and after multimodal preprocessing; extra keys override existing keys.
-// Requires volcengine-go-sdk with PreprocessResponsesRequest, CreateResponsesFromJSON, CreateResponsesStreamFromJSON.
+// Merged inside volcengine-go-sdk after the request is built and multimodal inputs are preprocessed;
+// keys in extraFields override existing keys. See arkruntime.WithResponsesExtraFields.
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.extraFields = extraFields

@@ -35,7 +35,6 @@ import (
 	arkModel "github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
-	"github.com/volcengine/volcengine-go-sdk/volcengine"
 )
 
 type Thinking = arkModel.Thinking
@@ -949,19 +948,23 @@ func (cm *ResponsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 	return options, arkOpts, nil
 }
 
+func extraFieldsToIface(m map[string]any) map[string]interface{} {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
 func (cm *ResponsesAPIChatModel) invokeCreateResponses(ctx context.Context, responseReq *responses.ResponsesRequest, spec *arkOptions) (*responses.ResponseObject, error) {
 	h := arkruntime.WithCustomHeaders(spec.customHeaders)
 	if len(spec.extraFields) == 0 {
 		return cm.client.CreateResponses(ctx, responseReq, h)
 	}
-	if err := cm.client.PreprocessResponsesRequest(ctx, responseReq); err != nil {
-		return nil, err
-	}
-	raw, err := mergeResponsesRequestExtraJSON(responseReq, spec.extraFields)
-	if err != nil {
-		return nil, err
-	}
-	return cm.client.CreateResponsesFromJSON(ctx, responseReq.Model, raw, h)
+	return cm.client.CreateResponses(ctx, responseReq, h, arkruntime.WithResponsesExtraFields(extraFieldsToIface(spec.extraFields)))
 }
 
 func (cm *ResponsesAPIChatModel) invokeCreateResponsesStream(ctx context.Context, responseReq *responses.ResponsesRequest, spec *arkOptions) (*utils.ResponsesStreamReader, error) {
@@ -969,15 +972,7 @@ func (cm *ResponsesAPIChatModel) invokeCreateResponsesStream(ctx context.Context
 	if len(spec.extraFields) == 0 {
 		return cm.client.CreateResponsesStream(ctx, responseReq, h)
 	}
-	responseReq.Stream = volcengine.Bool(true)
-	if err := cm.client.PreprocessResponsesRequest(ctx, responseReq); err != nil {
-		return nil, err
-	}
-	raw, err := mergeResponsesRequestExtraJSON(responseReq, spec.extraFields)
-	if err != nil {
-		return nil, err
-	}
-	return cm.client.CreateResponsesStreamFromJSON(ctx, responseReq.Model, raw, h)
+	return cm.client.CreateResponsesStream(ctx, responseReq, h, arkruntime.WithResponsesExtraFields(extraFieldsToIface(spec.extraFields)))
 }
 
 func (cm *ResponsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.ResponsesTool, error) {

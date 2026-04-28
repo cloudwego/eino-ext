@@ -66,8 +66,8 @@ github.com/goph/emperror v0.17.2/go.mod h1:+ZbQ+fUNO/6FNiUo0ujtMjhgad9Xa6fQL9KhH
 github.com/gopherjs/gopherjs v1.17.2 h1:fQnZVsXk8uxXIStYb0N4bGk7jeyTalG/wsZjQ25dO0g=
 github.com/gopherjs/gopherjs v1.17.2/go.mod h1:pRRIvn/QzFLrKfvEz3qUuEhtE/zLCWfreZ6J5gM2i+k=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
-github.com/jesse-engineer/volcengine-go-sdk v1.2.26-0.20260428150644-cf9db789ee32 h1:MmTysoe+4IMf8JpHkDZg2UF3sN5nt976sNLKXMoI6eg=
-github.com/jesse-engineer/volcengine-go-sdk v1.2.26-0.20260428150644-cf9db789ee32/go.mod h1:oxoVo+A17kvkwPkIeIHPVLjSw7EQAm+l/Vau1YGHN+A=
+github.com/jesse-engineer/volcengine-go-sdk v1.2.26-0.20260428152021-d3ac2bef0584 h1:hdi/IU3ATB4ZSmG1r15rJignySbT2c14PLQ9I2Adddc=
+github.com/jesse-engineer/volcengine-go-sdk v1.2.26-0.20260428152021-d3ac2bef0584/go.mod h1:oxoVo+A17kvkwPkIeIHPVLjSw7EQAm+l/Vau1YGHN+A=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1 h1:shLQSRRSCCPj3f2gpwzGwWFoC7ycTf1rcQZHOlsJ6N8=
