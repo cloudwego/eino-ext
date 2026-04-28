@@ -459,6 +459,32 @@ func TestThinkingConfig(t *testing.T) {
 	})
 }
 
+func TestThinkingConfigStream(t *testing.T) {
+	var capturedReq *deepseek.StreamChatCompletionRequest
+	defer mockey.Mock((*deepseek.Client).CreateChatCompletionStream).To(func(ctx context.Context, request *deepseek.StreamChatCompletionRequest) (deepseek.ChatCompletionStream, error) {
+		capturedReq = request
+		return &mockStream{}, nil
+	}).Build().UnPatch()
+
+	ctx := context.Background()
+	cm, err := NewChatModel(ctx, &ChatModelConfig{
+		APIKey: "test-key",
+		Model:  "deepseek-reasoner",
+		ThinkingConfig: &ThinkingConfig{
+			Type: "enabled",
+		},
+	})
+	assert.Nil(t, err)
+
+	stream, err := cm.Stream(ctx, []*schema.Message{schema.UserMessage("hello")})
+	assert.Nil(t, err)
+	if assert.NotNil(t, stream) &&
+		assert.NotNil(t, capturedReq) &&
+		assert.NotNil(t, capturedReq.Thinking) {
+		assert.Equal(t, "enabled", capturedReq.Thinking.Type)
+	}
+}
+
 func TestNewChatModel(t *testing.T) {
 	ctx := context.Background()
 
