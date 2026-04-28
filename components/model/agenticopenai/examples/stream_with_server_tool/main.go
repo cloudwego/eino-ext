@@ -108,7 +108,7 @@ func main() {
 		}
 
 		if block.ServerToolResult != nil {
-			result := block.ServerToolResult.Result.(*agenticopenai.ServerToolResult)
+			result := block.ServerToolResult.Content.(*agenticopenai.ServerToolResult)
 			resultJSON, _ := sonic.MarshalIndent(result, "  ", "  ")
 			log.Printf("server_tool_result: %s\n", string(resultJSON))
 		}

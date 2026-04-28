@@ -178,20 +178,20 @@ func getServerToolCallArguments(call *schema.ServerToolCall) (*ServerToolCallArg
 }
 
 func getServerToolResult(res *schema.ServerToolResult) (*ServerToolResult, error) {
-	if res == nil || res.Result == nil {
+	if res == nil || res.Content == nil {
 		return nil, fmt.Errorf("server tool result is nil")
 	}
-	if result, ok := res.Result.(*ServerToolResult); ok {
+	if result, ok := res.Content.(*ServerToolResult); ok {
 		return result, nil
 	}
-	if m, ok := res.Result.(map[string]any); ok {
+	if m, ok := res.Content.(map[string]any); ok {
 		result := &ServerToolResult{}
 		if err := mapstructure.Decode(m, result); err != nil {
 			return nil, fmt.Errorf("failed to decode server tool result: %w", err)
 		}
 		return result, nil
 	}
-	return nil, fmt.Errorf("unexpected type %T for server tool result", res.Result)
+	return nil, fmt.Errorf("unexpected type %T for server tool result", res.Content)
 }
 
 type ResponseError struct {
@@ -309,7 +309,7 @@ type DocCitation struct {
 
 func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (ret *ResponseMetaExtension, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no response meta extension found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
@@ -355,7 +355,7 @@ func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (ret *Respons
 
 func concatAssistantGenTextExtensions(chunks []*AssistantGenTextExtension) (ret *AssistantGenTextExtension, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no assistant generated text extension found")
+		return nil, nil
 	}
 
 	ret = &AssistantGenTextExtension{}
@@ -398,7 +398,7 @@ func concatAssistantGenTextExtensions(chunks []*AssistantGenTextExtension) (ret 
 
 func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *ServerToolCallArguments, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool call arguments found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
@@ -492,7 +492,7 @@ func concatDoubaoAppArguments(chunks []*DoubaoAppArguments) *DoubaoAppArguments 
 
 func concatServerToolResult(chunks []*ServerToolResult) (ret *ServerToolResult, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool result found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil

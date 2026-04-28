@@ -979,7 +979,7 @@ func (r *streamReceiver) doubaoAppOutputTextDeltaToContentBlock(ev *responses.Re
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
 		Name:   string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{DoubaoApp: result},
+		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
 	setItemID(block, ev.ItemId)
@@ -1018,7 +1018,7 @@ func (r *streamReceiver) doubaoAppReasoningTextDeltaToContentBlock(ev *responses
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
 		Name:   string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{DoubaoApp: result},
+		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
 	setItemID(block, ev.ItemId)
@@ -1043,7 +1043,7 @@ func (r *streamReceiver) doubaoAppSearchSearchingToContentBlock(ev *responses.Re
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
 		Name:   string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{DoubaoApp: result},
+		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
 	setItemID(block, ev.ItemId)
@@ -1081,7 +1081,7 @@ func (r *streamReceiver) doubaoAppSearchCompletedToContentBlock(ev *responses.Re
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
 		Name:   string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{DoubaoApp: result},
+		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
 	setItemID(block, ev.ItemId)
@@ -1106,7 +1106,7 @@ func (r *streamReceiver) doubaoAppReasoningSearchSearchingToContentBlock(ev *res
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
 		Name:   string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{DoubaoApp: result},
+		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
 	setItemID(block, ev.ItemId)
@@ -1144,7 +1144,7 @@ func (r *streamReceiver) doubaoAppReasoningSearchCompletedToContentBlock(ev *res
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
 		Name:   string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{DoubaoApp: result},
+		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
 	setItemID(block, ev.ItemId)

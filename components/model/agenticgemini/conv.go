@@ -179,7 +179,7 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 			if block.ServerToolResult != nil {
 				switch block.ServerToolResult.Name {
 				case ServerToolNameCodeExecution:
-					result, ok := block.ServerToolResult.Result.(*ServerToolCallResult)
+					result, ok := block.ServerToolResult.Content.(*ServerToolCallResult)
 					if !ok {
 						return nil, fmt.Errorf("failed to convert to genai content: CodeExecution tool result isn't *ServerToolCallResult")
 					}
@@ -307,12 +307,31 @@ func convFunctionToolCall(call *schema.FunctionToolCall) (*genai.Part, error) {
 }
 
 func convFunctionToolResult(result *schema.FunctionToolResult) (*genai.Part, error) {
-	response := make(map[string]any)
-	err := sonic.UnmarshalString(result.Result, &response)
+	text, err := functionToolResultContentToText(result.Content)
 	if err != nil {
-		response["output"] = result.Result
+		return nil, err
+	}
+	response := make(map[string]any)
+	err = sonic.UnmarshalString(text, &response)
+	if err != nil {
+		response["output"] = text
 	}
 	return genai.NewPartFromFunctionResponse(result.Name, response), nil
+}
+
+func functionToolResultContentToText(content []*schema.FunctionToolResultContentBlock) (string, error) {
+	if len(content) > 1 {
+		return "", fmt.Errorf("multiple function tool result content blocks are not supported, got %d", len(content))
+	}
+	for _, block := range content {
+		switch block.Type {
+		case schema.FunctionToolResultContentBlockTypeText:
+			return block.Text.Text, nil
+		default:
+			return "", fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
+		}
+	}
+	return "", nil
 }
 
 func convAgenticResponse(resp *genai.GenerateContentResponse, lastType schema.ContentBlockType) (*schema.AgenticMessage, error) {
@@ -375,7 +394,7 @@ func convAgenticCandidate(candidate *genai.Candidate, lastType schema.ContentBlo
 			cb.Type = schema.ContentBlockTypeServerToolResult
 			cb.ServerToolResult = &schema.ServerToolResult{
 				Name: ServerToolNameCodeExecution,
-				Result: &ServerToolCallResult{
+				Content: &ServerToolCallResult{
 					CodeExecutionResult: &CodeExecutionResult{
 						Outcome: Outcome(part.CodeExecutionResult.Outcome),
 						Output:  part.CodeExecutionResult.Output,

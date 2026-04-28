@@ -3,9 +3,9 @@ module github.com/cloudwego/eino-ext/components/model/agenticgemini
 go 1.24
 
 require (
-	github.com/bytedance/mockey v1.4.1
+	github.com/bytedance/mockey v1.4.6
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.9.0-alpha.7
+	github.com/cloudwego/eino v0.9.0-alpha.22
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/stretchr/testify v1.10.0
 	google.golang.org/genai v1.36.0

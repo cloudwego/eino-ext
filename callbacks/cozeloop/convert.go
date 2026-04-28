@@ -704,11 +704,11 @@ func expandAgenticModelMessage(message *schema.AgenticMessage) []*tracespec.Mode
 				Role:       "tool",
 				ToolCallID: block.FunctionToolResult.CallID,
 				Name:       block.FunctionToolResult.Name,
-				Content:    block.FunctionToolResult.Result,
+				Parts:      functionToolResultContentToParts(block.FunctionToolResult.Content),
 			})
 		} else if block.Type == schema.ContentBlockTypeServerToolResult && block.ServerToolResult != nil {
 			flushPending()
-			content, _ := sonic.MarshalString(block.ServerToolResult.Result)
+			content, _ := sonic.MarshalString(block.ServerToolResult.Content)
 			result = append(result, &tracespec.ModelMessage{
 				Role:       "tool",
 				ToolCallID: block.ServerToolResult.CallID,
@@ -721,7 +721,7 @@ func expandAgenticModelMessage(message *schema.AgenticMessage) []*tracespec.Mode
 				Role:       "tool",
 				ToolCallID: block.MCPToolResult.CallID,
 				Name:       block.MCPToolResult.Name,
-				Content:    block.MCPToolResult.Result,
+				Content:    block.MCPToolResult.Content,
 			})
 		} else {
 			if isToolCallBlock(block.Type) && pendingToolCallType != "" && pendingToolCallType != block.Type {
@@ -896,4 +896,64 @@ func iterSliceWithCtx[A, B any](ctx context.Context, sa []A, fb func(ctx context
 	}
 
 	return r
+}
+
+func functionToolResultContentToParts(content []*schema.FunctionToolResultContentBlock) []*tracespec.ModelMessagePart {
+	var parts []*tracespec.ModelMessagePart
+	for _, block := range content {
+		switch block.Type {
+		case schema.FunctionToolResultContentBlockTypeText:
+			parts = append(parts, &tracespec.ModelMessagePart{
+				Type: tracespec.ModelMessagePartTypeText,
+				Text: block.Text.Text,
+			})
+		case schema.FunctionToolResultContentBlockTypeImage:
+			part := &tracespec.ModelMessagePart{Type: tracespec.ModelMessagePartTypeImage}
+			if block.Image.URL != "" {
+				part.ImageURL = &tracespec.ModelImageURL{URL: block.Image.URL, Detail: string(block.Image.Detail)}
+			}
+			if block.Image.Base64Data != "" {
+				part.ImageURL = &tracespec.ModelImageURL{
+					URL:    fmt.Sprintf("data:%s;base64,%s", block.Image.MIMEType, block.Image.Base64Data),
+					Detail: string(block.Image.Detail),
+				}
+			}
+			parts = append(parts, part)
+		case schema.FunctionToolResultContentBlockTypeAudio:
+			part := &tracespec.ModelMessagePart{Type: tracespec.ModelMessagePartTypeAudio}
+			if block.Audio.URL != "" {
+				part.AudioURL = &tracespec.ModelAudioURL{URL: block.Audio.URL}
+			}
+			if block.Audio.Base64Data != "" {
+				part.AudioURL = &tracespec.ModelAudioURL{
+					URL: fmt.Sprintf("data:%s;base64,%s", block.Audio.MIMEType, block.Audio.Base64Data),
+				}
+			}
+			parts = append(parts, part)
+		case schema.FunctionToolResultContentBlockTypeVideo:
+			part := &tracespec.ModelMessagePart{Type: tracespec.ModelMessagePartTypeVideo}
+			if block.Video.URL != "" {
+				part.VideoURL = &tracespec.ModelVideoURL{URL: block.Video.URL}
+			}
+			if block.Video.Base64Data != "" {
+				part.VideoURL = &tracespec.ModelVideoURL{
+					URL: fmt.Sprintf("data:%s;base64,%s", block.Video.MIMEType, block.Video.Base64Data),
+				}
+			}
+			parts = append(parts, part)
+		case schema.FunctionToolResultContentBlockTypeFile:
+			part := &tracespec.ModelMessagePart{Type: tracespec.ModelMessagePartTypeFile}
+			if block.File.URL != "" {
+				part.FileURL = &tracespec.ModelFileURL{URL: block.File.URL, Name: block.File.Name}
+			}
+			if block.File.Base64Data != "" {
+				part.FileURL = &tracespec.ModelFileURL{
+					URL:  fmt.Sprintf("data:%s;base64,%s", block.File.MIMEType, block.File.Base64Data),
+					Name: block.File.Name,
+				}
+			}
+			parts = append(parts, part)
+		}
+	}
+	return parts
 }

@@ -117,7 +117,18 @@ func main() {
 	}
 
 	toolCall := lastBlock.FunctionToolCall
-	toolResultMsg := schema.FunctionToolResultAgenticMessage(toolCall.CallID, toolCall.Name, "20 degrees")
+	toolResultMsg := &schema.AgenticMessage{
+		Role: schema.AgenticRoleTypeUser,
+		ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.FunctionToolResult{
+				CallID: toolCall.CallID,
+				Name:   toolCall.Name,
+				Content: []*schema.FunctionToolResultContentBlock{
+					{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "20 degrees"}},
+				},
+			}),
+		},
+	}
 
 	secondInput := append(firstInput, concatenated, toolResultMsg)
 
