@@ -1050,12 +1050,14 @@ func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice
 		}
 
 		if onlyOneToolName != "" {
-			req.ToolChoice = openai.ToolChoice{
-				Type: openai.ToolTypeFunction,
-				Function: openai.ToolFunction{
-					Name: onlyOneToolName,
-				},
-			}
+			// Some OpenAI-compatible gateways reject the object form
+			// {"type":"function","function":{"name":"..."}}
+			// with "unknown parameter: tool_choice.function", while still
+			// supporting tool calling with the string form "required".
+			//
+			// In the single-tool case, "required" is semantically equivalent
+			// to forcing that one tool, so prefer the more compatible wire form.
+			req.ToolChoice = toolChoiceRequired
 		} else if len(allowedToolNames) > 1 {
 			req.ToolChoice = map[string]any{
 				"type": "allowed_tools",
@@ -1291,13 +1293,18 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 
 		sortArrayFields(paramsJSONSchema)
 
-		tools[i] = tool{
-			Function: &functionDefinition{
-				Name:        ti.Name,
-				Description: ti.Desc,
-				Parameters:  paramsJSONSchema,
-			},
+		fd := &functionDefinition{
+			Name:        ti.Name,
+			Description: ti.Desc,
+			Parameters:  paramsJSONSchema,
 		}
+		// Support strict tool use via ToolInfo.Extra["strict"] = true.
+		// When enabled, the API guarantees that tool call inputs conform
+		// to the declared JSON Schema exactly (OpenAI strict mode).
+		if strict, ok := ti.Extra["strict"].(bool); ok && strict {
+			fd.Strict = &strict
+		}
+		tools[i] = tool{Function: fd}
 	}
 
 	return tools, nil
