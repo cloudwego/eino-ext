@@ -339,3 +339,45 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		assert.Contains(t, res.Output, "background")
 	})
 }
+
+func TestParsePagesParam(t *testing.T) {
+	tests := []struct {
+		name      string
+		pages     string
+		wantStart int
+		wantEnd   int
+		wantErr   string
+	}{
+		{name: "single page", pages: "1", wantStart: 1, wantEnd: 1},
+		{name: "single page with spaces", pages: " 3 ", wantStart: 3, wantEnd: 3},
+		{name: "range", pages: "1-5", wantStart: 1, wantEnd: 5},
+		{name: "range with spaces", pages: " 3 - 10 ", wantStart: 3, wantEnd: 10},
+		{name: "same start and end", pages: "7-7", wantStart: 7, wantEnd: 7},
+		{name: "max allowed range", pages: "1-20", wantStart: 1, wantEnd: 20},
+
+		{name: "empty string", pages: "", wantErr: "pages parameter is empty"},
+		{name: "non-numeric", pages: "abc", wantErr: "invalid start page"},
+		{name: "zero start", pages: "0", wantErr: "invalid start page"},
+		{name: "negative start", pages: "-3", wantErr: "invalid start page"},
+		{name: "non-numeric end", pages: "1-abc", wantErr: "invalid end page"},
+		{name: "zero end", pages: "1-0", wantErr: "invalid end page"},
+		{name: "open-ended range", pages: "1-", wantErr: "open-ended page range is not supported"},
+		{name: "end less than start", pages: "5-3", wantErr: "end page 3 is less than start page 5"},
+		{name: "exceeds page limit", pages: "1-21", wantErr: "exceeds the limit of 20 pages per request"},
+		{name: "large range exceeds limit", pages: "10-50", wantErr: "exceeds the limit of 20 pages per request"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start, end, err := parsePagesParam(tt.pages)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantStart, start)
+			assert.Equal(t, tt.wantEnd, end)
+		})
+	}
+}

@@ -98,6 +98,7 @@ export VOLC_TOOL_ID="your_tool_id"
 
 - **`LsInfo(ctx, req)`** - 列出目录内容
 - **`Read(ctx, req)`** - 读取文件，支持可选的行偏移/限制
+- **`MultiModalRead(ctx, req)`** - 将图片/PDF 读取为结构化的多模态 parts（非图片/非 PDF 文件会回退到 `Read`）。大小限制：图片 10 MB，PDF 全量 20 MB，PDF 分页 100 MB（单次请求最多 20 页）。
 - **`Write(ctx, req)`** - 创建新文件（如果存在则失败）
 - **`Edit(ctx, req)`** - 在文件中搜索和替换
 - **`GrepRaw(ctx, req)`** - 在文件中搜索模式
