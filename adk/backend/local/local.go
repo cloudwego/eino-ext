@@ -18,25 +18,51 @@ package local
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/cloudwego/eino/schema"
+	"github.com/gen2brain/go-fitz"
 )
 
 const defaultRootPath = "/"
+
+const (
+	maxImageSizeMB    = 10
+	maxPDFSizeMB      = 20
+	maxPagedPDFSizeMB = 100
+
+	maxImageSize    = maxImageSizeMB * 1024 * 1024
+	maxPDFSize      = maxPDFSizeMB * 1024 * 1024
+	maxPagedPDFSize = maxPagedPDFSizeMB * 1024 * 1024
+
+	maxPDFPagesPerRequest = 20
+
+	// defaultPDFRenderDPI: 150 DPI balances readability and file size — typical screen is 72-96 DPI,
+	// 150 gives ~2x sharpness while keeping PNG sizes manageable for API transport.
+	defaultPDFRenderDPI = 150.0
+)
+
+// errFileTooLarge signals that a size check rejected a file because its size
+// exceeded the caller-supplied maxBytes. Used by both checkFileSize (stat
+// only) and readFileBytes (stat + ReadFile). Use errors.Is to detect it and
+// wrap with additional context (e.g. suggesting the 'pages' parameter for PDFs).
+var errFileTooLarge = errors.New("file exceeds max allowed size")
 
 type Config struct {
 	ValidateCommand func(string) error
@@ -158,6 +184,356 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 	return &filesystem.FileContent{
 		Content: strings.TrimSuffix(result.String(), "\n"),
 	}, nil
+}
+
+// MultiModalRead reads file content with multimodal support for images and PDFs.
+// For non-image/non-PDF files, it delegates to the standard Read method.
+//
+// Size limits (enforced up-front via os.Stat; a secondary length check after
+// ReadFile guards the images / non-paged PDF paths):
+//   - image: 10 MB (maxImageSize)
+//   - PDF full read (no 'pages' param): 20 MB (maxPDFSize)
+//   - PDF paged read (with 'pages' param): 100 MB (maxPagedPDFSize), max 20 pages per request (maxPDFPagesPerRequest)
+//
+// PDF rendering relies on go-fitz (MuPDF via purego/ffi, no classic CGO).
+// If build fails due to missing MuPDF libs, install them:
+//   - macOS:  brew install mupdf
+//   - Linux(Ubuntu/Debian): apt-get install -y libmupdf-dev
+//   - Linux(CentOS/RHEL):   yum install -y mupdf-devel
+func (s *Local) MultiModalRead(ctx context.Context, req *filesystem.MultiModalReadRequest) (*filesystem.MultiFileContent, error) {
+	path := filepath.Clean(req.FilePath)
+	ext := strings.ToLower(filepath.Ext(path))
+
+	// If the file is not an image or PDF, delegate to the standard Read method.
+	if !isImageExt(ext) && !isPDFExt(ext) {
+		content, err := s.Read(ctx, &req.ReadRequest)
+		if err != nil {
+			return nil, err
+		}
+		return &filesystem.MultiFileContent{
+			FileContent: content,
+		}, nil
+	}
+
+	// Image branch.
+	if isImageExt(ext) {
+		data, err := readFileBytes(path, maxImageSize)
+		if err != nil {
+			if errors.Is(err, errFileTooLarge) {
+				return nil, fmt.Errorf("%w; image size limit is %dMB, please compress or downsample the image before reading", err, maxImageSizeMB)
+			}
+			return nil, fmt.Errorf("failed to read file bytes: %w", err)
+		}
+		mime := detectImageMIME(data)
+		if mime == "" {
+			return nil, fmt.Errorf("file %s has image extension but content is not a recognized image format", path)
+		}
+		return &filesystem.MultiFileContent{
+			Parts: []filesystem.FileContentPart{newImageContentPart(mime, data)},
+		}, nil
+	}
+
+	// PDF branch — fail fast on offline validations before reading bytes or opening the doc.
+	paged := req.Pages != ""
+	var pagedStart, pagedEnd int
+	if paged {
+		var err error
+		pagedStart, pagedEnd, err = parsePagesParam(req.Pages)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Non-paged: must return the raw PDF bytes, so ReadFile is unavoidable.
+	if !paged {
+		data, err := readFileBytes(path, maxPDFSize)
+		if err != nil {
+			if errors.Is(err, errFileTooLarge) {
+				return nil, fmt.Errorf("%w; PDF full-read size limit is %dMB, use the 'pages' parameter to read page ranges (limit raised to %dMB)", err, maxPDFSizeMB, maxPagedPDFSizeMB)
+			}
+			return nil, fmt.Errorf("failed to read file bytes: %w", err)
+		}
+		if !isPDFBytes(data) {
+			return nil, fmt.Errorf("file %s has .pdf extension but content is not a valid PDF", path)
+		}
+		return &filesystem.MultiFileContent{
+			Parts: []filesystem.FileContentPart{
+				{
+					Type:     filesystem.FileContentPartTypePDF,
+					MIMEType: "application/pdf",
+					Data:     data,
+				},
+			},
+		}, nil
+	}
+
+	// Paged: stat-check size and peek magic header up-front, then let go-fitz read pages
+	// directly from disk (avoids loading up to 100MB into memory).
+	if err := checkFileSize(path, maxPagedPDFSize); err != nil {
+		if errors.Is(err, errFileTooLarge) {
+			return nil, fmt.Errorf("%w; paged PDF size limit is %dMB, the file is too large even for paged reading", err, maxPagedPDFSizeMB)
+		}
+		return nil, err
+	}
+	head, err := peekFileHead(path, 5)
+	if err != nil {
+		return nil, fmt.Errorf("failed to peek file head: %w", err)
+	}
+	if !isPDFBytes(head) {
+		return nil, fmt.Errorf("file %s has .pdf extension but content is not a valid PDF", path)
+	}
+
+	doc, err := fitz.New(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open PDF %s: %w", path, err)
+	}
+	defer doc.Close()
+
+	totalPages := doc.NumPage()
+	if totalPages == 0 {
+		return nil, fmt.Errorf("file %s has 0 pages, cannot read", path)
+	}
+
+	if pagedStart > totalPages {
+		return nil, fmt.Errorf("start page %d exceeds total page count %d (valid range: 1-%d) for file %s (pages=%q); adjust the 'pages' parameter accordingly", pagedStart, totalPages, totalPages, path, req.Pages)
+	}
+	// Keep clamp to allow read-to-end style requests like "1-100" on short PDFs;
+	// surface a warn so the caller can notice the mismatch.
+	if pagedEnd > totalPages {
+		log.Printf("[WARN] MultiModalRead: end page %d exceeds total pages %d for %s (pages=%q), clamped to %d", pagedEnd, totalPages, path, req.Pages, totalPages)
+		pagedEnd = totalPages
+	}
+	parts, err := renderPDFPagesToImages(ctx, doc, pagedStart, pagedEnd, path)
+	if err != nil {
+		return nil, err
+	}
+	return &filesystem.MultiFileContent{Parts: parts}, nil
+}
+
+// parsePagesParam parses and validates the pages parameter format.
+// It only enforces syntax rules and the per-request page-count ceiling
+// (maxPDFPagesPerRequest); it does NOT know about the actual PDF page count,
+// so callers must clamp against totalPages after opening the document.
+//
+// Supported formats:
+//   - "1"   → single page
+//   - "1-3" → inclusive range
+//
+// Open-ended ranges like "1-" are rejected; an explicit end page is required.
+// Returned start, end are 1-based inclusive.
+func parsePagesParam(pages string) (start, end int, err error) {
+	startStr, endStr, hasRange, err := splitPagesRange(pages)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	start, err = strconv.Atoi(startStr)
+	if err != nil || start < 1 {
+		return 0, 0, fmt.Errorf("invalid start page in pages parameter: %q", pages)
+	}
+
+	if !hasRange {
+		return start, start, nil
+	}
+
+	end, err = strconv.Atoi(endStr)
+	if err != nil || end < 1 {
+		return 0, 0, fmt.Errorf("invalid end page in pages parameter: %q", pages)
+	}
+
+	if err := validatePagesRange(start, end, pages); err != nil {
+		return 0, 0, err
+	}
+	return start, end, nil
+}
+
+// splitPagesRange splits the raw pages string by '-' and handles whitespace
+// plus the empty/open-ended cases. It does not parse numbers.
+func splitPagesRange(pages string) (startStr, endStr string, hasRange bool, err error) {
+	pages = strings.TrimSpace(pages)
+	if pages == "" {
+		return "", "", false, fmt.Errorf("pages parameter is empty")
+	}
+	parts := strings.SplitN(pages, "-", 2)
+	startStr = strings.TrimSpace(parts[0])
+	if len(parts) == 1 {
+		return startStr, "", false, nil
+	}
+	endStr = strings.TrimSpace(parts[1])
+	if endStr == "" {
+		return "", "", false, fmt.Errorf("open-ended page range is not supported, please specify an end page (max %d pages per request)", maxPDFPagesPerRequest)
+	}
+	return startStr, endStr, true, nil
+}
+
+// validatePagesRange enforces the business rules for a parsed [start, end] range:
+// end must not precede start, and the inclusive length must fit within
+// maxPDFPagesPerRequest. totalPages-based clamping is a caller concern.
+func validatePagesRange(start, end int, pages string) error {
+	if end < start {
+		return fmt.Errorf("end page %d is less than start page %d in pages parameter: %q", end, start, pages)
+	}
+	if end-start+1 > maxPDFPagesPerRequest {
+		return fmt.Errorf("requested %d pages (%d-%d) exceeds the limit of %d pages per request", end-start+1, start, end, maxPDFPagesPerRequest)
+	}
+	return nil
+}
+
+// renderPDFPagesToImages converts the specified page range [start, end] (1-based)
+// from the opened PDF document to PNG images and returns them as FileContentParts.
+// The provided doc is not goroutine-safe; callers must confine it to this invocation.
+// Each iteration checks ctx so long-running renders can be cancelled promptly.
+func renderPDFPagesToImages(ctx context.Context, doc *fitz.Document, start, end int, path string) ([]filesystem.FileContentPart, error) {
+	count := end - start + 1
+	parts := make([]filesystem.FileContentPart, 0, count)
+	for i := start - 1; i < end; i++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		pngData, err := doc.ImagePNG(i, defaultPDFRenderDPI)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert page %d to image for %s: %w", i+1, path, err)
+		}
+		parts = append(parts, newImageContentPart("image/png", pngData))
+	}
+	return parts, nil
+}
+
+// newImageContentPart builds a FileContentPart with image type and the given
+// MIME type and payload.
+func newImageContentPart(mime string, data []byte) filesystem.FileContentPart {
+	return filesystem.FileContentPart{
+		Type:     filesystem.FileContentPartTypeImage,
+		MIMEType: mime,
+		Data:     data,
+	}
+}
+
+// readFileBytes reads all bytes of the file at the given path from the local
+// filesystem, rejecting files larger than maxBytes.
+//
+// Size enforcement:
+//   - Primary: os.Stat size vs. maxBytes, so a multi-hundred-MB file is rejected
+//     without ever being loaded into memory.
+//   - Secondary: a sanity check on len(data) after ReadFile, in case the file
+//     grew between Stat and ReadFile.
+//
+// This helper is only used by paths that need the full payload in memory
+// (images, non-paged PDF). Paged PDF uses checkFileSize + peekFileHead +
+// fitz.New(path) to avoid loading the file at all.
+func readFileBytes(path string, maxBytes int) ([]byte, error) {
+	if err := checkFileSize(path, maxBytes); err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read file: %w", err)
+	}
+
+	if len(data) > maxBytes {
+		return nil, fmt.Errorf("%w: file %s (%d bytes, limit %dMB)", errFileTooLarge, path, len(data), maxBytes/1024/1024)
+	}
+
+	return data, nil
+}
+
+// checkFileSize stats path and returns errFileTooLarge when the file
+// exceeds maxBytes. It also rejects directories; not-exist errors are wrapped
+// so callers can still match them with errors.Is(err, os.ErrNotExist).
+func checkFileSize(path string, maxBytes int) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("file not found: %w", err)
+		}
+		return fmt.Errorf("failed to stat file: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("path %s is a directory, not a file", path)
+	}
+	if info.Size() > int64(maxBytes) {
+		return fmt.Errorf("%w: file %s (%d bytes, limit %dMB)", errFileTooLarge, path, info.Size(), maxBytes/1024/1024)
+	}
+	return nil
+}
+
+// peekFileHead opens path and reads up to n bytes from the start. Returns
+// fewer bytes without error if the file is shorter than n. not-exist errors
+// are wrapped so callers can still match with errors.Is(err, os.ErrNotExist).
+func peekFileHead(path string, n int) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("file not found: %w", err)
+		}
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer f.Close()
+
+	buf := make([]byte, n)
+	read, err := io.ReadFull(f, buf)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return nil, fmt.Errorf("failed to read file head: %w", err)
+	}
+	return buf[:read], nil
+}
+
+// isImageExt checks if the file extension represents an image.
+func isImageExt(ext string) bool {
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif":
+		return true
+	}
+	return false
+}
+
+// isPDFExt checks if the file extension represents a PDF.
+func isPDFExt(ext string) bool {
+	return ext == ".pdf"
+}
+
+// detectImageMIME detects the MIME type from image file bytes using magic number headers.
+// Returns the MIME type string or empty string if not a recognized image.
+// Each branch guards its own minimum length so new formats added later don't
+// have to rely on a shared top-level length check.
+func detectImageMIME(data []byte) string {
+	// PNG: 89 50 4E 47 0D 0A 1A 0A
+	if len(data) >= 8 && bytes.Equal(data[:8], []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}) {
+		return "image/png"
+	}
+
+	// JPEG: FF D8 FF
+	if len(data) >= 3 && bytes.Equal(data[:3], []byte{0xFF, 0xD8, 0xFF}) {
+		return "image/jpeg"
+	}
+
+	// GIF: GIF87a or GIF89a
+	if len(data) >= 6 && (bytes.Equal(data[:6], []byte("GIF87a")) || bytes.Equal(data[:6], []byte("GIF89a"))) {
+		return "image/gif"
+	}
+
+	// BMP: BM
+	if len(data) >= 2 && bytes.Equal(data[:2], []byte("BM")) {
+		return "image/bmp"
+	}
+
+	// WebP: RIFF....WEBP
+	if len(data) >= 12 && bytes.Equal(data[:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")) {
+		return "image/webp"
+	}
+
+	// TIFF: 49 49 2A 00 (little-endian) or 4D 4D 00 2A (big-endian)
+	if len(data) >= 4 && (bytes.Equal(data[:4], []byte{0x49, 0x49, 0x2A, 0x00}) || bytes.Equal(data[:4], []byte{0x4D, 0x4D, 0x00, 0x2A})) {
+		return "image/tiff"
+	}
+
+	return ""
+}
+
+// isPDFBytes checks if the data starts with the PDF magic number (%PDF-).
+func isPDFBytes(data []byte) bool {
+	return len(data) >= 5 && bytes.Equal(data[:5], []byte("%PDF-"))
 }
 
 type rgJSON struct {

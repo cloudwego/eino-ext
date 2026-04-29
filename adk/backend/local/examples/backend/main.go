@@ -18,12 +18,13 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 
-	"github.com/cloudwego/eino/adk/middlewares/filesystem"
+	"github.com/cloudwego/eino/adk/filesystem"
 
 	"github.com/cloudwego/eino-ext/adk/backend/local"
 )
@@ -219,6 +220,50 @@ func main() {
 		for i, f := range globFiles {
 			fmt.Printf("  %d. %s\n", i+1, f.Path)
 		}
+	}
+	fmt.Println()
+
+	// ========================================
+	// Example 8: MultiModalRead
+	// ========================================
+	fmt.Println("Example 8: MultiModalRead (images/PDFs + text fallback)")
+	fmt.Println("---------------------------------------------------------")
+
+	// 8a) Text fallback: .txt is not an image/PDF, so it falls back to Read.
+	textRes, err := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: filePath},
+	})
+	if err != nil {
+		log.Fatalf("✗ Failed MultiModalRead on text: %v", err)
+	}
+	fmt.Println("Text file (fallback to Read):")
+	fmt.Println("─────────────────────────")
+	if textRes.FileContent != nil {
+		fmt.Print(textRes.FileContent.Content)
+	}
+	fmt.Println("\n─────────────────────────")
+
+	// 8b) Image branch: write a 1x1 PNG and read it as multimodal content.
+	// 8-byte PNG signature + IHDR/IDAT/IEND encoding a 1x1 transparent pixel.
+	const onePixelPNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAeImBZsAAAAASUVORK5CYII="
+	pngBytes, err := base64.StdEncoding.DecodeString(onePixelPNGBase64)
+	if err != nil {
+		log.Fatalf("✗ Failed to decode PNG sample: %v", err)
+	}
+	pngPath := filepath.Join(tempDir, "pixel.png")
+	if err := os.WriteFile(pngPath, pngBytes, 0644); err != nil {
+		log.Fatalf("✗ Failed to write PNG sample: %v", err)
+	}
+
+	imgRes, err := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: pngPath},
+	})
+	if err != nil {
+		log.Fatalf("✗ Failed MultiModalRead on png: %v", err)
+	}
+	fmt.Println("PNG image (multimodal):")
+	for i, part := range imgRes.Parts {
+		fmt.Printf("  part %d: type=%s mime=%s bytes=%d\n", i+1, part.Type, part.MIMEType, len(part.Data))
 	}
 	fmt.Println()
 
