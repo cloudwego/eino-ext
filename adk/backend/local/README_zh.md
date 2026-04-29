@@ -16,7 +16,7 @@ go get github.com/cloudwego/eino-ext/adk/backend/local
 import (
     "context"
     "github.com/cloudwego/eino-ext/adk/backend/local"
-    "github.com/cloudwego/eino/adk/middlewares/filesystem"
+    "github.com/cloudwego/eino/adk/filesystem"
 )
 
 // 初始化后端
@@ -42,6 +42,7 @@ content, err := backend.Read(ctx, &filesystem.ReadRequest{
 - **零配置** - 开箱即用，无需设置
 - **直接文件系统访问** - 使用本地性能操作本地文件
 - **完整后端实现** - 支持所有 `filesystem.Backend` 操作
+- **多模态读取** - 为多模态模型返回结构化的图片 / PDF 内容；非图片/PDF 文件自动回退到纯文本 `Read`
 - **路径安全** - 强制使用绝对路径以防止目录遍历
 - **安全写入** - 默认情况下防止意外覆盖文件
 
@@ -92,10 +93,58 @@ backend, _ := local.NewLocalBackend(ctx, &local.Config{
 
 ### 其他方法
 
+- **`MultiModalRead(ctx, req)`** - 读取文件为多模态内容（图片 / PDF）；非图片/PDF 文件会回退到 `Read`。
 - **`Execute(ctx, req)`** - 执行 shell 命令（需要验证）
 - **`ExecuteStreaming(ctx, req)`** - 流式输出执行
 
 **注意：** 所有路径必须是绝对路径。使用 `filepath.Abs()` 转换相对路径。
+
+## MultiModalRead
+
+`MultiModalRead` 以适配多模态模型输入的结构化 Parts 返回文件内容。
+
+支持的文件类型：
+
+- **图片**：`.jpg` / `.jpeg` / `.png` / `.gif` / `.bmp` / `.webp` / `.tiff` / `.tif` — 返回 `image` 类型 Part，MIME 通过 magic number 识别。
+- **PDF**：
+  - 不指定 `Pages`：整个 PDF 作为 `pdf` 类型 Part 原样返回。
+  - 指定 `Pages`（例如 `"1"`、`"1-5"`）：按范围渲染为 PNG（150 DPI），作为 `image` Parts 返回。
+- **其他文件**：回退到 `Read`，内容通过 `MultiFileContent.FileContent` 返回。
+
+大小与页数限制：
+
+| 场景             | 限制                       |
+| ---------------- | -------------------------- |
+| 图片             | 10 MB                      |
+| PDF（全量读取）  | 20 MB                      |
+| PDF（分页读取）  | 100 MB，每次最多 20 页     |
+
+超出限制的文件会通过 `os.Stat` 提前拒绝，返回的错误信息会包含实际大小与限制值。PDF 全量读取超限时，错误信息会提示改用 `Pages` 切换到分页读取。
+
+### PDF 渲染依赖
+
+PDF 分页渲染依赖 [`go-fitz`](https://github.com/gen2brain/go-fitz)，底层通过 `purego`/FFI 调用 MuPDF（不走传统 CGO）。构建/运行机器需要安装原生库：
+
+- macOS：`brew install mupdf`
+- Ubuntu / Debian：`apt-get install -y libmupdf-dev`
+- CentOS / RHEL：`yum install -y mupdf-devel`
+
+### 使用示例
+
+```go
+res, err := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+    ReadRequest: filesystem.ReadRequest{FilePath: "/path/to/page.pdf"},
+    Pages:       "1-3",
+})
+if err != nil {
+    // 处理错误
+}
+for _, part := range res.Parts {
+    // part.Type: "image" | "pdf"
+    // part.MIMEType: "image/png"、"application/pdf" 等
+    // part.Data: 原始字节
+}
+```
 
 ## 安全
 
