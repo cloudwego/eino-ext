@@ -5,7 +5,7 @@ go 1.23.0
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.8.0
+	github.com/cloudwego/eino v0.9.0-alpha.5.0.20260421061526-d720849f2d78
 	github.com/coze-dev/cozeloop-go v0.1.20
 	github.com/coze-dev/cozeloop-go/spec v0.1.8
 	github.com/smartystreets/goconvey v1.8.1

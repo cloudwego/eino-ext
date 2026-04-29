@@ -162,6 +162,18 @@ func injectToolIDNameMapToCtx(ctx context.Context, info *callbacks.RunInfo, inpu
 			ctx = context.WithValue(ctx, consts.CozeLoopToolIDNameMap, toolIDNameMap)
 		}
 	}
+	if info.Component == compose.ComponentOfAgenticToolsNode {
+		message, ok := input.(*schema.AgenticMessage)
+		if ok && message != nil {
+			toolIDNameMap := make(map[string]string)
+			for _, block := range message.ContentBlocks {
+				if block != nil && block.Type == schema.ContentBlockTypeFunctionToolCall && block.FunctionToolCall != nil {
+					toolIDNameMap[block.FunctionToolCall.CallID] = block.FunctionToolCall.Name
+				}
+			}
+			ctx = context.WithValue(ctx, consts.CozeLoopToolIDNameMap, toolIDNameMap)
+		}
+	}
 
 	return ctx
 }

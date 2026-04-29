@@ -19,7 +19,8 @@ package cozeloop
 import "encoding/base64"
 
 const (
-	thoughtSignatureKey = "gemini_thought_signature"
+	thoughtSignatureKey             = "gemini_thought_signature"
+	agenticThoughtSignatureExtraKey = "_eino_ext_agentic_gemini_thought_signature"
 )
 
 // GetThoughtSignatureFromExtra
@@ -35,11 +36,15 @@ const (
 // The returned bool indicates whether thought_signature key exists in Extra.
 // The returned []byte is the thought signature if available
 func GetThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
+	return getThoughtSignatureByKey(extra, thoughtSignatureKey)
+}
+
+func getThoughtSignatureByKey(extra map[string]any, key string) ([]byte, bool) {
 	if extra == nil {
 		return nil, false
 	}
 
-	signature, exists := extra[thoughtSignatureKey]
+	signature, exists := extra[key]
 	if !exists {
 		return nil, false
 	}
@@ -71,7 +76,15 @@ func GetThoughtSignatureFromExtra(extra map[string]any) ([]byte, bool) {
 }
 
 func GetBase64ThoughtSignatureFromExtra(extra map[string]any) string {
-	signBytes, ok := GetThoughtSignatureFromExtra(extra)
+	return getBase64SignatureByKey(extra, thoughtSignatureKey)
+}
+
+func getBase64AgenticThoughtSignatureFromExtra(extra map[string]any) string {
+	return getBase64SignatureByKey(extra, agenticThoughtSignatureExtraKey)
+}
+
+func getBase64SignatureByKey(extra map[string]any, key string) string {
+	signBytes, ok := getThoughtSignatureByKey(extra, key)
 	if !ok {
 		return ""
 	}
