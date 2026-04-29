@@ -20,10 +20,13 @@ import (
 	"context"
 	"testing"
 
+	"fmt"
+
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 	"github.com/smartystreets/goconvey/convey"
 )
 
@@ -136,6 +139,32 @@ func Test_spanTags_set(t *testing.T) {
 
 			// Assert
 			convey.So(result[key], convey.ShouldEqual, value)
+		})
+	})
+}
+
+func Test_getErrorTags(t *testing.T) {
+	ctx := context.Background()
+
+	mockey.PatchConvey("测试 getErrorTags 函数", t, func() {
+		mockey.PatchConvey("普通错误应写入 tracespec.Error", func() {
+			err := fmt.Errorf("some error")
+			tags := getErrorTags(ctx, err)
+
+			convey.So(tags, convey.ShouldNotBeNil)
+			convey.So(tags[tracespec.Error], convey.ShouldEqual, "some error")
+			convey.So(tags[tracespec.Output], convey.ShouldBeNil)
+		})
+
+		mockey.PatchConvey("中断错误应写入 tracespec.Output", func() {
+			mockey.Mock(compose.ExtractInterruptInfo).Return(&compose.InterruptInfo{}, true).Build()
+
+			err := fmt.Errorf("interrupt happened")
+			tags := getErrorTags(ctx, err)
+
+			convey.So(tags, convey.ShouldNotBeNil)
+			convey.So(tags[tracespec.Output], convey.ShouldEqual, "interrupt happened")
+			convey.So(tags[tracespec.Error], convey.ShouldBeNil)
 		})
 	})
 }

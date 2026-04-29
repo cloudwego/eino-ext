@@ -585,7 +585,7 @@ func parseSpanTypeFromComponent(c components.Component) string {
 }
 
 const (
-	spanTypeAgent    = "Agent"
+	spanTypeAgent    = "agent"
 	attrKeyAgentName = "agent_name"
 	attrKeyRunMode   = "run_mode"
 )
