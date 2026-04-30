@@ -18,10 +18,14 @@ package cozeloop
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
@@ -124,6 +128,14 @@ func toJson(v any, bStream bool) string {
 		return fmt.Sprintf("%s", err.Error())
 	}
 	return b
+}
+
+func genAgentRunID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 16)
+	}
+	return hex.EncodeToString(b)
 }
 
 func getGraphNodeLevelFromCtx(ctx context.Context) int64 {

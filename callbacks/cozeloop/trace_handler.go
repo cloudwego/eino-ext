@@ -104,7 +104,10 @@ func (l *einoTracer) OnStart(ctx context.Context, info *callbacks.RunInfo, input
 	l.setSpanContext(ctx, span)
 
 	if info.Component == adk.ComponentOfAgent {
-		span.SetBaggage(ctx, map[string]string{attrKeyAgentName: info.Name})
+		span.SetBaggage(ctx, map[string]string{
+			attrKeyAgentName:  info.Name,
+			attrKeyAgentRunID: genAgentRunID(),
+		})
 	}
 
 	if l.parser != nil {
@@ -208,7 +211,10 @@ func (l *einoTracer) OnStartWithStreamInput(ctx context.Context, info *callbacks
 	l.setSpanContext(ctx, span)
 
 	if info.Component == adk.ComponentOfAgent {
-		span.SetBaggage(ctx, map[string]string{attrKeyAgentName: info.Name})
+		span.SetBaggage(ctx, map[string]string{
+			attrKeyAgentName:  info.Name,
+			attrKeyAgentRunID: genAgentRunID(),
+		})
 	}
 
 	if l.parser != nil {
