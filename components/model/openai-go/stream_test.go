@@ -53,9 +53,9 @@ func TestStreamStateConsume(t *testing.T) {
 		s := newStreamState()
 		msg, done, deltaOnly, err := s.consume(mustJSON[responses.ResponseStreamEventUnion](t, map[string]any{
 			"type":  "response.output_text.delta",
-			"delta": "hel",
+			"delta": "hello",
 		}))
-		if err != nil || done || !deltaOnly || msg == nil || msg.Content != "hel" {
+		if err != nil || done || !deltaOnly || msg == nil || msg.Content != "hello" {
 			t.Fatalf("unexpected text delta result: msg=%#v done=%v deltaOnly=%v err=%v", msg, done, deltaOnly, err)
 		}
 
