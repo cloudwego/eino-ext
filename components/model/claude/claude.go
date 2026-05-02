@@ -495,12 +495,28 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 				Properties: s.Properties,
 				Required:   s.Required,
 			}
+			// Pass through additionalProperties from the JSON Schema if present.
+			// This is required for strict tool use mode on some providers (e.g. Bedrock).
+			if s.AdditionalProperties != nil {
+				apBytes, _ := json.Marshal(s.AdditionalProperties)
+				var ap any
+				if json.Unmarshal(apBytes, &ap) == nil {
+					inputSchema.ExtraFields = map[string]any{"additionalProperties": ap}
+				}
+			}
 		}
 
 		toolParam := &anthropic.ToolParam{
 			Name:        tool.Name,
 			Description: param.NewOpt(tool.Desc),
 			InputSchema: inputSchema,
+		}
+
+		// Support strict tool use via ToolInfo.Extra["strict"] = true.
+		// When enabled, the API guarantees that tool call inputs conform
+		// to the declared JSON Schema exactly (no type coercion).
+		if strict, ok := tool.Extra["strict"].(bool); ok && strict {
+			toolParam.Strict = param.NewOpt(true)
 		}
 
 		if isBreakpointTool(tool) {
