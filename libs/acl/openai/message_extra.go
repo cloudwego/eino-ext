@@ -114,8 +114,11 @@ func setRequestID(msg *schema.Message, ID string) {
 }
 
 func GetRequestID(msg *schema.Message) string {
-	reqID, _ := getMsgExtraValue[openaiRequestID](msg, keyOfRequestID)
-	return string(reqID)
+	if reqID, ok := getMsgExtraValue[openaiRequestID](msg, keyOfRequestID); ok {
+		return string(reqID)
+	}
+	s, _ := getMsgExtraValue[string](msg, keyOfRequestID)
+	return s
 }
 
 func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {
