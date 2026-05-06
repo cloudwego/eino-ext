@@ -79,6 +79,7 @@ type eventBodyUnion struct {
 	Span       *SpanEventBody       `json:",inline,omitempty"`
 	Generation *GenerationEventBody `json:",inline,omitempty"`
 	Event      *EventEventBody      `json:",inline,omitempty"`
+	Score      *ScoreEventBody      `json:",inline,omitempty"`
 	Log        *SDKLogEventBody     `json:",inline,omitempty"`
 }
 
@@ -91,6 +92,8 @@ func (e *eventBodyUnion) MarshalJSON() ([]byte, error) {
 		return sonic.Marshal(e.Generation)
 	} else if e.Event != nil {
 		return sonic.Marshal(e.Event)
+	} else if e.Score != nil {
+		return sonic.Marshal(e.Score)
 	}
 	return nil, fmt.Errorf("event body is empty")
 }
@@ -104,6 +107,8 @@ func (e *eventBodyUnion) getTraceID() string {
 		return e.Generation.TraceID
 	} else if e.Event != nil {
 		return e.Event.TraceID
+	} else if e.Score != nil {
+		return e.Score.TraceID
 	}
 	return ""
 }
@@ -115,6 +120,8 @@ func (e *eventBodyUnion) getObservationID() string {
 		return e.Generation.ID
 	} else if e.Event != nil {
 		return e.Event.ID
+	} else if e.Score != nil {
+		return e.Score.ObservationID
 	}
 	return ""
 }
@@ -257,4 +264,14 @@ type SDKLogEventBody struct {
 	Log string `json:"log"`
 }
 
-// TODO: ScoreEvent
+type ScoreEventBody struct {
+	ID            string  `json:"id,omitempty"`
+	TraceID       string  `json:"traceId"`
+	Name          string  `json:"name"`
+	Value         float64 `json:"value"`
+	ObservationID string  `json:"observationId,omitempty"`
+	Comment       string  `json:"comment,omitempty"`
+	DataType      string  `json:"dataType,omitempty"`
+	ConfigID      string  `json:"configId,omitempty"`
+	Environment   string  `json:"environment,omitempty"`
+}
