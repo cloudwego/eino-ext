@@ -32,6 +32,7 @@ const (
 //go:generate mockgen -source=langfuse.go -destination=./mock/langfuse_mock.go -package=mock Langfuse
 type Langfuse interface {
 	CreateTrace(body *TraceEventBody) (string, error)
+	UpdateTrace(body *TraceEventBody) error
 	CreateSpan(body *SpanEventBody) (string, error)
 	EndSpan(body *SpanEventBody) error
 	CreateGeneration(body *GenerationEventBody) (string, error)
@@ -109,6 +110,26 @@ func (l *langfuseIns) CreateTrace(body *TraceEventBody) (string, error) {
 		body.TimeStamp = time.Now()
 	}
 	return body.ID, l.tm.push(&event{
+		ID:   uuid.NewString(),
+		Type: EventTypeTraceCreate,
+		Body: eventBodyUnion{Trace: body},
+	})
+}
+
+// UpdateTrace updates an existing trace in Langfuse
+//
+// Parameters:
+//   - body: The trace event details. ID must be present.
+//
+// Returns:
+//   - error: Any error that occurred during creation
+func (l *langfuseIns) UpdateTrace(body *TraceEventBody) error {
+	// There is no event type named "trace-update", and the only way to update a trace
+	// is to fire an event of type "trace-create" again with the same body id,
+	// while using a separate event id, which will be filled by CreateTrace.
+	//
+	// See https://api.reference.langfuse.com/#tag/ingestion/POST/api/public/ingestion
+	return l.tm.push(&event{
 		ID:   uuid.NewString(),
 		Type: EventTypeTraceCreate,
 		Body: eventBodyUnion{Trace: body},
