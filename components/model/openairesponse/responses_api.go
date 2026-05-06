@@ -70,8 +70,12 @@ type ResponsesAPIConfig struct {
 	// Optional.
 	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
 
-	BuiltinTools    []*schema.ToolInfo `json:"tools,omitempty"`
-	EnableWebSearch bool               `json:"enable_web_search,omitempty"`
+	BuiltinTools    []responses.ToolUnionParam `json:"builtin_tools,omitempty"`
+	EnableWebSearch bool                       `json:"enable_web_search,omitempty"`
+
+	// Reasoning configures reasoning parameters. nil means no reasoning config (model uses default behavior).
+	// Optional.
+	Reasoning *shared.ReasoningParam `json:"reasoning,omitempty"`
 }
 
 // ResponsesAPIChatModel implements the eino ChatModel interface using the OpenAI Responses API.
@@ -88,8 +92,9 @@ type ResponsesAPIChatModel struct {
 	tools           []responses.ToolUnionParam
 	rawTools        []*schema.ToolInfo
 	toolChoice      *schema.ToolChoice
-	builtinTools    []*schema.ToolInfo
+	builtinTools    []responses.ToolUnionParam
 	enableWebSearch bool
+	reasoning       *shared.ReasoningParam
 }
 
 var _ model.ToolCallingChatModel = (*ResponsesAPIChatModel)(nil)
@@ -132,6 +137,7 @@ func NewResponsesAPIChatModel(_ context.Context, config *ResponsesAPIConfig) (*R
 		responseFormat:  config.ResponseFormat,
 		builtinTools:    config.BuiltinTools,
 		enableWebSearch: config.EnableWebSearch,
+		reasoning:       config.Reasoning,
 	}, nil
 }
 
@@ -289,6 +295,7 @@ func (cm *ResponsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 
 	specOptions := model.GetImplSpecificOptions(&responsesAPIOptions{
 		EnableWebSearch: cm.enableWebSearch,
+		BuiltinTools:    cm.builtinTools,
 	}, opts...)
 
 	return options, specOptions, nil
@@ -356,6 +363,9 @@ func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 			},
 		})
 	}
+	if len(cm.builtinTools) > 0 {
+		req.Tools = append(req.Tools, cm.builtinTools...)
+	}
 
 	// Tool choice
 	if options.ToolChoice != nil {
@@ -365,6 +375,12 @@ func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		}
 		req.ToolChoice = tc
 	}
+
+	// Reasoning
+	if cm.reasoning != nil {
+		req.Reasoning = *cm.reasoning
+	}
+
 	return req, nil
 }
 
@@ -404,10 +420,11 @@ func (cm *ResponsesAPIChatModel) buildInputItems(in []*schema.Message) (response
 			}
 
 		case schema.Tool:
-			items = append(items, responses.ResponseInputItemParamOfFunctionCallOutput(
-				msg.ToolCallID,
-				msg.Content,
-			))
+			item, err := cm.buildToolInputItem(msg)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
 
 		default:
 			return nil, fmt.Errorf("unsupported message role: %s", msg.Role)
@@ -443,6 +460,46 @@ func (cm *ResponsesAPIChatModel) buildAssistantInputItem(msg *schema.Message) (*
 	}
 	item := responses.ResponseInputItemParamOfMessage(content, "assistant")
 	return &item, nil
+}
+
+func (cm *ResponsesAPIChatModel) buildToolInputItem(msg *schema.Message) (responses.ResponseInputItemUnionParam, error) {
+	if len(msg.UserInputMultiContent) > 0 {
+		outputItems, err := cm.toFunctionCallOutputItems(msg.UserInputMultiContent)
+		if err != nil {
+			return responses.ResponseInputItemUnionParam{}, err
+		}
+		return responses.ResponseInputItemParamOfFunctionCallOutput(msg.ToolCallID, outputItems), nil
+	}
+
+	return responses.ResponseInputItemParamOfFunctionCallOutput(msg.ToolCallID, msg.Content), nil
+}
+
+func (cm *ResponsesAPIChatModel) toFunctionCallOutputItems(parts []schema.MessageInputPart) (responses.ResponseFunctionCallOutputItemListParam, error) {
+	items := make(responses.ResponseFunctionCallOutputItemListParam, 0, len(parts))
+	for _, part := range parts {
+		switch part.Type {
+		case schema.ChatMessagePartTypeText:
+			items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputText: &responses.ResponseInputTextContentParam{Text: part.Text},
+			})
+		case schema.ChatMessagePartTypeImageURL:
+			if part.Image == nil {
+				return nil, fmt.Errorf("image field must not be nil when type is image_url")
+			}
+			imageURL, err := messagePartCommonToURL(part.Image.MessagePartCommon)
+			if err != nil {
+				return nil, fmt.Errorf("convert tool image failed: %w", err)
+			}
+			items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputImage: &responses.ResponseInputImageContentParam{
+					ImageURL: param.NewOpt(imageURL),
+				},
+			})
+		default:
+			return nil, fmt.Errorf("unsupported content type in tool output: %s", part.Type)
+		}
+	}
+	return items, nil
 }
 
 func (cm *ResponsesAPIChatModel) buildInputContent(msg *schema.Message) (responses.ResponseInputMessageContentListParam, error) {
@@ -626,6 +683,7 @@ func (cm *ResponsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.To
 		if err = json.Unmarshal(b, &paramsMap); err != nil {
 			return nil, fmt.Errorf("unmarshal tool params failed: %w", err)
 		}
+		normalizeToolParametersSchema(paramsMap)
 
 		tools = append(tools, responses.ToolUnionParam{
 			OfFunction: &responses.FunctionToolParam{
@@ -637,6 +695,23 @@ func (cm *ResponsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]responses.To
 		})
 	}
 	return tools, nil
+}
+
+// normalizeToolParametersSchema fixes OpenAI Responses API compatibility:
+// when the schema root is "object" but has no "properties", add an empty object
+// to prevent 400: "object schema missing properties".
+func normalizeToolParametersSchema(paramsMap map[string]any) {
+	if len(paramsMap) == 0 {
+		return
+	}
+	schemaType, _ := paramsMap["type"].(string)
+	if schemaType != "object" {
+		return
+	}
+
+	if _, ok := paramsMap["properties"]; !ok || paramsMap["properties"] == nil {
+		paramsMap["properties"] = map[string]any{}
+	}
 }
 
 func (cm *ResponsesAPIChatModel) toToolChoice(tc schema.ToolChoice, allowedNames []string, tools []responses.ToolUnionParam) (responses.ResponseNewParamsToolChoiceUnion, error) {

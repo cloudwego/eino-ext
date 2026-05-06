@@ -16,6 +16,9 @@
 
 package openairesponse
 
+import "github.com/openai/openai-go/v3/responses"
+
 type responsesAPIOptions struct {
-	EnableWebSearch bool `json:"enable_web_search,omitempty"`
+	EnableWebSearch bool                       `json:"enable_web_search,omitempty"`
+	BuiltinTools    []responses.ToolUnionParam `json:"builtin_tools,omitempty"`
 }
