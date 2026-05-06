@@ -389,6 +389,29 @@ func TestWithTools(t *testing.T) {
 	assert.Equal(t, "test tool name", ncm.(*ChatModel).origTools[0].Name)
 }
 
+func TestToAnthropicToolParam_Strict(t *testing.T) {
+	tools := []*schema.ToolInfo{
+		{
+			Name:  "strict_tool",
+			Desc:  "a tool with strict mode",
+			Extra: map[string]any{"strict": true},
+		},
+		{
+			Name: "normal_tool",
+			Desc: "a tool without strict mode",
+		},
+	}
+	result, err := toAnthropicToolParam(tools)
+	assert.NoError(t, err)
+	assert.Len(t, result, 2)
+
+	// First tool should have strict=true
+	assert.True(t, result[0].OfTool.Strict.Value)
+
+	// Second tool should not have strict set
+	assert.False(t, result[1].OfTool.Strict.Valid())
+}
+
 func TestPopulateContentBlockBreakPoint(t *testing.T) {
 	block := anthropic.NewTextBlock("input")
 	populateContentBlockBreakPoint(block, nil)
