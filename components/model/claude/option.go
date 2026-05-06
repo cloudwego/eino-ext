@@ -28,6 +28,8 @@ type options struct {
 	DisableParallelToolUse *bool
 
 	AutoCacheControl *CacheControl
+
+	ResponseFormat *ResponseFormat
 }
 
 func WithTopK(k int32) model.Option {
@@ -70,5 +72,12 @@ func WithEnableAutoCache(enabled bool) model.Option {
 func WithAutoCacheControl(ctrl *CacheControl) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.AutoCacheControl = ctrl
+	})
+}
+
+// WithResponseFormat sets the response format for structured JSON output.
+func WithResponseFormat(rf *ResponseFormat) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseFormat = rf
 	})
 }
