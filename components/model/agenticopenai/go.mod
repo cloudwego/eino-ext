@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/bytedance/mockey v1.4.1
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.9.0-alpha.14
+	github.com/cloudwego/eino v0.9.0-alpha.18
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/openai/openai-go/v3 v3.29.0

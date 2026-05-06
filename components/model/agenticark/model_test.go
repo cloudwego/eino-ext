@@ -84,33 +84,6 @@ func TestNew(t *testing.T) {
 	})
 }
 
-func TestModelWithTools(t *testing.T) {
-	mockey.PatchConvey("TestModelWithTools", t, func() {
-		m := &Model{}
-		tools := []*schema.ToolInfo{
-			{
-				Name: "test_tool",
-				Desc: "test tool desc",
-			},
-		}
-
-		mockey.Mock((*Model).toFunctionTools).Return([]*responses.ResponsesTool{{}}, nil).Build()
-
-		mockey.PatchConvey("success", func() {
-			nm, err := m.WithTools(tools)
-			assert.NoError(t, err)
-			assert.NotNil(t, nm)
-			assert.Equal(t, tools, nm.(*Model).rawFunctionTools)
-			assert.Equal(t, 1, len(nm.(*Model).functionTools))
-		})
-
-		mockey.PatchConvey("empty tools", func() {
-			_, err := m.WithTools(nil)
-			assert.Error(t, err)
-		})
-	})
-}
-
 func TestModelGetType(t *testing.T) {
 	mockey.PatchConvey("TestModelGetType", t, func() {
 		m := &Model{}

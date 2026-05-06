@@ -257,8 +257,9 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 	}
 
 	s.sw.Send(&model.AgenticCallbackOutput{
-		Message: msg,
-		Config:  s.config,
+		Message:    msg,
+		Config:     s.config,
+		TokenUsage: toModelTokenUsage(meta),
 	}, nil)
 }
 

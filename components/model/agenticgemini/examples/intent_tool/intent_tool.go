@@ -43,8 +43,7 @@ func main() {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
 
-	var cm model.AgenticModel
-	cm, err = agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 		ThinkingConfig: &genai.ThinkingConfig{
@@ -55,7 +54,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
 	}
-	cm, err = cm.WithTools([]*schema.ToolInfo{
+
+	tools := []*schema.ToolInfo{
 		{
 			Name: "book_recommender",
 			Desc: "Recommends books based on user preferences and provides purchase links",
@@ -75,14 +75,11 @@ func main() {
 				},
 			}),
 		},
-	})
-	if err != nil {
-		log.Fatalf("Bind tools error: %v", err)
 	}
 
 	stream, err := cm.Stream(ctx, []*schema.AgenticMessage{
 		schema.UserAgenticMessage("Recommend business books with minimum 4.3 rating and max 350 pages"),
-	})
+	}, model.WithTools(tools))
 	if err != nil {
 		log.Fatalf("Generate error: %v", err)
 	}
@@ -134,7 +131,7 @@ func main() {
 				}),
 			},
 		},
-	})
+	}, model.WithTools(tools))
 	if err != nil {
 		log.Fatalf("Generate error: %v", err)
 	}

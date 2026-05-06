@@ -891,8 +891,29 @@ func (g *Gemini) genInputAndConf(input []*schema.AgenticMessage, opts ...model.O
 
 func convCallbackOutput(message *schema.AgenticMessage, conf *model.AgenticConfig) *model.AgenticCallbackOutput {
 	callbackOutput := &model.AgenticCallbackOutput{
-		Message: message,
-		Config:  conf,
+		Message:    message,
+		Config:     conf,
+		TokenUsage: toModelTokenUsage(message),
 	}
 	return callbackOutput
+}
+
+func toModelTokenUsage(msg *schema.AgenticMessage) *model.TokenUsage {
+	if msg == nil || msg.ResponseMeta == nil || msg.ResponseMeta.TokenUsage == nil {
+		return nil
+	}
+
+	usage := msg.ResponseMeta.TokenUsage
+
+	return &model.TokenUsage{
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
+		CompletionTokens: usage.CompletionTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+		TotalTokens: usage.TotalTokens,
+	}
 }

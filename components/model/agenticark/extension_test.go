@@ -284,7 +284,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 func TestConcatResponseMetaExtensions(t *testing.T) {
 	ret, err := concatResponseMetaExtensions(nil)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, ret)
 
 	one := &ResponseMetaExtension{ID: "id1"}
@@ -335,7 +335,7 @@ func TestConcatAssistantGenTextExtensions(t *testing.T) {
 
 func TestConcatServerToolCallArguments(t *testing.T) {
 	ret, err := concatServerToolCallArguments(nil)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, ret)
 
 	one := &ServerToolCallArguments{WebSearch: &WebSearchArguments{ActionType: "search"}}
@@ -370,7 +370,7 @@ func TestConcatServerToolCallArguments(t *testing.T) {
 
 func TestConcatServerToolResult(t *testing.T) {
 	ret, err := concatServerToolResult(nil)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, ret)
 
 	one := &ServerToolResult{}

@@ -18,7 +18,6 @@ package agenticgemini
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -324,24 +323,6 @@ func (g *Gemini) Stream(ctx context.Context, input []*schema.AgenticMessage, opt
 	return schema.StreamReaderWithConvert(srList[1], func(t *model.AgenticCallbackOutput) (*schema.AgenticMessage, error) {
 		return t.Message, nil
 	}), nil
-}
-
-func (g *Gemini) WithTools(tools []*schema.ToolInfo) (model.AgenticModel, error) {
-	if len(tools) == 0 {
-		return nil, errors.New("no tools to bind")
-	}
-	gTools, err := toGeminiTools(tools)
-	if err != nil {
-		return nil, fmt.Errorf("convert to gemini tools fail: %w", err)
-	}
-
-	ng := *g
-	ng.toolChoice = &schema.AgenticToolChoice{
-		Type: schema.ToolChoiceAllowed,
-	}
-	ng.tools = gTools
-	ng.origTools = tools
-	return &ng, nil
 }
 
 func (g *Gemini) GetType() string          { return "Gemini" }
