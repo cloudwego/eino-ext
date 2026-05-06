@@ -46,3 +46,9 @@ func TestOptions(t *testing.T) {
 	assert.Equal(t, cacheOpt, *opt.cache)
 	assert.Equal(t, arkModel.ThinkingTypeEnabled, opt.thinking.Type)
 }
+
+func TestWithExtraFieldsOption(t *testing.T) {
+	fields := map[string]any{"k": "v"}
+	opt := model.GetImplSpecificOptions(&arkOptions{}, WithExtraFields(fields))
+	assert.Equal(t, fields, opt.extraFields)
+}

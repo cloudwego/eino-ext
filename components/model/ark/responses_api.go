@@ -283,7 +283,7 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 		}
 	}()
 
-	responseObject, err := cm.client.CreateResponses(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	responseObject, err := cm.invokeCreateResponses(ctx, responseReq, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
@@ -350,7 +350,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 		}
 	}()
 
-	responseStreamReader, err := cm.client.CreateResponsesStream(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	responseStreamReader, err := cm.invokeCreateResponsesStream(ctx, responseReq, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
@@ -946,6 +946,33 @@ func (cm *ResponsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 		return nil, nil, err
 	}
 	return options, arkOpts, nil
+}
+
+func extraFieldsToIface(m map[string]any) map[string]interface{} {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+func (cm *ResponsesAPIChatModel) invokeCreateResponses(ctx context.Context, responseReq *responses.ResponsesRequest, spec *arkOptions) (*responses.ResponseObject, error) {
+	h := arkruntime.WithCustomHeaders(spec.customHeaders)
+	if len(spec.extraFields) == 0 {
+		return cm.client.CreateResponses(ctx, responseReq, h)
+	}
+	return cm.client.CreateResponses(ctx, responseReq, h, arkruntime.WithResponsesExtraFields(extraFieldsToIface(spec.extraFields)))
+}
+
+func (cm *ResponsesAPIChatModel) invokeCreateResponsesStream(ctx context.Context, responseReq *responses.ResponsesRequest, spec *arkOptions) (*utils.ResponsesStreamReader, error) {
+	h := arkruntime.WithCustomHeaders(spec.customHeaders)
+	if len(spec.extraFields) == 0 {
+		return cm.client.CreateResponsesStream(ctx, responseReq, h)
+	}
+	return cm.client.CreateResponsesStream(ctx, responseReq, h, arkruntime.WithResponsesExtraFields(extraFieldsToIface(spec.extraFields)))
 }
 
 func (cm *ResponsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.ResponsesTool, error) {
@@ -1712,7 +1739,7 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 		return nil, err
 	}
 
-	responseObject, err := cm.client.CreateResponses(ctx, responseReq)
+	responseObject, err := cm.invokeCreateResponses(ctx, responseReq, specOptions)
 	if err != nil {
 		return nil, err
 	}
