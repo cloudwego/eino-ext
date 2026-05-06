@@ -586,6 +586,40 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 				},
 			},
 			{
+				name: "tool role success",
+				inMsg: &schema.Message{
+					Role: schema.Tool,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: text,
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleTool,
+					MultiContent: []openai.ChatMessagePart{
+						{
+							Type: openai.ChatMessagePartTypeText,
+							Text: text,
+						},
+					},
+				},
+			},
+			{
+				name: "unsupported role",
+				inMsg: &schema.Message{
+					Role: schema.System,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: text,
+						},
+					},
+				},
+				wantErr: true,
+			},
+			{
 				name: "unsupported type",
 				inMsg: &schema.Message{
 					Role: schema.User,

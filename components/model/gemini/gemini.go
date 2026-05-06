@@ -638,9 +638,11 @@ func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInp
 		switch input.Type {
 		case schema.ChatMessagePartTypeText:
 			if text != nil {
-				return nil, fmt.Errorf("multi-modal tool result only allows one text part, parts: %+v", inputs)
+				tmp := *text + input.Text
+				text = &tmp
+			} else {
+				text = &input.Text
 			}
-			text = &input.Text
 
 		case schema.ChatMessagePartTypeImageURL:
 			if input.Image == nil {

@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/meguminnnnnnnnn/go-openai"
 
@@ -388,10 +389,9 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 // It processes various message parts like text, images, and audio, converting them into
 // the format expected by the OpenAI API.
 func buildMessageFromUserInputMultiContent(inMsg *schema.Message) (openai.ChatCompletionMessage, error) {
-	if inMsg.Role != schema.User {
-		return openai.ChatCompletionMessage{}, errors.New("invalid role for UserInputMultiContent: role must be 'user'")
+	if inMsg.Role != schema.User && inMsg.Role != schema.Tool {
+		return openai.ChatCompletionMessage{}, fmt.Errorf("user input multi content only support user&tool role, got %s", inMsg.Role)
 	}
-
 	comMessage := openai.ChatCompletionMessage{
 		Role:       toOpenAIRole(inMsg.Role),
 		Content:    inMsg.Content,
@@ -1186,11 +1186,15 @@ func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) 
 	if extra == nil {
 		return
 	}
+
 	for _, key := range otherReasoningKeys {
-		if reasoningRawMessage, ok := extra[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
-			msg.ReasoningContent = string(reasoningRawMessage)
-			setReasoningContent(msg, string(reasoningRawMessage))
-			break
+		if reasoningRawMessage, ok := extra[key]; ok {
+			var reasoningContent string
+			if err := sonic.Unmarshal(reasoningRawMessage, &reasoningContent); err == nil && reasoningContent != "" {
+				msg.ReasoningContent = reasoningContent
+				setReasoningContent(msg, reasoningContent)
+				break
+			}
 		}
 	}
 }

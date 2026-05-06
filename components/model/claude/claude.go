@@ -107,8 +107,12 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		// Use direct Anthropic API
 		var opts []option.RequestOption
 
-		opts = append(opts, option.WithAPIKey(config.APIKey))
-
+		if config.APIKey != "" {
+			opts = append(opts, option.WithAPIKey(config.APIKey))
+		}
+		if config.AuthToken != "" {
+			opts = append(opts, option.WithAuthToken(config.AuthToken))
+		}
 		if config.BaseURL != nil {
 			opts = append(opts, option.WithBaseURL(*config.BaseURL))
 		}
@@ -125,7 +129,11 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, option.WithJSONSet(key, value))
 		}
 
-		cli = anthropic.NewClient(opts...)
+		if hasDirectAnthropicConfigAuth(config) {
+			cli = newDirectAnthropicClient(opts...)
+		} else {
+			cli = anthropic.NewClient(opts...)
+		}
 	}
 
 	// Auto-detect model from config or environment variable
@@ -200,10 +208,14 @@ type Config struct {
 	// Optional. Example: "https://custom-claude-api.example.com"
 	BaseURL *string
 
-	// APIKey is your Anthropic API key
+	// APIKey is your Anthropic API key for direct Anthropic API access.
 	// Obtain from: https://console.anthropic.com/account/keys
-	// Required
+	// Optional when AuthToken is set.
 	APIKey string
+
+	// AuthToken is your Anthropic auth token for direct Anthropic API access.
+	// Optional when APIKey is set.
+	AuthToken string
 
 	// Model specifies which Claude model to use.
 	// If not set, auto-detected from ANTHROPIC_MODEL environment variable.
@@ -267,6 +279,26 @@ type ChatModel struct {
 	origTools              []*schema.ToolInfo
 	toolChoice             *schema.ToolChoice
 	disableParallelToolUse *bool
+}
+
+func hasDirectAnthropicConfigAuth(config *Config) bool {
+	return config.APIKey != "" || config.AuthToken != ""
+}
+
+func newDirectAnthropicClient(opts ...option.RequestOption) (r anthropic.Client) {
+	defaults := []option.RequestOption{option.WithEnvironmentProduction()}
+	if o, ok := os.LookupEnv("ANTHROPIC_BASE_URL"); ok {
+		defaults = append(defaults, option.WithBaseURL(o))
+	}
+	opts = append(defaults, opts...)
+
+	r = anthropic.Client{Options: opts}
+	r.Completions = anthropic.NewCompletionService(opts...)
+	r.Messages = anthropic.NewMessageService(opts...)
+	r.Models = anthropic.NewModelService(opts...)
+	r.Beta = anthropic.NewBetaService(opts...)
+
+	return
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
