@@ -2,6 +2,8 @@
 
 All ChatModel implementations implement `ToolCallingChatModel` from `github.com/cloudwego/eino/components/model`.
 
+Common providers in `eino-ext` include `openai`, `atlascloud`, `deepseek`, `openrouter`, `qwen`, `claude`, `gemini`, `ark`, and `ollama`.
+
 ## Interfaces
 
 ```go
