@@ -513,6 +513,10 @@ partsLoop:
 				Type: openai.ChatMessagePartTypeText,
 				Text: part.Text,
 			})
+		case schema.ChatMessagePartTypeReasoning:
+			if part.Reasoning != nil {
+				comMessage.ReasoningContent = part.Reasoning.Text
+			}
 		case schema.ChatMessagePartTypeAudioURL:
 			audioID, ok := getMessageOutputAudioID(part.Audio)
 			if !ok {
@@ -753,9 +757,33 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
+	outMsg, err = buildGenerateResponse(resp, c.config)
+	if err != nil {
+		return nil, err
+	}
+
+	if specOptions.ResponseMessageModifier != nil {
+		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to modify response message: %w", err)
+		}
+	}
+
+	callbacks.OnEnd(ctx, &model.CallbackOutput{
+		Message:    outMsg,
+		Config:     cbInput.Config,
+		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
+	})
+
+	return outMsg, nil
+}
+
+func buildGenerateResponse(resp openai.ChatCompletionResponse, config *Config) (*schema.Message, error) {
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("received empty choices from OpenAI API response")
 	}
+
+	var outMsg *schema.Message
 
 	for _, choice := range resp.Choices {
 		if choice.Index != 0 {
@@ -783,9 +811,12 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
-			mimeType, ok := audioFormat2MimeTypes[c.config.Audio.Format]
+			if config.Audio == nil {
+				return nil, fmt.Errorf("audio config must be set when audio data is present")
+			}
+			mimeType, ok := audioFormat2MimeTypes[config.Audio.Format]
 			if !ok {
-				return nil, fmt.Errorf("audio mime type not found for config audio format %v", c.config.Audio.Format)
+				return nil, fmt.Errorf("audio mime type not found for config audio format %v", config.Audio.Format)
 			}
 
 			messageOutputPart := schema.MessageOutputPart{
@@ -815,19 +846,6 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 	}
 
 	setRequestID(outMsg, resp.ID)
-
-	if specOptions.ResponseMessageModifier != nil {
-		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to modify response message: %w", err)
-		}
-	}
-
-	callbacks.OnEnd(ctx, &model.CallbackOutput{
-		Message:    outMsg,
-		Config:     cbInput.Config,
-		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
-	})
 
 	return outMsg, nil
 }
