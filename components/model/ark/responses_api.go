@@ -652,7 +652,6 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 						{Text: msg.ReasoningContent},
 					},
 				}}})
-
 			}
 
 			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
@@ -1430,6 +1429,16 @@ func convUserInputMultiContentToContentItems(parts []schema.MessageInputPart) ([
 			}
 			items = append(items, item)
 
+		case schema.ChatMessagePartTypeAudioURL:
+			if part.Audio == nil {
+				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL")
+			}
+			item, err := convMsgInputAudioToResponseContentItem(part.Audio)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+
 		default:
 			return nil, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
 		}
@@ -1476,6 +1485,25 @@ func convMsgInputVideoToResponseContentItem(video *schema.MessageInputVideo) (*r
 	return &responses.ContentItem{
 		Union: &responses.ContentItem_Video{
 			Video: contentItemVideo,
+		},
+	}, nil
+
+}
+
+func convMsgInputAudioToResponseContentItem(audio *schema.MessageInputAudio) (*responses.ContentItem, error) {
+	audioURL, err := convMessagePartCommonToURL(audio.MessagePartCommon)
+	if err != nil {
+		return nil, fmt.Errorf("convert message input audio failed err: %w", err)
+	}
+
+	contentItemAudio := &responses.ContentItemAudio{
+		Type:     responses.ContentItemType_input_audio,
+		AudioUrl: audioURL,
+	}
+
+	return &responses.ContentItem{
+		Union: &responses.ContentItem_Audio{
+			Audio: contentItemAudio,
 		},
 	}, nil
 
