@@ -23,6 +23,7 @@ import (
 	"io"
 	"log"
 	"runtime/debug"
+	"strings"
 
 	"github.com/eino-contrib/jsonschema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
@@ -428,6 +429,52 @@ func runeSlice2int64(in []rune) []int64 {
 	return ret
 }
 
+// audioFormatFromMIME derives the ark SDK audio Format field from a MIME type.
+// Examples: "audio/mp3" -> "mp3", "audio/wav" -> "wav",
+// "audio/mpeg; codecs=mp3" -> "mpeg" (RFC 2045 parameters are stripped).
+// Returns input as-is when it is empty or does not carry the "audio/" prefix.
+func audioFormatFromMIME(mime string) string {
+	if mime == "" {
+		return ""
+	}
+	if idx := strings.IndexByte(mime, ';'); idx >= 0 {
+		mime = mime[:idx]
+	}
+	mime = strings.TrimSpace(mime)
+	return strings.TrimPrefix(mime, "audio/")
+}
+
+// validateMessagePartCommon validates the URL / Base64Data branching rules
+// shared by audio, image and video parts. partName is interpolated into error
+// messages (e.g., "audio", "image"). It returns the chosen raw value (URL or
+// raw base64), a flag indicating whether Base64Data was used, and an error
+// when neither field is provided or the input is malformed. The caller is
+// responsible for mapping the raw value into the SDK field expected by the
+// target API (e.g., wrapping base64 into a data URL for image/video, or
+// keeping it raw for audio).
+func validateMessagePartCommon(c schema.MessagePartCommon, partName string) (raw string, isBase64 bool, err error) {
+	if c.URL != nil && *c.URL != "" {
+		return *c.URL, false, nil
+	}
+	if c.Base64Data != nil && *c.Base64Data != "" {
+		if strings.HasPrefix(*c.Base64Data, "data:") {
+			return "", true, fmt.Errorf("%s Base64Data must be a raw base64 string (use Base64Data + MIMEType separately, not a 'data:' URL)", partName)
+		}
+		if c.MIMEType == "" {
+			return "", true, fmt.Errorf("%s part must have MIMEType when using Base64Data", partName)
+		}
+		return *c.Base64Data, true, nil
+	}
+	return "", false, fmt.Errorf("%s part must contain either a URL or Base64Data", partName)
+}
+
+// toBase64DataURL formats a raw base64 string and MIME type into an RFC 2397
+// data URL. The caller is expected to have validated both inputs (e.g., via
+// validateMessagePartCommon) before invoking it.
+func toBase64DataURL(rawBase64, mime string) string {
+	return fmt.Sprintf("data:%s;base64,%s", mime, rawBase64)
+}
+
 func (cm *completionAPIChatModel) resolveChatResponse(resp model.ChatCompletionResponse) (msg *schema.Message, err error) {
 	if len(resp.Choices) == 0 {
 		return nil, ErrEmptyResponse
@@ -587,7 +634,6 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 			return nil, fmt.Errorf("user input multi content only support user&tool role, got %s", msg.Role)
 		}
 		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.UserInputMultiContent))
-		var err error
 		for _, part := range msg.UserInputMultiContent {
 			switch part.Type {
 			case schema.ChatMessagePartTypeText:
@@ -599,19 +645,13 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 				if part.Image == nil {
 					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
 				}
-				var imageURL string
-				if part.Image.URL != nil && *part.Image.URL != "" {
-					imageURL = *part.Image.URL
-				} else if part.Image.Base64Data != nil && *part.Image.Base64Data != "" {
-					if part.Image.MIMEType == "" {
-						return nil, fmt.Errorf("image part must have MIMEType when using Base64Data")
-					}
-					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					return nil, fmt.Errorf("image part for user input must contain either a URL or Base64Data, but got: %+v", part.Image)
+				raw, isBase64, vErr := validateMessagePartCommon(part.Image.MessagePartCommon, "image")
+				if vErr != nil {
+					return nil, vErr
+				}
+				imageURL := raw
+				if isBase64 {
+					imageURL = toBase64DataURL(raw, part.Image.MIMEType)
 				}
 				parts = append(parts, &model.ChatCompletionMessageContentPart{
 					Type: model.ChatCompletionMessageContentPartTypeImageURL,
@@ -624,19 +664,13 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 				if part.Video == nil {
 					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in user message")
 				}
-				var videoURL string
-				if part.Video.URL != nil && *part.Video.URL != "" {
-					videoURL = *part.Video.URL
-				} else if part.Video.Base64Data != nil && *part.Video.Base64Data != "" {
-					if part.Video.MIMEType == "" {
-						return nil, fmt.Errorf("video part must have MIMEType when using Base64Data")
-					}
-					videoURL, err = ensureDataURL(*part.Video.Base64Data, part.Video.MIMEType)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					return nil, fmt.Errorf("video part for user input must contain either a URL or Base64Data, but got: %+v", part.Video)
+				raw, isBase64, vErr := validateMessagePartCommon(part.Video.MessagePartCommon, "video")
+				if vErr != nil {
+					return nil, vErr
+				}
+				videoURL := raw
+				if isBase64 {
+					videoURL = toBase64DataURL(raw, part.Video.MIMEType)
 				}
 				parts = append(parts, &model.ChatCompletionMessageContentPart{
 					Type: model.ChatCompletionMessageContentPartTypeVideoURL,
@@ -645,6 +679,27 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 						FPS: GetInputVideoFPS(part.Video),
 					},
 				})
+			case schema.ChatMessagePartTypeAudioURL:
+				if part.Audio == nil {
+					return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in user message")
+				}
+				raw, isBase64, vErr := validateMessagePartCommon(part.Audio.MessagePartCommon, "audio")
+				if vErr != nil {
+					return nil, vErr
+				}
+				audioURL := &model.ChatMessageAudioURL{
+					Format: audioFormatFromMIME(part.Audio.MIMEType),
+				}
+				if isBase64 {
+					audioURL.Data = raw
+				} else {
+					audioURL.URL = raw
+				}
+				parts = append(parts, &model.ChatCompletionMessageContentPart{
+					Type:       model.ChatCompletionMessageContentPartTypeAudioURL,
+					InputAudio: audioURL,
+				})
+
 			default:
 				return nil, fmt.Errorf("unsupported chat message part type in user message: %s", part.Type)
 			}
@@ -654,7 +709,6 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 			return nil, fmt.Errorf("assistant gen multi content only support assistant role, got %s", msg.Role)
 		}
 		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.AssistantGenMultiContent))
-		var err error
 		for _, part := range msg.AssistantGenMultiContent {
 			switch part.Type {
 			case schema.ChatMessagePartTypeText:
@@ -666,19 +720,13 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 				if part.Image == nil {
 					return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in assistant message")
 				}
-				var imageURL string
-				if part.Image.URL != nil && *part.Image.URL != "" {
-					imageURL = *part.Image.URL
-				} else if part.Image.Base64Data != nil && *part.Image.Base64Data != "" {
-					if part.Image.MIMEType == "" {
-						return nil, fmt.Errorf("image part must have MIMEType when using Base64Data")
-					}
-					imageURL, err = ensureDataURL(*part.Image.Base64Data, part.Image.MIMEType)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					return nil, fmt.Errorf("image part for assistant output must contain either a URL or Base64Data, but got: %+v", part.Image)
+				raw, isBase64, vErr := validateMessagePartCommon(part.Image.MessagePartCommon, "image")
+				if vErr != nil {
+					return nil, vErr
+				}
+				imageURL := raw
+				if isBase64 {
+					imageURL = toBase64DataURL(raw, part.Image.MIMEType)
 				}
 				parts = append(parts, &model.ChatCompletionMessageContentPart{
 					Type: model.ChatCompletionMessageContentPartTypeImageURL,
@@ -690,19 +738,13 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 				if part.Video == nil {
 					return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in assistant message")
 				}
-				var videoURL string
-				if part.Video.URL != nil && *part.Video.URL != "" {
-					videoURL = *part.Video.URL
-				} else if part.Video.Base64Data != nil && *part.Video.Base64Data != "" {
-					if part.Video.MIMEType == "" {
-						return nil, fmt.Errorf("video part must have MIMEType when using Base64Data")
-					}
-					videoURL, err = ensureDataURL(*part.Video.Base64Data, part.Video.MIMEType)
-					if err != nil {
-						return nil, err
-					}
-				} else {
-					return nil, fmt.Errorf("video part for assistant output must contain either a URL or Base64Data, but got: %+v", part.Video)
+				raw, isBase64, vErr := validateMessagePartCommon(part.Video.MessagePartCommon, "video")
+				if vErr != nil {
+					return nil, vErr
+				}
+				videoURL := raw
+				if isBase64 {
+					videoURL = toBase64DataURL(raw, part.Video.MIMEType)
 				}
 				parts = append(parts, &model.ChatCompletionMessageContentPart{
 					Type: model.ChatCompletionMessageContentPartTypeVideoURL,
