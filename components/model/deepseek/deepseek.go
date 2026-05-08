@@ -45,6 +45,8 @@ const (
 	ResponseFormatTypeJSONObject = "json_object"
 )
 
+type ThinkingConfig = deepseek.ThinkingConfig
+
 const (
 	toolChoiceNone     = "none"     // none means the model will not call any tool and instead generates a message.
 	toolChoiceAuto     = "auto"     // auto means the model can pick between generating a message or calling one or more tools.
@@ -119,6 +121,9 @@ type ChatModelConfig struct {
 
 	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
 	TopLogProbs int `json:"top_log_probs"`
+
+	// ThinkingConfig controls the switch between thinking and non-thinking mode.
+	ThinkingConfig *ThinkingConfig `json:"thinking_config,omitempty"`
 }
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
@@ -527,6 +532,7 @@ func (cm *ChatModel) generateStreamRequest(ctx context.Context, in []*schema.Mes
 		Tools:            origReq.Tools,
 		LogProbs:         origReq.LogProbs,
 		TopLogProbs:      origReq.TopLogProbs,
+		ExtraFields:      origReq.ExtraFields,
 	}
 	return req, cbIn, nil
 }
@@ -543,6 +549,8 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
+	specOpts := model.GetImplSpecificOptions(&deepseekOptions{}, opts...)
+
 	req := &deepseek.ChatCompletionRequest{
 		Model:            *options.Model,
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
@@ -553,6 +561,8 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		FrequencyPenalty: cm.conf.FrequencyPenalty,
 		LogProbs:         cm.conf.LogProbs,
 		TopLogProbs:      cm.conf.TopLogProbs,
+		Thinking:         cm.conf.ThinkingConfig,
+		ExtraFields:      specOpts.extraFields,
 	}
 
 	cbInput := &model.CallbackInput{
@@ -675,17 +685,52 @@ const (
 	roleTool      = "tool"
 )
 
+func concatTextParts[T any](parts []T, extract func(T) (schema.ChatMessagePartType, string)) (string, error) {
+	var texts []string
+	unsupported := make(map[schema.ChatMessagePartType]struct{})
+	for _, part := range parts {
+		typ, text := extract(part)
+		if typ == schema.ChatMessagePartTypeText {
+			texts = append(texts, text)
+		} else {
+			unsupported[typ] = struct{}{}
+		}
+	}
+	if len(unsupported) > 0 {
+		types := make([]string, 0, len(unsupported))
+		for typ := range unsupported {
+			types = append(types, string(typ))
+		}
+		return "", fmt.Errorf("deepseek does not support %s type", strings.Join(types, ", "))
+	}
+	return strings.Join(texts, "\n\n"), nil
+}
+
 func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, error) {
 	if len(m.MultiContent) > 0 {
 		return nil, fmt.Errorf("multi content is not supported in deepseek")
 	}
 
+	content := m.Content
+
 	if len(m.UserInputMultiContent) > 0 {
-		return nil, fmt.Errorf("user input multi content is not supported in deepseek")
+		var err error
+		content, err = concatTextParts(m.UserInputMultiContent, func(p schema.MessageInputPart) (schema.ChatMessagePartType, string) {
+			return p.Type, p.Text
+		})
+		if err != nil {
+			return nil, fmt.Errorf("user input multi content: %w", err)
+		}
 	}
 
 	if len(m.AssistantGenMultiContent) > 0 {
-		return nil, fmt.Errorf("assistan gen multi content is not supported in deepseek")
+		var err error
+		content, err = concatTextParts(m.AssistantGenMultiContent, func(p schema.MessageOutputPart) (schema.ChatMessagePartType, string) {
+			return p.Type, p.Text
+		})
+		if err != nil {
+			return nil, fmt.Errorf("assistant gen multi content: %w", err)
+		}
 	}
 
 	var role string
@@ -703,7 +748,7 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	}
 	ret := &deepseek.ChatCompletionMessage{
 		Role:    role,
-		Content: m.Content,
+		Content: content,
 		// TODO: tool call id
 		Prefix: HasPrefix(m),
 	}
