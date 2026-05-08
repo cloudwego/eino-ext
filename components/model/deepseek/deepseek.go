@@ -45,6 +45,8 @@ const (
 	ResponseFormatTypeJSONObject = "json_object"
 )
 
+type ThinkingConfig = deepseek.ThinkingConfig
+
 const (
 	toolChoiceNone     = "none"     // none means the model will not call any tool and instead generates a message.
 	toolChoiceAuto     = "auto"     // auto means the model can pick between generating a message or calling one or more tools.
@@ -119,6 +121,9 @@ type ChatModelConfig struct {
 
 	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
 	TopLogProbs int `json:"top_log_probs"`
+
+	// ThinkingConfig controls the switch between thinking and non-thinking mode.
+	ThinkingConfig *ThinkingConfig `json:"thinking_config,omitempty"`
 }
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
@@ -527,6 +532,7 @@ func (cm *ChatModel) generateStreamRequest(ctx context.Context, in []*schema.Mes
 		Tools:            origReq.Tools,
 		LogProbs:         origReq.LogProbs,
 		TopLogProbs:      origReq.TopLogProbs,
+		ExtraFields:      origReq.ExtraFields,
 	}
 	return req, cbIn, nil
 }
@@ -543,6 +549,8 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
+	specOpts := model.GetImplSpecificOptions(&deepseekOptions{}, opts...)
+
 	req := &deepseek.ChatCompletionRequest{
 		Model:            *options.Model,
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
@@ -553,6 +561,8 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		FrequencyPenalty: cm.conf.FrequencyPenalty,
 		LogProbs:         cm.conf.LogProbs,
 		TopLogProbs:      cm.conf.TopLogProbs,
+		Thinking:         cm.conf.ThinkingConfig,
+		ExtraFields:      specOpts.extraFields,
 	}
 
 	cbInput := &model.CallbackInput{

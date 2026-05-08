@@ -627,8 +627,10 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 			return fmt.Errorf("convert schema message fail: %w", err)
 		}
 
-		if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
-			hasSetMsgBreakPoint = true
+		if len(msgParam.Content) > 0 {
+			if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
+				hasSetMsgBreakPoint = true
+			}
 		}
 
 		msgParams = append(msgParams, msgParam)
@@ -899,13 +901,11 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
 		}
-	} else {
+	} else if len(message.MultiContent) > 0 {
 		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
 		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
 		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
-		if len(message.MultiContent) > 0 {
-			log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
-		}
+		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:
@@ -947,6 +947,11 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 
 	if len(messageParams) > 0 && isBreakpointMessage(message) {
 		populateContentBlockBreakPoint(messageParams[len(messageParams)-1], getMessageBreakpointCacheControl(message))
+	}
+	if len(messageParams) == 0 {
+		// Compatibility handling for empty messages: an empty message is treated as
+		// one whose Content field is set but contains an empty string.
+		messageParams = append(messageParams, anthropic.NewTextBlock(""))
 	}
 
 	switch message.Role {
