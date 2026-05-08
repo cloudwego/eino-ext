@@ -18,6 +18,7 @@ package cozeloop
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"testing"
 
@@ -696,6 +697,845 @@ func Test_convertModelMessage(t *testing.T) {
 
 			// Assert: 断言转换结果与期望值一致
 			So(result, ShouldResemble, expected)
+		})
+	})
+}
+
+func Test_convertAgenticModelMessage(t *testing.T) {
+	mockey.PatchConvey("测试 convertAgenticModelMessage 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := convertAgenticModelMessage(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("空 ContentBlocks", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result, ShouldNotBeNil)
+			So(result.Role, ShouldEqual, "assistant")
+			So(result.Parts, ShouldBeNil)
+			So(result.ToolCalls, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("Reasoning blocks 用换行拼接", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:      schema.ContentBlockTypeReasoning,
+						Reasoning: &schema.Reasoning{Text: "first thought"},
+					},
+					{
+						Type:      schema.ContentBlockTypeReasoning,
+						Reasoning: &schema.Reasoning{Text: "second thought"},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.ReasoningContent, ShouldEqual, "first thought\nsecond thought")
+		})
+
+		mockey.PatchConvey("Reasoning block 空文本也添加换行", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:      schema.ContentBlockTypeReasoning,
+						Reasoning: &schema.Reasoning{Text: "thought"},
+					},
+					{
+						Type:      schema.ContentBlockTypeReasoning,
+						Reasoning: &schema.Reasoning{Text: ""},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.ReasoningContent, ShouldEqual, "thought\n")
+		})
+
+		mockey.PatchConvey("UserInputText 转换为 text Part", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:          schema.ContentBlockTypeUserInputText,
+						UserInputText: &schema.UserInputText{Text: "hello"},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeText)
+			So(result.Parts[0].Text, ShouldEqual, "hello")
+		})
+
+		mockey.PatchConvey("AssistantGenText 转换为 text Part", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "response text"},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeText)
+			So(result.Parts[0].Text, ShouldEqual, "response text")
+		})
+
+		mockey.PatchConvey("UserInputImage URL 方式", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeUserInputImage,
+						UserInputImage: &schema.UserInputImage{
+							URL:    "https://example.com/img.png",
+							Detail: schema.ImageURLDetailHigh,
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeImage)
+			So(result.Parts[0].ImageURL.URL, ShouldEqual, "https://example.com/img.png")
+			So(result.Parts[0].ImageURL.Detail, ShouldEqual, string(schema.ImageURLDetailHigh))
+		})
+
+		mockey.PatchConvey("UserInputImage Base64 方式", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeUserInputImage,
+						UserInputImage: &schema.UserInputImage{
+							Base64Data: "abc123",
+							MIMEType:   "image/png",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.Parts[0].ImageURL.URL, ShouldEqual, "data:image/png;base64,abc123")
+		})
+
+		mockey.PatchConvey("UserInputAudio 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeUserInputAudio,
+						UserInputAudio: &schema.UserInputAudio{
+							URL: "https://example.com/audio.wav",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeAudio)
+			So(result.Parts[0].AudioURL.URL, ShouldEqual, "https://example.com/audio.wav")
+		})
+
+		mockey.PatchConvey("UserInputVideo 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeUserInputVideo,
+						UserInputVideo: &schema.UserInputVideo{
+							URL: "https://example.com/video.mp4",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeVideo)
+			So(result.Parts[0].VideoURL.URL, ShouldEqual, "https://example.com/video.mp4")
+		})
+
+		mockey.PatchConvey("UserInputFile 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeUserInputFile,
+						UserInputFile: &schema.UserInputFile{
+							URL: "https://example.com/doc.pdf",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeFile)
+			So(result.Parts[0].FileURL.URL, ShouldEqual, "https://example.com/doc.pdf")
+		})
+
+		mockey.PatchConvey("AssistantGenImage 有 MIMEType 的 Base64", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeAssistantGenImage,
+						AssistantGenImage: &schema.AssistantGenImage{
+							Base64Data: "imgdata",
+							MIMEType:   "image/jpeg",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.Parts[0].ImageURL.URL, ShouldEqual, "data:image/jpeg;base64,imgdata")
+		})
+
+		mockey.PatchConvey("AssistantGenImage 无 MIMEType 的 Base64", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeAssistantGenImage,
+						AssistantGenImage: &schema.AssistantGenImage{
+							Base64Data: "rawdata",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.Parts[0].ImageURL.URL, ShouldEqual, "rawdata")
+		})
+
+		mockey.PatchConvey("AssistantGenAudio 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeAssistantGenAudio,
+						AssistantGenAudio: &schema.AssistantGenAudio{
+							URL: "https://example.com/gen.wav",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeAudio)
+			So(result.Parts[0].AudioURL.URL, ShouldEqual, "https://example.com/gen.wav")
+		})
+
+		mockey.PatchConvey("AssistantGenVideo 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeAssistantGenVideo,
+						AssistantGenVideo: &schema.AssistantGenVideo{
+							URL: "https://example.com/gen.mp4",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeVideo)
+			So(result.Parts[0].VideoURL.URL, ShouldEqual, "https://example.com/gen.mp4")
+		})
+
+		mockey.PatchConvey("FunctionToolCall 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeFunctionToolCall,
+						FunctionToolCall: &schema.FunctionToolCall{
+							CallID:    "call_001",
+							Name:      "get_weather",
+							Arguments: `{"city":"Shanghai"}`,
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.ToolCalls), ShouldEqual, 1)
+			So(result.ToolCalls[0].ID, ShouldEqual, "call_001")
+			So(result.ToolCalls[0].Type, ShouldEqual, toolTypeFunction)
+			So(result.ToolCalls[0].Function.Name, ShouldEqual, "get_weather")
+			So(result.ToolCalls[0].Function.Arguments, ShouldEqual, `{"city":"Shanghai"}`)
+		})
+
+		mockey.PatchConvey("ServerToolCall 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeServerToolCall,
+						ServerToolCall: &schema.ServerToolCall{
+							CallID:    "srv_001",
+							Name:      "web_search",
+							Arguments: map[string]any{"query": "test"},
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.ToolCalls), ShouldEqual, 1)
+			So(result.ToolCalls[0].ID, ShouldEqual, "srv_001")
+			So(result.ToolCalls[0].Type, ShouldEqual, toolTypeServerTool)
+			So(result.ToolCalls[0].Function.Name, ShouldEqual, "web_search")
+		})
+
+		mockey.PatchConvey("MCPToolCall 转换", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeMCPToolCall,
+						MCPToolCall: &schema.MCPToolCall{
+							CallID:      "mcp_001",
+							Name:        "mcp_tool",
+							Arguments:   `{"key":"val"}`,
+							ServerLabel: "my_server",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.ToolCalls), ShouldEqual, 1)
+			So(result.ToolCalls[0].ID, ShouldEqual, "mcp_001")
+			So(result.ToolCalls[0].Type, ShouldEqual, toolTypeMCPTool)
+			So(result.ToolCalls[0].Function.Name, ShouldEqual, "mcp_tool")
+			So(result.Metadata["mcp_server_label"], ShouldEqual, "my_server")
+		})
+
+		mockey.PatchConvey("Signature 从 block.Extra 中提取", func() {
+			sigBytes := []byte("test_signature")
+			sigBase64 := base64.StdEncoding.EncodeToString(sigBytes)
+
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:          schema.ContentBlockTypeUserInputText,
+						UserInputText: &schema.UserInputText{Text: "text with sig"},
+						Extra: map[string]any{
+							agenticThoughtSignatureExtraKey: sigBytes,
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.Parts[0].Signature, ShouldEqual, sigBase64)
+		})
+
+		mockey.PatchConvey("Extra 转换为 Metadata", func() {
+			msg := &schema.AgenticMessage{
+				Role:  schema.AgenticRoleTypeUser,
+				Extra: map[string]any{"key1": "val1"},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.Metadata, ShouldNotBeNil)
+			So(result.Metadata["key1"], ShouldEqual, `"val1"`)
+		})
+
+		mockey.PatchConvey("nil block 被跳过", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					nil,
+					{
+						Type:          schema.ContentBlockTypeUserInputText,
+						UserInputText: &schema.UserInputText{Text: "valid"},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Text, ShouldEqual, "valid")
+		})
+
+		mockey.PatchConvey("未知类型的 block 被跳过", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeServerToolCall,
+					},
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "text"},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Text, ShouldEqual, "text")
+		})
+
+		mockey.PatchConvey("混合 blocks 综合测试", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:      schema.ContentBlockTypeReasoning,
+						Reasoning: &schema.Reasoning{Text: "thinking..."},
+					},
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "hello"},
+					},
+					{
+						Type: schema.ContentBlockTypeFunctionToolCall,
+						FunctionToolCall: &schema.FunctionToolCall{
+							CallID: "c1", Name: "fn", Arguments: "{}",
+						},
+					},
+				},
+			}
+			result := convertAgenticModelMessage(msg)
+			So(result.ReasoningContent, ShouldEqual, "thinking...")
+			So(len(result.Parts), ShouldEqual, 1)
+			So(result.Parts[0].Text, ShouldEqual, "hello")
+			So(len(result.ToolCalls), ShouldEqual, 1)
+			So(result.ToolCalls[0].ID, ShouldEqual, "c1")
+		})
+	})
+}
+
+func Test_expandAgenticModelMessage(t *testing.T) {
+	mockey.PatchConvey("测试 expandAgenticModelMessage 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := expandAgenticModelMessage(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("无 FunctionToolResult 返回单条消息", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "response"},
+					},
+				},
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 1)
+			So(result[0].Role, ShouldEqual, "assistant")
+		})
+
+		mockey.PatchConvey("空 ContentBlocks 返回一条带 Role 的空消息", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 1)
+			So(result[0].Role, ShouldEqual, "user")
+		})
+
+		mockey.PatchConvey("FunctionToolResult 拆分为独立 tool 消息", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "before tool"},
+					},
+					{
+						Type: schema.ContentBlockTypeFunctionToolResult,
+						FunctionToolResult: &schema.FunctionToolResult{
+							CallID: "call_1",
+							Name:   "tool_a",
+							Result: "result_a",
+						},
+					},
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "after tool"},
+					},
+				},
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 3)
+
+			So(result[0].Role, ShouldEqual, "assistant")
+			So(len(result[0].Parts), ShouldEqual, 1)
+			So(result[0].Parts[0].Text, ShouldEqual, "before tool")
+
+			So(result[1].Role, ShouldEqual, "tool")
+			So(result[1].ToolCallID, ShouldEqual, "call_1")
+			So(result[1].Name, ShouldEqual, "tool_a")
+			So(result[1].Content, ShouldEqual, "result_a")
+
+			So(result[2].Role, ShouldEqual, "assistant")
+			So(len(result[2].Parts), ShouldEqual, 1)
+			So(result[2].Parts[0].Text, ShouldEqual, "after tool")
+		})
+
+		mockey.PatchConvey("连续多个 FunctionToolResult", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeFunctionToolResult,
+						FunctionToolResult: &schema.FunctionToolResult{
+							CallID: "c1", Name: "t1", Result: "r1",
+						},
+					},
+					{
+						Type: schema.ContentBlockTypeFunctionToolResult,
+						FunctionToolResult: &schema.FunctionToolResult{
+							CallID: "c2", Name: "t2", Result: "r2",
+						},
+					},
+				},
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 2)
+			So(result[0].Role, ShouldEqual, "tool")
+			So(result[0].ToolCallID, ShouldEqual, "c1")
+			So(result[1].Role, ShouldEqual, "tool")
+			So(result[1].ToolCallID, ShouldEqual, "c2")
+		})
+
+		mockey.PatchConvey("ServerToolResult 独立成 tool 消息", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeServerToolResult,
+						ServerToolResult: &schema.ServerToolResult{
+							CallID: "srv_1",
+							Name:   "web_search",
+							Result: map[string]any{"data": "result"},
+						},
+					},
+				},
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 1)
+			So(result[0].Role, ShouldEqual, "tool")
+			So(result[0].ToolCallID, ShouldEqual, "srv_1")
+			So(result[0].Name, ShouldEqual, "web_search")
+			So(result[0].Content, ShouldNotBeEmpty)
+		})
+
+		mockey.PatchConvey("MCPToolResult 独立成 tool 消息", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeMCPToolResult,
+						MCPToolResult: &schema.MCPToolResult{
+							CallID:      "mcp_1",
+							Name:        "mcp_fn",
+							Result:      "mcp_result",
+							ServerLabel: "my_server",
+						},
+					},
+				},
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 1)
+			So(result[0].Role, ShouldEqual, "tool")
+			So(result[0].ToolCallID, ShouldEqual, "mcp_1")
+			So(result[0].Name, ShouldEqual, "mcp_fn")
+			So(result[0].Content, ShouldEqual, "mcp_result")
+		})
+
+		mockey.PatchConvey("不同类型 ToolCall 之间 flush pending", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type: schema.ContentBlockTypeFunctionToolCall,
+						FunctionToolCall: &schema.FunctionToolCall{
+							CallID: "f1", Name: "fn1", Arguments: "{}",
+						},
+					},
+					{
+						Type: schema.ContentBlockTypeMCPToolCall,
+						MCPToolCall: &schema.MCPToolCall{
+							CallID: "m1", Name: "mcp1", Arguments: "{}",
+						},
+					},
+				},
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 2)
+			So(result[0].ToolCalls[0].Type, ShouldEqual, toolTypeFunction)
+			So(result[1].ToolCalls[0].Type, ShouldEqual, toolTypeMCPTool)
+		})
+
+		mockey.PatchConvey("nil block 被跳过", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					nil,
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "text"},
+					},
+				},
+			}
+			result := expandAgenticModelMessage(msg)
+			So(len(result), ShouldEqual, 1)
+		})
+	})
+}
+
+func Test_flatExpandAgenticMessages(t *testing.T) {
+	mockey.PatchConvey("测试 flatExpandAgenticMessages 函数", t, func() {
+		mockey.PatchConvey("空 slice", func() {
+			result := flatExpandAgenticMessages(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("多条消息展开并合并", func() {
+			messages := []*schema.AgenticMessage{
+				{
+					Role: schema.AgenticRoleTypeUser,
+					ContentBlocks: []*schema.ContentBlock{
+						{
+							Type:          schema.ContentBlockTypeUserInputText,
+							UserInputText: &schema.UserInputText{Text: "question"},
+						},
+					},
+				},
+				{
+					Role: schema.AgenticRoleTypeAssistant,
+					ContentBlocks: []*schema.ContentBlock{
+						{
+							Type:             schema.ContentBlockTypeAssistantGenText,
+							AssistantGenText: &schema.AssistantGenText{Text: "answer"},
+						},
+						{
+							Type: schema.ContentBlockTypeFunctionToolResult,
+							FunctionToolResult: &schema.FunctionToolResult{
+								CallID: "c1", Name: "t1", Result: "r1",
+							},
+						},
+					},
+				},
+			}
+			result := flatExpandAgenticMessages(messages)
+			So(len(result), ShouldEqual, 3)
+			So(result[0].Role, ShouldEqual, "user")
+			So(result[1].Role, ShouldEqual, "assistant")
+			So(result[2].Role, ShouldEqual, "tool")
+		})
+	})
+}
+
+func Test_convertAgenticModelInput(t *testing.T) {
+	mockey.PatchConvey("测试 convertAgenticModelInput 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := convertAgenticModelInput(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("正常输入", func() {
+			input := &model.AgenticCallbackInput{
+				Messages: []*schema.AgenticMessage{
+					{
+						Role: schema.AgenticRoleTypeUser,
+						ContentBlocks: []*schema.ContentBlock{
+							{
+								Type:          schema.ContentBlockTypeUserInputText,
+								UserInputText: &schema.UserInputText{Text: "hi"},
+							},
+						},
+					},
+				},
+				Tools: []*schema.ToolInfo{
+					{
+						Name: "test_tool",
+						Desc: "a test tool",
+					},
+				},
+			}
+			result := convertAgenticModelInput(input)
+			So(result, ShouldNotBeNil)
+			So(len(result.Messages), ShouldEqual, 1)
+			So(len(result.Tools), ShouldEqual, 1)
+			So(result.Tools[0].Function.Name, ShouldEqual, "test_tool")
+		})
+	})
+}
+
+func Test_convertAgenticModelOutput(t *testing.T) {
+	mockey.PatchConvey("测试 convertAgenticModelOutput 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := convertAgenticModelOutput(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("正常输出 expand 为多条 choice", func() {
+			output := &model.AgenticCallbackOutput{
+				Message: &schema.AgenticMessage{
+					Role: schema.AgenticRoleTypeAssistant,
+					ContentBlocks: []*schema.ContentBlock{
+						{
+							Type:             schema.ContentBlockTypeAssistantGenText,
+							AssistantGenText: &schema.AssistantGenText{Text: "reply"},
+						},
+						{
+							Type: schema.ContentBlockTypeFunctionToolResult,
+							FunctionToolResult: &schema.FunctionToolResult{
+								CallID: "c1", Name: "fn", Result: "ok",
+							},
+						},
+					},
+				},
+			}
+			result := convertAgenticModelOutput(output)
+			So(result, ShouldNotBeNil)
+			So(len(result.Choices), ShouldEqual, 2)
+			So(result.Choices[0].Index, ShouldEqual, 0)
+			So(result.Choices[0].Message.Role, ShouldEqual, "assistant")
+			So(result.Choices[1].Index, ShouldEqual, 1)
+			So(result.Choices[1].Message.Role, ShouldEqual, "tool")
+		})
+	})
+}
+
+func Test_convertAgenticModelCallOption(t *testing.T) {
+	mockey.PatchConvey("测试 convertAgenticModelCallOption 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := convertAgenticModelCallOption(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("正常配置", func() {
+			config := &model.AgenticConfig{
+				Model:       "test-model",
+				Temperature: 0.7,
+				MaxTokens:   1024,
+				TopP:        0.9,
+			}
+			result := convertAgenticModelCallOption(config)
+			So(result, ShouldNotBeNil)
+			So(result.Temperature, ShouldEqual, float32(0.7))
+			So(result.MaxTokens, ShouldEqual, int64(1024))
+			So(result.TopP, ShouldEqual, float32(0.9))
+		})
+	})
+}
+
+func Test_convertAgenticPromptInput(t *testing.T) {
+	mockey.PatchConvey("测试 convertAgenticPromptInput 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := convertAgenticPromptInput(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("正常输入", func() {
+			input := &prompt.AgenticCallbackInput{
+				Variables: map[string]any{"name": "test"},
+				Templates: []schema.AgenticMessagesTemplate{
+					&schema.AgenticMessage{
+						Role: schema.AgenticRoleTypeUser,
+						ContentBlocks: []*schema.ContentBlock{
+							{
+								Type:          schema.ContentBlockTypeUserInputText,
+								UserInputText: &schema.UserInputText{Text: "{{name}}"},
+							},
+						},
+					},
+				},
+			}
+			result := convertAgenticPromptInput(input)
+			So(result, ShouldNotBeNil)
+			So(len(result.Templates), ShouldEqual, 1)
+			So(len(result.Arguments), ShouldEqual, 1)
+		})
+	})
+}
+
+func Test_convertAgenticPromptOutput(t *testing.T) {
+	mockey.PatchConvey("测试 convertAgenticPromptOutput 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := convertAgenticPromptOutput(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("正常输出使用 expand", func() {
+			output := &prompt.AgenticCallbackOutput{
+				Result: []*schema.AgenticMessage{
+					{
+						Role: schema.AgenticRoleTypeAssistant,
+						ContentBlocks: []*schema.ContentBlock{
+							{
+								Type:             schema.ContentBlockTypeAssistantGenText,
+								AssistantGenText: &schema.AssistantGenText{Text: "result"},
+							},
+							{
+								Type: schema.ContentBlockTypeFunctionToolResult,
+								FunctionToolResult: &schema.FunctionToolResult{
+									CallID: "c1", Name: "fn", Result: "ok",
+								},
+							},
+						},
+					},
+				},
+			}
+			result := convertAgenticPromptOutput(output)
+			So(result, ShouldNotBeNil)
+			So(len(result.Prompts), ShouldEqual, 2)
+			So(result.Prompts[0].Role, ShouldEqual, "assistant")
+			So(result.Prompts[1].Role, ShouldEqual, "tool")
+		})
+	})
+}
+
+type MockAgenticMessagesTemplate struct{}
+
+func (m *MockAgenticMessagesTemplate) Format(ctx context.Context, vs map[string]any, formatType schema.FormatType) ([]*schema.AgenticMessage, error) {
+	return nil, nil
+}
+
+func Test_convertAgenticTemplate(t *testing.T) {
+	mockey.PatchConvey("测试 convertAgenticTemplate 函数", t, func() {
+		mockey.PatchConvey("输入为 nil", func() {
+			result := convertAgenticTemplate(nil)
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("输入不是 *schema.AgenticMessage 类型", func() {
+			result := convertAgenticTemplate(&MockAgenticMessagesTemplate{})
+			So(result, ShouldBeNil)
+		})
+
+		mockey.PatchConvey("输入为 *schema.AgenticMessage，只处理 UserInput 类型", func() {
+			msg := &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					{
+						Type:          schema.ContentBlockTypeUserInputText,
+						UserInputText: &schema.UserInputText{Text: "template text"},
+					},
+					{
+						Type:             schema.ContentBlockTypeAssistantGenText,
+						AssistantGenText: &schema.AssistantGenText{Text: "should be skipped"},
+					},
+					{
+						Type: schema.ContentBlockTypeUserInputImage,
+						UserInputImage: &schema.UserInputImage{
+							URL: "https://example.com/img.png",
+						},
+					},
+				},
+			}
+			result := convertAgenticTemplate(msg)
+			So(result, ShouldNotBeNil)
+			So(result.Role, ShouldEqual, "user")
+			So(len(result.Parts), ShouldEqual, 2)
+			So(result.Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeText)
+			So(result.Parts[0].Text, ShouldEqual, "template text")
+			So(result.Parts[1].Type, ShouldEqual, tracespec.ModelMessagePartTypeImage)
 		})
 	})
 }
