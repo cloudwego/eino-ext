@@ -291,20 +291,20 @@ func getServerToolCallArguments(call *schema.ServerToolCall) (*ServerToolCallArg
 }
 
 func getServerToolResult(res *schema.ServerToolResult) (*ServerToolResult, error) {
-	if res == nil || res.Result == nil {
+	if res == nil || res.Content == nil {
 		return nil, fmt.Errorf("server tool result is nil")
 	}
-	if result, ok := res.Result.(*ServerToolResult); ok {
+	if result, ok := res.Content.(*ServerToolResult); ok {
 		return result, nil
 	}
-	if m, ok := res.Result.(map[string]any); ok {
+	if m, ok := res.Content.(map[string]any); ok {
 		result := &ServerToolResult{}
 		if err := mapstructure.Decode(m, result); err != nil {
 			return nil, fmt.Errorf("failed to decode server tool result: %w", err)
 		}
 		return result, nil
 	}
-	return nil, fmt.Errorf("unexpected type %T for server tool result", res.Result)
+	return nil, fmt.Errorf("unexpected type %T for server tool result", res.Content)
 }
 
 func checkExpectedType(expectedType, chunkType reflect.Type) (reflect.Type, error) {
@@ -319,7 +319,7 @@ func checkExpectedType(expectedType, chunkType reflect.Type) (reflect.Type, erro
 
 func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *ServerToolCallArguments, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool call arguments found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil
@@ -364,18 +364,12 @@ func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *Serv
 			if err != nil {
 				return nil, fmt.Errorf("failed to concat server tool call arguments: %w", err)
 			}
-			if codeInterpreterArguments != nil {
-				return nil, fmt.Errorf("cannot concat multiple code interpreter arguments")
-			}
 			codeInterpreterArguments = chunk.CodeInterpreter
 
 		case chunk.ImageGeneration != nil:
 			expectedType, err = checkExpectedType(expectedType, reflect.TypeOf(chunk.ImageGeneration))
 			if err != nil {
 				return nil, fmt.Errorf("failed to concat server tool call arguments: %w", err)
-			}
-			if imageGenerationArguments != nil {
-				return nil, fmt.Errorf("cannot concat multiple image generation arguments")
 			}
 			imageGenerationArguments = chunk.ImageGeneration
 
@@ -427,7 +421,7 @@ func concatShellArguments(chunks []*ShellArguments) *ShellArguments {
 
 func concatServerToolResult(chunks []*ServerToolResult) (ret *ServerToolResult, err error) {
 	if len(chunks) == 0 {
-		return nil, fmt.Errorf("no server tool result found")
+		return nil, nil
 	}
 	if len(chunks) == 1 {
 		return chunks[0], nil

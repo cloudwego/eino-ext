@@ -126,7 +126,9 @@ func TestToUserRoleInputItems(t *testing.T) {
 			schema.NewContentBlock(&schema.FunctionToolResult{
 				CallID: "c1",
 				Name:   "n1",
-				Result: "r1",
+				Content: []*schema.FunctionToolResultContentBlock{
+					{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "r1"}},
+				},
 			}),
 			schema.NewContentBlock(&schema.MCPToolApprovalResponse{
 				ApprovalRequestID: "ar1",
@@ -255,7 +257,9 @@ func TestFunctionToolResultToInputItem(t *testing.T) {
 	block := &schema.FunctionToolResult{
 		CallID: "c1",
 		Name:   "n1",
-		Result: "r1",
+		Content: []*schema.FunctionToolResultContentBlock{
+			{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "r1"}},
+		},
 	}
 	item, err := functionToolResultToInputItem(block)
 	assert.NoError(t, err)
@@ -406,7 +410,7 @@ func TestMcpToolResultToInputItem(t *testing.T) {
 	res := schema.NewContentBlock(&schema.MCPToolResult{
 		ServerLabel: "server",
 		Name:        "name",
-		Result:      "r",
+		Content:     "r",
 		Error:       &schema.MCPToolCallError{Message: "e"},
 	})
 
@@ -603,7 +607,7 @@ func TestImageProcessToContentBlocks(t *testing.T) {
 
 	assert.NotNil(t, blocks[1].ServerToolResult)
 	assert.Equal(t, string(ServerToolNameImageProcess), blocks[1].ServerToolResult.Name)
-	result := blocks[1].ServerToolResult.Result.(*ServerToolResult)
+	result := blocks[1].ServerToolResult.Content.(*ServerToolResult)
 	assert.NotNil(t, result.ImageProcess)
 	assert.Equal(t, ImageProcessActionPoint, result.ImageProcess.Action.Type)
 	assert.Equal(t, "http://example.com/result.png", result.ImageProcess.Action.ResultImageURL)
@@ -705,7 +709,7 @@ func TestImageProcessToContentBlocks_WithError(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(blocks))
 
-	result := blocks[1].ServerToolResult.Result.(*ServerToolResult)
+	result := blocks[1].ServerToolResult.Content.(*ServerToolResult)
 	assert.NotNil(t, result.ImageProcess.Error)
 	assert.Equal(t, "processing failed", result.ImageProcess.Error.Message)
 }
@@ -1040,7 +1044,7 @@ func TestDoubaoAppCallToContentBlocks(t *testing.T) {
 	assert.Equal(t, DoubaoAppFeature("ai_search"), args.DoubaoApp.Feature)
 
 	assert.NotNil(t, blocks[1].ServerToolResult)
-	result := blocks[1].ServerToolResult.Result.(*ServerToolResult)
+	result := blocks[1].ServerToolResult.Content.(*ServerToolResult)
 	assert.NotNil(t, result.DoubaoApp)
 	assert.Len(t, result.DoubaoApp.Blocks, 4)
 
@@ -1123,7 +1127,7 @@ func TestConvertDoubaoAppSearchResults(t *testing.T) {
 func TestServerToolResultToInputItem_ImageProcess(t *testing.T) {
 	block := schema.NewContentBlock(&schema.ServerToolResult{
 		Name: string(ServerToolNameImageProcess),
-		Result: &ServerToolResult{
+		Content: &ServerToolResult{
 			ImageProcess: &ImageProcessResult{
 				Action: &ImageProcessResultAction{
 					Type:           ImageProcessActionPoint,
@@ -1148,7 +1152,7 @@ func TestServerToolResultToInputItem_ImageProcess(t *testing.T) {
 func TestServerToolResultToInputItem_ImageProcess_WithError(t *testing.T) {
 	block := schema.NewContentBlock(&schema.ServerToolResult{
 		Name: string(ServerToolNameImageProcess),
-		Result: &ServerToolResult{
+		Content: &ServerToolResult{
 			ImageProcess: &ImageProcessResult{
 				Error: &ImageProcessResultError{
 					Message: "processing failed",
@@ -1170,7 +1174,7 @@ func TestServerToolResultToInputItem_ImageProcess_WithError(t *testing.T) {
 func TestServerToolResultToInputItem_DoubaoApp(t *testing.T) {
 	block := schema.NewContentBlock(&schema.ServerToolResult{
 		Name: string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{
+		Content: &ServerToolResult{
 			DoubaoApp: &DoubaoAppResult{
 				Blocks: []*DoubaoAppBlock{
 					{
@@ -1230,8 +1234,8 @@ func TestServerToolResultToInputItem_DoubaoApp(t *testing.T) {
 
 func TestServerToolResultToInputItem_NilResult(t *testing.T) {
 	block := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameImageProcess),
-		Result: nil,
+		Name:    string(ServerToolNameImageProcess),
+		Content: nil,
 	})
 
 	_, err := serverToolResultToInputItem(block)
@@ -1240,8 +1244,8 @@ func TestServerToolResultToInputItem_NilResult(t *testing.T) {
 
 func TestServerToolResultToInputItem_UnknownName(t *testing.T) {
 	block := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   "unknown",
-		Result: &ServerToolResult{},
+		Name:    "unknown",
+		Content: &ServerToolResult{},
 	})
 
 	_, err := serverToolResultToInputItem(block)

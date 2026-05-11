@@ -137,7 +137,18 @@ func main() {
 
 	log.Printf("\n%s\n", concatenated.String())
 
-	resp, err = am.Stream(ctx, append(input, concatenated, schema.FunctionToolResultAgenticMessage(callID, "list_open_orders", "[noodles,soap]")), opts...)
+	resp, err = am.Stream(ctx, append(input, concatenated, &schema.AgenticMessage{
+		Role: schema.AgenticRoleTypeUser,
+		ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.FunctionToolResult{
+				CallID: callID,
+				Name:   "list_open_orders",
+				Content: []*schema.FunctionToolResultContentBlock{
+					{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "[noodles,soap]"}},
+				},
+			}),
+		},
+	}), opts...)
 	if err != nil {
 		log.Fatalf("failed to stream, err: %v", err)
 	}
