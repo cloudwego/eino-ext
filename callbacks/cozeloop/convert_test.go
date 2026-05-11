@@ -1008,7 +1008,6 @@ func Test_convertAgenticModelMessage(t *testing.T) {
 			So(result.ToolCalls[0].ID, ShouldEqual, "mcp_001")
 			So(result.ToolCalls[0].Type, ShouldEqual, toolTypeMCPTool)
 			So(result.ToolCalls[0].Function.Name, ShouldEqual, "mcp_tool")
-			So(result.Metadata["mcp_server_label"], ShouldEqual, "my_server")
 		})
 
 		mockey.PatchConvey("Signature 从 block.Extra 中提取", func() {
@@ -1149,7 +1148,9 @@ func Test_expandAgenticModelMessage(t *testing.T) {
 						FunctionToolResult: &schema.FunctionToolResult{
 							CallID: "call_1",
 							Name:   "tool_a",
-							Result: "result_a",
+							Content: []*schema.FunctionToolResultContentBlock{
+								{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "result_a"}},
+							},
 						},
 					},
 					{
@@ -1168,7 +1169,10 @@ func Test_expandAgenticModelMessage(t *testing.T) {
 			So(result[1].Role, ShouldEqual, "tool")
 			So(result[1].ToolCallID, ShouldEqual, "call_1")
 			So(result[1].Name, ShouldEqual, "tool_a")
-			So(result[1].Content, ShouldEqual, "result_a")
+			So(result[1].Content, ShouldBeEmpty)
+			So(len(result[1].Parts), ShouldEqual, 1)
+			So(result[1].Parts[0].Type, ShouldEqual, tracespec.ModelMessagePartTypeText)
+			So(result[1].Parts[0].Text, ShouldEqual, "result_a")
 
 			So(result[2].Role, ShouldEqual, "assistant")
 			So(len(result[2].Parts), ShouldEqual, 1)
@@ -1182,13 +1186,17 @@ func Test_expandAgenticModelMessage(t *testing.T) {
 					{
 						Type: schema.ContentBlockTypeFunctionToolResult,
 						FunctionToolResult: &schema.FunctionToolResult{
-							CallID: "c1", Name: "t1", Result: "r1",
+							CallID: "c1", Name: "t1", Content: []*schema.FunctionToolResultContentBlock{
+								{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "r1"}},
+							},
 						},
 					},
 					{
 						Type: schema.ContentBlockTypeFunctionToolResult,
 						FunctionToolResult: &schema.FunctionToolResult{
-							CallID: "c2", Name: "t2", Result: "r2",
+							CallID: "c2", Name: "t2", Content: []*schema.FunctionToolResultContentBlock{
+								{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "r2"}},
+							},
 						},
 					},
 				},
@@ -1210,7 +1218,7 @@ func Test_expandAgenticModelMessage(t *testing.T) {
 						ServerToolResult: &schema.ServerToolResult{
 							CallID: "srv_1",
 							Name:   "web_search",
-							Result: map[string]any{"data": "result"},
+							Content: map[string]any{"data": "result"},
 						},
 					},
 				},
@@ -1232,7 +1240,7 @@ func Test_expandAgenticModelMessage(t *testing.T) {
 						MCPToolResult: &schema.MCPToolResult{
 							CallID:      "mcp_1",
 							Name:        "mcp_fn",
-							Result:      "mcp_result",
+							Content:     "mcp_result",
 							ServerLabel: "my_server",
 						},
 					},
@@ -1315,7 +1323,9 @@ func Test_flatExpandAgenticMessages(t *testing.T) {
 						{
 							Type: schema.ContentBlockTypeFunctionToolResult,
 							FunctionToolResult: &schema.FunctionToolResult{
-								CallID: "c1", Name: "t1", Result: "r1",
+								CallID: "c1", Name: "t1", Content: []*schema.FunctionToolResultContentBlock{
+								{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "r1"}},
+							},
 							},
 						},
 					},
@@ -1385,7 +1395,7 @@ func Test_convertAgenticModelOutput(t *testing.T) {
 						{
 							Type: schema.ContentBlockTypeFunctionToolResult,
 							FunctionToolResult: &schema.FunctionToolResult{
-								CallID: "c1", Name: "fn", Result: "ok",
+								CallID: "c1", Name: "fn", Content: []*schema.FunctionToolResultContentBlock{{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "ok"}}},
 							},
 						},
 					},
@@ -1475,7 +1485,7 @@ func Test_convertAgenticPromptOutput(t *testing.T) {
 							{
 								Type: schema.ContentBlockTypeFunctionToolResult,
 								FunctionToolResult: &schema.FunctionToolResult{
-									CallID: "c1", Name: "fn", Result: "ok",
+									CallID: "c1", Name: "fn", Content: []*schema.FunctionToolResultContentBlock{{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "ok"}}},
 								},
 							},
 						},

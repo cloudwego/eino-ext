@@ -1078,8 +1078,8 @@ func (r *streamReceiver) codeInterpreterCodeDeltaEventToContentBlock(ev response
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameCodeInterpreter),
-		Result: result,
+		Name:    string(ServerToolNameCodeInterpreter),
+		Content: result,
 	}, meta)
 
 	setItemID(block, ev.ItemID)
@@ -1115,8 +1115,8 @@ func (r *streamReceiver) imageGenerationPartialImageEventToContentBlock(ev respo
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameImageGeneration),
-		Result: result,
+		Name:    string(ServerToolNameImageGeneration),
+		Content: result,
 	}, meta)
 
 	setItemID(block, ev.ItemID)
