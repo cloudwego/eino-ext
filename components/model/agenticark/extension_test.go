@@ -198,7 +198,7 @@ func TestGetServerToolResult(t *testing.T) {
 	assert.Nil(t, res)
 
 	resWithWrongType := &schema.ServerToolResult{
-		Result: struct{ X string }{X: "v"},
+		Content: struct{ X string }{X: "v"},
 	}
 	res, err = getServerToolResult(resWithWrongType)
 	assert.Error(t, err)
@@ -213,7 +213,7 @@ func TestGetServerToolResult(t *testing.T) {
 		},
 	}
 	resWithCorrectResult := &schema.ServerToolResult{
-		Result: expected,
+		Content: expected,
 	}
 	res, err = getServerToolResult(resWithCorrectResult)
 	assert.NoError(t, err)
@@ -221,7 +221,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 	// map[string]any with image_process
 	resWithMapImageProcess := &schema.ServerToolResult{
-		Result: map[string]any{
+		Content: map[string]any{
 			"image_process": map[string]any{
 				"action": map[string]any{
 					"type":             "point",
@@ -240,7 +240,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 	// map[string]any with image_process error
 	resWithMapImageProcessError := &schema.ServerToolResult{
-		Result: map[string]any{
+		Content: map[string]any{
 			"image_process": map[string]any{
 				"error": map[string]any{
 					"message": "processing failed",
@@ -257,7 +257,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 	// map[string]any with doubao_app
 	resWithMapDoubaoApp := &schema.ServerToolResult{
-		Result: map[string]any{
+		Content: map[string]any{
 			"doubao_app": map[string]any{
 				"blocks": []any{
 					map[string]any{
@@ -284,7 +284,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 func TestConcatResponseMetaExtensions(t *testing.T) {
 	ret, err := concatResponseMetaExtensions(nil)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, ret)
 
 	one := &ResponseMetaExtension{ID: "id1"}
@@ -335,7 +335,7 @@ func TestConcatAssistantGenTextExtensions(t *testing.T) {
 
 func TestConcatServerToolCallArguments(t *testing.T) {
 	ret, err := concatServerToolCallArguments(nil)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, ret)
 
 	one := &ServerToolCallArguments{WebSearch: &WebSearchArguments{ActionType: "search"}}
@@ -370,7 +370,7 @@ func TestConcatServerToolCallArguments(t *testing.T) {
 
 func TestConcatServerToolResult(t *testing.T) {
 	ret, err := concatServerToolResult(nil)
-	assert.Error(t, err)
+	assert.NoError(t, err)
 	assert.Nil(t, ret)
 
 	one := &ServerToolResult{}

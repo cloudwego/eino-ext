@@ -392,8 +392,10 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 					{
 						Type: schema.ContentBlockTypeFunctionToolResult,
 						FunctionToolResult: &schema.FunctionToolResult{
-							Name:   "get_weather",
-							Result: `{"temperature":72,"condition":"sunny"}`,
+							Name: "get_weather",
+							Content: []*schema.FunctionToolResultContentBlock{
+								{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: `{"temperature":72,"condition":"sunny"}`}},
+							},
 						},
 					},
 				},
@@ -425,7 +427,7 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 						Type: schema.ContentBlockTypeServerToolResult,
 						ServerToolResult: &schema.ServerToolResult{
 							Name: ServerToolNameCodeExecution,
-							Result: &ServerToolCallResult{&CodeExecutionResult{
+							Content: &ServerToolCallResult{&CodeExecutionResult{
 								Outcome: OutcomeOK,
 								Output:  "output",
 							}},
@@ -767,7 +769,7 @@ func TestConvAgenticCandidate_Tools(t *testing.T) {
 				assert.Equal(t, schema.ContentBlockTypeServerToolResult, message.ContentBlocks[0].Type)
 				assert.Equal(t, ServerToolNameCodeExecution, message.ContentBlocks[0].ServerToolResult.Name)
 
-				result := message.ContentBlocks[0].ServerToolResult.Result.(*ServerToolCallResult).CodeExecutionResult
+				result := message.ContentBlocks[0].ServerToolResult.Content.(*ServerToolCallResult).CodeExecutionResult
 				assert.Equal(t, OutcomeOK, result.Outcome)
 				assert.Equal(t, "2", result.Output)
 			},

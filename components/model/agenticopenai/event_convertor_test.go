@@ -936,7 +936,7 @@ func TestCodeInterpreterCodeDeltaEventToContentBlock(t *testing.T) {
 	assert.NotNil(t, block.ServerToolResult)
 	assert.Equal(t, string(ServerToolNameCodeInterpreter), block.ServerToolResult.Name)
 
-	result, ok := block.ServerToolResult.Result.(*ServerToolResult)
+	result, ok := block.ServerToolResult.Content.(*ServerToolResult)
 	assert.True(t, ok)
 	assert.NotNil(t, result.CodeInterpreter)
 	assert.Equal(t, "print('hello", result.CodeInterpreter.Code)
@@ -1029,7 +1029,7 @@ func TestImageGenerationPartialImageEventToContentBlock(t *testing.T) {
 	assert.NotNil(t, block.ServerToolResult)
 	assert.Equal(t, string(ServerToolNameImageGeneration), block.ServerToolResult.Name)
 
-	result, ok := block.ServerToolResult.Result.(*ServerToolResult)
+	result, ok := block.ServerToolResult.Content.(*ServerToolResult)
 	assert.True(t, ok)
 	assert.NotNil(t, result.ImageGeneration)
 	assert.Equal(t, "partial_base64_data", result.ImageGeneration.ImageBase64)

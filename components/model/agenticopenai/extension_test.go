@@ -124,7 +124,7 @@ func TestGetServerToolResult(t *testing.T) {
 		mockey.PatchConvey("success", func() {
 			result := &ServerToolResult{}
 			content := &schema.ServerToolResult{
-				Result: result,
+				Content: result,
 			}
 			res, err := getServerToolResult(content)
 			assert.NoError(t, err)
@@ -139,7 +139,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 		mockey.PatchConvey("nil result", func() {
 			content := &schema.ServerToolResult{
-				Result: nil,
+				Content: nil,
 			}
 			res, err := getServerToolResult(content)
 			assert.Error(t, err)
@@ -148,7 +148,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 		mockey.PatchConvey("wrong type", func() {
 			content := &schema.ServerToolResult{
-				Result: "wrong type",
+				Content: "wrong type",
 			}
 			res, err := getServerToolResult(content)
 			assert.Error(t, err)
@@ -157,7 +157,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 		mockey.PatchConvey("map[string]any with web_search", func() {
 			content := &schema.ServerToolResult{
-				Result: map[string]any{
+				Content: map[string]any{
 					"web_search": map[string]any{
 						"action_type": "search",
 						"search": map[string]any{
@@ -180,7 +180,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 		mockey.PatchConvey("map[string]any with code_interpreter", func() {
 			content := &schema.ServerToolResult{
-				Result: map[string]any{
+				Content: map[string]any{
 					"code_interpreter": map[string]any{
 						"code":         "print('hello')",
 						"container_id": "container123",
@@ -207,7 +207,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 		mockey.PatchConvey("map[string]any with image_generation", func() {
 			content := &schema.ServerToolResult{
-				Result: map[string]any{
+				Content: map[string]any{
 					"image_generation": map[string]any{
 						"image_base64": "base64data",
 					},
@@ -222,7 +222,7 @@ func TestGetServerToolResult(t *testing.T) {
 
 		mockey.PatchConvey("map[string]any with shell", func() {
 			content := &schema.ServerToolResult{
-				Result: map[string]any{
+				Content: map[string]any{
 					"shell": map[string]any{
 						"max_output_length": float64(1000),
 						"created_by":        "user1",
@@ -251,7 +251,7 @@ func TestConcatServerToolCallArguments(t *testing.T) {
 	mockey.PatchConvey("concatServerToolCallArguments", t, func() {
 		mockey.PatchConvey("empty chunks", func() {
 			res, err := concatServerToolCallArguments(nil)
-			assert.Error(t, err)
+			assert.NoError(t, err)
 			assert.Nil(t, res)
 		})
 
@@ -298,7 +298,7 @@ func TestConcatServerToolResult(t *testing.T) {
 	mockey.PatchConvey("concatServerToolResult", t, func() {
 		mockey.PatchConvey("empty chunks", func() {
 			res, err := concatServerToolResult(nil)
-			assert.Error(t, err)
+			assert.NoError(t, err)
 			assert.Nil(t, res)
 		})
 

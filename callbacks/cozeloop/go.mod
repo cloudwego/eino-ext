@@ -3,9 +3,9 @@ module github.com/cloudwego/eino-ext/callbacks/cozeloop
 go 1.23.0
 
 require (
-	github.com/bytedance/mockey v1.2.14
+	github.com/bytedance/mockey v1.4.6
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.9.0-alpha.18
+	github.com/cloudwego/eino v0.9.0-alpha.22
 	github.com/coze-dev/cozeloop-go v0.1.20
 	github.com/coze-dev/cozeloop-go/spec v0.1.8
 	github.com/smartystreets/goconvey v1.8.1

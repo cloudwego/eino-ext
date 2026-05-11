@@ -692,16 +692,73 @@ func toolSearchToolResultToInputItem(block *schema.ToolSearchFunctionToolResult)
 }
 
 func functionToolResultToInputItem(block *schema.FunctionToolResult) (item responses.ResponseInputItemUnionParam, err error) {
+	output, err := functionToolResultContentToOutput(block.Content)
+	if err != nil {
+		return item, err
+	}
+
 	item = responses.ResponseInputItemUnionParam{
 		OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
 			CallID: block.CallID,
-			Output: responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
-				OfString: param.NewOpt(block.Result),
-			},
+			Output: output,
 		},
 	}
 
 	return item, nil
+}
+
+func functionToolResultContentToOutput(content []*schema.FunctionToolResultContentBlock) (responses.ResponseInputItemFunctionCallOutputOutputUnionParam, error) {
+	var items responses.ResponseFunctionCallOutputItemListParam
+	for _, block := range content {
+		switch block.Type {
+		case schema.FunctionToolResultContentBlockTypeText:
+			items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputText: &responses.ResponseInputTextContentParam{
+					Text: block.Text.Text,
+				},
+			})
+
+		case schema.FunctionToolResultContentBlockTypeImage:
+			imageURL, err := resolveURL(block.Image.URL, block.Image.Base64Data, block.Image.MIMEType)
+			if err != nil {
+				return responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}, err
+			}
+			imgParam := &responses.ResponseInputImageContentParam{
+				ImageURL: newOpenaiStrOpt(imageURL),
+			}
+			if block.Image.Detail != "" {
+				imgParam.Detail = responses.ResponseInputImageContentDetail(block.Image.Detail)
+			}
+			items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputImage: imgParam,
+			})
+
+		case schema.FunctionToolResultContentBlockTypeFile:
+			fileURL, err := resolveURL(block.File.URL, block.File.Base64Data, block.File.MIMEType)
+			if err != nil {
+				return responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}, err
+			}
+			items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
+				OfInputFile: &responses.ResponseInputFileContentParam{
+					FileURL:  newOpenaiStrOpt(fileURL),
+					Filename: newOpenaiStrOpt(block.File.Name),
+				},
+			})
+
+		default:
+			return responses.ResponseInputItemFunctionCallOutputOutputUnionParam{},
+				fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
+		}
+	}
+
+	if len(items) == 0 {
+		return responses.ResponseInputItemFunctionCallOutputOutputUnionParam{},
+			fmt.Errorf("function tool result content is empty")
+	}
+
+	return responses.ResponseInputItemFunctionCallOutputOutputUnionParam{
+		OfResponseFunctionCallOutputItemArray: items,
+	}, nil
 }
 
 func assistantGenTextToInputItem(block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
@@ -1405,7 +1462,7 @@ func mcpToolResultToInputItem(block *schema.ContentBlock) (item responses.Respon
 			ServerLabel: content.ServerLabel,
 			Name:        content.Name,
 			Error:       newOpenaiStrOpt(errorMsg),
-			Output:      newOpenaiStrOpt(content.Result),
+			Output:      newOpenaiStrOpt(content.Content),
 			Status:      status,
 		},
 	}
@@ -1724,8 +1781,8 @@ func webSearchToContentBlocks(item responses.ResponseFunctionWebSearch) (blocks 
 	}
 
 	resBlock := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameWebSearch),
-		Result: res,
+		Name:    string(ServerToolNameWebSearch),
+		Content: res,
 	})
 	setItemID(resBlock, item.ID)
 	if s := string(item.Status); s != "" {
@@ -1784,7 +1841,7 @@ func toolSearchToolResultToContentBlock(item responses.ResponseToolSearchOutputI
 	}
 	block := schema.NewContentBlock(&schema.ServerToolResult{
 		CallID: item.CallID,
-		Result: &ServerToolResult{
+		Content: &ServerToolResult{
 			ToolSearch: &ToolSearchResult{
 				Tools: tools,
 			},
@@ -1847,8 +1904,8 @@ func fileSearchToContentBlocks(item responses.ResponseFileSearchToolCall) (block
 	}
 
 	resBlock := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameFileSearch),
-		Result: res,
+		Name:    string(ServerToolNameFileSearch),
+		Content: res,
 	})
 	setItemID(resBlock, item.ID)
 	if s := string(item.Status); s != "" {
@@ -1907,8 +1964,8 @@ func codeInterpreterToContentBlocks(item responses.ResponseCodeInterpreterToolCa
 	}
 
 	resBlock := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameCodeInterpreter),
-		Result: res,
+		Name:    string(ServerToolNameCodeInterpreter),
+		Content: res,
 	})
 	setItemID(resBlock, item.ID)
 	if s := string(item.Status); s != "" {
@@ -1941,8 +1998,8 @@ func imageGenerationToContentBlocks(item responses.ResponseOutputItemImageGenera
 	}
 
 	resBlock := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameImageGeneration),
-		Result: res,
+		Name:    string(ServerToolNameImageGeneration),
+		Content: res,
 	})
 	setItemID(resBlock, item.ID)
 	if item.Status != "" {
@@ -2043,9 +2100,9 @@ func shellOutputToContentBlock(item responses.ResponseFunctionShellToolCallOutpu
 	}
 
 	block = schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameShell),
-		CallID: item.CallID,
-		Result: res,
+		Name:    string(ServerToolNameShell),
+		CallID:  item.CallID,
+		Content: res,
 	})
 	setItemID(block, item.ID)
 	if item.Status != "" {
@@ -2065,7 +2122,8 @@ func reasoningToContentBlocks(item responses.ResponseReasoningItem) (block *sche
 	}
 
 	block = schema.NewContentBlock(&schema.Reasoning{
-		Text: text.String(),
+		Text:      text.String(),
+		Signature: item.EncryptedContent,
 	})
 
 	setItemID(block, item.ID)
@@ -2088,7 +2146,7 @@ func mcpCallToContentBlocks(item responses.ResponseOutputItemMcpCall) (blocks []
 	resultBlock := schema.NewContentBlock(&schema.MCPToolResult{
 		ServerLabel: item.ServerLabel,
 		Name:        item.Name,
-		Result:      item.Output,
+		Content:     item.Output,
 		Error: func() *schema.MCPToolCallError {
 			if item.Error == "" {
 				return nil

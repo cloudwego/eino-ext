@@ -389,6 +389,12 @@ func toUserRoleInputItems(msg *schema.AgenticMessage) (items []*responses.InputI
 				return nil, fmt.Errorf("failed to convert user input video to input item: %w", err)
 			}
 
+		case schema.ContentBlockTypeUserInputAudio:
+			item, err = userInputAudioToInputItem(responses.MessageRole_user, block.UserInputAudio)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert user input audio to input item: %w", err)
+			}
+
 		case schema.ContentBlockTypeFunctionToolResult:
 			item, err = functionToolResultToInputItem(block.FunctionToolResult)
 			if err != nil {
@@ -521,6 +527,34 @@ func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.Us
 	return inputItem, nil
 }
 
+func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.UserInputAudio) (inputItem *responses.InputItem, err error) {
+	audioURL, err := resolveURL(block.URL, block.Base64Data, block.MIMEType)
+	if err != nil {
+		return nil, err
+	}
+
+	contentItem := &responses.ContentItem{
+		Union: &responses.ContentItem_Audio{
+			Audio: &responses.ContentItemAudio{
+				Type:     responses.ContentItemType_input_audio,
+				AudioUrl: audioURL,
+			},
+		},
+	}
+
+	inputItem = &responses.InputItem{
+		Union: &responses.InputItem_InputMessage{
+			InputMessage: &responses.ItemInputMessage{
+				Type:    ptrOf(responses.ItemType_message),
+				Role:    role,
+				Content: []*responses.ContentItem{contentItem},
+			},
+		},
+	}
+
+	return inputItem, nil
+}
+
 func userInputFileToInputItem(role responses.MessageRole_Enum, block *schema.UserInputFile) (inputItem *responses.InputItem, err error) {
 	fileItem := &responses.ContentItemFile{
 		Type:     responses.ContentItemType_input_file,
@@ -555,17 +589,37 @@ func userInputFileToInputItem(role responses.MessageRole_Enum, block *schema.Use
 }
 
 func functionToolResultToInputItem(block *schema.FunctionToolResult) (item *responses.InputItem, err error) {
+	output, err := functionToolResultContentToText(block.Content)
+	if err != nil {
+		return nil, err
+	}
+
 	item = &responses.InputItem{
 		Union: &responses.InputItem_FunctionToolCallOutput{
 			FunctionToolCallOutput: &responses.ItemFunctionToolCallOutput{
 				Type:   responses.ItemType_function_call_output,
 				CallId: block.CallID,
-				Output: block.Result,
+				Output: output,
 			},
 		},
 	}
 
 	return item, nil
+}
+
+func functionToolResultContentToText(content []*schema.FunctionToolResultContentBlock) (string, error) {
+	if len(content) > 1 {
+		return "", fmt.Errorf("multiple function tool result content blocks are not supported, got %d", len(content))
+	}
+	for _, block := range content {
+		switch block.Type {
+		case schema.FunctionToolResultContentBlockTypeText:
+			return block.Text.Text, nil
+		default:
+			return "", fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
+		}
+	}
+	return "", nil
 }
 
 func assistantGenTextToInputItem(block *schema.ContentBlock) (item *responses.InputItem, err error) {
@@ -1108,7 +1162,7 @@ func mcpToolResultToInputItem(block *schema.ContentBlock) (item *responses.Input
 				Id:          ptrIfNonZero(id),
 				ServerLabel: content.ServerLabel,
 				Name:        content.Name,
-				Output:      ptrIfNonZero(content.Result),
+				Output:      ptrIfNonZero(content.Content),
 				Error: func() *string {
 					if content.Error == nil {
 						return nil
@@ -1420,8 +1474,8 @@ func imageProcessToContentBlocks(item *responses.OutputItem_FunctionImageProcess
 	}
 
 	resultBlock := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameImageProcess),
-		Result: &ServerToolResult{ImageProcess: result},
+		Name:    string(ServerToolNameImageProcess),
+		Content: &ServerToolResult{ImageProcess: result},
 	})
 
 	setItemID(callBlock, ip.Id)
@@ -1502,8 +1556,8 @@ func doubaoAppCallToContentBlocks(item *responses.OutputItem_FunctionDoubaoAppCa
 	}
 
 	resultBlock := schema.NewContentBlock(&schema.ServerToolResult{
-		Name:   string(ServerToolNameDoubaoApp),
-		Result: &ServerToolResult{DoubaoApp: result},
+		Name:    string(ServerToolNameDoubaoApp),
+		Content: &ServerToolResult{DoubaoApp: result},
 	})
 
 	setItemID(callBlock, dac.GetId())
@@ -1633,7 +1687,7 @@ func mcpCallToContentBlocks(item *responses.OutputItem_FunctionMcpCall) (blocks 
 	resultBlock := schema.NewContentBlock(&schema.MCPToolResult{
 		ServerLabel: mcpCall.ServerLabel,
 		Name:        mcpCall.Name,
-		Result:      mcpCall.GetOutput(),
+		Content:     mcpCall.GetOutput(),
 		Error: func() *schema.MCPToolCallError {
 			if mcpCall.Error == nil {
 				return nil
