@@ -255,13 +255,22 @@ func agenticUserToMessages(msg *schema.AgenticMessage) ([]*schema.Message, error
 		switch block.Type {
 		case schema.ContentBlockTypeFunctionToolResult:
 			flushInputParts()
-			result = append(result, &schema.Message{
+			toolMsg := &schema.Message{
 				Role:       schema.Tool,
-				Content:    block.FunctionToolResult.Result,
 				ToolCallID: block.FunctionToolResult.CallID,
 				ToolName:   block.FunctionToolResult.Name,
 				Extra:      block.Extra,
-			})
+			}
+			toolMsgParts, err := functionToolResultContentToInputParts(block.FunctionToolResult.Content)
+			if err != nil {
+				return nil, fmt.Errorf("failed to convert function tool result content: %w", err)
+			}
+			if len(toolMsgParts) == 1 && toolMsgParts[0].Type == schema.ChatMessagePartTypeText {
+				toolMsg.Content = toolMsgParts[0].Text
+			} else {
+				toolMsg.UserInputMultiContent = toolMsgParts
+			}
+			result = append(result, toolMsg)
 
 		case schema.ContentBlockTypeUserInputText:
 			inputParts = append(inputParts, schema.MessageInputPart{
@@ -500,6 +509,83 @@ func outputPartToContentBlock(part schema.MessageOutputPart) (*schema.ContentBlo
 	}
 	block.Extra = part.Extra
 	return block, nil
+}
+
+func functionToolResultContentToInputParts(content []*schema.FunctionToolResultContentBlock) ([]schema.MessageInputPart, error) {
+	if len(content) == 0 {
+		return nil, nil
+	}
+
+	parts := make([]schema.MessageInputPart, 0, len(content))
+	for _, block := range content {
+		if block == nil {
+			continue
+		}
+		switch block.Type {
+		case schema.FunctionToolResultContentBlockTypeText:
+			parts = append(parts, schema.MessageInputPart{
+				Type:  schema.ChatMessagePartTypeText,
+				Text:  block.Text.Text,
+				Extra: block.Extra,
+			})
+		case schema.FunctionToolResultContentBlockTypeImage:
+			part := schema.MessageInputPart{
+				Type: schema.ChatMessagePartTypeImageURL,
+				Image: &schema.MessageInputImage{
+					MessagePartCommon: schema.MessagePartCommon{
+						MIMEType: block.Image.MIMEType,
+					},
+					Detail: block.Image.Detail,
+				},
+				Extra: block.Extra,
+			}
+			if block.Image.URL != "" {
+				part.Image.URL = &block.Image.URL
+			}
+			if block.Image.Base64Data != "" {
+				part.Image.Base64Data = &block.Image.Base64Data
+			}
+			parts = append(parts, part)
+		case schema.FunctionToolResultContentBlockTypeAudio:
+			part := schema.MessageInputPart{
+				Type: schema.ChatMessagePartTypeAudioURL,
+				Audio: &schema.MessageInputAudio{
+					MessagePartCommon: schema.MessagePartCommon{
+						MIMEType: block.Audio.MIMEType,
+					},
+				},
+				Extra: block.Extra,
+			}
+			if block.Audio.URL != "" {
+				part.Audio.URL = &block.Audio.URL
+			}
+			if block.Audio.Base64Data != "" {
+				part.Audio.Base64Data = &block.Audio.Base64Data
+			}
+			parts = append(parts, part)
+		case schema.FunctionToolResultContentBlockTypeVideo:
+			part := schema.MessageInputPart{
+				Type: schema.ChatMessagePartTypeVideoURL,
+				Video: &schema.MessageInputVideo{
+					MessagePartCommon: schema.MessagePartCommon{
+						MIMEType: block.Video.MIMEType,
+					},
+				},
+				Extra: block.Extra,
+			}
+			if block.Video.URL != "" {
+				part.Video.URL = &block.Video.URL
+			}
+			if block.Video.Base64Data != "" {
+				part.Video.Base64Data = &block.Video.Base64Data
+			}
+			parts = append(parts, part)
+		default:
+			return nil, fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
+		}
+	}
+
+	return parts, nil
 }
 
 func ptrToString(p *string) string {
