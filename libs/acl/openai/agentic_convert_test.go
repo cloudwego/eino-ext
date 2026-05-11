@@ -160,12 +160,16 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 					schema.NewContentBlock(&schema.FunctionToolResult{
 						CallID: "call_1",
 						Name:   "get_weather",
-						Result: `{"temp": 22}`,
+						Content: []*schema.FunctionToolResultContentBlock{
+							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: `{"temp": 22}`}},
+						},
 					}),
 					schema.NewContentBlock(&schema.FunctionToolResult{
 						CallID: "call_2",
 						Name:   "get_time",
-						Result: `{"time": "12:00"}`,
+						Content: []*schema.FunctionToolResultContentBlock{
+							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: `{"time": "12:00"}`}},
+						},
 					}),
 				},
 			},
@@ -190,7 +194,9 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 					schema.NewContentBlock(&schema.FunctionToolResult{
 						CallID: "call_1",
 						Name:   "fn",
-						Result: "result",
+						Content: []*schema.FunctionToolResultContentBlock{
+							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "result"}},
+						},
 					}),
 					schema.NewContentBlock(&schema.UserInputText{Text: "Now answer"}),
 				},
@@ -203,6 +209,60 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 		assert.Equal(t, schema.Tool, result[0].Role)
 		assert.Equal(t, schema.User, result[1].Role)
 		assert.Equal(t, "Now answer", result[1].UserInputMultiContent[0].Text)
+	})
+
+	t.Run("user message with multimodal tool result", func(t *testing.T) {
+		imgURL := "https://example.com/result.png"
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.FunctionToolResult{
+						CallID: "call_1",
+						Name:   "generate_image",
+						Content: []*schema.FunctionToolResultContentBlock{
+							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "here is the image"}},
+							{Type: schema.FunctionToolResultContentBlockTypeImage, Image: &schema.UserInputImage{URL: imgURL, MIMEType: "image/png"}},
+						},
+					}),
+				},
+			},
+		}
+
+		result, err := agenticMessagesToMessages(msgs)
+		assert.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Equal(t, schema.Tool, result[0].Role)
+		assert.Equal(t, "call_1", result[0].ToolCallID)
+		assert.Equal(t, "generate_image", result[0].ToolName)
+		assert.Empty(t, result[0].Content)
+		assert.Len(t, result[0].UserInputMultiContent, 2)
+		assert.Equal(t, schema.ChatMessagePartTypeText, result[0].UserInputMultiContent[0].Type)
+		assert.Equal(t, "here is the image", result[0].UserInputMultiContent[0].Text)
+		assert.Equal(t, schema.ChatMessagePartTypeImageURL, result[0].UserInputMultiContent[1].Type)
+		assert.Equal(t, imgURL, *result[0].UserInputMultiContent[1].Image.URL)
+	})
+
+	t.Run("user message with empty tool result content", func(t *testing.T) {
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.FunctionToolResult{
+						CallID: "call_1",
+						Name:   "noop",
+					}),
+				},
+			},
+		}
+
+		result, err := agenticMessagesToMessages(msgs)
+		assert.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Equal(t, schema.Tool, result[0].Role)
+		assert.Equal(t, "call_1", result[0].ToolCallID)
+		assert.Empty(t, result[0].Content)
+		assert.Empty(t, result[0].UserInputMultiContent)
 	})
 
 	t.Run("assistant message with text and tool calls", func(t *testing.T) {
