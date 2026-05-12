@@ -695,14 +695,16 @@ func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *response
 	arkOpts *arkOptions) ([]*schema.AgenticMessage, error) {
 
 	var (
-		store       = false
-		enableCache = false
-		expireAtSec *int64
-		headRespID  *string
+		store              = false
+		enableCache        = false
+		hasSessionCacheCfg = false
+		expireAtSec        *int64
+		headRespID         *string
 	)
 
 	if m.cache != nil {
 		if sCache := m.cache.SessionCache; sCache != nil {
+			hasSessionCacheCfg = true
 			if sCache.EnableCache {
 				store = true
 				enableCache = true
@@ -715,6 +717,7 @@ func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *response
 		headRespID = cacheOpt.HeadPreviousResponseID
 
 		if sCacheOpt := cacheOpt.SessionCache; sCacheOpt != nil {
+			hasSessionCacheCfg = true
 			expireAtSec = &sCacheOpt.ExpireAtSec
 
 			if sCacheOpt.EnableCache {
@@ -772,13 +775,15 @@ func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *response
 		responseReq.ExpireAt = expireAtSec
 	}
 
-	responseReq.Caching = &responses.ResponsesCaching{
-		Type: func() *responses.CacheType_Enum {
-			if enableCache {
-				return responses.CacheType_enabled.Enum()
-			}
-			return responses.CacheType_disabled.Enum()
-		}(),
+	if hasSessionCacheCfg {
+		responseReq.Caching = &responses.ResponsesCaching{
+			Type: func() *responses.CacheType_Enum {
+				if enableCache {
+					return responses.CacheType_enabled.Enum()
+				}
+				return responses.CacheType_disabled.Enum()
+			}(),
+		}
 	}
 
 	return in, nil
