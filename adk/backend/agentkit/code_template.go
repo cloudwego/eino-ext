@@ -20,8 +20,9 @@ const (
 	readPythonCodeTemplate = `
 import os
 import sys
+import base64
 
-file_path = '{file_path}'
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
 offset = {offset}
 limit = {limit}
 

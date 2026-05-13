@@ -327,9 +327,9 @@ func (s *SandboxTool) Read(ctx context.Context, req *filesystem.ReadRequest) (*f
 	}
 
 	params := map[string]any{
-		"file_path": path,
-		"offset":    req.Offset,
-		"limit":     req.Limit,
+		"file_path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
+		"offset":        req.Offset,
+		"limit":         req.Limit,
 	}
 
 	script, err := pyfmt.Fmt(readPythonCodeTemplate, params)
