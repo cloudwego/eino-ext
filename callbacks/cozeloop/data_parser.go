@@ -585,9 +585,10 @@ func parseSpanTypeFromComponent(c components.Component) string {
 }
 
 const (
-	spanTypeAgent    = "agent"
-	attrKeyAgentName = "agent_name"
-	attrKeyRunMode   = "run_mode"
+	spanTypeAgent     = "agent"
+	attrKeyAgentName  = "agent_name"
+	attrKeyAgentRunID = "agent_run_id"
+	attrKeyRunMode    = "run_mode"
 )
 
 func (d defaultDataParser) parseAgentInput(ctx context.Context, info *callbacks.RunInfo, input *adk.AgentCallbackInput) map[string]any {
