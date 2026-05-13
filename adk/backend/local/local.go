@@ -79,7 +79,7 @@ type MultiModalReadConfig struct {
 	// PDFRenderDPI is dots-per-inch used when rasterizing each PDF page to PNG.
 	// Higher DPI yields sharper images at the cost of larger payloads:
 	// typical screens are 72-96 DPI, 150 DPI ≈ 2x sharpness with manageable size,
-	// 300 DPI is print-grade but produces ~4x larger PNGs.
+	// 300 DPI is print-grade but produces ~4x larger images.
 	// Default 150. Hard-cap 600.
 	PDFRenderDPI float64
 }

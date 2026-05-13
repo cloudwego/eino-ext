@@ -567,6 +567,57 @@ func TestResolveMultiModalReadConfig(t *testing.T) {
 // still resolves NumPage()==1.
 const minimalValidPDF = "%PDF-1.1\n%\xa5\xb1\xeb\n\n1 0 obj\n  << /Type /Catalog\n     /Pages 2 0 R\n  >>\nendobj\n\n2 0 obj\n  << /Type /Pages\n     /Kids [3 0 R]\n     /Count 1\n     /MediaBox [0 0 100 100]\n  >>\nendobj\n\n3 0 obj\n  <<  /Type /Page\n      /Parent 2 0 R\n      /Resources << >>\n  >>\nendobj\n\nxref\n0 4\n0000000000 65535 f \n0000000018 00000 n \n0000000077 00000 n \n0000000178 00000 n \ntrailer\n  <<  /Root 1 0 R\n      /Size 4\n  >>\nstartxref\n240\n%%EOF\n"
 
+func TestIsImageExt(t *testing.T) {
+	for _, ext := range []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"} {
+		assert.True(t, isImageExt(ext), ext)
+	}
+	for _, ext := range []string{".pdf", ".txt", ".go", "", ".PNG"} {
+		assert.False(t, isImageExt(ext), ext)
+	}
+}
+
+func TestIsPDFExt(t *testing.T) {
+	assert.True(t, isPDFExt(".pdf"))
+	assert.False(t, isPDFExt(".PDF"))
+	assert.False(t, isPDFExt(".txt"))
+	assert.False(t, isPDFExt(""))
+}
+
+func TestNewImageContentPart(t *testing.T) {
+	data := []byte("fake-image-data")
+	part := newImageContentPart("image/png", data)
+	assert.Equal(t, filesystem.FileContentPartTypeImage, part.Type)
+	assert.Equal(t, "image/png", part.MIMEType)
+	assert.Equal(t, data, part.Data)
+}
+
+func TestRenderPDFPagesToImages_Success(t *testing.T) {
+	doc, err := fitz.NewFromMemory([]byte(minimalValidPDF))
+	if err != nil || doc.NumPage() < 1 {
+		t.Skipf("minimal PDF fixture not parseable in this environment: err=%v", err)
+	}
+	defer doc.Close()
+
+	parts, err := renderPDFPagesToImages(context.Background(), doc, 1, 1, "fixture.pdf", 72)
+	require.NoError(t, err)
+	require.Len(t, parts, 1)
+	assert.Equal(t, filesystem.FileContentPartTypeImage, parts[0].Type)
+	assert.Equal(t, "image/png", parts[0].MIMEType)
+	assert.NotEmpty(t, parts[0].Data)
+}
+
+func TestRenderPDFPagesToImages_DefaultDPI(t *testing.T) {
+	doc, err := fitz.NewFromMemory([]byte(minimalValidPDF))
+	if err != nil || doc.NumPage() < 1 {
+		t.Skipf("minimal PDF fixture not parseable in this environment: err=%v", err)
+	}
+	defer doc.Close()
+
+	parts, err := renderPDFPagesToImages(context.Background(), doc, 1, 1, "fixture.pdf", 0)
+	require.NoError(t, err)
+	require.Len(t, parts, 1)
+}
+
 func TestRenderPDFPagesToImages_RespectsCanceledCtx(t *testing.T) {
 	doc, err := fitz.NewFromMemory([]byte(minimalValidPDF))
 	if err != nil || doc.NumPage() < 1 {
