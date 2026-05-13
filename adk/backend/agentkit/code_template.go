@@ -47,6 +47,31 @@ with open(file_path, 'r') as f:
 
 sys.stdout.write("".join(collected))
 `
+	readAllBytesPythonCodeTemplate = `
+import os
+import sys
+import base64
+
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
+max_bytes = {max_bytes}
+
+if not os.path.isfile(file_path):
+    sys.stdout.write(f'Error: File not found: {{file_path}}')
+    sys.exit(1)
+
+# Size gate: emit a sentinel prefix that the Go side (readAllBytes) matches on
+# to distinguish "too large" from other failures. The prefix must stay in sync
+# with the tooLargeMarker constant in sandbox.go.
+size = os.path.getsize(file_path)
+if size > max_bytes:
+    sys.stdout.write(f'__READALLBYTES_TOO_LARGE__ size={{size}} max={{max_bytes}}')
+    sys.exit(1)
+
+with open(file_path, 'rb') as f:
+    data = f.read()
+
+sys.stdout.write(base64.b64encode(data).decode('ascii'))
+`
 	lsInfoPythonCodeTemplate = `
 import os
 import json
@@ -77,8 +102,8 @@ parent_dir = os.path.dirname(file_path) or '.'
 os.makedirs(parent_dir, exist_ok=True)
 
 # Decode and write content
-content = base64.b64decode('{content_b64}').decode('utf-8')
-with open(file_path, 'w') as f:
+content = base64.b64decode('{content_b64}')
+with open(file_path, 'wb') as f:
     f.write(content)
 `
 	editPythonCodeTemplate = `
