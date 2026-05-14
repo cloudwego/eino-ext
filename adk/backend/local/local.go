@@ -24,7 +24,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -265,6 +264,10 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 //   - PDF paged read (with 'pages' param): 100 MB, max 20 pages per request
 //   - PDF render DPI: 150
 //
+// For paged PDF reads, if the requested end page exceeds the actual total pages,
+// it is silently clamped to the last page. For example, requesting pages "1-100"
+// on a 5-page PDF returns pages 1 through 5.
+//
 // PDF rendering relies on go-fitz (MuPDF via purego/ffi, no classic CGO).
 // If build fails due to missing MuPDF libs, install them:
 //   - macOS:  brew install mupdf
@@ -350,10 +353,7 @@ func (s *Local) MultiModalRead(ctx context.Context, req *filesystem.MultiModalRe
 		if pagedStart > totalPages {
 			return nil, fmt.Errorf("invalid pages parameter: %q (start page %d exceeds total pages %d in file %s)", req.Pages, pagedStart, totalPages, path)
 		}
-		// Keep clamp to allow read-to-end style requests like "1-100" on short PDFs;
-		// surface a warn so the caller can notice the mismatch.
 		if pagedEnd > totalPages {
-			log.Printf("[WARN] MultiModalRead: end page %d exceeds total pages %d for %s (pages=%q), clamped to %d", pagedEnd, totalPages, path, req.Pages, totalPages)
 			pagedEnd = totalPages
 		}
 		parts, err := renderPDFPagesToImages(ctx, doc, pagedStart, pagedEnd, path, s.multiModalReadCfg.PDFRenderDPI)
