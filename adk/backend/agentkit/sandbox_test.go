@@ -327,6 +327,80 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		assert.Contains(t, resp.Output, "command failed")
 	})
 
+	// Special character path tests — verify base64 encoding prevents template breakage.
+	t.Run("LsInfo: Special Characters in Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, `{"path": "a.txt", "is_dir": false}`, "", ""))
+		}
+		specialPaths := []string{
+			"/data/it's a dir",
+			"/data/文档/测试",
+			`/data/back\slash`,
+			"/data/new\nline",
+			"/data/path with spaces",
+		}
+		for _, p := range specialPaths {
+			res, err := s.LsInfo(context.Background(), &filesystem.LsInfoRequest{Path: p})
+			require.NoError(t, err, "path=%q", p)
+			require.Len(t, res, 1, "path=%q", p)
+		}
+	})
+
+	t.Run("GrepRaw: Special Characters in Pattern and Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, `[]`, "", ""))
+		}
+		cases := []struct {
+			pattern string
+			path    string
+		}{
+			{`\bfoo\b`, "/data/it's here"},
+			{`hello'world`, "/data/文档"},
+			{`line1\nline2`, `/data/back\slash`},
+		}
+		for _, tc := range cases {
+			_, err := s.GrepRaw(context.Background(), &filesystem.GrepRequest{
+				Pattern: tc.pattern,
+				Path:    tc.path,
+			})
+			require.NoError(t, err, "pattern=%q path=%q", tc.pattern, tc.path)
+		}
+	})
+
+	t.Run("Write: Special Characters in Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, "", "", ""))
+		}
+		specialPaths := []string{
+			"/data/it's a file.txt",
+			"/data/文档/新文件.txt",
+			`/data/back\slash.txt`,
+		}
+		for _, p := range specialPaths {
+			err := s.Write(context.Background(), &filesystem.WriteRequest{FilePath: p, Content: "content"})
+			require.NoError(t, err, "path=%q", p)
+		}
+	})
+
+	t.Run("Edit: Special Characters in Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, "1", "", ""))
+		}
+		specialPaths := []string{
+			"/data/it's a file.txt",
+			"/data/文档/新文件.txt",
+			`/data/back\slash.txt`,
+		}
+		for _, p := range specialPaths {
+			err := s.Edit(context.Background(), &filesystem.EditRequest{FilePath: p, OldString: "old", NewString: "new"})
+			require.NoError(t, err, "path=%q", p)
+		}
+	})
+
 	t.Run("Execute: RunInBackendGround returns immediately", func(t *testing.T) {
 		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)

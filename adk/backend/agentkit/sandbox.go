@@ -281,7 +281,7 @@ func (s *SandboxTool) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest)
 	path := filepath.Clean(req.Path)
 
 	params := map[string]any{
-		"path": path,
+		"path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
 	}
 
 	script, err := pyfmt.Fmt(lsInfoPythonCodeTemplate, params)
@@ -357,12 +357,12 @@ func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) 
 	}
 	path := filepath.Clean(req.Path)
 	params := map[string]any{
-		"fileType":    req.FileType,
-		"glob":        req.Glob,
-		"afterLines":  req.AfterLines,
-		"beforeLines": req.BeforeLines,
-		"pattern":     req.Pattern,
-		"path":        path,
+		"fileType_b64": base64.StdEncoding.EncodeToString([]byte(req.FileType)),
+		"glob_b64":     base64.StdEncoding.EncodeToString([]byte(req.Glob)),
+		"afterLines":   req.AfterLines,
+		"beforeLines":  req.BeforeLines,
+		"pattern_b64":  base64.StdEncoding.EncodeToString([]byte(req.Pattern)),
+		"path_b64":     base64.StdEncoding.EncodeToString([]byte(path)),
 	}
 	if req.CaseInsensitive {
 		params["caseInsensitive"] = 1
@@ -439,8 +439,8 @@ func (s *SandboxTool) Write(ctx context.Context, req *filesystem.WriteRequest) e
 	path := filepath.Clean(req.FilePath)
 
 	params := map[string]any{
-		"file_path":   path,
-		"content_b64": base64.StdEncoding.EncodeToString([]byte(req.Content)),
+		"file_path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
+		"content_b64":   base64.StdEncoding.EncodeToString([]byte(req.Content)),
 	}
 
 	script, err := pyfmt.Fmt(writePythonCodeTemplate, params)
@@ -476,10 +476,10 @@ func (s *SandboxTool) Edit(ctx context.Context, req *filesystem.EditRequest) err
 		replaceAll = 0
 	}
 	params := map[string]any{
-		"file_path":   path,
-		"old_b64":     base64.StdEncoding.EncodeToString([]byte(req.OldString)),
-		"new_b64":     base64.StdEncoding.EncodeToString([]byte(req.NewString)),
-		"replace_all": replaceAll,
+		"file_path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
+		"old_b64":       base64.StdEncoding.EncodeToString([]byte(req.OldString)),
+		"new_b64":       base64.StdEncoding.EncodeToString([]byte(req.NewString)),
+		"replace_all":   replaceAll,
 	}
 
 	script, err := pyfmt.Fmt(editPythonCodeTemplate, params)

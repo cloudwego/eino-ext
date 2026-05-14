@@ -76,8 +76,9 @@ sys.stdout.write(base64.b64encode(data).decode('ascii'))
 	lsInfoPythonCodeTemplate = `
 import os
 import json
+import base64
 
-path = '{path}'
+path = base64.b64decode('{path_b64}').decode('utf-8')
 
 try:
     with os.scandir(path) as it:
@@ -96,7 +97,7 @@ except PermissionError:
 import os
 import base64
 
-file_path = '{file_path}'
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
 
 # Create parent directory if needed
 parent_dir = os.path.dirname(file_path) or '.'
@@ -111,8 +112,10 @@ with open(file_path, 'wb') as f:
 import sys
 import base64
 
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
+
 # Read file content
-with open('{file_path}', 'r') as f:
+with open(file_path, 'r') as f:
     text = f.read()
 
 # Decode base64-encoded strings
@@ -137,7 +140,7 @@ else:
     result = text.replace(old, new, 1)
 
 # Write back to file
-with open('{file_path}', 'w') as f:
+with open(file_path, 'w') as f:
     f.write(result)
 
 print(count, end="")
@@ -146,6 +149,7 @@ print(count, end="")
 	grepPythonCodeTemplate = `
 import fnmatch
 import json
+import base64
 import subprocess
 from pathlib import Path
 
@@ -221,13 +225,18 @@ def run_ripgrep(file_type, glob_pattern, after_lines, before_lines, pattern, sea
     return parse_ripgrep_output(result.stdout.strip(), file_type, glob_pattern)
 
 
+file_type = base64.b64decode('{fileType_b64}').decode('utf-8')
+glob_pattern = base64.b64decode('{glob_b64}').decode('utf-8')
+pattern = base64.b64decode('{pattern_b64}').decode('utf-8')
+search_path = base64.b64decode('{path_b64}').decode('utf-8')
+
 responses = run_ripgrep(
-    file_type='{fileType}',
-    glob_pattern='{glob}',
+    file_type=file_type,
+    glob_pattern=glob_pattern,
     after_lines={afterLines},
     before_lines={beforeLines},
-    pattern='{pattern}',
-    search_path='{path}',
+    pattern=pattern,
+    search_path=search_path,
     case_insensitive={caseInsensitive},
     multiline={enableMultiline}
 )
