@@ -237,6 +237,9 @@ type UsageDetail struct {
 	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 }
 
+// Usage is an alias for UsageDetail for backward compatibility with callers that still use the Usage name.
+type Usage = UsageDetail
+
 // CompletionTokensDetails Breakdown of tokens used in a completion.
 type CompletionTokensDetails struct {
 	AudioTokens              int `json:"audio_tokens"`
