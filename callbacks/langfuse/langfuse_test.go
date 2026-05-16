@@ -24,14 +24,14 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
-	"github.com/cloudwego/eino-ext/libs/acl/langfuse/mock"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/golang/mock/gomock"
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse/mock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -184,7 +184,7 @@ func TestLangfuseCallback(t *testing.T) {
 		}
 	})
 	mockey.PatchConvey("test generation", t, func() {
-		//mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).Times(1)
+		// mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).Times(1)
 		mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) (string, error) {
 			assert.Equal(t, body.Model, "model")
 			assert.Equal(t, body.ModelParameters.(*model.Config), &model.Config{
@@ -194,11 +194,27 @@ func TestLangfuseCallback(t *testing.T) {
 		}).Times(1)
 		mockLangfuse.EXPECT().EndGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) error {
 			assert.Equal(t, body.ID, "generation id")
-			assert.Equal(t, body.OutMessage, &schema.Message{Role: schema.Assistant, Content: "assistant message"})
-			assert.Equal(t, body.Usage, &langfuse.Usage{
+			assert.Equal(t, body.OutMessage, &schema.Message{
+				Role:    schema.Assistant,
+				Content: "assistant message",
+				ResponseMeta: &schema.ResponseMeta{
+					Usage: &schema.TokenUsage{
+						PromptTokens:     1,
+						CompletionTokens: 2,
+						TotalTokens:      3,
+					},
+				},
+			})
+			assert.Equal(t, body.Usage, &langfuse.UsageDetail{
 				PromptTokens:     1,
 				CompletionTokens: 2,
 				TotalTokens:      3,
+				CompletionTokensDetails: &langfuse.CompletionTokensDetails{
+					ReasoningTokens: 0,
+				},
+				PromptTokensDetails: &langfuse.PromptTokensDetails{
+					CachedTokens: 0,
+				},
 			})
 			return nil
 		}).Times(1)
@@ -211,11 +227,16 @@ func TestLangfuseCallback(t *testing.T) {
 			Extra: map[string]interface{}{"key": "value"},
 		})
 		cbh.OnEnd(ctx1, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackOutput{
-			Message: &schema.Message{Role: schema.Assistant, Content: "assistant message"},
-			TokenUsage: &model.TokenUsage{
-				PromptTokens:     1,
-				CompletionTokens: 2,
-				TotalTokens:      3,
+			Message: &schema.Message{
+				Role:    schema.Assistant,
+				Content: "assistant message",
+				ResponseMeta: &schema.ResponseMeta{
+					Usage: &schema.TokenUsage{
+						PromptTokens:     1,
+						CompletionTokens: 2,
+						TotalTokens:      3,
+					},
+				},
 			},
 		})
 	})
@@ -249,11 +270,16 @@ func TestLangfuseCallback(t *testing.T) {
 			Message: &schema.Message{Role: schema.Assistant, Content: "assistant"},
 		}, nil)
 		outsw.Send(&model.CallbackOutput{
-			Message: &schema.Message{Role: schema.Assistant, Content: " "},
-			TokenUsage: &model.TokenUsage{
-				PromptTokens:     1,
-				CompletionTokens: 2,
-				TotalTokens:      3,
+			Message: &schema.Message{
+				Role:    schema.Assistant,
+				Content: " ",
+				ResponseMeta: &schema.ResponseMeta{
+					Usage: &schema.TokenUsage{
+						PromptTokens:     1,
+						CompletionTokens: 2,
+						TotalTokens:      3,
+					},
+				},
 			},
 		}, nil)
 		outsw.Send(&model.CallbackOutput{
@@ -273,11 +299,7 @@ func TestLangfuseCallback(t *testing.T) {
 			WithSessionID("sessionid"),
 			WithTags("tags"),
 			WithPublic(true),
-			WithEnvironment("development"),
-			WithVersion("version"),
 		)
 		assert.Equal(t, "traceid", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).ID)
-		assert.Equal(t, "development", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Environment)
-		assert.Equal(t, "version", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Version)
 	})
 }

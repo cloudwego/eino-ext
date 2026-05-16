@@ -24,11 +24,11 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 )
 
 type Config struct {
@@ -257,7 +257,7 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 	}
 
 	state, ok := ctx.Value(langfuseStateKey{}).(*langfuseState)
-	if !ok {
+	if !ok || state == nil {
 		log.Printf("no state in context, runinfo: %+v", info)
 		return ctx
 	}
@@ -275,11 +275,19 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 			EndTime:             time.Now(),
 			CompletionStartTime: time.Now(),
 		}
-		if mcbo.TokenUsage != nil {
-			body.Usage = &langfuse.Usage{
-				PromptTokens:     mcbo.TokenUsage.PromptTokens,
-				CompletionTokens: mcbo.TokenUsage.CompletionTokens,
-				TotalTokens:      mcbo.TokenUsage.TotalTokens,
+		if mcbo.Message.ResponseMeta != nil && mcbo.Message.ResponseMeta.Usage != nil {
+			usage := mcbo.Message.ResponseMeta.Usage
+
+			body.Usage = &langfuse.UsageDetail{
+				CompletionTokens: usage.CompletionTokens,
+				PromptTokens:     usage.PromptTokens,
+				TotalTokens:      usage.TotalTokens,
+				CompletionTokensDetails: &langfuse.CompletionTokensDetails{
+					ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+				},
+				PromptTokensDetails: &langfuse.PromptTokensDetails{
+					CachedTokens: usage.PromptTokenDetails.CachedTokens,
+				},
 			}
 		}
 
@@ -316,7 +324,7 @@ func (c *CallbackHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 	}
 
 	state, ok := ctx.Value(langfuseStateKey{}).(*langfuseState)
-	if !ok {
+	if !ok || state == nil {
 		log.Printf("no state in context, runinfo: %+v, execute error: %v", info, err)
 		return ctx
 	}
@@ -498,7 +506,7 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	}
 
 	state, ok := ctx.Value(langfuseStateKey{}).(*langfuseState)
-	if !ok {
+	if !ok || state == nil {
 		log.Printf("no state in context, runinfo: %+v", info)
 		return ctx
 	}
@@ -525,7 +533,7 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 				outs = append(outs, chunk)
 			}
 
-			usage, outMessage, extra, err := extractModelOutput(convModelCallbackOutput(outs))
+			outMessage, extra, err := extractModelOutput(convModelCallbackOutput(outs))
 			body := &langfuse.GenerationEventBody{
 				BaseObservationEventBody: langfuse.BaseObservationEventBody{
 					BaseEventBody: langfuse.BaseEventBody{
@@ -537,11 +545,19 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 				EndTime:             time.Now(),
 				CompletionStartTime: startTime,
 			}
-			if usage != nil {
-				body.Usage = &langfuse.Usage{
-					PromptTokens:     usage.PromptTokens,
+			if outMessage.ResponseMeta != nil && outMessage.ResponseMeta.Usage != nil {
+				usage := outMessage.ResponseMeta.Usage
+
+				body.Usage = &langfuse.UsageDetail{
 					CompletionTokens: usage.CompletionTokens,
+					PromptTokens:     usage.PromptTokens,
 					TotalTokens:      usage.TotalTokens,
+					CompletionTokensDetails: &langfuse.CompletionTokensDetails{
+						ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+					},
+					PromptTokensDetails: &langfuse.PromptTokensDetails{
+						CachedTokens: usage.PromptTokenDetails.CachedTokens,
+					},
 				}
 			}
 
@@ -594,10 +610,26 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	return ctx
 }
 
+func (c *CallbackHandler) ReportOutput(ctx context.Context, traceID string, output string) {
+	err := c.cli.EndTrace(&langfuse.TraceEventBody{
+		BaseEventBody: langfuse.BaseEventBody{
+			ID: traceID,
+		},
+		Output: output,
+	})
+	if err != nil {
+		log.Printf("output end trace fail: %v, traceID: %s", err, traceID)
+	}
+}
+
 func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (context.Context, *langfuseState) {
 	state := ctx.Value(langfuseStateKey{})
 	if state != nil {
-		return ctx, state.(*langfuseState)
+		s, _ := state.(*langfuseState)
+		if s == nil {
+			return ctx, nil
+		}
+		return ctx, s
 	}
 
 	traceOpts := ctx.Value(langfuseTraceOptionKey{})
@@ -615,7 +647,7 @@ func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (c
 		name = curName
 	}
 	nState, err := initState(ctx, c.cli, &traceOptions{
-		Name:      c.name,
+		Name:      name,
 		UserID:    c.userID,
 		SessionID: c.sessionID,
 		Release:   c.release,

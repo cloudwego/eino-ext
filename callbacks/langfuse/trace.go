@@ -51,6 +51,11 @@ func WithUserID(userID string) TraceOption {
 		o.UserID = userID
 	}
 }
+func WithInput(input string) TraceOption {
+	return func(o *traceOptions) {
+		o.Input = input
+	}
+}
 func WithSessionID(sessionID string) TraceOption {
 	return func(o *traceOptions) {
 		o.SessionID = sessionID
@@ -76,41 +81,29 @@ func WithMetadata(metadata map[string]string) TraceOption {
 		o.Metadata = metadata
 	}
 }
-func WithEnvironment(environment string) TraceOption {
-	return func(o *traceOptions) {
-		o.Environment = environment
-	}
-}
-func WithVersion(version string) TraceOption {
-	return func(o *traceOptions) {
-		o.Version = version
-	}
-}
 
 type traceOptions struct {
-	ID          string
-	Name        string
-	UserID      string
-	SessionID   string
-	Release     string
-	Tags        []string
-	Public      bool
-	Metadata    map[string]string
-	Environment string
-	Version     string
+	ID        string
+	Name      string
+	UserID    string
+	Input     string
+	SessionID string
+	Release   string
+	Tags      []string
+	Public    bool
+	Metadata  map[string]string
 }
 
 func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) (*langfuseState, error) {
 	traceID, err := cli.CreateTrace(&langfuse.TraceEventBody{
 		BaseEventBody: langfuse.BaseEventBody{
-			ID:          options.ID,
-			Name:        options.Name,
-			MetaData:    options.Metadata,
-			Environment: options.Environment,
-			Version:     options.Version,
+			ID:       options.ID,
+			Name:     options.Name,
+			MetaData: options.Metadata,
 		},
 		TimeStamp: time.Now(),
 		UserID:    options.UserID,
+		Input:     options.Input,
 		SessionID: options.SessionID,
 		Release:   options.Release,
 		Tags:      options.Tags,
