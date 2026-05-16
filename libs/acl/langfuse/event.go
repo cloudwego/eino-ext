@@ -193,10 +193,11 @@ func (e *eventBodyUnion) setMetadata(data any) {
 }
 
 type BaseEventBody struct {
-	ID       string `json:"id,omitempty"`
-	Name     string `json:"name,omitempty"`
-	MetaData any    `json:"metadata,omitempty"`
-	Version  string `json:"version,omitempty"`
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name,omitempty"`
+	MetaData    any    `json:"metadata,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Environment string `json:"environment,omitempty"`
 }
 
 type TraceEventBody struct {
