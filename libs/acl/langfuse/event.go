@@ -193,11 +193,10 @@ func (e *eventBodyUnion) setMetadata(data any) {
 }
 
 type BaseEventBody struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name,omitempty"`
-	MetaData    any    `json:"metadata,omitempty"`
-	Version     string `json:"version,omitempty"`
-	Environment string `json:"environment,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Name     string `json:"name,omitempty"`
+	MetaData any    `json:"metadata,omitempty"`
+	Version  string `json:"version,omitempty"`
 }
 
 type TraceEventBody struct {
@@ -229,10 +228,26 @@ type SpanEventBody struct {
 	EndTime time.Time `json:"endTime,omitempty"`
 }
 
-type Usage struct {
-	PromptTokens     int `json:"promptTokens,omitempty"`
-	CompletionTokens int `json:"completionTokens,omitempty"`
-	TotalTokens      int `json:"totalTokens,omitempty"`
+type UsageDetail struct {
+	CompletionTokens        int                      `json:"completion_tokens,omitempty"`
+	PromptTokens            int                      `json:"prompt_tokens,omitempty"`
+	TotalTokens             int                      `json:"total_tokens,omitempty"`
+	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+}
+
+// CompletionTokensDetails Breakdown of tokens used in a completion.
+type CompletionTokensDetails struct {
+	AudioTokens              int `json:"audio_tokens"`
+	ReasoningTokens          int `json:"reasoning_tokens"`
+	AcceptedPredictionTokens int `json:"accepted_prediction_tokens"`
+	RejectedPredictionTokens int `json:"rejected_prediction_tokens"`
+}
+
+// PromptTokensDetails Breakdown of tokens used in the prompt.
+type PromptTokensDetails struct {
+	AudioTokens  int `json:"audio_tokens"`
+	CachedTokens int `json:"cached_tokens"`
 }
 
 type GenerationEventBody struct {
@@ -246,7 +261,7 @@ type GenerationEventBody struct {
 	PromptName          string            `json:"promptName,omitempty"`
 	PromptVersion       int               `json:"promptVersion,omitempty"`
 	ModelParameters     any               `json:"modelParameters,omitempty"`
-	Usage               *Usage            `json:"usage,omitempty"`
+	Usage               *UsageDetail      `json:"usageDetails,omitempty"`
 }
 
 type EventEventBody struct {
