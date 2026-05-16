@@ -145,6 +145,7 @@ ctx = langfuse.SetTrace(ctx,
     langfuse.WithTags("production", "feature-x"),
     langfuse.WithMetadata(map[string]string{"key": "value"}),
     langfuse.WithInput("用户输入文本"),
+    langfuse.WithEnvironment("production"),
     langfuse.WithPublic(true),
 )
 ```
