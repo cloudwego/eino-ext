@@ -18,20 +18,22 @@ package langfuse
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse/mock"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/golang/mock/gomock"
-	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
-	"github.com/cloudwego/eino-ext/libs/acl/langfuse/mock"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -306,4 +308,62 @@ func TestLangfuseCallback(t *testing.T) {
 		assert.Equal(t, "development", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Environment)
 		assert.Equal(t, "version", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Version)
 	})
+}
+
+func TestAttack_NilMessageInOnEnd(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockLangfuse := mock.NewMockLangfuse(ctrl)
+	defer mockey.Mock(langfuse.NewLangfuse).Return(mockLangfuse).Build().UnPatch()
+
+	cbh, _ := NewLangfuseHandler(&Config{
+		Host: "http://localhost", PublicKey: "pk", SecretKey: "sk",
+		Name: "trace",
+	})
+	mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id", nil).Times(1)
+	mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).Return("generation-id", nil).Times(1)
+	mockLangfuse.EXPECT().EndGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) error {
+		assert.Nil(t, body.Usage)
+		return nil
+	}).Times(1)
+
+	ctx := SetTrace(context.Background(), WithID("trace-id"))
+	ctx = cbh.OnStart(ctx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackInput{
+		Messages: []*schema.Message{{Role: schema.User, Content: "hi"}},
+		Config:   &model.Config{Model: "m"},
+	})
+	cbh.OnEnd(ctx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackOutput{
+		Message: nil,
+	})
+}
+
+func TestAttack_ExtractModelOutputErrorIgnored(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	mockLangfuse := mock.NewMockLangfuse(ctrl)
+	defer mockey.Mock(langfuse.NewLangfuse).Return(mockLangfuse).Build().UnPatch()
+	defer mockey.Mock(extractModelOutput).Return((*schema.Message)(nil), nil, fmt.Errorf("concat failed")).Build().UnPatch()
+
+	cbh, _ := NewLangfuseHandler(&Config{
+		Host: "http://localhost", PublicKey: "pk", SecretKey: "sk",
+	})
+	mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id", nil).Times(1)
+	mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).Return("generation-id", nil).Times(1)
+	// Stream input goroutine calls EndGeneration once to attach model input; output goroutine must not call again when extractModelOutput fails.
+	mockLangfuse.EXPECT().EndGeneration(gomock.Any()).Times(1)
+
+	insr, insw := schema.Pipe[callbacks.CallbackInput](1)
+	insw.Send(&model.CallbackInput{
+		Messages: []*schema.Message{{Role: schema.User, Content: "x"}},
+		Config:   &model.Config{Model: "m"},
+	}, nil)
+	insw.Close()
+	outsr, outsw := schema.Pipe[callbacks.CallbackOutput](1)
+	outsw.Send(&model.CallbackOutput{
+		Message: &schema.Message{Role: schema.Assistant, Content: "y"},
+	}, nil)
+	outsw.Close()
+
+	ctx := context.Background()
+	ctx = cbh.OnStartWithStreamInput(ctx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, insr)
+	cbh.OnEndWithStreamOutput(ctx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, outsr)
+	time.Sleep(100 * time.Millisecond)
 }

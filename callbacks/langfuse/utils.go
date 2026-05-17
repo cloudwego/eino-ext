@@ -19,6 +19,7 @@ package langfuse
 import (
 	"fmt"
 
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -88,6 +89,23 @@ func extractModelOutput(outs []*model.CallbackOutput) (message *schema.Message, 
 	}
 
 	return message, extra, nil
+}
+
+func mapUsageDetail(usage *schema.TokenUsage) *langfuse.UsageDetail {
+	if usage == nil {
+		return nil
+	}
+	return &langfuse.UsageDetail{
+		CompletionTokens: usage.CompletionTokens,
+		PromptTokens:     usage.PromptTokens,
+		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: &langfuse.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+		PromptTokensDetails: &langfuse.PromptTokensDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
+	}
 }
 
 func concatMessageArray(mas [][]*schema.Message) ([]*schema.Message, error) {

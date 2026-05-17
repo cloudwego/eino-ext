@@ -24,11 +24,11 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 )
 
 type Config struct {
@@ -275,20 +275,8 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 			EndTime:             time.Now(),
 			CompletionStartTime: time.Now(),
 		}
-		if mcbo.Message.ResponseMeta != nil && mcbo.Message.ResponseMeta.Usage != nil {
-			usage := mcbo.Message.ResponseMeta.Usage
-
-			body.Usage = &langfuse.UsageDetail{
-				CompletionTokens: usage.CompletionTokens,
-				PromptTokens:     usage.PromptTokens,
-				TotalTokens:      usage.TotalTokens,
-				CompletionTokensDetails: &langfuse.CompletionTokensDetails{
-					ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
-				},
-				PromptTokensDetails: &langfuse.PromptTokensDetails{
-					CachedTokens: usage.PromptTokenDetails.CachedTokens,
-				},
-			}
+		if mcbo.Message != nil && mcbo.Message.ResponseMeta != nil && mcbo.Message.ResponseMeta.Usage != nil {
+			body.Usage = mapUsageDetail(mcbo.Message.ResponseMeta.Usage)
 		}
 
 		err := c.cli.EndGeneration(body)
@@ -534,6 +522,10 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 			}
 
 			outMessage, extra, err := extractModelOutput(convModelCallbackOutput(outs))
+			if err != nil {
+				log.Printf("extract stream model output error: %v, runinfo: %+v", err, info)
+				return
+			}
 			body := &langfuse.GenerationEventBody{
 				BaseObservationEventBody: langfuse.BaseObservationEventBody{
 					BaseEventBody: langfuse.BaseEventBody{
@@ -545,20 +537,8 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 				EndTime:             time.Now(),
 				CompletionStartTime: startTime,
 			}
-			if outMessage.ResponseMeta != nil && outMessage.ResponseMeta.Usage != nil {
-				usage := outMessage.ResponseMeta.Usage
-
-				body.Usage = &langfuse.UsageDetail{
-					CompletionTokens: usage.CompletionTokens,
-					PromptTokens:     usage.PromptTokens,
-					TotalTokens:      usage.TotalTokens,
-					CompletionTokensDetails: &langfuse.CompletionTokensDetails{
-						ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
-					},
-					PromptTokensDetails: &langfuse.PromptTokensDetails{
-						CachedTokens: usage.PromptTokenDetails.CachedTokens,
-					},
-				}
+			if outMessage != nil && outMessage.ResponseMeta != nil && outMessage.ResponseMeta.Usage != nil {
+				body.Usage = mapUsageDetail(outMessage.ResponseMeta.Usage)
 			}
 
 			err = c.cli.EndGeneration(body)
@@ -610,7 +590,10 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	return ctx
 }
 
+// ReportOutput pushes final trace output to Langfuse (via ACL EndTrace).
+// ctx is reserved for future cancellation / deadline propagation; callers may pass context.Background() for now.
 func (c *CallbackHandler) ReportOutput(ctx context.Context, traceID string, output string) {
+	_ = ctx
 	err := c.cli.EndTrace(&langfuse.TraceEventBody{
 		BaseEventBody: langfuse.BaseEventBody{
 			ID: traceID,
