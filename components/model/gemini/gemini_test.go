@@ -69,6 +69,7 @@ func TestGemini(t *testing.T) {
 		assert.Equal(t, "Hello, how can I help you?", resp.Content)
 		assert.Equal(t, schema.Assistant, resp.Role)
 		assert.Equal(t, 100, resp.ResponseMeta.Usage.TotalTokens)
+		assert.Equal(t, 100, resp.ResponseMeta.Usage.CompletionTokens)
 		assert.Equal(t, 50, resp.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 	mockey.PatchConvey("stream", t, func() {

@@ -1148,7 +1148,7 @@ func convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) 
 			PromptTokenDetails: schema.PromptTokenDetails{
 				CachedTokens: int(resp.UsageMetadata.CachedContentTokenCount),
 			},
-			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
+			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount) + int(resp.UsageMetadata.ThoughtsTokenCount),
 			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
 			CompletionTokensDetails: schema.CompletionTokensDetails{
 				ReasoningTokens: int(resp.UsageMetadata.ThoughtsTokenCount),
