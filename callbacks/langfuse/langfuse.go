@@ -590,9 +590,9 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	return ctx
 }
 
-// ReportOutput pushes final trace output to Langfuse (via ACL EndTrace).
+// UpdateTraceOutput pushes final trace output to Langfuse (via ACL EndTrace).
 // ctx is reserved for future cancellation / deadline propagation; callers may pass context.Background() for now.
-func (c *CallbackHandler) ReportOutput(ctx context.Context, traceID string, output string) {
+func (c *CallbackHandler) UpdateTraceOutput(ctx context.Context, traceID string, output string) {
 	_ = ctx
 	err := c.cli.EndTrace(&langfuse.TraceEventBody{
 		BaseEventBody: langfuse.BaseEventBody{
