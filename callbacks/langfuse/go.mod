@@ -6,7 +6,7 @@ require (
 	github.com/bytedance/mockey v1.2.13
 	github.com/bytedance/sonic v1.14.1
 	github.com/cloudwego/eino v0.7.13
-	github.com/cloudwego/eino-ext/libs/acl/langfuse v0.0.0-00010101000000-000000000000
+	github.com/cloudwego/eino-ext/libs/acl/langfuse v0.1.1
 	github.com/golang/mock v1.6.0
 	github.com/stretchr/testify v1.10.0
 )
@@ -47,5 +47,3 @@ require (
 	golang.org/x/term v0.32.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/cloudwego/eino-ext/libs/acl/langfuse => ../../libs/acl/langfuse
