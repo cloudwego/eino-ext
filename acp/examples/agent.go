@@ -88,7 +88,11 @@ func (a *agent) NewSession(ctx context.Context, _ acp.NewSessionRequest) (acp.Ne
 	// If the client supports filesystem or terminal, add the ACP client tools middleware.
 	// This bridges ACP's ReadTextFile/WriteTextFile/Terminal to eino's filesystem tools.
 	if a.clientCapabilities != nil {
-		m, err := einoacp.NewClientToolsMiddleware(ctx, sessionID, a.clientCapabilities, a.conn)
+		m, err := einoacp.NewClientToolsMiddleware(ctx, &einoacp.Config{
+			SessionID:    sessionID,
+			Conn:         a.conn,
+			Capabilities: a.clientCapabilities,
+		})
 		if err != nil {
 			return acp.NewSessionResponse{}, fmt.Errorf("failed to create client tools middleware: %w", err)
 		}
