@@ -18,6 +18,7 @@ package einoacp
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"strconv"
@@ -42,22 +43,26 @@ type Config struct {
 	Capabilities *acpproto.ClientCapabilities
 
 	// UseTerminalForFileTools enables terminal-backed implementations of the
-	// ls, glob, and grep tools. It only takes effect when the client also
-	// advertises the terminal capability; otherwise those tools stay disabled
-	// because the ACP protocol does not expose corresponding filesystem methods.
+	// ls, glob, grep, and edit tools. It only takes effect when the client
+	// also advertises the terminal capability; otherwise those tools stay
+	// disabled because the ACP protocol does not expose corresponding
+	// filesystem methods.
 	//
 	// Implementation: ls runs `ls -1A`, glob enumerates with `find` and matches
-	// in-process via doublestar, and grep shells out to ripgrep (`rg`). If `rg`
-	// is not installed on the client side, grep calls will fail.
+	// in-process via doublestar, grep shells out to ripgrep (`rg`), and edit
+	// runs an inline `python3` script that reads, replaces, and rewrites the
+	// file in one shot. Old/new strings are passed base64-encoded so they round-
+	// trip safely through argv. If `rg` or `python3` is missing on the client
+	// side, the corresponding tool calls will fail.
 	UseTerminalForFileTools bool
 }
 
 // NewClientToolsMiddleware creates a ChatModelAgentMiddleware that bridges ACP client-side capabilities
 // (filesystem read/write, terminal execution) to eino's filesystem tools. The ACP protocol only exposes
-// read_text_file, write_text_file and terminal capabilities, so edit is always disabled; read_file,
-// write_file and terminal are enabled only when the client advertises the corresponding capability.
-// ls/glob/grep are disabled by default; they become available when cfg.UseTerminalForFileTools is true
-// and the client advertises the terminal capability — in which case they run as shell commands.
+// read_text_file, write_text_file and terminal capabilities, so read_file and write_file are enabled
+// only when the client advertises the corresponding capability. ls/glob/grep/edit are disabled by
+// default; they become available when cfg.UseTerminalForFileTools is true and the client advertises
+// the terminal capability — in which case they run as shell commands.
 func NewClientToolsMiddleware(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
 	if cfg == nil {
 		return nil, errors.New("acp.NewClientToolsMiddleware: cfg is required")
@@ -88,6 +93,7 @@ func NewClientToolsMiddleware(ctx context.Context, cfg *Config) (adk.ChatModelAg
 				config.LsToolConfig = nil
 				config.GlobToolConfig = nil
 				config.GrepToolConfig = nil
+				config.EditFileToolConfig = nil
 			}
 		}
 		if cfg.Capabilities.FS != nil {
@@ -316,9 +322,56 @@ func (b *backend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest)
 	return infos, nil
 }
 
-func (b *backend) Edit(_ context.Context, _ *filesystem.EditRequest) error {
-	return fmt.Errorf("acp client does not support edit")
+func (b *backend) Edit(ctx context.Context, req *filesystem.EditRequest) error {
+	if b.shell == nil {
+		return fmt.Errorf("acp client does not support edit")
+	}
+	if req.OldString == "" {
+		return errors.New("oldString must be non-empty")
+	}
+
+	oldB64 := base64.StdEncoding.EncodeToString([]byte(req.OldString))
+	newB64 := base64.StdEncoding.EncodeToString([]byte(req.NewString))
+	replaceAll := "0"
+	if req.ReplaceAll {
+		replaceAll = "1"
+	}
+	cmd := joinShellArgs([]string{
+		"python3", "-c", editPythonScript,
+		req.FilePath, oldB64, newB64, replaceAll,
+	})
+	if _, err := b.runShell(ctx, cmd); err != nil {
+		return fmt.Errorf("acp.shell edit %s: %w", req.FilePath, err)
+	}
+	return nil
 }
+
+// editPythonScript reads a file, replaces OldString with NewString, and writes
+// it back. Args (after `-c <script>`): file_path old_b64 new_b64 replace_all
+// where replace_all is "1" or "0". Old/new are base64-encoded so they survive
+// argv as opaque byte strings. Avoids single quotes so the whole script can be
+// passed inside a single-quoted shell argument.
+const editPythonScript = `import base64, sys
+path = sys.argv[1]
+old = base64.b64decode(sys.argv[2]).decode("utf-8")
+new_ = base64.b64decode(sys.argv[3]).decode("utf-8")
+replace_all = sys.argv[4] == "1"
+try:
+    with open(path, "r") as f:
+        content = f.read()
+except FileNotFoundError:
+    sys.stderr.write("file not found: " + path + "\n")
+    sys.exit(2)
+if old not in content:
+    sys.stderr.write("oldString not found in file: " + path + "\n")
+    sys.exit(3)
+if not replace_all and content.count(old) > 1:
+    sys.stderr.write("multiple occurrences of oldString found in file " + path + ", but ReplaceAll is false\n")
+    sys.exit(4)
+content = content.replace(old, new_) if replace_all else content.replace(old, new_, 1)
+with open(path, "w") as f:
+    f.write(content)
+`
 
 func (b *backend) runShell(ctx context.Context, cmd string) (string, error) {
 	resp, err := b.shell.Execute(ctx, &filesystem.ExecuteRequest{Command: cmd})
