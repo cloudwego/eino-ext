@@ -69,6 +69,11 @@ type EmbeddingConfig struct {
 	AccessKey string `json:"access_key"`
 	SecretKey string `json:"secret_key"`
 
+	// ProjectName specifies the project name for preset endpoint (ep-m-*) authentication
+	// Required only when using AccessKey/SecretKey with preset endpoints
+	// Optional.
+	ProjectName string `json:"project_name,omitempty"`
+
 	// Model specifies the ID of endpoint on ark platform
 	// Required
 	Model string `json:"model"`
@@ -195,7 +200,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 			req.Dimensions = *e.conf.Dimensions
 		}
 
-		resp, err := e.client.CreateEmbeddings(ctx, req)
+		resp, err := e.client.CreateEmbeddings(ctx, req, arkruntime.WithProjectName(e.conf.ProjectName))
 		if err != nil {
 			return nil, fmt.Errorf("[Ark] CreateEmbeddings error: %w", err)
 		}
@@ -229,7 +234,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 					Model:          conf.Model,
 					EncodingFormat: &encodingFormat,
 					Dimensions:     e.conf.Dimensions,
-				})
+				}, arkruntime.WithProjectName(e.conf.ProjectName))
 				if err != nil {
 					return fmt.Errorf("[Ark] CreateMultiModalEmbeddings error: %w", err)
 				}
