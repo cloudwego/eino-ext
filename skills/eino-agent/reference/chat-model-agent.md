@@ -234,12 +234,19 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 
 See the "ModelRetryConfig (v0.9 Enhanced)" section below for the full retry API with output-based decisions, modified inputs, and backoff control.
 
-When a streaming response will be retried, the stream emits a `WillRetryError` event. Handle it to show retry status to the user:
+When a streaming response will be retried, the stream emits a `WillRetryError` via `Recv()`. Handle it to show retry status to the user:
 
 ```go
-if willRetry, ok := err.(*adk.WillRetryError); ok {
-    fmt.Printf("Retrying (attempt %d): %s\n", willRetry.RetryAttempt, willRetry.ErrStr)
-    reason := willRetry.RejectReason() // custom reason from RetryDecision
+// WillRetryError is returned by stream.Recv() when an attempt is rejected and will be retried.
+// The stream continues after this error — call Recv() again to get the next attempt's chunks.
+chunk, err := stream.Recv()
+if err != nil {
+    var willRetry *adk.WillRetryError
+    if errors.As(err, &willRetry) {
+        fmt.Printf("Retrying (attempt %d): %s\n", willRetry.RetryAttempt, willRetry.ErrStr)
+        reason := willRetry.RejectReason() // custom reason from RetryDecision
+        continue // next Recv() will return chunks from the retry attempt
+    }
 }
 ```
 
@@ -267,6 +274,8 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
             }
             return &adk.RetryDecision{Retry: false}
         },
+        // BackoffFunc provides the default delay between retries.
+        // ShouldRetry can override this per-attempt via RetryDecision.Backoff (non-zero takes precedence).
         BackoffFunc: func(ctx context.Context, attempt int) time.Duration {
             return time.Duration(attempt) * time.Second // linear backoff
         },
@@ -345,28 +354,16 @@ On cancel, a `CancelError` is delivered via the event stream. It contains `Inter
 
 ## WithAfterToolCallsHook
 
-Execute a callback after all tool calls in a ReAct iteration complete:
+Execute a callback after all tool calls in a ReAct iteration complete, before the next ChatModel call:
 
 ```go
 iter := runner.Query(ctx, "do work",
-    adk.WithAfterToolCallsHook(func(ctx context.Context, tcc *adk.ToolCallsContext) error {
-        for _, tc := range tcc.ToolCalls {
-            fmt.Printf("Tool %s (call %s) completed\n", tc.Name, tc.CallID)
-        }
+    adk.WithAfterToolCallsHook(func(ctx context.Context) error {
+        // Fires after tool execution finishes, before the next model call.
+        // Useful for TurnLoop Push+Preempt patterns where pushed items
+        // must be visible to the next turn's GenInput.
+        fmt.Println("All tool calls completed")
         return nil
-    }),
-)
-```
-
-## WithHistoryModifier
-
-Modify message history before it's fed to the model (per-run):
-
-```go
-iter := runner.Query(ctx, "hello",
-    adk.WithHistoryModifier(func(msgs []*schema.Message) []*schema.Message {
-        // Inject additional context, filter messages, etc.
-        return append([]*schema.Message{schema.SystemMessage("Extra context")}, msgs...)
     }),
 )
 ```
