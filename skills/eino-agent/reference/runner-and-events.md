@@ -233,10 +233,10 @@ func (ai *AsyncIterator[T]) Next() (T, bool)
 ```go
 type MyAgent struct{}
 
-func (a *MyAgent) Name() string        { return "MyAgent" }
-func (a *MyAgent) Description() string { return "My custom agent" }
+func (a *MyAgent) Name(ctx context.Context) string        { return "MyAgent" }
+func (a *MyAgent) Description(ctx context.Context) string { return "My custom agent" }
 
-func (a *MyAgent) Run(ctx context.Context, input *adk.AgentInput) *adk.AsyncIterator[*adk.AgentEvent] {
+func (a *MyAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
     iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
     go func() {
         defer gen.Close()

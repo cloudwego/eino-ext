@@ -15,9 +15,9 @@ type MessageType interface {
 }
 
 type TypedAgent[M MessageType] interface {
-    Name() string
-    Description() string
-    Run(ctx context.Context, input *TypedAgentInput[M]) *AsyncIterator[*TypedAgentEvent[M]]
+    Name(ctx context.Context) string
+    Description(ctx context.Context) string
+    Run(ctx context.Context, input *TypedAgentInput[M], opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]]
 }
 
 // Convenience aliases for classic message type
