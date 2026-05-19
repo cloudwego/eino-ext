@@ -22,25 +22,21 @@ import (
 	"os"
 
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
+	"github.com/cloudwego/eino-ext/components/model/agenticclaude"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/openai/openai-go/v3/responses"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
-		BaseURL: "https://api.openai.com/v1",
-		Model:   os.Getenv("OPENAI_MODEL_ID"),
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Reasoning: &responses.ReasoningParam{
-			Effort:  responses.ReasoningEffortLow,
-			Summary: responses.ReasoningSummaryDetailed,
-		},
+	am, err := agenticclaude.New(ctx, &agenticclaude.Config{
+		BaseURL:   os.Getenv("CLAUDE_BASE_URL"),
+		Model:     os.Getenv("CLAUDE_MODEL"),
+		APIKey:    os.Getenv("CLAUDE_API_KEY"),
+		MaxTokens: 4096,
 	})
 	if err != nil {
 		log.Fatalf("failed to create agentic model, err: %v", err)
@@ -75,9 +71,10 @@ func main() {
 		log.Fatalf("failed to generate, err: %v", err)
 	}
 
-	meta := msg.ResponseMeta.OpenAIExtension
+	if meta := msg.ResponseMeta.ClaudeExtension; meta != nil {
+		log.Printf("request_id: %s\n", meta.ID)
+	}
 
-	log.Printf("request_id: %s\n", meta.ID)
 	respBody, _ := sonic.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("body: %s\n", string(respBody))
 }

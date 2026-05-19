@@ -557,7 +557,7 @@ func toUserRoleInputItems(msg *schema.AgenticMessage) (items []responses.Respons
 			}
 
 		case schema.ContentBlockTypeToolSearchResult:
-			item, err = toolSearchToolResultToInputItem(block.ToolSearchFunctionToolResult)
+			item, err = toolSearchToolResultBlockToInputItem(block.ToolSearchFunctionToolResult)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert tool search function tool result to input item: %w", err)
 			}
@@ -672,7 +672,7 @@ func userInputFileToInputItem(role responses.EasyInputMessageRole, block *schema
 	return item, nil
 }
 
-func toolSearchToolResultToInputItem(block *schema.ToolSearchFunctionToolResult) (item responses.ResponseInputItemUnionParam, err error) {
+func toolSearchToolResultBlockToInputItem(block *schema.ToolSearchFunctionToolResult) (item responses.ResponseInputItemUnionParam, err error) {
 	if block.Result == nil {
 		return item, fmt.Errorf("tool search result should not be nil")
 	}
@@ -927,10 +927,6 @@ func reasoningToInputItem(block *schema.ContentBlock) (item responses.ResponseIn
 
 func serverToolCallToInputItem(block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
 	content := block.ServerToolCall
-	if content == nil {
-		return item, fmt.Errorf("server tool call is nil")
-	}
-
 	arguments, err := getServerToolCallArguments(content)
 	if err != nil {
 		return item, err
@@ -948,19 +944,7 @@ func serverToolCallToInputItem(block *schema.ContentBlock) (item responses.Respo
 	case arguments.Shell != nil:
 		return shellToolCallToInputItem(arguments.Shell, block)
 	case arguments.ToolSearch != nil:
-		id, _ := getItemID(block)
-		status, _ := GetItemStatus(block)
-		var action *responses.ResponseInputItemToolSearchCallParam
-		action, err = getToolSearchCallActionParam(arguments.ToolSearch)
-		if err != nil {
-			return item, err
-		}
-		action.CallID = newOpenaiStrOpt(content.CallID)
-		action.ID = param.NewOpt(id)
-		action.Status = status
-		return responses.ResponseInputItemUnionParam{
-			OfToolSearchCall: action,
-		}, nil
+		return toolSearchToolCallToInputItem(arguments.ToolSearch, content.CallID, block)
 	default:
 		return item, fmt.Errorf("server tool call arguments are nil")
 	}
@@ -1123,10 +1107,6 @@ func getToolSearchCallActionParam(ts *ToolSearchCall) (*responses.ResponseInputI
 
 func serverToolResultToInputItem(block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
 	content := block.ServerToolResult
-	if content == nil {
-		return item, fmt.Errorf("server tool result is nil")
-	}
-
 	result, err := getServerToolResult(content)
 	if err != nil {
 		return item, err
@@ -1144,23 +1124,46 @@ func serverToolResultToInputItem(block *schema.ContentBlock) (item responses.Res
 	case result.Shell != nil:
 		return shellToolResultToInputItem(result.Shell, block)
 	case result.ToolSearch != nil:
-		id, _ := getItemID(block)
-		status, _ := GetItemStatus(block)
-		var action *responses.ResponseToolSearchOutputItemParam
-		action, err = getToolSearchResultActionParam(result.ToolSearch)
-		if err != nil {
-			return item, err
-		}
-		action.CallID = newOpenaiStrOpt(content.CallID)
-		action.ID = param.NewOpt(id)
-		action.Status = responses.ResponseToolSearchOutputItemParamStatus(status)
-
-		return responses.ResponseInputItemUnionParam{
-			OfToolSearchOutput: action,
-		}, nil
+		return toolSearchToolResultToInputItem(result.ToolSearch, content.CallID, block)
 	default:
 		return item, fmt.Errorf("server tool result is nil")
 	}
+}
+
+func toolSearchToolCallToInputItem(args *ToolSearchCall, callID string, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	action, err := getToolSearchCallActionParam(args)
+	if err != nil {
+		return item, err
+	}
+
+	action.CallID = newOpenaiStrOpt(callID)
+	action.ID = newOpenaiStrOpt(id)
+	action.Status = status
+
+	return responses.ResponseInputItemUnionParam{
+		OfToolSearchCall: action,
+	}, nil
+}
+
+func toolSearchToolResultToInputItem(result *ToolSearchResult, callID string, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+	id, _ := getItemID(block)
+	status, _ := GetItemStatus(block)
+
+	action, err := getToolSearchResultActionParam(result)
+	if err != nil {
+		return item, err
+	}
+
+	action.CallID = newOpenaiStrOpt(callID)
+	action.ID = newOpenaiStrOpt(id)
+	action.Status = responses.ResponseToolSearchOutputItemParamStatus(status)
+
+	return responses.ResponseInputItemUnionParam{
+		OfToolSearchOutput: action,
+	}, nil
 }
 
 func webSearchToolResultToInputItem(result *WebSearchResult, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {

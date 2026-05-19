@@ -18,7 +18,6 @@ package agenticopenai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -206,9 +205,6 @@ func buildClient(config *Config) (*Model, error) {
 type Model struct {
 	cli responses.ResponseService
 
-	rawFunctionTools []*schema.ToolInfo
-	functionTools    []responses.ToolUnionParam
-
 	model             string
 	maxTokens         *int
 	temperature       *float32
@@ -245,14 +241,9 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 
 	config := toCallbackConfig(req)
 
-	tools := m.rawFunctionTools
-	if options.Tools != nil {
-		tools = options.Tools
-	}
-
 	ctx = callbacks.OnStart(ctx, &model.AgenticCallbackInput{
 		Messages: input,
-		Tools:    tools,
+		Tools:    options.Tools,
 		Config:   config,
 	})
 
@@ -297,14 +288,10 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 	}
 
 	config := toCallbackConfig(req)
-	tools := m.rawFunctionTools
-	if options.Tools != nil {
-		tools = options.Tools
-	}
 
 	ctx = callbacks.OnStart(ctx, &model.AgenticCallbackInput{
 		Messages: input,
-		Tools:    tools,
+		Tools:    options.Tools,
 		Config:   config,
 	})
 
@@ -353,23 +340,6 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 	)
 
 	return outStream, err
-}
-
-func (m *Model) WithTools(functionTools []*schema.ToolInfo) (model.AgenticModel, error) {
-	if len(functionTools) == 0 {
-		return nil, errors.New("function tools are required")
-	}
-
-	fts, err := toFunctionTools(functionTools)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert function tools: %w", err)
-	}
-
-	m_ := *m
-	m_.rawFunctionTools = functionTools
-	m_.functionTools = fts
-
-	return &m_, nil
 }
 
 func (m *Model) GetType() string {
@@ -589,10 +559,10 @@ func (m *Model) prePopulateConfig(responseReq *responses.ResponseNewParams, opti
 
 	// options configuration
 	if options.TopP != nil {
-		responseReq.TopP = newOpenaiOpt(ptrOf(float64(*options.TopP)))
+		responseReq.TopP = param.NewOpt(float64(*options.TopP))
 	}
 	if options.Temperature != nil {
-		responseReq.Temperature = newOpenaiOpt(ptrOf(float64(*options.Temperature)))
+		responseReq.Temperature = param.NewOpt(float64(*options.Temperature))
 	}
 	if options.Model != nil {
 		responseReq.Model = *options.Model
@@ -715,7 +685,7 @@ func (m *Model) populateToolChoice(responseReq *responses.ResponseNewParams, opt
 		}
 
 	default:
-		return fmt.Errorf("invalid tool choice: %s", *options.ToolChoice)
+		return fmt.Errorf("invalid tool choice: %s", toolChoice.Type)
 	}
 
 	return nil
@@ -761,8 +731,6 @@ func (m *Model) populateTools(responseReq *responses.ResponseNewParams, options 
 		if err != nil {
 			return err
 		}
-	} else {
-		functionTools = m.functionTools
 	}
 
 	if len(options.DeferredTools) > 0 {
