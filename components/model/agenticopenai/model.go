@@ -772,9 +772,11 @@ func (m *Model) populateTools(responseReq *responses.ResponseNewParams, options 
 			return err
 		}
 		functionTools = append(functionTools, deferredTools...)
-		functionTools = append(functionTools, responses.ToolUnionParam{
-			OfToolSearch: &responses.ToolSearchToolParam{}, // add hosted tool search automatically if deferred tools has been set
-		})
+		if options.ToolSearchTool == nil {
+			functionTools = append(functionTools, responses.ToolUnionParam{
+				OfToolSearch: &responses.ToolSearchToolParam{}, // add hosted tool search automatically if deferred tools has been set
+			})
+		}
 	}
 
 	if options.ToolSearchTool != nil {
