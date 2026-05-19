@@ -110,6 +110,34 @@ sr, sw := schema.Pipe[T](capacity)
 // chunk, err := sr.Recv(); sr.Close()
 ```
 
+## AgenticToolsNode
+
+`AgenticToolsNode` is the agentic counterpart to `ToolsNode`. It operates on `*schema.AgenticMessage` instead of `*schema.Message`, extracting `FunctionToolCall` content blocks and returning `FunctionToolResult` content blocks.
+
+```go
+import "github.com/cloudwego/eino/compose"
+
+// Create from the same ToolsNodeConfig
+agenticToolsNode, err := compose.NewAgenticToolsNode(ctx, &compose.ToolsNodeConfig{
+    Tools: []tool.BaseTool{myTool1, myTool2},
+})
+
+// Use in Graph
+g := compose.NewGraph[*schema.AgenticMessage, []*schema.AgenticMessage]()
+g.AddAgenticToolsNode("tools", agenticToolsNode)
+
+// Use in Chain
+chain := compose.NewChain[*schema.AgenticMessage, []*schema.AgenticMessage]()
+chain.AppendAgenticToolsNode(agenticToolsNode)
+```
+
+Key differences from `ToolsNode`:
+- Input: `*schema.AgenticMessage` (reads `ContentBlockTypeFunctionToolCall` blocks)
+- Output: `[]*schema.AgenticMessage` (writes `ContentBlockTypeFunctionToolResult` blocks)
+- Supports multimodal tool results (text, image, audio, video, file)
+- Handles `ToolSearchFunctionToolResult` for dynamic tool discovery
+- Reuses the same `ToolsNodeConfig` -- all existing tools work unchanged
+
 ## Compile & Run
 
 ```go

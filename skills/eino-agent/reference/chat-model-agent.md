@@ -31,10 +31,10 @@ type ChatModelAgentConfig struct {
     Instruction string
 
     // The LLM model. Must support tool calling.
-    Model model.ToolCallingChatModel
+    Model model.BaseModel[M] // model.BaseChatModel or model.AgenticModel
 
     // Tool configuration
-    ToolsConfig ToolsConfig
+    ToolsConfig *ToolsConfig // pointer in v0.9
 
     // Custom function to transform instruction + input into model messages.
     // Optional. Defaults to prepending instruction as system message.
@@ -42,16 +42,19 @@ type ChatModelAgentConfig struct {
 
     // Exit tool. When called, agent terminates immediately.
     // Use the built-in ExitTool: adk.ExitTool{}
-    Exit tool.BaseTool
+    Exit *Exit // Built-in exit tool config
 
     // Max ReAct iterations. Default: 20. Agent errors if exceeded.
     MaxIterations int
 
     // Retry config for ChatModel failures. Optional.
-    ModelRetryConfig *ModelRetryConfig
+    ModelRetryConfig *TypedModelRetryConfig[M]
+
+    // Failover config for model failures. Optional.
+    ModelFailoverConfig *ModelFailoverConfig[M]
 
     // Middleware list
-    Handlers []ChatModelAgentMiddleware
+    Handlers []TypedChatModelAgentMiddleware[M]
 }
 ```
 
@@ -73,8 +76,12 @@ type ToolsConfig struct {
 
 ```go
 type ToolsNodeConfig struct {
-    Tools              []tool.BaseTool
-    ToolCallMiddlewares []compose.ToolCallMiddleware
+    Tools               []tool.BaseTool
+    ToolAliases         map[string]ToolAliasConfig
+    UnknownToolsHandler func(ctx context.Context, name, input string) (string, error)
+    ExecuteSequentially bool
+    ToolArgumentsHandler func(ctx context.Context, name, arguments string) (string, error)
+    ToolCallMiddlewares  []ToolMiddleware
 }
 ```
 
@@ -225,19 +232,144 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 
 ## ModelRetryConfig
 
-Configure automatic retry on model failures:
+See the "ModelRetryConfig (v0.9 Enhanced)" section below for the full retry API with output-based decisions, modified inputs, and backoff control.
+
+When a streaming response will be retried, the stream emits a `WillRetryError` event. Handle it to show retry status to the user:
+
+```go
+if willRetry, ok := err.(*adk.WillRetryError); ok {
+    fmt.Printf("Retrying (attempt %d): %s\n", willRetry.RetryAttempt, willRetry.ErrStr)
+    reason := willRetry.RejectReason() // custom reason from RetryDecision
+}
+```
+
+## ModelRetryConfig (v0.9 Enhanced)
+
+Output-based retry with full decision control:
 
 ```go
 agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
     // ...
     ModelRetryConfig: &adk.ModelRetryConfig{
         MaxRetries: 3,
-        // Additional retry policy fields...
+        ShouldRetry: func(ctx context.Context, retryCtx *adk.RetryContext) *adk.RetryDecision {
+            // Access the full output message for decision
+            if retryCtx.Err != nil {
+                return &adk.RetryDecision{Retry: true}
+            }
+            if retryCtx.OutputMessage.Content == "" {
+                return &adk.RetryDecision{
+                    Retry:                 true,
+                    ModifiedInputMessages: append(retryCtx.InputMessages, schema.UserMessage("Please provide a non-empty response")),
+                    PersistModifiedInputMessages: true,
+                    Backoff:               2 * time.Second,
+                }
+            }
+            return &adk.RetryDecision{Retry: false}
+        },
+        BackoffFunc: func(ctx context.Context, attempt int) time.Duration {
+            return time.Duration(attempt) * time.Second // linear backoff
+        },
     },
 })
 ```
 
-When a streaming response fails and will be retried, the stream returns a `WillRetryError`. Handle it to show retry status to the user.
+RetryContext fields:
+- `RetryAttempt int` -- current retry attempt (0-indexed)
+- `InputMessages []M` -- messages sent to the model
+- `OutputMessage M` -- full concatenated response (stream fully consumed for streaming)
+- `Err error` -- error from model call (nil if output-based retry)
+- `Options []model.Option` -- model options used
+
+RetryDecision fields:
+- `Retry bool` -- whether to retry
+- `RewriteError error` -- replace the original error
+- `ModifiedInputMessages []M` -- modified input for retry
+- `PersistModifiedInputMessages bool` -- keep modified input in agent state
+- `AdditionalOptions []model.Option` -- extra model options for retry
+- `Backoff time.Duration` -- wait before retry (overrides BackoffFunc)
+- `RejectReason any` -- attached to WillRetryError for stream consumers
+
+## ModelFailoverConfig
+
+Dynamic model switching when the primary model fails:
+
+```go
+agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
+    // ...
+    ModelFailoverConfig: &adk.ModelFailoverConfig[*schema.Message]{
+        MaxRetries: 2,
+        ShouldFailover: func(ctx context.Context, output *schema.Message, err error) bool {
+            return err != nil
+        },
+        GetFailoverModel: func(ctx context.Context, fCtx *adk.FailoverContext[*schema.Message]) (
+            model.BaseModel[*schema.Message], []*schema.Message, error) {
+            return backupModel, fCtx.InputMessages, nil
+        },
+    },
+})
+```
+
+FailoverContext fields:
+- `FailoverAttempt uint` -- current failover attempt
+- `InputMessages []M` -- original input messages
+- `LastOutputMessage M` -- last model output (may be nil)
+- `LastErr error` -- last error (may be `*RetryExhaustedError` if retry is also configured)
+
+## Cancel
+
+Cancel provides safe, controllable termination during a run:
+
+```go
+cancelOpt, cancelFn := adk.WithCancel()
+iter := runner.Query(ctx, "do something", cancelOpt)
+
+// Later: cancel at safe point
+handle, ok := cancelFn(
+    adk.WithAgentCancelMode(adk.CancelAfterToolCalls),
+    adk.WithAgentCancelTimeout(5*time.Second),
+    adk.WithRecursive(),
+)
+if ok {
+    err := handle.Wait()
+    // err is *CancelError with checkpoint for resume
+}
+```
+
+CancelMode values (bitmask, combinable):
+- `CancelImmediate` (0) -- abort now, stream terminated with StreamCanceledError
+- `CancelAfterChatModel` -- wait for model call to complete
+- `CancelAfterToolCalls` -- wait for tool execution to complete
+
+On cancel, a `CancelError` is delivered via the event stream. It contains `InterruptContexts` for checkpoint-based resumption.
+
+## WithAfterToolCallsHook
+
+Execute a callback after all tool calls in a ReAct iteration complete:
+
+```go
+iter := runner.Query(ctx, "do work",
+    adk.WithAfterToolCallsHook(func(ctx context.Context, tcc *adk.ToolCallsContext) error {
+        for _, tc := range tcc.ToolCalls {
+            fmt.Printf("Tool %s (call %s) completed\n", tc.Name, tc.CallID)
+        }
+        return nil
+    }),
+)
+```
+
+## WithHistoryModifier
+
+Modify message history before it's fed to the model (per-run):
+
+```go
+iter := runner.Query(ctx, "hello",
+    adk.WithHistoryModifier(func(msgs []*schema.Message) []*schema.Message {
+        // Inject additional context, filter messages, etc.
+        return append([]*schema.Message{schema.SystemMessage("Extra context")}, msgs...)
+    }),
+)
+```
 
 ## SessionValues
 

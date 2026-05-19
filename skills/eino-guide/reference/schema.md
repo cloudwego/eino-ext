@@ -57,6 +57,100 @@ type FunctionCall struct {
 }
 ```
 
+## AgenticMessage
+
+Block-based message type for the agentic path, providing lossless multimodal representation aligned with OpenAI Responses, Claude Message, and Gemini APIs.
+
+```go
+type AgenticMessage struct {
+    Role          AgenticRoleType      // system, user, assistant
+    ContentBlocks []*ContentBlock      // ordered typed content blocks
+    ResponseMeta  *AgenticResponseMeta // token usage, provider extensions
+    Extra         map[string]any
+}
+```
+
+### Roles
+
+| Role | Constant | Purpose |
+|------|----------|---------|
+| System | `schema.AgenticRoleTypeSystem` | Instructions to the model |
+| User | `schema.AgenticRoleTypeUser` | User input and tool results |
+| Assistant | `schema.AgenticRoleTypeAssistant` | Model output |
+
+Note: Unlike classic Message, there is no Tool role. Tool results are ContentBlocks within a User message.
+
+### ContentBlock (Tagged Union)
+
+```go
+type ContentBlock struct {
+    Type ContentBlockType  // discriminator
+
+    // Populated based on Type:
+    Reasoning          *Reasoning
+    UserInputText      *UserInputText
+    UserInputImage     *UserInputImage
+    UserInputAudio     *UserInputAudio
+    UserInputVideo     *UserInputVideo
+    UserInputFile      *UserInputFile
+    AssistantGenText   *AssistantGenText
+    AssistantGenImage  *AssistantGenImage
+    AssistantGenAudio  *AssistantGenAudio
+    AssistantGenVideo  *AssistantGenVideo
+    FunctionToolCall   *FunctionToolCall
+    FunctionToolResult *FunctionToolResult
+    ServerToolCall     *ServerToolCall
+    ServerToolResult   *ServerToolResult
+    MCPToolCall        *MCPToolCall
+    MCPToolResult      *MCPToolResult
+    // ... and more
+}
+```
+
+### Key ContentBlock Types
+
+| Type | Description |
+|------|-------------|
+| `ContentBlockTypeReasoning` | Model's chain-of-thought (Text + encrypted Signature) |
+| `ContentBlockTypeUserInputText` | Text input from user |
+| `ContentBlockTypeUserInputImage` | Image (URL or base64) |
+| `ContentBlockTypeAssistantGenText` | Generated text output |
+| `ContentBlockTypeFunctionToolCall` | Tool call (Name + Arguments JSON) |
+| `ContentBlockTypeFunctionToolResult` | Tool result (multimodal: text/image/audio/video/file) |
+| `ContentBlockTypeServerToolCall` | Provider built-in tool call (e.g., web_search) |
+| `ContentBlockTypeMCPToolCall` | MCP protocol tool call |
+
+### Constructors
+
+```go
+schema.SystemAgenticMessage("You are a helpful assistant.")
+schema.UserAgenticMessage("Hello")
+
+// Type-safe content block construction
+block := schema.NewContentBlock(&schema.FunctionToolCall{
+    CallID: "call_1", Name: "search", Arguments: `{"q":"go"}`,
+})
+```
+
+### Streaming
+
+```go
+// Concatenate streaming chunks into a single message
+fullMsg, err := schema.ConcatAgenticMessages(chunks)
+```
+
+### AgenticMessage vs Message
+
+| Aspect | Message | AgenticMessage |
+|--------|---------|----------------|
+| Content model | String + MultiContent | `[]*ContentBlock` (typed union) |
+| Tool calls | `ToolCalls []ToolCall` on assistant | `FunctionToolCall` content blocks |
+| Tool results | Separate Tool-role message | `FunctionToolResult` block in user message |
+| MCP support | Not native | Native (`MCPToolCall`, `MCPToolResult`, approval flow) |
+| Server tools | Not native | Native (`ServerToolCall`, `ServerToolResult`) |
+| Reasoning | `ReasoningContent` string | `Reasoning` block with Text + Signature |
+| Multimodal results | Text only | Text, image, audio, video, file |
+
 ## Document
 
 Unit of data for RAG pipelines.

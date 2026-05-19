@@ -3,14 +3,20 @@ ChatModelAgentMiddleware extends ChatModelAgent behavior at various execution st
 ## Interface
 
 ```go
-type ChatModelAgentMiddleware interface {
+type TypedChatModelAgentMiddleware[M MessageType] interface {
     BeforeAgent(ctx context.Context, runCtx *ChatModelAgentContext) (context.Context, *ChatModelAgentContext, error)
-    BeforeModelRewriteState(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error)
-    AfterModelRewriteState(ctx context.Context, state *ChatModelAgentState, mc *ModelContext) (context.Context, *ChatModelAgentState, error)
+    AfterAgent(ctx context.Context, state *TypedChatModelAgentState[M]) (context.Context, error)
+    BeforeModelRewriteState(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error)
+    AfterModelRewriteState(ctx context.Context, state *TypedChatModelAgentState[M], mc *TypedModelContext[M]) (context.Context, *TypedChatModelAgentState[M], error)
     WrapInvokableToolCall(ctx context.Context, endpoint InvokableToolCallEndpoint, tCtx *ToolContext) (InvokableToolCallEndpoint, error)
     WrapStreamableToolCall(ctx context.Context, endpoint StreamableToolCallEndpoint, tCtx *ToolContext) (StreamableToolCallEndpoint, error)
-    WrapModel(ctx context.Context, m model.BaseChatModel, mc *ModelContext) (model.BaseChatModel, error)
+    WrapEnhancedInvokableToolCall(ctx context.Context, endpoint EnhancedInvokableToolCallEndpoint, tCtx *ToolContext) (EnhancedInvokableToolCallEndpoint, error)
+    WrapEnhancedStreamableToolCall(ctx context.Context, endpoint EnhancedStreamableToolCallEndpoint, tCtx *ToolContext) (EnhancedStreamableToolCallEndpoint, error)
+    WrapModel(ctx context.Context, m model.BaseModel[M], mc *TypedModelContext[M]) (model.BaseModel[M], error)
 }
+
+// Convenience alias for classic message path
+type ChatModelAgentMiddleware = TypedChatModelAgentMiddleware[*schema.Message]
 ```
 
 Embed `*adk.BaseChatModelAgentMiddleware` to get default no-op implementations and only override what you need.
@@ -30,6 +36,7 @@ Agent.Run(input)
             -> Tool.Run()
             -> Results added to messages
        -> Continue loop
+  -> AfterAgent (once per run: cleanup, final state processing)
   -> Agent.Run() ends
 ```
 
@@ -235,16 +242,69 @@ Place this middleware first in the chain to ensure clean message history for oth
 
 ---
 
+## Agents.md Middleware
+
+Package: `github.com/cloudwego/eino/adk/middlewares/agentsmd`
+
+Injects Agents.md file contents into model input as transient context. The injected content is excluded from summarization to avoid polluting compressed history.
+
+```go
+import "github.com/cloudwego/eino/adk/middlewares/agentsmd"
+
+mw, err := agentsmd.New(ctx, &agentsmd.Config{
+    Loader: myLoader,  // Required: loads Agents.md content
+})
+```
+
+Use this middleware when you want to provide persistent reference documentation to the agent without it being summarized away. The content is re-injected fresh on each model call.
+
+---
+
+## Run-Local State
+
+Middleware can persist key-value state that survives interrupt/resume cycles:
+
+```go
+// Inside any middleware method
+adk.SetRunLocalValue(ctx, "myKey", myValue)
+
+// Read later (even after resume)
+val, ok, err := adk.GetRunLocalValue(ctx, "myKey")
+
+// Delete
+adk.DeleteRunLocalValue(ctx, "myKey")
+```
+
+Values must be gob-serializable. Register custom types in `init()`.
+
+---
+
+## Event Emission from Middleware
+
+Middleware can emit custom events to the agent's event stream:
+
+```go
+adk.SendEvent(ctx, &adk.AgentEvent{
+    AgentName: "MyAgent",
+    Output: &adk.AgentOutput{
+        CustomizedOutput: myData,
+    },
+})
+```
+
+---
+
 ## Recommended Middleware Order
 
 ```go
 Handlers: []adk.ChatModelAgentMiddleware{
     patchToolCallsMW,    // 1. Fix message history first
-    summarizationMW,     // 2. Compress if needed
-    reductionMW,         // 3. Handle large tool results
-    filesystemMW,        // 4. Add file tools
-    skillMW,             // 5. Add skill discovery
-    planTaskMW,          // 6. Add task management
+    agentsMdMW,          // 2. Inject reference docs
+    summarizationMW,     // 3. Compress if needed
+    reductionMW,         // 4. Handle large tool results
+    filesystemMW,        // 5. Add file tools
+    skillMW,             // 6. Add skill discovery
+    planTaskMW,          // 7. Add task management
 }
 ```
 

@@ -1,13 +1,13 @@
 ---
 name: eino-component
-description: Eino component selection, configuration, and usage. Use when a user needs to choose or configure a ChatModel, Embedding, Retriever, Indexer, Tool, Document loader/parser/transformer, Prompt template, or Callback handler. Covers all component interfaces and their implementations in eino-ext including OpenAI, Claude, Gemini, Ollama, Milvus, Elasticsearch, Redis, MCP tools, and more.
+description: Eino component selection, configuration, and usage. Use when a user needs to choose or configure a ChatModel, AgenticModel, Embedding, Retriever, Indexer, Tool, Document loader/parser/transformer, Prompt template, or Callback handler. Covers all component interfaces and their implementations in eino-ext including OpenAI, Claude, Gemini, Ark, Ollama, Milvus, Elasticsearch, Redis, MCP tools, and more.
 ---
 
 # Eino Component Guide
 
 ## Component Selection Guide
 
-### ChatModel -- LLM inference
+### ChatModel -- LLM inference (classic Message path)
 
 | Provider | Package | Notes |
 |----------|---------|-------|
@@ -20,6 +20,18 @@ description: Eino component selection, configuration, and usage. Use when a user
 | Qwen | `model/qwen` | Alibaba DashScope API |
 | Qianfan | `model/qianfan` | Baidu ERNIE models |
 | OpenRouter | `model/openrouter` | Multi-provider routing |
+
+### AgenticModel -- LLM inference (AgenticMessage path)
+
+AgenticModel operates on `*schema.AgenticMessage` with block-based content (reasoning, text, images, audio, video, tool calls/results). Tools are always passed at call time via `model.WithTools` option (no `WithTools` method).
+
+| Provider | Package | Notes |
+|----------|---------|-------|
+| OpenAI | `model/agenticopenai` | GPT-4o, o1, o3 series |
+| Gemini | `model/agenticgemini` | Gemini 2.x models |
+| DeepSeek | `model/agenticdeepseek` | DeepSeek-R1 with reasoning |
+| Ark (Volcengine) | `model/agenticark` | Doubao models (agentic path) |
+| Qwen | `model/agenticqwen` | Qwen series via DashScope |
 
 ### Embedding -- text to vector
 
@@ -65,11 +77,17 @@ description: Eino component selection, configuration, and usage. Use when a user
 ## Interface Quick Reference
 
 ```go
-// ChatModel
-type BaseChatModel interface {
-    Generate(ctx context.Context, input []*schema.Message, opts ...Option) (*schema.Message, error)
-    Stream(ctx context.Context, input []*schema.Message, opts ...Option) (*schema.StreamReader[*schema.Message], error)
+// BaseModel (generic)
+type BaseModel[M any] interface {
+    Generate(ctx context.Context, input []M, opts ...Option) (M, error)
+    Stream(ctx context.Context, input []M, opts ...Option) (*schema.StreamReader[M], error)
 }
+
+// Type aliases
+type BaseChatModel = BaseModel[*schema.Message]       // classic path
+type AgenticModel = BaseModel[*schema.AgenticMessage] // agentic path
+
+// ToolCallingChatModel (classic path, adds WithTools)
 type ToolCallingChatModel interface {
     BaseChatModel
     WithTools(tools []*schema.ToolInfo) (ToolCallingChatModel, error)
@@ -116,11 +134,12 @@ type ChatTemplate interface {
 go get github.com/cloudwego/eino-ext/components/{type}/{impl}@latest
 # Examples:
 go get github.com/cloudwego/eino-ext/components/model/openai@latest
+go get github.com/cloudwego/eino-ext/components/model/agenticopenai@latest
 go get github.com/cloudwego/eino-ext/components/retriever/milvus2@latest
 go get github.com/cloudwego/eino-ext/components/tool/mcp@latest
 ```
 
-## ChatModel Usage
+## ChatModel Usage (Classic Path)
 
 ### Generate
 
@@ -150,6 +169,40 @@ for {
 withTools, err := chatModel.WithTools([]*schema.ToolInfo{toolInfo})
 resp, err := withTools.Generate(ctx, messages)
 // resp.ToolCalls contains model's tool invocations
+```
+
+## AgenticModel Usage
+
+```go
+import (
+    "github.com/cloudwego/eino-ext/components/model/agenticopenai"
+    "github.com/cloudwego/eino/components/model"
+    "github.com/cloudwego/eino/schema"
+)
+
+// Create agentic model
+am, _ := agenticopenai.NewAgenticModel(ctx, &agenticopenai.AgenticModelConfig{
+    Model:  "gpt-4o",
+    APIKey: "your-key",
+})
+
+// Tools passed at call time (not via WithTools)
+resp, err := am.Generate(ctx,
+    []*schema.AgenticMessage{schema.UserAgenticMessage("Search for Go tutorials")},
+    model.WithTools(toolInfos...),
+)
+
+// Response contains typed ContentBlocks
+for _, block := range resp.ContentBlocks {
+    switch block.Type {
+    case schema.ContentBlockTypeAssistantGenText:
+        fmt.Println(block.AssistantGenText.Text)
+    case schema.ContentBlockTypeFunctionToolCall:
+        fmt.Printf("Tool call: %s(%s)\n", block.FunctionToolCall.Name, block.FunctionToolCall.Arguments)
+    case schema.ContentBlockTypeReasoning:
+        fmt.Printf("Reasoning: %s\n", block.Reasoning.Text)
+    }
+}
 ```
 
 ## RAG Components
@@ -187,7 +240,9 @@ Implement `Info()` and `InvokableRun()` to create a custom tool.
 ## Instructions to Agent
 
 - Constructor signatures and Config struct names vary across implementations. Always read the provider's reference file in `reference/{type}/{impl}.md` before generating initialization code.
-- Use `ToolCallingChatModel` (not deprecated `ChatModel`) for tool binding.
+- Use `BaseChatModel` (classic path) or `AgenticModel` (agentic path) based on the user's needs.
+- AgenticModel does NOT have a `WithTools` method. Tools are always passed via `model.WithTools(...)` option at call time.
+- For ADK agents, the `ChatModelAgentConfig.Model` field accepts `model.BaseModel[M]` -- both paths work seamlessly.
 - For RAG, ensure the same Embedder model is used for both indexing and retrieval.
 - See reference files for detailed per-component documentation.
 
@@ -195,7 +250,7 @@ Implement `Info()` and `InvokableRun()` to create a custom tool.
 
 Read files on-demand for detailed API, config, and examples. Each `{type}/` directory contains an `overview.md` (interfaces + common patterns) and per-implementation files:
 
-- `reference/model/*.md` -- ChatModel interfaces, tool binding, streaming, and per-provider config (openai, claude, gemini, ark, ollama, deepseek, qwen, qianfan, openrouter)
+- `reference/model/*.md` -- ChatModel and AgenticModel interfaces, tool binding, streaming, and per-provider config (openai, claude, gemini, ark, ollama, deepseek, qwen, qianfan, openrouter)
 - `reference/embedding/*.md` -- Embedder interface and per-provider config (openai, ark, ollama, etc.)
 - `reference/retriever/*.md` -- Retriever interface, RAG example, and per-backend config (redis, milvus2, es8)
 - `reference/indexer/*.md` -- Indexer interface, indexing pipeline, and per-backend config (redis, milvus2, es8, qdrant)
