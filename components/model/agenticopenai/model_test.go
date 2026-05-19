@@ -265,6 +265,39 @@ func TestPopulateToolsWithDeferredTools(t *testing.T) {
 			}
 			assert.True(t, hasToolSearch, "should add client tool search when ToolSearchTool is set")
 		})
+
+		mockey.PatchConvey("uses_client_tool_search_when_deferred_tools_and_tool_search_tool_are_set", func() {
+			deferredTools := []*schema.ToolInfo{
+				{Name: "deferred1", Desc: "d", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+			}
+			toolSearchTool := &schema.ToolInfo{
+				Name:        "my_search",
+				Desc:        "search tools",
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"}),
+			}
+			options := &model.Options{
+				DeferredTools:  deferredTools,
+				ToolSearchTool: toolSearchTool,
+			}
+			specOptions := &openaiOptions{}
+			req := &responses.ResponseNewParams{}
+			err := m.populateTools(req, options, specOptions)
+			assert.NoError(t, err)
+
+			toolSearchCount := 0
+			hasDeferredTool := false
+			for _, tool := range req.Tools {
+				if tool.OfFunction != nil && tool.OfFunction.Name == "deferred1" {
+					hasDeferredTool = true
+				}
+				if tool.OfToolSearch != nil {
+					toolSearchCount++
+					assert.Equal(t, responses.ToolSearchToolExecutionClient, tool.OfToolSearch.Execution)
+				}
+			}
+			assert.True(t, hasDeferredTool, "should keep deferred tools registered")
+			assert.Equal(t, 1, toolSearchCount, "should not add both hosted and client tool search")
+		})
 	})
 }
 
