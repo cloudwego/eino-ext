@@ -103,11 +103,11 @@ msg, err := mv.GetMessage()
 
 ```go
 type AgentAction struct {
-    Exit             bool              // Immediately exit the multi-agent system
-    Interrupted      *InterruptInfo    // Pause execution, save checkpoint
-    TransferToAgent  string            // Transfer control to another agent (agent name)
-    BreakLoop        *BreakLoopAction  // Break out of a LoopAgent
-    CustomizedAction any               // Custom action
+    Exit             bool                  // Immediately exit the multi-agent system
+    Interrupted      *InterruptInfo        // Pause execution, save checkpoint
+    TransferToAgent  *TransferToAgentAction // Transfer control to another agent
+    BreakLoop        *BreakLoopAction      // Break out of a LoopAgent
+    CustomizedAction any                   // Custom action
 }
 ```
 
@@ -132,8 +132,8 @@ for {
             fmt.Printf("Interrupted: %v\n", event.Action.Interrupted)
             continue
         }
-        if event.Action.TransferToAgent != "" {
-            fmt.Printf("Transfer to: %s\n", event.Action.TransferToAgent)
+        if event.Action.TransferToAgent != nil {
+            fmt.Printf("Transfer to: %s\n", event.Action.TransferToAgent.DestAgentName)
             continue
         }
     }

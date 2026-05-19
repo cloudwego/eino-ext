@@ -112,7 +112,7 @@ import "github.com/cloudwego/eino/adk/middlewares/reduction"
 mw, err := reduction.New(ctx, &reduction.Config{
     Backend:           myBackend,     // Required: storage for offloaded content
     MaxLengthForTrunc: 50000,         // Default: 50000 chars
-    MaxTokensForClear: 128000,        // 128000 tokens
+    MaxTokensForClear: 160000,        // Default: 160000 tokens
     SkipTruncation:    false,         // Set true to skip truncation
     SkipClear:         false,         // Set true to skip clearing
 })
@@ -132,12 +132,12 @@ import "github.com/cloudwego/eino/adk/middlewares/summarization"
 mw, err := summarization.New(ctx, &summarization.Config{
     Model: summarizationModel,  // Required: model used to generate summaries
     Trigger: &summarization.TriggerCondition{
-        ContextTokens: 190000,  // Default: 190000
+        ContextTokens: 160000,  // Default: 160000
     },
     TranscriptFilePath: "/path/to/transcript.txt",  // Optional: save full transcript
     PreserveUserMessages: &summarization.PreserveUserMessages{
-        Enabled:   true,       // Default: true
-        MaxTokens: 50000,      // Keep recent user messages up to this limit
+        Enabled:   true,       // Default: true (when nil)
+        MaxTokens: 30000,      // Default: 30000. Keep recent user messages up to this limit
     },
 })
 ```
@@ -252,7 +252,8 @@ Injects Agents.md file contents into model input as transient context. The injec
 import "github.com/cloudwego/eino/adk/middlewares/agentsmd"
 
 mw, err := agentsmd.New(ctx, &agentsmd.Config{
-    Loader: myLoader,  // Required: loads Agents.md content
+    Backend:       myBackend,                        // Required: file access backend
+    AgentsMDFiles: []string{"/path/to/Agents.md"},   // Ordered list of files to load
 })
 ```
 

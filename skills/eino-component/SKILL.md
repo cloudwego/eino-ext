@@ -186,10 +186,10 @@ am, _ := agenticopenai.NewAgenticModel(ctx, &agenticopenai.AgenticModelConfig{
     APIKey: "your-key",
 })
 
-// Tools passed at call time (not via WithTools)
+// Tools passed at call time via option (not via WithTools method)
 resp, err := am.Generate(ctx,
     []*schema.AgenticMessage{schema.UserAgenticMessage("Search for Go tutorials")},
-    model.WithTools(toolInfos...),
+    model.WithTools(toolInfos),
 )
 
 // Response contains typed ContentBlocks

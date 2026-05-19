@@ -33,16 +33,18 @@ type ChatModelAgentConfig struct {
     // The LLM model. Must support tool calling.
     Model model.BaseModel[M] // model.BaseChatModel or model.AgenticModel
 
-    // Tool configuration
-    ToolsConfig *ToolsConfig // pointer in v0.9
+    // Tool configuration (value type, not pointer)
+    ToolsConfig ToolsConfig
 
     // Custom function to transform instruction + input into model messages.
     // Optional. Defaults to prepending instruction as system message.
     GenModelInput GenModelInput
 
-    // Exit tool. When called, agent terminates immediately.
-    // Use the built-in ExitTool: adk.ExitTool{}
-    Exit *Exit // Built-in exit tool config
+    // NOT RECOMMENDED: Exit tool for agent transfer. Consider AgentTool or DeepAgent instead.
+    Exit tool.BaseTool
+
+    // NOT RECOMMENDED: OutputKey for agent transfer pattern.
+    OutputKey string
 
     // Max ReAct iterations. Default: 20. Agent errors if exceeded.
     MaxIterations int
@@ -53,7 +55,7 @@ type ChatModelAgentConfig struct {
     // Failover config for model failures. Optional.
     ModelFailoverConfig *ModelFailoverConfig[M]
 
-    // Middleware list
+    // Middleware list (replaces deprecated Middlewares field)
     Handlers []TypedChatModelAgentMiddleware[M]
 }
 ```
@@ -284,7 +286,7 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
 ```
 
 RetryContext fields:
-- `RetryAttempt int` -- current retry attempt (0-indexed)
+- `RetryAttempt int` -- current retry attempt (1-based: first retry = 1)
 - `InputMessages []M` -- messages sent to the model
 - `OutputMessage M` -- full concatenated response (stream fully consumed for streaming)
 - `Err error` -- error from model call (nil if output-based retry)

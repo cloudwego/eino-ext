@@ -183,8 +183,8 @@ Push-based event loop for multi-turn agent execution with preemption, idle timeo
 ```go
 import "github.com/cloudwego/eino/adk"
 
-loop := adk.NewTurnLoop[string, *schema.Message](&adk.TurnLoopConfig[string, *schema.Message]{
-    GenInput: func(ctx context.Context, turnCtx *adk.TurnContext[string, *schema.Message], items []string) (*adk.GenInputResult[string, *schema.Message], error) {
+loop := adk.NewTurnLoop(adk.TurnLoopConfig[string, *schema.Message]{
+    GenInput: func(ctx context.Context, loop *adk.TurnLoop[string, *schema.Message], items []string) (*adk.GenInputResult[string, *schema.Message], error) {
         // Convert pushed items into agent input
         combined := strings.Join(items, "\n")
         return &adk.GenInputResult[string, *schema.Message]{
@@ -193,11 +193,20 @@ loop := adk.NewTurnLoop[string, *schema.Message](&adk.TurnLoopConfig[string, *sc
             Consumed: items,
         }, nil
     },
-    PrepareAgent: func(ctx context.Context) (*adk.TypedChatModelAgent[*schema.Message], []adk.AgentRunOption, error) {
-        return myAgent, nil, nil
+    PrepareAgent: func(ctx context.Context, loop *adk.TurnLoop[string, *schema.Message], consumed []string) (adk.Agent, error) {
+        return myAgent, nil
     },
-    OnAgentEvents: func(ctx context.Context, turnCtx *adk.TurnContext[string, *schema.Message], event *adk.AgentEvent) error {
-        // Process events (e.g., send to client)
+    OnAgentEvents: func(ctx context.Context, tc *adk.TurnContext[string, *schema.Message], events *adk.AsyncIterator[*adk.AgentEvent]) error {
+        for {
+            event, ok := events.Next()
+            if !ok {
+                break
+            }
+            if event.Err != nil {
+                return event.Err
+            }
+            // Process events (e.g., send to client)
+        }
         return nil
     },
 })
@@ -205,7 +214,7 @@ loop := adk.NewTurnLoop[string, *schema.Message](&adk.TurnLoopConfig[string, *sc
 // Start the loop
 loop.Run(ctx)
 
-// Push items (non-blocking)
+// Push items (non-blocking, returns (ok bool, resolved <-chan struct{}))
 loop.Push("user message 1")
 
 // Preempt current turn with new input

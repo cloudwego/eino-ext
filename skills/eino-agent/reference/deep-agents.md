@@ -45,8 +45,16 @@ MainAgent (ChatModelAgent + built-in tools + prompt)
 
 ```go
 type Config struct {
-    // Required: the LLM model
-    Model model.ToolCallingChatModel
+    // Name is the identifier for the Deep agent.
+    Name string
+    // Description provides a brief explanation of the agent's purpose.
+    Description string
+
+    // Required: the LLM model (must support model.WithTools call option if tools are used)
+    ChatModel model.BaseChatModel
+
+    // Optional: tools and tool-calling configuration
+    ToolsConfig adk.ToolsConfig
 
     // Optional: filesystem backend for file operations
     Backend filesystem.Backend
@@ -57,14 +65,14 @@ type Config struct {
     // Optional: streaming shell execution
     StreamingShell filesystem.StreamingShell
 
-    // Optional: custom tools added to the main agent
-    Tools []tool.BaseTool
-
     // Optional: custom sub-agents
     SubAgents []adk.Agent
 
-    // Optional: custom system prompt (appended to built-in prompt)
+    // Optional: custom system prompt (replaces built-in prompt when non-empty)
     Instruction string
+
+    // Optional: max reasoning iterations
+    MaxIteration int
 
     // Optional: disable WriteTodos tool
     WithoutWriteTodos bool
@@ -73,10 +81,20 @@ type Config struct {
     WithoutGeneralSubAgent bool
 
     // Optional: custom TaskTool description generator
-    TaskToolDescriptionGenerator func(ctx context.Context, agents []adk.Agent) string
+    TaskToolDescriptionGenerator func(ctx context.Context, agents []adk.Agent) (string, error)
 
-    // Optional: middleware
+    // Optional: struct-based middleware (deprecated style)
+    Middlewares []adk.AgentMiddleware
+
+    // Optional: interface-based middleware (recommended)
     Handlers []adk.ChatModelAgentMiddleware
+
+    // Optional: model retry configuration
+    ModelRetryConfig *adk.TypedModelRetryConfig[*schema.Message]
+    // Optional: model failover configuration
+    ModelFailoverConfig *adk.ModelFailoverConfig[*schema.Message]
+    // Optional: store agent output in session values
+    OutputKey string
 }
 ```
 
@@ -104,8 +122,8 @@ func main() {
     backend := filesystem.NewInMemoryBackend()
 
     agent, err := deep.New(ctx, &deep.Config{
-        Model:   cm,
-        Backend: backend,
+        ChatModel: cm,
+        Backend:   backend,
     })
     if err != nil {
         log.Fatal(err)
