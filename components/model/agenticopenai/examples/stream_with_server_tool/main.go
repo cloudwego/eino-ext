@@ -67,6 +67,7 @@ func main() {
 
 	opts := []model.Option{
 		model.WithAgenticToolChoice(&schema.AgenticToolChoice{
+			Type: schema.ToolChoiceForced,
 			Forced: &schema.AgenticForcedToolChoice{
 				Tools: allowedTools,
 			},

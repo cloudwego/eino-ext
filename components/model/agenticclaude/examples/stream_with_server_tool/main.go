@@ -23,45 +23,36 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
+	"github.com/cloudwego/eino-ext/components/model/agenticclaude"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/openai/openai-go/v3/packages/param"
-	"github.com/openai/openai-go/v3/responses"
 )
 
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
-		BaseURL: "https://api.openai.com/v1",
-		Model:   os.Getenv("OPENAI_MODEL_ID"),
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Reasoning: &responses.ReasoningParam{
-			Effort:  responses.ReasoningEffortLow,
-			Summary: responses.ReasoningSummaryDetailed,
-		},
+	am, err := agenticclaude.New(ctx, &agenticclaude.Config{
+		BaseURL:   os.Getenv("CLAUDE_BASE_URL"),
+		Model:     os.Getenv("CLAUDE_MODEL"),
+		APIKey:    os.Getenv("CLAUDE_API_KEY"),
+		MaxTokens: 4096,
 	})
 	if err != nil {
 		log.Fatalf("failed to create agentic model, err=%v", err)
 	}
 
-	mcpTools := []*responses.ToolMcpParam{
+	serverTools := []*agenticclaude.ServerToolConfig{
 		{
-			ServerLabel: "test_mcp_server",
-			RequireApproval: responses.ToolMcpRequireApprovalUnionParam{
-				OfMcpToolApprovalSetting: param.NewOpt("never"),
-			},
-			ServerURL: param.NewOpt("server url"),
+			WebSearch20260209: &anthropic.WebSearchTool20260209Param{},
 		},
 	}
 
 	allowedTools := []*schema.AllowedTool{
 		{
-			MCPTool: &schema.AllowedMCPTool{
-				ServerLabel: "test_mcp_server",
-				Name:        "amap/maps_weather",
+			ServerTool: &schema.AllowedServerTool{
+				Name: string(agenticclaude.ServerToolNameWebSearch),
 			},
 		},
 	}
@@ -73,11 +64,11 @@ func main() {
 				Tools: allowedTools,
 			},
 		}),
-		agenticopenai.WithMCPTools(mcpTools),
+		agenticclaude.WithServerTools(serverTools),
 	}
 
 	input := []*schema.AgenticMessage{
-		schema.UserAgenticMessage("what's the weather like in Beijing today"),
+		schema.UserAgenticMessage("what's cloudwego/eino"),
 	}
 
 	resp, err := am.Stream(ctx, input, opts...)
@@ -87,12 +78,12 @@ func main() {
 
 	var msgs []*schema.AgenticMessage
 	for {
-		msg, err := resp.Recv()
-		if err != nil {
-			if errors.Is(err, io.EOF) {
+		msg, recvErr := resp.Recv()
+		if recvErr != nil {
+			if errors.Is(recvErr, io.EOF) {
 				break
 			}
-			log.Fatalf("failed to receive stream response, err: %v", err)
+			log.Fatalf("failed to receive stream response, err: %v", recvErr)
 		}
 		msgs = append(msgs, msg)
 	}
@@ -102,9 +93,24 @@ func main() {
 		log.Fatalf("failed to concat agentic messages, err: %v", err)
 	}
 
-	meta := concatenated.ResponseMeta.OpenAIExtension
-	log.Printf("request_id: %s\n", meta.ID)
+	for _, block := range concatenated.ContentBlocks {
+		if block.ServerToolCall != nil {
+			serverToolArgs := block.ServerToolCall.Arguments.(*agenticclaude.ServerToolCallArguments)
+			args, _ := sonic.MarshalIndent(serverToolArgs, "  ", "  ")
+			log.Printf("server_tool_args: %s\n", string(args))
+		}
+
+		if block.ServerToolResult != nil {
+			result := block.ServerToolResult.Content.(*agenticclaude.ServerToolResult)
+			resultJSON, _ := sonic.MarshalIndent(result, "  ", "  ")
+			log.Printf("server_tool_result: %s\n", string(resultJSON))
+		}
+	}
+
+	if meta := concatenated.ResponseMeta.ClaudeExtension; meta != nil {
+		log.Printf("request_id: %s\n", meta.ID)
+	}
 
 	respBody, _ := sonic.MarshalIndent(concatenated, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("body: %s\n", string(respBody))
 }

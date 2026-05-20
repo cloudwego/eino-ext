@@ -211,7 +211,7 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 		msg.ContentBlocks = append(msg.ContentBlocks, wsCall)
 
 		wsRes := schema.NewContentBlock(&schema.ServerToolResult{
-			Name:   string(ServerToolNameWebSearch),
+			Name:    string(ServerToolNameWebSearch),
 			Content: &ServerToolResult{WebSearch: &WebSearchResult{ActionType: WebSearchActionSearch, Search: &WebSearchQueryResult{Sources: []*WebSearchQuerySource{{URL: "u"}}}}},
 		})
 		setItemID(wsRes, "ws1")
@@ -434,8 +434,8 @@ func TestUserInputFileToInputItem(t *testing.T) {
 func TestFunctionToolResultToInputItem(t *testing.T) {
 	mockey.PatchConvey("functionToolResultToInputItem", t, func() {
 		item, err := functionToolResultToInputItem(&schema.FunctionToolResult{CallID: "c", Content: []*schema.FunctionToolResultContentBlock{
-				{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "r"}},
-			}})
+			{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "r"}},
+		}})
 		assert.NoError(t, err)
 		assert.NotNil(t, item.OfFunctionCallOutput)
 		assert.Equal(t, "c", item.OfFunctionCallOutput.CallID)
@@ -562,7 +562,7 @@ func TestGetWebSearchToolCallActionParam(t *testing.T) {
 func TestServerToolResultToInputItem(t *testing.T) {
 	mockey.PatchConvey("serverToolResultToInputItem", t, func() {
 		block := schema.NewContentBlock(&schema.ServerToolResult{
-			Name:   string(ServerToolNameWebSearch),
+			Name:    string(ServerToolNameWebSearch),
 			Content: &ServerToolResult{WebSearch: &WebSearchResult{ActionType: WebSearchActionSearch, Search: &WebSearchQueryResult{Sources: []*WebSearchQuerySource{{URL: "u"}}}}},
 		})
 		setItemID(block, "ws1")
@@ -907,7 +907,7 @@ func TestToolSearchToolResultToInputItem(t *testing.T) {
 					},
 				},
 			}
-			item, err := toolSearchToolResultToInputItem(block)
+			item, err := toolSearchToolResultBlockToInputItem(block)
 			assert.NoError(t, err)
 			assert.NotNil(t, item.OfToolSearchOutput)
 			assert.True(t, item.OfToolSearchOutput.CallID.Valid())
@@ -922,7 +922,7 @@ func TestToolSearchToolResultToInputItem(t *testing.T) {
 				CallID: "call1",
 				Result: nil,
 			}
-			_, err := toolSearchToolResultToInputItem(block)
+			_, err := toolSearchToolResultBlockToInputItem(block)
 			assert.Error(t, err)
 			assert.Contains(t, err.Error(), "tool search result should not be nil")
 		})
@@ -1173,7 +1173,7 @@ func TestFileSearchToolResultToInputItem(t *testing.T) {
 				},
 			}
 			block := schema.NewContentBlock(&schema.ServerToolResult{
-				Name:   string(ServerToolNameFileSearch),
+				Name:    string(ServerToolNameFileSearch),
 				Content: &ServerToolResult{FileSearch: result},
 			})
 			setItemID(block, "fs1")
@@ -1200,7 +1200,7 @@ func TestFileSearchToolResultToInputItem(t *testing.T) {
 		mockey.PatchConvey("empty_results", func() {
 			result := &FileSearchResult{Results: []*FileSearchResultItem{}}
 			block := schema.NewContentBlock(&schema.ServerToolResult{
-				Name:   string(ServerToolNameFileSearch),
+				Name:    string(ServerToolNameFileSearch),
 				Content: &ServerToolResult{FileSearch: result},
 			})
 			setItemID(block, "fs2")
@@ -1514,7 +1514,7 @@ func TestCodeInterpreterToolResultToInputItem(t *testing.T) {
 			}
 
 			block := schema.NewContentBlock(&schema.ServerToolResult{
-				Name:   string(ServerToolNameCodeInterpreter),
+				Name:    string(ServerToolNameCodeInterpreter),
 				Content: &ServerToolResult{CodeInterpreter: result},
 			})
 			setItemID(block, "ci1")
@@ -1541,7 +1541,7 @@ func TestCodeInterpreterToolResultToInputItem(t *testing.T) {
 				},
 			}
 			block := schema.NewContentBlock(&schema.ServerToolResult{
-				Name:   string(ServerToolNameCodeInterpreter),
+				Name:    string(ServerToolNameCodeInterpreter),
 				Content: &ServerToolResult{CodeInterpreter: result},
 			})
 			_, err := codeInterpreterToolResultToInputItem(result, block)
@@ -1571,7 +1571,7 @@ func TestImageGenerationToolResultToInputItem(t *testing.T) {
 	mockey.PatchConvey("imageGenerationToolResultToInputItem", t, func() {
 		result := &ImageGenerationResult{ImageBase64: "abc123base64"}
 		block := schema.NewContentBlock(&schema.ServerToolResult{
-			Name:   string(ServerToolNameImageGeneration),
+			Name:    string(ServerToolNameImageGeneration),
 			Content: &ServerToolResult{ImageGeneration: result},
 		})
 		setItemID(block, "ig1")
@@ -1693,8 +1693,8 @@ func TestShellToolResultToInputItem(t *testing.T) {
 				},
 			}
 			block := schema.NewContentBlock(&schema.ServerToolResult{
-				Name:   string(ServerToolNameShell),
-				CallID: "call_1",
+				Name:    string(ServerToolNameShell),
+				CallID:  "call_1",
 				Content: &ServerToolResult{Shell: result},
 			})
 			setItemID(block, "sh1")
@@ -1728,8 +1728,8 @@ func TestShellToolResultToInputItem(t *testing.T) {
 				},
 			}
 			block := schema.NewContentBlock(&schema.ServerToolResult{
-				Name:   string(ServerToolNameShell),
-				CallID: "call_2",
+				Name:    string(ServerToolNameShell),
+				CallID:  "call_2",
 				Content: &ServerToolResult{Shell: result},
 			})
 			setItemID(block, "sh2")
@@ -1750,8 +1750,8 @@ func TestShellToolResultToInputItem(t *testing.T) {
 				},
 			}
 			block := schema.NewContentBlock(&schema.ServerToolResult{
-				Name:   string(ServerToolNameShell),
-				CallID: "call_3",
+				Name:    string(ServerToolNameShell),
+				CallID:  "call_3",
 				Content: &ServerToolResult{Shell: result},
 			})
 			_, err := shellToolResultToInputItem(result, block)
@@ -1876,7 +1876,7 @@ func TestServerToolResultToInputItem_Shell(t *testing.T) {
 func TestServerToolResultToInputItem_Nil(t *testing.T) {
 	mockey.PatchConvey("serverToolResultToInputItem_nil", t, func() {
 		block := schema.NewContentBlock(&schema.ServerToolResult{
-			Name:   string(ServerToolNameCodeInterpreter),
+			Name:    string(ServerToolNameCodeInterpreter),
 			Content: &ServerToolResult{},
 		})
 		_, err := serverToolResultToInputItem(block)
