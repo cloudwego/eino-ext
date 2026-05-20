@@ -31,8 +31,9 @@ type options struct {
 	ThinkingConfig     *genai.ThinkingConfig
 	ResponseModalities []GeminiResponseModality
 	ImageConfig        *genai.ImageConfig
-	CachedContentName  string
-	PrefixCacheTTL     *time.Duration
+	CachedContentName       string
+	PrefixCacheTTL          *time.Duration
+	PrefixCacheExpireTime   *time.Time
 }
 
 func WithTopK(k int32) model.Option {
@@ -72,6 +73,14 @@ func WithCachedContentName(name string) model.Option {
 func WithPrefixCacheTTL(ttl time.Duration) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.PrefixCacheTTL = &ttl
+	})
+}
+
+// WithPrefixCacheExpireTime sets the absolute expiry for CreatePrefixCache on this call.
+// When set, it overrides Config.Cache.ExpireTime for that CreatePrefixCache invocation.
+func WithPrefixCacheExpireTime(expireTime time.Time) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.PrefixCacheExpireTime = &expireTime
 	})
 }
 

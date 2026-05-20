@@ -383,13 +383,23 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema
 
 func (cm *ChatModel) resolvePrefixCacheConfig(opts ...model.Option) (ttl time.Duration, expireTime time.Time) {
 	geminiOptions := model.GetImplSpecificOptions(&options{}, opts...)
-	if geminiOptions.PrefixCacheTTL != nil {
-		return *geminiOptions.PrefixCacheTTL, time.Time{}
-	}
 	if cm.cache != nil {
-		return cm.cache.TTL, cm.cache.ExpireTime
+		ttl = cm.cache.TTL
+		expireTime = cm.cache.ExpireTime
 	}
-	return 0, time.Time{}
+	if geminiOptions.PrefixCacheTTL != nil {
+		ttl = *geminiOptions.PrefixCacheTTL
+		if geminiOptions.PrefixCacheExpireTime == nil {
+			expireTime = time.Time{}
+		}
+	}
+	if geminiOptions.PrefixCacheExpireTime != nil {
+		expireTime = *geminiOptions.PrefixCacheExpireTime
+		if geminiOptions.PrefixCacheTTL == nil {
+			ttl = 0
+		}
+	}
+	return ttl, expireTime
 }
 
 func populateToolChoice(m *genai.GenerateContentConfig, toolChoice *schema.ToolChoice, allowedToolNames []string) error {
