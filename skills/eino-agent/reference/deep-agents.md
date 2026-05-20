@@ -44,58 +44,62 @@ MainAgent (ChatModelAgent + built-in tools + prompt)
 ## Configuration
 
 ```go
-type Config struct {
+type TypedConfig[M adk.MessageType] struct {
     // Name is the identifier for the Deep agent.
     Name string
     // Description provides a brief explanation of the agent's purpose.
     Description string
 
-    // Required: the LLM model (must support model.WithTools call option if tools are used)
-    ChatModel model.BaseChatModel
+    // Required: the LLM model.
+    // If tools are used, it must support the model.WithTools call option.
+    ChatModel model.BaseModel[M]
 
-    // Optional: tools and tool-calling configuration
+    // Optional: tools and tool-calling configuration.
     ToolsConfig adk.ToolsConfig
 
-    // Optional: filesystem backend for file operations
+    // Optional: filesystem backend for file operations.
     Backend filesystem.Backend
 
-    // Optional: shell execution (mutually exclusive with StreamingShell)
+    // Optional: shell execution (mutually exclusive with StreamingShell).
     Shell filesystem.Shell
 
-    // Optional: streaming shell execution
+    // Optional: streaming shell execution.
     StreamingShell filesystem.StreamingShell
 
-    // Optional: custom sub-agents
-    SubAgents []adk.Agent
+    // Optional: custom sub-agents.
+    // M = *schema.Message accepts standard agents; M = *schema.AgenticMessage accepts agentic agents.
+    SubAgents []adk.TypedAgent[M]
 
-    // Optional: custom system prompt (replaces built-in prompt when non-empty)
+    // Optional: custom system prompt (replaces built-in prompt when non-empty).
     Instruction string
 
-    // Optional: max reasoning iterations
+    // Optional: max reasoning iterations.
     MaxIteration int
 
-    // Optional: disable WriteTodos tool
+    // Optional: disable WriteTodos tool.
     WithoutWriteTodos bool
 
-    // Optional: disable the default general-purpose sub-agent
+    // Optional: disable the default general-purpose sub-agent.
     WithoutGeneralSubAgent bool
 
-    // Optional: custom TaskTool description generator
-    TaskToolDescriptionGenerator func(ctx context.Context, agents []adk.Agent) (string, error)
+    // Optional: custom TaskTool description generator.
+    TaskToolDescriptionGenerator func(ctx context.Context, availableAgents []adk.TypedAgent[M]) (string, error)
 
-    // Optional: struct-based middleware (deprecated style)
+    // Optional: struct-based middleware (deprecated style).
     Middlewares []adk.AgentMiddleware
 
-    // Optional: interface-based middleware (recommended)
-    Handlers []adk.ChatModelAgentMiddleware
+    // Optional: interface-based middleware (recommended).
+    Handlers []adk.TypedChatModelAgentMiddleware[M]
 
-    // Optional: model retry configuration
-    ModelRetryConfig *adk.TypedModelRetryConfig[*schema.Message]
-    // Optional: model failover configuration
-    ModelFailoverConfig *adk.ModelFailoverConfig[*schema.Message]
-    // Optional: store agent output in session values
+    // Optional: model retry configuration.
+    ModelRetryConfig *adk.TypedModelRetryConfig[M]
+    // Optional: model failover configuration.
+    ModelFailoverConfig *adk.ModelFailoverConfig[M]
+    // Optional: store agent output in session values.
     OutputKey string
 }
+
+type Config = TypedConfig[*schema.Message]
 ```
 
 ## Quick Start

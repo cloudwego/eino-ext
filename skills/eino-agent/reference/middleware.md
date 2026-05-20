@@ -214,8 +214,8 @@ skills/
 
 Context modes in SKILL.md frontmatter:
 - (empty) -- inline: skill content returned as tool result
-- `fork` -- new agent with copied history
-- `isolate` -- new agent with isolated context
+- `fork` -- new agent with clean context, discarding parent message history
+- `fork_with_context` -- new agent carrying over parent message history
 
 ---
 

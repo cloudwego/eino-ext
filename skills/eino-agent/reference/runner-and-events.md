@@ -47,7 +47,7 @@ Every event from `AsyncIterator` is an `AgentEvent`:
 ```go
 type TypedAgentEvent[M MessageType] struct {
     AgentName string                // Which agent produced this event
-    RunPath   []string              // Full call chain from entry agent to current
+    RunPath   []RunStep             // Full call chain from entry agent to current
     Output    *TypedAgentOutput[M]  // Message output (may be nil)
     Action    *AgentAction          // Control action (may be nil)
     Err       error                 // Error (may be nil; may be *CancelError or *RetryExhaustedError)

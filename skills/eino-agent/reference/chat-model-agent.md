@@ -19,7 +19,7 @@ When no tools are configured, ChatModelAgent degrades to a single ChatModel call
 ## ChatModelAgentConfig
 
 ```go
-type ChatModelAgentConfig struct {
+type TypedChatModelAgentConfig[M MessageType] struct {
     // Name of the agent. Should be unique across all agents.
     Name string
 
@@ -38,7 +38,7 @@ type ChatModelAgentConfig struct {
 
     // Custom function to transform instruction + input into model messages.
     // Optional. Defaults to prepending instruction as system message.
-    GenModelInput GenModelInput
+    GenModelInput TypedGenModelInput[M]
 
     // NOT RECOMMENDED: Exit tool for agent transfer. Consider AgentTool or DeepAgent instead.
     Exit tool.BaseTool
@@ -58,6 +58,8 @@ type ChatModelAgentConfig struct {
     // Middleware list (replaces deprecated Middlewares field)
     Handlers []TypedChatModelAgentMiddleware[M]
 }
+
+type ChatModelAgentConfig = TypedChatModelAgentConfig[*schema.Message]
 ```
 
 ## ToolsConfig
@@ -266,7 +268,7 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
             if retryCtx.Err != nil {
                 return &adk.RetryDecision{Retry: true}
             }
-            if retryCtx.OutputMessage.Content == "" {
+            if retryCtx.OutputMessage == nil || retryCtx.OutputMessage.Content == "" {
                 return &adk.RetryDecision{
                     Retry:                 true,
                     ModifiedInputMessages: append(retryCtx.InputMessages, schema.UserMessage("Please provide a non-empty response")),

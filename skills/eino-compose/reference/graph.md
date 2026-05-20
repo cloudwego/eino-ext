@@ -20,6 +20,7 @@ Every `Add*Node` method takes a string key, the component instance, and optional
 g.AddChatModelNode(key string, node model.BaseChatModel, opts ...GraphAddNodeOpt) error
 g.AddChatTemplateNode(key string, node prompt.ChatTemplate, opts ...GraphAddNodeOpt) error
 g.AddToolsNode(key string, node *compose.ToolsNode, opts ...GraphAddNodeOpt) error
+g.AddAgenticToolsNode(key string, node *compose.AgenticToolsNode, opts ...GraphAddNodeOpt) error
 g.AddRetrieverNode(key string, node retriever.Retriever, opts ...GraphAddNodeOpt) error
 g.AddEmbeddingNode(key string, node embedding.Embedder, opts ...GraphAddNodeOpt) error
 g.AddIndexerNode(key string, node indexer.Indexer, opts ...GraphAddNodeOpt) error

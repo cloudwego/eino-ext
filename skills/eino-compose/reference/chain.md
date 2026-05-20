@@ -18,6 +18,7 @@ All Append methods return `*Chain[I, O]` for method chaining:
 chain.AppendChatModel(node model.BaseChatModel, opts ...GraphAddNodeOpt) *Chain[I, O]
 chain.AppendChatTemplate(node prompt.ChatTemplate, opts ...GraphAddNodeOpt) *Chain[I, O]
 chain.AppendToolsNode(node *compose.ToolsNode, opts ...GraphAddNodeOpt) *Chain[I, O]
+chain.AppendAgenticToolsNode(node *compose.AgenticToolsNode, opts ...GraphAddNodeOpt) *Chain[I, O]
 chain.AppendLambda(node *compose.Lambda, opts ...GraphAddNodeOpt) *Chain[I, O]
 chain.AppendRetriever(node retriever.Retriever, opts ...GraphAddNodeOpt) *Chain[I, O]
 chain.AppendEmbedding(node embedding.Embedder, opts ...GraphAddNodeOpt) *Chain[I, O]

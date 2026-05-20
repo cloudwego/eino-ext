@@ -67,7 +67,7 @@ r, err := chain.Compile(ctx)
 out, err := r.Invoke(ctx, input)
 ```
 
-Append methods: `AppendChatModel`, `AppendChatTemplate`, `AppendToolsNode`, `AppendLambda`, `AppendGraph`, `AppendParallel`, `AppendBranch`, `AppendPassthrough`, `AppendRetriever`, `AppendEmbedding`, `AppendLoader`, `AppendIndexer`, `AppendDocumentTransformer`.
+Append methods: `AppendChatModel`, `AppendChatTemplate`, `AppendToolsNode`, `AppendAgenticToolsNode`, `AppendLambda`, `AppendGraph`, `AppendParallel`, `AppendBranch`, `AppendPassthrough`, `AppendRetriever`, `AppendEmbedding`, `AppendLoader`, `AppendIndexer`, `AppendDocumentTransformer`.
 
 ## Workflow Quick Reference
 

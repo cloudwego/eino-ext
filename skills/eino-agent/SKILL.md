@@ -140,7 +140,10 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
         MaxRetries: 3,
         ShouldRetry: func(ctx context.Context, retryCtx *adk.RetryContext) *adk.RetryDecision {
             // Retry based on output content (e.g., empty response, bad finish reason)
-            if retryCtx.OutputMessage.Content == "" {
+            if retryCtx.Err != nil {
+                return &adk.RetryDecision{Retry: true, Backoff: time.Second}
+            }
+            if retryCtx.OutputMessage == nil || retryCtx.OutputMessage.Content == "" {
                 return &adk.RetryDecision{Retry: true, Backoff: time.Second}
             }
             return &adk.RetryDecision{Retry: false}
