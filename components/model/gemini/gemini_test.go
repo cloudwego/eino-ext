@@ -989,56 +989,6 @@ func TestCreatePrefixCache(t *testing.T) {
 
 	})
 
-	t.Run("prefix_cache_ttl_option_overrides_config", func(t *testing.T) {
-		ctx := context.Background()
-		cm, err := NewChatModel(ctx, &Config{
-			Client: &genai.Client{Caches: &genai.Caches{}},
-			Model:  "test-model",
-			Cache:  &CacheConfig{TTL: time.Minute},
-		})
-		assert.Nil(t, err)
-
-		var cacheConfig *genai.CreateCachedContentConfig
-		defer mockey.Mock(genai.Caches.Create).
-			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
-				cacheConfig = config
-				return &genai.CachedContent{Name: "cached/ttl_option"}, nil
-			}).Build().Patch().UnPatch()
-
-		prefixMsgs := []*schema.Message{{Role: schema.User, Content: "hello"}}
-		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs, WithPrefixCacheTTL(2*time.Hour))
-		assert.NoError(t, err)
-		assert.NotNil(t, cache)
-		assert.Equal(t, 2*time.Hour, cacheConfig.TTL)
-		assert.True(t, cacheConfig.ExpireTime.IsZero())
-	})
-
-	t.Run("prefix_cache_expire_time_option_overrides_config", func(t *testing.T) {
-		ctx := context.Background()
-		configExpire := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
-		optionExpire := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
-		cm, err := NewChatModel(ctx, &Config{
-			Client: &genai.Client{Caches: &genai.Caches{}},
-			Model:  "test-model",
-			Cache:  &CacheConfig{TTL: time.Minute, ExpireTime: configExpire},
-		})
-		assert.Nil(t, err)
-
-		var cacheConfig *genai.CreateCachedContentConfig
-		defer mockey.Mock(genai.Caches.Create).
-			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
-				cacheConfig = config
-				return &genai.CachedContent{Name: "cached/expire_option"}, nil
-			}).Build().Patch().UnPatch()
-
-		prefixMsgs := []*schema.Message{{Role: schema.User, Content: "hello"}}
-		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs, WithPrefixCacheExpireTime(optionExpire))
-		assert.NoError(t, err)
-		assert.NotNil(t, cache)
-		assert.Equal(t, time.Duration(0), cacheConfig.TTL)
-		assert.Equal(t, optionExpire, cacheConfig.ExpireTime)
-	})
-
 	t.Run("cache_and_generate", func(t *testing.T) {
 		ctx := context.Background()
 		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{
@@ -1113,7 +1063,7 @@ func TestUpdatePrefixCache(t *testing.T) {
 				return &genai.CachedContent{Name: name}, nil
 			}).Build().Patch().UnPatch()
 
-		cache, err := cm.UpdatePrefixCache(ctx, "cachedContents/abc", WithPrefixCacheUpdateTTL(2*time.Hour))
+		cache, err := cm.UpdatePrefixCache(ctx, "cachedContents/abc", WithPrefixCacheTTL(2*time.Hour))
 		assert.NoError(t, err)
 		assert.NotNil(t, cache)
 		assert.Equal(t, "cachedContents/abc", cache.Name)
@@ -1139,7 +1089,7 @@ func TestUpdatePrefixCache(t *testing.T) {
 				return &genai.CachedContent{Name: name, ExpireTime: config.ExpireTime}, nil
 			}).Build().Patch().UnPatch()
 
-		cache, err := cm.UpdatePrefixCache(ctx, "cachedContents/abc", WithPrefixCacheUpdateExpireTime(optionExpire))
+		cache, err := cm.UpdatePrefixCache(ctx, "cachedContents/abc", WithPrefixCacheExpireTime(optionExpire))
 		assert.NoError(t, err)
 		assert.NotNil(t, cache)
 		assert.Equal(t, time.Duration(0), updateConfig.TTL)

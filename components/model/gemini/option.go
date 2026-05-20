@@ -76,26 +76,13 @@ func WithPrefixCacheTTL(ttl time.Duration) model.Option {
 	})
 }
 
-// WithPrefixCacheExpireTime sets the absolute expiry for CreatePrefixCache on this call.
-// When set, it overrides Config.Cache.ExpireTime for that CreatePrefixCache invocation.
+// WithPrefixCacheExpireTime sets the absolute expiry for CreatePrefixCache or UpdatePrefixCache on this call.
+// When set, it overrides Config.Cache.ExpireTime for that invocation.
 func WithPrefixCacheExpireTime(expireTime time.Time) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.PrefixCacheExpireTime = &expireTime
 	})
 }
-
-// WithPrefixCacheUpdateTTL sets the TTL for UpdatePrefixCache on this call.
-// When set, it overrides Config.Cache.TTL for that UpdatePrefixCache invocation.
-func WithPrefixCacheUpdateTTL(ttl time.Duration) model.Option {
-	return WithPrefixCacheTTL(ttl)
-}
-
-// WithPrefixCacheUpdateExpireTime sets the absolute expiry for UpdatePrefixCache on this call.
-// When set, it overrides Config.Cache.ExpireTime for that UpdatePrefixCache invocation.
-func WithPrefixCacheUpdateExpireTime(expireTime time.Time) model.Option {
-	return WithPrefixCacheExpireTime(expireTime)
-}
-
 // WithImageConfig sets the image generation configuration.
 // Note: an error will be returned for a model that does not support the configuration options.
 // Optional.
