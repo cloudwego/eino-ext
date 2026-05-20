@@ -388,9 +388,9 @@ func (cm *ChatModel) UpdatePrefixCache(ctx context.Context, name string, opts ..
 		return nil, fmt.Errorf("UpdatePrefixCache: cache name is required")
 	}
 
-	ttl, expireTime := cm.resolvePrefixCacheUpdateConfig(opts...)
+	ttl, expireTime := cm.resolvePrefixCacheConfig(opts...)
 	if ttl == 0 && expireTime.IsZero() {
-		return nil, fmt.Errorf("UpdatePrefixCache requires WithPrefixCacheUpdateTTL or WithPrefixCacheUpdateExpireTime")
+		return nil, fmt.Errorf("UpdatePrefixCache requires WithPrefixCacheTTL or WithPrefixCacheExpireTime")
 	}
 
 	cachedContent, err := cm.cli.Caches.Update(ctx, name, &genai.UpdateCachedContentConfig{
@@ -418,27 +418,6 @@ func (cm *ChatModel) resolvePrefixCacheConfig(opts ...model.Option) (ttl time.Du
 	if geminiOptions.PrefixCacheExpireTime != nil {
 		expireTime = *geminiOptions.PrefixCacheExpireTime
 		if geminiOptions.PrefixCacheTTL == nil {
-			ttl = 0
-		}
-	}
-	return ttl, expireTime
-}
-
-func (cm *ChatModel) resolvePrefixCacheUpdateConfig(opts ...model.Option) (ttl time.Duration, expireTime time.Time) {
-	geminiOptions := model.GetImplSpecificOptions(&options{}, opts...)
-	if cm.cache != nil {
-		ttl = cm.cache.TTL
-		expireTime = cm.cache.ExpireTime
-	}
-	if geminiOptions.PrefixCacheUpdateTTL != nil {
-		ttl = *geminiOptions.PrefixCacheUpdateTTL
-		if geminiOptions.PrefixCacheUpdateExpireTime == nil {
-			expireTime = time.Time{}
-		}
-	}
-	if geminiOptions.PrefixCacheUpdateExpireTime != nil {
-		expireTime = *geminiOptions.PrefixCacheUpdateExpireTime
-		if geminiOptions.PrefixCacheUpdateTTL == nil {
 			ttl = 0
 		}
 	}

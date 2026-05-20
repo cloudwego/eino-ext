@@ -32,10 +32,8 @@ type options struct {
 	ResponseModalities          []GeminiResponseModality
 	ImageConfig                 *genai.ImageConfig
 	CachedContentName           string
-	PrefixCacheTTL              *time.Duration
-	PrefixCacheExpireTime       *time.Time
-	PrefixCacheUpdateTTL        *time.Duration
-	PrefixCacheUpdateExpireTime *time.Time
+	PrefixCacheTTL        *time.Duration
+	PrefixCacheExpireTime *time.Time
 }
 
 func WithTopK(k int32) model.Option {
@@ -70,8 +68,8 @@ func WithCachedContentName(name string) model.Option {
 	})
 }
 
-// WithPrefixCacheTTL sets the TTL for CreatePrefixCache on this call.
-// When set, it overrides Config.Cache.TTL for that CreatePrefixCache invocation.
+// WithPrefixCacheTTL sets the TTL for CreatePrefixCache or UpdatePrefixCache on this call.
+// When set, it overrides Config.Cache.TTL for that invocation.
 func WithPrefixCacheTTL(ttl time.Duration) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.PrefixCacheTTL = &ttl
@@ -89,17 +87,13 @@ func WithPrefixCacheExpireTime(expireTime time.Time) model.Option {
 // WithPrefixCacheUpdateTTL sets the TTL for UpdatePrefixCache on this call.
 // When set, it overrides Config.Cache.TTL for that UpdatePrefixCache invocation.
 func WithPrefixCacheUpdateTTL(ttl time.Duration) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.PrefixCacheUpdateTTL = &ttl
-	})
+	return WithPrefixCacheTTL(ttl)
 }
 
 // WithPrefixCacheUpdateExpireTime sets the absolute expiry for UpdatePrefixCache on this call.
 // When set, it overrides Config.Cache.ExpireTime for that UpdatePrefixCache invocation.
 func WithPrefixCacheUpdateExpireTime(expireTime time.Time) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		o.PrefixCacheUpdateExpireTime = &expireTime
-	})
+	return WithPrefixCacheExpireTime(expireTime)
 }
 
 // WithImageConfig sets the image generation configuration.
