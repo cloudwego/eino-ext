@@ -220,7 +220,7 @@ type CacheConfig struct {
 
 This component supports two caching strategies to improve latency and reduce API calls:
 
-- Explicit caching (prefix cache): Build a reusable context from the system instruction, tools, and messages. Use `CreatePrefixCache` to create the cache and pass its name with `gemini.WithCachedContentName(...)` in subsequent requests. Default TTL can be set via `CacheConfig.TTL`; per-call overrides are available via `gemini.WithPrefixCacheTTL(...)` or `gemini.WithPrefixCacheExpireTime(...)`. When a cached content is used, the request omits system instruction and tools and relies on the cached prefix.
+- Explicit caching (prefix cache): Build a reusable context from the system instruction, tools, and messages. Use `CreatePrefixCache` to create the cache and pass its name with `gemini.WithCachedContentName(...)` in subsequent requests. Default TTL can be set via `CacheConfig.TTL`; per-call overrides are available via `gemini.WithPrefixCacheTTL(...)` or `gemini.WithPrefixCacheExpireTime(...)`. Use `UpdatePrefixCache` with `gemini.WithPrefixCacheUpdateTTL(...)` or `gemini.WithPrefixCacheUpdateExpireTime(...)` to extend an existing cache without recreating it. When a cached content is used, the request omits system instruction and tools and relies on the cached prefix.
 - Implicit caching: Managed by Gemini itself. The service may reuse prior requests or responses automatically. Expiry and reuse are controlled by Gemini and cannot be configured.
 
 ```

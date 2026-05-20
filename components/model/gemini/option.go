@@ -26,14 +26,16 @@ import (
 )
 
 type options struct {
-	TopK               *int32
-	ResponseJSONSchema *jsonschema.Schema
-	ThinkingConfig     *genai.ThinkingConfig
-	ResponseModalities []GeminiResponseModality
-	ImageConfig        *genai.ImageConfig
-	CachedContentName       string
-	PrefixCacheTTL          *time.Duration
-	PrefixCacheExpireTime   *time.Time
+	TopK                        *int32
+	ResponseJSONSchema          *jsonschema.Schema
+	ThinkingConfig              *genai.ThinkingConfig
+	ResponseModalities          []GeminiResponseModality
+	ImageConfig                 *genai.ImageConfig
+	CachedContentName           string
+	PrefixCacheTTL              *time.Duration
+	PrefixCacheExpireTime       *time.Time
+	PrefixCacheUpdateTTL        *time.Duration
+	PrefixCacheUpdateExpireTime *time.Time
 }
 
 func WithTopK(k int32) model.Option {
@@ -81,6 +83,22 @@ func WithPrefixCacheTTL(ttl time.Duration) model.Option {
 func WithPrefixCacheExpireTime(expireTime time.Time) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.PrefixCacheExpireTime = &expireTime
+	})
+}
+
+// WithPrefixCacheUpdateTTL sets the TTL for UpdatePrefixCache on this call.
+// When set, it overrides Config.Cache.TTL for that UpdatePrefixCache invocation.
+func WithPrefixCacheUpdateTTL(ttl time.Duration) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.PrefixCacheUpdateTTL = &ttl
+	})
+}
+
+// WithPrefixCacheUpdateExpireTime sets the absolute expiry for UpdatePrefixCache on this call.
+// When set, it overrides Config.Cache.ExpireTime for that UpdatePrefixCache invocation.
+func WithPrefixCacheUpdateExpireTime(expireTime time.Time) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.PrefixCacheUpdateExpireTime = &expireTime
 	})
 }
 

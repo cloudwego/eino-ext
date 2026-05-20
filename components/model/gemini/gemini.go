@@ -381,6 +381,28 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema
 	return cachedContent, nil
 }
 
+// UpdatePrefixCache updates TTL or expire time of an existing prefix cache.
+// See https://ai.google.dev/gemini-api/docs/caching#update-cache
+func (cm *ChatModel) UpdatePrefixCache(ctx context.Context, name string, opts ...model.Option) (*genai.CachedContent, error) {
+	if name == "" {
+		return nil, fmt.Errorf("UpdatePrefixCache: cache name is required")
+	}
+
+	ttl, expireTime := cm.resolvePrefixCacheUpdateConfig(opts...)
+	if ttl == 0 && expireTime.IsZero() {
+		return nil, fmt.Errorf("UpdatePrefixCache requires WithPrefixCacheUpdateTTL or WithPrefixCacheUpdateExpireTime")
+	}
+
+	cachedContent, err := cm.cli.Caches.Update(ctx, name, &genai.UpdateCachedContentConfig{
+		TTL:        ttl,
+		ExpireTime: expireTime,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("update cache failed: %w", err)
+	}
+	return cachedContent, nil
+}
+
 func (cm *ChatModel) resolvePrefixCacheConfig(opts ...model.Option) (ttl time.Duration, expireTime time.Time) {
 	geminiOptions := model.GetImplSpecificOptions(&options{}, opts...)
 	if cm.cache != nil {
@@ -396,6 +418,27 @@ func (cm *ChatModel) resolvePrefixCacheConfig(opts ...model.Option) (ttl time.Du
 	if geminiOptions.PrefixCacheExpireTime != nil {
 		expireTime = *geminiOptions.PrefixCacheExpireTime
 		if geminiOptions.PrefixCacheTTL == nil {
+			ttl = 0
+		}
+	}
+	return ttl, expireTime
+}
+
+func (cm *ChatModel) resolvePrefixCacheUpdateConfig(opts ...model.Option) (ttl time.Duration, expireTime time.Time) {
+	geminiOptions := model.GetImplSpecificOptions(&options{}, opts...)
+	if cm.cache != nil {
+		ttl = cm.cache.TTL
+		expireTime = cm.cache.ExpireTime
+	}
+	if geminiOptions.PrefixCacheUpdateTTL != nil {
+		ttl = *geminiOptions.PrefixCacheUpdateTTL
+		if geminiOptions.PrefixCacheUpdateExpireTime == nil {
+			expireTime = time.Time{}
+		}
+	}
+	if geminiOptions.PrefixCacheUpdateExpireTime != nil {
+		expireTime = *geminiOptions.PrefixCacheUpdateExpireTime
+		if geminiOptions.PrefixCacheUpdateTTL == nil {
 			ttl = 0
 		}
 	}

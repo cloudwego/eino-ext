@@ -1100,6 +1100,62 @@ func TestCreatePrefixCache(t *testing.T) {
 	})
 }
 
+func TestUpdatePrefixCache(t *testing.T) {
+	t.Run("update_ttl", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		var updateConfig *genai.UpdateCachedContentConfig
+		defer mockey.Mock(genai.Caches.Update).
+			To(func(ctx context.Context, name string, config *genai.UpdateCachedContentConfig) (*genai.CachedContent, error) {
+				updateConfig = config
+				return &genai.CachedContent{Name: name}, nil
+			}).Build().Patch().UnPatch()
+
+		cache, err := cm.UpdatePrefixCache(ctx, "cachedContents/abc", WithPrefixCacheUpdateTTL(2*time.Hour))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+		assert.Equal(t, "cachedContents/abc", cache.Name)
+		assert.Equal(t, 2*time.Hour, updateConfig.TTL)
+		assert.True(t, updateConfig.ExpireTime.IsZero())
+	})
+
+	t.Run("update_expire_time", func(t *testing.T) {
+		ctx := context.Background()
+		configExpire := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+		optionExpire := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+		cm, err := NewChatModel(ctx, &Config{
+			Client: &genai.Client{Caches: &genai.Caches{}},
+			Model:  "test-model",
+			Cache:  &CacheConfig{TTL: time.Minute, ExpireTime: configExpire},
+		})
+		assert.Nil(t, err)
+
+		var updateConfig *genai.UpdateCachedContentConfig
+		defer mockey.Mock(genai.Caches.Update).
+			To(func(ctx context.Context, name string, config *genai.UpdateCachedContentConfig) (*genai.CachedContent, error) {
+				updateConfig = config
+				return &genai.CachedContent{Name: name, ExpireTime: config.ExpireTime}, nil
+			}).Build().Patch().UnPatch()
+
+		cache, err := cm.UpdatePrefixCache(ctx, "cachedContents/abc", WithPrefixCacheUpdateExpireTime(optionExpire))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+		assert.Equal(t, time.Duration(0), updateConfig.TTL)
+		assert.Equal(t, optionExpire, updateConfig.ExpireTime)
+	})
+
+	t.Run("missing_ttl_and_expire_time", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		_, err = cm.UpdatePrefixCache(ctx, "cachedContents/abc")
+		assert.Error(t, err)
+	})
+}
+
 func TestSpecialPart(t *testing.T) {
 	msg, err := convCandidate(&genai.Candidate{
 		Content: &genai.Content{
