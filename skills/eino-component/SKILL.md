@@ -33,6 +33,13 @@ AgenticModel operates on `*schema.AgenticMessage` with block-based content (reas
 | Ark (Volcengine) | `model/agenticark` | Doubao models (agentic path) |
 | Qwen | `model/agenticqwen` | Qwen series via DashScope |
 
+Detailed configuration references:
+- `reference/model/agenticopenai.md`
+- `reference/model/agenticgemini.md`
+- `reference/model/agenticdeepseek.md`
+- `reference/model/agenticark.md`
+- `reference/model/agenticqwen.md`
+
 ### Embedding -- text to vector
 
 | Provider | Package | Notes |
@@ -190,7 +197,7 @@ am, _ := agenticopenai.New(ctx, &agenticopenai.Config{
     APIKey: "your-key",
 })
 
-// Tools passed at call time via option (not via WithTools method)
+// Tools passed at call time via option for AgenticModel-interface code
 resp, err := am.Generate(ctx,
     []*schema.AgenticMessage{schema.UserAgenticMessage("Search for Go tutorials")},
     model.WithTools(toolInfos),
@@ -245,7 +252,7 @@ Implement `Info()` and `InvokableRun()` to create a custom tool.
 
 - Constructor signatures and Config struct names vary across implementations. Always read the provider's reference file in `reference/{type}/{impl}.md` before generating initialization code.
 - Use `BaseChatModel` (classic path) or `AgenticModel` (agentic path) based on the user's needs.
-- AgenticModel does NOT have a `WithTools` method. Tools are always passed via `model.WithTools(...)` option at call time.
+- `model.AgenticModel` does not add a `WithTools` method to the interface. Prefer `model.WithTools(...)` at call time for interface-oriented code.
 - For ADK agents, the `ChatModelAgentConfig.Model` field accepts `model.BaseModel[M]` -- both paths work seamlessly.
 - For RAG, ensure the same Embedder model is used for both indexing and retrieval.
 - See reference files for detailed per-component documentation.
