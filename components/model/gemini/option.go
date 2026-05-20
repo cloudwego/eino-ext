@@ -17,6 +17,8 @@
 package gemini
 
 import (
+	"time"
+
 	"github.com/eino-contrib/jsonschema"
 	"google.golang.org/genai"
 
@@ -24,12 +26,14 @@ import (
 )
 
 type options struct {
-	TopK               *int32
-	ResponseJSONSchema *jsonschema.Schema
-	ThinkingConfig     *genai.ThinkingConfig
-	ResponseModalities []GeminiResponseModality
-	ImageConfig        *genai.ImageConfig
-	CachedContentName  string
+	TopK                      *int32
+	ResponseJSONSchema        *jsonschema.Schema
+	ThinkingConfig            *genai.ThinkingConfig
+	ResponseModalities        []GeminiResponseModality
+	ImageConfig               *genai.ImageConfig
+	CachedContentName         string
+	PrefixCacheUpdateTTL      *time.Duration
+	PrefixCacheUpdateExpireTime *time.Time
 }
 
 func WithTopK(k int32) model.Option {
@@ -61,6 +65,22 @@ func WithResponseModalities(m []GeminiResponseModality) model.Option {
 func WithCachedContentName(name string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.CachedContentName = name
+	})
+}
+
+// WithPrefixCacheUpdateTTL sets the TTL for UpdatePrefixCache on this call.
+// When set, it overrides Config.Cache.TTL for that UpdatePrefixCache invocation.
+func WithPrefixCacheUpdateTTL(ttl time.Duration) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.PrefixCacheUpdateTTL = &ttl
+	})
+}
+
+// WithPrefixCacheUpdateExpireTime sets the absolute expiry for UpdatePrefixCache on this call.
+// When set, it overrides Config.Cache.ExpireTime for that UpdatePrefixCache invocation.
+func WithPrefixCacheUpdateExpireTime(expireTime time.Time) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.PrefixCacheUpdateExpireTime = &expireTime
 	})
 }
 
