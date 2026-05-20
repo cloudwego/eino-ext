@@ -220,7 +220,7 @@ type CacheConfig struct {
 
 该组件支持两种缓存策略以提高延迟并减少 API 调用：
 
-- 显式缓存（前缀缓存）：从系统指令、工具和消息中构建可重用的上下文。使用 `CreatePrefixCache` 创建缓存，并在后续请求中使用 `gemini.WithCachedContentName(...)` 传递其名称。默认 TTL 可通过 `CacheConfig.TTL` 配置；单次调用也可用 `gemini.WithPrefixCacheTTL(...)` 或 `gemini.WithPrefixCacheExpireTime(...)` 覆盖。`UpdatePrefixCache` 使用相同 option 延长已有缓存而无需重建。当使用缓存内容时，请求会省略系统指令和工具，并依赖于缓存的前缀。
+- 显式缓存（前缀缓存）：从系统指令、工具和消息中构建可重用的上下文。使用 `CreatePrefixCache` 创建缓存，并在后续请求中使用 `gemini.WithCachedContentName(...)` 传递其名称。默认 TTL 可通过 `CacheConfig.TTL` 配置；单次调用也可用 `gemini.WithPrefixCacheTTL(...)` 或 `gemini.WithPrefixCacheExpireTime(...)` 覆盖。`UpdatePrefixCache` 使用相同 option 延长已有缓存而无需重建。`DeletePrefixCache` 可手动删除缓存。当使用缓存内容时，请求会省略系统指令和工具，并依赖于缓存的前缀。
 - 隐式缓存：由 Gemini 自身管理。服务可能会自动重用先前的请求或响应。到期和重用由 Gemini 控制，无法配置。
 
 下面的示例展示了如何创建前缀缓存并在后续调用中重用它。

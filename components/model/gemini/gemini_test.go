@@ -1106,6 +1106,34 @@ func TestUpdatePrefixCache(t *testing.T) {
 	})
 }
 
+func TestDeletePrefixCache(t *testing.T) {
+	t.Run("delete", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		var deletedName string
+		defer mockey.Mock(genai.Caches.Delete).
+			To(func(ctx context.Context, name string, config *genai.DeleteCachedContentConfig) (*genai.DeleteCachedContentResponse, error) {
+				deletedName = name
+				return &genai.DeleteCachedContentResponse{}, nil
+			}).Build().Patch().UnPatch()
+
+		err = cm.DeletePrefixCache(ctx, "cachedContents/abc")
+		assert.NoError(t, err)
+		assert.Equal(t, "cachedContents/abc", deletedName)
+	})
+
+	t.Run("missing_name", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{Caches: &genai.Caches{}}, Model: "test-model"})
+		assert.Nil(t, err)
+
+		err = cm.DeletePrefixCache(ctx, "")
+		assert.Error(t, err)
+	})
+}
+
 func TestSpecialPart(t *testing.T) {
 	msg, err := convCandidate(&genai.Candidate{
 		Content: &genai.Content{

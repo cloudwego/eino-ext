@@ -403,6 +403,20 @@ func (cm *ChatModel) UpdatePrefixCache(ctx context.Context, name string, opts ..
 	return cachedContent, nil
 }
 
+// DeletePrefixCache deletes an existing prefix cache.
+// See https://ai.google.dev/gemini-api/docs/caching#delete-cache
+func (cm *ChatModel) DeletePrefixCache(ctx context.Context, name string) error {
+	if name == "" {
+		return fmt.Errorf("DeletePrefixCache: cache name is required")
+	}
+
+	_, err := cm.cli.Caches.Delete(ctx, name, &genai.DeleteCachedContentConfig{})
+	if err != nil {
+		return fmt.Errorf("delete cache failed: %w", err)
+	}
+	return nil
+}
+
 func (cm *ChatModel) resolvePrefixCacheConfig(opts ...model.Option) (ttl time.Duration, expireTime time.Time) {
 	geminiOptions := model.GetImplSpecificOptions(&options{}, opts...)
 	if cm.cache != nil {
