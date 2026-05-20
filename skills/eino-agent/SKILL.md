@@ -7,7 +7,7 @@ description: Eino ADK agent construction, middleware, and runner. Use when a use
 
 Import: `github.com/cloudwego/eino/adk`
 
-The Agent Development Kit (ADK) provides a framework for building agents in Go. The ADK is generically parameterized by `MessageType` to support both classic `*schema.Message` and the new `*schema.AgenticMessage`.
+The Agent Development Kit (ADK) provides a framework for building agents in Go. The ADK is generically parameterized by `MessageType` to support both classic `*schema.Message` and the new `*schema.AgenticMessage`. Prefer `*schema.AgenticMessage` for new usage.
 
 ```go
 type MessageType interface {
@@ -17,7 +17,7 @@ type MessageType interface {
 type TypedAgent[M MessageType] interface {
     Name(ctx context.Context) string
     Description(ctx context.Context) string
-    Run(ctx context.Context, input *TypedAgentInput[M], opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]]
+    Run(ctx context.Context, input *TypedAgentInput[M], options ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]]
 }
 
 // Convenience aliases for classic message type
@@ -105,10 +105,12 @@ Cancel provides safe, controllable termination of agent execution.
 cancelOpt, cancelFn := adk.WithCancel()
 iter := runner.Query(ctx, "do something", cancelOpt)
 
-// Cancel at a safe point (after current model call or tool calls complete)
+// ... iterate events ...
+
+// Cancel at a safe point (cancelFn is non-blocking, Wait blocks until complete)
 handle, ok := cancelFn(adk.WithAgentCancelMode(adk.CancelAfterChatModel))
 if ok {
-    err := handle.Wait() // blocks until cancel completes
+    handle.Wait()
 }
 ```
 
