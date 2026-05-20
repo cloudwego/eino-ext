@@ -17,6 +17,8 @@
 package gemini
 
 import (
+	"time"
+
 	"github.com/eino-contrib/jsonschema"
 	"google.golang.org/genai"
 
@@ -30,6 +32,7 @@ type options struct {
 	ResponseModalities []GeminiResponseModality
 	ImageConfig        *genai.ImageConfig
 	CachedContentName  string
+	PrefixCacheTTL     *time.Duration
 }
 
 func WithTopK(k int32) model.Option {
@@ -61,6 +64,14 @@ func WithResponseModalities(m []GeminiResponseModality) model.Option {
 func WithCachedContentName(name string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.CachedContentName = name
+	})
+}
+
+// WithPrefixCacheTTL sets the TTL for CreatePrefixCache on this call.
+// When set, it overrides Config.Cache.TTL for that CreatePrefixCache invocation.
+func WithPrefixCacheTTL(ttl time.Duration) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.PrefixCacheTTL = &ttl
 	})
 }
 

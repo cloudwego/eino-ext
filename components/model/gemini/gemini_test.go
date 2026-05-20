@@ -989,6 +989,30 @@ func TestCreatePrefixCache(t *testing.T) {
 
 	})
 
+	t.Run("prefix_cache_ttl_option_overrides_config", func(t *testing.T) {
+		ctx := context.Background()
+		cm, err := NewChatModel(ctx, &Config{
+			Client: &genai.Client{Caches: &genai.Caches{}},
+			Model:  "test-model",
+			Cache:  &CacheConfig{TTL: time.Minute},
+		})
+		assert.Nil(t, err)
+
+		var cacheConfig *genai.CreateCachedContentConfig
+		defer mockey.Mock(genai.Caches.Create).
+			To(func(ctx context.Context, model string, config *genai.CreateCachedContentConfig) (*genai.CachedContent, error) {
+				cacheConfig = config
+				return &genai.CachedContent{Name: "cached/ttl_option"}, nil
+			}).Build().Patch().UnPatch()
+
+		prefixMsgs := []*schema.Message{{Role: schema.User, Content: "hello"}}
+		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs, WithPrefixCacheTTL(2*time.Hour))
+		assert.NoError(t, err)
+		assert.NotNil(t, cache)
+		assert.Equal(t, 2*time.Hour, cacheConfig.TTL)
+		assert.True(t, cacheConfig.ExpireTime.IsZero())
+	})
+
 	t.Run("cache_and_generate", func(t *testing.T) {
 		ctx := context.Background()
 		cm, err := NewChatModel(ctx, &Config{Client: &genai.Client{

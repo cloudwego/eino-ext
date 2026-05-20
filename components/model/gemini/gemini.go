@@ -364,29 +364,32 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema
 		return nil, err
 	}
 
+	ttl, expireTime := cm.resolvePrefixCacheConfig(opts...)
+
 	cachedContent, err := cm.cli.Caches.Create(ctx, modelName, &genai.CreateCachedContentConfig{
 		Contents:          contents,
 		SystemInstruction: genaiConf.SystemInstruction,
 		Tools:             genaiConf.Tools,
 		ToolConfig:        genaiConf.ToolConfig,
-		TTL: func() time.Duration {
-			if cm.cache != nil {
-				return cm.cache.TTL
-			}
-			return 0
-		}(),
-		ExpireTime: func() time.Time {
-			if cm.cache != nil {
-				return cm.cache.ExpireTime
-			}
-			return time.Time{}
-		}(),
+		TTL:               ttl,
+		ExpireTime:        expireTime,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create cache failed: %w", err)
 	}
 
 	return cachedContent, nil
+}
+
+func (cm *ChatModel) resolvePrefixCacheConfig(opts ...model.Option) (ttl time.Duration, expireTime time.Time) {
+	geminiOptions := model.GetImplSpecificOptions(&options{}, opts...)
+	if geminiOptions.PrefixCacheTTL != nil {
+		return *geminiOptions.PrefixCacheTTL, time.Time{}
+	}
+	if cm.cache != nil {
+		return cm.cache.TTL, cm.cache.ExpireTime
+	}
+	return 0, time.Time{}
 }
 
 func populateToolChoice(m *genai.GenerateContentConfig, toolChoice *schema.ToolChoice, allowedToolNames []string) error {
