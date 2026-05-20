@@ -117,8 +117,12 @@ type Transformer interface {
 }
 
 // Tool
-type InvokableTool interface {
+type BaseTool interface {
     Info(ctx context.Context) (*schema.ToolInfo, error)
+}
+
+type InvokableTool interface {
+    BaseTool
     InvokableRun(ctx context.Context, argumentsInJSON string, opts ...Option) (string, error)
 }
 
@@ -181,7 +185,7 @@ import (
 )
 
 // Create agentic model
-am, _ := agenticopenai.NewAgenticModel(ctx, &agenticopenai.AgenticModelConfig{
+am, _ := agenticopenai.New(ctx, &agenticopenai.Config{
     Model:  "gpt-4o",
     APIKey: "your-key",
 })

@@ -47,7 +47,6 @@ Every event from `AsyncIterator` is an `AgentEvent`:
 ```go
 type TypedAgentEvent[M MessageType] struct {
     AgentName string                // Which agent produced this event
-    RunPath   []RunStep             // Full call chain from entry agent to current
     Output    *TypedAgentOutput[M]  // Message output (may be nil)
     Action    *AgentAction          // Control action (may be nil)
     Err       error                 // Error (may be nil; may be *CancelError or *RetryExhaustedError)
@@ -105,7 +104,6 @@ msg, err := mv.GetMessage()
 type AgentAction struct {
     Exit             bool                  // Immediately exit the multi-agent system
     Interrupted      *InterruptInfo        // Pause execution, save checkpoint
-    TransferToAgent  *TransferToAgentAction // Transfer control to another agent
     BreakLoop        *BreakLoopAction      // Break out of a LoopAgent
     CustomizedAction any                   // Custom action
 }
@@ -130,10 +128,6 @@ for {
     if event.Action != nil {
         if event.Action.Interrupted != nil {
             fmt.Printf("Interrupted: %v\n", event.Action.Interrupted)
-            continue
-        }
-        if event.Action.TransferToAgent != nil {
-            fmt.Printf("Transfer to: %s\n", event.Action.TransferToAgent.DestAgentName)
             continue
         }
     }

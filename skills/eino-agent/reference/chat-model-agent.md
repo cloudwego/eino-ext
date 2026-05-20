@@ -40,12 +40,6 @@ type TypedChatModelAgentConfig[M MessageType] struct {
     // Optional. Defaults to prepending instruction as system message.
     GenModelInput TypedGenModelInput[M]
 
-    // NOT RECOMMENDED: Exit tool for agent transfer. Consider AgentTool or DeepAgent instead.
-    Exit tool.BaseTool
-
-    // NOT RECOMMENDED: OutputKey for agent transfer pattern.
-    OutputKey string
-
     // Max ReAct iterations. Default: 20. Agent errors if exceeded.
     MaxIterations int
 
@@ -312,12 +306,12 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
     // ...
     ModelFailoverConfig: &adk.ModelFailoverConfig[*schema.Message]{
         MaxRetries: 2,
-        ShouldFailover: func(ctx context.Context, output *schema.Message, err error) bool {
-            return err != nil
+        ShouldFailover: func(ctx context.Context, outputMessage *schema.Message, outputErr error) bool {
+            return outputErr != nil
         },
-        GetFailoverModel: func(ctx context.Context, fCtx *adk.FailoverContext[*schema.Message]) (
+        GetFailoverModel: func(ctx context.Context, failoverCtx *adk.FailoverContext[*schema.Message]) (
             model.BaseModel[*schema.Message], []*schema.Message, error) {
-            return backupModel, fCtx.InputMessages, nil
+            return backupModel, failoverCtx.InputMessages, nil
         },
     },
 })

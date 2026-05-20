@@ -197,10 +197,12 @@ iter, err := runner.Resume(ctx, checkpointID,
 Agents that support interrupt/resume must implement:
 
 ```go
-type ResumableAgent interface {
-    Agent
-    Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*AgentEvent]
+type TypedResumableAgent[M MessageType] interface {
+    TypedAgent[M]
+    Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]]
 }
+
+type ResumableAgent = TypedResumableAgent[*schema.Message]
 
 type ResumeInfo struct {
     WasInterrupted bool   // Always true when Resume is called

@@ -11,8 +11,8 @@ chatModel, err := openai.NewChatModel(ctx, &openai.ChatModelConfig{
     APIKey:  "your-key",       // Required
     Model:   "gpt-4o",         // Required
     BaseURL: "",               // Optional, custom endpoint
-    Temperature:         ptrFloat32(0.7), // Optional, 0.0-2.0
-    MaxCompletionTokens: ptrInt(4096),    // Optional
+    Temperature:         func() *float32 { t := float32(0.7); return &t }(), // Optional, 0.0-2.0
+    MaxCompletionTokens: func() *int { t := 4096; return &t }(),    // Optional
     ReasoningEffort:     openai.ReasoningEffortLevelHigh, // Optional
 })
 ```

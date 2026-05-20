@@ -167,8 +167,8 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
     // ...
     ModelFailoverConfig: &adk.ModelFailoverConfig[*schema.Message]{
         MaxRetries: 2,
-        ShouldFailover: func(ctx context.Context, output *schema.Message, err error) bool {
-            return err != nil // failover on any error
+        ShouldFailover: func(ctx context.Context, outputMessage *schema.Message, outputErr error) bool {
+            return outputErr != nil // failover on any error
         },
         GetFailoverModel: func(ctx context.Context, failoverCtx *adk.FailoverContext[*schema.Message]) (
             model.BaseModel[*schema.Message], []*schema.Message, error) {

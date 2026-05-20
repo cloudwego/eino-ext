@@ -53,7 +53,7 @@ High-level abstractions for building AI agents. Encapsulates the model-tool-loop
 | **Runner** | Executes agents, manages checkpoints, emits event streams |
 | **Middleware (Handlers)** | Intercept and extend agent behavior (filesystem, summarization, plan-task, etc.) |
 | **Interrupt/Resume** | Human-in-the-loop: pause agent, get user input, resume from checkpoint |
-| **AgentAsTool** | Wrap an agent as a tool callable by another agent |
+| **AgentTool** | Wrap an agent as a tool callable by another agent |
 
 -> Use `/eino-agent` for building agents, configuring middleware, runners, and human-in-the-loop.
 

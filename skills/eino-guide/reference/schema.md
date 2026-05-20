@@ -12,11 +12,13 @@ type Message struct {
     Content                  string              // text content
     UserInputMultiContent    []MessageInputPart  // multimodal input from user (images, audio, etc.)
     AssistantGenMultiContent []MessageOutputPart // multi-part output from model (e.g., reasoning + text, audio + text). When non-empty, prefer this over Content/ReasoningContent.
+    Name                     string              // message name
     ToolCalls                []ToolCall          // tool calls requested by model (assistant only)
     ToolCallID               string              // identifies which tool call this message responds to (tool only)
     ToolName                 string              // tool name (tool only)
-    ReasoningContent         string              // model's reasoning/thinking content
     ResponseMeta             *ResponseMeta       // model response metadata (token usage, finish reason, etc.)
+    ReasoningContent         string              // model's reasoning/thinking content
+    Extra                    map[string]any      // customized information for model implementation
 }
 ```
 
@@ -187,7 +189,7 @@ schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 })
 
 // Option B: use raw JSON Schema
-schema.NewParamsOneOfByJSONSchema(jsonSchemaBytes)
+schema.NewParamsOneOfByJSONSchema(schemaObj)
 ```
 
 ## StreamReader[T]

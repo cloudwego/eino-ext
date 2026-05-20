@@ -184,7 +184,7 @@ g.Compile(ctx,
     compose.WithCheckPointStore(store),       // Enable checkpointing
     compose.WithInterruptBeforeNodes([]string{"node1"}),
     compose.WithInterruptAfterNodes([]string{"node2"}),
-    compose.WithEagerExecution(),             // DAG mode: run nodes as soon as ready
+    // compose.WithEagerExecution(), // Deprecated: Eager execution is automatically enabled by default when a node's trigger mode is set to AllPredecessor.
 )
 ```
 
@@ -193,7 +193,7 @@ g.Compile(ctx,
 A minimal ReAct loop: model → branch (has tool calls?) → tools → model cycle.
 
 ```go
-func buildReActGraph(ctx context.Context, cm model.ToolCallingChatModel) (compose.Runnable[map[string]any, *schema.Message], error) {
+func buildReActGraph(ctx context.Context, cm model.BaseChatModel) (compose.Runnable[map[string]any, *schema.Message], error) {
     // Create ChatTemplate inline
     tpl := prompt.FromMessages(schema.FString,
         schema.SystemMessage("You are a helpful assistant."),

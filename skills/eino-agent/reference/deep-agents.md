@@ -85,9 +85,6 @@ type TypedConfig[M adk.MessageType] struct {
     // Optional: custom TaskTool description generator.
     TaskToolDescriptionGenerator func(ctx context.Context, availableAgents []adk.TypedAgent[M]) (string, error)
 
-    // Optional: struct-based middleware (deprecated style).
-    Middlewares []adk.AgentMiddleware
-
     // Optional: interface-based middleware (recommended).
     Handlers []adk.TypedChatModelAgentMiddleware[M]
 
@@ -95,8 +92,6 @@ type TypedConfig[M adk.MessageType] struct {
     ModelRetryConfig *adk.TypedModelRetryConfig[M]
     // Optional: model failover configuration.
     ModelFailoverConfig *adk.ModelFailoverConfig[M]
-    // Optional: store agent output in session values.
-    OutputKey string
 }
 
 type Config = TypedConfig[*schema.Message]
