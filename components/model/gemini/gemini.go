@@ -382,22 +382,24 @@ func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema
 }
 
 func (cm *ChatModel) resolvePrefixCacheConfig(opts ...model.Option) (ttl time.Duration, expireTime time.Time) {
-	geminiOptions := model.GetImplSpecificOptions(&options{}, opts...)
+	defaults := &options{}
 	if cm.cache != nil {
-		ttl = cm.cache.TTL
-		expireTime = cm.cache.ExpireTime
-	}
-	if geminiOptions.PrefixCacheTTL != nil {
-		ttl = *geminiOptions.PrefixCacheTTL
-		if geminiOptions.PrefixCacheExpireTime == nil {
-			expireTime = time.Time{}
+		if cm.cache.TTL != 0 {
+			ttlDefault := cm.cache.TTL
+			defaults.PrefixCacheTTL = &ttlDefault
+		}
+		if !cm.cache.ExpireTime.IsZero() {
+			expireDefault := cm.cache.ExpireTime
+			defaults.PrefixCacheExpireTime = &expireDefault
 		}
 	}
-	if geminiOptions.PrefixCacheExpireTime != nil {
-		expireTime = *geminiOptions.PrefixCacheExpireTime
-		if geminiOptions.PrefixCacheTTL == nil {
-			ttl = 0
-		}
+
+	merged := model.GetImplSpecificOptions(defaults, opts...)
+	if merged.PrefixCacheTTL != nil {
+		ttl = *merged.PrefixCacheTTL
+	}
+	if merged.PrefixCacheExpireTime != nil {
+		expireTime = *merged.PrefixCacheExpireTime
 	}
 	return ttl, expireTime
 }

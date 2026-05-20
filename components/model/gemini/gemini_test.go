@@ -1035,7 +1035,7 @@ func TestCreatePrefixCache(t *testing.T) {
 		cache, err := cm.CreatePrefixCache(ctx, prefixMsgs, WithPrefixCacheExpireTime(optionExpire))
 		assert.NoError(t, err)
 		assert.NotNil(t, cache)
-		assert.Equal(t, time.Duration(0), cacheConfig.TTL)
+		assert.Equal(t, time.Minute, cacheConfig.TTL)
 		assert.Equal(t, optionExpire, cacheConfig.ExpireTime)
 	})
 
