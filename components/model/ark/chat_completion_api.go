@@ -25,15 +25,15 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/eino-contrib/jsonschema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
-	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
-
+	"code.byted.org/gopkg/logs/v2"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
+	autils "github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 type completionAPIChatModel struct {
@@ -275,6 +275,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 				},
 			}, nil)
 			if closed {
+				logs.CtxError(ctx, "[test] stream closed")
 				return
 			}
 		}
