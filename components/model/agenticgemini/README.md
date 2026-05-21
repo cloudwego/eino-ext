@@ -149,6 +149,11 @@ type Config struct {
     SafetySettings []*genai.SafetySetting
     
     ThinkingConfig *genai.ThinkingConfig
+
+    // ImageConfig is the image generation configuration.
+    // Note: an error will be returned if this field is set for a model that does not support the configuration options.
+    // Optional.
+    ImageConfig *genai.ImageConfig
     
     // ResponseModalities specifies the modalities the model can return.
     // Optional.

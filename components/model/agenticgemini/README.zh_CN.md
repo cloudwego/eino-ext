@@ -149,6 +149,11 @@ type Config struct {
     SafetySettings []*genai.SafetySetting
     
     ThinkingConfig *genai.ThinkingConfig
+
+    // ImageConfig 是图片生成配置
+    // 注意：如果模型不支持该配置选项，将会返回错误
+    // 可选。
+    ImageConfig *genai.ImageConfig
     
     // ResponseModalities 指定模型可以返回的模态类型
     // 可选。

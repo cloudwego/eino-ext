@@ -47,6 +47,7 @@ func TestNewAgenticModel(t *testing.T) {
 			},
 		},
 		ResponseModalities: []ResponseModality{ResponseModalityText, ResponseModalityImage},
+		ImageConfig:        &genai.ImageConfig{AspectRatio: "16:9", ImageSize: "1K"},
 		Cache: &CacheConfig{
 			TTL: time.Hour,
 		},
@@ -62,6 +63,8 @@ func TestNewAgenticModel(t *testing.T) {
 	assert.NotNil(t, model.enableCodeExecution)
 	assert.Len(t, model.safetySettings, 1)
 	assert.Len(t, model.responseModalities, 2)
+	assert.Equal(t, "16:9", model.imageConfig.AspectRatio)
+	assert.Equal(t, "1K", model.imageConfig.ImageSize)
 	assert.NotNil(t, model.cache)
 	assert.Equal(t, time.Hour, model.cache.TTL)
 
@@ -83,6 +86,10 @@ func TestGemini_GenInputAndConf(t *testing.T) {
 		model:       "gemini-pro",
 		temperature: ptrOf(float32(0.5)),
 		topP:        ptrOf(float32(0.9)),
+		imageConfig: &genai.ImageConfig{
+			AspectRatio: "1:1",
+			ImageSize:   "1K",
+		},
 	}
 
 	input := []*schema.AgenticMessage{
@@ -120,6 +127,16 @@ func TestGemini_GenInputAndConf(t *testing.T) {
 	assert.Equal(t, newModel, conf.Model)
 	assert.Equal(t, genai.FunctionCallingConfigModeAny, genaiConf.ToolConfig.FunctionCallingConfig.Mode)
 	assert.Equal(t, []string{"tool1"}, genaiConf.ToolConfig.FunctionCallingConfig.AllowedFunctionNames)
+	assert.Equal(t, "1:1", genaiConf.ImageConfig.AspectRatio)
+	assert.Equal(t, "1K", genaiConf.ImageConfig.ImageSize)
+
+	overrideImageConfig := &genai.ImageConfig{
+		AspectRatio: "16:9",
+		ImageSize:   "2K",
+	}
+	_, _, genaiConf, _, err = g.genInputAndConf(input, WithImageConfig(overrideImageConfig))
+	assert.NoError(t, err)
+	assert.Equal(t, overrideImageConfig, genaiConf.ImageConfig)
 }
 
 func TestGemini_Generate_Success(t *testing.T) {
