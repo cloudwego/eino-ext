@@ -730,6 +730,7 @@ func (g *Gemini) genInputAndConf(input []*schema.AgenticMessage, opts ...model.O
 		TopK:               g.topK,
 		ResponseJSONSchema: g.responseJSONSchema,
 		ResponseModalities: g.responseModalities,
+		ImageConfig:        g.imageConfig,
 	}, opts...)
 	conf := &model.AgenticConfig{}
 
@@ -896,6 +897,10 @@ func (g *Gemini) genInputAndConf(input []*schema.AgenticMessage, opts ...model.O
 	m.ThinkingConfig = g.thinkingConfig
 	if geminiOptions.ThinkingConfig != nil {
 		m.ThinkingConfig = geminiOptions.ThinkingConfig
+	}
+
+	if geminiOptions.ImageConfig != nil {
+		m.ImageConfig = geminiOptions.ImageConfig
 	}
 
 	if len(geminiOptions.CachedContentName) > 0 {

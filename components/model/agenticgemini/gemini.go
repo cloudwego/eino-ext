@@ -95,6 +95,11 @@ type Config struct {
 
 	ThinkingConfig *genai.ThinkingConfig
 
+	// ImageConfig is the image generation configuration.
+	// Note: an error will be returned if this field is set for a model that does not support the configuration options.
+	// Optional.
+	ImageConfig *genai.ImageConfig
+
 	// ResponseModalities specifies the modalities the model can return.
 	// Optional.
 	ResponseModalities []ResponseModality
@@ -142,6 +147,7 @@ func NewAgenticModel(_ context.Context, cfg *Config) (*Gemini, error) {
 		enableGoogleMaps:            cfg.EnableGoogleMaps,
 		safetySettings:              cfg.SafetySettings,
 		thinkingConfig:              cfg.ThinkingConfig,
+		imageConfig:                 cfg.ImageConfig,
 		responseModalities:          cfg.ResponseModalities,
 		mediaResolution:             cfg.MediaResolution,
 		cache:                       cfg.Cache,
@@ -169,6 +175,7 @@ type Gemini struct {
 	enableGoogleMaps            *genai.GoogleMaps
 	safetySettings              []*genai.SafetySetting
 	thinkingConfig              *genai.ThinkingConfig
+	imageConfig                 *genai.ImageConfig
 	responseModalities          []ResponseModality
 	mediaResolution             genai.MediaResolution
 	cache                       *CacheConfig

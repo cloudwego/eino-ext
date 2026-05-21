@@ -45,6 +45,11 @@ func main() {
 	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
+		// you can set the necessary parameters for image generation
+		ImageConfig: &genai.ImageConfig{
+			AspectRatio: "16:9",
+			ImageSize:   "1K",
+		},
 		ResponseModalities: []agenticgemini.ResponseModality{
 			agenticgemini.ResponseModalityText,
 			agenticgemini.ResponseModalityImage,

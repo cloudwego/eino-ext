@@ -32,6 +32,7 @@ func TestSpecificOptions(t *testing.T) {
 		WithCachedContentName("name"),
 		WithThinkingConfig(&genai.ThinkingConfig{}),
 		WithResponseModalities([]ResponseModality{ResponseModalityText}),
+		WithImageConfig(&genai.ImageConfig{AspectRatio: "16:9"}),
 	)
 
 	assert.Equal(t, int32(2), *o.TopK)
@@ -39,4 +40,5 @@ func TestSpecificOptions(t *testing.T) {
 	assert.Equal(t, "name", o.CachedContentName)
 	assert.NotNil(t, o.ThinkingConfig)
 	assert.Len(t, o.ResponseModalities, 1)
+	assert.Equal(t, "16:9", o.ImageConfig.AspectRatio)
 }
