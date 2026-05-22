@@ -10,6 +10,7 @@
 - 支持 Responses API
 - 支持流式响应 (Streaming)
 - 支持工具调用 (Tools)，包括函数工具 (Function Tools)、MCP 工具 (MCP Tools) 和服务器工具 (Server Tools)
+- 支持多轮对话自动缓存
 - 支持 Azure OpenAI
 
 ## 安装
@@ -184,6 +185,14 @@ type Config struct {
 	// 可选。
 	MCPTools []*responses.ToolMcpParam
 
+	// EnableAutoCache 控制是否开启多轮对话自动缓存。
+	// 可选。
+	EnableAutoCache bool
+
+	// PromptCacheRetention 指定 prompt cache 的保留策略。
+	// 可选。
+	PromptCacheRetention *PromptCacheRetention
+
 	// CustomHeaders 指定 API 请求中包含的自定义 HTTP 标头。
 	// CustomHeaders 允许传递额外的元数据或身份验证信息。
 	// 可选。
@@ -196,7 +205,31 @@ type Config struct {
 }
 ```
 
+可用的 `PromptCacheRetention` 常量：
+
+```go
+const (
+	PromptCacheRetentionInMemory PromptCacheRetention = "in_memory"
+	PromptCacheRetention24H      PromptCacheRetention = "24h"
+)
+```
+
 ## 高级用法
+
+### 缓存
+
+使用 `EnableAutoCache` 开启多轮对话自动缓存。若某条缓存消息已经失效，可以调用 `InvalidateMessageCaches` 临时跳过该缓存。
+
+```go
+retention := agenticopenai.PromptCacheRetention24H
+
+am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	Model:                os.Getenv("OPENAI_MODEL_ID"),
+	APIKey:               os.Getenv("OPENAI_API_KEY"),
+	EnableAutoCache:      true,
+	PromptCacheRetention: &retention,
+})
+```
 
 ### 工具调用 (Tool Calling)
 

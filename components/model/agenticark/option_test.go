@@ -86,9 +86,10 @@ func TestWithCustomHeaders(t *testing.T) {
 	assert.Equal(t, headers, got.customHeaders)
 }
 
-func TestWithCache(t *testing.T) {
+func TestWithHeadPreviousResponseID(t *testing.T) {
 	base := &arkOptions{}
-	cache := &CacheOption{}
-	got := model.GetImplSpecificOptions(base, WithCache(cache))
-	assert.Same(t, cache, got.cache)
+	got := model.GetImplSpecificOptions(base, WithHeadPreviousResponseID("resp_123"))
+	if assert.NotNil(t, got.headPreviousResponseID) {
+		assert.Equal(t, "resp_123", *got.headPreviousResponseID)
+	}
 }

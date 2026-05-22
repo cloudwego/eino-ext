@@ -23,16 +23,17 @@ import (
 )
 
 const (
-	extraKeyWebSearchToolResultCaller = "_claude_web_search_tool_result_caller"
-	extraKeyWebFetchToolResultCaller  = "_claude_web_fetch_tool_result_caller"
+	keyOfWebSearchToolResultCaller = "_agenticclaude_web_search_tool_result_caller"
+	keyOfWebFetchToolResultCaller  = "_agenticclaude_web_fetch_tool_result_caller"
+	keyOfCacheControlTTL           = "_agenticclaude_cache_control_ttl"
 )
 
 func setWebSearchResultCaller(block *schema.ContentBlock, caller anthropic.WebSearchToolResultBlockCallerUnion) {
-	setContentBlockExtraValue(block, extraKeyWebSearchToolResultCaller, caller.RawJSON())
+	setContentBlockExtraValue(block, keyOfWebSearchToolResultCaller, caller.RawJSON())
 }
 
 func toWebSearchResultCallerParam(block *schema.ContentBlock) (param anthropic.WebSearchToolResultBlockParamCallerUnion, err error) {
-	caller, ok := getContentBlockExtraValue[string](block, extraKeyWebSearchToolResultCaller)
+	caller, ok := getContentBlockExtraValue[string](block, keyOfWebSearchToolResultCaller)
 	if !ok || caller == "" {
 		return param, nil
 	}
@@ -40,11 +41,11 @@ func toWebSearchResultCallerParam(block *schema.ContentBlock) (param anthropic.W
 }
 
 func setWebFetchResultCaller(block *schema.ContentBlock, caller anthropic.WebFetchToolResultBlockCallerUnion) {
-	setContentBlockExtraValue(block, extraKeyWebFetchToolResultCaller, caller.RawJSON())
+	setContentBlockExtraValue(block, keyOfWebFetchToolResultCaller, caller.RawJSON())
 }
 
 func toWebFetchResultCallerParam(block *schema.ContentBlock) (param anthropic.WebFetchToolResultBlockParamCallerUnion, err error) {
-	caller, ok := getContentBlockExtraValue[string](block, extraKeyWebFetchToolResultCaller)
+	caller, ok := getContentBlockExtraValue[string](block, keyOfWebFetchToolResultCaller)
 	if !ok || caller == "" {
 		return param, nil
 	}
@@ -71,4 +72,91 @@ func getContentBlockExtraValue[T any](block *schema.ContentBlock, key string) (T
 		return zero, false
 	}
 	return value, true
+}
+
+func copyExtra(src map[string]any) map[string]any {
+	if src == nil {
+		return map[string]any{}
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+// SetToolInfoCacheControl sets a cache control on a tool info.
+// When a manual control is set, the top-level auto-cache will not override it.
+func SetToolInfoCacheControl(toolInfo *schema.ToolInfo, ctrl *anthropic.CacheControlEphemeralParam) *schema.ToolInfo {
+	if toolInfo == nil {
+		return nil
+	}
+	if ctrl == nil {
+		return toolInfo
+	}
+	ti := *toolInfo
+	ti.Extra = copyExtra(toolInfo.Extra)
+	ti.Extra[keyOfCacheControlTTL] = string(ctrl.TTL)
+	return &ti
+}
+
+func hasCacheControlOnToolInfo(toolInfo *schema.ToolInfo) bool {
+	if toolInfo == nil || toolInfo.Extra == nil {
+		return false
+	}
+	_, ok := toolInfo.Extra[keyOfCacheControlTTL]
+	return ok
+}
+
+func getToolInfoCacheControl(toolInfo *schema.ToolInfo) *anthropic.CacheControlEphemeralParam {
+	if toolInfo == nil || toolInfo.Extra == nil {
+		return nil
+	}
+	ttl, ok := toolInfo.Extra[keyOfCacheControlTTL].(string)
+	if !ok {
+		return nil
+	}
+	p := anthropic.NewCacheControlEphemeralParam()
+	if ttl != "" {
+		p.TTL = anthropic.CacheControlEphemeralTTL(ttl)
+	}
+	return &p
+}
+
+// SetContentBlockCacheControl sets a cache control on a content block.
+// When a manual control is set, the top-level auto-cache will not override it.
+func SetContentBlockCacheControl(block *schema.ContentBlock, ctrl *anthropic.CacheControlEphemeralParam) *schema.ContentBlock {
+	if block == nil {
+		return nil
+	}
+	if ctrl == nil {
+		return block
+	}
+	b := *block
+	b.Extra = copyExtra(block.Extra)
+	b.Extra[keyOfCacheControlTTL] = string(ctrl.TTL)
+	return &b
+}
+
+func hasCacheControlOnContentBlock(block *schema.ContentBlock) bool {
+	if block == nil || block.Extra == nil {
+		return false
+	}
+	_, ok := block.Extra[keyOfCacheControlTTL]
+	return ok
+}
+
+func getContentBlockCacheControl(block *schema.ContentBlock) *anthropic.CacheControlEphemeralParam {
+	if block == nil || block.Extra == nil {
+		return nil
+	}
+	ttl, ok := block.Extra[keyOfCacheControlTTL].(string)
+	if !ok {
+		return nil
+	}
+	p := anthropic.NewCacheControlEphemeralParam()
+	if ttl != "" {
+		p.TTL = anthropic.CacheControlEphemeralTTL(ttl)
+	}
+	return &p
 }

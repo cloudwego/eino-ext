@@ -1588,8 +1588,6 @@ func toOutputMessage(resp *responses.Response, options *model.Options) (msg *sch
 		ResponseMeta:  responseObjectToResponseMeta(resp),
 	}
 
-	msg = setSelfGenerated(msg)
-
 	return msg, nil
 }
 

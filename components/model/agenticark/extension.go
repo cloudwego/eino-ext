@@ -150,13 +150,6 @@ func getResponseMeta(meta *schema.AgenticResponseMeta) *ResponseMetaExtension {
 	if ext, ok := meta.Extension.(*ResponseMetaExtension); ok {
 		return ext
 	}
-	if m, ok := meta.Extension.(map[string]any); ok {
-		ext := &ResponseMetaExtension{}
-		if err := mapstructure.Decode(m, ext); err != nil {
-			return nil
-		}
-		return ext
-	}
 	return nil
 }
 

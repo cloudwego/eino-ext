@@ -292,8 +292,6 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 		ResponseMeta: meta,
 	}
 
-	setSelfGenerated(msg)
-
 	if block != nil {
 		msg.ContentBlocks = []*schema.ContentBlock{block}
 	}
@@ -978,7 +976,7 @@ func (r *streamReceiver) doubaoAppOutputTextDeltaToContentBlock(ev *responses.Re
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameDoubaoApp),
+		Name:    string(ServerToolNameDoubaoApp),
 		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
@@ -1017,7 +1015,7 @@ func (r *streamReceiver) doubaoAppReasoningTextDeltaToContentBlock(ev *responses
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameDoubaoApp),
+		Name:    string(ServerToolNameDoubaoApp),
 		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
@@ -1042,7 +1040,7 @@ func (r *streamReceiver) doubaoAppSearchSearchingToContentBlock(ev *responses.Re
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameDoubaoApp),
+		Name:    string(ServerToolNameDoubaoApp),
 		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
@@ -1080,7 +1078,7 @@ func (r *streamReceiver) doubaoAppSearchCompletedToContentBlock(ev *responses.Re
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameDoubaoApp),
+		Name:    string(ServerToolNameDoubaoApp),
 		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
@@ -1105,7 +1103,7 @@ func (r *streamReceiver) doubaoAppReasoningSearchSearchingToContentBlock(ev *res
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameDoubaoApp),
+		Name:    string(ServerToolNameDoubaoApp),
 		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 
@@ -1143,7 +1141,7 @@ func (r *streamReceiver) doubaoAppReasoningSearchCompletedToContentBlock(ev *res
 	}
 
 	block := schema.NewContentBlockChunk(&schema.ServerToolResult{
-		Name:   string(ServerToolNameDoubaoApp),
+		Name:    string(ServerToolNameDoubaoApp),
 		Content: &ServerToolResult{DoubaoApp: result},
 	}, meta)
 

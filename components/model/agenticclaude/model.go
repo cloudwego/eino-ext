@@ -103,6 +103,12 @@ type Config struct {
 	// This allows for vendor-specific or future parameters not yet explicitly supported.
 	// Optional.
 	ExtraFields map[string]any
+
+	// CacheControl configures automatic prompt caching behavior.
+	// When non-nil, automatically applies a cache_control marker to the last
+	// cacheable block in the request.
+	// Optional.
+	CacheControl *anthropic.CacheControlEphemeralParam
 }
 
 type GoogleVertexAIConfig struct {
@@ -158,6 +164,7 @@ type Model struct {
 	customHeaders          map[string]string
 	extraFields            map[string]any
 	thinking               *anthropic.ThinkingConfigParamUnion
+	cacheControl           *anthropic.CacheControlEphemeralParam
 }
 
 type ServerToolConfig struct {
@@ -210,6 +217,7 @@ func New(ctx context.Context, cfg *Config) (*Model, error) {
 		customHeaders:          cfg.CustomHeaders,
 		extraFields:            cfg.ExtraFields,
 		thinking:               cfg.Thinking,
+		cacheControl:           cfg.CacheControl,
 	}, nil
 }
 
@@ -442,6 +450,10 @@ func (m *Model) genRequestAndOptions(input []*schema.AgenticMessage, options *mo
 
 	if err = m.populateToolChoice(req, options); err != nil {
 		return nil, nil, err
+	}
+
+	if m.cacheControl != nil {
+		req.CacheControl = *m.cacheControl
 	}
 
 	reqOpts = appendCustomHeaders(reqOpts, specOptions.serverTools, specOptions.customHeaders)

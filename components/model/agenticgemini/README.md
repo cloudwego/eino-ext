@@ -161,9 +161,13 @@ type Config struct {
     
     MediaResolution genai.MediaResolution
     
-    // Cache controls prefix cache settings for the model.
-    // Optional. used to CreatePrefixCache for reused inputs.
-    Cache *CacheConfig
+    // CacheTTL specifies how long prefix cache resources remain valid (now + TTL).
+    // Optional.
+    CacheTTL time.Duration
+
+    // CacheExpireTime sets the absolute expiration timestamp for prefix cache resources.
+    // Optional.
+    CacheExpireTime time.Time
 }
 ```
 

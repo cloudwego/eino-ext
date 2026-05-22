@@ -10,6 +10,7 @@ An Anthropic Claude model implementation for [Eino](https://github.com/cloudwego
 - Support for Anthropic Messages API
 - Support for streaming responses
 - Support for tool calling (Function Tools, Deferred Tools, Client Tool Search, Server Tools)
+- Support for prompt caching
 - Support for AWS Bedrock and Google Vertex AI
 
 ## Installation
@@ -146,10 +147,35 @@ type Config struct {
     // ExtraFields specifies additional fields that will be directly added to the HTTP request body.
     // Optional.
     ExtraFields map[string]any
+
+    // CacheControl configures automatic prompt caching behavior.
+    // When non-nil, automatically applies a cache_control marker to the last
+    // cacheable block in the request.
+    // Optional.
+    CacheControl *anthropic.CacheControlEphemeralParam
 }
 ```
 
 ## Advanced Usage
+
+### Cache
+
+Use `CacheControl` to enable auto-caching for multi-turn conversations. When set (non-nil), the API automatically applies a cache_control marker to the last cacheable block in the request.
+
+For fine-grained control, use `SetContentBlockCacheControl` or `SetToolInfoCacheControl` to manually place cache breakpoints on specific blocks or tools.
+
+```go
+cacheCtrl := anthropic.NewCacheControlEphemeralParam()
+cacheCtrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+
+am, err := agenticclaude.New(ctx, &agenticclaude.Config{
+    BaseURL:      os.Getenv("CLAUDE_BASE_URL"),
+    Model:        os.Getenv("CLAUDE_MODEL"),
+    APIKey:       os.Getenv("CLAUDE_API_KEY"),
+    MaxTokens:    4096,
+    CacheControl: &cacheCtrl,
+})
+```
 
 ### Tool Calling
 

@@ -161,9 +161,13 @@ type Config struct {
     
     MediaResolution genai.MediaResolution
     
-    // Cache 控制模型的前缀缓存设置
-    // 可选。用于为重复使用的输入创建前缀缓存
-    Cache *CacheConfig
+    // CacheTTL 指定前缀缓存资源的有效时长（now + TTL）。
+    // 可选。
+    CacheTTL time.Duration
+
+    // CacheExpireTime 设置前缀缓存资源的绝对过期时间戳。
+    // 可选。
+    CacheExpireTime time.Time
 }
 ```
 

@@ -78,7 +78,7 @@ func TestResultCallerRoundTrip(t *testing.T) {
 
 func TestResultCallerDecodeError(t *testing.T) {
 	block := &schema.ContentBlock{Extra: map[string]any{
-		extraKeyWebSearchToolResultCaller: "{",
+		keyOfWebSearchToolResultCaller: "{",
 	}}
 
 	_, err := toWebSearchResultCallerParam(block)

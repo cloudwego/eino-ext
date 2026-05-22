@@ -22,27 +22,20 @@ import (
 	"io"
 	"log"
 	"os"
-	"time"
 
-	"github.com/cloudwego/eino-ext/components/model/agenticark"
+	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 )
 
 func main() {
 	ctx := context.Background()
 
-	expireAtSec := time.Now().Add(10 * time.Minute).Unix()
-
-	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
-	am, err := agenticark.New(ctx, &agenticark.Config{
-		APIKey: os.Getenv("ARK_API_KEY"),
-		Model:  os.Getenv("ARK_MODEL_ID"),
-		Thinking: &responses.ResponsesThinking{
-			Type: responses.ThinkingType_disabled.Enum(),
-		},
+	// Get OPENAI_API_KEY and OPENAI_MODEL_ID
+	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+		BaseURL:         "https://api.openai.com/v1",
+		APIKey:          os.Getenv("OPENAI_API_KEY"),
+		Model:           os.Getenv("OPENAI_MODEL_ID"),
 		EnableAutoCache: true,
-		ExpireAtSec:     &expireAtSec,
 	})
 	if err != nil {
 		log.Fatalf("failed to create chat model, err=%v", err)

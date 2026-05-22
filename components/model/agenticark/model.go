@@ -135,9 +135,17 @@ type Config struct {
 	// Optional.
 	MCPTools []*responses.ToolMcp
 
-	// Cache specifies response caching configuration for the session.
+	// EnableAutoCache controls whether auto-caching for multi-turn conversations is active for the model.
+	// When enabled, conversation turns are stored, and the model automatically maintains context
+	// by locating the most recent cached message in the input (via Response ID in ResponseMeta).
+	// This cached message and all preceding inputs are excluded from the request.
+	// If the cached message becomes invalid, you can call [InvalidateMessageCaches] to temporarily invalidate the cache.
 	// Optional.
-	Cache *CacheConfig
+	EnableAutoCache bool
+
+	// ExpireAtSec specifies the expiration Unix timestamp (in seconds) for auto caching or prefix cache.
+	// Optional.
+	ExpireAtSec *int64
 
 	// ContextManagement specifies context management strategies to help the model utilize the context window effectively.
 	// Supports clearing thinking blocks and tool call content.
@@ -148,23 +156,6 @@ type Config struct {
 	// CustomHeaders allows passing additional metadata or authentication information.
 	// Optional.
 	CustomHeaders map[string]string
-}
-
-type CacheConfig struct {
-	// SessionCache can be overridden by [WithCache].
-	// Optional.
-	SessionCache *SessionCacheConfig
-}
-
-type SessionCacheConfig struct {
-	// EnableCache controls whether session caching is active.
-	// When enabled, conversation turns are stored, and the model automatically maintains context
-	// by locating the most recent cached message in the input (via Response ID in ResponseMeta).
-	// This cached message and all preceding inputs are excluded from the request.
-	// The detected Response ID takes precedence over HeadPreviousResponseID.
-	EnableCache bool
-
-	ExpireAtSec int64
 }
 
 type ServerToolConfig struct {
@@ -230,7 +221,8 @@ func buildClient(config *Config) (*Model, error) {
 		parallelToolCalls:       config.ParallelToolCalls,
 		serverTools:             config.ServerTools,
 		mcpTools:                config.MCPTools,
-		cache:                   config.Cache,
+		enableAutoCache:         config.EnableAutoCache,
+		expireAtSec:             config.ExpireAtSec,
 		contextManagement:       config.ContextManagement,
 		customHeaders:           config.CustomHeaders,
 	}
@@ -257,7 +249,8 @@ type Model struct {
 	serverTools       []*ServerToolConfig
 	mcpTools          []*responses.ToolMcp
 
-	cache                   *CacheConfig
+	enableAutoCache         bool
+	expireAtSec             *int64
 	contextManagement       *contextmanagement.ContextManagement
 	enablePassBackReasoning *bool
 	customHeaders           map[string]string
@@ -305,6 +298,10 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 	outMsg, err = toOutputMessage(responseObject)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert output to message: %w", err)
+	}
+
+	if m.enableAutoCache {
+		setAutoCached(outMsg)
 	}
 
 	callbacks.OnEnd(ctx, &model.AgenticCallbackOutput{
@@ -386,6 +383,9 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 			if s.Message == nil {
 				return nil, schema.ErrNoValue
 			}
+			if m.enableAutoCache {
+				setAutoCached(s.Message)
+			}
 			return s.Message, nil
 		},
 	)
@@ -419,7 +419,7 @@ func (m *Model) IsCallbacksEnabled() bool {
 }
 
 type CacheInfo struct {
-	// ResponseID return by ResponsesAPI, it's specifies the id of prefix that can be used with [WithCache.HeadPreviousResponseID] option.
+	// ResponseID return by ResponsesAPI, it's specifies the id of prefix that can be used with [WithHeadPreviousResponseID] option.
 	ResponseID string
 	// Usage specifies the token usage of prefix
 	Usage schema.TokenUsage
@@ -432,7 +432,9 @@ type CacheInfo struct {
 // Parameters:
 //   - ctx: The context for the request
 //   - prefix: Initial messages to be cached as prefix context
-//   - expireAtSec: Expiration Unix timestamp (in seconds) for the cached prefix. Defaults to 3 days from now if not specified.
+//
+// The expiration Unix timestamp (in seconds) for the cached prefix can be set via
+// [WithExpireAtSec] option or the ExpireAtSec field in Config. Defaults to 3 days from now if not specified.
 //
 // Returns:
 //   - info: Information about the created prefix cache, including the context ID and token usage
@@ -442,8 +444,18 @@ type CacheInfo struct {
 //
 // Note:
 //   - It is unavailable for doubao models of version 1.6 and above.
-func (m *Model) CreatePrefixCache(ctx context.Context, prefix []*schema.AgenticMessage, expireAtSec *int64,
+func (m *Model) CreatePrefixCache(ctx context.Context, prefix []*schema.AgenticMessage,
 	opts ...model.Option) (info *CacheInfo, err error) {
+
+	options, specOptions, err := m.getOptions(opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get options: %w", err)
+	}
+
+	expireAtSec := m.expireAtSec
+	if specOptions.expireAtSec != nil {
+		expireAtSec = specOptions.expireAtSec
+	}
 
 	responseReq := &responses.ResponsesRequest{
 		Model:    m.model,
@@ -453,11 +465,6 @@ func (m *Model) CreatePrefixCache(ctx context.Context, prefix []*schema.AgenticM
 			Type:   responses.CacheType_enabled.Enum(),
 			Prefix: ptrOf(true),
 		},
-	}
-
-	options, specOptions, err := m.getOptions(opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get options: %w", err)
 	}
 
 	err = m.prePopulateConfig(responseReq, options, specOptions)
@@ -487,7 +494,9 @@ func (m *Model) CreatePrefixCache(ctx context.Context, prefix []*schema.AgenticM
 
 	info = &CacheInfo{
 		ResponseID: responseObj.Id,
-		Usage:      *toTokenUsage(responseObj),
+	}
+	if usage := toTokenUsage(responseObj); usage != nil {
+		info.Usage = *usage
 	}
 
 	return info, nil
@@ -695,39 +704,16 @@ func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *response
 	arkOpts *arkOptions) ([]*schema.AgenticMessage, error) {
 
 	var (
-		store              = false
-		enableCache        = false
-		hasSessionCacheCfg = false
-		expireAtSec        *int64
-		headRespID         *string
+		enableCache = m.enableAutoCache
+		headRespID  = arkOpts.headPreviousResponseID
+		expireAtSec *int64
 	)
 
-	if m.cache != nil {
-		if sCache := m.cache.SessionCache; sCache != nil {
-			hasSessionCacheCfg = true
-			if sCache.EnableCache {
-				store = true
-				enableCache = true
-			}
-			expireAtSec = &sCache.ExpireAtSec
-		}
+	if m.expireAtSec != nil {
+		expireAtSec = m.expireAtSec
 	}
-
-	if cacheOpt := arkOpts.cache; cacheOpt != nil {
-		headRespID = cacheOpt.HeadPreviousResponseID
-
-		if sCacheOpt := cacheOpt.SessionCache; sCacheOpt != nil {
-			hasSessionCacheCfg = true
-			expireAtSec = &sCacheOpt.ExpireAtSec
-
-			if sCacheOpt.EnableCache {
-				store = true
-				enableCache = true
-			} else {
-				store = false
-				enableCache = false
-			}
-		}
+	if arkOpts.expireAtSec != nil {
+		expireAtSec = arkOpts.expireAtSec
 	}
 
 	var (
@@ -740,12 +726,18 @@ func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *response
 	if enableCache {
 		for i := len(in) - 1; i >= 0; i-- {
 			msg := in[i]
+			if msg.Extra == nil {
+				continue
+			}
+			if isAutoCached, ok := msg.Extra[keyOfResponseAutoCached].(bool); !ok || !isAutoCached {
+				continue
+			}
 			if msg.ResponseMeta == nil {
 				continue
 			}
 
 			extensions := getResponseMeta(msg.ResponseMeta)
-			if extensions == nil || ptrFromOrZero(extensions.ExpireAt) <= now {
+			if extensions == nil || extensions.ID == "" || ptrFromOrZero(extensions.ExpireAt) <= now {
 				continue
 			}
 
@@ -764,25 +756,20 @@ func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *response
 	}
 
 	// ResponseID has a higher priority than HeadPreviousResponseID
-	if preRespID == nil {
+	if preRespID == nil || *preRespID == "" {
 		preRespID = headRespID
 	}
 
 	responseReq.PreviousResponseId = preRespID
-	responseReq.Store = &store
+	responseReq.Store = &enableCache
 
 	if expireAtSec != nil {
 		responseReq.ExpireAt = expireAtSec
 	}
 
-	if hasSessionCacheCfg {
+	if enableCache {
 		responseReq.Caching = &responses.ResponsesCaching{
-			Type: func() *responses.CacheType_Enum {
-				if enableCache {
-					return responses.CacheType_enabled.Enum()
-				}
-				return responses.CacheType_disabled.Enum()
-			}(),
+			Type: responses.CacheType_enabled.Enum(),
 		}
 	}
 

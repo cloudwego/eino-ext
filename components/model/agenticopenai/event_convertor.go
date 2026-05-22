@@ -250,8 +250,6 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 		ResponseMeta: meta,
 	}
 
-	msg = setSelfGenerated(msg)
-
 	if block != nil {
 		msg.ContentBlocks = []*schema.ContentBlock{block}
 	}

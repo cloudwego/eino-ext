@@ -73,9 +73,8 @@ func main() {
 			},
 		}),
 		model.WithTools(functionTools),
+		agenticark.WithExpireAtSec(time.Now().Add(10 * time.Minute).Unix()),
 	}
-
-	expireAtSec := time.Now().Add(10 * time.Minute).Unix()
 
 	prefix := []*schema.AgenticMessage{
 		schema.SystemAgenticMessage(`Once upon a time, in a quaint little village surrounded by vast green forests and blooming meadows, there lived a spirited young girl known as Little Red Riding Hood. She earned her name from the vibrant red cape that her beloved grandmother had sewn for her, a gift that she cherished deeply. This cape was more than just a piece of clothing; it was a symbol of the bond between her and her grandmother, who lived on the other side of the great woods, near a sparkling brook that bubbled merrily all year round.
@@ -142,21 +141,16 @@ func main() {
 	}
 
 	// create response prefix cache, note: more than 1024 tokens are required, otherwise the prefix cache cannot be created
-	cacheInfo, err := am.CreatePrefixCache(ctx, prefix, &expireAtSec, opts...)
+	cacheInfo, err := am.CreatePrefixCache(ctx, prefix, opts...)
 	if err != nil {
 		log.Fatalf("CreatePrefixCache failed, err=%v", err)
-	}
-
-	// use cache information in subsequent requests
-	cacheOpt := &agenticark.CacheOption{
-		HeadPreviousResponseID: &cacheInfo.ResponseID,
 	}
 
 	input := []*schema.AgenticMessage{
 		schema.UserAgenticMessage("What is the main idea expressed above？"),
 	}
 
-	opts = append(opts, agenticark.WithCache(cacheOpt))
+	opts = append(opts, agenticark.WithHeadPreviousResponseID(cacheInfo.ResponseID))
 	outMsg, err := am.Generate(ctx, input, opts...)
 	if err != nil {
 		log.Fatalf("Generate failed, err=%v", err)

@@ -1274,8 +1274,6 @@ func toOutputMessage(resp *responses.ResponseObject) (msg *schema.AgenticMessage
 		ResponseMeta:  responseObjectToResponseMeta(resp),
 	}
 
-	msg = setSelfGenerated(msg)
-
 	return msg, nil
 }
 

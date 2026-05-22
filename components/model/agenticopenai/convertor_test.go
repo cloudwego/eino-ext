@@ -228,7 +228,9 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 		setItemStatus(mcpRes, "completed")
 		msg.ContentBlocks = append(msg.ContentBlocks, mcpRes)
 
-		msg = setSelfGenerated(msg)
+		msg.ResponseMeta = &schema.AgenticResponseMeta{
+			OpenAIExtension: &openaischema.ResponseMetaExtension{},
+		}
 
 		items, err := toAssistantRoleInputItems(msg)
 		assert.NoError(t, err)

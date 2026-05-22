@@ -20,10 +20,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-const (
-	geminiGeneratedKey = "gemini-generated"
-)
-
 // allowedNonSelfGeneratedBlockTypes defines the whitelist of ContentBlockTypes
 // that can be processed when a message is NOT self-generated (i.e., from other models).
 // These types are model-agnostic and have standardized fields without model-specific extensions.
@@ -51,18 +47,6 @@ func isAllowedNonSelfGeneratedBlockType(blockType schema.ContentBlockType) bool 
 	return allowedNonSelfGeneratedBlockTypes[blockType]
 }
 
-func setSelfGenerated(msg *schema.AgenticMessage) *schema.AgenticMessage {
-	if msg.Extra == nil {
-		msg.Extra = map[string]any{}
-	}
-	msg.Extra[geminiGeneratedKey] = true
-	return msg
-}
-
 func isSelfGeneratedMessage(msg *schema.AgenticMessage) bool {
-	if msg == nil || msg.Extra == nil {
-		return false
-	}
-	v, ok := msg.Extra[geminiGeneratedKey].(bool)
-	return ok && v
+	return msg != nil && msg.ResponseMeta != nil && msg.ResponseMeta.GeminiExtension != nil
 }

@@ -65,9 +65,11 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 	}
 	setItemID(msg.ContentBlocks[1], "id-1")
 	setItemStatus(msg.ContentBlocks[1], responses.ItemStatus_completed.String())
-	setSelfGenerated(msg)
-
-	items, err := toAssistantRoleInputItems(msg)
+	msg.ResponseMeta = &schema.AgenticResponseMeta{
+			Extension: &ResponseMetaExtension{},
+		}
+		
+		items, err := toAssistantRoleInputItems(msg)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(items))
 	assert.Equal(t, responses.MessageRole_assistant, items[0].GetInputMessage().Role)

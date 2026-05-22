@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	openaiGeneratedKey = "openai-generated"
+	keyOfResponseAutoCached = "_eino_ext_agenticopenai_auto_cached"
 )
 
 // allowedNonSelfGeneratedBlockTypes defines the whitelist of ContentBlockTypes
@@ -43,6 +43,7 @@ var allowedNonSelfGeneratedBlockTypes = map[schema.ContentBlockType]bool{
 	// Function Tool types - user-defined tools, cross-model compatible
 	schema.ContentBlockTypeFunctionToolCall:   true,
 	schema.ContentBlockTypeFunctionToolResult: true,
+	schema.ContentBlockTypeToolSearchResult:   true,
 }
 
 // isAllowedNonSelfGeneratedBlockType checks if a ContentBlockType is in the whitelist
@@ -51,18 +52,26 @@ func isAllowedNonSelfGeneratedBlockType(blockType schema.ContentBlockType) bool 
 	return allowedNonSelfGeneratedBlockTypes[blockType]
 }
 
-func setSelfGenerated(msg *schema.AgenticMessage) *schema.AgenticMessage {
+func isSelfGeneratedMessage(msg *schema.AgenticMessage) bool {
+	return msg != nil && msg.ResponseMeta != nil && msg.ResponseMeta.OpenAIExtension != nil
+}
+
+func setAutoCached(msg *schema.AgenticMessage) *schema.AgenticMessage {
 	if msg.Extra == nil {
 		msg.Extra = map[string]any{}
 	}
-	msg.Extra[openaiGeneratedKey] = true
+	msg.Extra[keyOfResponseAutoCached] = true
 	return msg
 }
 
-func isSelfGeneratedMessage(msg *schema.AgenticMessage) bool {
-	if msg == nil || msg.Extra == nil {
-		return false
+// InvalidateMessageCaches temporarily disables caching for the specified messages.
+// When a message is modified or model is switched, OPENAI invalidates caches for that message and all subsequent ones.
+// Call this to mark those message caches as invalid temporarily.
+func InvalidateMessageCaches(messages []*schema.AgenticMessage) error {
+	for _, msg := range messages {
+		if msg.Extra != nil {
+			delete(msg.Extra, keyOfResponseAutoCached)
+		}
 	}
-	v, ok := msg.Extra[openaiGeneratedKey].(bool)
-	return ok && v
+	return nil
 }

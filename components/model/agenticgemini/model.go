@@ -106,17 +106,13 @@ type Config struct {
 
 	MediaResolution genai.MediaResolution
 
-	// Cache controls prefix cache settings for the model.
-	// Optional. used to CreatePrefixCache for reused inputs.
-	Cache *CacheConfig
-}
+	// CacheTTL specifies how long prefix cache resources remain valid (now + TTL).
+	// Optional.
+	CacheTTL time.Duration
 
-// CacheConfig controls prefix cache settings for the model.
-type CacheConfig struct {
-	// TTL specifies how long cached resources remain valid (now + TTL).
-	TTL time.Duration `json:"ttl,omitempty"`
-	// ExpireTime sets the absolute expiration timestamp for cached resources.
-	ExpireTime time.Time `json:"expireTime,omitempty"`
+	// CacheExpireTime sets the absolute expiration timestamp for prefix cache resources.
+	// Optional.
+	CacheExpireTime time.Time
 }
 
 type ResponseModality string
@@ -150,7 +146,8 @@ func NewAgenticModel(_ context.Context, cfg *Config) (*Gemini, error) {
 		imageConfig:                 cfg.ImageConfig,
 		responseModalities:          cfg.ResponseModalities,
 		mediaResolution:             cfg.MediaResolution,
-		cache:                       cfg.Cache,
+		cacheTTL:                    cfg.CacheTTL,
+		cacheExpireTime:             cfg.CacheExpireTime,
 	}, nil
 }
 
@@ -178,7 +175,8 @@ type Gemini struct {
 	imageConfig                 *genai.ImageConfig
 	responseModalities          []ResponseModality
 	mediaResolution             genai.MediaResolution
-	cache                       *CacheConfig
+	cacheTTL                    time.Duration
+	cacheExpireTime             time.Time
 }
 
 // CreatePrefixCache assembles inputs the same as Generate/Stream and writes
@@ -201,18 +199,8 @@ func (g *Gemini) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema.Age
 		SystemInstruction: genaiConf.SystemInstruction,
 		Tools:             genaiConf.Tools,
 		ToolConfig:        genaiConf.ToolConfig,
-		TTL: func() time.Duration {
-			if g.cache != nil {
-				return g.cache.TTL
-			}
-			return 0
-		}(),
-		ExpireTime: func() time.Time {
-			if g.cache != nil {
-				return g.cache.ExpireTime
-			}
-			return time.Time{}
-		}(),
+		TTL:               g.cacheTTL,
+		ExpireTime:        g.cacheExpireTime,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create cache failed: %w", err)
