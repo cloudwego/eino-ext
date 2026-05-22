@@ -1591,3 +1591,137 @@ func TestConvSchemaMessageToolCallOrder(t *testing.T) {
 		assert.Equal(t, "tool2", content.Parts[2].FunctionCall.Name)
 	})
 }
+
+func TestConvLogprobs(t *testing.T) {
+	t.Run("nil input", func(t *testing.T) {
+		assert.Nil(t, convLogprobs(nil))
+	})
+
+	t.Run("empty chosen candidates", func(t *testing.T) {
+		assert.Nil(t, convLogprobs(&genai.LogprobsResult{}))
+	})
+
+	t.Run("all chosen candidates nil", func(t *testing.T) {
+		assert.Nil(t, convLogprobs(&genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{nil, nil},
+		}))
+	})
+
+	t.Run("normal with top candidates", func(t *testing.T) {
+		lp := &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "hello", LogProbability: -0.1},
+				{Token: "world", LogProbability: -0.2},
+			},
+			TopCandidates: []*genai.LogprobsResultTopCandidates{
+				{Candidates: []*genai.LogprobsResultCandidate{
+					{Token: "hello", LogProbability: -0.1},
+					{Token: "hi", LogProbability: -1.5},
+				}},
+				{Candidates: []*genai.LogprobsResultCandidate{
+					{Token: "world", LogProbability: -0.2},
+				}},
+			},
+		}
+		got := convLogprobs(lp)
+		assert.NotNil(t, got)
+		assert.Len(t, got.Content, 2)
+		assert.Equal(t, "hello", got.Content[0].Token)
+		assert.InDelta(t, -0.1, got.Content[0].LogProb, 1e-6)
+		assert.Len(t, got.Content[0].TopLogProbs, 2)
+		assert.Equal(t, "hi", got.Content[0].TopLogProbs[1].Token)
+		assert.InDelta(t, -1.5, got.Content[0].TopLogProbs[1].LogProb, 1e-6)
+		assert.Len(t, got.Content[1].TopLogProbs, 1)
+	})
+
+	t.Run("top candidates length mismatch", func(t *testing.T) {
+		// chosen=2, top=1 — second chosen has empty TopLogProbs (no panic)
+		lp := &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "a", LogProbability: -0.1},
+				{Token: "b", LogProbability: -0.2},
+			},
+			TopCandidates: []*genai.LogprobsResultTopCandidates{
+				{Candidates: []*genai.LogprobsResultCandidate{{Token: "a", LogProbability: -0.1}}},
+			},
+		}
+		got := convLogprobs(lp)
+		assert.Len(t, got.Content, 2)
+		assert.Len(t, got.Content[0].TopLogProbs, 1)
+		assert.Empty(t, got.Content[1].TopLogProbs)
+	})
+
+	t.Run("top candidate entry nil and inner nil", func(t *testing.T) {
+		lp := &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "a", LogProbability: -0.1},
+			},
+			TopCandidates: []*genai.LogprobsResultTopCandidates{
+				{Candidates: []*genai.LogprobsResultCandidate{nil, {Token: "x", LogProbability: -0.5}}},
+			},
+		}
+		got := convLogprobs(lp)
+		assert.Len(t, got.Content, 1)
+		assert.Len(t, got.Content[0].TopLogProbs, 1)
+		assert.Equal(t, "x", got.Content[0].TopLogProbs[0].Token)
+	})
+}
+
+func TestLogprobsOptionsOverride(t *testing.T) {
+	ctx := context.Background()
+	five := int32(5)
+	cm, err := NewChatModel(ctx, &Config{
+		Client:           &genai.Client{Models: &genai.Models{}},
+		Model:            "gemini-x",
+		ResponseLogprobs: true,
+		Logprobs:         &five,
+	})
+	assert.NoError(t, err)
+
+	t.Run("config defaults applied", func(t *testing.T) {
+		_, _, m, _, err := cm.genInputAndConf([]*schema.Message{{Role: schema.User, Content: "hi"}})
+		assert.NoError(t, err)
+		assert.True(t, m.ResponseLogprobs)
+		assert.NotNil(t, m.Logprobs)
+		assert.Equal(t, int32(5), *m.Logprobs)
+	})
+
+	t.Run("option overrides response logprobs to false", func(t *testing.T) {
+		_, _, m, _, err := cm.genInputAndConf(
+			[]*schema.Message{{Role: schema.User, Content: "hi"}},
+			WithResponseLogprobs(false),
+		)
+		assert.NoError(t, err)
+		assert.False(t, m.ResponseLogprobs)
+	})
+
+	t.Run("option overrides logprobs top-K", func(t *testing.T) {
+		_, _, m, _, err := cm.genInputAndConf(
+			[]*schema.Message{{Role: schema.User, Content: "hi"}},
+			WithLogprobs(3),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, m.Logprobs)
+		assert.Equal(t, int32(3), *m.Logprobs)
+	})
+}
+
+func TestConvCandidateLogprobs(t *testing.T) {
+	candidate := &genai.Candidate{
+		Content: &genai.Content{
+			Role:  roleModel,
+			Parts: []*genai.Part{{Text: "hi"}},
+		},
+		LogprobsResult: &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "hi", LogProbability: -0.05},
+			},
+		},
+	}
+	msg, err := convCandidate(candidate)
+	assert.NoError(t, err)
+	assert.NotNil(t, msg.ResponseMeta)
+	assert.NotNil(t, msg.ResponseMeta.LogProbs)
+	assert.Len(t, msg.ResponseMeta.LogProbs.Content, 1)
+	assert.Equal(t, "hi", msg.ResponseMeta.LogProbs.Content[0].Token)
+}
