@@ -66,7 +66,7 @@ const (
 	// in memory. Files larger than this are rejected to prevent OOM.
 	maxEditFileSize = 32 * 1024 * 1024 // 32 MiB
 
-	// rgJSONMaxFailedRatio is the maximum ratio of unparseable lines in `rg --json`
+	// rgJSONMaxFailedRatio is the maximum ratio of unparsable lines in `rg --json`
 	// output before we treat the entire result as an error. This guards against
 	// incompatible rg versions that emit non-JSON output while still tolerating
 	// occasional malformed lines (e.g. from binary file matches or locale issues).
@@ -844,7 +844,7 @@ func parsePosixGrepOutput(out string) []filesystem.GrepMatch {
 // substring matching :<positive-integer><sep> before the real line number.
 //
 // Known limitation: if the path itself contains a `:N:` or `:N-` pattern where
-// N is a positive integer (e.g. "prefix:1:rest.go"), the parser will mis-split.
+// N is a positive integer (e.g. "prefix:1:rest.go"), the parser will split incorrectly.
 // POSIX grep has no NUL-delimited output mode (`-Z` is GNU-only), so this is
 // an inherent best-effort trade-off.
 func parsePosixGrepLine(line string) (filePath string, lineno int, content string, ok bool) {

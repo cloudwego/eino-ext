@@ -481,8 +481,8 @@ func TestParsePosixGrepLine_AdversarialPath(t *testing.T) {
 	}{
 		{
 			// Path "prefix:1:rest.go" contains `:1:` which the parser will
-			// match first. This is a known mis-split — we document it here.
-			name:    "path with :1: prefix mis-splits (known limitation)",
+			// match first. This is a known incorrect split — we document it here.
+			name:    "path with :1: prefix splits incorrectly (known limitation)",
 			line:    "prefix:1:rest.go:10:actual content",
 			wantOK:  true,
 			path:    "prefix",
@@ -548,12 +548,12 @@ func TestDetectRipgrep_CachesAfterFirstProbe(t *testing.T) {
 
 // mockConn implements ACPConn for unit testing Backend methods.
 type mockConn struct {
-	readTextFile       func(ctx context.Context, req acpproto.ReadTextFileRequest) (acpproto.ReadTextFileResponse, error)
-	writeTextFile      func(ctx context.Context, req acpproto.WriteTextFileRequest) (acpproto.WriteTextFileResponse, error)
-	createTerminal     func(ctx context.Context, req acpproto.CreateTerminalRequest) (acpproto.CreateTerminalResponse, error)
+	readTextFile        func(ctx context.Context, req acpproto.ReadTextFileRequest) (acpproto.ReadTextFileResponse, error)
+	writeTextFile       func(ctx context.Context, req acpproto.WriteTextFileRequest) (acpproto.WriteTextFileResponse, error)
+	createTerminal      func(ctx context.Context, req acpproto.CreateTerminalRequest) (acpproto.CreateTerminalResponse, error)
 	waitForTerminalExit func(ctx context.Context, req acpproto.WaitForTerminalExitRequest) (acpproto.WaitForTerminalExitResponse, error)
-	terminalOutput     func(ctx context.Context, req acpproto.TerminalOutputRequest) (acpproto.TerminalOutputResponse, error)
-	releaseTerminal    func(ctx context.Context, req acpproto.ReleaseTerminalRequest) (acpproto.ReleaseTerminalResponse, error)
+	terminalOutput      func(ctx context.Context, req acpproto.TerminalOutputRequest) (acpproto.TerminalOutputResponse, error)
+	releaseTerminal     func(ctx context.Context, req acpproto.ReleaseTerminalRequest) (acpproto.ReleaseTerminalResponse, error)
 }
 
 func (m *mockConn) ReadTextFile(ctx context.Context, req acpproto.ReadTextFileRequest) (acpproto.ReadTextFileResponse, error) {
@@ -624,8 +624,8 @@ func terminalMock(output string, exitCode int, truncated bool) *mockConn {
 		},
 		terminalOutput: func(_ context.Context, _ acpproto.TerminalOutputRequest) (acpproto.TerminalOutputResponse, error) {
 			return acpproto.TerminalOutputResponse{
-				Output:    output,
-				Truncated: truncated,
+				Output:     output,
+				Truncated:  truncated,
 				ExitStatus: &acpproto.TerminalExitStatus{ExitCode: &ec},
 			}, nil
 		},
