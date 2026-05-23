@@ -18,43 +18,120 @@ package einoacp
 
 import (
 	"context"
-	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"path"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+	"unicode/utf8"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/adk/filesystem"
 	mfs "github.com/cloudwego/eino/adk/middlewares/filesystem"
 	acpproto "github.com/eino-contrib/acp"
-	acpconn "github.com/eino-contrib/acp/conn"
 )
+
+// Sentinel errors for structured error handling by callers.
+var (
+	// ErrShellNonZeroExit is returned when a shell command exits with a non-zero code.
+	ErrShellNonZeroExit = errors.New("acp.shell: non-zero exit")
+	// ErrCapabilityMissing is returned when the client does not advertise the required capability.
+	ErrCapabilityMissing = errors.New("acp: client capability not supported")
+	// ErrOldStringNotFound is returned when Edit cannot locate the oldString in the file.
+	ErrOldStringNotFound = errors.New("acp.edit: oldString not found")
+	// ErrAmbiguousReplace is returned when multiple occurrences exist but ReplaceAll is false.
+	ErrAmbiguousReplace = errors.New("acp.edit: ambiguous replacement (set ReplaceAll)")
+	// ErrFileTooLarge is returned when Edit is attempted on a file exceeding maxEditFileSize.
+	ErrFileTooLarge = errors.New("acp.edit: file too large for in-memory edit")
+)
+
+const (
+	// releaseTerminalTimeout is how long we wait for ReleaseTerminal after the
+	// command finishes (using a background context so cancellation won't prevent cleanup).
+	releaseTerminalTimeout = 5 * time.Second
+
+	// maxLogCommandLen is the maximum length of a command string included in log messages.
+	maxLogCommandLen = 200
+
+	// findMaxDepth is the -maxdepth value passed to `find` in GlobInfo.
+	findMaxDepth = 20
+
+	// maxEditFileSize is the maximum file size (in bytes) that Edit will process
+	// in memory. Files larger than this are rejected to prevent OOM.
+	maxEditFileSize = 32 * 1024 * 1024 // 32 MiB
+
+	// rgJSONMaxFailedRatio is the maximum ratio of unparseable lines in `rg --json`
+	// output before we treat the entire result as an error. This guards against
+	// incompatible rg versions that emit non-JSON output while still tolerating
+	// occasional malformed lines (e.g. from binary file matches or locale issues).
+	rgJSONMaxFailedRatio = 0.5
+)
+
+// ACPConn is the minimal interface for ACP client-side RPC calls used by
+// Backend and shell. It is satisfied by *acpconn.AgentConnection (from the
+// github.com/eino-contrib/acp/conn package). Callers may provide alternative
+// implementations for testing or proxying.
+type ACPConn interface {
+	ReadTextFile(ctx context.Context, req acpproto.ReadTextFileRequest) (acpproto.ReadTextFileResponse, error)
+	WriteTextFile(ctx context.Context, req acpproto.WriteTextFileRequest) (acpproto.WriteTextFileResponse, error)
+	CreateTerminal(ctx context.Context, req acpproto.CreateTerminalRequest) (acpproto.CreateTerminalResponse, error)
+	WaitForTerminalExit(ctx context.Context, req acpproto.WaitForTerminalExitRequest) (acpproto.WaitForTerminalExitResponse, error)
+	TerminalOutput(ctx context.Context, req acpproto.TerminalOutputRequest) (acpproto.TerminalOutputResponse, error)
+	ReleaseTerminal(ctx context.Context, req acpproto.ReleaseTerminalRequest) (acpproto.ReleaseTerminalResponse, error)
+}
 
 // Config configures NewClientToolsMiddleware.
 type Config struct {
 	// SessionID is the ACP session the middleware will operate on. Required.
 	SessionID acpproto.SessionID
 	// Conn is the agent-side ACP connection used to issue client requests. Required.
-	Conn *acpconn.AgentConnection
+	// Any implementation of ACPConn is accepted; *conn.AgentConnection (from
+	// github.com/eino-contrib/acp/conn) satisfies this interface and is the
+	// typical production choice.
+	Conn ACPConn
 	// Capabilities is the client capability set advertised during initialization.
 	// Required: tools are enabled based on what the client supports.
 	Capabilities *acpproto.ClientCapabilities
 
 	// UseTerminalForFileTools enables terminal-backed implementations of the
-	// ls, glob, grep, and edit tools. It only takes effect when the client
+	// ls, glob, and grep tools. It only takes effect when the client
 	// also advertises the terminal capability; otherwise those tools stay
 	// disabled because the ACP protocol does not expose corresponding
 	// filesystem methods.
 	//
+	// Note: edit always requires fs capability (ReadTextFile + WriteTextFile).
+	//
 	// Implementation: ls runs `ls -1A`, glob enumerates with `find` and matches
-	// in-process via doublestar, grep shells out to ripgrep (`rg`), and edit
-	// runs an inline `python3` script that reads, replaces, and rewrites the
-	// file in one shot. Old/new strings are passed base64-encoded so they round-
-	// trip safely through argv. If `rg` or `python3` is missing on the client
-	// side, the corresponding tool calls will fail.
+	// in-process via doublestar, grep prefers ripgrep (`rg --json`) and
+	// transparently falls back to POSIX `grep -RnE` when `rg` is not
+	// installed on the client side.
 	UseTerminalForFileTools bool
+
+	// Logger is an optional structured logger for non-fatal diagnostics (e.g.
+	// ReleaseTerminal failures). If nil, slog.Default() is used.
+	Logger *slog.Logger
+}
+
+func (c *Config) validate() error {
+	if c == nil {
+		return errors.New("acp.NewClientToolsMiddleware: cfg is required")
+	}
+	if c.Conn == nil {
+		return errors.New("acp.NewClientToolsMiddleware: cfg.Conn is required")
+	}
+	if c.SessionID == "" {
+		return errors.New("acp.NewClientToolsMiddleware: cfg.SessionID is required")
+	}
+	if c.Capabilities == nil {
+		return errors.New("acp.NewClientToolsMiddleware: cfg.Capabilities is required")
+	}
+	return nil
 }
 
 // NewClientToolsMiddleware creates a ChatModelAgentMiddleware that bridges ACP client-side capabilities
@@ -64,17 +141,11 @@ type Config struct {
 // default; they become available when cfg.UseTerminalForFileTools is true and the client advertises
 // the terminal capability — in which case they run as shell commands.
 func NewClientToolsMiddleware(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error) {
-	if cfg == nil {
-		return nil, errors.New("acp.NewClientToolsMiddleware: cfg is required")
-	}
-	if cfg.Conn == nil {
-		return nil, errors.New("acp.NewClientToolsMiddleware: cfg.Conn is required")
-	}
-	if cfg.SessionID == "" {
-		return nil, errors.New("acp.NewClientToolsMiddleware: cfg.SessionID is required")
+	b, err := NewBackend(cfg)
+	if err != nil {
+		return nil, err
 	}
 
-	b := &backend{conn: cfg.Conn, sessionID: cfg.SessionID}
 	config := &mfs.MiddlewareConfig{
 		Backend:             b,
 		LsToolConfig:        &mfs.ToolConfig{Disable: true},
@@ -84,33 +155,39 @@ func NewClientToolsMiddleware(ctx context.Context, cfg *Config) (adk.ChatModelAg
 		GlobToolConfig:      &mfs.ToolConfig{Disable: true},
 		GrepToolConfig:      &mfs.ToolConfig{Disable: true},
 	}
-	if cfg.Capabilities != nil {
-		if cfg.Capabilities.Terminal {
-			sh := &shell{conn: cfg.Conn, sessionID: cfg.SessionID}
-			config.Shell = sh
-			if cfg.UseTerminalForFileTools {
-				b.shell = sh
-				config.LsToolConfig = nil
-				config.GlobToolConfig = nil
-				config.GrepToolConfig = nil
-				config.EditFileToolConfig = nil
-			}
+
+	if cfg.Capabilities.Terminal {
+		// The Shell field is independent of UseTerminalForFileTools: even if
+		// callers don't want fs tools backed by terminal, the shell tool
+		// itself is still exposed when the client supports it.
+		logger := cfg.Logger
+		if logger == nil {
+			logger = slog.Default()
 		}
-		if cfg.Capabilities.FS != nil {
-			if cfg.Capabilities.FS.WriteTextFile {
-				config.WriteFileToolConfig = nil
-			}
-			if cfg.Capabilities.FS.ReadTextFile {
-				config.ReadFileToolConfig = nil
-			}
+		config.Shell = &shell{conn: cfg.Conn, sessionID: cfg.SessionID, logger: logger}
+		if cfg.UseTerminalForFileTools {
+			config.LsToolConfig = nil
+			config.GlobToolConfig = nil
+			config.GrepToolConfig = nil
 		}
 	}
+	if b.hasReadFS {
+		config.ReadFileToolConfig = nil
+	}
+	if b.hasWriteFS {
+		config.WriteFileToolConfig = nil
+	}
+	if b.hasReadFS && b.hasWriteFS {
+		config.EditFileToolConfig = nil
+	}
+
 	return mfs.New(ctx, config)
 }
 
 type shell struct {
-	conn      *acpconn.AgentConnection
+	conn      ACPConn
 	sessionID acpproto.SessionID
+	logger    *slog.Logger
 }
 
 func (s *shell) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (*filesystem.ExecuteResponse, error) {
@@ -128,10 +205,21 @@ func (s *shell) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (
 		return nil, fmt.Errorf("acp.createTerminal session=%s: %w", s.sessionID, err)
 	}
 	defer func() {
-		_, _ = s.conn.ReleaseTerminal(ctx, acpproto.ReleaseTerminalRequest{
+		// Use a background context so that ReleaseTerminal still succeeds even
+		// when the caller's ctx has been cancelled (e.g. user stop / timeout).
+		bg, bgCancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTerminalTimeout)
+		defer bgCancel()
+		if _, rerr := s.conn.ReleaseTerminal(bg, acpproto.ReleaseTerminalRequest{
 			SessionID:  s.sessionID,
 			TerminalID: createResp.TerminalID,
-		})
+		}); rerr != nil {
+			cmd := input.Command
+			if len(cmd) > maxLogCommandLen {
+				cmd = cmd[:maxLogCommandLen] + "..."
+			}
+			s.logger.WarnContext(ctx, "acp.releaseTerminal failed",
+				"session", s.sessionID, "terminal", createResp.TerminalID, "command", cmd, "err", rerr)
+		}
 	}()
 
 	waitResp, err := s.conn.WaitForTerminalExit(ctx, acpproto.WaitForTerminalExitRequest{
@@ -171,13 +259,69 @@ func (s *shell) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (
 	return ret, nil
 }
 
-type backend struct {
-	conn      *acpconn.AgentConnection
-	sessionID acpproto.SessionID
-	shell     *shell
+// Backend implements the mfs.Backend interface on top of an ACP agent
+// connection, bridging filesystem and shell tool calls to ACP client-side
+// capabilities (read_text_file / write_text_file / terminal). It is exported
+// so callers that build their own filesystem middleware (instead of using
+// NewClientToolsMiddleware) can plug it directly into mfs.MiddlewareConfig.
+type Backend struct {
+	conn       ACPConn
+	sessionID  acpproto.SessionID
+	shell      *shell
+	hasReadFS  bool
+	hasWriteFS bool
+
+	// rgState stores the ripgrep probe result as an atomic int32 (rgProbeState).
+	// Probing uses rgOnce-style synchronization: the first goroutine to find
+	// state==unprobed wins the "probe race" via CAS and executes the RPC;
+	// concurrent goroutines that arrive during probing fall back to POSIX grep
+	// rather than blocking. Once determined, the result is cached permanently
+	// (available/unavailable). Transient transport errors leave state as unprobed
+	// so the next caller retries.
+	rgState atomic.Int32
+
+	// rgProbeMu serializes concurrent probe attempts so only one RPC flies at
+	// a time. Goroutines that can't acquire it immediately return false (POSIX
+	// fallback) rather than blocking.
+	rgProbeMu sync.Mutex
 }
 
-func (b *backend) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
+// NewBackend constructs a Backend from the same Config used by
+// NewClientToolsMiddleware. The returned Backend reflects the capabilities
+// advertised by the client:
+//
+//   - Read/Write are enabled when cfg.Capabilities.FS.ReadTextFile /
+//     WriteTextFile are set; otherwise calling them returns an error from the
+//     underlying ACP RPC.
+//   - LsInfo/GlobInfo/GrepRaw (terminal-backed implementations) are only
+//     functional when cfg.Capabilities.Terminal is true AND
+//     cfg.UseTerminalForFileTools is set; otherwise they return an error.
+//   - Edit requires both ReadTextFile and WriteTextFile fs capabilities;
+//     it performs a read-modify-write cycle via the fs API.
+func NewBackend(cfg *Config) (*Backend, error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	b := &Backend{conn: cfg.Conn, sessionID: cfg.SessionID}
+
+	if cfg.Capabilities.Terminal && cfg.UseTerminalForFileTools {
+		b.shell = &shell{conn: cfg.Conn, sessionID: cfg.SessionID, logger: logger}
+	}
+	if cfg.Capabilities.FS != nil {
+		b.hasReadFS = cfg.Capabilities.FS.ReadTextFile
+		b.hasWriteFS = cfg.Capabilities.FS.WriteTextFile
+	}
+
+	return b, nil
+}
+
+func (b *Backend) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesystem.FileContent, error) {
 	var limit, line *int64
 	if req.Limit != 0 {
 		tmp := int64(req.Limit)
@@ -199,7 +343,7 @@ func (b *backend) Read(ctx context.Context, req *filesystem.ReadRequest) (*files
 	return &filesystem.FileContent{Content: resp.Content}, nil
 }
 
-func (b *backend) Write(ctx context.Context, req *filesystem.WriteRequest) error {
+func (b *Backend) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 	_, err := b.conn.WriteTextFile(ctx, acpproto.WriteTextFileRequest{
 		Content:   req.Content,
 		Path:      req.FilePath,
@@ -211,33 +355,107 @@ func (b *backend) Write(ctx context.Context, req *filesystem.WriteRequest) error
 	return nil
 }
 
-func (b *backend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
+func (b *Backend) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]filesystem.FileInfo, error) {
 	if b.shell == nil {
-		return nil, fmt.Errorf("acp client does not support ls info")
+		return nil, fmt.Errorf("%w: ls info", ErrCapabilityMissing)
 	}
-	path := req.Path
-	if path == "" {
-		path = "."
+	dir := req.Path
+	if dir == "" {
+		dir = "."
 	}
-	out, err := b.runShell(ctx, "ls -1A -- "+shellQuote(path))
+	quotedDir, err := shellQuote(dir)
 	if err != nil {
-		return nil, fmt.Errorf("acp.shell ls path=%s: %w", path, err)
+		return nil, fmt.Errorf("acp.shell ls path=%s: %w", dir, err)
+	}
+	result, err := b.runShell(ctx, "ls -1Ap -- "+quotedDir)
+	if err != nil {
+		return nil, fmt.Errorf("acp.shell ls path=%s: %w", dir, err)
+	}
+	if result.Truncated {
+		b.shell.logger.WarnContext(ctx, "acp.shell ls: output truncated, returning partial results", "path", dir)
 	}
 	var infos []filesystem.FileInfo
-	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+	for _, line := range strings.Split(strings.TrimRight(result.Output, "\n"), "\n") {
 		if line == "" {
 			continue
 		}
-		infos = append(infos, filesystem.FileInfo{Path: line})
+		info := filesystem.FileInfo{}
+		if strings.HasSuffix(line, "/") {
+			info.Path = strings.TrimSuffix(line, "/")
+			info.IsDir = true
+		} else {
+			info.Path = line
+		}
+		infos = append(infos, info)
 	}
 	return infos, nil
 }
 
-func (b *backend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+func (b *Backend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
 	if b.shell == nil {
-		return nil, fmt.Errorf("acp client does not support grep raw")
+		return nil, fmt.Errorf("%w: grep raw", ErrCapabilityMissing)
 	}
-	args := []string{"rg", "--line-number", "--no-heading", "--color=never"}
+	if b.detectRipgrep(ctx) {
+		return b.grepWithRipgrep(ctx, req)
+	}
+	return b.grepWithPosix(ctx, req)
+}
+
+// rgProbeState represents the three-state probe result for ripgrep availability.
+type rgProbeState = int32
+
+const (
+	rgUnprobed    rgProbeState = iota // not yet probed
+	rgAvailable                       // rg is installed
+	rgUnavailable                     // rg is confirmed not installed
+)
+
+// detectRipgrep probes for ripgrep availability on the client side using
+// `command -v rg`. The result is cached once determined definitively (rg found
+// or confirmed absent). If the probe fails due to a transient transport error
+// (e.g. ctx cancelled), the state remains "unprobed" so the next call retries.
+//
+// Concurrency: uses a non-blocking TryLock so that concurrent grep calls don't
+// serialize behind a slow probe RPC. If another goroutine is already probing,
+// latecomers fall back to POSIX grep for that single call rather than waiting.
+func (b *Backend) detectRipgrep(ctx context.Context) bool {
+	// Fast path: already probed.
+	state := b.rgState.Load()
+	if state != rgUnprobed {
+		return state == rgAvailable
+	}
+
+	// Slow path: try to become the probe goroutine. If someone else is already
+	// probing, fall back to POSIX grep for this call (non-blocking).
+	if !b.rgProbeMu.TryLock() {
+		return false
+	}
+	defer b.rgProbeMu.Unlock()
+
+	// Double-check after acquiring the lock: another goroutine may have finished
+	// probing between our Load() and TryLock().
+	state = b.rgState.Load()
+	if state != rgUnprobed {
+		return state == rgAvailable
+	}
+
+	resp, err := b.shell.Execute(ctx, &filesystem.ExecuteRequest{Command: "command -v rg >/dev/null 2>&1"})
+	if err != nil {
+		// Transport error — don't cache, retry next time.
+		b.shell.logger.DebugContext(ctx, "acp.shell grep: rg detection probe failed, will retry", "err", err)
+		return false
+	}
+	if resp.ExitCode != nil && *resp.ExitCode == 0 {
+		b.rgState.Store(rgAvailable)
+		return true
+	}
+	b.shell.logger.InfoContext(ctx, "acp.shell grep: ripgrep (rg) not found on client, falling back to POSIX grep")
+	b.rgState.Store(rgUnavailable)
+	return false
+}
+
+func (b *Backend) grepWithRipgrep(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+	args := []string{"rg", "--json"}
 	if req.CaseInsensitive {
 		args = append(args, "--ignore-case")
 	}
@@ -263,36 +481,127 @@ func (b *backend) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]f
 		args = append(args, ".")
 	}
 
-	resp, err := b.shell.Execute(ctx, &filesystem.ExecuteRequest{Command: joinShellArgs(args)})
+	cmd, err := joinShellArgs(args)
+	if err != nil {
+		return nil, fmt.Errorf("acp.shell grep: %w", err)
+	}
+	resp, err := b.shell.Execute(ctx, &filesystem.ExecuteRequest{Command: cmd})
 	if err != nil {
 		return nil, fmt.Errorf("acp.shell grep: %w", err)
 	}
 	// rg exit code 1 means "no matches" — not an error.
 	if resp.ExitCode != nil && *resp.ExitCode != 0 && *resp.ExitCode != 1 {
-		return nil, fmt.Errorf("acp.shell grep failed (exit %d): %s", *resp.ExitCode, resp.Output)
+		return nil, fmt.Errorf("acp.shell grep (exit %d): %w: %s", *resp.ExitCode, ErrShellNonZeroExit, resp.Output)
 	}
 	if resp.ExitCode != nil && *resp.ExitCode == 1 {
 		return nil, nil
 	}
-	return parseRipgrepOutput(resp.Output), nil
+	if resp.Truncated {
+		b.shell.logger.WarnContext(ctx, "acp.shell grep: output truncated, returning partial results")
+	}
+	return parseRipgrepJSONOutput(resp.Output, b.shell.logger)
 }
 
-func (b *backend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
+// grepWithPosix is the fallback used when ripgrep (rg) is not installed on
+// the client. It shells out to POSIX `grep -RnE` (with widely-supported BSD/GNU
+// extensions: -R recursive, -n line numbers, -E extended regex, -H force path
+// prefix, --include for glob filtering, -A/-B for context).
+//
+// Limitations vs. ripgrep:
+//   - EnableMultiline is rejected: POSIX grep operates line-by-line, and
+//     silently ignoring this flag would change match semantics.
+//   - FileType is best-effort: POSIX grep has no built-in type registry, so
+//     the flag is ignored with a warning. Callers wanting strict type filtering
+//     should install rg or pass an equivalent Glob.
+func (b *Backend) grepWithPosix(ctx context.Context, req *filesystem.GrepRequest) ([]filesystem.GrepMatch, error) {
+	if req.EnableMultiline {
+		return nil, errors.New("acp.shell grep: EnableMultiline requires ripgrep (rg); not supported by POSIX grep fallback")
+	}
+	if req.FileType != "" {
+		b.shell.logger.WarnContext(ctx, "acp.shell grep: FileType is ignored in POSIX grep fallback (rg not installed)", "fileType", req.FileType)
+	}
+	args := []string{"grep", "-RHnE", "--no-messages"}
+	if req.CaseInsensitive {
+		args = append(args, "-i")
+	}
+	if req.BeforeLines > 0 {
+		args = append(args, "-B", strconv.Itoa(req.BeforeLines))
+	}
+	if req.AfterLines > 0 {
+		args = append(args, "-A", strconv.Itoa(req.AfterLines))
+	}
+	if req.Glob != "" {
+		args = append(args, "--include="+req.Glob)
+	}
+	args = append(args, "-e", req.Pattern)
+	if req.Path != "" {
+		args = append(args, req.Path)
+	} else {
+		args = append(args, ".")
+	}
+
+	cmd, err := joinShellArgs(args)
+	if err != nil {
+		return nil, fmt.Errorf("acp.shell grep: %w", err)
+	}
+	resp, err := b.shell.Execute(ctx, &filesystem.ExecuteRequest{Command: cmd})
+	if err != nil {
+		return nil, fmt.Errorf("acp.shell grep: %w", err)
+	}
+	// grep exit codes: 0 = matches found, 1 = no matches, >=2 = error.
+	if resp.ExitCode != nil && *resp.ExitCode >= 2 {
+		return nil, fmt.Errorf("acp.shell grep (exit %d): %w: %s", *resp.ExitCode, ErrShellNonZeroExit, resp.Output)
+	}
+	if resp.ExitCode != nil && *resp.ExitCode == 1 {
+		return nil, nil
+	}
+	if resp.Truncated {
+		b.shell.logger.WarnContext(ctx, "acp.shell grep: output truncated, returning partial results")
+	}
+	return parsePosixGrepOutput(resp.Output), nil
+}
+
+func (b *Backend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) ([]filesystem.FileInfo, error) {
 	if b.shell == nil {
-		return nil, fmt.Errorf("acp client does not support glob info")
+		return nil, fmt.Errorf("%w: glob info", ErrCapabilityMissing)
 	}
 	basePath := req.Path
 	if basePath == "" {
 		basePath = "."
 	}
-	out, err := b.runShell(ctx, "find "+shellQuote(basePath)+" -type f")
+	basePath = path.Clean(basePath)
+
+	// We don't use runShell here because `find` may exit with code 1 when it
+	// encounters permission-denied directories, while still producing valid
+	// output on stdout. runShell treats any non-zero exit as a hard error,
+	// which would discard legitimate results.
+	quotedBase, err := shellQuote(basePath)
 	if err != nil {
 		return nil, fmt.Errorf("acp.shell glob path=%s: %w", basePath, err)
+	}
+	cmd := fmt.Sprintf("find %s -maxdepth %d 2>/dev/null", quotedBase, findMaxDepth)
+	resp, err := b.shell.Execute(ctx, &filesystem.ExecuteRequest{Command: cmd})
+	if err != nil {
+		return nil, fmt.Errorf("acp.shell glob path=%s: %w", basePath, err)
+	}
+	// find exit codes: 0 = success, 1 = partial failure (e.g. permission denied
+	// on some subdirectories but stdout still has results). Only treat exit >= 2
+	// or nil (signal-killed) as hard errors.
+	if resp.ExitCode == nil {
+		return nil, fmt.Errorf("acp.shell glob path=%s: %w: process terminated without exit code",
+			basePath, ErrShellNonZeroExit)
+	}
+	if *resp.ExitCode >= 2 {
+		return nil, fmt.Errorf("acp.shell glob path=%s (exit %d): %w: %s",
+			basePath, *resp.ExitCode, ErrShellNonZeroExit, resp.Output)
+	}
+	if resp.Truncated {
+		b.shell.logger.WarnContext(ctx, "acp.shell glob: output truncated, returning partial results", "path", basePath)
 	}
 
 	isAbsolutePattern := strings.HasPrefix(req.Pattern, "/")
 	var infos []filesystem.FileInfo
-	for _, p := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+	for _, p := range strings.Split(strings.TrimRight(resp.Output, "\n"), "\n") {
 		if p == "" {
 			continue
 		}
@@ -322,121 +631,263 @@ func (b *backend) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest)
 	return infos, nil
 }
 
-func (b *backend) Edit(ctx context.Context, req *filesystem.EditRequest) error {
-	if b.shell == nil {
-		return fmt.Errorf("acp client does not support edit")
-	}
+func (b *Backend) Edit(ctx context.Context, req *filesystem.EditRequest) error {
 	if req.OldString == "" {
 		return errors.New("oldString must be non-empty")
 	}
-
-	oldB64 := base64.StdEncoding.EncodeToString([]byte(req.OldString))
-	newB64 := base64.StdEncoding.EncodeToString([]byte(req.NewString))
-	replaceAll := "0"
-	if req.ReplaceAll {
-		replaceAll = "1"
+	if req.OldString == req.NewString {
+		return nil
 	}
-	cmd := joinShellArgs([]string{
-		"python3", "-c", editPythonScript,
-		req.FilePath, oldB64, newB64, replaceAll,
+
+	if !(b.hasReadFS && b.hasWriteFS) {
+		return fmt.Errorf("%w: edit requires fs.ReadTextFile and fs.WriteTextFile", ErrCapabilityMissing)
+	}
+	return b.editViaFS(ctx, req)
+}
+
+// readFull reads an entire file via the ACP ReadTextFile RPC (no offset/limit).
+// Used by both Read (when no offset) and Edit for the read-modify-write cycle.
+func (b *Backend) readFull(ctx context.Context, filePath string) (string, error) {
+	resp, err := b.conn.ReadTextFile(ctx, acpproto.ReadTextFileRequest{
+		Path:      filePath,
+		SessionID: b.sessionID,
 	})
-	if _, err := b.runShell(ctx, cmd); err != nil {
-		return fmt.Errorf("acp.shell edit %s: %w", req.FilePath, err)
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+func (b *Backend) editViaFS(ctx context.Context, req *filesystem.EditRequest) error {
+	content, err := b.readFull(ctx, req.FilePath)
+	if err != nil {
+		return fmt.Errorf("acp.edit read %s: %w", req.FilePath, err)
+	}
+	if len(content) > maxEditFileSize {
+		return fmt.Errorf("acp.edit %s: file is %d bytes: %w", req.FilePath, len(content), ErrFileTooLarge)
+	}
+	count := strings.Count(content, req.OldString)
+	switch {
+	case count == 0:
+		return fmt.Errorf("acp.edit %s: %w", req.FilePath, ErrOldStringNotFound)
+	case count > 1 && !req.ReplaceAll:
+		return fmt.Errorf("acp.edit %s: %d occurrences found: %w", req.FilePath, count, ErrAmbiguousReplace)
+	}
+	if req.ReplaceAll {
+		content = strings.ReplaceAll(content, req.OldString, req.NewString)
+	} else {
+		content = strings.Replace(content, req.OldString, req.NewString, 1)
+	}
+	_, err = b.conn.WriteTextFile(ctx, acpproto.WriteTextFileRequest{
+		Path:      req.FilePath,
+		Content:   content,
+		SessionID: b.sessionID,
+	})
+	if err != nil {
+		return fmt.Errorf("acp.edit write %s: %w", req.FilePath, err)
 	}
 	return nil
 }
 
-// editPythonScript reads a file, replaces OldString with NewString, and writes
-// it back. Args (after `-c <script>`): file_path old_b64 new_b64 replace_all
-// where replace_all is "1" or "0". Old/new are base64-encoded so they survive
-// argv as opaque byte strings. Avoids single quotes so the whole script can be
-// passed inside a single-quoted shell argument.
-const editPythonScript = `import base64, sys
-path = sys.argv[1]
-old = base64.b64decode(sys.argv[2]).decode("utf-8")
-new_ = base64.b64decode(sys.argv[3]).decode("utf-8")
-replace_all = sys.argv[4] == "1"
-try:
-    with open(path, "r") as f:
-        content = f.read()
-except FileNotFoundError:
-    sys.stderr.write("file not found: " + path + "\n")
-    sys.exit(2)
-if old not in content:
-    sys.stderr.write("oldString not found in file: " + path + "\n")
-    sys.exit(3)
-if not replace_all and content.count(old) > 1:
-    sys.stderr.write("multiple occurrences of oldString found in file " + path + ", but ReplaceAll is false\n")
-    sys.exit(4)
-content = content.replace(old, new_) if replace_all else content.replace(old, new_, 1)
-with open(path, "w") as f:
-    f.write(content)
-`
+// shellResult holds the output of a shell command execution along with
+// metadata about whether the output was truncated.
+type shellResult struct {
+	Output    string
+	Truncated bool
+}
 
-func (b *backend) runShell(ctx context.Context, cmd string) (string, error) {
+func (b *Backend) runShell(ctx context.Context, cmd string) (*shellResult, error) {
 	resp, err := b.shell.Execute(ctx, &filesystem.ExecuteRequest{Command: cmd})
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	if resp.ExitCode != nil && *resp.ExitCode != 0 {
-		return "", fmt.Errorf("exit %d: %s", *resp.ExitCode, resp.Output)
+	if resp.ExitCode == nil {
+		// Process was terminated by signal or exited without a code — treat as error.
+		return nil, fmt.Errorf("%w: process terminated without exit code (output=%q)",
+			ErrShellNonZeroExit, truncateStr(resp.Output, maxLogCommandLen))
 	}
-	return resp.Output, nil
+	if *resp.ExitCode != 0 {
+		return nil, fmt.Errorf("%w: exit %d: %s", ErrShellNonZeroExit, *resp.ExitCode, resp.Output)
+	}
+	return &shellResult{
+		Output:    resp.Output,
+		Truncated: resp.Truncated,
+	}, nil
+}
+
+// truncateStr shortens s to at most maxLen bytes, appending "..." if truncated.
+// It avoids splitting multi-byte UTF-8 characters by backing off to a valid rune boundary.
+func truncateStr(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// Back off to avoid cutting a multi-byte rune in half.
+	for maxLen > 0 && !utf8.ValidString(s[:maxLen]) {
+		maxLen--
+	}
+	return s[:maxLen] + "..."
 }
 
 // shellQuote wraps s in single quotes for safe inclusion in a sh/bash/zsh command.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+// It rejects strings containing null bytes, which shells cannot represent in arguments.
+func shellQuote(s string) (string, error) {
+	if strings.ContainsRune(s, 0) {
+		return "", errors.New("acp.shell: argument contains null byte")
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'", nil
 }
 
-func joinShellArgs(args []string) string {
+func joinShellArgs(args []string) (string, error) {
 	quoted := make([]string, len(args))
 	for i, a := range args {
-		quoted[i] = shellQuote(a)
+		q, err := shellQuote(a)
+		if err != nil {
+			return "", err
+		}
+		quoted[i] = q
 	}
-	return strings.Join(quoted, " ")
+	return strings.Join(quoted, " "), nil
 }
 
-// parseRipgrepOutput parses output of `rg --line-number --no-heading`. Each
-// match line is "path:line:content"; each context line (when -A/-B/-C is set)
-// is "path:line-content". Group separators ("--") and unparsable lines are
-// skipped. Filenames containing ':' are not handled — they would be skipped.
-func parseRipgrepOutput(out string) []filesystem.GrepMatch {
+// rgJSONMatch represents a single match entry from `rg --json` output.
+type rgJSONMatch struct {
+	Type string `json:"type"`
+	Data struct {
+		Path struct {
+			Text string `json:"text"`
+		} `json:"path"`
+		LineNumber int `json:"line_number"`
+		Lines      struct {
+			Text string `json:"text"`
+		} `json:"lines"`
+	} `json:"data"`
+}
+
+// parseRipgrepJSONOutput parses `rg --json` output format. Each line is a JSON
+// object; we only extract entries with type=="match". This correctly handles
+// filenames containing ':' or other special characters.
+// Returns an error if the output is non-empty but every line fails to parse
+// (e.g. incompatible rg version).
+func parseRipgrepJSONOutput(out string, logger *slog.Logger) ([]filesystem.GrepMatch, error) {
 	var matches []filesystem.GrepMatch
+	var totalLines, failedLines int
 	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		if line == "" {
 			continue
 		}
-		m, ok := parseRipgrepLine(line)
+		totalLines++
+		var entry rgJSONMatch
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			failedLines++
+			logger.Warn("acp.grep: failed to parse rg JSON line", "err", err, "line", line)
+			continue
+		}
+		if entry.Type != "match" {
+			continue
+		}
+		content := entry.Data.Lines.Text
+		// rg --json includes trailing newline in lines.text; trim it.
+		content = strings.TrimSuffix(content, "\n")
+		matches = append(matches, filesystem.GrepMatch{
+			Path:    entry.Data.Path.Text,
+			Line:    entry.Data.LineNumber,
+			Content: content,
+		})
+	}
+	if totalLines > 0 && failedLines == totalLines {
+		return nil, fmt.Errorf("acp.grep: all %d output lines failed JSON parsing (possible rg version incompatibility)", totalLines)
+	}
+	if failedLines > 0 && float64(failedLines)/float64(totalLines) >= rgJSONMaxFailedRatio {
+		return nil, fmt.Errorf("acp.grep: %d/%d output lines failed JSON parsing (possible rg version incompatibility)", failedLines, totalLines)
+	}
+	return matches, nil
+}
+
+// parsePosixGrepOutput parses `grep -RHn` style output where each match line
+// is `<path>:<lineno>:<content>` and context lines use `-` as the separator.
+// `--` group separators emitted by -A/-B are skipped. Lines that don't match
+// the expected shape are skipped (best-effort), since `grep --no-messages` may
+// still emit content from binary files in unusual encodings.
+//
+// To handle paths containing colons, we search from the right for the last
+// occurrence of `:<digits>:` or `:<digits>-` boundary, which more reliably
+// identifies the line-number field.
+func parsePosixGrepOutput(out string) []filesystem.GrepMatch {
+	var matches []filesystem.GrepMatch
+	for _, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
+		if line == "" || line == "--" {
+			continue
+		}
+		filePath, lineno, content, ok := parsePosixGrepLine(line)
 		if !ok {
 			continue
 		}
-		matches = append(matches, m)
+		matches = append(matches, filesystem.GrepMatch{
+			Path:    filePath,
+			Line:    lineno,
+			Content: content,
+		})
 	}
 	return matches
 }
 
-func parseRipgrepLine(line string) (filesystem.GrepMatch, bool) {
-	i := strings.IndexByte(line, ':')
-	if i <= 0 {
-		return filesystem.GrepMatch{}, false
+// parsePosixGrepLine parses a single line of grep -RHn output. The format is:
+//
+//	<path><sep><lineno><sep><content>
+//
+// where <sep> is ':' (match line) or '-' (context line from -A/-B).
+//
+// Algorithm: scan left-to-right for the first <sep><digits><sep> boundary.
+// Everything before the leading separator is the path; everything after the
+// trailing separator is the content. This correctly handles paths containing
+// ':' (e.g. "vendor/pkg:v2/file.go") as long as the path does not contain a
+// substring matching :<positive-integer><sep> before the real line number.
+//
+// Known limitation: if the path itself contains a `:N:` or `:N-` pattern where
+// N is a positive integer (e.g. "prefix:1:rest.go"), the parser will mis-split.
+// POSIX grep has no NUL-delimited output mode (`-Z` is GNU-only), so this is
+// an inherent best-effort trade-off.
+func parsePosixGrepLine(line string) (filePath string, lineno int, content string, ok bool) {
+	n := len(line)
+	// Find first occurrence of <sep><digits><sep> scanning left-to-right.
+	i := 0
+	for i < n {
+		// Find next ':' or '-' separator.
+		sep1 := -1
+		for j := i; j < n; j++ {
+			if line[j] == ':' || line[j] == '-' {
+				sep1 = j
+				break
+			}
+		}
+		if sep1 < 0 || sep1+1 >= n {
+			return "", 0, "", false
+		}
+		// Check if digits follow.
+		digitStart := sep1 + 1
+		digitEnd := digitStart
+		for digitEnd < n && line[digitEnd] >= '0' && line[digitEnd] <= '9' {
+			digitEnd++
+		}
+		if digitEnd == digitStart || digitEnd >= n {
+			// No digits found after this separator, or digits run to end of line.
+			i = sep1 + 1
+			continue
+		}
+		// Check that digits are followed by another separator.
+		if line[digitEnd] != ':' && line[digitEnd] != '-' {
+			i = sep1 + 1
+			continue
+		}
+		// We have a valid <sep><digits><sep> at sep1..digitEnd.
+		num, err := strconv.Atoi(line[digitStart:digitEnd])
+		if err != nil || num <= 0 {
+			i = sep1 + 1
+			continue
+		}
+		filePath = line[:sep1]
+		content = line[digitEnd+1:]
+		return filePath, num, content, true
 	}
-	path := line[:i]
-	rest := line[i+1:]
-
-	j := 0
-	for j < len(rest) && rest[j] >= '0' && rest[j] <= '9' {
-		j++
-	}
-	if j == 0 || j >= len(rest) {
-		return filesystem.GrepMatch{}, false
-	}
-	if sep := rest[j]; sep != ':' && sep != '-' {
-		return filesystem.GrepMatch{}, false
-	}
-	lineNum, err := strconv.Atoi(rest[:j])
-	if err != nil {
-		return filesystem.GrepMatch{}, false
-	}
-	return filesystem.GrepMatch{Path: path, Line: lineNum, Content: rest[j+1:]}, true
+	return "", 0, "", false
 }
