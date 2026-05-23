@@ -883,7 +883,10 @@ func TestFromToolCall(t *testing.T) {
 		ID:       "call-123",
 		Function: schema.FunctionCall{Name: "search", Arguments: `{"q":"test"}`},
 	}
-	result := fromToolCall(tc)
+	result, err := fromToolCall(tc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if string(result.ToolCallID) != "call-123" {
 		t.Fatalf("ToolCallID = %q, want %q", result.ToolCallID, "call-123")
 	}
@@ -892,6 +895,31 @@ func TestFromToolCall(t *testing.T) {
 	}
 	if string(result.RawInput) != `{"q":"test"}` {
 		t.Fatalf("RawInput = %s, want %s", result.RawInput, `{"q":"test"}`)
+	}
+}
+
+func TestFromToolCallEmptyArgs(t *testing.T) {
+	tc := schema.ToolCall{
+		ID:       "call-456",
+		Function: schema.FunctionCall{Name: "noop", Arguments: ""},
+	}
+	result, err := fromToolCall(tc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(result.RawInput) != `{}` {
+		t.Fatalf("RawInput = %s, want {}", result.RawInput)
+	}
+}
+
+func TestFromToolCallInvalidJSON(t *testing.T) {
+	tc := schema.ToolCall{
+		ID:       "call-789",
+		Function: schema.FunctionCall{Name: "broken", Arguments: `{invalid`},
+	}
+	_, err := fromToolCall(tc)
+	if err == nil {
+		t.Fatal("expected error for invalid JSON args, got nil")
 	}
 }
 
@@ -1505,4 +1533,56 @@ func TestAgentEventToSessionUpdate_OptNilConverterUsesDefault(t *testing.T) {
 		t.Fatalf("expected 1 update, got %d", len(updates))
 	}
 	requireTextChunk(t, updates[0], "hello")
+}
+
+func TestAgentEventToSessionUpdate_StreamingFlushDoesNotDropValidToolCalls(t *testing.T) {
+	// When one tool call in a batch has invalid JSON args, the other valid ones
+	// should still be yielded (the invalid one yields an error but doesn't abort).
+	reader, writer := schema.Pipe[*schema.Message](10)
+	idx0, idx1, idx2 := 0, 1, 2
+	go func() {
+		// Stream 3 tool calls: index 0 valid, index 1 invalid JSON, index 2 valid
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Index: &idx0, ID: "tc-good-1", Function: schema.FunctionCall{Name: "read_file", Arguments: `{"path":"/a.txt"}`}},
+				{Index: &idx1, ID: "tc-bad", Function: schema.FunctionCall{Name: "write_file", Arguments: `{invalid`}},
+				{Index: &idx2, ID: "tc-good-2", Function: schema.FunctionCall{Name: "ls", Arguments: `{"path":"."}`}},
+			},
+		}, nil)
+		writer.Close()
+	}()
+
+	event := &adk.AgentEvent{
+		Output: &adk.AgentOutput{
+			MessageOutput: &adk.MessageVariant{
+				IsStreaming:   true,
+				MessageStream: reader,
+			},
+		},
+	}
+	updates, errs := collectUpdates(AgentEventToSessionUpdate(event, nil))
+
+	// Should get 1 error (for the invalid tool call) and 2 valid ToolCall updates
+	if len(errs) != 1 {
+		t.Fatalf("expected 1 error, got %d: %v", len(errs), errs)
+	}
+	if len(updates) != 2 {
+		t.Fatalf("expected 2 tool call updates, got %d", len(updates))
+	}
+	// Verify the valid tool calls came through
+	tc0, ok := updates[0].AsToolCall()
+	if !ok {
+		t.Fatal("expected first update to be ToolCall")
+	}
+	if tc0.Title != "read_file" {
+		t.Fatalf("expected first tool call name 'read_file', got %q", tc0.Title)
+	}
+	tc1, ok := updates[1].AsToolCall()
+	if !ok {
+		t.Fatal("expected second update to be ToolCall")
+	}
+	if tc1.Title != "ls" {
+		t.Fatalf("expected second tool call name 'ls', got %q", tc1.Title)
+	}
 }

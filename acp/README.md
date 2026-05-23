@@ -80,13 +80,18 @@ for su, err := range einoacp.AgentEventToSessionUpdate(event, opt) {
 Creates a `ChatModelAgentMiddleware` that bridges ACP client-side capabilities to eino's filesystem tools.
 
 ```go
-func NewClientToolsMiddleware(
-    ctx context.Context,
-    sessionID acpproto.SessionID,
-    capabilities *acpproto.ClientCapabilities,
-    conn *acpconn.AgentConnection,
-) (adk.ChatModelAgentMiddleware, error)
+func NewClientToolsMiddleware(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error)
 ```
+
+`Config` fields:
+
+| Field | Description |
+|---|---|
+| `SessionID` | ACP session ID (required) |
+| `Conn` | Agent-side ACP connection (required) |
+| `Capabilities` | Client capability set from initialization (required) |
+| `UseTerminalForFileTools` | Enable terminal-backed ls/glob/grep/edit (requires terminal capability) |
+| `Logger` | Optional structured logger; defaults to `slog.Default()` |
 
 Tools are enabled based on client-advertised capabilities:
 
@@ -95,12 +100,15 @@ Tools are enabled based on client-advertised capabilities:
 | `fs.readTextFile` | `read_file` |
 | `fs.writeTextFile` | `write_file` |
 | `terminal` | Shell command execution |
+| `terminal` + `UseTerminalForFileTools` | `ls`, `glob`, `grep`, `edit` |
 
 ```go
 if clientCapabilities != nil {
-    middleware, err := einoacp.NewClientToolsMiddleware(
-        ctx, sessionID, clientCapabilities, conn,
-    )
+    middleware, err := einoacp.NewClientToolsMiddleware(ctx, &einoacp.Config{
+        SessionID:    sessionID,
+        Conn:         conn,
+        Capabilities: clientCapabilities,
+    })
     if err != nil {
         return err
     }

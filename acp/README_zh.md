@@ -103,13 +103,18 @@ for su, err := range einoacp.AgentEventToSessionUpdate(event, opt) {
 创建一个 `ChatModelAgentMiddleware`，将 ACP 客户端能力桥接到 eino 的文件系统工具。根据客户端声明的能力自动启用对应工具，未支持的工具会被禁用。
 
 ```go
-func NewClientToolsMiddleware(
-    ctx context.Context,
-    sessionID acpproto.SessionID,
-    capabilities *acpproto.ClientCapabilities,
-    conn *acpconn.AgentConnection,
-) (adk.ChatModelAgentMiddleware, error)
+func NewClientToolsMiddleware(ctx context.Context, cfg *Config) (adk.ChatModelAgentMiddleware, error)
 ```
+
+`Config` 字段说明：
+
+| 字段 | 说明 |
+|---|---|
+| `SessionID` | ACP 会话 ID（必填） |
+| `Conn` | Agent 侧的 ACP 连接（必填） |
+| `Capabilities` | 初始化阶段从客户端获取的能力集（必填） |
+| `UseTerminalForFileTools` | 启用基于终端实现的 ls/glob/grep/edit（需要客户端支持 terminal 能力） |
+| `Logger` | 可选的结构化日志记录器，默认使用 `slog.Default()` |
 
 能力与工具的对应关系：
 
@@ -118,6 +123,7 @@ func NewClientToolsMiddleware(
 | `fs.readTextFile` | `read_file` | 通过 ACP 连接读取客户端文件 |
 | `fs.writeTextFile` | `write_file` | 通过 ACP 连接写入客户端文件 |
 | `terminal` | Shell 命令执行 | 通过 ACP 连接在客户端创建终端并执行命令 |
+| `terminal` + `UseTerminalForFileTools` | `ls`、`glob`、`grep`、`edit` | 通过终端命令在客户端实现文件系统工具 |
 
 #### 使用示例
 
@@ -125,9 +131,11 @@ func NewClientToolsMiddleware(
 
 ```go
 if clientCapabilities != nil {
-    middleware, err := einoacp.NewClientToolsMiddleware(
-        ctx, sessionID, clientCapabilities, conn,
-    )
+    middleware, err := einoacp.NewClientToolsMiddleware(ctx, &einoacp.Config{
+        SessionID:    sessionID,
+        Conn:         conn,
+        Capabilities: clientCapabilities,
+    })
     if err != nil {
         return err
     }

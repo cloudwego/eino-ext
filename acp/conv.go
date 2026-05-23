@@ -105,7 +105,14 @@ func AgentEventToSessionUpdate(
 					ID:       a.id,
 					Function: schema.FunctionCall{Name: a.name, Arguments: a.args.String()},
 				}
-				if !yield(acpproto.NewSessionUpdateToolCall(fromToolCall(tc)), nil) {
+				converted, err := fromToolCall(tc)
+				if err != nil {
+					if !yield(acpproto.SessionUpdate{}, err) {
+						return false
+					}
+					continue
+				}
+				if !yield(acpproto.NewSessionUpdateToolCall(converted), nil) {
 					return false
 				}
 			}
@@ -121,7 +128,28 @@ func AgentEventToSessionUpdate(
 				return
 			}
 			if err != nil {
-				// Discard any partially-accumulated tool call buffer — the args may be incomplete JSON.
+				// Before yielding the error, flush any tool calls whose arguments
+				// are already complete JSON. Partially-accumulated calls are discarded.
+				for _, idx := range pendingOrder {
+					a := pendingToolCalls[idx]
+					if a.id == "" || a.name == "" {
+						continue
+					}
+					if !json.Valid([]byte(a.args.String())) {
+						continue
+					}
+					tc := schema.ToolCall{
+						ID:       a.id,
+						Function: schema.FunctionCall{Name: a.name, Arguments: a.args.String()},
+					}
+					converted, convErr := fromToolCall(tc)
+					if convErr != nil {
+						continue
+					}
+					if !yield(acpproto.NewSessionUpdateToolCall(converted), nil) {
+						return
+					}
+				}
 				yield(acpproto.SessionUpdate{}, err)
 				return
 			}
@@ -309,7 +337,12 @@ func yieldMessageUpdates(msg adk.Message, yield func(acpproto.SessionUpdate, err
 			}
 		}
 		for _, tc := range msg.ToolCalls {
-			if !yield(acpproto.NewSessionUpdateToolCall(fromToolCall(tc)), nil) {
+			converted, err := fromToolCall(tc)
+			if err != nil {
+				yield(acpproto.SessionUpdate{}, err)
+				return false
+			}
+			if !yield(acpproto.NewSessionUpdateToolCall(converted), nil) {
 				return false
 			}
 		}
@@ -481,14 +514,18 @@ func outputPartToSessionUpdate(part schema.MessageOutputPart) (acpproto.SessionU
 	}
 }
 
-func fromToolCall(call schema.ToolCall) acpproto.ToolCall {
+func fromToolCall(call schema.ToolCall) (acpproto.ToolCall, error) {
 	args := call.Function.Arguments
-	if args == "" || !json.Valid([]byte(args)) {
+	if args == "" {
 		args = "{}"
+	} else if !json.Valid([]byte(args)) {
+		return acpproto.ToolCall{}, fmt.Errorf(
+			"invalid JSON arguments for tool %q (id=%s): %q",
+			call.Function.Name, call.ID, args)
 	}
 	return acpproto.ToolCall{
 		ToolCallID: acpproto.ToolCallID(call.ID),
 		Title:      call.Function.Name,
 		RawInput:   json.RawMessage(args),
-	}
+	}, nil
 }

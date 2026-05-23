@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -42,6 +43,9 @@ type sessionState struct {
 
 // agent implements acp.Agent by embedding BaseAgent for default stubs,
 // and overriding the methods we care about.
+//
+// NOTE: In production, sessions should have TTL-based expiration or LRU eviction
+// to prevent unbounded memory growth. This example omits cleanup for brevity.
 type agent struct {
 	acp.BaseAgent
 
@@ -222,6 +226,7 @@ func capturedMessage(event *adk.AgentEvent, historyCopy adk.MessageStream) adk.M
 	// ConcatMessageStream drains and closes the stream.
 	msg, err := schema.ConcatMessageStream(historyCopy)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to concat message stream for history: %v\n", err)
 		return nil
 	}
 	return msg
@@ -229,13 +234,15 @@ func capturedMessage(event *adk.AgentEvent, historyCopy adk.MessageStream) adk.M
 
 // --- Helpers ---
 
+// extractTextFromPrompt concatenates all text blocks from the ACP prompt.
 func extractTextFromPrompt(blocks []acp.ContentBlock) string {
+	var parts []string
 	for _, block := range blocks {
 		if tc, ok := block.AsText(); ok {
-			return tc.Text
+			parts = append(parts, tc.Text)
 		}
 	}
-	return ""
+	return strings.Join(parts, "\n")
 }
 
 func createChatModel(ctx context.Context) (*ark.ChatModel, error) {
