@@ -48,9 +48,7 @@ func TestNewAgenticModel(t *testing.T) {
 		},
 		ResponseModalities: []ResponseModality{ResponseModalityText, ResponseModalityImage},
 		ImageConfig:        &genai.ImageConfig{AspectRatio: "16:9", ImageSize: "1K"},
-		Cache: &CacheConfig{
-			TTL: time.Hour,
-		},
+		CacheTTL: time.Hour,
 	}
 	model, err := NewAgenticModel(context.Background(), config)
 	assert.NoError(t, err)
@@ -63,10 +61,9 @@ func TestNewAgenticModel(t *testing.T) {
 	assert.NotNil(t, model.enableCodeExecution)
 	assert.Len(t, model.safetySettings, 1)
 	assert.Len(t, model.responseModalities, 2)
+	assert.Equal(t, time.Hour, model.cacheTTL)
 	assert.Equal(t, "16:9", model.imageConfig.AspectRatio)
 	assert.Equal(t, "1K", model.imageConfig.ImageSize)
-	assert.NotNil(t, model.cache)
-	assert.Equal(t, time.Hour, model.cache.TTL)
 
 	assert.Equal(t, "Gemini", model.GetType())
 	assert.True(t, model.IsCallbacksEnabled())

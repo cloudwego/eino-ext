@@ -10,6 +10,7 @@
 - 支持 Anthropic Messages API
 - 支持流式响应
 - 支持工具调用（函数工具、延迟加载工具、客户端工具搜索、Server Tool）
+- 支持 Prompt 缓存
 - 支持 AWS Bedrock 和 Google Vertex AI
 
 ## 安装
@@ -146,10 +147,35 @@ type Config struct {
     // ExtraFields specifies additional fields that will be directly added to the HTTP request body.
     // Optional.
     ExtraFields map[string]any
+
+    // CacheControl configures automatic prompt caching behavior.
+    // When non-nil, automatically applies a cache_control marker to the last
+    // cacheable block in the request.
+    // Optional.
+    CacheControl *anthropic.CacheControlEphemeralParam
 }
 ```
 
 ## Advanced Usage
+
+### Cache
+
+使用 `CacheControl` 为多轮对话启用自动缓存。设置后（非 nil），API 会自动在请求中最后一个可缓存的 block 上应用 cache_control 标记。
+
+如需细粒度控制，可使用 `SetContentBlockCacheControl` 或 `SetToolInfoCacheControl` 手动在特定的 block 或 tool 上放置缓存断点。
+
+```go
+cacheCtrl := anthropic.NewCacheControlEphemeralParam()
+cacheCtrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+
+am, err := agenticclaude.New(ctx, &agenticclaude.Config{
+    BaseURL:      os.Getenv("CLAUDE_BASE_URL"),
+    Model:        os.Getenv("CLAUDE_MODEL"),
+    APIKey:       os.Getenv("CLAUDE_API_KEY"),
+    MaxTokens:    4096,
+    CacheControl: &cacheCtrl,
+})
+```
 
 ### Tool Calling
 

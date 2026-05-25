@@ -34,20 +34,21 @@ type arkOptions struct {
 
 	contextManagement *contextmanagement.ContextManagement
 	customHeaders     map[string]string
-	cache             *CacheOption
+
+	headPreviousResponseID *string
+	expireAtSec            *int64
 }
 
-type CacheOption struct {
-	// HeadPreviousResponseID is a response ID from a previous ResponsesAPI call.
-	// This ID links the current request to a previous conversation context, enabling
-	// features like conversation continuation and prefix caching.
-	// The referenced response must be cached before use.
-	// Optional.
-	HeadPreviousResponseID *string
-
-	// SessionCache is the configuration of ResponsesAPI session cache.
-	// Optional.
-	SessionCache *SessionCacheConfig
+// WithHeadPreviousResponseID sets a response ID from a previous ResponsesAPI call.
+// This ID links the current request to a previous conversation context, enabling
+// features like conversation continuation and prefix caching.
+// In populateCache, an auto-discovered response ID from input messages takes
+// priority over this option.
+// The referenced response must be cached before use.
+func WithHeadPreviousResponseID(id string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.headPreviousResponseID = &id
+	})
 }
 
 func WithReasoning(reasoning *responses.ResponsesReasoning) model.Option {
@@ -98,14 +99,16 @@ func WithCustomHeaders(headers map[string]string) model.Option {
 	})
 }
 
-func WithCache(option *CacheOption) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
-		o.cache = option
-	})
-}
-
 func WithContextManagement(cm *contextmanagement.ContextManagement) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.contextManagement = cm
+	})
+}
+
+// WithExpireAtSec sets the expiration Unix timestamp (in seconds) for auto caching or prefix cache.
+// This option overrides the ExpireAtSec field in Config.
+func WithExpireAtSec(expireAtSec int64) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.expireAtSec = &expireAtSec
 	})
 }

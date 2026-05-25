@@ -22,19 +22,32 @@ import (
 )
 
 type openaiOptions struct {
-	reasoning         *responses.ReasoningParam
-	maxToolCalls      *int
-	parallelToolCalls *bool
-	text              *responses.ResponseTextConfigParam
-	store             *bool
-	promptCacheKey    *string
-	truncation        *responses.ResponseNewParamsTruncation
+	reasoning              *responses.ReasoningParam
+	maxToolCalls           *int
+	parallelToolCalls      *bool
+	text                   *responses.ResponseTextConfigParam
+	store                  *bool
+	promptCacheKey         *string
+	headPreviousResponseID *string
+	truncation             *responses.ResponseNewParamsTruncation
 
 	serverTools []*ServerToolConfig
 	mcpTools    []*responses.ToolMcpParam
 
 	customHeaders map[string]string
 	extraFields   map[string]any
+}
+
+// WithHeadPreviousResponseID sets a response ID from a previous ResponsesAPI call.
+// This ID links the current request to a previous conversation context, enabling
+// features like conversation continuation and prefix caching.
+// In populateCache, an auto-discovered response ID from input messages takes
+// priority over this option.
+// The referenced response must be cached before use.
+func WithHeadPreviousResponseID(id string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.headPreviousResponseID = &id
+	})
 }
 
 func WithStore(store bool) model.Option {

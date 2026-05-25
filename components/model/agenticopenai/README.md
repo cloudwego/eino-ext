@@ -10,6 +10,7 @@ An OpenAI model implementation for [Eino](https://github.com/cloudwego/eino) tha
 - Support for responses api
 - Support for streaming responses
 - Support for tool calling (Function Tools, MCP Tools, Server Tools)
+- Support for auto-caching for multi-turn conversations
 - Support for Azure OpenAI
 
 ## Installation
@@ -183,6 +184,14 @@ type Config struct {
     // MCPTools specifies Model Context Protocol tools available to the model.
     // Optional.
     MCPTools []*responses.ToolMcpParam
+
+    // EnableAutoCache controls whether auto-caching for multi-turn conversations is active for the model.
+    // Optional.
+    EnableAutoCache bool
+
+    // PromptCacheRetention specifies the retention policy for the prompt cache.
+    // Optional.
+    PromptCacheRetention *PromptCacheRetention
     
     // CustomHeaders specifies custom HTTP headers to include in API requests.
     // CustomHeaders allows passing additional metadata or authentication information.
@@ -196,7 +205,31 @@ type Config struct {
 }
 ```
 
+Available `PromptCacheRetention` constants:
+
+```go
+const (
+    PromptCacheRetentionInMemory PromptCacheRetention = "in_memory"
+    PromptCacheRetention24H      PromptCacheRetention = "24h"
+)
+```
+
 ## Advanced Usage
+
+### Cache
+
+Use `EnableAutoCache` to enable auto-caching for multi-turn conversations. If a cached message becomes invalid, call `InvalidateMessageCaches` to temporarily skip it.
+
+```go
+retention := agenticopenai.PromptCacheRetention24H
+
+am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	Model:                os.Getenv("OPENAI_MODEL_ID"),
+	APIKey:               os.Getenv("OPENAI_API_KEY"),
+	EnableAutoCache:      true,
+	PromptCacheRetention: &retention,
+})
+```
 
 ### Tool Calling
 

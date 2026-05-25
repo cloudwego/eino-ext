@@ -22,27 +22,24 @@ import (
 	"io"
 	"log"
 	"os"
-	"time"
 
-	"github.com/cloudwego/eino-ext/components/model/agenticark"
+	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/cloudwego/eino-ext/components/model/agenticclaude"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 )
 
 func main() {
 	ctx := context.Background()
 
-	expireAtSec := time.Now().Add(10 * time.Minute).Unix()
+	cacheCtrl := anthropic.NewCacheControlEphemeralParam()
+	cacheCtrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
 
-	// Get ARK_API_KEY and ARK_MODEL_ID: https://www.volcengine.com/docs/82379/1399008
-	am, err := agenticark.New(ctx, &agenticark.Config{
-		APIKey: os.Getenv("ARK_API_KEY"),
-		Model:  os.Getenv("ARK_MODEL_ID"),
-		Thinking: &responses.ResponsesThinking{
-			Type: responses.ThinkingType_disabled.Enum(),
-		},
-		EnableAutoCache: true,
-		ExpireAtSec:     &expireAtSec,
+	am, err := agenticclaude.New(ctx, &agenticclaude.Config{
+		BaseURL:      os.Getenv("CLAUDE_BASE_URL"),
+		Model:        os.Getenv("CLAUDE_MODEL"),
+		APIKey:       os.Getenv("CLAUDE_API_KEY"),
+		MaxTokens:    4096,
+		CacheControl: &cacheCtrl,
 	})
 	if err != nil {
 		log.Fatalf("failed to create chat model, err=%v", err)

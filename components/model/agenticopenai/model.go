@@ -123,6 +123,19 @@ type Config struct {
 	// Optional.
 	Truncation *responses.ResponseNewParamsTruncation
 
+	// EnableAutoCache controls whether auto-caching for multi-turn conversations is active for the model.
+	// When enabled, conversation turns are stored, and the model automatically maintains context
+	// by locating the most recent cached message in the input (via Response ID in ResponseMeta).
+	// This cached message and all preceding inputs are excluded from the request.
+	// If the cached message becomes invalid, you can call InvalidateMessageCaches to temporarily invalidate the cache.
+	// Unless store is set to false explicitly for a request, auto-cache forces Store to true.
+	// Optional.
+	EnableAutoCache bool
+
+	// PromptCacheRetention specifies the retention policy for the prompt cache.
+	// Optional.
+	PromptCacheRetention *PromptCacheRetention
+
 	// CustomHeaders specifies custom HTTP headers to include in API requests.
 	// CustomHeaders allows passing additional metadata or authentication information.
 	// Optional.
@@ -180,23 +193,25 @@ func buildClient(config *Config) (*Model, error) {
 	client := responses.NewResponseService(opts...)
 
 	cm := &Model{
-		cli:               client,
-		model:             config.Model,
-		maxTokens:         config.MaxTokens,
-		temperature:       config.Temperature,
-		topP:              config.TopP,
-		serviceTier:       config.ServiceTier,
-		text:              config.Text,
-		reasoning:         config.Reasoning,
-		store:             config.Store,
-		maxToolCalls:      config.MaxToolCalls,
-		parallelToolCalls: config.ParallelToolCalls,
-		include:           config.Include,
-		serverTools:       config.ServerTools,
-		mcpTools:          config.MCPTools,
-		truncation:        config.Truncation,
-		customHeader:      config.CustomHeaders,
-		extraFields:       config.ExtraFields,
+		cli:                  client,
+		model:                config.Model,
+		maxTokens:            config.MaxTokens,
+		temperature:          config.Temperature,
+		topP:                 config.TopP,
+		serviceTier:          config.ServiceTier,
+		text:                 config.Text,
+		reasoning:            config.Reasoning,
+		store:                config.Store,
+		maxToolCalls:         config.MaxToolCalls,
+		parallelToolCalls:    config.ParallelToolCalls,
+		include:              config.Include,
+		serverTools:          config.ServerTools,
+		mcpTools:             config.MCPTools,
+		truncation:           config.Truncation,
+		enableAutoCache:      config.EnableAutoCache,
+		promptCacheRetention: config.PromptCacheRetention,
+		customHeader:         config.CustomHeaders,
+		extraFields:          config.ExtraFields,
 	}
 
 	return cm, nil
@@ -205,20 +220,22 @@ func buildClient(config *Config) (*Model, error) {
 type Model struct {
 	cli responses.ResponseService
 
-	model             string
-	maxTokens         *int
-	temperature       *float32
-	topP              *float32
-	serviceTier       *responses.ResponseNewParamsServiceTier
-	text              *responses.ResponseTextConfigParam
-	reasoning         *responses.ReasoningParam
-	store             *bool
-	maxToolCalls      *int
-	parallelToolCalls *bool
-	include           []responses.ResponseIncludable
-	serverTools       []*ServerToolConfig
-	mcpTools          []*responses.ToolMcpParam
-	truncation        *responses.ResponseNewParamsTruncation
+	model                string
+	maxTokens            *int
+	temperature          *float32
+	topP                 *float32
+	serviceTier          *responses.ResponseNewParamsServiceTier
+	text                 *responses.ResponseTextConfigParam
+	reasoning            *responses.ReasoningParam
+	store                *bool
+	maxToolCalls         *int
+	parallelToolCalls    *bool
+	include              []responses.ResponseIncludable
+	serverTools          []*ServerToolConfig
+	mcpTools             []*responses.ToolMcpParam
+	truncation           *responses.ResponseNewParamsTruncation
+	enableAutoCache      bool
+	promptCacheRetention *PromptCacheRetention
 
 	customHeader map[string]string
 	extraFields  map[string]any
@@ -263,6 +280,10 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 		return nil, fmt.Errorf("failed to convert output to message: %w", err)
 	}
 
+	if m.enableAutoCache {
+		setAutoCached(outMsg)
+	}
+
 	callbacks.OnEnd(ctx, &model.AgenticCallbackOutput{
 		Message:    outMsg,
 		Config:     config,
@@ -302,6 +323,9 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 	}()
 
 	respStreamReader := m.cli.NewStreaming(ctx, *req, reqOpts...)
+	if err = respStreamReader.Err(); err != nil {
+		return nil, fmt.Errorf("failed to create streaming response: %w", err)
+	}
 
 	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](1)
 
@@ -335,6 +359,9 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 			if s.Message == nil {
 				return nil, schema.ErrNoValue
 			}
+			if m.enableAutoCache {
+				setAutoCached(s.Message)
+			}
 			return s.Message, nil
 		},
 	)
@@ -348,13 +375,6 @@ func (m *Model) GetType() string {
 
 func (m *Model) IsCallbacksEnabled() bool {
 	return true
-}
-
-type CacheInfo struct {
-	// ResponseID return by ResponsesAPI, it's specifies the id of prefix that can be used with [WithCache.HeadPreviousResponseID] option.
-	ResponseID string
-	// Usage specifies the token usage of prefix
-	Usage schema.TokenUsage
 }
 
 func toCallbackConfig(req *responses.ResponseNewParams) *model.AgenticConfig {
@@ -522,6 +542,11 @@ func (m *Model) genRequestAndOptions(in []*schema.AgenticMessage, options *model
 		return req, nil, fmt.Errorf("failed to pre-populate config: %w", err)
 	}
 
+	in, err = m.populateCache(in, req, specOptions)
+	if err != nil {
+		return req, nil, fmt.Errorf("failed to populate cache: %w", err)
+	}
+
 	err = m.populateInput(in, req)
 	if err != nil {
 		return req, nil, fmt.Errorf("failed to populate input: %w", err)
@@ -556,6 +581,9 @@ func (m *Model) prePopulateConfig(responseReq *responses.ResponseNewParams, opti
 		responseReq.ServiceTier = *m.serviceTier
 	}
 	responseReq.Include = m.include
+	if m.promptCacheRetention != nil {
+		responseReq.PromptCacheRetention = responses.ResponseNewParamsPromptCacheRetention(*m.promptCacheRetention)
+	}
 
 	// options configuration
 	if options.TopP != nil {
@@ -591,6 +619,66 @@ func (m *Model) prePopulateConfig(responseReq *responses.ResponseNewParams, opti
 	}
 
 	return nil
+}
+
+// populateCache resolves the PreviousResponseID for cache continuation.
+// Priority: auto-discovered response ID in messages > WithHeadPreviousResponseID option > none.
+// When enableAutoCache is true and an explicit WithStore(false) is not set, Store is forced to true.
+func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *responses.ResponseNewParams,
+	specOpts *openaiOptions) ([]*schema.AgenticMessage, error) {
+
+	var (
+		enableCache = m.enableAutoCache
+		headRespID  = specOpts.headPreviousResponseID
+	)
+
+	var (
+		preRespID *string
+		inputIdx  int
+	)
+
+	if enableCache {
+		for i := len(in) - 1; i >= 0; i-- {
+			msg := in[i]
+			if msg.Extra == nil {
+				continue
+			}
+			if isAutoCached, ok := msg.Extra[keyOfResponseAutoCached].(bool); !ok || !isAutoCached {
+				continue
+			}
+			if msg.ResponseMeta == nil || msg.ResponseMeta.OpenAIExtension == nil {
+				continue
+			}
+			if msg.ResponseMeta.OpenAIExtension.ID == "" {
+				continue
+			}
+			inputIdx = i
+			preRespID = &msg.ResponseMeta.OpenAIExtension.ID
+			break
+		}
+	}
+
+	if preRespID != nil {
+		if inputIdx+1 >= len(in) {
+			return in, fmt.Errorf("incremental input not found after response ID")
+		}
+		in = in[inputIdx+1:]
+	}
+
+	// ResponseID has a higher priority than HeadPreviousResponseID
+	if preRespID == nil || *preRespID == "" {
+		preRespID = headRespID
+	}
+
+	if preRespID != nil && *preRespID != "" {
+		responseReq.PreviousResponseID = param.NewOpt(*preRespID)
+	}
+
+	if enableCache && specOpts.store == nil {
+		responseReq.Store = param.NewOpt(true)
+	}
+
+	return in, nil
 }
 
 func (m *Model) populateInput(in []*schema.AgenticMessage, responseReq *responses.ResponseNewParams) (err error) {

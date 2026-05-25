@@ -234,7 +234,7 @@ func TestModelCreatePrefixCache(t *testing.T) {
 			},
 		}, nil).Build()
 
-		info, err := m.CreatePrefixCache(ctx, prefix, ptrOf(int64(3600)))
+		info, err := m.CreatePrefixCache(ctx, prefix, WithExpireAtSec(int64(3600)))
 		assert.NoError(t, err)
 		assert.NotNil(t, info)
 		assert.Equal(t, "rid", info.ResponseID)
@@ -366,12 +366,8 @@ func TestModelPopulateCache(t *testing.T) {
 		})
 
 		mockey.PatchConvey("session cache enabled in model", func() {
-			m.cache = &CacheConfig{
-				SessionCache: &SessionCacheConfig{
-					EnableCache: true,
-					ExpireAtSec: 3600,
-				},
-			}
+			m.enableAutoCache = true
+			m.expireAtSec = ptrOf(int64(3600))
 			in := []*schema.AgenticMessage{{Role: schema.AgenticRoleTypeUser}}
 			_, err := m.populateCache(in, req, specOpts)
 			assert.NoError(t, err)
@@ -380,12 +376,8 @@ func TestModelPopulateCache(t *testing.T) {
 		})
 
 		mockey.PatchConvey("response id in messages", func() {
-			m.cache = &CacheConfig{
-				SessionCache: &SessionCacheConfig{
-					EnableCache: true,
-					ExpireAtSec: 3600,
-				},
-			}
+			m.enableAutoCache = true
+			m.expireAtSec = ptrOf(int64(3600))
 
 			// Mock time.Now to control expiration check
 			mockey.Mock(time.Now).Return(time.Unix(1000, 0)).Build()
@@ -393,6 +385,9 @@ func TestModelPopulateCache(t *testing.T) {
 			in := []*schema.AgenticMessage{
 				{
 					Role: schema.AgenticRoleTypeAssistant,
+					Extra: map[string]any{
+						keyOfResponseAutoCached: true,
+					},
 					ResponseMeta: &schema.AgenticResponseMeta{
 						Extension: &ResponseMetaExtension{
 							ID:       "rid",
@@ -410,16 +405,15 @@ func TestModelPopulateCache(t *testing.T) {
 		})
 
 		mockey.PatchConvey("response id in messages - no incremental input", func() {
-			m.cache = &CacheConfig{
-				SessionCache: &SessionCacheConfig{
-					EnableCache: true,
-					ExpireAtSec: 3600,
-				},
-			}
+			m.enableAutoCache = true
+			m.expireAtSec = ptrOf(int64(3600))
 			mockey.Mock(time.Now).Return(time.Unix(1000, 0)).Build()
 			in := []*schema.AgenticMessage{
 				{
 					Role: schema.AgenticRoleTypeAssistant,
+					Extra: map[string]any{
+						keyOfResponseAutoCached: true,
+					},
 					ResponseMeta: &schema.AgenticResponseMeta{
 						Extension: &ResponseMetaExtension{
 							ID:       "rid",

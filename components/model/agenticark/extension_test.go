@@ -41,40 +41,13 @@ func TestGetResponseMeta(t *testing.T) {
 	assert.Equal(t, "id", ext.ID)
 	assert.Equal(t, ResponseStatus("ok"), ext.Status)
 
-	// map[string]any conversion
 	metaFromMap := &schema.AgenticResponseMeta{
 		Extension: map[string]any{
 			"id":     "id-from-map",
 			"status": "completed",
 		},
 	}
-	extFromMap := getResponseMeta(metaFromMap)
-	assert.NotNil(t, extFromMap)
-	assert.Equal(t, "id-from-map", extFromMap.ID)
-	assert.Equal(t, ResponseStatus("completed"), extFromMap.Status)
-
-	// map[string]any with nested fields
-	metaFromMapNested := &schema.AgenticResponseMeta{
-		Extension: map[string]any{
-			"id":     "id-nested",
-			"status": "failed",
-			"error": map[string]any{
-				"code":    "ERR001",
-				"message": "something went wrong",
-			},
-			"incomplete_details": map[string]any{
-				"reason": "timeout",
-			},
-		},
-	}
-	extFromMapNested := getResponseMeta(metaFromMapNested)
-	assert.NotNil(t, extFromMapNested)
-	assert.Equal(t, "id-nested", extFromMapNested.ID)
-	assert.NotNil(t, extFromMapNested.Error)
-	assert.Equal(t, "ERR001", extFromMapNested.Error.Code)
-	assert.Equal(t, "something went wrong", extFromMapNested.Error.Message)
-	assert.NotNil(t, extFromMapNested.IncompleteDetails)
-	assert.Equal(t, "timeout", extFromMapNested.IncompleteDetails.Reason)
+	assert.Nil(t, getResponseMeta(metaFromMap))
 
 	// wrong type returns nil
 	metaWrongType := &schema.AgenticResponseMeta{

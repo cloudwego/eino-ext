@@ -98,7 +98,9 @@ func TestConvAgenticMessage_Text(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.message = setSelfGenerated(tt.message)
+			tt.message.ResponseMeta = &schema.AgenticResponseMeta{
+				GeminiExtension: &gemini_schema.ResponseMetaExtension{},
+			}
 			content, err := convAgenticMessage(tt.message)
 			tt.validate(t, content, err)
 		})
@@ -450,7 +452,9 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tt.message = setSelfGenerated(tt.message)
+			tt.message.ResponseMeta = &schema.AgenticResponseMeta{
+				GeminiExtension: &gemini_schema.ResponseMetaExtension{},
+			}
 			content, err := convAgenticMessage(tt.message)
 			tt.validate(t, content, err)
 		})
@@ -839,6 +843,7 @@ func TestConvAgenticResponse(t *testing.T) {
 				assert.NoError(t, err)
 				assert.NotNil(t, message.ResponseMeta)
 				assert.NotNil(t, message.ResponseMeta.TokenUsage)
+				assert.NotNil(t, message.ResponseMeta.GeminiExtension)
 				assert.Equal(t, 10, message.ResponseMeta.TokenUsage.PromptTokens)
 				assert.Equal(t, 20, message.ResponseMeta.TokenUsage.CompletionTokens)
 				assert.Equal(t, 30, message.ResponseMeta.TokenUsage.TotalTokens)

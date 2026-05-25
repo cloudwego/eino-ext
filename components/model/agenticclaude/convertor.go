@@ -76,9 +76,13 @@ func toSystemBlocks(msg *schema.AgenticMessage) ([]anthropic.TextBlockParam, err
 		if block.Type != schema.ContentBlockTypeUserInputText {
 			return nil, fmt.Errorf("system message only supports text blocks, got %q", block.Type)
 		}
-		blockParams = append(blockParams, anthropic.TextBlockParam{
+		textBlock := anthropic.TextBlockParam{
 			Text: block.UserInputText.Text,
-		})
+		}
+		if hasCacheControlOnContentBlock(block) {
+			textBlock.CacheControl = *getContentBlockCacheControl(block)
+		}
+		blockParams = append(blockParams, textBlock)
 	}
 
 	return blockParams, nil
@@ -107,6 +111,10 @@ func toUserMessageParam(msg *schema.AgenticMessage) (msgParam anthropic.MessageP
 
 		if err != nil {
 			return anthropic.MessageParam{}, err
+		}
+
+		if hasCacheControlOnContentBlock(block) {
+			*blockParam.GetCacheControl() = *getContentBlockCacheControl(block)
 		}
 
 		blockParams = append(blockParams, blockParam)
@@ -141,6 +149,10 @@ func toAssistantMessageParam(msg *schema.AgenticMessage) (msgParam anthropic.Mes
 
 		if err != nil {
 			return anthropic.MessageParam{}, err
+		}
+
+		if hasCacheControlOnContentBlock(block) {
+			*blockParam.GetCacheControl() = *getContentBlockCacheControl(block)
 		}
 
 		blockParams = append(blockParams, blockParam)
@@ -431,17 +443,19 @@ func toFunctionTools(functionTools []*schema.ToolInfo) ([]anthropic.ToolUnionPar
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool %q parameters to JSON schema: %w", tool.Name, err)
 		}
-		tools = append(tools, anthropic.ToolUnionParam{
-			OfTool: &anthropic.ToolParam{
-				Type:        anthropic.ToolTypeCustom,
-				Name:        tool.Name,
-				Description: newClaudeStrOpt(tool.Desc),
-				InputSchema: anthropic.ToolInputSchemaParam{
-					Properties: s.Properties,
-					Required:   s.Required,
-				},
+		toolParam := &anthropic.ToolParam{
+			Type:        anthropic.ToolTypeCustom,
+			Name:        tool.Name,
+			Description: newClaudeStrOpt(tool.Desc),
+			InputSchema: anthropic.ToolInputSchemaParam{
+				Properties: s.Properties,
+				Required:   s.Required,
 			},
-		})
+		}
+		if hasCacheControlOnToolInfo(tool) {
+			toolParam.CacheControl = *getToolInfoCacheControl(tool)
+		}
+		tools = append(tools, anthropic.ToolUnionParam{OfTool: toolParam})
 	}
 	return tools, nil
 }

@@ -10,7 +10,7 @@ A Volcengine Ark model implementation for [Eino](https://github.com/cloudwego/ei
 - Support for responses api
 - Support for streaming responses
 - Support for tool calling (Function Tools, MCP Tools, Server Tools)
-- Support for Prefix Cache and Session Cache
+- Support for Prefix Cache and auto-caching for multi-turn conversations
 
 ## Installation
 
@@ -166,9 +166,13 @@ type Config struct {
     // Optional.
     MCPTools []*responses.ToolMcp
     
-    // Cache specifies response caching configuration for the session.
+    // EnableAutoCache controls whether auto-caching for multi-turn conversations is active for the model.
     // Optional.
-    Cache *CacheConfig
+    EnableAutoCache bool
+
+    // ExpireAtSec specifies the expiration Unix timestamp (in seconds) for auto caching or prefix cache.
+    // Optional.
+    ExpireAtSec *int64
     
     // ContextManagement specifies context management strategies to help the model utilize the context window effectively.
     // Supports clearing thinking blocks and tool call content.
@@ -183,6 +187,23 @@ type Config struct {
 ```
 
 ## Advanced Usage
+
+### Cache
+
+Use `EnableAutoCache` to enable auto-caching for multi-turn conversations. If a cached message becomes invalid, call `InvalidateMessageCaches` to temporarily skip it.
+
+For explicit prefix reuse, call `CreatePrefixCache` first and then pass the returned response ID with `WithHeadPreviousResponseID`.
+
+```go
+expireAtSec := time.Now().Add(time.Hour).Unix()
+
+am, err := agenticark.New(ctx, &agenticark.Config{
+	Model:           os.Getenv("ARK_MODEL_ID"),
+	APIKey:          os.Getenv("ARK_API_KEY"),
+	EnableAutoCache: true,
+	ExpireAtSec:     &expireAtSec,
+})
+```
 
 ### Tool Calling
 

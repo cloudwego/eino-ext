@@ -619,3 +619,197 @@ func testToolInfo(name string) *schema.ToolInfo {
 		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"}),
 	}
 }
+
+func TestCacheControl(t *testing.T) {
+	t.Run("cacheControl nil does not set req.CacheControl", func(t *testing.T) {
+		m := &Model{}
+		if m.cacheControl != nil {
+			t.Fatalf("cacheControl should be nil")
+		}
+	})
+
+	t.Run("cacheControl non-nil is stored", func(t *testing.T) {
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		ctrl.TTL = anthropic.CacheControlEphemeralTTLTTL1h
+		m := &Model{cacheControl: &ctrl}
+		if m.cacheControl == nil {
+			t.Fatalf("cacheControl should be non-nil")
+		}
+		if m.cacheControl.TTL != anthropic.CacheControlEphemeralTTLTTL1h {
+			t.Fatalf("cacheControl.TTL = %q, want \"1h\"", m.cacheControl.TTL)
+		}
+	})
+}
+
+func TestSetContentBlockCacheControl(t *testing.T) {
+	t.Run("set and read", func(t *testing.T) {
+		block := schema.NewContentBlock(&schema.UserInputText{Text: "hello"})
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		ctrl.TTL = anthropic.CacheControlEphemeralTTLTTL1h
+		block = SetContentBlockCacheControl(block, &ctrl)
+
+		if !hasCacheControlOnContentBlock(block) {
+			t.Fatalf("block should have cache control set")
+		}
+		got := getContentBlockCacheControl(block)
+		if got == nil || got.TTL != anthropic.CacheControlEphemeralTTLTTL1h {
+			t.Fatalf("getContentBlockCacheControl() = %#v", got)
+		}
+	})
+
+	t.Run("nil ctrl does nothing", func(t *testing.T) {
+		block := schema.NewContentBlock(&schema.UserInputText{Text: "hello"})
+		block = SetContentBlockCacheControl(block, nil)
+
+		if hasCacheControlOnContentBlock(block) {
+			t.Fatalf("block should not have cache control set with nil ctrl")
+		}
+	})
+
+	t.Run("nil block is safe", func(t *testing.T) {
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		SetContentBlockCacheControl(nil, &ctrl)
+	})
+}
+
+func TestSetToolInfoCacheControl(t *testing.T) {
+	t.Run("set and read", func(t *testing.T) {
+		toolInfo := &schema.ToolInfo{Name: "fn", Desc: "desc"}
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		ctrl.TTL = anthropic.CacheControlEphemeralTTLTTL1h
+		toolInfo = SetToolInfoCacheControl(toolInfo, &ctrl)
+
+		if !hasCacheControlOnToolInfo(toolInfo) {
+			t.Fatalf("tool should have cache control set")
+		}
+		got := getToolInfoCacheControl(toolInfo)
+		if got == nil || got.TTL != anthropic.CacheControlEphemeralTTLTTL1h {
+			t.Fatalf("getToolInfoCacheControl() = %#v", got)
+		}
+	})
+
+	t.Run("nil ctrl does nothing", func(t *testing.T) {
+		toolInfo := &schema.ToolInfo{Name: "fn", Desc: "desc"}
+		toolInfo = SetToolInfoCacheControl(toolInfo, nil)
+
+		if hasCacheControlOnToolInfo(toolInfo) {
+			t.Fatalf("tool should not have cache control set with nil ctrl")
+		}
+	})
+
+	t.Run("nil toolInfo is safe", func(t *testing.T) {
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		SetToolInfoCacheControl(nil, &ctrl)
+	})
+
+	t.Run("propagated to tool param in toFunctionTools", func(t *testing.T) {
+		toolInfo := testToolInfo("fn")
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		ctrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+		toolInfo = SetToolInfoCacheControl(toolInfo, &ctrl)
+
+		tools, err := toFunctionTools([]*schema.ToolInfo{toolInfo})
+		if err != nil {
+			t.Fatalf("toFunctionTools() error = %v", err)
+		}
+		if tools[0].OfTool.CacheControl.Type != "ephemeral" {
+			t.Fatalf("tool param cache_control.type = %q, want \"ephemeral\"", tools[0].OfTool.CacheControl.Type)
+		}
+		if tools[0].OfTool.CacheControl.TTL != "5m" {
+			t.Fatalf("tool param cache_control.ttl = %q, want \"5m\"", tools[0].OfTool.CacheControl.TTL)
+		}
+	})
+
+	t.Run("tool without cache control has no cache_control in param", func(t *testing.T) {
+		toolInfo := testToolInfo("fn")
+
+		tools, err := toFunctionTools([]*schema.ToolInfo{toolInfo})
+		if err != nil {
+			t.Fatalf("toFunctionTools() error = %v", err)
+		}
+		if tools[0].OfTool.CacheControl.Type != "" {
+			t.Fatalf("tool param should not have cache_control, got type=%q", tools[0].OfTool.CacheControl.Type)
+		}
+	})
+}
+
+func TestManualCacheControlInConvertors(t *testing.T) {
+	t.Run("toSystemBlocks propagates manual cache control", func(t *testing.T) {
+		block := schema.NewContentBlock(&schema.UserInputText{Text: "sys"})
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		ctrl.TTL = anthropic.CacheControlEphemeralTTLTTL1h
+		block = SetContentBlockCacheControl(block, &ctrl)
+		msg := &schema.AgenticMessage{
+			Role:          schema.AgenticRoleTypeSystem,
+			ContentBlocks: []*schema.ContentBlock{block},
+		}
+
+		blocks, err := toSystemBlocks(msg)
+		if err != nil {
+			t.Fatalf("toSystemBlocks() error = %v", err)
+		}
+		if blocks[0].CacheControl.Type != "ephemeral" {
+			t.Fatalf("system block cache_control.type = %q, want \"ephemeral\"", blocks[0].CacheControl.Type)
+		}
+		if blocks[0].CacheControl.TTL != "1h" {
+			t.Fatalf("system block cache_control.ttl = %q, want \"1h\"", blocks[0].CacheControl.TTL)
+		}
+	})
+
+	t.Run("toUserMessageParam propagates manual cache control", func(t *testing.T) {
+		block := schema.NewContentBlock(&schema.UserInputText{Text: "hello"})
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		ctrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+		block = SetContentBlockCacheControl(block, &ctrl)
+		msg := &schema.AgenticMessage{
+			Role:          schema.AgenticRoleTypeUser,
+			ContentBlocks: []*schema.ContentBlock{block},
+		}
+
+		param, err := toUserMessageParam(msg)
+		if err != nil {
+			t.Fatalf("toUserMessageParam() error = %v", err)
+		}
+		if param.Content[0].OfText.CacheControl.Type != "ephemeral" {
+			t.Fatalf("user block cache_control.type = %q, want \"ephemeral\"", param.Content[0].OfText.CacheControl.Type)
+		}
+		if param.Content[0].OfText.CacheControl.TTL != "5m" {
+			t.Fatalf("user block cache_control.ttl = %q, want \"5m\"", param.Content[0].OfText.CacheControl.TTL)
+		}
+	})
+
+	t.Run("toAssistantMessageParam propagates manual cache control", func(t *testing.T) {
+		block := schema.NewContentBlock(&schema.AssistantGenText{Text: "hi"})
+		ctrl := anthropic.NewCacheControlEphemeralParam()
+		block = SetContentBlockCacheControl(block, &ctrl)
+		msg := &schema.AgenticMessage{
+			Role:          schema.AgenticRoleTypeAssistant,
+			ContentBlocks: []*schema.ContentBlock{block},
+		}
+
+		param, err := toAssistantMessageParam(msg)
+		if err != nil {
+			t.Fatalf("toAssistantMessageParam() error = %v", err)
+		}
+		if param.Content[0].OfText.CacheControl.Type != "ephemeral" {
+			t.Fatalf("assistant block cache_control.type = %q, want \"ephemeral\"", param.Content[0].OfText.CacheControl.Type)
+		}
+	})
+
+	t.Run("blocks without manual cache control are not affected", func(t *testing.T) {
+		msg := &schema.AgenticMessage{
+			Role: schema.AgenticRoleTypeUser,
+			ContentBlocks: []*schema.ContentBlock{
+				schema.NewContentBlock(&schema.UserInputText{Text: "hello"}),
+			},
+		}
+
+		param, err := toUserMessageParam(msg)
+		if err != nil {
+			t.Fatalf("toUserMessageParam() error = %v", err)
+		}
+		if param.Content[0].OfText.CacheControl.Type != "" {
+			t.Fatalf("block should not have cache_control, got type=%q", param.Content[0].OfText.CacheControl.Type)
+		}
+	})
+}

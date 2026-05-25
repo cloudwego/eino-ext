@@ -361,8 +361,6 @@ func convAgenticResponse(resp *genai.GenerateContentResponse, lastType schema.Co
 		}
 	}
 
-	message = setSelfGenerated(message)
-
 	return message, nil
 }
 

@@ -10,7 +10,7 @@
 - 支持 Responses API
 - 支持流式响应 (Streaming)
 - 支持工具调用 (Tools)，包括函数工具 (Function Tools)、MCP 工具 (MCP Tools) 和服务器工具 (Server Tools)
-- 支持前缀缓存 (Prefix Cache) 和会话缓存 (Session Cache)
+- 支持前缀缓存 (Prefix Cache) 和多轮对话自动缓存
 
 ## 安装
 
@@ -180,9 +180,13 @@ type Config struct {
     // 可选。
     MCPTools []*responses.ToolMcp
 
-    // Cache 指定模型的缓存配置。
+    // EnableAutoCache 控制是否开启多轮对话自动缓存。
     // 可选。
-    Cache *CacheConfig
+    EnableAutoCache bool
+
+    // ExpireAtSec 指定自动缓存或前缀缓存的过期 Unix 时间戳（秒）。
+    // 可选。
+    ExpireAtSec *int64
 
     // ContextManagement 指定上下文管理策略，帮助模型有效利用上下文窗口。
     // 支持清除思维链内容和工具调用内容。
@@ -195,6 +199,23 @@ type Config struct {
 ```
 
 ## 高级用法
+
+### 缓存
+
+使用 `EnableAutoCache` 开启多轮对话自动缓存。若某条缓存消息已经失效，可以调用 `InvalidateMessageCaches` 临时跳过该缓存。
+
+如果需要显式复用前缀缓存，可以先调用 `CreatePrefixCache`，再通过 `WithHeadPreviousResponseID` 传入返回的响应 ID。
+
+```go
+expireAtSec := time.Now().Add(time.Hour).Unix()
+
+am, err := agenticark.New(ctx, &agenticark.Config{
+	Model:           os.Getenv("ARK_MODEL_ID"),
+	APIKey:          os.Getenv("ARK_API_KEY"),
+	EnableAutoCache: true,
+	ExpireAtSec:     &expireAtSec,
+})
+```
 
 ### 工具调用 (Tool Calling)
 
