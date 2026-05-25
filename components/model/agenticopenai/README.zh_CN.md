@@ -191,7 +191,7 @@ type Config struct {
 
 	// PromptCacheRetention 指定 prompt cache 的保留策略。
 	// 可选。
-	PromptCacheRetention *PromptCacheRetention
+	PromptCacheRetention *responses.ResponseNewParamsPromptCacheRetention
 
 	// CustomHeaders 指定 API 请求中包含的自定义 HTTP 标头。
 	// CustomHeaders 允许传递额外的元数据或身份验证信息。
@@ -205,15 +205,6 @@ type Config struct {
 }
 ```
 
-可用的 `PromptCacheRetention` 常量：
-
-```go
-const (
-	PromptCacheRetentionInMemory PromptCacheRetention = "in_memory"
-	PromptCacheRetention24H      PromptCacheRetention = "24h"
-)
-```
-
 ## 高级用法
 
 ### 缓存
@@ -221,7 +212,7 @@ const (
 使用 `EnableAutoCache` 开启多轮对话自动缓存。若某条缓存消息已经失效，可以调用 `InvalidateMessageCaches` 临时跳过该缓存。
 
 ```go
-retention := agenticopenai.PromptCacheRetention24H
+retention := responses.ResponseNewParamsPromptCacheRetention24h
 
 am, err := agenticopenai.New(ctx, &agenticopenai.Config{
 	Model:                os.Getenv("OPENAI_MODEL_ID"),

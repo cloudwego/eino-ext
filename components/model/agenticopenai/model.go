@@ -128,13 +128,13 @@ type Config struct {
 	// by locating the most recent cached message in the input (via Response ID in ResponseMeta).
 	// This cached message and all preceding inputs are excluded from the request.
 	// If the cached message becomes invalid, you can call InvalidateMessageCaches to temporarily invalidate the cache.
-	// Unless store is set to false explicitly for a request, auto-cache forces Store to true.
+	// Unless Store is set to false explicitly for a request, auto-cache forces Store to true.
 	// Optional.
 	EnableAutoCache bool
 
 	// PromptCacheRetention specifies the retention policy for the prompt cache.
 	// Optional.
-	PromptCacheRetention *PromptCacheRetention
+	PromptCacheRetention *responses.ResponseNewParamsPromptCacheRetention
 
 	// CustomHeaders specifies custom HTTP headers to include in API requests.
 	// CustomHeaders allows passing additional metadata or authentication information.
@@ -235,7 +235,7 @@ type Model struct {
 	mcpTools             []*responses.ToolMcpParam
 	truncation           *responses.ResponseNewParamsTruncation
 	enableAutoCache      bool
-	promptCacheRetention *PromptCacheRetention
+	promptCacheRetention *responses.ResponseNewParamsPromptCacheRetention
 
 	customHeader map[string]string
 	extraFields  map[string]any
@@ -582,7 +582,7 @@ func (m *Model) prePopulateConfig(responseReq *responses.ResponseNewParams, opti
 	}
 	responseReq.Include = m.include
 	if m.promptCacheRetention != nil {
-		responseReq.PromptCacheRetention = responses.ResponseNewParamsPromptCacheRetention(*m.promptCacheRetention)
+		responseReq.PromptCacheRetention = *m.promptCacheRetention
 	}
 
 	// options configuration

@@ -191,7 +191,7 @@ type Config struct {
 
     // PromptCacheRetention specifies the retention policy for the prompt cache.
     // Optional.
-    PromptCacheRetention *PromptCacheRetention
+    PromptCacheRetention *responses.ResponseNewParamsPromptCacheRetention
     
     // CustomHeaders specifies custom HTTP headers to include in API requests.
     // CustomHeaders allows passing additional metadata or authentication information.
@@ -205,15 +205,6 @@ type Config struct {
 }
 ```
 
-Available `PromptCacheRetention` constants:
-
-```go
-const (
-    PromptCacheRetentionInMemory PromptCacheRetention = "in_memory"
-    PromptCacheRetention24H      PromptCacheRetention = "24h"
-)
-```
-
 ## Advanced Usage
 
 ### Cache
@@ -221,7 +212,7 @@ const (
 Use `EnableAutoCache` to enable auto-caching for multi-turn conversations. If a cached message becomes invalid, call `InvalidateMessageCaches` to temporarily skip it.
 
 ```go
-retention := agenticopenai.PromptCacheRetention24H
+retention := responses.ResponseNewParamsPromptCacheRetention24h
 
 am, err := agenticopenai.New(ctx, &agenticopenai.Config{
 	Model:                os.Getenv("OPENAI_MODEL_ID"),
