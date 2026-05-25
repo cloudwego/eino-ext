@@ -3,7 +3,7 @@ module github.com/cloudwego/eino-ext/a2a
 go 1.18
 
 require (
-	github.com/bytedance/sonic v1.14.0
+	github.com/bytedance/sonic v1.15.1
 	github.com/cloudwego/eino v0.5.0-alpha.7
 	github.com/cloudwego/eino-ext/components/model/openai v0.0.0-20250822083409-f8d432eea60f
 	github.com/cloudwego/hertz v0.10.2
@@ -13,9 +13,9 @@ require (
 )
 
 require (
-	github.com/bytedance/gopkg v0.1.1 // indirect
-	github.com/bytedance/sonic/loader v0.3.0 // indirect
-	github.com/cloudwego/base64x v0.1.5 // indirect
+	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/bytedance/sonic/loader v0.5.1 // indirect
+	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/cloudwego/eino-ext/libs/acl/openai v0.0.0-20250821122458-ae35393076b3 // indirect
 	github.com/cloudwego/gopkg v0.1.4 // indirect
 	github.com/cloudwego/netpoll v0.7.0 // indirect
@@ -32,7 +32,7 @@ require (
 	github.com/invopop/yaml v0.1.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
+	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/meguminnnnnnnnn/go-openai v0.0.0-20250821095446-07791bea23a0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
