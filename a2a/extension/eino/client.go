@@ -302,6 +302,7 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 		}
 		if err != nil {
 			sender.Send(&adk.AgentEvent{Err: err})
+			break
 		}
 		if event.Message != nil {
 			m := toADKMessage(event.Message)
@@ -317,8 +318,6 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 			var m adk.Message
 			if event.Task.Status.Message != nil {
 				m = toADKMessage(event.Task.Status.Message)
-			} else {
-				m = schema.AssistantMessage(string(event.Task.Status.State), nil)
 			}
 			// check interrupt
 			if event.Task.Status.State == models.TaskStateInputRequired {
@@ -331,7 +330,7 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 					},
 				})
 				return
-			} else {
+			} else if m != nil {
 				sender.Send(&adk.AgentEvent{
 					Output: &adk.AgentOutput{
 						MessageOutput: &adk.MessageVariant{
@@ -346,8 +345,6 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 			var m adk.Message
 			if statusUpdateEvent.Status.Message != nil {
 				m = toADKMessage(statusUpdateEvent.Status.Message)
-			} else {
-				m = schema.AssistantMessage(string(statusUpdateEvent.Status.State), nil)
 			}
 
 			if statusUpdateEvent.Status.State == models.TaskStateInputRequired {
@@ -360,7 +357,7 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 						}},
 					},
 				})
-			} else {
+			} else if m != nil {
 				// handler common status update
 				sender.Send(&adk.AgentEvent{
 					Output: &adk.AgentOutput{
