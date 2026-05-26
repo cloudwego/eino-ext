@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/adk"
@@ -1584,5 +1585,201 @@ func TestAgentEventToSessionUpdate_StreamingFlushDoesNotDropValidToolCalls(t *te
 	}
 	if tc1.Title != "ls" {
 		t.Fatalf("expected second tool call name 'ls', got %q", tc1.Title)
+	}
+}
+
+func TestAgentEventToSessionUpdate_StreamToolCalls(t *testing.T) {
+	// With PreserveToolCallStream=true, every chunk that carries tool-call data is
+	// forwarded as its own ToolCall SessionUpdate. The args fragment is JSON-
+	// encoded as a string in RawInput; the client reassembles by ToolCallID.
+	reader, writer := schema.Pipe[*schema.Message](10)
+	go func() {
+		// chunk 1: id + name + first arg fragment
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{ID: "tc-s", Function: schema.FunctionCall{Name: "read_file", Arguments: `{"pat`}},
+			},
+		}, nil)
+		// chunk 2: more args, no id/name (eino populates them only on first chunk)
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Function: schema.FunctionCall{Arguments: `h":"/tmp`}},
+			},
+		}, nil)
+		// chunk 3: tail of args
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Function: schema.FunctionCall{Arguments: `/a.txt"}`}},
+			},
+		}, nil)
+		writer.Close()
+	}()
+
+	event := &adk.AgentEvent{
+		Output: &adk.AgentOutput{
+			MessageOutput: &adk.MessageVariant{
+				IsStreaming:   true,
+				MessageStream: reader,
+			},
+		},
+	}
+	updates, errs := collectUpdates(AgentEventToSessionUpdate(event, &EventConverterOption{PreserveToolCallStream: true}))
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(updates) != 3 {
+		t.Fatalf("expected 3 ToolCall updates (one per chunk), got %d", len(updates))
+	}
+
+	var argsAccum strings.Builder
+	for i, su := range updates {
+		tc, ok := su.AsToolCall()
+		if !ok {
+			t.Fatalf("update[%d]: expected ToolCall variant", i)
+		}
+		if string(tc.ToolCallID) != "tc-s" {
+			t.Fatalf("update[%d]: ToolCallID = %q, want %q", i, tc.ToolCallID, "tc-s")
+		}
+		if tc.Title != "read_file" {
+			t.Fatalf("update[%d]: Title = %q, want %q", i, tc.Title, "read_file")
+		}
+		// RawInput must be valid JSON (a JSON string carrying the partial fragment).
+		var fragment string
+		if err := json.Unmarshal(tc.RawInput, &fragment); err != nil {
+			t.Fatalf("update[%d]: RawInput is not a JSON-encoded string: %v (raw=%s)", i, err, tc.RawInput)
+		}
+		argsAccum.WriteString(fragment)
+	}
+
+	wantArgs := `{"path":"/tmp/a.txt"}`
+	if argsAccum.String() != wantArgs {
+		t.Fatalf("reassembled args = %q, want %q", argsAccum.String(), wantArgs)
+	}
+	if !json.Valid([]byte(argsAccum.String())) {
+		t.Fatalf("reassembled args is not valid JSON: %s", argsAccum.String())
+	}
+}
+
+func TestAgentEventToSessionUpdate_StreamToolCallsMultipleCalls(t *testing.T) {
+	// Two parallel tool calls (different Index) in the same stream — the client
+	// should be able to demultiplex by ToolCallID even when chunks interleave.
+	reader, writer := schema.Pipe[*schema.Message](10)
+	idx0, idx1 := 0, 1
+	go func() {
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Index: &idx0, ID: "tc-A", Function: schema.FunctionCall{Name: "read_file", Arguments: `{"p":`}},
+				{Index: &idx1, ID: "tc-B", Function: schema.FunctionCall{Name: "ls", Arguments: `{"d":`}},
+			},
+		}, nil)
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Index: &idx0, Function: schema.FunctionCall{Arguments: `"a"}`}},
+				{Index: &idx1, Function: schema.FunctionCall{Arguments: `"."}`}},
+			},
+		}, nil)
+		writer.Close()
+	}()
+
+	event := &adk.AgentEvent{
+		Output: &adk.AgentOutput{
+			MessageOutput: &adk.MessageVariant{
+				IsStreaming:   true,
+				MessageStream: reader,
+			},
+		},
+	}
+	updates, errs := collectUpdates(AgentEventToSessionUpdate(event, &EventConverterOption{PreserveToolCallStream: true}))
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	// 2 chunks * 2 calls = 4 SessionUpdates
+	if len(updates) != 4 {
+		t.Fatalf("expected 4 updates, got %d", len(updates))
+	}
+
+	// Reassemble args by ToolCallID and check both end up with the right value.
+	type accum struct {
+		title string
+		args  strings.Builder
+	}
+	byID := make(map[string]*accum)
+	for i, su := range updates {
+		tc, ok := su.AsToolCall()
+		if !ok {
+			t.Fatalf("update[%d]: expected ToolCall variant", i)
+		}
+		a, ok := byID[string(tc.ToolCallID)]
+		if !ok {
+			a = &accum{}
+			byID[string(tc.ToolCallID)] = a
+		}
+		if tc.Title != "" {
+			a.title = tc.Title
+		}
+		if len(tc.RawInput) > 0 {
+			var s string
+			if err := json.Unmarshal(tc.RawInput, &s); err != nil {
+				t.Fatalf("update[%d]: RawInput not a JSON string: %v", i, err)
+			}
+			a.args.WriteString(s)
+		}
+	}
+
+	if got := byID["tc-A"]; got == nil || got.title != "read_file" || got.args.String() != `{"p":"a"}` {
+		t.Fatalf("tc-A reassembled = %+v", got)
+	}
+	if got := byID["tc-B"]; got == nil || got.title != "ls" || got.args.String() != `{"d":"."}` {
+		t.Fatalf("tc-B reassembled = %+v", got)
+	}
+}
+
+func TestAgentEventToSessionUpdate_StreamToolCallsBufferingDefault(t *testing.T) {
+	// Sanity check: when StreamToolCalls is false (default), the buffering
+	// behavior is preserved — a single accumulated ToolCall, not per-chunk emission.
+	reader, writer := schema.Pipe[*schema.Message](5)
+	go func() {
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{ID: "tc-x", Function: schema.FunctionCall{Name: "f", Arguments: `{"k":`}},
+			},
+		}, nil)
+		writer.Send(&schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Function: schema.FunctionCall{Arguments: `"v"}`}},
+			},
+		}, nil)
+		writer.Close()
+	}()
+
+	event := &adk.AgentEvent{
+		Output: &adk.AgentOutput{
+			MessageOutput: &adk.MessageVariant{
+				IsStreaming:   true,
+				MessageStream: reader,
+			},
+		},
+	}
+	// Explicitly false to make the assertion clear.
+	updates, errs := collectUpdates(AgentEventToSessionUpdate(event, &EventConverterOption{PreserveToolCallStream: false}))
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 buffered ToolCall update, got %d", len(updates))
+	}
+	tc, ok := updates[0].AsToolCall()
+	if !ok {
+		t.Fatal("expected ToolCall")
+	}
+	if string(tc.RawInput) != `{"k":"v"}` {
+		t.Fatalf("RawInput = %s, want {\"k\":\"v\"}", tc.RawInput)
 	}
 }
