@@ -19,12 +19,15 @@ package eino
 import (
 	"context"
 	"encoding/gob"
+	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 	"github.com/go-openapi/spec"
 	"github.com/google/uuid"
 
@@ -50,8 +53,10 @@ type ServerConfig struct {
 	// convert user input to agent run option when resume
 	ResumeConvertor func(ctx context.Context, t *models.Task, input *models.Message, metadata map[string]any) ([]adk.AgentRunOption, error)
 
-	// optional. customized convertor to convert adk.AgentEvent to a2a models.ResponseEvent
-	EventConvertor func(ctx context.Context, stream *adk.AsyncIterator[*adk.AgentEvent], writer func(p models.ResponseEvent) error) (err error)
+	// optional. customized convertor to convert adk.AgentEvent to a2a models.ResponseEvent.
+	// enableStreaming reflects the client's streaming preference (from request metadata) — when true,
+	// streamed agent outputs should be forwarded chunk-by-chunk rather than concatenated.
+	EventConvertor func(ctx context.Context, stream *adk.AsyncIterator[*adk.AgentEvent], enableStreaming bool, writer func(p models.ResponseEvent) error) (err error)
 
 	// the following 4 fields are used by default event convertor, if you customized event convertor, it's not necessary to configure these.
 
@@ -168,17 +173,18 @@ type a2aHandlersBuilder struct {
 	runOptionConv, resumeConv func(ctx context.Context, t *models.Task, input *models.Message, metadata map[string]any) ([]adk.AgentRunOption, error)
 	inputMessageConv          func(ctx context.Context, messages []*models.Message) ([]adk.Message, error)
 
-	eventConvertor func(ctx context.Context, event *adk.AsyncIterator[*adk.AgentEvent], writer func(p models.ResponseEvent) error) (err error)
+	eventConvertor func(ctx context.Context, event *adk.AsyncIterator[*adk.AgentEvent], enableStreaming bool, writer func(p models.ResponseEvent) error) (err error)
 }
 
 func (a *a2aHandlersBuilder) buildStreamHandler() server.MessageStreamingHandler {
 	return func(ctx context.Context, params *server.InputParams, writer server.ResponseEventWriter) error {
+		enableStreaming := getEnableStreaming(params.Metadata)
 		iter, err := a.genIter(ctx, params.Task, params.Input, params.Metadata)
 		if err != nil {
 			return err
 		}
 
-		err = a.eventConvertor(ctx, iter, writer.Write)
+		err = a.eventConvertor(ctx, iter, enableStreaming, writer.Write)
 		if err != nil {
 			return err
 		}
@@ -248,6 +254,7 @@ type defaultEventConvertor struct {
 func (d *defaultEventConvertor) handlerEventIter(
 	ctx context.Context,
 	iter *adk.AsyncIterator[*adk.AgentEvent],
+	enableStreaming bool,
 	writer func(p models.ResponseEvent) error,
 ) error {
 	for {
@@ -273,7 +280,7 @@ func (d *defaultEventConvertor) handlerEventIter(
 			return fmt.Errorf("failed to execute agent: %w", ret.Err)
 		}
 
-		interrupted, err := d.convAgentEvent(ctx, ret, writer)
+		interrupted, err := d.convAgentEvent(ctx, ret, enableStreaming, writer)
 		if err != nil {
 			return err
 		}
@@ -287,6 +294,7 @@ func (d *defaultEventConvertor) handlerEventIter(
 func (d *defaultEventConvertor) convAgentEvent(
 	ctx context.Context,
 	event *adk.AgentEvent,
+	enableStreaming bool,
 	writer func(p models.ResponseEvent) error,
 ) (interrupted bool, err error) {
 	if event == nil {
@@ -358,36 +366,70 @@ func (d *defaultEventConvertor) convAgentEvent(
 
 	// llm&tool output
 	if event.Output != nil && event.Output.MessageOutput != nil {
-		return false, d.messageVar2Status(ctx, event.Output.MessageOutput, writer)
+		return false, d.messageVar2Status(ctx, event.Output.MessageOutput, enableStreaming, writer)
 	}
 
 	// empty agent event
 	return false, nil
 }
 
-func (d *defaultEventConvertor) messageVar2Status(ctx context.Context, messageVar *adk.MessageVariant, writer func(p models.ResponseEvent) (err error)) error {
+func (d *defaultEventConvertor) messageVar2Status(ctx context.Context, messageVar *adk.MessageVariant, enableStreaming bool, writer func(p models.ResponseEvent) (err error)) error {
 	messageID, err := d.messageIDGen(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to generate message ID: %w", err)
 	}
+
+	emit := func(m *schema.Message, isChunk, final bool) error {
+		p, convErr := d.outputMessageConv(ctx, []adk.Message{m})
+		if convErr != nil {
+			return convErr
+		}
+		out := &models.Message{
+			Role:      models.RoleAgent,
+			MessageID: messageID,
+			Parts:     p,
+		}
+		if p == nil && !final {
+			// final 不能跳过，发一个空的 final 包
+			return nil
+		}
+		if isChunk {
+			out.Metadata = map[string]any{}
+			setStreamChunkFinal(out.Metadata, final)
+		}
+		return writer(models.ResponseEvent{Message: out})
+	}
+
+	if enableStreaming && messageVar.IsStreaming {
+		defer messageVar.MessageStream.Close()
+		// emit one chunk lagging by one frame so we can mark the last frame as final.
+		var prev *schema.Message
+		for {
+			chunk, recvErr := messageVar.MessageStream.Recv()
+			if errors.Is(recvErr, io.EOF) {
+				break
+			}
+			if recvErr != nil {
+				return fmt.Errorf("failed to recv message stream: %w", recvErr)
+			}
+			if prev != nil {
+				if emitErr := emit(prev, true, false); emitErr != nil {
+					return emitErr
+				}
+			}
+			prev = chunk
+		}
+		if prev != nil {
+			return emit(prev, true, true)
+		}
+		return nil
+	}
+
 	m, err := messageVar.GetMessage()
 	if err != nil {
 		return fmt.Errorf("failed to get message: %w", err)
 	}
-	p, convErr := d.outputMessageConv(ctx, []adk.Message{m})
-	if convErr != nil {
-		return convErr
-	}
-	if p != nil {
-		return writer(models.ResponseEvent{
-			Message: &models.Message{
-				Role:      models.RoleAgent,
-				MessageID: messageID,
-				Parts:     p,
-			},
-		})
-	}
-	return nil
+	return emit(m, false, false)
 }
 
 func (a *a2aHandlersBuilder) einoResponseEventConsolidator(_ context.Context, params *server.InputParams, events []models.ResponseEvent, _ error) *models.TaskContent {
@@ -403,9 +445,28 @@ func (a *a2aHandlersBuilder) einoResponseEventConsolidator(_ context.Context, pa
 	}
 
 	artifacts := make(map[string][]*models.Artifact)
+	messageChunks := make(map[string][]*models.Message)
 	var lastMessage *models.Message
 	for _, event := range events {
 		if event.Message != nil {
+			isChunk, final := getStreamChunkFinal(event.Message.Metadata)
+			if isChunk {
+				messageChunks[event.Message.MessageID] = append(messageChunks[event.Message.MessageID], event.Message)
+				if final {
+					merged := concatMessages(messageChunks[event.Message.MessageID])
+					delete(messageChunks, event.Message.MessageID)
+					if merged != nil {
+						// strip our internal chunk marker before persisting
+						delete(merged.Metadata, metadataKeyOfStreamChunkFinal)
+						if len(merged.Metadata) == 0 {
+							merged.Metadata = nil
+						}
+						tc.History = append(tc.History, merged)
+						lastMessage = merged
+					}
+				}
+				continue
+			}
 			tc.History = append(tc.History, event.Message)
 
 			lastMessage = event.Message
@@ -496,6 +557,9 @@ func concatMessages(messages []*models.Message) *models.Message {
 			ret.ReferenceTaskIDs = m.ReferenceTaskIDs
 		}
 		for k, v := range m.Metadata {
+			if ret.Metadata == nil {
+				ret.Metadata = map[string]any{}
+			}
 			ret.Metadata[k] = v
 		}
 
@@ -526,6 +590,9 @@ func concatArtifacts(artifacts []*models.Artifact) *models.Artifact {
 			ret.Description = artifact.Description
 		}
 		for k, v := range artifact.Metadata {
+			if ret.Metadata == nil {
+				ret.Metadata = map[string]any{}
+			}
 			ret.Metadata[k] = v
 		}
 
