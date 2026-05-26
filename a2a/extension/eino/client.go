@@ -289,8 +289,12 @@ type ResponseUnionReceiver struct {
 
 func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, sender *AgentEventSender) {
 	artifactMap := make(map[string] /*artifact id*/ *schema.StreamWriter[*schema.Message])
+	messageMap := make(map[string] /*message id*/ *schema.StreamWriter[*schema.Message])
 	defer func() {
 		for _, sw := range artifactMap {
+			sw.Close()
+		}
+		for _, sw := range messageMap {
 			sw.Close()
 		}
 	}()
@@ -305,15 +309,26 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 			break
 		}
 		if event.Message != nil {
-			m := toADKMessage(event.Message)
-			sender.Send(&adk.AgentEvent{
-				Output: &adk.AgentOutput{
-					MessageOutput: &adk.MessageVariant{
-						Message: m,
-						Role:    schema.Assistant,
+			isChunk, final := getStreamChunkFinal(event.Message.Metadata)
+			if isChunk {
+				// keep our internal marker out of the ADK message
+				delete(event.Message.Metadata, metadataKeyOfStreamChunkFinal)
+				if len(event.Message.Metadata) == 0 {
+					event.Message.Metadata = nil
+				}
+				m := toADKMessage(event.Message)
+				handleNewMessage(event.Message.MessageID, messageMap, m, final, schema.Assistant, sender)
+			} else {
+				m := toADKMessage(event.Message)
+				sender.Send(&adk.AgentEvent{
+					Output: &adk.AgentOutput{
+						MessageOutput: &adk.MessageVariant{
+							Message: m,
+							Role:    schema.Assistant,
+						},
 					},
-				},
-			})
+				})
+			}
 		} else if event.Task != nil {
 			var m adk.Message
 			if event.Task.Status.Message != nil {
@@ -373,12 +388,12 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 			}
 		} else if event.TaskArtifactUpdateEvent != nil {
 			m := artifact2ADKMessage(&event.TaskArtifactUpdateEvent.Artifact)
-			handleNewMessage(event.TaskArtifactUpdateEvent.Artifact.ArtifactID, artifactMap, m, event.TaskArtifactUpdateEvent.LastChunk, sender)
+			handleNewMessage(event.TaskArtifactUpdateEvent.Artifact.ArtifactID, artifactMap, m, event.TaskArtifactUpdateEvent.LastChunk, "", sender)
 		}
 	}
 }
 
-func handleNewMessage(id string, idMap map[string]*schema.StreamWriter[*schema.Message], msg *schema.Message, final bool, sender *AgentEventSender) {
+func handleNewMessage(id string, idMap map[string]*schema.StreamWriter[*schema.Message], msg *schema.Message, final bool, role schema.RoleType, sender *AgentEventSender) {
 	// 1. check if the messageID has been recorded
 	// 		if not,
 	//			if Final == true, report directly.
@@ -390,7 +405,7 @@ func handleNewMessage(id string, idMap map[string]*schema.StreamWriter[*schema.M
 		if final {
 			sender.Send(&adk.AgentEvent{
 				Output: &adk.AgentOutput{
-					MessageOutput: &adk.MessageVariant{Message: msg},
+					MessageOutput: &adk.MessageVariant{Message: msg, Role: role},
 				},
 			})
 			return
@@ -402,6 +417,7 @@ func handleNewMessage(id string, idMap map[string]*schema.StreamWriter[*schema.M
 			Output: &adk.AgentOutput{MessageOutput: &adk.MessageVariant{
 				IsStreaming:   true,
 				MessageStream: sr,
+				Role:          role,
 			}},
 		})
 	}
