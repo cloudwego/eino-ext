@@ -33,16 +33,16 @@ import (
 func TestNew(t *testing.T) {
 	mockey.PatchConvey("TestNew", t, func() {
 		mockey.PatchConvey("success", func() {
-			config := &Config{
+			config := &ResponsesConfig{
 				APIKey: "test",
 			}
-			m, err := New(context.Background(), config)
+			m, err := NewResponsesModel(context.Background(), config)
 			assert.NoError(t, err)
 			assert.NotNil(t, m)
-			assert.Equal(t, implType, m.GetType())
+			assert.Equal(t, responsesImplType, m.GetType())
 		})
 		mockey.PatchConvey("config nil", func() {
-			m, err := New(context.Background(), nil)
+			m, err := NewResponsesModel(context.Background(), nil)
 			assert.NoError(t, err)
 			assert.NotNil(t, m)
 		})
@@ -52,8 +52,8 @@ func TestNew(t *testing.T) {
 func TestModelGenerate(t *testing.T) {
 	mockey.PatchConvey("TestModelGenerate", t, func() {
 		ctx := context.Background()
-		config := &Config{APIKey: "test"}
-		m, err := New(ctx, config)
+		config := &ResponsesConfig{APIKey: "test"}
+		m, err := NewResponsesModel(ctx, config)
 		assert.NoError(t, err)
 
 		input := []*schema.AgenticMessage{
@@ -110,8 +110,8 @@ func TestModelGenerate(t *testing.T) {
 func TestModelStream(t *testing.T) {
 	mockey.PatchConvey("TestModelStream", t, func() {
 		ctx := context.Background()
-		config := &Config{APIKey: "test", Model: "gpt-4"}
-		m, err := New(ctx, config)
+		config := &ResponsesConfig{APIKey: "test", Model: "gpt-4"}
+		m, err := NewResponsesModel(ctx, config)
 		assert.NoError(t, err)
 
 		input := []*schema.AgenticMessage{
@@ -155,15 +155,15 @@ func TestModelStream(t *testing.T) {
 
 func TestModelGetType(t *testing.T) {
 	mockey.PatchConvey("TestModelGetType", t, func() {
-		m, err := New(context.Background(), &Config{APIKey: "test"})
+		m, err := NewResponsesModel(context.Background(), &ResponsesConfig{APIKey: "test"})
 		assert.NoError(t, err)
-		assert.Equal(t, "OpenAI", m.GetType())
+		assert.Equal(t, responsesImplType, m.GetType())
 	})
 }
 
 func TestModelIsCallbacksEnabled(t *testing.T) {
 	mockey.PatchConvey("TestModelIsCallbacksEnabled", t, func() {
-		m, err := New(context.Background(), &Config{APIKey: "test"})
+		m, err := NewResponsesModel(context.Background(), &ResponsesConfig{APIKey: "test"})
 		assert.NoError(t, err)
 		assert.True(t, m.IsCallbacksEnabled())
 	})
@@ -193,19 +193,19 @@ func (d *modelTestMockDecoder) Close() error { return nil }
 func TestPopulateToolsWithDeferredTools(t *testing.T) {
 	mockey.PatchConvey("populateToolsWithDeferredTools", t, func() {
 		ctx := context.Background()
-		m, err := New(ctx, &Config{APIKey: "test", Model: "gpt-4"})
+		m, err := NewResponsesModel(ctx, &ResponsesConfig{APIKey: "test", Model: "gpt-4"})
 		assert.NoError(t, err)
 
 		mockey.PatchConvey("adds_hosted_tool_search_when_deferred_tools_set", func() {
 			deferredTools := []*schema.ToolInfo{
 				{Name: "deferred1", Desc: "d", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
 			}
-			options := &model.Options{
+			mOpts := &model.Options{
 				DeferredTools: deferredTools,
 			}
-			specOptions := &openaiOptions{}
+			specOptions := &options{}
 			req := &responses.ResponseNewParams{}
-			err := m.populateTools(req, options, specOptions)
+			err := m.populateTools(req, mOpts, specOptions)
 			assert.NoError(t, err)
 
 			hasToolSearch := false
@@ -224,12 +224,12 @@ func TestPopulateToolsWithDeferredTools(t *testing.T) {
 				Desc:        "search tools",
 				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"}),
 			}
-			options := &model.Options{
+			mOpts := &model.Options{
 				ToolSearchTool: toolSearchTool,
 			}
-			specOptions := &openaiOptions{}
+			specOptions := &options{}
 			req := &responses.ResponseNewParams{}
-			err := m.populateTools(req, options, specOptions)
+			err := m.populateTools(req, mOpts, specOptions)
 			assert.NoError(t, err)
 
 			hasToolSearch := false
@@ -252,13 +252,13 @@ func TestPopulateToolsWithDeferredTools(t *testing.T) {
 				Desc:        "search tools",
 				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"}),
 			}
-			options := &model.Options{
+			mOpts := &model.Options{
 				DeferredTools:  deferredTools,
 				ToolSearchTool: toolSearchTool,
 			}
-			specOptions := &openaiOptions{}
+			specOptions := &options{}
 			req := &responses.ResponseNewParams{}
-			err := m.populateTools(req, options, specOptions)
+			err := m.populateTools(req, mOpts, specOptions)
 			assert.NoError(t, err)
 
 			toolSearchCount := 0

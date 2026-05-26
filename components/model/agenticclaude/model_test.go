@@ -536,8 +536,8 @@ func TestConfigAndModelBasics(t *testing.T) {
 		if m.thinking != thinking {
 			t.Fatalf("thinking = %#v, want %#v", m.thinking, thinking)
 		}
-		if m.GetType() != typ {
-			t.Fatalf("GetType() = %q, want %q", m.GetType(), typ)
+		if m.GetType() != implType {
+			t.Fatalf("GetType() = %q, want %q", m.GetType(), implType)
 		}
 		if !m.IsCallbacksEnabled() {
 			t.Fatalf("IsCallbacksEnabled() should return true")

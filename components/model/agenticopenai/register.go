@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,6 +22,9 @@ import (
 )
 
 func init() {
+	schema.RegisterName[*ChatResponseMetaExtension]("_eino_ext_openai_chat_response_meta_extension")
+	compose.RegisterStreamChunkConcatFunc(concatChatResponseMetaExtensions)
+
 	schema.RegisterName[blockExtraItemID]("_eino_ext_openai_block_extra_item_id")
 	schema.RegisterName[blockExtraItemStatus]("_eino_ext_openai_block_extra_item_status")
 	schema.RegisterName[*ServerToolCallArguments]("_eino_ext_openai_server_tool_call_arguments")

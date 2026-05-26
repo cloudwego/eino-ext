@@ -97,6 +97,7 @@ The `AgenticModel` can be configured using the `agenticclaude.Config` struct:
 ```go
 type Config struct {
     // HTTPClient specifies the client to send HTTP requests.
+    // It is not applied when using Google Vertex AI.
     // Optional.
     HTTPClient *http.Client
 
@@ -108,11 +109,13 @@ type Config struct {
     // Optional.
     ByGoogleVertexAI *GoogleVertexAIConfig
 
-    // BaseURL is the custom API endpoint URL.
+    // BaseURL is the custom API endpoint URL
+    // Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
     // Optional.
     BaseURL string
 
-    // APIKey is your Anthropic API key.
+    // APIKey is your Anthropic API key
+    // Obtain from: https://console.anthropic.com/account/keys
     // Required for direct Anthropic API requests.
     APIKey string
 
@@ -120,15 +123,18 @@ type Config struct {
     // Required.
     Model string
 
-    // MaxTokens limits the maximum number of tokens in the response.
+    // MaxTokens limits the maximum number of tokens in the response
+    // Range: 1 to model's context length
     // Required.
     MaxTokens int
 
-    // StopSequences specifies custom stop sequences.
+    // StopSequences specifies custom stop sequences
+    // The model will stop generating when it encounters any of these sequences
     // Optional.
     StopSequences []string
 
     // DisableParallelToolUse specifies whether to disable parallel tool use.
+    // It only takes effect when AgenticToolChoice is set.
     // Optional.
     DisableParallelToolUse *bool
 
@@ -141,10 +147,12 @@ type Config struct {
     ServerTools []*ServerToolConfig
 
     // CustomHeaders specifies custom HTTP headers to include in API requests.
+    // CustomHeaders allows passing additional metadata or authentication information.
     // Optional.
     CustomHeaders map[string]string
 
     // ExtraFields specifies additional fields that will be directly added to the HTTP request body.
+    // This allows for vendor-specific or future parameters not yet explicitly supported.
     // Optional.
     ExtraFields map[string]any
 

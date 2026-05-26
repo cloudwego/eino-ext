@@ -27,14 +27,15 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/openai/openai-go/v3/packages/param"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/openai/openai-go/v3/responses"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 		BaseURL: "https://api.openai.com/v1",
 		Model:   os.Getenv("OPENAI_MODEL_ID"),
 		APIKey:  os.Getenv("OPENAI_API_KEY"),
@@ -47,22 +48,31 @@ func main() {
 		log.Fatalf("failed to create agentic model, err=%v", err)
 	}
 
-	mcpTools := []*responses.ToolMcpParam{
+	functionTools := []*schema.ToolInfo{
 		{
-			ServerLabel: "test_mcp_server",
-			RequireApproval: responses.ToolMcpRequireApprovalUnionParam{
-				OfMcpToolApprovalSetting: param.NewOpt("never"),
-			},
-			ServerURL: param.NewOpt("server url"),
+			Name: "get_weather",
+			Desc: "get the weather in a city",
+			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
+				Type: "object",
+				Properties: orderedmap.New[string, *jsonschema.Schema](
+					orderedmap.WithInitialData(
+						orderedmap.Pair[string, *jsonschema.Schema]{
+							Key: "city",
+							Value: &jsonschema.Schema{
+								Type:        "string",
+								Description: "the city to get the weather",
+							},
+						},
+					),
+				),
+				Required: []string{"city"},
+			}),
 		},
 	}
 
 	allowedTools := []*schema.AllowedTool{
 		{
-			MCPTool: &schema.AllowedMCPTool{
-				ServerLabel: "test_mcp_server",
-				Name:        "amap/maps_weather",
-			},
+			FunctionName: "get_weather",
 		},
 	}
 
@@ -73,21 +83,21 @@ func main() {
 				Tools: allowedTools,
 			},
 		}),
-		agenticopenai.WithMCPTools(mcpTools),
+		model.WithTools(functionTools),
 	}
 
-	input := []*schema.AgenticMessage{
+	firstInput := []*schema.AgenticMessage{
 		schema.UserAgenticMessage("what's the weather like in Beijing today"),
 	}
 
-	resp, err := am.Stream(ctx, input, opts...)
+	sResp, err := am.Stream(ctx, firstInput, opts...)
 	if err != nil {
 		log.Fatalf("failed to stream, err: %v", err)
 	}
 
 	var msgs []*schema.AgenticMessage
 	for {
-		msg, err := resp.Recv()
+		msg, err := sResp.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -102,9 +112,35 @@ func main() {
 		log.Fatalf("failed to concat agentic messages, err: %v", err)
 	}
 
+	lastBlock := concatenated.ContentBlocks[len(concatenated.ContentBlocks)-1]
+	if lastBlock.Type != schema.ContentBlockTypeFunctionToolCall {
+		log.Fatalf("last block is not function tool call, type: %s", lastBlock.Type)
+	}
+
+	toolCall := lastBlock.FunctionToolCall
+	toolResultMsg := &schema.AgenticMessage{
+		Role: schema.AgenticRoleTypeUser,
+		ContentBlocks: []*schema.ContentBlock{
+			schema.NewContentBlock(&schema.FunctionToolResult{
+				CallID: toolCall.CallID,
+				Name:   toolCall.Name,
+				Content: []*schema.FunctionToolResultContentBlock{
+					{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "20 degrees"}},
+				},
+			}),
+		},
+	}
+
+	secondInput := append(firstInput, concatenated, toolResultMsg)
+
+	gResp, err := am.Generate(ctx, secondInput)
+	if err != nil {
+		log.Fatalf("failed to generate, err: %v", err)
+	}
+
 	meta := concatenated.ResponseMeta.OpenAIExtension
 	log.Printf("request_id: %s\n", meta.ID)
 
-	respBody, _ := sonic.MarshalIndent(concatenated, "  ", "  ")
+	respBody, _ := sonic.MarshalIndent(gResp, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
 }

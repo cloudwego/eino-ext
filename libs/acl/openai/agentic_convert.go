@@ -43,6 +43,8 @@ func messageToAgenticMessage(msg *schema.Message) (*schema.AgenticMessage, error
 		Extra: msg.Extra,
 	}
 
+	delete(out.Extra, keyOfReasoningContent)
+
 	multiContentHasReasoning := multiContentContainsType(msg.AssistantGenMultiContent, schema.ChatMessagePartTypeReasoning)
 	multiContentHasText := multiContentContainsType(msg.AssistantGenMultiContent, schema.ChatMessagePartTypeText)
 
@@ -134,6 +136,8 @@ func (c *chunkConverter) convert(msg *schema.Message) (*schema.AgenticMessage, e
 		Role:  schema.AgenticRoleTypeAssistant,
 		Extra: msg.Extra,
 	}
+
+	delete(out.Extra, keyOfReasoningContent)
 
 	multiContentHasReasoning := multiContentContainsType(msg.AssistantGenMultiContent, schema.ChatMessagePartTypeReasoning)
 	multiContentHasText := multiContentContainsType(msg.AssistantGenMultiContent, schema.ChatMessagePartTypeText)

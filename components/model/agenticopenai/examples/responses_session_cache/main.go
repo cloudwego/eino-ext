@@ -31,7 +31,7 @@ func main() {
 	ctx := context.Background()
 
 	// Get OPENAI_API_KEY and OPENAI_MODEL_ID
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 		BaseURL:         "https://api.openai.com/v1",
 		APIKey:          os.Getenv("OPENAI_API_KEY"),
 		Model:           os.Getenv("OPENAI_MODEL_ID"),

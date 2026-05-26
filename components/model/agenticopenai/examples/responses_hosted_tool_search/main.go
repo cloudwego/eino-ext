@@ -23,13 +23,12 @@ import (
 	"log"
 	"os"
 
+	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/openai/openai-go/v3/responses"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
-
-	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 )
 
 // This example demonstrates hosted (server-side) tool search.
@@ -39,7 +38,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 		BaseURL: "https://api.openai.com/v1",
 		Model:   os.Getenv("OPENAI_MODEL_ID"),
 		APIKey:  os.Getenv("OPENAI_API_KEY"),

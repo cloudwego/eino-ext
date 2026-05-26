@@ -35,15 +35,15 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-var _ model.AgenticModel = (*Model)(nil)
+var _ model.AgenticModel = (*ResponsesModel)(nil)
 
-type Config struct {
+type ResponsesConfig struct {
 	// ByAzure specifies whether to use Azure OpenAI service.
 	// Optional.
 	ByAzure bool
 
 	// BaseURL specifies the base URL for the OpenAI service endpoint.
-	// Optional.
+	// Optional. Default: https://api.openai.com/v1
 	BaseURL string
 
 	// APIKey specifies the API key for authentication.
@@ -113,7 +113,7 @@ type Config struct {
 
 	// ServerTools specifies server-side tools available to the model.
 	// Optional.
-	ServerTools []*ServerToolConfig
+	ServerTools []*ResponsesServerToolConfig
 
 	// MCPTools specifies Model Context Protocol tools available to the model.
 	// Optional.
@@ -147,16 +147,16 @@ type Config struct {
 	ExtraFields map[string]any
 }
 
-type ServerToolConfig struct {
+type ResponsesServerToolConfig struct {
 	WebSearch       *responses.WebSearchToolParam
 	FileSearch      *responses.FileSearchToolParam
 	CodeInterpreter *responses.ToolCodeInterpreterParam
 	Shell           *responses.FunctionShellToolParam
 }
 
-func New(_ context.Context, config *Config) (*Model, error) {
+func NewResponsesModel(_ context.Context, config *ResponsesConfig) (*ResponsesModel, error) {
 	if config == nil {
-		config = &Config{}
+		config = &ResponsesConfig{}
 	}
 
 	c, err := buildClient(config)
@@ -167,7 +167,7 @@ func New(_ context.Context, config *Config) (*Model, error) {
 	return c, nil
 }
 
-func buildClient(config *Config) (*Model, error) {
+func buildClient(config *ResponsesConfig) (*ResponsesModel, error) {
 	var opts []option.RequestOption
 
 	if config.Timeout != nil {
@@ -176,9 +176,11 @@ func buildClient(config *Config) (*Model, error) {
 	if config.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
 	}
-	if config.BaseURL != "" {
-		opts = append(opts, option.WithBaseURL(config.BaseURL))
+	baseURL := config.BaseURL
+	if baseURL == "" {
+		baseURL = defaultBaseURL
 	}
+	opts = append(opts, option.WithBaseURL(baseURL))
 	if config.APIKey != "" {
 		if config.ByAzure {
 			opts = append(opts, azure.WithAPIKey(config.APIKey))
@@ -192,7 +194,7 @@ func buildClient(config *Config) (*Model, error) {
 
 	client := responses.NewResponseService(opts...)
 
-	cm := &Model{
+	cm := &ResponsesModel{
 		cli:                  client,
 		model:                config.Model,
 		maxTokens:            config.MaxTokens,
@@ -217,7 +219,7 @@ func buildClient(config *Config) (*Model, error) {
 	return cm, nil
 }
 
-type Model struct {
+type ResponsesModel struct {
 	cli responses.ResponseService
 
 	model                string
@@ -231,7 +233,7 @@ type Model struct {
 	maxToolCalls         *int
 	parallelToolCalls    *bool
 	include              []responses.ResponseIncludable
-	serverTools          []*ServerToolConfig
+	serverTools          []*ResponsesServerToolConfig
 	mcpTools             []*responses.ToolMcpParam
 	truncation           *responses.ResponseNewParamsTruncation
 	enableAutoCache      bool
@@ -241,7 +243,7 @@ type Model struct {
 	extraFields  map[string]any
 }
 
-func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (
+func (m *ResponsesModel) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (
 	outMsg *schema.AgenticMessage, err error) {
 
 	ctx = callbacks.EnsureRunInfo(ctx, m.GetType(), components.ComponentOfAgenticModel)
@@ -293,7 +295,7 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 	return outMsg, nil
 }
 
-func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (
+func (m *ResponsesModel) Stream(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (
 	outStream *schema.StreamReader[*schema.AgenticMessage], err error) {
 
 	ctx = callbacks.EnsureRunInfo(ctx, m.GetType(), components.ComponentOfAgenticModel)
@@ -369,11 +371,11 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 	return outStream, err
 }
 
-func (m *Model) GetType() string {
-	return implType
+func (m *ResponsesModel) GetType() string {
+	return responsesImplType
 }
 
-func (m *Model) IsCallbacksEnabled() bool {
+func (m *ResponsesModel) IsCallbacksEnabled() bool {
 	return true
 }
 
@@ -462,7 +464,7 @@ func toDeferredFunctionTools(tools []*schema.ToolInfo) ([]responses.ToolUnionPar
 	return toolParams, nil
 }
 
-func toServerTools(serverTools []*ServerToolConfig) ([]responses.ToolUnionParam, error) {
+func toServerTools(serverTools []*ResponsesServerToolConfig) ([]responses.ToolUnionParam, error) {
 	tools := make([]responses.ToolUnionParam, len(serverTools))
 
 	for i := range serverTools {
@@ -492,8 +494,8 @@ func toServerTools(serverTools []*ServerToolConfig) ([]responses.ToolUnionParam,
 	return tools, nil
 }
 
-func (m *Model) getOptions(opts []model.Option) (*model.Options, *openaiOptions, error) {
-	options := model.GetCommonOptions(&model.Options{
+func (m *ResponsesModel) getOptions(opts []model.Option) (*model.Options, *options, error) {
+	commonOpts := model.GetCommonOptions(&model.Options{
 		Temperature:   m.temperature,
 		Model:         &m.model,
 		TopP:          m.topP,
@@ -502,7 +504,7 @@ func (m *Model) getOptions(opts []model.Option) (*model.Options, *openaiOptions,
 		DeferredTools: nil,
 	}, opts...)
 
-	specOptions := model.GetImplSpecificOptions(&openaiOptions{
+	specOptions := model.GetImplSpecificOptions(&options{
 		reasoning:         m.reasoning,
 		store:             m.store,
 		text:              m.text,
@@ -514,15 +516,15 @@ func (m *Model) getOptions(opts []model.Option) (*model.Options, *openaiOptions,
 		customHeaders:     m.customHeader,
 	}, opts...)
 
-	err := m.checkOptions(options)
+	err := m.checkOptions(commonOpts)
 	if err != nil {
-		return options, specOptions, err
+		return commonOpts, specOptions, err
 	}
 
-	return options, specOptions, nil
+	return commonOpts, specOptions, nil
 }
 
-func (m *Model) checkOptions(mOpts *model.Options) error {
+func (m *ResponsesModel) checkOptions(mOpts *model.Options) error {
 	if mOpts.Stop != nil {
 		return fmt.Errorf("'Stop' option is not supported")
 	}
@@ -532,8 +534,8 @@ func (m *Model) checkOptions(mOpts *model.Options) error {
 	return nil
 }
 
-func (m *Model) genRequestAndOptions(in []*schema.AgenticMessage, options *model.Options,
-	specOptions *openaiOptions) (req *responses.ResponseNewParams, reqOpts []option.RequestOption, err error) {
+func (m *ResponsesModel) genRequestAndOptions(in []*schema.AgenticMessage, options *model.Options,
+	specOptions *options) (req *responses.ResponseNewParams, reqOpts []option.RequestOption, err error) {
 
 	req = &responses.ResponseNewParams{}
 
@@ -573,8 +575,8 @@ func (m *Model) genRequestAndOptions(in []*schema.AgenticMessage, options *model
 	return req, reqOpts, nil
 }
 
-func (m *Model) prePopulateConfig(responseReq *responses.ResponseNewParams, options *model.Options,
-	specOptions *openaiOptions) error {
+func (m *ResponsesModel) prePopulateConfig(responseReq *responses.ResponseNewParams, options *model.Options,
+	specOptions *options) error {
 
 	// instance configuration
 	if m.serviceTier != nil {
@@ -623,9 +625,9 @@ func (m *Model) prePopulateConfig(responseReq *responses.ResponseNewParams, opti
 
 // populateCache resolves the PreviousResponseID for cache continuation.
 // Priority: auto-discovered response ID in messages > WithHeadPreviousResponseID option > none.
-// When enableAutoCache is true and an explicit WithStore(false) is not set, Store is forced to true.
-func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *responses.ResponseNewParams,
-	specOpts *openaiOptions) ([]*schema.AgenticMessage, error) {
+// When enableAutoCache is true and an explicit WithResponsesStore(false) is not set, Store is forced to true.
+func (m *ResponsesModel) populateCache(in []*schema.AgenticMessage, responseReq *responses.ResponseNewParams,
+	specOpts *options) ([]*schema.AgenticMessage, error) {
 
 	var (
 		enableCache = m.enableAutoCache
@@ -681,7 +683,7 @@ func (m *Model) populateCache(in []*schema.AgenticMessage, responseReq *response
 	return in, nil
 }
 
-func (m *Model) populateInput(in []*schema.AgenticMessage, responseReq *responses.ResponseNewParams) (err error) {
+func (m *ResponsesModel) populateInput(in []*schema.AgenticMessage, responseReq *responses.ResponseNewParams) (err error) {
 	if len(in) == 0 {
 		return nil
 	}
@@ -724,7 +726,7 @@ func (m *Model) populateInput(in []*schema.AgenticMessage, responseReq *response
 	return nil
 }
 
-func (m *Model) populateToolChoice(responseReq *responses.ResponseNewParams, options *model.Options) (err error) {
+func (m *ResponsesModel) populateToolChoice(responseReq *responses.ResponseNewParams, options *model.Options) (err error) {
 	toolChoice := options.AgenticToolChoice
 	if toolChoice == nil {
 		return nil
@@ -812,7 +814,7 @@ func toAllowedTools(tools []*schema.AllowedTool) ([]map[string]any, error) {
 	return allowedTools, nil
 }
 
-func (m *Model) populateTools(responseReq *responses.ResponseNewParams, options *model.Options, specOptions *openaiOptions) (err error) {
+func (m *ResponsesModel) populateTools(responseReq *responses.ResponseNewParams, options *model.Options, specOptions *options) (err error) {
 	var functionTools []responses.ToolUnionParam
 	if options.Tools != nil {
 		functionTools, err = toFunctionTools(options.Tools)

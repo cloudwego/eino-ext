@@ -27,13 +27,14 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/openai/openai-go/v3/packages/param"
 	"github.com/openai/openai-go/v3/responses"
 )
 
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 		BaseURL: "https://api.openai.com/v1",
 		Model:   os.Getenv("OPENAI_MODEL_ID"),
 		APIKey:  os.Getenv("OPENAI_API_KEY"),
@@ -41,26 +42,26 @@ func main() {
 			Effort:  responses.ReasoningEffortLow,
 			Summary: responses.ReasoningSummaryDetailed,
 		},
-		Include: []responses.ResponseIncludable{
-			responses.ResponseIncludableWebSearchCallActionSources,
-		},
 	})
 	if err != nil {
 		log.Fatalf("failed to create agentic model, err=%v", err)
 	}
 
-	serverTools := []*agenticopenai.ServerToolConfig{
+	mcpTools := []*responses.ToolMcpParam{
 		{
-			WebSearch: &responses.WebSearchToolParam{
-				Type: responses.WebSearchToolTypeWebSearch,
+			ServerLabel: "test_mcp_server",
+			RequireApproval: responses.ToolMcpRequireApprovalUnionParam{
+				OfMcpToolApprovalSetting: param.NewOpt("never"),
 			},
+			ServerURL: param.NewOpt("server url"),
 		},
 	}
 
 	allowedTools := []*schema.AllowedTool{
 		{
-			ServerTool: &schema.AllowedServerTool{
-				Name: string(agenticopenai.ServerToolNameWebSearch),
+			MCPTool: &schema.AllowedMCPTool{
+				ServerLabel: "test_mcp_server",
+				Name:        "amap/maps_weather",
 			},
 		},
 	}
@@ -72,11 +73,11 @@ func main() {
 				Tools: allowedTools,
 			},
 		}),
-		agenticopenai.WithServerTools(serverTools),
+		agenticopenai.WithResponsesMCPTools(mcpTools),
 	}
 
 	input := []*schema.AgenticMessage{
-		schema.UserAgenticMessage("what's cloudwego/eino"),
+		schema.UserAgenticMessage("what's the weather like in Beijing today"),
 	}
 
 	resp, err := am.Stream(ctx, input, opts...)
@@ -99,20 +100,6 @@ func main() {
 	concatenated, err := schema.ConcatAgenticMessages(msgs)
 	if err != nil {
 		log.Fatalf("failed to concat agentic messages, err: %v", err)
-	}
-
-	for _, block := range concatenated.ContentBlocks {
-		if block.ServerToolCall != nil {
-			serverToolArgs := block.ServerToolCall.Arguments.(*agenticopenai.ServerToolCallArguments)
-			args, _ := sonic.MarshalIndent(serverToolArgs, "  ", "  ")
-			log.Printf("server_tool_args: %s\n", string(args))
-		}
-
-		if block.ServerToolResult != nil {
-			result := block.ServerToolResult.Content.(*agenticopenai.ServerToolResult)
-			resultJSON, _ := sonic.MarshalIndent(result, "  ", "  ")
-			log.Printf("server_tool_result: %s\n", string(resultJSON))
-		}
 	}
 
 	meta := concatenated.ResponseMeta.OpenAIExtension

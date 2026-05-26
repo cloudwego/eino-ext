@@ -33,7 +33,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 		BaseURL: "https://api.openai.com/v1",
 		Model:   os.Getenv("OPENAI_MODEL_ID"),
 		APIKey:  os.Getenv("OPENAI_API_KEY"),

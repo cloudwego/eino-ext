@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ *     http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +21,12 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-type openaiOptions struct {
+type options struct {
+	// Common fields (used by both chat and responses models)
+	customHeaders map[string]string
+	extraFields   map[string]any
+
+	// Responses-specific fields
 	reasoning              *responses.ReasoningParam
 	maxToolCalls           *int
 	parallelToolCalls      *bool
@@ -31,87 +36,122 @@ type openaiOptions struct {
 	headPreviousResponseID *string
 	truncation             *responses.ResponseNewParamsTruncation
 
-	serverTools []*ServerToolConfig
+	serverTools []*ResponsesServerToolConfig
 	mcpTools    []*responses.ToolMcpParam
-
-	customHeaders map[string]string
-	extraFields   map[string]any
 }
 
-// WithHeadPreviousResponseID sets a response ID from a previous ResponsesAPI call.
+// WithCustomHeaders sets custom HTTP headers for the request.
+func WithCustomHeaders(headers map[string]string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.customHeaders = headers
+	})
+}
+
+// WithExtraFields sets extra fields to include in the request body.
+// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
+//
+// Example:
+//
+//	WithExtraFields(map[string]any{
+//	    "reasoning_effort": "high",
+//	    "service_tier": "default",
+//	})
+//
+// The resulting request body will be:
+//
+//	{
+//	    "model": "o1",
+//	    "input": [...],
+//	    "reasoning_effort": "high",
+//	    "service_tier": "default"
+//	}
+func WithExtraFields(fields map[string]any) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.extraFields = fields
+	})
+}
+
+// WithHeadPreviousResponseID sets a response ID from a previous Responses API call.
 // This ID links the current request to a previous conversation context, enabling
 // features like conversation continuation and prefix caching.
 // In populateCache, an auto-discovered response ID from input messages takes
 // priority over this option.
 // The referenced response must be cached before use.
+// Available only for Responses API.
 func WithHeadPreviousResponseID(id string) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.headPreviousResponseID = &id
 	})
 }
 
-func WithStore(store bool) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesStore sets whether to store the response on the server.
+// Available only for Responses API.
+func WithResponsesStore(store bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.store = &store
 	})
 }
 
-func WithPromptCacheKey(key string) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesPromptCacheKey sets the prompt cache key for the request.
+// Available only for Responses API.
+func WithResponsesPromptCacheKey(key string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.promptCacheKey = &key
 	})
 }
 
-func WithReasoning(reasoning *responses.ReasoningParam) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesReasoning sets the reasoning configuration for the request.
+// Available only for Responses API.
+func WithResponsesReasoning(reasoning *responses.ReasoningParam) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.reasoning = reasoning
 	})
 }
 
-func WithText(text *responses.ResponseTextConfigParam) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesText sets the text generation configuration for the request.
+// Available only for Responses API.
+func WithResponsesText(text *responses.ResponseTextConfigParam) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.text = text
 	})
 }
 
-func WithMaxToolCalls(maxToolCalls int) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesMaxToolCalls sets the maximum number of tool calls allowed in a single turn.
+// Available only for Responses API.
+func WithResponsesMaxToolCalls(maxToolCalls int) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.maxToolCalls = &maxToolCalls
 	})
 }
 
-func WithParallelToolCalls(parallelToolCalls bool) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesParallelToolCalls sets whether to allow multiple tool calls in a single turn.
+// Available only for Responses API.
+func WithResponsesParallelToolCalls(parallelToolCalls bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.parallelToolCalls = &parallelToolCalls
 	})
 }
 
-func WithServerTools(tools []*ServerToolConfig) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesServerTools sets server-side tools available to the model.
+// Available only for Responses API.
+func WithResponsesServerTools(tools []*ResponsesServerToolConfig) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.serverTools = tools
 	})
 }
 
-func WithMCPTools(tools []*responses.ToolMcpParam) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesMCPTools sets Model Context Protocol tools available to the model.
+// Available only for Responses API.
+func WithResponsesMCPTools(tools []*responses.ToolMcpParam) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.mcpTools = tools
 	})
 }
 
-func WithCustomHeaders(headers map[string]string) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
-		o.customHeaders = headers
-	})
-}
-
-func WithExtraFields(fields map[string]any) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
-		o.extraFields = fields
-	})
-}
-
-func WithTruncation(truncation responses.ResponseNewParamsTruncation) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+// WithResponsesTruncation sets how to handle context that exceeds the model's context window.
+// Available only for Responses API.
+func WithResponsesTruncation(truncation responses.ResponseNewParamsTruncation) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.truncation = &truncation
 	})
 }

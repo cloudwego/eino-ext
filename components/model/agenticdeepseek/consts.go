@@ -14,28 +14,13 @@
  * limitations under the License.
  */
 
-package agenticqwen
+package agenticdeepseek
 
-const implType = "AgenticQwen"
+const implType = "AgenticDeepSeek"
 
-type Modality string
-
-const (
-	ModalityText  Modality = "text"
-	ModalityAudio Modality = "audio"
-)
-
-type AudioFormat string
+type ResponseFormatType string
 
 const (
-	AudioFormatWav AudioFormat = "wav"
-)
-
-type AudioVoice string
-
-const (
-	AudioVoiceCherry  AudioVoice = "Cherry"
-	AudioVoiceSerena  AudioVoice = "Serena"
-	AudioVoiceEthan   AudioVoice = "Ethan"
-	AudioVoiceChelsie AudioVoice = "Chelsie"
+	ResponseFormatTypeText       = "text"
+	ResponseFormatTypeJSONObject = "json_object"
 )

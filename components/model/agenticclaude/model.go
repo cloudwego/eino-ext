@@ -41,13 +41,11 @@ import (
 
 var _ model.AgenticModel = (*Model)(nil)
 
-const typ = "AgenticClaude"
-
 type Config struct {
 	// HTTPClient specifies the client to send HTTP requests.
 	// It is not applied when using Google Vertex AI.
 	// Optional.
-	HTTPClient *http.Client `json:"http_client"`
+	HTTPClient *http.Client
 
 	// ByBedrock specifies the configuration for using AWS Bedrock.
 	// Optional.
@@ -84,7 +82,7 @@ type Config struct {
 	// DisableParallelToolUse specifies whether to disable parallel tool use.
 	// It only takes effect when AgenticToolChoice is set.
 	// Optional.
-	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
+	DisableParallelToolUse *bool
 
 	// Thinking specifies the configuration for Claude thinking mode.
 	// Optional.
@@ -406,7 +404,7 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 }
 
 func (m *Model) GetType() string {
-	return typ
+	return implType
 }
 
 func (m *Model) IsCallbacksEnabled() bool {
