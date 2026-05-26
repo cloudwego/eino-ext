@@ -126,6 +126,9 @@ func toADKMessage(m *models.Message) adk.Message {
 		SetTaskID(ret, *m.TaskID)
 	}
 	for k, v := range m.Metadata {
+		if ret.Extra == nil {
+			ret.Extra = map[string]any{}
+		}
 		ret.Extra[k] = v
 	}
 	return ret
@@ -144,6 +147,9 @@ func artifact2ADKMessage(a *models.Artifact) *schema.Message {
 
 	SetArtifactID(ret, a.ArtifactID)
 	for k, v := range a.Metadata {
+		if ret.Extra == nil {
+			ret.Extra = map[string]any{}
+		}
 		ret.Extra[k] = v
 	}
 	return ret

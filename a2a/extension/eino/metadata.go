@@ -17,8 +17,9 @@
 package eino
 
 const (
-	metadataKeyOfEnableStreaming = "_a2a_eino_adk_enable_streaming"
-	metadataKeyOfInterrupted     = "_a2a_eino_adk_interrupted"
+	metadataKeyOfEnableStreaming  = "_a2a_eino_adk_enable_streaming"
+	metadataKeyOfInterrupted      = "_a2a_eino_adk_interrupted"
+	metadataKeyOfStreamChunkFinal = "_a2a_eino_adk_stream_chunk_final"
 )
 
 func setEnableStreaming(metadata map[string]any) {
@@ -37,4 +38,20 @@ func setInterrupted(metadata map[string]any) {
 func getInterrupted(metadata map[string]any) bool {
 	b, ok := metadata[metadataKeyOfInterrupted]
 	return ok && b == true
+}
+
+// setStreamChunkFinal marks the message as a chunk of a streaming output.
+// final=true marks the last chunk of the stream; final=false marks an intermediate chunk.
+func setStreamChunkFinal(metadata map[string]any, final bool) {
+	metadata[metadataKeyOfStreamChunkFinal] = final
+}
+
+// getStreamChunkFinal reports whether the message is a streaming chunk and, if so, whether it's the final chunk.
+func getStreamChunkFinal(metadata map[string]any) (isStreamChunk bool, final bool) {
+	v, ok := metadata[metadataKeyOfStreamChunkFinal]
+	if !ok {
+		return false, false
+	}
+	b, _ := v.(bool)
+	return true, b
 }
