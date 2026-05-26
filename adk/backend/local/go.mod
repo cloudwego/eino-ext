@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
-	github.com/cloudwego/eino v0.9.0-alpha.5.0.20260421122314-28a9142a0774
+	github.com/cloudwego/eino v0.9.0
 	github.com/gen2brain/go-fitz v1.24.15
 	github.com/stretchr/testify v1.11.1
 )
