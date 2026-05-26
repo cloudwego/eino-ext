@@ -94,13 +94,44 @@ type ServerConfig struct {
 	PushNotifier server.PushNotifier
 }
 
+// AgentFactory creates an adk.Agent for a single request. It is invoked once per request,
+// allowing the implementation to bind per-request state (e.g. session, user identity, tools
+// scoped to the caller) before the runner starts. Returned agents are not reused across requests.
+//
+// The returned context replaces the request context for the rest of the request pipeline
+// (runner, AgentRunOptionConvertor, ResumeConvertor, HistoryMessageConvertor, EventConvertor),
+// so factories may attach values via context.WithValue. Returning the input ctx unchanged is fine.
+type AgentFactory func(ctx context.Context, t *models.Task, input *models.Message, metadata map[string]any) (context.Context, adk.Agent, error)
+
 func RegisterServerHandlers(ctx context.Context, a adk.Agent, cfg *ServerConfig) error {
+	if a == nil {
+		return errors.New("agent is required")
+	}
+	factory := func(ctx context.Context, _ *models.Task, _ *models.Message, _ map[string]any) (context.Context, adk.Agent, error) {
+		return ctx, a, nil
+	}
+	return registerServerHandlers(ctx, factory, a.Name(ctx), a.Description(ctx), cfg)
+}
+
+// RegisterServerHandlersWithAgentFactory registers handlers that create a fresh adk.Agent for
+// each incoming request via factory. Use this when the agent needs per-request state and cannot
+// be safely shared across concurrent calls. Since the AgentCard is published once at registration
+// time, callers must supply agentName and agentDescription explicitly — the factory is not invoked
+// during registration.
+func RegisterServerHandlersWithAgentFactory(ctx context.Context, factory AgentFactory, agentName, agentDescription string, cfg *ServerConfig) error {
+	if factory == nil {
+		return errors.New("AgentFactory is required")
+	}
+	return registerServerHandlers(ctx, factory, agentName, agentDescription, cfg)
+}
+
+func registerServerHandlers(ctx context.Context, factory AgentFactory, agentName, agentDescription string, cfg *ServerConfig) error {
 	if cfg == nil {
 		cfg = &ServerConfig{}
 	}
 
 	builder := &a2aHandlersBuilder{
-		agent:            a,
+		agentFactory:     factory,
 		cp:               cfg.CheckPointStore,
 		runOptionConv:    cfg.AgentRunOptionConvertor,
 		resumeConv:       cfg.ResumeConvertor,
@@ -143,8 +174,8 @@ func RegisterServerHandlers(ctx context.Context, a adk.Agent, cfg *ServerConfig)
 
 	return server.RegisterHandlers(ctx, cfg.Registrar, &server.Config{
 		AgentCardConfig: server.AgentCardConfig{
-			Name:               a.Name(ctx),
-			Description:        a.Description(ctx),
+			Name:               agentName,
+			Description:        agentDescription,
 			URL:                cfg.URL,
 			Version:            cfg.Version,
 			DocumentationURL:   cfg.DocumentationURL,
@@ -168,7 +199,7 @@ func RegisterServerHandlers(ctx context.Context, a adk.Agent, cfg *ServerConfig)
 }
 
 type a2aHandlersBuilder struct {
-	agent                     adk.Agent
+	agentFactory              AgentFactory
 	cp                        compose.CheckPointStore
 	runOptionConv, resumeConv func(ctx context.Context, t *models.Task, input *models.Message, metadata map[string]any) ([]adk.AgentRunOption, error)
 	inputMessageConv          func(ctx context.Context, messages []*models.Message) ([]adk.Message, error)
@@ -179,7 +210,7 @@ type a2aHandlersBuilder struct {
 func (a *a2aHandlersBuilder) buildStreamHandler() server.MessageStreamingHandler {
 	return func(ctx context.Context, params *server.InputParams, writer server.ResponseEventWriter) error {
 		enableStreaming := getEnableStreaming(params.Metadata)
-		iter, err := a.genIter(ctx, params.Task, params.Input, params.Metadata)
+		ctx, iter, err := a.genIter(ctx, params.Task, params.Input, params.Metadata)
 		if err != nil {
 			return err
 		}
@@ -197,40 +228,47 @@ func (a *a2aHandlersBuilder) genIter(
 	t *models.Task,
 	input *models.Message,
 	metadata map[string]any,
-) (iter *adk.AsyncIterator[*adk.AgentEvent], err error) {
-	runner := adk.NewRunner(ctx, adk.RunnerConfig{
-		Agent:           a.agent,
+) (newCtx context.Context, iter *adk.AsyncIterator[*adk.AgentEvent], err error) {
+	newCtx, agent, err := a.agentFactory(ctx, t, input, metadata)
+	if err != nil {
+		return ctx, nil, fmt.Errorf("failed to create agent: %w", err)
+	}
+	if newCtx == nil {
+		newCtx = ctx
+	}
+	runner := adk.NewRunner(newCtx, adk.RunnerConfig{
+		Agent:           agent,
 		CheckPointStore: a.cp,
 		EnableStreaming: getEnableStreaming(metadata),
 	})
 	var opts []adk.AgentRunOption
 	if a.runOptionConv != nil {
-		opts, err = a.runOptionConv(ctx, t, input, metadata)
+		opts, err = a.runOptionConv(newCtx, t, input, metadata)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert user input to agent run options: %w", err)
+			return newCtx, nil, fmt.Errorf("failed to convert user input to agent run options: %w", err)
 		}
 	}
 	if getInterrupted(t.Metadata) {
 		if a.resumeConv != nil {
 			var rOpts []adk.AgentRunOption
-			rOpts, err = a.resumeConv(ctx, t, input, metadata)
+			rOpts, err = a.resumeConv(newCtx, t, input, metadata)
 			if err != nil {
-				return nil, fmt.Errorf("failed to convert user input to resume agent run options: %w", err)
+				return newCtx, nil, fmt.Errorf("failed to convert user input to resume agent run options: %w", err)
 			}
 			opts = append(opts, rOpts...)
 		}
-		iter, err = runner.Resume(ctx, t.ID, opts...)
+		iter, err = runner.Resume(newCtx, t.ID, opts...)
 		if err != nil {
-			return nil, err
+			return newCtx, nil, err
 		}
 	} else {
-		in, err := a.inputMessageConv(ctx, append(t.History, input))
+		in, err := a.inputMessageConv(newCtx, append(t.History, input))
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert a2a history to adk input: %w", err)
+			return newCtx, nil, fmt.Errorf("failed to convert a2a history to adk input: %w", err)
 		}
-		iter = runner.Run(ctx, in, append(opts, adk.WithCheckPointID(t.ID))...)
+		iter = runner.Run(newCtx, in, append(opts, adk.WithCheckPointID(t.ID))...)
 	}
-	return iter, nil
+	return newCtx, iter, nil
 }
 
 func (a *a2aHandlersBuilder) buildTaskCanceler() server.CancelTaskHandler {
