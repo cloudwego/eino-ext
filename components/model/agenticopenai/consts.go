@@ -28,13 +28,6 @@ const (
 	ServerToolNameShell           ServerToolName = "shell"
 )
 
-type PromptCacheRetention string
-
-const (
-	PromptCacheRetentionInMemory PromptCacheRetention = "in_memory"
-	PromptCacheRetention24H      PromptCacheRetention = "24h"
-)
-
 type WebSearchAction string
 
 const (
