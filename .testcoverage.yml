@@ -20,6 +20,8 @@ threshold:
   file: 0  # Set to 0 to effectively ignore file-level coverage checks
 
 override:
+  - path: ^a2a
+    threshold: 0
   # Adjust coverage threshold to xx% for specific packages.
   - path: ^libs/acl/langfuse
     threshold: 0

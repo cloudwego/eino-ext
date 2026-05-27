@@ -283,6 +283,7 @@ jobs:
           echo "has_readme_changes=$has_readme_changes" >> $GITHUB_OUTPUT
 
       - name: Find existing comment
+        continue-on-error: true
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
         uses: peter-evans/find-comment@v3
         id: find-comment
@@ -292,6 +293,7 @@ jobs:
           body-includes: "### 🏷️ Tag Version Reminder"
 
       - name: Post or update PR comment
+        continue-on-error: true
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
         uses: peter-evans/create-or-update-comment@v4
         with:
