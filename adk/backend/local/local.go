@@ -814,11 +814,6 @@ func (s *Local) ExecuteStreaming(ctx context.Context, input *filesystem.ExecuteR
 		return sr, nil
 	}
 
-	if input.RunInBackendGround {
-		s.runCmdInBackground(ctx, cmd, stdout, stderr, w)
-		return sr, nil
-	}
-
 	go s.streamCmdOutput(ctx, cmd, stdout, stderr, w)
 
 	return sr, nil
@@ -883,38 +878,6 @@ func (s *Local) initStreamingCmd(ctx context.Context, command string) (*exec.Cmd
 	}
 
 	return cmd, stdout, stderr, nil
-}
-
-// runCmdInBackground executes command in background without waiting for completion.
-// The caller controls timeout/cancellation via ctx.Done().
-func (s *Local) runCmdInBackground(ctx context.Context, cmd *exec.Cmd, stdout, stderr io.ReadCloser, w *schema.StreamWriter[*filesystem.ExecuteResponse]) {
-	go func() {
-		defer func() {
-			if pe := recover(); pe != nil {
-				_ = cmd.Process.Kill()
-			}
-			_ = stdout.Close()
-			_ = stderr.Close()
-		}()
-
-		done := make(chan struct{})
-		go func() {
-			drainPipesConcurrently(stdout, stderr)
-			_ = cmd.Wait()
-			close(done)
-		}()
-
-		select {
-		case <-done:
-		case <-ctx.Done():
-			_ = cmd.Process.Kill()
-		}
-	}()
-
-	go func() {
-		defer w.Close()
-		w.Send(&filesystem.ExecuteResponse{Output: "command started in background\n", ExitCode: new(int)}, nil)
-	}()
 }
 
 // drainPipesConcurrently consumes stdout and stderr concurrently to prevent pipe blocking.
