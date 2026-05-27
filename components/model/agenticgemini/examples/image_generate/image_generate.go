@@ -42,7 +42,7 @@ func main() {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
 
-	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.New(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 		// you can set the necessary parameters for image generation
@@ -50,13 +50,13 @@ func main() {
 			AspectRatio: "16:9",
 			ImageSize:   "1K",
 		},
-		ResponseModalities: []agenticgemini.ResponseModality{
-			agenticgemini.ResponseModalityText,
-			agenticgemini.ResponseModalityImage,
+		ResponseModalities: []genai.Modality{
+			genai.ModalityText,
+			genai.ModalityImage,
 		},
 	})
 	if err != nil {
-		log.Fatalf("NewAgenticModel of gemini failed, err=%v", err)
+		log.Fatalf("New of gemini failed, err=%v", err)
 	}
 
 	/*

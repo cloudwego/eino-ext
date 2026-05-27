@@ -420,15 +420,15 @@ func TestGetOptions(t *testing.T) {
 		model:         "claude-sonnet-4",
 		maxTokens:     4096,
 		stopSequences: []string{"done"},
-		serverTools: []*ServerToolConfig{
-			{WebSearch20260209: &anthropic.WebSearchTool20260209Param{}},
-		},
 		customHeaders: map[string]string{"x-default": "1"},
 		extraFields:   map[string]any{"foo": "bar"},
 	}
 
 	options, specOptions, err := m.getOptions([]model.Option{
 		model.WithTemperature(0.2),
+		WithServerTools([]*ServerToolConfig{
+			{WebSearch20260209: &anthropic.WebSearchTool20260209Param{}},
+		}),
 		WithCustomHeaders(map[string]string{"x-call": "2"}),
 	})
 	if err != nil {

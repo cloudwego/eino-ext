@@ -179,14 +179,6 @@ type ResponsesConfig struct {
     // Optional.
     Include []responses.ResponseIncludable
 
-    // ServerTools specifies server-side tools available to the model.
-    // Optional.
-    ServerTools []*ResponsesServerToolConfig
-
-    // MCPTools specifies Model Context Protocol tools available to the model.
-    // Optional.
-    MCPTools []*responses.ToolMcpParam
-
     // Truncation specifies how to handle context that exceeds the model's context window.
     // Optional.
     Truncation *responses.ResponseNewParamsTruncation

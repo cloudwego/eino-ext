@@ -142,10 +142,6 @@ type Config struct {
     // 可选。
     Thinking *anthropic.ThinkingConfigParamUnion
 
-    // ServerTools 指定模型可用的服务器端工具。
-    // 可选。
-    ServerTools []*ServerToolConfig
-
     // CustomHeaders 指定 API 请求中包含的自定义 HTTP 标头。
     // 可用于传递额外的元数据或认证信息。
     // 可选。

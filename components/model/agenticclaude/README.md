@@ -142,10 +142,6 @@ type Config struct {
     // Optional.
     Thinking *anthropic.ThinkingConfigParamUnion
 
-    // ServerTools specifies server-side tools available to the model.
-    // Optional.
-    ServerTools []*ServerToolConfig
-
     // CustomHeaders specifies custom HTTP headers to include in API requests.
     // CustomHeaders allows passing additional metadata or authentication information.
     // Optional.

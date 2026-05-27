@@ -18,7 +18,6 @@ package agenticgemini
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime/debug"
 	"time"
@@ -32,7 +31,9 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-var _ model.AgenticModel = (*Gemini)(nil)
+const implType = "AgenticGemini"
+
+var _ model.AgenticModel = (*Model)(nil)
 
 // Config contains the configuration options for the Gemini agentic model
 type Config struct {
@@ -80,26 +81,23 @@ type Config struct {
 
 	// ResponseModalities specifies the modalities the model can return.
 	// Optional.
-	ResponseModalities []ResponseModality
+	ResponseModalities []genai.Modality
 
 	MediaResolution genai.MediaResolution
 
-	// CacheTTL specifies how long prefix cache resources remain valid (now + TTL).
+	// CacheExpiration configures the expiration policy for prefix cache resources.
 	// Optional.
-	CacheTTL time.Duration
-
-	// CacheExpireTime sets the absolute expiration timestamp for prefix cache resources.
-	// Optional.
-	CacheExpireTime time.Time
+	CacheExpiration *CacheExpiration
 }
 
-type ResponseModality string
-
-const (
-	ResponseModalityText  ResponseModality = "TEXT"
-	ResponseModalityImage ResponseModality = "IMAGE"
-	ResponseModalityAudio ResponseModality = "AUDIO"
-)
+// CacheExpiration configures the expiration policy for prefix cache resources.
+// Exactly one field should be set.
+type CacheExpiration struct {
+	// TTL specifies how long prefix cache resources remain valid (now + TTL).
+	TTL *time.Duration
+	// ExpireTime sets the absolute expiration timestamp for prefix cache resources.
+	ExpireTime *time.Time
+}
 
 type ServerToolConfig struct {
 	CodeExecution         *genai.ToolCodeExecution
@@ -110,9 +108,9 @@ type ServerToolConfig struct {
 	GoogleMaps            *genai.GoogleMaps
 }
 
-// NewAgenticModel creates a new Gemini agentic model instance
-func NewAgenticModel(_ context.Context, cfg *Config) (*Gemini, error) {
-	return &Gemini{
+// New creates a new Gemini agentic model instance
+func New(_ context.Context, cfg *Config) (*Model, error) {
+	return &Model{
 		cli: cfg.Client,
 
 		model:              cfg.Model,
@@ -126,12 +124,11 @@ func NewAgenticModel(_ context.Context, cfg *Config) (*Gemini, error) {
 		imageConfig:        cfg.ImageConfig,
 		responseModalities: cfg.ResponseModalities,
 		mediaResolution:    cfg.MediaResolution,
-		cacheTTL:           cfg.CacheTTL,
-		cacheExpireTime:    cfg.CacheExpireTime,
+		cacheExpiration:    cfg.CacheExpiration,
 	}, nil
 }
 
-type Gemini struct {
+type Model struct {
 	cli *genai.Client
 
 	model              string
@@ -146,10 +143,9 @@ type Gemini struct {
 	safetySettings     []*genai.SafetySetting
 	thinkingConfig     *genai.ThinkingConfig
 	imageConfig        *genai.ImageConfig
-	responseModalities []ResponseModality
+	responseModalities []genai.Modality
 	mediaResolution    genai.MediaResolution
-	cacheTTL           time.Duration
-	cacheExpireTime    time.Time
+	cacheExpiration    *CacheExpiration
 }
 
 func toServerTools(serverTools []*ServerToolConfig) ([]*genai.Tool, error) {
@@ -195,7 +191,7 @@ func toServerTools(serverTools []*ServerToolConfig) ([]*genai.Tool, error) {
 
 // CreatePrefixCache assembles inputs the same as Generate/Stream and writes
 // the final system instruction, tools, and messages into a reusable prefix cache.
-func (g *Gemini) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema.AgenticMessage, opts ...model.Option) (
+func (g *Model) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema.AgenticMessage, opts ...model.Option) (
 	*genai.CachedContent, error) {
 
 	modelName, inputMsgs, genaiConf, _, err := g.genInputAndConf(prefixMsgs, opts...)
@@ -208,14 +204,22 @@ func (g *Gemini) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema.Age
 		return nil, err
 	}
 
-	cachedContent, err := g.cli.Caches.Create(ctx, modelName, &genai.CreateCachedContentConfig{
+	createCfg := &genai.CreateCachedContentConfig{
 		Contents:          contents,
 		SystemInstruction: genaiConf.SystemInstruction,
 		Tools:             genaiConf.Tools,
 		ToolConfig:        genaiConf.ToolConfig,
-		TTL:               g.cacheTTL,
-		ExpireTime:        g.cacheExpireTime,
-	})
+	}
+	if g.cacheExpiration != nil {
+		if g.cacheExpiration.TTL != nil {
+			createCfg.TTL = *g.cacheExpiration.TTL
+		}
+		if g.cacheExpiration.ExpireTime != nil {
+			createCfg.ExpireTime = *g.cacheExpiration.ExpireTime
+		}
+	}
+
+	cachedContent, err := g.cli.Caches.Create(ctx, modelName, createCfg)
 	if err != nil {
 		return nil, fmt.Errorf("create cache failed: %w", err)
 	}
@@ -223,7 +227,7 @@ func (g *Gemini) CreatePrefixCache(ctx context.Context, prefixMsgs []*schema.Age
 	return cachedContent, nil
 }
 
-func (g *Gemini) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.AgenticMessage, error) {
+func (g *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.AgenticMessage, error) {
 	ctx = callbacks.EnsureRunInfo(ctx, g.GetType(), components.ComponentOfChatModel)
 
 	modelName, nInput, genaiConf, cbConf, err := g.genInputAndConf(input, opts...)
@@ -267,7 +271,7 @@ func (g *Gemini) Generate(ctx context.Context, input []*schema.AgenticMessage, o
 	return message, nil
 }
 
-func (g *Gemini) Stream(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.StreamReader[*schema.AgenticMessage], error) {
+func (g *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (*schema.StreamReader[*schema.AgenticMessage], error) {
 	ctx = callbacks.EnsureRunInfo(ctx, g.GetType(), components.ComponentOfChatModel)
 
 	modelName, nInput, genaiConf, cbConf, err := g.genInputAndConf(input, opts...)
@@ -335,26 +339,8 @@ func (g *Gemini) Stream(ctx context.Context, input []*schema.AgenticMessage, opt
 	}), nil
 }
 
-func (g *Gemini) WithTools(tools []*schema.ToolInfo) (model.AgenticModel, error) {
-	if len(tools) == 0 {
-		return nil, errors.New("no tools to bind")
-	}
-	gTools, err := toGeminiTools(tools)
-	if err != nil {
-		return nil, fmt.Errorf("convert to gemini tools fail: %w", err)
-	}
-
-	ng := *g
-	ng.toolChoice = &schema.AgenticToolChoice{
-		Type: schema.ToolChoiceAllowed,
-	}
-	ng.tools = gTools
-	ng.origTools = tools
-	return &ng, nil
-}
-
-func (g *Gemini) GetType() string          { return "Gemini" }
-func (g *Gemini) IsCallbacksEnabled() bool { return true }
+func (g *Model) GetType() string          { return implType }
+func (g *Model) IsCallbacksEnabled() bool { return true }
 
 type panicErr struct {
 	info  any

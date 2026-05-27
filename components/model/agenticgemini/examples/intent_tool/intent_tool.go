@@ -44,7 +44,7 @@ func main() {
 	}
 
 	var cm model.AgenticModel
-	cm, err = agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err = agenticgemini.New(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 		ThinkingConfig: &genai.ThinkingConfig{

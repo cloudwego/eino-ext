@@ -159,14 +159,6 @@ type Config struct {
     // 可选。
     ParallelToolCalls *bool
 
-    // ServerTools 指定模型可用的服务器端工具。
-    // 可选。
-    ServerTools []*ServerToolConfig
-
-    // MCPTools 指定模型可用的 MCP（模型上下文协议）工具。
-    // 可选。
-    MCPTools []*responses.ToolMcp
-
     // EnableAutoCache 控制是否开启多轮对话自动缓存。
     // 启用后，对话轮次将被存储，模型通过定位输入中最近的缓存消息（通过 ResponseMeta 中的 Response ID）
     // 自动维护上下文。该缓存消息及其之前的所有输入将从请求中排除。

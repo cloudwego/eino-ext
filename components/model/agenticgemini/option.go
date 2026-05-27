@@ -26,7 +26,7 @@ type options struct {
 	TopK               *int32
 	ResponseJSONSchema *jsonschema.Schema
 	ThinkingConfig     *genai.ThinkingConfig
-	ResponseModalities []ResponseModality
+	ResponseModalities []genai.Modality
 	ImageConfig        *genai.ImageConfig
 	ServerTools        []*ServerToolConfig
 
@@ -51,7 +51,7 @@ func WithThinkingConfig(t *genai.ThinkingConfig) model.Option {
 	})
 }
 
-func WithResponseModalities(m []ResponseModality) model.Option {
+func WithResponseModalities(m []genai.Modality) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ResponseModalities = m
 	})

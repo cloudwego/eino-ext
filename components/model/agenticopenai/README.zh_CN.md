@@ -179,14 +179,6 @@ type ResponsesConfig struct {
     // 可选。
     Include []responses.ResponseIncludable
 
-    // ServerTools 指定模型可用的服务器端工具。
-    // 可选。
-    ServerTools []*ResponsesServerToolConfig
-
-    // MCPTools 指定模型可用的 MCP（模型上下文协议）工具。
-    // 可选。
-    MCPTools []*responses.ToolMcpParam
-
     // Truncation 指定如何处理超出模型上下文窗口的内容。
     // 可选。
     Truncation *responses.ResponseNewParamsTruncation

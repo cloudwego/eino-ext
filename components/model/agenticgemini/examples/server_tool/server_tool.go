@@ -78,12 +78,12 @@ func streamAndConcat(stream *schema.StreamReader[*schema.AgenticMessage]) (*sche
 // with multi-turn conversation. The model can search the web and provide grounded
 // responses with source citations.
 func runGoogleSearchExample(ctx context.Context, client *genai.Client, modelName string) {
-	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.New(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 	})
 	if err != nil {
-		log.Fatalf("NewAgenticModel with GoogleSearch failed, err=%v", err)
+		log.Fatalf("New with GoogleSearch failed, err=%v", err)
 	}
 	serverTools := []*agenticgemini.ServerToolConfig{{GoogleSearch: &genai.GoogleSearch{}}}
 
@@ -169,12 +169,12 @@ func runGoogleSearchExample(ctx context.Context, client *genai.Client, modelName
 // with multi-turn conversation. The model can write and execute Python code
 // to solve problems and iterate on solutions.
 func runCodeExecutionExample(ctx context.Context, client *genai.Client, modelName string) {
-	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.New(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 	})
 	if err != nil {
-		log.Fatalf("NewAgenticModel with CodeExecution failed, err=%v", err)
+		log.Fatalf("New with CodeExecution failed, err=%v", err)
 	}
 	serverTools := []*agenticgemini.ServerToolConfig{{CodeExecution: &genai.ToolCodeExecution{}}}
 
