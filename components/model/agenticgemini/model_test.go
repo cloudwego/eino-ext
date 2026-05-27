@@ -33,13 +33,12 @@ import (
 
 func TestNewAgenticModel(t *testing.T) {
 	config := &Config{
-		Client:              &genai.Client{},
-		Model:               "gemini-pro",
-		MaxTokens:           ptrOf(100),
-		Temperature:         ptrOf(float32(0.7)),
-		TopP:                ptrOf(float32(0.9)),
-		TopK:                ptrOf(int32(40)),
-		EnableCodeExecution: &genai.ToolCodeExecution{},
+		Client:      &genai.Client{},
+		Model:       "gemini-pro",
+		MaxTokens:   ptrOf(100),
+		Temperature: ptrOf(float32(0.7)),
+		TopP:        ptrOf(float32(0.9)),
+		TopK:        ptrOf(int32(40)),
 		SafetySettings: []*genai.SafetySetting{
 			{
 				Category:  genai.HarmCategoryHarassment,
@@ -48,7 +47,7 @@ func TestNewAgenticModel(t *testing.T) {
 		},
 		ResponseModalities: []ResponseModality{ResponseModalityText, ResponseModalityImage},
 		ImageConfig:        &genai.ImageConfig{AspectRatio: "16:9", ImageSize: "1K"},
-		CacheTTL: time.Hour,
+		CacheTTL:           time.Hour,
 	}
 	model, err := NewAgenticModel(context.Background(), config)
 	assert.NoError(t, err)
@@ -58,7 +57,6 @@ func TestNewAgenticModel(t *testing.T) {
 	assert.Equal(t, float32(0.7), *model.temperature)
 	assert.Equal(t, float32(0.9), *model.topP)
 	assert.Equal(t, int32(40), *model.topK)
-	assert.NotNil(t, model.enableCodeExecution)
 	assert.Len(t, model.safetySettings, 1)
 	assert.Len(t, model.responseModalities, 2)
 	assert.Equal(t, time.Hour, model.cacheTTL)
@@ -134,6 +132,13 @@ func TestGemini_GenInputAndConf(t *testing.T) {
 	_, _, genaiConf, _, err = g.genInputAndConf(input, WithImageConfig(overrideImageConfig))
 	assert.NoError(t, err)
 	assert.Equal(t, overrideImageConfig, genaiConf.ImageConfig)
+
+	_, _, genaiConf, _, err = g.genInputAndConf(input,
+		WithServerTools([]*ServerToolConfig{{GoogleSearch: &genai.GoogleSearch{}}}),
+	)
+	assert.NoError(t, err)
+	assert.Len(t, genaiConf.Tools, 1)
+	assert.NotNil(t, genaiConf.Tools[0].GoogleSearch)
 }
 
 func TestGemini_Generate_Success(t *testing.T) {

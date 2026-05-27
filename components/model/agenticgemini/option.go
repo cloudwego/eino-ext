@@ -28,6 +28,7 @@ type options struct {
 	ThinkingConfig     *genai.ThinkingConfig
 	ResponseModalities []ResponseModality
 	ImageConfig        *genai.ImageConfig
+	ServerTools        []*ServerToolConfig
 
 	CachedContentName string
 }
@@ -62,6 +63,13 @@ func WithResponseModalities(m []ResponseModality) model.Option {
 func WithImageConfig(cfg *genai.ImageConfig) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ImageConfig = cfg
+	})
+}
+
+// WithServerTools sets Gemini server-side tools for this request.
+func WithServerTools(tools []*ServerToolConfig) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ServerTools = tools
 	})
 }
 

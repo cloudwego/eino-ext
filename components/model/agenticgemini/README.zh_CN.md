@@ -121,28 +121,6 @@ type Config struct {
     // 可选。当需要 JSON 格式的结构化输出时使用
     ResponseJSONSchema *jsonschema.Schema
     
-    // EnableCodeExecution 允许模型使用服务端工具 CodeExecution
-    // 可选。
-    EnableCodeExecution *genai.ToolCodeExecution
-    // EnableGoogleSearch 允许模型使用服务端工具 GoogleSearch
-    // 可选。
-    EnableGoogleSearch *genai.GoogleSearch
-    // EnableGoogleSearchRetrieval 允许模型使用服务端工具 GoogleSearchRetrieval
-    // 可选。
-    EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
-    // EnableComputerUse 允许模型使用服务端工具 ComputerUse
-    // 可选。
-    EnableComputerUse *genai.ComputerUse
-    // EnableURLContext 允许模型使用服务端工具 URLContext
-    // 可选。
-    EnableURLContext *genai.URLContext
-    // EnableFileSearch 允许模型使用服务端工具 FileSearch
-    // 可选。
-    EnableFileSearch *genai.FileSearch
-    // EnableGoogleMaps 允许模型使用服务端工具 GoogleMaps
-    // 可选。
-    EnableGoogleMaps *genai.GoogleMaps
-    
     // SafetySettings 配置不同危害类别的内容过滤
     // 控制模型对潜在有害内容的过滤行为
     // 可选。

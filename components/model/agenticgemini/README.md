@@ -121,28 +121,6 @@ type Config struct {
     // Optional. Used when you want structured output in JSON format
     ResponseJSONSchema *jsonschema.Schema
     
-    // EnableCodeExecution allows the model to use the server tool CodeExecution
-    // Optional.
-    EnableCodeExecution *genai.ToolCodeExecution
-    // EnableGoogleSearch allows the model to use the server tool GoogleSearch
-    // Optional.
-    EnableGoogleSearch *genai.GoogleSearch
-    // EnableGoogleSearchRetrieval allows the model to use the server tool GoogleSearchRetrieval
-    // Optional.
-    EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
-    // EnableComputerUse allows the model to use the server tool ComputerUse
-    // Optional.
-    EnableComputerUse *genai.ComputerUse
-    // EnableURLContext allows the model to use the server tool URLContext
-    // Optional.
-    EnableURLContext *genai.URLContext
-    // EnableFileSearch allows the model to use the server tool FileSearch
-    // Optional.
-    EnableFileSearch *genai.FileSearch
-    // EnableGoogleMaps allows the model to use the server tool GoogleMaps
-    // Optional.
-    EnableGoogleMaps *genai.GoogleMaps
-    
     // SafetySettings configures content filtering for different harm categories
     // Controls the model's filtering behavior for potentially harmful content
     // Optional.
