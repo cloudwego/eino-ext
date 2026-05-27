@@ -14,28 +14,14 @@
  * limitations under the License.
  */
 
-package agenticqwen
+package agenticdeepseek
 
-const implType = "AgenticQwen"
-
-type Modality string
-
-const (
-	ModalityText  Modality = "text"
-	ModalityAudio Modality = "audio"
+import (
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 )
 
-type AudioFormat string
-
-const (
-	AudioFormatWav AudioFormat = "wav"
-)
-
-type AudioVoice string
-
-const (
-	AudioVoiceCherry  AudioVoice = "Cherry"
-	AudioVoiceSerena  AudioVoice = "Serena"
-	AudioVoiceEthan   AudioVoice = "Ethan"
-	AudioVoiceChelsie AudioVoice = "Chelsie"
-)
+func init() {
+	schema.RegisterName[*ResponseMetaExtension]("_eino_ext_deepseek_response_meta_extension")
+	compose.RegisterStreamChunkConcatFunc(concatResponseMetaExtensions)
+}

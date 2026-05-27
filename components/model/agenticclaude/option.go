@@ -39,6 +39,22 @@ func WithCustomHeaders(headers map[string]string) model.Option {
 }
 
 // WithExtraFields specifies additional fields that will be directly added to the HTTP request body.
+//
+// Example:
+//
+//	WithExtraFields(map[string]any{
+//	    "service_tier": "default",
+//	    "metadata": map[string]any{"user_id": "user_123"},
+//	})
+//
+// The resulting request body will be:
+//
+//	{
+//	    "model": "claude-sonnet-4-20250514",
+//	    "messages": [...],
+//	    "service_tier": "default",
+//	    "metadata": {"user_id": "user_123"}
+//	}
 func WithExtraFields(fields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *claudeOptions) {
 		o.extraFields = fields

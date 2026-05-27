@@ -27,15 +27,13 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/eino-contrib/jsonschema"
 	"github.com/openai/openai-go/v3/responses"
-	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 		BaseURL: "https://api.openai.com/v1",
 		Model:   os.Getenv("OPENAI_MODEL_ID"),
 		APIKey:  os.Getenv("OPENAI_API_KEY"),
@@ -43,36 +41,27 @@ func main() {
 			Effort:  responses.ReasoningEffortLow,
 			Summary: responses.ReasoningSummaryDetailed,
 		},
+		Include: []responses.ResponseIncludable{
+			responses.ResponseIncludableWebSearchCallActionSources,
+		},
 	})
 	if err != nil {
 		log.Fatalf("failed to create agentic model, err=%v", err)
 	}
 
-	functionTools := []*schema.ToolInfo{
+	serverTools := []*agenticopenai.ResponsesServerToolConfig{
 		{
-			Name: "get_weather",
-			Desc: "get the weather in a city",
-			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
-				Type: "object",
-				Properties: orderedmap.New[string, *jsonschema.Schema](
-					orderedmap.WithInitialData(
-						orderedmap.Pair[string, *jsonschema.Schema]{
-							Key: "city",
-							Value: &jsonschema.Schema{
-								Type:        "string",
-								Description: "the city to get the weather",
-							},
-						},
-					),
-				),
-				Required: []string{"city"},
-			}),
+			WebSearch: &responses.WebSearchToolParam{
+				Type: responses.WebSearchToolTypeWebSearch,
+			},
 		},
 	}
 
 	allowedTools := []*schema.AllowedTool{
 		{
-			FunctionName: "get_weather",
+			ServerTool: &schema.AllowedServerTool{
+				Name: string(agenticopenai.ServerToolNameWebSearch),
+			},
 		},
 	}
 
@@ -83,21 +72,21 @@ func main() {
 				Tools: allowedTools,
 			},
 		}),
-		model.WithTools(functionTools),
+		agenticopenai.WithResponsesServerTools(serverTools),
 	}
 
-	firstInput := []*schema.AgenticMessage{
-		schema.UserAgenticMessage("what's the weather like in Beijing today"),
+	input := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("what's cloudwego/eino"),
 	}
 
-	sResp, err := am.Stream(ctx, firstInput, opts...)
+	resp, err := am.Stream(ctx, input, opts...)
 	if err != nil {
 		log.Fatalf("failed to stream, err: %v", err)
 	}
 
 	var msgs []*schema.AgenticMessage
 	for {
-		msg, err := sResp.Recv()
+		msg, err := resp.Recv()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
@@ -112,35 +101,23 @@ func main() {
 		log.Fatalf("failed to concat agentic messages, err: %v", err)
 	}
 
-	lastBlock := concatenated.ContentBlocks[len(concatenated.ContentBlocks)-1]
-	if lastBlock.Type != schema.ContentBlockTypeFunctionToolCall {
-		log.Fatalf("last block is not function tool call, type: %s", lastBlock.Type)
-	}
+	for _, block := range concatenated.ContentBlocks {
+		if block.ServerToolCall != nil {
+			serverToolArgs := block.ServerToolCall.Arguments.(*agenticopenai.ServerToolCallArguments)
+			args, _ := sonic.MarshalIndent(serverToolArgs, "  ", "  ")
+			log.Printf("server_tool_args: %s\n", string(args))
+		}
 
-	toolCall := lastBlock.FunctionToolCall
-	toolResultMsg := &schema.AgenticMessage{
-		Role: schema.AgenticRoleTypeUser,
-		ContentBlocks: []*schema.ContentBlock{
-			schema.NewContentBlock(&schema.FunctionToolResult{
-				CallID: toolCall.CallID,
-				Name:   toolCall.Name,
-				Content: []*schema.FunctionToolResultContentBlock{
-					{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "20 degrees"}},
-				},
-			}),
-		},
-	}
-
-	secondInput := append(firstInput, concatenated, toolResultMsg)
-
-	gResp, err := am.Generate(ctx, secondInput)
-	if err != nil {
-		log.Fatalf("failed to generate, err: %v", err)
+		if block.ServerToolResult != nil {
+			result := block.ServerToolResult.Content.(*agenticopenai.ServerToolResult)
+			resultJSON, _ := sonic.MarshalIndent(result, "  ", "  ")
+			log.Printf("server_tool_result: %s\n", string(resultJSON))
+		}
 	}
 
 	meta := concatenated.ResponseMeta.OpenAIExtension
 	log.Printf("request_id: %s\n", meta.ID)
 
-	respBody, _ := sonic.MarshalIndent(gResp, "  ", "  ")
+	respBody, _ := sonic.MarshalIndent(concatenated, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
 }

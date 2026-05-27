@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package agenticqwen
+package agenticopenai
 
 import (
 	"context"
@@ -24,12 +24,13 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-type ResponseMetaExtension struct {
+type ChatResponseMetaExtension struct {
+	ID           string           `json:"id,omitempty"`
 	FinishReason string           `json:"finish_reason,omitempty"`
 	LogProbs     *schema.LogProbs `json:"logprobs,omitempty"`
 }
 
-func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (*ResponseMetaExtension, error) {
+func concatChatResponseMetaExtensions(chunks []*ChatResponseMetaExtension) (*ChatResponseMetaExtension, error) {
 	if len(chunks) == 0 {
 		return nil, nil
 	}
@@ -37,10 +38,13 @@ func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (*ResponseMet
 		return chunks[0], nil
 	}
 
-	ret := &ResponseMetaExtension{}
+	ret := &ChatResponseMetaExtension{}
 	for _, ext := range chunks {
 		if ext == nil {
 			continue
+		}
+		if ext.ID != "" {
+			ret.ID = ext.ID
 		}
 		if ext.FinishReason != "" {
 			ret.FinishReason = ext.FinishReason
@@ -56,21 +60,23 @@ func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (*ResponseMet
 	return ret, nil
 }
 
-const extraKeyResponseMetaExtension = "_eino_ext_agenticqwen_response_meta_ext"
+const extraKeyChatResponseMetaExtension = "_eino_ext_agenticopenai_chat_response_meta_ext"
 
-func applyResponseMetaExtension(msg *schema.Message) {
+func applyChatResponseMetaExtension(msg *schema.Message) {
 	if msg != nil && msg.ResponseMeta != nil {
-		setMsgExtra(msg, extraKeyResponseMetaExtension, &ResponseMetaExtension{
+		ext := &ChatResponseMetaExtension{
+			ID:           openai.GetRequestID(msg),
 			FinishReason: msg.ResponseMeta.FinishReason,
 			LogProbs:     msg.ResponseMeta.LogProbs,
-		})
+		}
+		setMsgExtra(msg, extraKeyChatResponseMetaExtension, ext)
 	}
 }
 
 func responseMetaModifier() model.Option {
 	return openai.WithResponseMessageModifier(
 		func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error) {
-			applyResponseMetaExtension(msg)
+			applyChatResponseMetaExtension(msg)
 			return msg, nil
 		},
 	)
@@ -79,17 +85,17 @@ func responseMetaModifier() model.Option {
 func responseMetaChunkModifier() model.Option {
 	return openai.WithResponseChunkMessageModifier(
 		func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error) {
-			applyResponseMetaExtension(msg)
+			applyChatResponseMetaExtension(msg)
 			return msg, nil
 		},
 	)
 }
 
-func extractResponseMetaExtension(out *schema.AgenticMessage) {
+func extractChatResponseMetaExtension(out *schema.AgenticMessage) {
 	if out.Extra == nil {
 		return
 	}
-	ext, ok := out.Extra[extraKeyResponseMetaExtension].(*ResponseMetaExtension)
+	ext, ok := out.Extra[extraKeyChatResponseMetaExtension].(*ChatResponseMetaExtension)
 	if !ok {
 		return
 	}

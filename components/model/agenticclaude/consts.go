@@ -85,3 +85,5 @@ const (
 	headerAnthropicBeta        = "anthropic-beta"
 	betaHeaderWebFetch20260309 = "web-fetch-2026-03-09"
 )
+
+const implType = "AgenticClaude"

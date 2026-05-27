@@ -44,84 +44,84 @@ type Config struct {
 
 	// APIKey is your authentication key
 	// Required
-	APIKey string `json:"api_key"`
+	APIKey string
 
 	// Timeout specifies the maximum duration to wait for API responses
 	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default: no timeout
-	Timeout time.Duration `json:"timeout"`
+	Timeout time.Duration
 
 	// HTTPClient specifies the client to send HTTP requests.
 	// If HTTPClient is set, Timeout will not be used.
 	// Optional. Default &http.Client{Timeout: Timeout}
-	HTTPClient *http.Client `json:"http_client"`
+	HTTPClient *http.Client
 
 	// BaseURL specifies the QWen endpoint URL
 	// Optional. Default: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-	BaseURL string `json:"base_url"`
+	BaseURL string
 
 	// Model specifies the ID of the model to use
 	// Required
-	Model string `json:"model"`
+	Model string
 
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
-	MaxTokens *int `json:"max_tokens,omitempty"`
+	MaxTokens *int
 
 	// Temperature specifies what sampling temperature to use
 	// Range: 0.0 to 2.0. Higher values make output more random
 	// Optional. Default: 1.0
-	Temperature *float32 `json:"temperature,omitempty"`
+	Temperature *float32
 
 	// TopP controls diversity via nucleus sampling
 	// Range: 0.0 to 1.0. Lower values make output more focused
 	// Optional. Default: 1.0
-	TopP *float32 `json:"top_p,omitempty"`
+	TopP *float32
 
 	// Stop sequences where the API will stop generating further tokens
 	// Optional. Example: []string{"\n", "User:"}
-	Stop []string `json:"stop,omitempty"`
+	Stop []string
 
 	// PresencePenalty prevents repetition by penalizing tokens based on presence
 	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics
 	// Optional. Default: 0
-	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
+	PresencePenalty *float32
 
 	// Seed enables deterministic sampling for consistent outputs
 	// Optional. Set for reproducible results
-	Seed *int `json:"seed,omitempty"`
+	Seed *int
 
 	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
 	// Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
 	// Optional. Default: 0
-	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+	FrequencyPenalty *float32
 
 	// LogitBias modifies likelihood of specific tokens appearing in completion
 	// Optional. Map token IDs to bias values from -100 to 100
-	LogitBias map[string]int `json:"logit_bias,omitempty"`
+	LogitBias map[string]int
 
 	// User unique identifier representing end-user
 	// Optional. Helps monitor and detect abuse
-	User *string `json:"user,omitempty"`
+	User *string
 
 	// EnableThinking enables thinking mode
 	// https://help.aliyun.com/zh/model-studio/deep-thinking
 	// Optional. Default: base on the Model
-	EnableThinking *bool `json:"enable_thinking,omitempty"`
+	EnableThinking *bool
 
 	// PreserveThinking preserves thinking content in multi-turn conversations.
 	// https://help.aliyun.com/zh/model-studio/deep-thinking
 	// Optional. Default: false
-	PreserveThinking *bool `json:"preserve_thinking,omitempty"`
+	PreserveThinking *bool
 
 	// Modalities specifies the output data modalities and is only supported by the Qwen-Omni model.
 	// Possible values are:
 	// - ["text", "audio"]: Output text and audio.
 	// - ["text"]: Output text (default).
-	Modalities []Modality `json:"modalities,omitempty"`
+	Modalities []Modality
 
 	// Audio parameters for audio output. Required when modalities includes "audio".
-	Audio *AudioConfig `json:"audio,omitempty"`
+	Audio *AudioConfig
 }
 
 type Model struct {
@@ -243,63 +243,10 @@ func (m *Model) parseCustomOptions(opts ...model.Option) []model.Option {
 	return opts
 }
 
-const typ = "AgenticQwen"
-
 func (m *Model) GetType() string {
-	return typ
+	return implType
 }
 
 func (m *Model) IsCallbacksEnabled() bool {
 	return m.cli.IsCallbacksEnabled()
-}
-
-const extraKeyResponseMetaExtension = "_qwen_response_meta_ext"
-
-func responseMetaModifier() model.Option {
-	return openai.WithResponseMessageModifier(
-		func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error) {
-			if msg != nil && msg.ResponseMeta != nil {
-				setMsgExtra(msg, extraKeyResponseMetaExtension, &ResponseMetaExtension{
-					FinishReason: msg.ResponseMeta.FinishReason,
-					LogProbs:     msg.ResponseMeta.LogProbs,
-				})
-			}
-			return msg, nil
-		},
-	)
-}
-
-func responseMetaChunkModifier() model.Option {
-	return openai.WithResponseChunkMessageModifier(
-		func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error) {
-			if msg != nil && msg.ResponseMeta != nil {
-				setMsgExtra(msg, extraKeyResponseMetaExtension, &ResponseMetaExtension{
-					FinishReason: msg.ResponseMeta.FinishReason,
-					LogProbs:     msg.ResponseMeta.LogProbs,
-				})
-			}
-			return msg, nil
-		},
-	)
-}
-
-func extractResponseMetaExtension(out *schema.AgenticMessage) {
-	if out.Extra == nil {
-		return
-	}
-	ext, ok := out.Extra[extraKeyResponseMetaExtension].(*ResponseMetaExtension)
-	if !ok {
-		return
-	}
-	if out.ResponseMeta == nil {
-		out.ResponseMeta = &schema.AgenticResponseMeta{}
-	}
-	out.ResponseMeta.Extension = ext
-}
-
-func setMsgExtra(msg *schema.Message, key string, value any) {
-	if msg.Extra == nil {
-		msg.Extra = make(map[string]any)
-	}
-	msg.Extra[key] = value
 }

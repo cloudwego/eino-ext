@@ -96,69 +96,76 @@ func main() {
 
 ```go
 type Config struct {
-    // HTTPClient specifies the client to send HTTP requests.
-    // Optional.
+    // HTTPClient 指定用于发送 HTTP 请求的客户端。
+    // 使用 Google Vertex AI 时不生效。
+    // 可选。
     HTTPClient *http.Client
 
-    // ByBedrock specifies the configuration for using AWS Bedrock.
-    // Optional.
+    // ByBedrock 指定使用 AWS Bedrock 的配置。
+    // 可选。
     ByBedrock *BedrockConfig
 
-    // ByGoogleVertexAI specifies the configuration for using Google Vertex AI.
-    // Optional.
+    // ByGoogleVertexAI 指定使用 Google Vertex AI 的配置。
+    // 可选。
     ByGoogleVertexAI *GoogleVertexAIConfig
 
-    // BaseURL is the custom API endpoint URL.
-    // Optional.
+    // BaseURL 自定义 API 端点 URL。
+    // 用于指定不同的 API 端点，例如代理或企业部署。
+    // 可选。
     BaseURL string
 
-    // APIKey is your Anthropic API key.
-    // Required for direct Anthropic API requests.
+    // APIKey 是 Anthropic API 密钥。
+    // 获取地址：https://console.anthropic.com/account/keys
+    // 直接使用 Anthropic API 时必填。
     APIKey string
 
-    // Model specifies which Claude model to use.
-    // Required.
+    // Model 指定使用的 Claude 模型。
+    // 必填。
     Model string
 
-    // MaxTokens limits the maximum number of tokens in the response.
-    // Required.
+    // MaxTokens 限制响应中的最大 token 数。
+    // 范围：1 到模型的上下文长度。
+    // 必填。
     MaxTokens int
 
-    // StopSequences specifies custom stop sequences.
-    // Optional.
+    // StopSequences 指定自定义停止序列。
+    // 模型在遇到这些序列中的任何一个时将停止生成。
+    // 可选。
     StopSequences []string
 
-    // DisableParallelToolUse specifies whether to disable parallel tool use.
-    // Optional.
+    // DisableParallelToolUse 指定是否禁用并行工具调用。
+    // 仅在设置了 AgenticToolChoice 时生效。
+    // 可选。
     DisableParallelToolUse *bool
 
-    // Thinking specifies the configuration for Claude thinking mode.
-    // Optional.
+    // Thinking 指定 Claude 思考模式的配置。
+    // 可选。
     Thinking *anthropic.ThinkingConfigParamUnion
 
-    // ServerTools specifies server-side tools available to the model.
-    // Optional.
+    // ServerTools 指定模型可用的服务器端工具。
+    // 可选。
     ServerTools []*ServerToolConfig
 
-    // CustomHeaders specifies custom HTTP headers to include in API requests.
-    // Optional.
+    // CustomHeaders 指定 API 请求中包含的自定义 HTTP 标头。
+    // 可用于传递额外的元数据或认证信息。
+    // 可选。
     CustomHeaders map[string]string
 
-    // ExtraFields specifies additional fields that will be directly added to the HTTP request body.
-    // Optional.
+    // ExtraFields 指定直接添加到 HTTP 请求体的额外字段。
+    // 允许使用尚未显式支持的供应商特定参数或未来参数。
+    // 可选。
     ExtraFields map[string]any
 
-    // CacheControl configures automatic prompt caching behavior.
-    // When non-nil, automatically applies a cache_control marker to the last
-    // cacheable block in the request.
-    // Optional.
+    // CacheControl 配置自动提示缓存行为。
+    // 非 nil 时，自动在请求中最后一个可缓存的 block 上应用 cache_control 标记。
+    // 可选。
     CacheControl *anthropic.CacheControlEphemeralParam
 }
 ```
 
-## Advanced Usage
+## 高级用法
 
-### Cache
+### 缓存
 
 使用 `CacheControl` 为多轮对话启用自动缓存。设置后（非 nil），API 会自动在请求中最后一个可缓存的 block 上应用 cache_control 标记。
 
@@ -177,11 +184,11 @@ am, err := agenticclaude.New(ctx, &agenticclaude.Config{
 })
 ```
 
-### Tool Calling
+### 工具调用 (Tool Calling)
 
 `AgenticModel` 支持工具调用，包括函数工具、延迟加载工具、客户端工具搜索和 Server Tool。
 
-#### Function Tool Example
+#### 函数工具示例
 
 ```go
 package main
@@ -313,7 +320,7 @@ func main() {
 }
 ```
 
-#### Server Tool Example
+#### 服务器工具示例
 
 ```go
 package main

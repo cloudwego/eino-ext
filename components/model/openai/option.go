@@ -34,6 +34,23 @@ type ResponseMessageModifier = openai.ResponseMessageModifier
 type ResponseChunkMessageModifier = openai.ResponseChunkMessageModifier
 
 // WithExtraFields is used to set extra body fields for the request.
+// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
+//
+// Example:
+//
+//	WithExtraFields(map[string]any{
+//	    "reasoning_effort": "high",
+//	    "service_tier": "default",
+//	})
+//
+// The resulting request body will be:
+//
+//	{
+//	    "model": "o1",
+//	    "messages": [...],
+//	    "reasoning_effort": "high",
+//	    "service_tier": "default"
+//	}
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return openai.WithExtraFields(extraFields)
 }

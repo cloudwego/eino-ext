@@ -167,6 +167,10 @@ type Config struct {
     MCPTools []*responses.ToolMcp
     
     // EnableAutoCache controls whether auto-caching for multi-turn conversations is active for the model.
+    // When enabled, conversation turns are stored, and the model automatically maintains context
+    // by locating the most recent cached message in the input (via Response ID in ResponseMeta).
+    // This cached message and all preceding inputs are excluded from the request.
+    // If the cached message becomes invalid, you can call InvalidateMessageCaches to temporarily invalidate the cache.
     // Optional.
     EnableAutoCache bool
 

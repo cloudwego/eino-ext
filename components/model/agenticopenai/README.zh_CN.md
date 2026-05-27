@@ -1,17 +1,17 @@
 # OpenAI Agentic Model
 
-基于 [Eino](https://github.com/cloudwego/eino) 的 OpenAI 模型实现，实现了 `AgenticModel` 组件接口。这使得该模型能够无缝集成到 Eino 的 Agent 能力中，提供增强的自然语言处理和生成功能。
+基于 [Eino](https://github.com/cloudwego/eino) 的 OpenAI 模型实现，实现了 `AgenticModel` 组件接口。本包提供两种模型实现：**Chat**（Chat Completions API）和 **Responses**（Responses API），使其能够无缝集成到 Eino 的 Agent 能力中。
 
 ## 功能特性
 
 - 实现了 `github.com/cloudwego/eino/components/model.AgenticModel` 接口
 - 易于集成到 Eino 的 agent 系统中
 - 可配置的模型参数
-- 支持 Responses API
+- 同时支持 Chat Completions API 和 Responses API
 - 支持流式响应 (Streaming)
 - 支持工具调用 (Tools)，包括函数工具 (Function Tools)、MCP 工具 (MCP Tools) 和服务器工具 (Server Tools)
-- 支持多轮对话自动缓存
-- 支持 Azure OpenAI
+- 支持前缀缓存 (Prefix Cache) 和多轮对话自动缓存
+- 支持 Azure OpenAI 服务
 
 ## 安装
 
@@ -21,7 +21,7 @@ go get github.com/cloudwego/eino-ext/components/model/agenticopenai@latest
 
 ## 快速开始
 
-以下是如何使用 `AgenticModel` 的一个快速示例：
+### Responses API
 
 ```go
 package main
@@ -34,23 +34,14 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
 	"github.com/cloudwego/eino/schema"
-	openaischema "github.com/cloudwego/eino/schema/openai"
-	"github.com/eino-contrib/jsonschema"
-	"github.com/openai/openai-go/v3/responses"
-	"github.com/wk8/go-ordered-map/v2"
 )
 
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
-		BaseURL: "https://api.agenticopenai.com/v1",
-		Model:   os.Getenv("OPENAI_MODEL_ID"),
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Reasoning: &responses.ReasoningParam{
-			Effort:  responses.ReasoningEffortLow,
-			Summary: responses.ReasoningSummaryDetailed,
-		},
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
+		APIKey: os.Getenv("OPENAI_API_KEY"),
+		Model:  os.Getenv("OPENAI_MODEL_ID"),
 	})
 	if err != nil {
 		log.Fatalf("failed to create agentic model, err: %v", err)
@@ -60,148 +51,253 @@ func main() {
 		schema.UserAgenticMessage("what is the weather like in Beijing"),
 	}
 
-	am_, err := am.WithTools([]*schema.ToolInfo{
-		{
-			Name: "get_weather",
-			Desc: "get the weather in a city",
-			ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
-				Type: "object",
-				Properties: orderedmap.New[string, *jsonschema.Schema](
-					orderedmap.WithInitialData(
-						orderedmap.Pair[string, *jsonschema.Schema]{
-							Key: "city",
-							Value: &jsonschema.Schema{
-								Type:        "string",
-								Description: "the city to get the weather",
-							},
-						},
-					),
-				),
-				Required: []string{"city"},
-			}),
-		},
-	})
-	if err != nil {
-		log.Fatalf("failed to create agentic model with tools, err: %v", err)
-	}
-
-	msg, err := am_.Generate(ctx, input)
+	msg, err := am.Generate(ctx, input)
 	if err != nil {
 		log.Fatalf("failed to generate, err: %v", err)
 	}
 
-	meta := msg.ResponseMeta.Extension.(*openaischema.ResponseMetaExtension)
-
-	log.Printf("request_id: %s\n", meta.ID)
 	respBody, _ := sonic.MarshalIndent(msg, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
+	log.Printf("response: %s\n", string(respBody))
+}
+```
+
+### Chat Completions API
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+
+	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino-ext/components/model/agenticopenai"
+	"github.com/cloudwego/eino/schema"
+)
+
+func main() {
+	ctx := context.Background()
+
+	m, err := agenticopenai.NewChatModel(ctx, &agenticopenai.ChatConfig{
+		APIKey: os.Getenv("OPENAI_API_KEY"),
+		Model:  os.Getenv("OPENAI_MODEL_ID"),
+	})
+	if err != nil {
+		log.Fatalf("failed to create chat model, err: %v", err)
+	}
+
+	input := []*schema.AgenticMessage{
+		schema.UserAgenticMessage("what is the weather like in Beijing"),
+	}
+
+	msg, err := m.Generate(ctx, input)
+	if err != nil {
+		log.Fatalf("failed to generate, err: %v", err)
+	}
+
+	respBody, _ := sonic.MarshalIndent(msg, "  ", "  ")
+	log.Printf("response: %s\n", string(respBody))
 }
 ```
 
 ## 配置
 
-可以使用 `agenticopenai.Config` 结构体配置 `AgenticModel`：
+### ResponsesConfig
+
+可以使用 `agenticopenai.ResponsesConfig` 结构体配置 `ResponsesModel`：
 
 ```go
-type Config struct {
-	// ByAzure 指定是否使用 Azure OpenAI 服务。
-	// 可选。
-	ByAzure bool
+type ResponsesConfig struct {
+    // ByAzure 指定是否使用 Azure OpenAI 服务。
+    // 可选。
+    ByAzure bool
 
-	// BaseURL 指定 OpenAI 服务端点的基准 URL。
-	// 可选。
-	BaseURL string
+    // BaseURL 指定 OpenAI 服务端点的基准 URL。
+    // 可选。默认值：https://api.openai.com/v1
+    BaseURL string
 
-	// APIKey 指定用于认证的 API 密钥。
-	// 必填。
-	APIKey string
+    // APIKey 指定用于认证的 API 密钥。
+    // 必填。
+    APIKey string
 
-	// Timeout 指定等待 API 响应的最大持续时间。
-	// 可选。
-	Timeout *time.Duration
+    // Timeout 指定等待 API 响应的最大持续时间。
+    // 可选。
+    Timeout *time.Duration
 
-	// HTTPClient 指定用于发送 HTTP 请求的客户端。
-	// 可选。
-	HTTPClient *http.Client
+    // HTTPClient 指定用于发送请求的 HTTP 客户端。
+    // 可选。
+    HTTPClient *http.Client
 
-	// MaxRetries 指定失败请求的最大重试次数。
-	// 可选。
-	MaxRetries *int
+    // MaxRetries 指定失败请求的最大重试次数。
+    // 可选。
+    MaxRetries *int
 
-	// Model 指定用于响应的模型 ID。
-	// 必填。
-	Model string
+    // Model 指定用于响应的模型 ID。
+    // 必填。
+    Model string
 
-	// MaxTokens 指定响应中生成的最大 token 数。
-	// 可选。
-	MaxTokens *int
+    // MaxTokens 指定响应中生成的最大 token 数。
+    // 可选。
+    MaxTokens *int
 
-	// Temperature 控制模型输出的随机性。
-	// 较高的值（如 0.8）使输出更随机，而较低的值（如 0.2）使输出更集中和确定。
-	// 范围：0.0 到 2.0。
-	// 可选。
-	Temperature *float32
+    // Temperature 控制模型输出的随机性。
+    // 范围：0.0 到 2.0。
+    // 可选。
+    Temperature *float32
 
-	// TopP 通过核心采样控制多样性。
-	// 它指定 token 选择的累积概率阈值。
-	// 建议修改此项或 Temperature，但不要同时修改。
-	// 范围：0.0 到 1.0。
-	// 可选。
-	TopP *float32
+    // TopP 通过核采样控制多样性。
+    // 范围：0.0 到 1.0。
+    // 可选。
+    TopP *float32
 
-	// ServiceTier 指定处理请求的延迟层级。
-	// 可选。
-	ServiceTier *responses.ResponseNewParamsServiceTier
+    // ServiceTier 指定处理请求的延迟层级。
+    // 可选。
+    ServiceTier *responses.ResponseNewParamsServiceTier
 
-	// Text 指定文本生成输出的配置。
-	// 可选。
-	Text *responses.ResponseTextConfigParam
+    // Text 指定文本生成输出的配置。
+    // 可选。
+    Text *responses.ResponseTextConfigParam
 
-	// Reasoning 指定推理模型的配置。
-	// 可选。
-	Reasoning *responses.ReasoningParam
+    // Reasoning 指定推理模型的配置。
+    // 可选。
+    Reasoning *responses.ReasoningParam
 
-	// Store 指定是否在服务器上存储响应。
-	// 可选。
-	Store *bool
+    // Store 指定是否将响应存储在服务器上。
+    // 可选。
+    Store *bool
 
-	// MaxToolCalls 指定单轮中允许的最大工具调用次数。
-	// 可选。
-	MaxToolCalls *int
+    // MaxToolCalls 指定单轮中允许的最大工具调用次数。
+    // 可选。
+    MaxToolCalls *int
 
-	// ParallelToolCalls 指定是否允许在单轮中进行多次工具调用。
-	// 可选。
-	ParallelToolCalls *bool
+    // ParallelToolCalls 指定是否允许单轮中进行多次工具调用。
+    // 可选。
+    ParallelToolCalls *bool
 
-	// Include 指定响应中包含的额外字段列表。
-	// 可选。
-	Include []responses.ResponseIncludable
+    // Include 指定响应中需要包含的额外字段列表。
+    // 可选。
+    Include []responses.ResponseIncludable
 
-	// ServerTools 指定模型可用的服务器端工具。
-	// 可选。
-	ServerTools []*ServerToolConfig
+    // ServerTools 指定模型可用的服务器端工具。
+    // 可选。
+    ServerTools []*ResponsesServerToolConfig
 
-	// MCPTools 指定模型可用的 Model Context Protocol 工具。
-	// 可选。
-	MCPTools []*responses.ToolMcpParam
+    // MCPTools 指定模型可用的 MCP（模型上下文协议）工具。
+    // 可选。
+    MCPTools []*responses.ToolMcpParam
 
-	// EnableAutoCache 控制是否开启多轮对话自动缓存。
-	// 可选。
-	EnableAutoCache bool
+    // Truncation 指定如何处理超出模型上下文窗口的内容。
+    // 可选。
+    Truncation *responses.ResponseNewParamsTruncation
 
-	// PromptCacheRetention 指定 prompt cache 的保留策略。
-	// 可选。
-	PromptCacheRetention *responses.ResponseNewParamsPromptCacheRetention
+    // EnableAutoCache 控制是否开启多轮对话自动缓存。
+    // 启用后，模型通过定位输入中最近的缓存消息（通过 ResponseMeta 中的 Response ID）
+    // 自动维护上下文。
+    // 可选。
+    EnableAutoCache bool
 
-	// CustomHeaders 指定 API 请求中包含的自定义 HTTP 标头。
-	// CustomHeaders 允许传递额外的元数据或身份验证信息。
-	// 可选。
-	CustomHeaders map[string]string
+    // PromptCacheRetention 指定提示缓存的保留策略。
+    // 可选。
+    PromptCacheRetention *responses.ResponseNewParamsPromptCacheRetention
 
-	// ExtraFields 指定将直接添加到 HTTP 请求体的额外字段。
-	// 这允许支持尚未显式支持的供应商特定或未来参数。
-	// 可选。
-	ExtraFields map[string]any
+    // CustomHeaders 指定 API 请求中包含的自定义 HTTP 标头。
+    // 可选。
+    CustomHeaders map[string]string
+
+    // ExtraFields 指定直接添加到 HTTP 请求体的额外字段。
+    // 可选。
+    ExtraFields map[string]any
+}
+```
+
+### ChatConfig
+
+可以使用 `agenticopenai.ChatConfig` 结构体配置 `ChatModel`：
+
+```go
+type ChatConfig struct {
+    // APIKey 是认证密钥。
+    // 必填。
+    APIKey string
+
+    // Timeout 指定等待 API 响应的最大持续时间。
+    // 如果设置了 HTTPClient，则不会使用 Timeout。
+    // 可选。
+    Timeout time.Duration
+
+    // HTTPClient 指定用于发送 HTTP 请求的客户端。
+    // 如果设置了 HTTPClient，则不会使用 Timeout。
+    // 可选。
+    HTTPClient *http.Client
+
+    // ByAzure 指定是否使用 Azure OpenAI 服务。
+    // 可选。默认值：false
+    ByAzure bool
+
+    // AzureModelMapperFunc 用于将模型名称映射为 Azure OpenAI 服务的部署名称。
+    // Azure 可选。
+    AzureModelMapperFunc func(model string) string
+
+    // APIVersion 指定 Azure OpenAI API 版本。
+    // Azure 必填。
+    APIVersion string
+
+    // BaseURL 指定 API 端点 URL。
+    // 可选。默认值：https://api.openai.com/v1
+    BaseURL string
+
+    // Model 指定要使用的模型 ID。
+    // 必填。
+    Model string
+
+    // MaxCompletionTokens 指定可以生成的 token 数量上限。
+    // 可选。
+    MaxCompletionTokens *int
+
+    // Temperature 指定采样温度。
+    // 范围：0.0 到 2.0。
+    // 可选。默认值：1.0
+    Temperature *float32
+
+    // TopP 通过核采样控制多样性。
+    // 范围：0.0 到 1.0。
+    // 可选。默认值：1.0
+    TopP *float32
+
+    // Stop 指定 API 停止生成 token 的序列。
+    // 可选。
+    Stop []string
+
+    // PresencePenalty 通过基于存在性惩罚 token 来防止重复。
+    // 范围：-2.0 到 2.0。
+    // 可选。默认值：0
+    PresencePenalty *float32
+
+    // FrequencyPenalty 通过基于频率惩罚 token 来防止重复。
+    // 范围：-2.0 到 2.0。
+    // 可选。默认值：0
+    FrequencyPenalty *float32
+
+    // LogitBias 修改特定 token 出现在补全中的可能性。
+    // 可选。
+    LogitBias map[string]int
+
+    // LogProbs 指定是否返回输出 token 的对数概率。
+    // 可选。默认值：false
+    LogProbs bool
+
+    // TopLogProbs 指定在每个 token 位置返回最可能的 token 数量。
+    // 可选。
+    TopLogProbs int
+
+    // CustomHeaders 指定请求中包含的自定义 HTTP 标头。
+    // 可选。
+    CustomHeaders map[string]string
+
+    // ExtraFields 指定请求体中包含的额外字段。
+    // 可选。
+    ExtraFields map[string]any
 }
 ```
 
@@ -211,20 +307,19 @@ type Config struct {
 
 使用 `EnableAutoCache` 开启多轮对话自动缓存。若某条缓存消息已经失效，可以调用 `InvalidateMessageCaches` 临时跳过该缓存。
 
-```go
-retention := responses.ResponseNewParamsPromptCacheRetention24h
+如果需要显式复用前缀缓存，可以通过 `WithHeadPreviousResponseID` 传入响应 ID。
 
-am, err := agenticopenai.New(ctx, &agenticopenai.Config{
-	Model:                os.Getenv("OPENAI_MODEL_ID"),
-	APIKey:               os.Getenv("OPENAI_API_KEY"),
-	EnableAutoCache:      true,
-	PromptCacheRetention: &retention,
+```go
+am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
+    APIKey:          os.Getenv("OPENAI_API_KEY"),
+    Model:           os.Getenv("OPENAI_MODEL_ID"),
+    EnableAutoCache: true,
 })
 ```
 
 ### 工具调用 (Tool Calling)
 
-`AgenticModel` 支持工具调用，包括函数工具、MCP 工具和服务器工具。
+`ResponsesModel` 支持工具调用，包括函数工具、MCP 工具和服务器工具。
 
 #### 函数工具示例
 
@@ -243,21 +338,15 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
-	"github.com/openai/openai-go/v3/responses"
-	"github.com/wk8/go-ordered-map/v2"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
-		BaseURL: "https://api.agenticopenai.com/v1",
-		Model:   os.Getenv("OPENAI_MODEL_ID"),
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Reasoning: &responses.ReasoningParam{
-			Effort:  responses.ReasoningEffortLow,
-			Summary: responses.ReasoningSummaryDetailed,
-		},
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
+		APIKey: os.Getenv("OPENAI_API_KEY"),
+		Model:  os.Getenv("OPENAI_MODEL_ID"),
 	})
 	if err != nil {
 		log.Fatalf("failed to create agentic model, err=%v", err)
@@ -328,9 +417,6 @@ func main() {
 	}
 
 	lastBlock := concatenated.ContentBlocks[len(concatenated.ContentBlocks)-1]
-	if lastBlock.Type != schema.ContentBlockTypeFunctionToolCall {
-		log.Fatalf("last block is not function tool call, type: %s", lastBlock.Type)
-	}
 
 	toolCall := lastBlock.FunctionToolCall
 	toolResultMsg := schema.FunctionToolResultAgenticMessage(toolCall.CallID, toolCall.Name, "20 degrees")
@@ -342,14 +428,10 @@ func main() {
 		log.Fatalf("failed to generate, err: %v", err)
 	}
 
-	meta := concatenated.ResponseMeta.OpenAIExtension
-	log.Printf("request_id: %s\n", meta.ID)
-
 	respBody, _ := sonic.MarshalIndent(gResp, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))
 }
 ```
-
 
 #### 服务器工具示例
 
@@ -373,14 +455,9 @@ import (
 func main() {
 	ctx := context.Background()
 
-	am, err := agenticopenai.New(ctx, &agenticopenai.Config{
-		BaseURL: "https://api.agenticopenai.com/v1",
-		Model:   os.Getenv("OPENAI_MODEL_ID"),
-		APIKey:  os.Getenv("OPENAI_API_KEY"),
-		Reasoning: &responses.ReasoningParam{
-			Effort:  responses.ReasoningEffortLow,
-			Summary: responses.ReasoningSummaryDetailed,
-		},
+	am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
+		APIKey: os.Getenv("OPENAI_API_KEY"),
+		Model:  os.Getenv("OPENAI_MODEL_ID"),
 		Include: []responses.ResponseIncludable{
 			responses.ResponseIncludableWebSearchCallActionSources,
 		},
@@ -389,7 +466,7 @@ func main() {
 		log.Fatalf("failed to create agentic model, err=%v", err)
 	}
 
-	serverTools := []*agenticopenai.ServerToolConfig{
+	serverTools := []*agenticopenai.ResponsesServerToolConfig{
 		{
 			WebSearch: &responses.WebSearchToolParam{
 				Type: responses.WebSearchToolTypeWebSearch,
@@ -406,13 +483,13 @@ func main() {
 	}
 
 	opts := []model.Option{
+		agenticopenai.WithResponsesServerTools(serverTools),
 		model.WithAgenticToolChoice(&schema.AgenticToolChoice{
 			Type: schema.ToolChoiceForced,
 			Forced: &schema.AgenticForcedToolChoice{
 				Tools: allowedTools,
 			},
 		}),
-		agenticopenai.WithServerTools(serverTools),
 	}
 
 	input := []*schema.AgenticMessage{
@@ -449,14 +526,11 @@ func main() {
 		}
 
 		if block.ServerToolResult != nil {
-			result := block.ServerToolResult.Result.(*agenticopenai.ServerToolResult)
+			result := block.ServerToolResult.Content.(*agenticopenai.ServerToolResult)
 			resultJSON, _ := sonic.MarshalIndent(result, "  ", "  ")
 			log.Printf("server_tool_result: %s\n", string(resultJSON))
 		}
 	}
-
-	meta := concatenated.ResponseMeta.OpenAIExtension
-	log.Printf("request_id: %s\n", meta.ID)
 
 	respBody, _ := sonic.MarshalIndent(concatenated, "  ", "  ")
 	log.Printf("  body: %s\n", string(respBody))

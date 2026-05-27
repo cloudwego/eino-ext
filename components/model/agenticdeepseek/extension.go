@@ -17,14 +17,12 @@
 package agenticdeepseek
 
 import (
-	"github.com/cloudwego/eino/compose"
+	"context"
+
+	"github.com/cloudwego/eino-ext/libs/acl/openai"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
-
-func init() {
-	schema.RegisterName[*ResponseMetaExtension]("_eino_ext_deepseek_response_meta_extension")
-	compose.RegisterStreamChunkConcatFunc(concatResponseMetaExtensions)
-}
 
 type ResponseMetaExtension struct {
 	FinishReason string           `json:"finish_reason,omitempty"`
@@ -41,13 +39,69 @@ func concatResponseMetaExtensions(chunks []*ResponseMetaExtension) (*ResponseMet
 
 	ret := &ResponseMetaExtension{}
 	for _, ext := range chunks {
+		if ext == nil {
+			continue
+		}
 		if ext.FinishReason != "" {
 			ret.FinishReason = ext.FinishReason
 		}
 		if ext.LogProbs != nil {
-			ret.LogProbs = ext.LogProbs
+			if ret.LogProbs == nil {
+				ret.LogProbs = &schema.LogProbs{}
+			}
+			ret.LogProbs.Content = append(ret.LogProbs.Content, ext.LogProbs.Content...)
 		}
 	}
 
 	return ret, nil
+}
+
+const extraKeyResponseMetaExtension = "_eino_ext_agenticdeepseek_response_meta_ext"
+
+func applyResponseMetaExtension(msg *schema.Message) {
+	if msg != nil && msg.ResponseMeta != nil {
+		setMsgExtra(msg, extraKeyResponseMetaExtension, &ResponseMetaExtension{
+			FinishReason: msg.ResponseMeta.FinishReason,
+			LogProbs:     msg.ResponseMeta.LogProbs,
+		})
+	}
+}
+
+func responseMetaModifier() model.Option {
+	return openai.WithResponseMessageModifier(
+		func(ctx context.Context, msg *schema.Message, rawBody []byte) (*schema.Message, error) {
+			applyResponseMetaExtension(msg)
+			return msg, nil
+		},
+	)
+}
+
+func responseMetaChunkModifier() model.Option {
+	return openai.WithResponseChunkMessageModifier(
+		func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error) {
+			applyResponseMetaExtension(msg)
+			return msg, nil
+		},
+	)
+}
+
+func extractResponseMetaExtension(out *schema.AgenticMessage) {
+	if out.Extra == nil {
+		return
+	}
+	ext, ok := out.Extra[extraKeyResponseMetaExtension].(*ResponseMetaExtension)
+	if !ok {
+		return
+	}
+	if out.ResponseMeta == nil {
+		out.ResponseMeta = &schema.AgenticResponseMeta{}
+	}
+	out.ResponseMeta.Extension = ext
+}
+
+func setMsgExtra(msg *schema.Message, key string, value any) {
+	if msg.Extra == nil {
+		msg.Extra = make(map[string]any)
+	}
+	msg.Extra[key] = value
 }
