@@ -418,7 +418,7 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 					{
 						Type: schema.ContentBlockTypeServerToolCall,
 						ServerToolCall: &schema.ServerToolCall{
-							Name: ServerToolNameCodeExecution,
+							Name: string(ServerToolNameCodeExecution),
 							Arguments: &ServerToolCallArguments{&ExecutableCode{
 								Code:     "print('hello')",
 								Language: LanguagePython,
@@ -428,7 +428,7 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 					{
 						Type: schema.ContentBlockTypeServerToolResult,
 						ServerToolResult: &schema.ServerToolResult{
-							Name: ServerToolNameCodeExecution,
+							Name: string(ServerToolNameCodeExecution),
 							Content: &ServerToolCallResult{&CodeExecutionResult{
 								Outcome: OutcomeOK,
 								Output:  "output",
@@ -745,7 +745,7 @@ func TestConvAgenticCandidate_Tools(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Len(t, message.ContentBlocks, 1)
 				assert.Equal(t, schema.ContentBlockTypeServerToolCall, message.ContentBlocks[0].Type)
-				assert.Equal(t, ServerToolNameCodeExecution, message.ContentBlocks[0].ServerToolCall.Name)
+				assert.Equal(t, string(ServerToolNameCodeExecution), message.ContentBlocks[0].ServerToolCall.Name)
 
 				execCode := message.ContentBlocks[0].ServerToolCall.Arguments.(*ServerToolCallArguments).ExecutableCode
 				assert.Equal(t, "x = 1 + 1", execCode.Code)
@@ -771,7 +771,7 @@ func TestConvAgenticCandidate_Tools(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Len(t, message.ContentBlocks, 1)
 				assert.Equal(t, schema.ContentBlockTypeServerToolResult, message.ContentBlocks[0].Type)
-				assert.Equal(t, ServerToolNameCodeExecution, message.ContentBlocks[0].ServerToolResult.Name)
+				assert.Equal(t, string(ServerToolNameCodeExecution), message.ContentBlocks[0].ServerToolResult.Name)
 
 				result := message.ContentBlocks[0].ServerToolResult.Content.(*ServerToolCallResult).CodeExecutionResult
 				assert.Equal(t, OutcomeOK, result.Outcome)

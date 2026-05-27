@@ -88,10 +88,6 @@ type Config struct {
 	// Optional.
 	Thinking *anthropic.ThinkingConfigParamUnion
 
-	// ServerTools specifies server-side tools available to the model.
-	// Optional.
-	ServerTools []*ServerToolConfig
-
 	// CustomHeaders specifies custom HTTP headers to include in API requests.
 	// CustomHeaders allows passing additional metadata or authentication information.
 	// Optional.
@@ -158,7 +154,6 @@ type Model struct {
 	maxTokens              int
 	stopSequences          []string
 	disableParallelToolUse *bool
-	serverTools            []*ServerToolConfig
 	customHeaders          map[string]string
 	extraFields            map[string]any
 	thinking               *anthropic.ThinkingConfigParamUnion
@@ -211,7 +206,6 @@ func New(ctx context.Context, cfg *Config) (*Model, error) {
 		maxTokens:              cfg.MaxTokens,
 		stopSequences:          cfg.StopSequences,
 		disableParallelToolUse: cfg.DisableParallelToolUse,
-		serverTools:            cfg.ServerTools,
 		customHeaders:          cfg.CustomHeaders,
 		extraFields:            cfg.ExtraFields,
 		thinking:               cfg.Thinking,
@@ -514,7 +508,6 @@ func (m *Model) getOptions(opts []model.Option) (*model.Options, *claudeOptions,
 		Stop:      m.stopSequences,
 	}, opts...)
 	specOptions := model.GetImplSpecificOptions(&claudeOptions{
-		serverTools:   m.serverTools,
 		customHeaders: m.customHeaders,
 		extraFields:   m.extraFields,
 	}, opts...)

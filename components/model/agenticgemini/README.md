@@ -50,7 +50,7 @@ func main() {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
 
-	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.New(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 		ThinkingConfig: &genai.ThinkingConfig{
@@ -135,17 +135,13 @@ type Config struct {
     
     // ResponseModalities specifies the modalities the model can return.
     // Optional.
-    ResponseModalities []ResponseModality
+    ResponseModalities []genai.Modality
     
     MediaResolution genai.MediaResolution
     
-    // CacheTTL specifies how long prefix cache resources remain valid (now + TTL).
+    // CacheExpiration configures the expiration policy for prefix cache resources.
     // Optional.
-    CacheTTL time.Duration
-
-    // CacheExpireTime sets the absolute expiration timestamp for prefix cache resources.
-    // Optional.
-    CacheExpireTime time.Time
+    CacheExpiration *CacheExpiration
 }
 ```
 

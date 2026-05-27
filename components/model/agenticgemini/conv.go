@@ -160,11 +160,11 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 
 		case schema.ContentBlockTypeServerToolCall:
 			if block.ServerToolCall != nil {
-				switch block.ServerToolCall.Name {
+				switch ServerToolName(block.ServerToolCall.Name) {
 				case ServerToolNameCodeExecution:
-					result, ok := block.ServerToolCall.Arguments.(*ServerToolCallArguments)
-					if !ok {
-						return nil, fmt.Errorf("failed to convert to genai content: CodeExecution tool call argument isn't *ServerToolCallArguments")
+					result, err := getServerToolCallArguments(block.ServerToolCall)
+					if err != nil {
+						return nil, fmt.Errorf("failed to convert to genai content: %w", err)
 					}
 					if result.ExecutableCode == nil {
 						return nil, fmt.Errorf("failed to convert to genai content: CodeExecution tool call argument is empty")
@@ -177,11 +177,11 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 
 		case schema.ContentBlockTypeServerToolResult:
 			if block.ServerToolResult != nil {
-				switch block.ServerToolResult.Name {
+				switch ServerToolName(block.ServerToolResult.Name) {
 				case ServerToolNameCodeExecution:
-					result, ok := block.ServerToolResult.Content.(*ServerToolCallResult)
-					if !ok {
-						return nil, fmt.Errorf("failed to convert to genai content: CodeExecution tool result isn't *ServerToolCallResult")
+					result, err := getServerToolCallResult(block.ServerToolResult)
+					if err != nil {
+						return nil, fmt.Errorf("failed to convert to genai content: %w", err)
 					}
 					if result.CodeExecutionResult == nil {
 						return nil, fmt.Errorf("failed to convert to genai content: CodeExecution tool result is empty")
@@ -391,7 +391,7 @@ func convAgenticCandidate(candidate *genai.Candidate, lastType schema.ContentBlo
 		if part.CodeExecutionResult != nil {
 			cb.Type = schema.ContentBlockTypeServerToolResult
 			cb.ServerToolResult = &schema.ServerToolResult{
-				Name: ServerToolNameCodeExecution,
+				Name: string(ServerToolNameCodeExecution),
 				Content: &ServerToolCallResult{
 					CodeExecutionResult: &CodeExecutionResult{
 						Outcome: Outcome(part.CodeExecutionResult.Outcome),
@@ -402,7 +402,7 @@ func convAgenticCandidate(candidate *genai.Candidate, lastType schema.ContentBlo
 		} else if part.ExecutableCode != nil {
 			cb.Type = schema.ContentBlockTypeServerToolCall
 			cb.ServerToolCall = &schema.ServerToolCall{
-				Name: ServerToolNameCodeExecution,
+				Name: string(ServerToolNameCodeExecution),
 				Arguments: &ServerToolCallArguments{ExecutableCode: &ExecutableCode{
 					Code:     part.ExecutableCode.Code,
 					Language: Language(part.ExecutableCode.Language),
@@ -487,6 +487,7 @@ func convGroundingMetadata(gm *genai.GroundingMetadata) *gemini_schema.Grounding
 			nSupport.GroundingChunkIndices = append(nSupport.GroundingChunkIndices, int(index))
 		}
 		nSupport.ConfidenceScores = support.ConfidenceScores
+		ret.GroundingSupports = append(ret.GroundingSupports, nSupport)
 	}
 	if gm.SearchEntryPoint != nil {
 		ret.SearchEntryPoint = &gemini_schema.SearchEntryPoint{
@@ -716,7 +717,7 @@ func createContentBlockFromType(t schema.ContentBlockType) *schema.ContentBlock 
 }
 
 // genInputAndConf generates input messages and configuration for Gemini API
-func (g *Gemini) genInputAndConf(input []*schema.AgenticMessage, opts ...model.Option) (string, []*schema.AgenticMessage, *genai.GenerateContentConfig, *model.AgenticConfig, error) {
+func (g *Model) genInputAndConf(input []*schema.AgenticMessage, opts ...model.Option) (string, []*schema.AgenticMessage, *genai.GenerateContentConfig, *model.AgenticConfig, error) {
 	commonOptions := model.GetCommonOptions(&model.Options{
 		Temperature:       g.temperature,
 		TopP:              g.topP,

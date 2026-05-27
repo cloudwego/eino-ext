@@ -50,7 +50,7 @@ func main() {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
 
-	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.New(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 		ThinkingConfig: &genai.ThinkingConfig{
@@ -135,17 +135,13 @@ type Config struct {
     
     // ResponseModalities 指定模型可以返回的模态类型
     // 可选。
-    ResponseModalities []ResponseModality
+    ResponseModalities []genai.Modality
     
     MediaResolution genai.MediaResolution
     
-    // CacheTTL 指定前缀缓存资源的有效时长（now + TTL）。
+    // CacheExpiration 配置前缀缓存资源的过期策略。
     // 可选。
-    CacheTTL time.Duration
-
-    // CacheExpireTime 设置前缀缓存资源的绝对过期时间戳。
-    // 可选。
-    CacheExpireTime time.Time
+    CacheExpiration *CacheExpiration
 }
 ```
 

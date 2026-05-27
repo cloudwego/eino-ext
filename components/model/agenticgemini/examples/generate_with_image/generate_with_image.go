@@ -42,7 +42,7 @@ func main() {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}
 
-	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.New(ctx, &agenticgemini.Config{
 		Client: client,
 		Model:  modelName,
 	})

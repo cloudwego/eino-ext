@@ -44,12 +44,12 @@ func main() {
 		log.Fatalf("genai.NewClient failed: %v", err)
 	}
 
-	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
+	cm, err := agenticgemini.New(ctx, &agenticgemini.Config{
 		Model:  modelName,
 		Client: client,
 	})
 	if err != nil {
-		log.Fatalf("gemini.NewAgenticModel failed: %v", err)
+		log.Fatalf("gemini.New failed: %v", err)
 	}
 
 	type toolCallInput struct {

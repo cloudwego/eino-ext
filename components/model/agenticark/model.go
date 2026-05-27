@@ -127,14 +127,6 @@ type Config struct {
 	// Optional.
 	ParallelToolCalls *bool
 
-	// ServerTools specifies server-side tools available to the model.
-	// Optional.
-	ServerTools []*ServerToolConfig
-
-	// MCPTools specifies Model Context Protocol tools available to the model.
-	// Optional.
-	MCPTools []*responses.ToolMcp
-
 	// EnableAutoCache controls whether auto-caching for multi-turn conversations is active for the model.
 	// When enabled, conversation turns are stored, and the model automatically maintains context
 	// by locating the most recent cached message in the input (via Response ID in ResponseMeta).
@@ -219,8 +211,6 @@ func buildClient(config *Config) (*Model, error) {
 		enablePassBackReasoning: config.EnablePassBackReasoning,
 		maxToolCalls:            config.MaxToolCalls,
 		parallelToolCalls:       config.ParallelToolCalls,
-		serverTools:             config.ServerTools,
-		mcpTools:                config.MCPTools,
 		enableAutoCache:         config.EnableAutoCache,
 		expireAtSec:             config.ExpireAtSec,
 		contextManagement:       config.ContextManagement,
@@ -246,8 +236,6 @@ type Model struct {
 	reasoning         *responses.ResponsesReasoning
 	maxToolCalls      *int64
 	parallelToolCalls *bool
-	serverTools       []*ServerToolConfig
-	mcpTools          []*responses.ToolMcp
 
 	enableAutoCache         bool
 	expireAtSec             *int64
@@ -611,8 +599,6 @@ func (m *Model) getOptions(opts []model.Option) (*model.Options, *arkOptions, er
 		text:              m.text,
 		maxToolCalls:      m.maxToolCalls,
 		parallelToolCalls: m.parallelToolCalls,
-		serverTools:       m.serverTools,
-		mcpTools:          m.mcpTools,
 		contextManagement: m.contextManagement,
 		customHeaders:     m.customHeaders,
 	}, opts...)

@@ -31,7 +31,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-func TestNewAgenticModel(t *testing.T) {
+func TestNew(t *testing.T) {
 	config := &Config{
 		Client:      &genai.Client{},
 		Model:       "gemini-pro",
@@ -45,38 +45,30 @@ func TestNewAgenticModel(t *testing.T) {
 				Threshold: genai.HarmBlockThresholdBlockMediumAndAbove,
 			},
 		},
-		ResponseModalities: []ResponseModality{ResponseModalityText, ResponseModalityImage},
+		ResponseModalities: []genai.Modality{genai.ModalityText, genai.ModalityImage},
 		ImageConfig:        &genai.ImageConfig{AspectRatio: "16:9", ImageSize: "1K"},
-		CacheTTL:           time.Hour,
+		CacheExpiration: &CacheExpiration{TTL: ptrOf(time.Hour)},
 	}
-	model, err := NewAgenticModel(context.Background(), config)
+	m, err := New(context.Background(), config)
 	assert.NoError(t, err)
-	assert.NotNil(t, model)
-	assert.Equal(t, "gemini-pro", model.model)
-	assert.Equal(t, 100, *model.maxTokens)
-	assert.Equal(t, float32(0.7), *model.temperature)
-	assert.Equal(t, float32(0.9), *model.topP)
-	assert.Equal(t, int32(40), *model.topK)
-	assert.Len(t, model.safetySettings, 1)
-	assert.Len(t, model.responseModalities, 2)
-	assert.Equal(t, time.Hour, model.cacheTTL)
-	assert.Equal(t, "16:9", model.imageConfig.AspectRatio)
-	assert.Equal(t, "1K", model.imageConfig.ImageSize)
+	assert.NotNil(t, m)
+	assert.Equal(t, "gemini-pro", m.model)
+	assert.Equal(t, 100, *m.maxTokens)
+	assert.Equal(t, float32(0.7), *m.temperature)
+	assert.Equal(t, float32(0.9), *m.topP)
+	assert.Equal(t, int32(40), *m.topK)
+	assert.Len(t, m.safetySettings, 1)
+	assert.Len(t, m.responseModalities, 2)
+	assert.Equal(t, time.Hour, *m.cacheExpiration.TTL)
+	assert.Equal(t, "16:9", m.imageConfig.AspectRatio)
+	assert.Equal(t, "1K", m.imageConfig.ImageSize)
 
-	assert.Equal(t, "Gemini", model.GetType())
-	assert.True(t, model.IsCallbacksEnabled())
-
-	tm, err := model.WithTools([]*schema.ToolInfo{{}})
-	assert.NoError(t, err)
-	model = tm.(*Gemini)
-	assert.Len(t, model.tools, 1)
-	assert.Len(t, model.origTools, 1)
-	assert.NotNil(t, model.toolChoice)
-	assert.Equal(t, schema.ToolChoiceAllowed, model.toolChoice.Type)
+	assert.Equal(t, "AgenticGemini", m.GetType())
+	assert.True(t, m.IsCallbacksEnabled())
 }
 
-func TestGemini_GenInputAndConf(t *testing.T) {
-	g := &Gemini{
+func TestModel_GenInputAndConf(t *testing.T) {
+	g := &Model{
 		cli:         &genai.Client{},
 		model:       "gemini-pro",
 		temperature: ptrOf(float32(0.5)),
@@ -141,7 +133,7 @@ func TestGemini_GenInputAndConf(t *testing.T) {
 	assert.NotNil(t, genaiConf.Tools[0].GoogleSearch)
 }
 
-func TestGemini_Generate_Success(t *testing.T) {
+func TestModel_Generate_Success(t *testing.T) {
 	defer mockey.Mock(genai.Models.GenerateContent).Return(&genai.GenerateContentResponse{
 		Candidates: []*genai.Candidate{
 			{
@@ -161,7 +153,7 @@ func TestGemini_Generate_Success(t *testing.T) {
 		},
 	}, nil).Build().UnPatch()
 
-	g := &Gemini{
+	g := &Model{
 		cli:   &genai.Client{Models: &genai.Models{}},
 		model: "gemini-pro",
 	}
@@ -198,7 +190,7 @@ func TestGemini_Generate_Success(t *testing.T) {
 	assert.Equal(t, 30, result.ResponseMeta.TokenUsage.TotalTokens)
 }
 
-func TestGemini_Generate_WithFunctionCall(t *testing.T) {
+func TestModel_Generate_WithFunctionCall(t *testing.T) {
 	defer mockey.Mock(genai.Models.GenerateContent).Return(&genai.GenerateContentResponse{
 		Candidates: []*genai.Candidate{
 			{
@@ -220,7 +212,7 @@ func TestGemini_Generate_WithFunctionCall(t *testing.T) {
 		},
 	}, nil).Build().UnPatch()
 
-	g := &Gemini{
+	g := &Model{
 		cli:   &genai.Client{Models: &genai.Models{}},
 		model: "gemini-pro",
 	}
@@ -249,7 +241,7 @@ func TestGemini_Generate_WithFunctionCall(t *testing.T) {
 	assert.Equal(t, "get_weather", result.ContentBlocks[0].FunctionToolCall.Name)
 }
 
-func TestGemini_Stream_Success(t *testing.T) {
+func TestModel_Stream_Success(t *testing.T) {
 	// Create a mock stream iterator
 	mockIterator := func(yield func(*genai.GenerateContentResponse, error) bool) {
 		// First chunk
@@ -309,7 +301,7 @@ func TestGemini_Stream_Success(t *testing.T) {
 		iter.Seq2[*genai.GenerateContentResponse, error](mockIterator),
 	).Build().UnPatch()
 
-	g := &Gemini{
+	g := &Model{
 		cli:   &genai.Client{Models: &genai.Models{}},
 		model: "gemini-pro",
 	}
@@ -372,7 +364,7 @@ func TestConvCallbackOutput(t *testing.T) {
 }
 
 func TestPrefixCache(t *testing.T) {
-	g := &Gemini{cli: &genai.Client{Caches: &genai.Caches{}}}
+	g := &Model{cli: &genai.Client{Caches: &genai.Caches{}}}
 
 	defer mockey.Mock(genai.Caches.Create).Return(&genai.CachedContent{
 		Name: "name",

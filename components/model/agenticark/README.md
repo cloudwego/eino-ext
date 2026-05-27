@@ -158,14 +158,6 @@ type Config struct {
     // Optional.
     ParallelToolCalls *bool
     
-    // ServerTools specifies server-side tools available to the model.
-    // Optional.
-    ServerTools []*ServerToolConfig
-    
-    // MCPTools specifies Model Context Protocol tools available to the model.
-    // Optional.
-    MCPTools []*responses.ToolMcp
-    
     // EnableAutoCache controls whether auto-caching for multi-turn conversations is active for the model.
     // When enabled, conversation turns are stored, and the model automatically maintains context
     // by locating the most recent cached message in the input (via Response ID in ResponseMeta).

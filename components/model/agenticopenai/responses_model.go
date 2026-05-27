@@ -111,14 +111,6 @@ type ResponsesConfig struct {
 	// Optional.
 	Include []responses.ResponseIncludable
 
-	// ServerTools specifies server-side tools available to the model.
-	// Optional.
-	ServerTools []*ResponsesServerToolConfig
-
-	// MCPTools specifies Model Context Protocol tools available to the model.
-	// Optional.
-	MCPTools []*responses.ToolMcpParam
-
 	// Truncation specifies how to handle context that exceeds the model's context window.
 	// Optional.
 	Truncation *responses.ResponseNewParamsTruncation
@@ -207,8 +199,6 @@ func buildClient(config *ResponsesConfig) (*ResponsesModel, error) {
 		maxToolCalls:         config.MaxToolCalls,
 		parallelToolCalls:    config.ParallelToolCalls,
 		include:              config.Include,
-		serverTools:          config.ServerTools,
-		mcpTools:             config.MCPTools,
 		truncation:           config.Truncation,
 		enableAutoCache:      config.EnableAutoCache,
 		promptCacheRetention: config.PromptCacheRetention,
@@ -233,8 +223,6 @@ type ResponsesModel struct {
 	maxToolCalls         *int
 	parallelToolCalls    *bool
 	include              []responses.ResponseIncludable
-	serverTools          []*ResponsesServerToolConfig
-	mcpTools             []*responses.ToolMcpParam
 	truncation           *responses.ResponseNewParamsTruncation
 	enableAutoCache      bool
 	promptCacheRetention *responses.ResponseNewParamsPromptCacheRetention
@@ -510,8 +498,6 @@ func (m *ResponsesModel) getOptions(opts []model.Option) (*model.Options, *optio
 		text:              m.text,
 		maxToolCalls:      m.maxToolCalls,
 		parallelToolCalls: m.parallelToolCalls,
-		serverTools:       m.serverTools,
-		mcpTools:          m.mcpTools,
 		truncation:        m.truncation,
 		customHeaders:     m.customHeader,
 	}, opts...)

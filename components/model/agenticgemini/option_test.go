@@ -33,7 +33,7 @@ func TestSpecificOptions(t *testing.T) {
 		WithResponseJSONSchema(&jsonschema.Schema{}),
 		WithCachedContentName("name"),
 		WithThinkingConfig(&genai.ThinkingConfig{}),
-		WithResponseModalities([]ResponseModality{ResponseModalityText}),
+		WithResponseModalities([]genai.Modality{genai.ModalityText}),
 		WithImageConfig(&genai.ImageConfig{AspectRatio: "16:9"}),
 		WithServerTools(tools),
 	)
