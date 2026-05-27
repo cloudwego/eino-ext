@@ -51,6 +51,24 @@ type EventConverterOption struct {
 	// If nil, the default conversion is used: the interrupt data is converted to
 	// an AgentMessageChunk with the interrupt metadata in _meta.
 	InterruptConverter InterruptConverter
+
+	// PreserveToolCallStream controls how an upstream tool-call stream is mapped
+	// into ACP SessionUpdates. ACP's ToolCall update has no native streaming
+	// concept for arguments, so by default (false) the converter concatenates
+	// every chunk into a single, complete ToolCall before yielding it. When set
+	// to true, each upstream chunk is forwarded as its own ToolCall SessionUpdate
+	// and the partial argument fragment is placed in RawInput as a JSON-encoded
+	// string (so it stays valid JSON on the wire).
+	//
+	// Whether the upstream is a stream at all is determined by the eino event
+	// (MessageVariant.IsStreaming), not by this flag — this flag only chooses
+	// between "preserve the stream" and "concat into one update" when it is.
+	//
+	// When true, the converter guarantees that ToolCallIDs do not interleave:
+	// once the emitted ToolCallID changes, the previous call is finalized and
+	// no further chunks for it will appear. Clients reassemble fragments by
+	// ToolCallID and treat an ID change as the end of the previous call.
+	PreserveToolCallStream bool
 }
 
 // toolCallAccum buffers streaming tool call argument chunks keyed by Index.
@@ -62,10 +80,22 @@ type toolCallAccum struct {
 	args strings.Builder
 }
 
+// toolCallStreamState tracks the id and name observed for a tool call whose
+// stream is being preserved (PreserveToolCallStream=true), keyed by Index.
+// Upstream populates ID/Name only on the first chunk; mirroring them onto every
+// emitted SessionUpdate gives clients a stable ToolCallID for reassembly.
+type toolCallStreamState struct {
+	id   string
+	name string
+}
+
 // AgentEventToSessionUpdate converts an eino AgentEvent into a sequence of ACP SessionUpdate notifications.
 // It handles message output (both streaming and non-streaming), tool calls, tool results, and interrupt events.
 // For interrupt events, a custom InterruptConverter can be provided via opt; if nil, the default converter
 // is used, which serializes the interrupt data as an AgentMessageChunk with interrupt metadata in _meta.
+// When the upstream message output is a stream, tool-call argument chunks are concatenated into a single
+// ToolCall update by default; set opt.PreserveToolCallStream to forward each chunk as its own update
+// (see EventConverterOption.PreserveToolCallStream for the client-side reassembly contract).
 func AgentEventToSessionUpdate(
 	event *adk.AgentEvent,
 	opt *EventConverterOption,
@@ -93,10 +123,17 @@ func AgentEventToSessionUpdate(
 		}
 		defer mo.MessageStream.Close()
 
+		preserveToolCallStream := opt != nil && opt.PreserveToolCallStream
+
 		var lastRole schema.RoleType
 		// pendingToolCalls accumulates streaming tool call argument chunks keyed by Index.
+		// Unused when preserveToolCallStream is true.
 		pendingToolCalls := make(map[int]*toolCallAccum)
 		var pendingOrder []int
+		// streamStates tracks id/name per Index so each emitted chunk carries a stable
+		// ToolCallID even though upstream sets ID/name only on the first chunk.
+		// Unused when preserveToolCallStream is false.
+		streamStates := make(map[int]*toolCallStreamState)
 
 		flushToolCalls := func() bool {
 			for _, idx := range pendingOrder {
@@ -174,24 +211,66 @@ func AgentEventToSessionUpdate(
 			}
 
 			if len(msg.ToolCalls) > 0 {
-				for i, tc := range msg.ToolCalls {
-					idx := i
-					if tc.Index != nil {
-						idx = *tc.Index
+				if preserveToolCallStream {
+					for i, tc := range msg.ToolCalls {
+						idx := i
+						if tc.Index != nil {
+							idx = *tc.Index
+						}
+						s, ok := streamStates[idx]
+						if !ok {
+							s = &toolCallStreamState{}
+							streamStates[idx] = s
+						}
+						if tc.ID != "" {
+							s.id = tc.ID
+						}
+						if tc.Function.Name != "" {
+							s.name = tc.Function.Name
+						}
+						// Encode the args fragment as a JSON string so partial JSON
+						// stays valid on the wire. Clients JSON-decode RawInput as a
+						// string, concatenate fragments sharing a ToolCallID, then
+						// parse the concatenated result as the final arguments object.
+						var rawInput json.RawMessage
+						if tc.Function.Arguments != "" {
+							encoded, jErr := json.Marshal(tc.Function.Arguments)
+							if jErr != nil {
+								if !yield(acpproto.SessionUpdate{}, jErr) {
+									return
+								}
+								continue
+							}
+							rawInput = encoded
+						}
+						if !yield(acpproto.NewSessionUpdateToolCall(acpproto.ToolCall{
+							ToolCallID: acpproto.ToolCallID(s.id),
+							Title:      s.name,
+							RawInput:   rawInput,
+						}), nil) {
+							return
+						}
 					}
-					a, ok := pendingToolCalls[idx]
-					if !ok {
-						a = &toolCallAccum{}
-						pendingToolCalls[idx] = a
-						pendingOrder = append(pendingOrder, idx)
+				} else {
+					for i, tc := range msg.ToolCalls {
+						idx := i
+						if tc.Index != nil {
+							idx = *tc.Index
+						}
+						a, ok := pendingToolCalls[idx]
+						if !ok {
+							a = &toolCallAccum{}
+							pendingToolCalls[idx] = a
+							pendingOrder = append(pendingOrder, idx)
+						}
+						if tc.ID != "" && a.id == "" {
+							a.id = tc.ID
+						}
+						if tc.Function.Name != "" && a.name == "" {
+							a.name = tc.Function.Name
+						}
+						a.args.WriteString(tc.Function.Arguments)
 					}
-					if tc.ID != "" && a.id == "" {
-						a.id = tc.ID
-					}
-					if tc.Function.Name != "" && a.name == "" {
-						a.name = tc.Function.Name
-					}
-					a.args.WriteString(tc.Function.Arguments)
 				}
 				if hasNonToolContent {
 					clone := *msg
