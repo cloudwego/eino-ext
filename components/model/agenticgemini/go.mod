@@ -5,7 +5,7 @@ go 1.24
 require (
 	github.com/bytedance/mockey v1.4.6
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.9.0
+	github.com/cloudwego/eino v0.9.1
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/stretchr/testify v1.10.0
