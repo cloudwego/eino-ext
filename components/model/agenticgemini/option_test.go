@@ -26,6 +26,8 @@ import (
 )
 
 func TestSpecificOptions(t *testing.T) {
+	tools := []*ServerToolConfig{{GoogleSearch: &genai.GoogleSearch{}}}
+
 	o := model.GetImplSpecificOptions[options](nil,
 		WithTopK(2),
 		WithResponseJSONSchema(&jsonschema.Schema{}),
@@ -33,6 +35,7 @@ func TestSpecificOptions(t *testing.T) {
 		WithThinkingConfig(&genai.ThinkingConfig{}),
 		WithResponseModalities([]ResponseModality{ResponseModalityText}),
 		WithImageConfig(&genai.ImageConfig{AspectRatio: "16:9"}),
+		WithServerTools(tools),
 	)
 
 	assert.Equal(t, int32(2), *o.TopK)
@@ -41,4 +44,5 @@ func TestSpecificOptions(t *testing.T) {
 	assert.NotNil(t, o.ThinkingConfig)
 	assert.Len(t, o.ResponseModalities, 1)
 	assert.Equal(t, "16:9", o.ImageConfig.AspectRatio)
+	assert.Equal(t, tools, o.ServerTools)
 }

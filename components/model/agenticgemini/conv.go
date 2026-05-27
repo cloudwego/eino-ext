@@ -757,41 +757,11 @@ func (g *Gemini) genInputAndConf(input []*schema.AgenticMessage, opts ...model.O
 		copy(t.FunctionDeclarations, tools)
 		m.Tools = append(m.Tools, t)
 	}
-	if g.enableCodeExecution != nil {
-		m.Tools = append(m.Tools, &genai.Tool{
-			CodeExecution: g.enableCodeExecution,
-		})
+	serverTools, err := toServerTools(geminiOptions.ServerTools)
+	if err != nil {
+		return "", nil, nil, nil, err
 	}
-	if g.enableGoogleSearch != nil {
-		m.Tools = append(m.Tools, &genai.Tool{
-			GoogleSearch: g.enableGoogleSearch,
-		})
-	}
-	if g.enableGoogleSearchRetrieval != nil {
-		m.Tools = append(m.Tools, &genai.Tool{
-			GoogleSearchRetrieval: g.enableGoogleSearchRetrieval,
-		})
-	}
-	if g.enableComputerUse != nil {
-		m.Tools = append(m.Tools, &genai.Tool{
-			ComputerUse: g.enableComputerUse,
-		})
-	}
-	if g.enableURLContext != nil {
-		m.Tools = append(m.Tools, &genai.Tool{
-			URLContext: g.enableURLContext,
-		})
-	}
-	if g.enableFileSearch != nil {
-		m.Tools = append(m.Tools, &genai.Tool{
-			FileSearch: g.enableFileSearch,
-		})
-	}
-	if g.enableGoogleMaps != nil {
-		m.Tools = append(m.Tools, &genai.Tool{
-			GoogleMaps: g.enableGoogleMaps,
-		})
-	}
+	m.Tools = append(m.Tools, serverTools...)
 
 	m.MediaResolution = g.mediaResolution
 

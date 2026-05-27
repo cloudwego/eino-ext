@@ -79,13 +79,13 @@ func streamAndConcat(stream *schema.StreamReader[*schema.AgenticMessage]) (*sche
 // responses with source citations.
 func runGoogleSearchExample(ctx context.Context, client *genai.Client, modelName string) {
 	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
-		Client:             client,
-		Model:              modelName,
-		EnableGoogleSearch: &genai.GoogleSearch{},
+		Client: client,
+		Model:  modelName,
 	})
 	if err != nil {
 		log.Fatalf("NewAgenticModel with GoogleSearch failed, err=%v", err)
 	}
+	serverTools := []*agenticgemini.ServerToolConfig{{GoogleSearch: &genai.GoogleSearch{}}}
 
 	// First turn: Ask about AI news
 	fmt.Println("\n--- First Turn ---")
@@ -93,7 +93,7 @@ func runGoogleSearchExample(ctx context.Context, client *genai.Client, modelName
 
 	stream, err := cm.Stream(ctx, []*schema.AgenticMessage{
 		schema.UserAgenticMessage("Use GoogleSearch and tell me what are the latest news about AI developments today?"),
-	})
+	}, agenticgemini.WithServerTools(serverTools))
 	if err != nil {
 		log.Fatalf("Stream error: %v", err)
 	}
@@ -122,7 +122,7 @@ func runGoogleSearchExample(ctx context.Context, client *genai.Client, modelName
 		schema.UserAgenticMessage("Use GoogleSearch and tell me what are the latest news about AI developments today?"),
 		firstResp,
 		schema.UserAgenticMessage("Can you give me more details about the most significant one? Search for more information if needed."),
-	})
+	}, agenticgemini.WithServerTools(serverTools))
 	if err != nil {
 		log.Fatalf("Stream error: %v", err)
 	}
@@ -153,7 +153,7 @@ func runGoogleSearchExample(ctx context.Context, client *genai.Client, modelName
 		schema.UserAgenticMessage("Can you give me more details about the most significant one? Search for more information if needed."),
 		secondResp,
 		schema.UserAgenticMessage("Please summarize all the key points we discussed."),
-	})
+	}, agenticgemini.WithServerTools(serverTools))
 	if err != nil {
 		log.Fatalf("Stream error: %v", err)
 	}
@@ -170,13 +170,13 @@ func runGoogleSearchExample(ctx context.Context, client *genai.Client, modelName
 // to solve problems and iterate on solutions.
 func runCodeExecutionExample(ctx context.Context, client *genai.Client, modelName string) {
 	cm, err := agenticgemini.NewAgenticModel(ctx, &agenticgemini.Config{
-		Client:              client,
-		Model:               modelName,
-		EnableCodeExecution: &genai.ToolCodeExecution{},
+		Client: client,
+		Model:  modelName,
 	})
 	if err != nil {
 		log.Fatalf("NewAgenticModel with CodeExecution failed, err=%v", err)
 	}
+	serverTools := []*agenticgemini.ServerToolConfig{{CodeExecution: &genai.ToolCodeExecution{}}}
 
 	// First turn: Calculate factorial and Fibonacci
 	fmt.Println("\n--- First Turn ---")
@@ -184,7 +184,7 @@ func runCodeExecutionExample(ctx context.Context, client *genai.Client, modelNam
 
 	stream, err := cm.Stream(ctx, []*schema.AgenticMessage{
 		schema.UserAgenticMessage("Calculate the factorial of 10 using Python code, and also generate the first 20 Fibonacci numbers."),
-	})
+	}, agenticgemini.WithServerTools(serverTools))
 	if err != nil {
 		log.Fatalf("Stream error: %v", err)
 	}
@@ -203,7 +203,7 @@ func runCodeExecutionExample(ctx context.Context, client *genai.Client, modelNam
 		schema.UserAgenticMessage("Calculate the factorial of 10 using Python code, and also generate the first 20 Fibonacci numbers."),
 		firstResp,
 		schema.UserAgenticMessage("Can you optimize the Fibonacci function using memoization and compare the performance with the previous implementation? Generate Fibonacci for n=30 and time both approaches."),
-	})
+	}, agenticgemini.WithServerTools(serverTools))
 	if err != nil {
 		log.Fatalf("Stream error: %v", err)
 	}
@@ -224,7 +224,7 @@ func runCodeExecutionExample(ctx context.Context, client *genai.Client, modelNam
 		schema.UserAgenticMessage("Can you optimize the Fibonacci function using memoization and compare the performance with the previous implementation? Generate Fibonacci for n=30 and time both approaches."),
 		secondResp,
 		schema.UserAgenticMessage("Now create a simple visualization showing the exponential growth of Fibonacci numbers. Use matplotlib to plot the first 20 Fibonacci numbers."),
-	})
+	}, agenticgemini.WithServerTools(serverTools))
 	if err != nil {
 		log.Fatalf("Stream error: %v", err)
 	}

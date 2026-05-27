@@ -66,28 +66,6 @@ type Config struct {
 	// Optional. Used when you want structured output in JSON format
 	ResponseJSONSchema *jsonschema.Schema
 
-	// EnableCodeExecution allows the model to use the server tool CodeExecution
-	// Optional.
-	EnableCodeExecution *genai.ToolCodeExecution
-	// EnableGoogleSearch allows the model to use the server tool GoogleSearch
-	// Optional.
-	EnableGoogleSearch *genai.GoogleSearch
-	// EnableGoogleSearchRetrieval allows the model to use the server tool GoogleSearchRetrieval
-	// Optional.
-	EnableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
-	// EnableComputerUse allows the model to use the server tool ComputerUse
-	// Optional.
-	EnableComputerUse *genai.ComputerUse
-	// EnableURLContext allows the model to use the server tool URLContext
-	// Optional.
-	EnableURLContext *genai.URLContext
-	// EnableFileSearch allows the model to use the server tool FileSearch
-	// Optional.
-	EnableFileSearch *genai.FileSearch
-	// EnableGoogleMaps allows the model to use the server tool GoogleMaps
-	// Optional.
-	EnableGoogleMaps *genai.GoogleMaps
-
 	// SafetySettings configures content filtering for different harm categories
 	// Controls the model's filtering behavior for potentially harmful content
 	// Optional.
@@ -123,60 +101,96 @@ const (
 	ResponseModalityAudio ResponseModality = "AUDIO"
 )
 
+type ServerToolConfig struct {
+	CodeExecution         *genai.ToolCodeExecution
+	GoogleSearch          *genai.GoogleSearch
+	GoogleSearchRetrieval *genai.GoogleSearchRetrieval
+	URLContext            *genai.URLContext
+	FileSearch            *genai.FileSearch
+	GoogleMaps            *genai.GoogleMaps
+}
+
 // NewAgenticModel creates a new Gemini agentic model instance
 func NewAgenticModel(_ context.Context, cfg *Config) (*Gemini, error) {
 	return &Gemini{
 		cli: cfg.Client,
 
-		model:                       cfg.Model,
-		maxTokens:                   cfg.MaxTokens,
-		temperature:                 cfg.Temperature,
-		topP:                        cfg.TopP,
-		topK:                        cfg.TopK,
-		responseJSONSchema:          cfg.ResponseJSONSchema,
-		enableCodeExecution:         cfg.EnableCodeExecution,
-		enableGoogleSearch:          cfg.EnableGoogleSearch,
-		enableGoogleSearchRetrieval: cfg.EnableGoogleSearchRetrieval,
-		enableComputerUse:           cfg.EnableComputerUse,
-		enableURLContext:            cfg.EnableURLContext,
-		enableFileSearch:            cfg.EnableFileSearch,
-		enableGoogleMaps:            cfg.EnableGoogleMaps,
-		safetySettings:              cfg.SafetySettings,
-		thinkingConfig:              cfg.ThinkingConfig,
-		imageConfig:                 cfg.ImageConfig,
-		responseModalities:          cfg.ResponseModalities,
-		mediaResolution:             cfg.MediaResolution,
-		cacheTTL:                    cfg.CacheTTL,
-		cacheExpireTime:             cfg.CacheExpireTime,
+		model:              cfg.Model,
+		maxTokens:          cfg.MaxTokens,
+		temperature:        cfg.Temperature,
+		topP:               cfg.TopP,
+		topK:               cfg.TopK,
+		responseJSONSchema: cfg.ResponseJSONSchema,
+		safetySettings:     cfg.SafetySettings,
+		thinkingConfig:     cfg.ThinkingConfig,
+		imageConfig:        cfg.ImageConfig,
+		responseModalities: cfg.ResponseModalities,
+		mediaResolution:    cfg.MediaResolution,
+		cacheTTL:           cfg.CacheTTL,
+		cacheExpireTime:    cfg.CacheExpireTime,
 	}, nil
 }
 
 type Gemini struct {
 	cli *genai.Client
 
-	model                       string
-	maxTokens                   *int
-	topP                        *float32
-	temperature                 *float32
-	topK                        *int32
-	responseJSONSchema          *jsonschema.Schema
-	tools                       []*genai.FunctionDeclaration
-	origTools                   []*schema.ToolInfo
-	toolChoice                  *schema.AgenticToolChoice
-	enableCodeExecution         *genai.ToolCodeExecution
-	enableGoogleSearch          *genai.GoogleSearch
-	enableGoogleSearchRetrieval *genai.GoogleSearchRetrieval
-	enableComputerUse           *genai.ComputerUse
-	enableURLContext            *genai.URLContext
-	enableFileSearch            *genai.FileSearch
-	enableGoogleMaps            *genai.GoogleMaps
-	safetySettings              []*genai.SafetySetting
-	thinkingConfig              *genai.ThinkingConfig
-	imageConfig                 *genai.ImageConfig
-	responseModalities          []ResponseModality
-	mediaResolution             genai.MediaResolution
-	cacheTTL                    time.Duration
-	cacheExpireTime             time.Time
+	model              string
+	maxTokens          *int
+	topP               *float32
+	temperature        *float32
+	topK               *int32
+	responseJSONSchema *jsonschema.Schema
+	tools              []*genai.FunctionDeclaration
+	origTools          []*schema.ToolInfo
+	toolChoice         *schema.AgenticToolChoice
+	safetySettings     []*genai.SafetySetting
+	thinkingConfig     *genai.ThinkingConfig
+	imageConfig        *genai.ImageConfig
+	responseModalities []ResponseModality
+	mediaResolution    genai.MediaResolution
+	cacheTTL           time.Duration
+	cacheExpireTime    time.Time
+}
+
+func toServerTools(serverTools []*ServerToolConfig) ([]*genai.Tool, error) {
+	tools := make([]*genai.Tool, len(serverTools))
+
+	for i := range serverTools {
+		ti := serverTools[i]
+		if ti == nil {
+			return nil, fmt.Errorf("unknown server tool type")
+		}
+		switch {
+		case ti.CodeExecution != nil:
+			tools[i] = &genai.Tool{
+				CodeExecution: ti.CodeExecution,
+			}
+		case ti.GoogleSearch != nil:
+			tools[i] = &genai.Tool{
+				GoogleSearch: ti.GoogleSearch,
+			}
+		case ti.GoogleSearchRetrieval != nil:
+			tools[i] = &genai.Tool{
+				GoogleSearchRetrieval: ti.GoogleSearchRetrieval,
+			}
+		case ti.URLContext != nil:
+			tools[i] = &genai.Tool{
+				URLContext: ti.URLContext,
+			}
+		case ti.FileSearch != nil:
+			tools[i] = &genai.Tool{
+				FileSearch: ti.FileSearch,
+			}
+		case ti.GoogleMaps != nil:
+			tools[i] = &genai.Tool{
+				GoogleMaps: ti.GoogleMaps,
+			}
+		default:
+			return nil, fmt.Errorf("unknown server tool type")
+		}
+	}
+
+	return tools, nil
 }
 
 // CreatePrefixCache assembles inputs the same as Generate/Stream and writes
