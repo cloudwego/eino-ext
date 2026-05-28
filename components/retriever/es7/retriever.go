@@ -116,6 +116,10 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 	effectiveConfig := *r.config
 	effectiveConfig.Index = effectiveIndex
+	if effectiveConfig.ScoreThreshold != nil {
+		scoreThreshold := *effectiveConfig.ScoreThreshold
+		effectiveConfig.ScoreThreshold = &scoreThreshold
+	}
 
 	reqBody, err := effectiveConfig.SearchMode.BuildRequest(ctx, &effectiveConfig, query, opts...)
 	if err != nil {

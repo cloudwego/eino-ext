@@ -295,6 +295,7 @@ func TestRetriever_Retrieve(t *testing.T) {
 		Convey("with index option", func() {
 			var searchModeIndex string
 			var searchPath string
+			scoreThreshold := 0.5
 			mockT := &mockTransport{
 				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
 					header := http.Header{"X-Elastic-Product": []string{"Elasticsearch"}}
@@ -320,11 +321,13 @@ func TestRetriever_Retrieve(t *testing.T) {
 				Transport: mockT,
 			})
 			r, _ := NewRetriever(ctx, &RetrieverConfig{
-				Client: client,
-				Index:  "default_index",
+				Client:         client,
+				Index:          "default_index",
+				ScoreThreshold: &scoreThreshold,
 				SearchMode: &mockSearchMode{
 					buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
 						searchModeIndex = conf.Index
+						*conf.ScoreThreshold = 0.9
 						return map[string]any{"query": map[string]any{"match_all": map[string]any{}}}, nil
 					},
 				},
@@ -337,6 +340,7 @@ func TestRetriever_Retrieve(t *testing.T) {
 			So(searchPath, ShouldNotContainSubstring, "default_index")
 			So(searchModeIndex, ShouldEqual, "override_index")
 			So(r.config.Index, ShouldEqual, "default_index")
+			So(*r.config.ScoreThreshold, ShouldEqual, 0.5)
 		})
 
 		Convey("success", func() {

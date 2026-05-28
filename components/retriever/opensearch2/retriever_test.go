@@ -244,6 +244,7 @@ func TestRetrieve(t *testing.T) {
 		PatchConvey("test with index option", func() {
 			var searchModeIndex string
 			var searchPath string
+			scoreThreshold := 0.5
 			searchResp := `{"hits": {"hits": []}}`
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasSuffix(r.URL.Path, "/_search") {
@@ -263,11 +264,13 @@ func TestRetrieve(t *testing.T) {
 			r := &Retriever{
 				client: client,
 				config: &RetrieverConfig{
-					Index: "default_index",
-					TopK:  10,
+					Index:          "default_index",
+					TopK:           10,
+					ScoreThreshold: &scoreThreshold,
 					SearchMode: &mockSearchMode{
 						buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
 							searchModeIndex = conf.Index
+							*conf.ScoreThreshold = 0.9
 							return map[string]any{
 								"query": map[string]any{
 									"match": map[string]any{
@@ -288,6 +291,7 @@ func TestRetrieve(t *testing.T) {
 			convey.So(searchPath, convey.ShouldNotContainSubstring, "default_index")
 			convey.So(searchModeIndex, convey.ShouldEqual, "override_index")
 			convey.So(r.config.Index, convey.ShouldEqual, "default_index")
+			convey.So(*r.config.ScoreThreshold, convey.ShouldEqual, 0.5)
 		})
 	})
 }

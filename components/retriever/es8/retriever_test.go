@@ -98,6 +98,7 @@ func TestNewRetriever(t *testing.T) {
 	t.Run("with_index_option", func(t *testing.T) {
 		var searchModeIndex string
 		var searchPath string
+		scoreThreshold := 0.5
 		client, err := elasticsearch.NewClient(elasticsearch.Config{
 			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
 				header := http.Header{"X-Elastic-Product": []string{"Elasticsearch"}}
@@ -122,12 +123,14 @@ func TestNewRetriever(t *testing.T) {
 		assert.NoError(t, err)
 
 		r, err := NewRetriever(ctx, &RetrieverConfig{
-			Client: client,
-			Index:  "eino_ut",
-			TopK:   10,
+			Client:         client,
+			Index:          "eino_ut",
+			TopK:           10,
+			ScoreThreshold: &scoreThreshold,
 			SearchMode: &mockSearchMode{
 				buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error) {
 					searchModeIndex = conf.Index
+					*conf.ScoreThreshold = 0.9
 					return &search.Request{}, nil
 				},
 			},
@@ -141,6 +144,7 @@ func TestNewRetriever(t *testing.T) {
 		assert.NotContains(t, searchPath, "eino_ut")
 		assert.Equal(t, "override_index", searchModeIndex)
 		assert.Equal(t, "eino_ut", r.config.Index)
+		assert.Equal(t, 0.5, *r.config.ScoreThreshold)
 	})
 
 	t.Run("default_result_parser", func(t *testing.T) {
