@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.3.2
-	github.com/cloudwego/eino v0.9.2-0.20260528092631-292d298c9ba3
+	github.com/cloudwego/eino v0.9.2
 	github.com/opensearch-project/opensearch-go/v2 v2.3.0
 	github.com/smartystreets/goconvey v1.8.1
 )
