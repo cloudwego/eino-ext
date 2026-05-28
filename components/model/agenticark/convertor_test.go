@@ -62,13 +62,16 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 				Text: "reason",
 			}),
 		},
+		Extra: map[string]any{
+			keyOfGeneratedByAgentic: true,
+		},
 	}
 	setItemID(msg.ContentBlocks[1], "id-1")
 	setItemStatus(msg.ContentBlocks[1], responses.ItemStatus_completed.String())
 	msg.ResponseMeta = &schema.AgenticResponseMeta{
 			Extension: &ResponseMetaExtension{},
 		}
-		
+
 		items, err := toAssistantRoleInputItems(msg)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(items))

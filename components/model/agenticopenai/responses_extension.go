@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 	"github.com/go-viper/mapstructure/v2"
 )
@@ -31,7 +32,7 @@ type ServerToolCallArguments struct {
 	CodeInterpreter *CodeInterpreterArguments `json:"code_interpreter,omitempty" mapstructure:"code_interpreter,omitempty"`
 	ImageGeneration *ImageGenerationArguments `json:"image_generation,omitempty" mapstructure:"image_generation,omitempty"`
 	Shell           *ShellArguments           `json:"shell,omitempty" mapstructure:"shell,omitempty"`
-	ToolSearch      *ToolSearchCall           `json:"tool_search,omitempty"`
+	ToolSearch      *ToolSearchArguments      `json:"tool_search,omitempty" mapstructure:"-"`
 }
 
 type ServerToolResult struct {
@@ -40,7 +41,7 @@ type ServerToolResult struct {
 	CodeInterpreter *CodeInterpreterResult `json:"code_interpreter,omitempty" mapstructure:"code_interpreter,omitempty"`
 	ImageGeneration *ImageGenerationResult `json:"image_generation,omitempty" mapstructure:"image_generation,omitempty"`
 	Shell           *ShellResult           `json:"shell,omitempty" mapstructure:"shell,omitempty"`
-	ToolSearch      *ToolSearchResult      `json:"tool_search,omitempty"`
+	ToolSearch      *ToolSearchResult      `json:"tool_search,omitempty" mapstructure:"-"`
 }
 
 // WebSearchArguments represents the arguments for a web search tool call.
@@ -265,12 +266,20 @@ type ShellOutputOutcomeExit struct {
 	ExitCode int64 `json:"exit_code,omitempty" mapstructure:"exit_code,omitempty"`
 }
 
-type ToolSearchCall struct {
-	Arguments json.RawMessage `json:"arguments"`
+type ToolSearchArguments struct {
+	Arguments json.RawMessage `json:"arguments,omitempty"`
 }
 
 type ToolSearchResult struct {
 	Tools []*schema.ToolInfo `json:"tools"`
+}
+
+func unmarshalFromMap(m map[string]any, v any) error {
+	bs, err := sonic.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return sonic.Unmarshal(bs, v)
 }
 
 func getServerToolCallArguments(call *schema.ServerToolCall) (*ServerToolCallArguments, error) {
@@ -284,6 +293,14 @@ func getServerToolCallArguments(call *schema.ServerToolCall) (*ServerToolCallArg
 		args := &ServerToolCallArguments{}
 		if err := mapstructure.Decode(m, args); err != nil {
 			return nil, fmt.Errorf("failed to decode server tool call arguments: %w", err)
+		}
+		if ts, ok := m["tool_search"]; ok {
+			if tsMap, ok := ts.(map[string]any); ok {
+				args.ToolSearch = &ToolSearchArguments{}
+				if err := unmarshalFromMap(tsMap, args.ToolSearch); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal tool_search arguments: %w", err)
+				}
+			}
 		}
 		return args, nil
 	}
@@ -301,6 +318,14 @@ func getServerToolResult(res *schema.ServerToolResult) (*ServerToolResult, error
 		result := &ServerToolResult{}
 		if err := mapstructure.Decode(m, result); err != nil {
 			return nil, fmt.Errorf("failed to decode server tool result: %w", err)
+		}
+		if ts, ok := m["tool_search"]; ok {
+			if tsMap, ok := ts.(map[string]any); ok {
+				result.ToolSearch = &ToolSearchResult{}
+				if err := unmarshalFromMap(tsMap, result.ToolSearch); err != nil {
+					return nil, fmt.Errorf("failed to unmarshal tool_search result: %w", err)
+				}
+			}
 		}
 		return result, nil
 	}
@@ -331,6 +356,7 @@ func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *Serv
 		fileSearchArguments      *FileSearchArguments
 		codeInterpreterArguments *CodeInterpreterArguments
 		imageGenerationArguments *ImageGenerationArguments
+		toolSearchArguments      *ToolSearchArguments
 		shellArguments           []*ShellArguments
 	)
 	for _, chunk := range chunks {
@@ -379,6 +405,13 @@ func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *Serv
 				return nil, fmt.Errorf("failed to concat server tool call arguments: %w", err)
 			}
 			shellArguments = append(shellArguments, chunk.Shell)
+
+		case chunk.ToolSearch != nil:
+			expectedType, err = checkExpectedType(expectedType, reflect.TypeOf(chunk.ToolSearch))
+			if err != nil {
+				return nil, fmt.Errorf("failed to concat server tool call arguments: %w", err)
+			}
+			toolSearchArguments = chunk.ToolSearch
 		}
 	}
 
@@ -398,6 +431,9 @@ func concatServerToolCallArguments(chunks []*ServerToolCallArguments) (ret *Serv
 		return &ServerToolCallArguments{
 			Shell: concatShellArguments(shellArguments),
 		}, nil
+	}
+	if toolSearchArguments != nil {
+		return &ServerToolCallArguments{ToolSearch: toolSearchArguments}, nil
 	}
 
 	return nil, fmt.Errorf("no valid server tool call arguments to concat")
@@ -434,6 +470,7 @@ func concatServerToolResult(chunks []*ServerToolResult) (ret *ServerToolResult, 
 		codeInterpreterResults []*CodeInterpreterResult
 		imageGenerationResults []*ImageGenerationResult
 		shellResults           []*ShellResult
+		toolSearchResults      []*ToolSearchResult
 	)
 	for _, chunk := range chunks {
 		if chunk == nil {
@@ -480,6 +517,13 @@ func concatServerToolResult(chunks []*ServerToolResult) (ret *ServerToolResult, 
 				return nil, fmt.Errorf("failed to concat server tool result: %w", err)
 			}
 			shellResults = append(shellResults, chunk.Shell)
+
+		case chunk.ToolSearch != nil:
+			expectedType, err = checkExpectedType(expectedType, reflect.TypeOf(chunk.ToolSearch))
+			if err != nil {
+				return nil, fmt.Errorf("failed to concat server tool result: %w", err)
+			}
+			toolSearchResults = append(toolSearchResults, chunk.ToolSearch)
 		}
 	}
 
@@ -502,6 +546,11 @@ func concatServerToolResult(chunks []*ServerToolResult) (ret *ServerToolResult, 
 	if len(shellResults) > 0 {
 		return &ServerToolResult{
 			Shell: concatShellResults(shellResults),
+		}, nil
+	}
+	if len(toolSearchResults) > 0 {
+		return &ServerToolResult{
+			ToolSearch: concatToolSearchResults(toolSearchResults),
 		}, nil
 	}
 
@@ -538,6 +587,14 @@ func concatShellResults(chunks []*ShellResult) *ShellResult {
 			ret.CreatedBy = chunk.CreatedBy
 		}
 		ret.Outputs = append(ret.Outputs, chunk.Outputs...)
+	}
+	return ret
+}
+
+func concatToolSearchResults(chunks []*ToolSearchResult) *ToolSearchResult {
+	ret := &ToolSearchResult{}
+	for _, chunk := range chunks {
+		ret.Tools = append(ret.Tools, chunk.Tools...)
 	}
 	return ret
 }

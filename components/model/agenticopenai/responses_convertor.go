@@ -1098,7 +1098,7 @@ func shellToolCallToInputItem(args *ShellArguments, block *schema.ContentBlock) 
 	return item, nil
 }
 
-func getToolSearchCallActionParam(ts *ToolSearchCall) (*responses.ResponseInputItemToolSearchCallParam, error) {
+func getToolSearchCallActionParam(ts *ToolSearchArguments) (*responses.ResponseInputItemToolSearchCallParam, error) {
 	return &responses.ResponseInputItemToolSearchCallParam{
 		Arguments: ts.Arguments,
 		Execution: "server",
@@ -1130,7 +1130,7 @@ func serverToolResultToInputItem(block *schema.ContentBlock) (item responses.Res
 	}
 }
 
-func toolSearchToolCallToInputItem(args *ToolSearchCall, callID string, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
+func toolSearchToolCallToInputItem(args *ToolSearchArguments, callID string, block *schema.ContentBlock) (item responses.ResponseInputItemUnionParam, err error) {
 	id, _ := getItemID(block)
 	status, _ := GetItemStatus(block)
 
@@ -1485,8 +1485,7 @@ func toOutputMessage(resp *responses.Response, options *model.Options) (msg *sch
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert reasoning to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case responses.ResponseOutputMessage:
 			tmpBlocks, err = outputMessageToContentBlocks(variant)
@@ -1499,16 +1498,14 @@ func toOutputMessage(resp *responses.Response, options *model.Options) (msg *sch
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert function tool call to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case responses.ResponseOutputItemMcpListTools:
 			block, err := mcpListToolsToContentBlock(variant)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert MCP list tools to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case responses.ResponseOutputItemMcpCall:
 			tmpBlocks, err = mcpCallToContentBlocks(variant)
@@ -1521,8 +1518,7 @@ func toOutputMessage(resp *responses.Response, options *model.Options) (msg *sch
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert MCP approval request to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case responses.ResponseFunctionWebSearch:
 			tmpBlocks, err = webSearchToContentBlocks(variant)
@@ -1561,19 +1557,20 @@ func toOutputMessage(resp *responses.Response, options *model.Options) (msg *sch
 				return nil, fmt.Errorf("failed to convert function shell output to content block: %w", err)
 			}
 			tmpBlocks = []*schema.ContentBlock{block}
+
 		case responses.ResponseToolSearchCall:
 			block, err := toolSearchToolCallToContentBlock(variant, options)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert tool search call to content block: %w", err)
 			}
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case responses.ResponseToolSearchOutputItem:
 			block, err := toolSearchToolResultToContentBlock(variant)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert tool search output item to content block: %w", err)
 			}
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		default:
 			return nil, fmt.Errorf("unknown output item type: %T", variant)
@@ -1821,7 +1818,7 @@ func toolSearchToolCallToContentBlock(item responses.ResponseToolSearchCall, opt
 		block := schema.NewContentBlock(&schema.ServerToolCall{
 			CallID: item.CallID,
 			Arguments: &ServerToolCallArguments{
-				ToolSearch: &ToolSearchCall{
+				ToolSearch: &ToolSearchArguments{
 					Arguments: args,
 				},
 			},

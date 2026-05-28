@@ -1188,8 +1188,7 @@ func toOutputMessage(resp *responses.ResponseObject) (msg *schema.AgenticMessage
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert reasoning to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case *responses.OutputItem_OutputMessage:
 			tmpBlocks, err = outputMessageToContentBlocks(t)
@@ -1202,16 +1201,14 @@ func toOutputMessage(resp *responses.ResponseObject) (msg *schema.AgenticMessage
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert function tool call to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case *responses.OutputItem_FunctionMcpListTools:
 			block, err := mcpListToolsToContentBlock(t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert MCP list tools to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case *responses.OutputItem_FunctionMcpCall:
 			tmpBlocks, err = mcpCallToContentBlocks(t)
@@ -1219,47 +1216,37 @@ func toOutputMessage(resp *responses.ResponseObject) (msg *schema.AgenticMessage
 				return nil, fmt.Errorf("failed to convert MCP call to content blocks: %w", err)
 			}
 
-			tmpBlocks = append(tmpBlocks, tmpBlocks...)
-
 		case *responses.OutputItem_FunctionMcpApprovalRequest:
 			block, err := mcpApprovalRequestToContentBlock(t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert MCP approval request to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case *responses.OutputItem_FunctionWebSearch:
 			block, err := webSearchToContentBlock(t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert web search to content block: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, block)
+			tmpBlocks = []*schema.ContentBlock{block}
 
 		case *responses.OutputItem_FunctionImageProcess:
-			bs, err := imageProcessToContentBlocks(t)
+			tmpBlocks, err = imageProcessToContentBlocks(t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert image process to content blocks: %w", err)
 			}
 
-			tmpBlocks = append(tmpBlocks, bs...)
-
 		case *responses.OutputItem_FunctionDoubaoAppCall:
-			bs, err := doubaoAppCallToContentBlocks(t)
+			tmpBlocks, err = doubaoAppCallToContentBlocks(t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert doubao app call to content blocks: %w", err)
 			}
 
-			tmpBlocks = append(tmpBlocks, bs...)
-
 		case *responses.OutputItem_FunctionKnowledgeSearch:
-			bs, err := knowledgeSearchCallToContentBlocks(t)
+			tmpBlocks, err = knowledgeSearchCallToContentBlocks(t)
 			if err != nil {
 				return nil, fmt.Errorf("failed to convert knowledge search call to content blocks: %w", err)
 			}
-
-			tmpBlocks = append(tmpBlocks, bs...)
 
 		default:
 			return nil, fmt.Errorf("unknown output item type: %T", t)
@@ -1273,6 +1260,8 @@ func toOutputMessage(resp *responses.ResponseObject) (msg *schema.AgenticMessage
 		ContentBlocks: blocks,
 		ResponseMeta:  responseObjectToResponseMeta(resp),
 	}
+
+	markSelfGenerated(msg)
 
 	return msg, nil
 }

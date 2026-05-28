@@ -20,7 +20,9 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -115,6 +117,22 @@ func TestGetServerToolCallArguments(t *testing.T) {
 			assert.NotNil(t, res.Shell.Action)
 			assert.Equal(t, []string{"ls", "pwd"}, res.Shell.Action.Commands)
 			assert.Equal(t, int64(5000), res.Shell.Action.TimeoutMs)
+		})
+
+		mockey.PatchConvey("map[string]any with tool_search", func() {
+			call := &schema.ServerToolCall{
+				Arguments: map[string]any{
+					"tool_search": map[string]any{
+						"arguments": map[string]any{"query": "find tools"},
+					},
+				},
+			}
+			res, err := getServerToolCallArguments(call)
+			assert.NoError(t, err)
+			assert.NotNil(t, res)
+			assert.NotNil(t, res.ToolSearch)
+			assert.NotNil(t, res.ToolSearch.Arguments)
+			assert.Contains(t, string(res.ToolSearch.Arguments), "find tools")
 		})
 	})
 }
@@ -243,6 +261,45 @@ func TestGetServerToolResult(t *testing.T) {
 			assert.Equal(t, "user1", res.Shell.CreatedBy)
 			assert.Len(t, res.Shell.Outputs, 1)
 			assert.Equal(t, "output", res.Shell.Outputs[0].Stdout)
+		})
+
+		mockey.PatchConvey("map[string]any with tool_search", func() {
+			expectedTool := &schema.ToolInfo{
+				Name: "tool1",
+				Desc: "description1",
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
+					Type:     "object",
+					Required: []string{"query"},
+				}),
+			}
+			toolBytes, err := sonic.Marshal(expectedTool)
+			assert.NoError(t, err)
+			var toolAny any
+			err = sonic.Unmarshal(toolBytes, &toolAny)
+			assert.NoError(t, err)
+
+			content := &schema.ServerToolResult{
+				Content: map[string]any{
+					"tool_search": map[string]any{
+						"tools": []any{toolAny},
+					},
+				},
+			}
+			res, err := getServerToolResult(content)
+			assert.NoError(t, err)
+			assert.NotNil(t, res)
+			assert.NotNil(t, res.ToolSearch)
+			assert.Len(t, res.ToolSearch.Tools, 1)
+
+			tool := res.ToolSearch.Tools[0]
+			assert.Equal(t, "tool1", tool.Name)
+			assert.Equal(t, "description1", tool.Desc)
+			assert.NotNil(t, tool.ParamsOneOf)
+
+			gotSchema, err := tool.ParamsOneOf.ToJSONSchema()
+			assert.NoError(t, err)
+			assert.Equal(t, "object", gotSchema.Type)
+			assert.Equal(t, []string{"query"}, gotSchema.Required)
 		})
 	})
 }
