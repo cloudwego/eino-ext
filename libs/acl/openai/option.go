@@ -24,6 +24,35 @@ import (
 	"github.com/meguminnnnnnnnn/go-openai"
 )
 
+// ToolInfoExtraKeyStrict is the schema.ToolInfo.Extra key used to opt a
+// single tool definition into OpenAI Structured Outputs strict mode.
+//
+// Set the value to true to request the model emit tool-call arguments
+// that strictly match the tool's JSON Schema. Supported by OpenAI's
+// Structured Outputs for tools and by DeepSeek's tool-call strict mode.
+// Without strict, providers occasionally emit syntactically invalid
+// JSON in tool-call arguments (e.g. unescaped control bytes inside
+// string values), which downstream JSON parsers reject.
+//
+// Sourced via schema.ToolInfo.Extra because schema.ToolInfo has no
+// dedicated Strict field; using Extra keeps this provider-specific
+// knob inside the openai package boundary and avoids changes to
+// cloudwego/eino core.
+//
+// Example:
+//
+//	toolInfo := &schema.ToolInfo{
+//	    Name:        "extract_facts",
+//	    Desc:        "Extract structured facts from the user's text.",
+//	    ParamsOneOf: schema.NewParamsOneOfByJSONSchema(mySchema),
+//	    Extra: map[string]any{
+//	        openai.ToolInfoExtraKeyStrict: true,
+//	    },
+//	}
+//
+// Non-bool values at this key are silently ignored.
+const ToolInfoExtraKeyStrict = "openai_strict"
+
 // ReasoningEffortLevel see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-reasoning_effort
 type ReasoningEffortLevel string
 
@@ -54,6 +83,7 @@ type openaiOptions struct {
 	ResponseMessageModifier      ResponseMessageModifier
 	ResponseChunkMessageModifier ResponseChunkMessageModifier
 	MaxCompletionTokens          *int
+	ResponseFormat               *ChatCompletionResponseFormat
 }
 
 // WithExtraFields sets extra fields to include in the request body.
@@ -128,5 +158,42 @@ func WithExtraHeader(header map[string]string) model.Option {
 func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.MaxCompletionTokens = &maxCompletionTokens
+	})
+}
+
+// WithResponseFormat sets the response_format for a single chat completion
+// request, overriding any Config.ResponseFormat set at NewChatModel time.
+//
+// This is the per-call counterpart of Config.ResponseFormat. It is useful
+// when a single shared ChatModel must mix structured-output calls (e.g.
+// DeepSeek json_object mode for a structured-extraction sidecar) with
+// free-form text calls that must NOT set response_format.
+//
+// Pass nil to leave the request's response_format alone and fall back to
+// Config.ResponseFormat (the existing behavior).
+//
+// Example (DeepSeek JSON Output, per-call):
+//
+//	resp, err := cm.Generate(ctx, messages,
+//	    openai.WithResponseFormat(&openai.ChatCompletionResponseFormat{
+//	        Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+//	    }),
+//	)
+//
+// Example (OpenAI Structured Outputs with a JSON Schema):
+//
+//	resp, err := cm.Generate(ctx, messages,
+//	    openai.WithResponseFormat(&openai.ChatCompletionResponseFormat{
+//	        Type: openai.ChatCompletionResponseFormatTypeJSONSchema,
+//	        JSONSchema: &openai.ChatCompletionResponseFormatJSONSchema{
+//	            Name:   "weather_response",
+//	            Schema: mySchema,
+//	            Strict: true,
+//	        },
+//	    }),
+//	)
+func WithResponseFormat(format *ChatCompletionResponseFormat) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ResponseFormat = format
 	})
 }
