@@ -69,6 +69,7 @@ func TestGemini(t *testing.T) {
 		assert.Equal(t, "Hello, how can I help you?", resp.Content)
 		assert.Equal(t, schema.Assistant, resp.Role)
 		assert.Equal(t, 100, resp.ResponseMeta.Usage.TotalTokens)
+		assert.Equal(t, 100, resp.ResponseMeta.Usage.CompletionTokens)
 		assert.Equal(t, 50, resp.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 	mockey.PatchConvey("stream", t, func() {
@@ -1309,12 +1310,12 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 3)
-		
+
 		// Verify all IDs are valid UUIDs
 		assert.True(t, isValidUUID(message.ToolCalls[0].ID), "ID 0 should be a valid UUID")
 		assert.True(t, isValidUUID(message.ToolCalls[1].ID), "ID 1 should be a valid UUID")
 		assert.True(t, isValidUUID(message.ToolCalls[2].ID), "ID 2 should be a valid UUID")
-		
+
 		// Verify all IDs are unique
 		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[1].ID, "IDs should be unique")
 		assert.NotEqual(t, message.ToolCalls[0].ID, message.ToolCalls[2].ID, "IDs should be unique")
@@ -1366,12 +1367,12 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 3)
-		
+
 		// Verify all IDs are valid UUIDs
 		for i, tc := range message.ToolCalls {
 			assert.True(t, isValidUUID(tc.ID), "ID %d should be a valid UUID", i)
 		}
-		
+
 		// Verify all IDs are unique
 		ids := make(map[string]bool)
 		for _, tc := range message.ToolCalls {
@@ -1423,7 +1424,7 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NoError(t, err)
 		assert.NotNil(t, message)
 		assert.Len(t, message.ToolCalls, 5)
-		
+
 		// Verify all IDs are valid UUIDs and unique
 		ids := make(map[string]bool)
 		for i, tc := range message.ToolCalls {
@@ -1489,9 +1490,238 @@ func TestUniqueToolCallIDs(t *testing.T) {
 		assert.NotNil(t, message2)
 		assert.Len(t, message2.ToolCalls, 1)
 		assert.True(t, isValidUUID(message2.ToolCalls[0].ID))
-		
+
 		// Verify IDs across responses are unique
 		assert.NotEqual(t, message1.ToolCalls[0].ID, message2.ToolCalls[0].ID)
 		assert.NotEqual(t, message1.ToolCalls[1].ID, message2.ToolCalls[0].ID)
 	})
+}
+
+func TestConvSchemaMessageToolCallOrder(t *testing.T) {
+	t.Run("AssistantGenMultiContent with tool calls - tool calls come after media parts", func(t *testing.T) {
+		base64Data := base64.StdEncoding.EncodeToString([]byte("123"))
+		message := &schema.Message{
+			Role: schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{
+				{Type: schema.ChatMessagePartTypeText, Text: "Here's the image:"},
+				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}}},
+			},
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "analyze_image",
+						Arguments: `{"image_id":"123"}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.Equal(t, "Here's the image:", content.Parts[0].Text)
+		assert.NotNil(t, content.Parts[1].InlineData)
+		assert.Equal(t, "image/png", content.Parts[1].InlineData.MIMEType)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "analyze_image", content.Parts[2].FunctionCall.Name)
+	})
+
+	t.Run("Content with reasoning and tool calls - correct order", func(t *testing.T) {
+		message := &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "Final answer",
+			ReasoningContent: "Thinking process",
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "tool",
+						Arguments: `{}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.True(t, content.Parts[0].Thought)
+		assert.Equal(t, "Thinking process", content.Parts[0].Text)
+		assert.Equal(t, "Final answer", content.Parts[1].Text)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "tool", content.Parts[2].FunctionCall.Name)
+	})
+
+	t.Run("Multiple tool calls with content - all tool calls come after text", func(t *testing.T) {
+		message := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "I need to check several things:",
+			ToolCalls: []schema.ToolCall{
+				{
+					ID: "call_1",
+					Function: schema.FunctionCall{
+						Name:      "tool1",
+						Arguments: `{"a":1}`,
+					},
+				},
+				{
+					ID: "call_2",
+					Function: schema.FunctionCall{
+						Name:      "tool2",
+						Arguments: `{"b":2}`,
+					},
+				},
+			},
+		}
+
+		content, err := convSchemaMessage(message)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 3)
+
+		assert.Equal(t, "I need to check several things:", content.Parts[0].Text)
+		assert.NotNil(t, content.Parts[1].FunctionCall)
+		assert.Equal(t, "tool1", content.Parts[1].FunctionCall.Name)
+		assert.NotNil(t, content.Parts[2].FunctionCall)
+		assert.Equal(t, "tool2", content.Parts[2].FunctionCall.Name)
+	})
+}
+
+func TestConvLogprobs(t *testing.T) {
+	t.Run("nil input", func(t *testing.T) {
+		assert.Nil(t, convLogprobs(nil))
+	})
+
+	t.Run("empty chosen candidates", func(t *testing.T) {
+		assert.Nil(t, convLogprobs(&genai.LogprobsResult{}))
+	})
+
+	t.Run("all chosen candidates nil", func(t *testing.T) {
+		assert.Nil(t, convLogprobs(&genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{nil, nil},
+		}))
+	})
+
+	t.Run("normal with top candidates", func(t *testing.T) {
+		lp := &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "hello", LogProbability: -0.1},
+				{Token: "world", LogProbability: -0.2},
+			},
+			TopCandidates: []*genai.LogprobsResultTopCandidates{
+				{Candidates: []*genai.LogprobsResultCandidate{
+					{Token: "hello", LogProbability: -0.1},
+					{Token: "hi", LogProbability: -1.5},
+				}},
+				{Candidates: []*genai.LogprobsResultCandidate{
+					{Token: "world", LogProbability: -0.2},
+				}},
+			},
+		}
+		got := convLogprobs(lp)
+		assert.NotNil(t, got)
+		assert.Len(t, got.Content, 2)
+		assert.Equal(t, "hello", got.Content[0].Token)
+		assert.InDelta(t, -0.1, got.Content[0].LogProb, 1e-6)
+		assert.Len(t, got.Content[0].TopLogProbs, 2)
+		assert.Equal(t, "hi", got.Content[0].TopLogProbs[1].Token)
+		assert.InDelta(t, -1.5, got.Content[0].TopLogProbs[1].LogProb, 1e-6)
+		assert.Len(t, got.Content[1].TopLogProbs, 1)
+	})
+
+	t.Run("top candidates length mismatch", func(t *testing.T) {
+		// chosen=2, top=1 — second chosen has empty TopLogProbs (no panic)
+		lp := &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "a", LogProbability: -0.1},
+				{Token: "b", LogProbability: -0.2},
+			},
+			TopCandidates: []*genai.LogprobsResultTopCandidates{
+				{Candidates: []*genai.LogprobsResultCandidate{{Token: "a", LogProbability: -0.1}}},
+			},
+		}
+		got := convLogprobs(lp)
+		assert.Len(t, got.Content, 2)
+		assert.Len(t, got.Content[0].TopLogProbs, 1)
+		assert.Empty(t, got.Content[1].TopLogProbs)
+	})
+
+	t.Run("top candidate entry nil and inner nil", func(t *testing.T) {
+		lp := &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "a", LogProbability: -0.1},
+			},
+			TopCandidates: []*genai.LogprobsResultTopCandidates{
+				{Candidates: []*genai.LogprobsResultCandidate{nil, {Token: "x", LogProbability: -0.5}}},
+			},
+		}
+		got := convLogprobs(lp)
+		assert.Len(t, got.Content, 1)
+		assert.Len(t, got.Content[0].TopLogProbs, 1)
+		assert.Equal(t, "x", got.Content[0].TopLogProbs[0].Token)
+	})
+}
+
+func TestLogprobsOptionsOverride(t *testing.T) {
+	ctx := context.Background()
+	five := int32(5)
+	cm, err := NewChatModel(ctx, &Config{
+		Client:           &genai.Client{Models: &genai.Models{}},
+		Model:            "gemini-x",
+		ResponseLogprobs: true,
+		Logprobs:         &five,
+	})
+	assert.NoError(t, err)
+
+	t.Run("config defaults applied", func(t *testing.T) {
+		_, _, m, _, err := cm.genInputAndConf([]*schema.Message{{Role: schema.User, Content: "hi"}})
+		assert.NoError(t, err)
+		assert.True(t, m.ResponseLogprobs)
+		assert.NotNil(t, m.Logprobs)
+		assert.Equal(t, int32(5), *m.Logprobs)
+	})
+
+	t.Run("option overrides response logprobs to false", func(t *testing.T) {
+		_, _, m, _, err := cm.genInputAndConf(
+			[]*schema.Message{{Role: schema.User, Content: "hi"}},
+			WithResponseLogprobs(false),
+		)
+		assert.NoError(t, err)
+		assert.False(t, m.ResponseLogprobs)
+	})
+
+	t.Run("option overrides logprobs top-K", func(t *testing.T) {
+		_, _, m, _, err := cm.genInputAndConf(
+			[]*schema.Message{{Role: schema.User, Content: "hi"}},
+			WithLogprobs(3),
+		)
+		assert.NoError(t, err)
+		assert.NotNil(t, m.Logprobs)
+		assert.Equal(t, int32(3), *m.Logprobs)
+	})
+}
+
+func TestConvCandidateLogprobs(t *testing.T) {
+	candidate := &genai.Candidate{
+		Content: &genai.Content{
+			Role:  roleModel,
+			Parts: []*genai.Part{{Text: "hi"}},
+		},
+		LogprobsResult: &genai.LogprobsResult{
+			ChosenCandidates: []*genai.LogprobsResultCandidate{
+				{Token: "hi", LogProbability: -0.05},
+			},
+		},
+	}
+	msg, err := convCandidate(candidate)
+	assert.NoError(t, err)
+	assert.NotNil(t, msg.ResponseMeta)
+	assert.NotNil(t, msg.ResponseMeta.LogProbs)
+	assert.Len(t, msg.ResponseMeta.LogProbs.Content, 1)
+	assert.Equal(t, "hi", msg.ResponseMeta.LogProbs.Content[0].Token)
 }

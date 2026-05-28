@@ -22,6 +22,13 @@ import (
 	"github.com/cloudwego/eino-ext/devops/internal/model"
 )
 
+// WithDevServerIP sets dev server listen ip, default to 127.0.0.1
+func WithDevServerIP(ip string) model.DevOption {
+	return func(o *model.DevOpt) {
+		o.DevServerIP = ip
+	}
+}
+
 // WithDevServerPort sets dev server port, default to 52538
 func WithDevServerPort(port string) model.DevOption {
 	return func(o *model.DevOpt) {

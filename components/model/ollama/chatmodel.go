@@ -378,8 +378,8 @@ func toOllamaMessage(einoMsg *schema.Message) (api.Message, error) {
 	}
 
 	if len(einoMsg.UserInputMultiContent) > 0 {
-		if einoMsg.Role != schema.User {
-			return api.Message{}, fmt.Errorf("user input multi content only support user role, got %s", einoMsg.Role)
+		if einoMsg.Role != schema.User && einoMsg.Role != schema.Tool {
+			return api.Message{}, fmt.Errorf("user input multi content only support user&tool role, got %s", einoMsg.Role)
 		}
 		for _, part := range einoMsg.UserInputMultiContent {
 			switch part.Type {

@@ -32,6 +32,7 @@ const (
 //go:generate mockgen -source=langfuse.go -destination=./mock/langfuse_mock.go -package=mock Langfuse
 type Langfuse interface {
 	CreateTrace(body *TraceEventBody) (string, error)
+	EndTrace(body *TraceEventBody) error
 	CreateSpan(body *SpanEventBody) (string, error)
 	EndSpan(body *SpanEventBody) error
 	CreateGeneration(body *GenerationEventBody) (string, error)
@@ -109,6 +110,21 @@ func (l *langfuseIns) CreateTrace(body *TraceEventBody) (string, error) {
 		body.TimeStamp = time.Now()
 	}
 	return body.ID, l.tm.push(&event{
+		ID:   uuid.NewString(),
+		Type: EventTypeTraceCreate,
+		Body: eventBodyUnion{Trace: body},
+	})
+}
+
+// EndTrace marks an existing trace as completed (flush/update semantics depend on Langfuse ingestion).
+//
+// Parameters:
+//   - body: The trace event details to update
+//
+// Returns:
+//   - error: Any error that occurred during the update
+func (l *langfuseIns) EndTrace(body *TraceEventBody) error {
+	return l.tm.push(&event{
 		ID:   uuid.NewString(),
 		Type: EventTypeTraceCreate,
 		Body: eventBodyUnion{Trace: body},
