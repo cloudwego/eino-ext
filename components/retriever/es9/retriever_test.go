@@ -20,6 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/bytedance/mockey"
@@ -90,6 +93,54 @@ func TestNewRetriever(t *testing.T) {
 
 		assert.Len(t, docs, 1)
 		assert.Equal(t, "i'm fine, thank you", docs[0].Content)
+	})
+
+	t.Run("with_index_option", func(t *testing.T) {
+		var searchModeIndex string
+		var searchPath string
+		client, err := elasticsearch.NewClient(elasticsearch.Config{
+			Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				header := http.Header{"X-Elastic-Product": []string{"Elasticsearch"}}
+				if req.Method == http.MethodGet && req.URL.Path == "/" {
+					return &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(strings.NewReader(`{"version":{"number":"9.0.0"}}`)),
+						Header:     header,
+					}, nil
+				}
+				if strings.HasSuffix(req.URL.Path, "/_search") {
+					searchPath = req.URL.Path
+					return &http.Response{
+						StatusCode: 200,
+						Body:       io.NopCloser(strings.NewReader(`{"hits":{"hits":[]}}`)),
+						Header:     header,
+					}, nil
+				}
+				return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+			}),
+		})
+		assert.NoError(t, err)
+
+		r, err := NewRetriever(ctx, &RetrieverConfig{
+			Client: client,
+			Index:  "eino_ut",
+			TopK:   10,
+			SearchMode: &mockSearchMode{
+				buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error) {
+					searchModeIndex = conf.Index
+					return &search.Request{}, nil
+				},
+			},
+		})
+		assert.NoError(t, err)
+
+		docs, err := r.Retrieve(ctx, "test query", retriever.WithIndex("override_index"))
+		assert.NoError(t, err)
+		assert.Empty(t, docs)
+		assert.Contains(t, searchPath, "override_index")
+		assert.NotContains(t, searchPath, "eino_ut")
+		assert.Equal(t, "override_index", searchModeIndex)
+		assert.Equal(t, "eino_ut", r.config.Index)
 	})
 
 	t.Run("default_result_parser", func(t *testing.T) {
@@ -243,8 +294,19 @@ func TestNewRetriever(t *testing.T) {
 	})
 }
 
-type mockSearchMode struct{}
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type mockSearchMode struct {
+	buildRequestFn func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error)
+}
 
 func (m *mockSearchMode) BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (*search.Request, error) {
+	if m.buildRequestFn != nil {
+		return m.buildRequestFn(ctx, conf, query, opts...)
+	}
 	return &search.Request{}, nil
 }
