@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
@@ -304,7 +305,7 @@ func (i *Indexer) upsertDocuments(ctx context.Context, docs []*schema.Document, 
 
 	ids := make([]string, 0, result.IDs.Len())
 	for idx := 0; idx < result.IDs.Len(); idx++ {
-		idStr, err := result.IDs.GetAsString(idx)
+		idStr, err := idValueAsString(result.IDs, idx)
 		if err != nil {
 			return nil, fmt.Errorf("[Indexer.Store] failed to get id: %w", err)
 		}
@@ -312,6 +313,22 @@ func (i *Indexer) upsertDocuments(ctx context.Context, docs []*schema.Document, 
 	}
 
 	return ids, nil
+}
+
+func idValueAsString(ids column.Column, idx int) (string, error) {
+	id, err := ids.Get(idx)
+	if err != nil {
+		return "", err
+	}
+
+	switch v := id.(type) {
+	case string:
+		return v, nil
+	case int64:
+		return strconv.FormatInt(v, 10), nil
+	default:
+		return "", fmt.Errorf("unsupported id type %T", id)
+	}
 }
 
 // GetType returns the type of the indexer.
