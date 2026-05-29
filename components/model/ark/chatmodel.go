@@ -178,7 +178,7 @@ type CacheConfig struct {
 	// Note that if the type is ResponsesAPI,
 	// the following configuration will not be available (ARK may support it in the future):
 	// `Region`, `AccessKey`, `SecretKey`, `Stop`, `FrequencyPenalty`, `LogitBias`, `PresencePenalty`,
-	// `LogProbs`, `TopLogProbs`, `ResponseFormat.JSONSchema`.
+	// `LogProbs`, `TopLogProbs`.
 	// It can be overridden by [WithCache].
 	// Optional. Default: ContextAPI.
 	//
@@ -342,7 +342,6 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*ResponsesAPIChatModel
 }
 
 func checkResponsesAPIConfig(config *ChatModelConfig) error {
-
 	if config.APIKey == "" && (config.AccessKey == "" && config.SecretKey == "") {
 		return fmt.Errorf("missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
 	}
@@ -364,9 +363,6 @@ func checkResponsesAPIConfig(config *ChatModelConfig) error {
 	}
 	if config.TopLogProbs > 0 {
 		return fmt.Errorf("'TopLogProbs' is not supported by ResponsesAPI")
-	}
-	if config.ResponseFormat != nil && config.ResponseFormat.JSONSchema != nil {
-		return fmt.Errorf("'ResponseFormat.JSONSchema' is not supported by ResponsesAPI")
 	}
 	return nil
 }

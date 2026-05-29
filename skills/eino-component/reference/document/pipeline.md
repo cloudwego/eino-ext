@@ -56,7 +56,7 @@ docs, err := loader.Load(ctx, document.Source{URI: "https://example.com/page"})
 ```go
 import "github.com/cloudwego/eino-ext/components/document/loader/s3"
 
-loader, err := s3.NewLoader(ctx, &s3.LoaderConfig{
+loader, err := s3.NewS3Loader(ctx, &s3.LoaderConfig{
     Region: "us-east-1",
     Bucket: "my-bucket",
 })
@@ -89,7 +89,7 @@ parser, err := html.NewParser(ctx, &html.Config{
 ```go
 import "github.com/cloudwego/eino-ext/components/document/parser/pdf"
 
-parser, err := pdf.NewParser(ctx, &pdf.Config{})
+parser, err := pdf.NewPDFParser(ctx, &pdf.Config{})
 ```
 
 ## Transformers

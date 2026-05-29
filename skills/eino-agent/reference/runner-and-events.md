@@ -29,11 +29,12 @@ iter := runner.Run(ctx, []adk.Message{
 ## AgentInput
 
 ```go
-type AgentInput struct {
-    Messages       []Message  // Conversation messages (user, assistant, tool, system)
-    EnableStreaming bool       // Suggest streaming mode for capable components
+type TypedAgentInput[M MessageType] struct {
+    Messages       []M   // Conversation messages
+    EnableStreaming bool  // Suggest streaming mode for capable components
 }
 
+type AgentInput = TypedAgentInput[*schema.Message]
 type Message = *schema.Message
 ```
 
@@ -44,13 +45,14 @@ type Message = *schema.Message
 Every event from `AsyncIterator` is an `AgentEvent`:
 
 ```go
-type AgentEvent struct {
-    AgentName string         // Which agent produced this event
-    RunPath   []RunStep      // Full call chain from entry agent to current
-    Output    *AgentOutput   // Message output (may be nil)
-    Action    *AgentAction   // Control action (may be nil)
-    Err       error          // Error (may be nil)
+type TypedAgentEvent[M MessageType] struct {
+    AgentName string                // Which agent produced this event
+    Output    *TypedAgentOutput[M]  // Message output (may be nil)
+    Action    *AgentAction          // Control action (may be nil)
+    Err       error                 // Error (may be nil; may be *CancelError or *RetryExhaustedError)
 }
+
+type AgentEvent = TypedAgentEvent[*schema.Message]
 ```
 
 ### AgentOutput
@@ -100,11 +102,10 @@ msg, err := mv.GetMessage()
 
 ```go
 type AgentAction struct {
-    Exit            bool                    // Immediately exit the multi-agent system
-    Interrupted     *InterruptInfo          // Pause execution, save checkpoint
-    TransferToAgent *TransferToAgentAction  // Transfer control to another agent
-    BreakLoop       *BreakLoopAction        // Break out of a LoopAgent
-    CustomizedAction any                    // Custom action
+    Exit             bool                  // Immediately exit the multi-agent system
+    Interrupted      *InterruptInfo        // Pause execution, save checkpoint
+    BreakLoop        *BreakLoopAction      // Break out of a LoopAgent
+    CustomizedAction any                   // Custom action
 }
 ```
 
@@ -129,10 +130,6 @@ for {
             fmt.Printf("Interrupted: %v\n", event.Action.Interrupted)
             continue
         }
-        if event.Action.TransferToAgent != nil {
-            fmt.Printf("Transfer to: %s\n", event.Action.TransferToAgent.DestAgentName)
-            continue
-        }
     }
 
     // Handle output
@@ -143,6 +140,38 @@ for {
         }
         fmt.Printf("[%s][%s] %s\n", event.AgentName, event.Output.MessageOutput.Role, msg.Content)
     }
+}
+```
+
+## Cancel-Aware Event Handling
+
+When using `WithCancel()`, the event stream may deliver a `CancelError`:
+
+```go
+cancelOpt, cancelFn := adk.WithCancel()
+iter := runner.Query(ctx, "do work", cancelOpt)
+
+// In another goroutine: trigger cancel
+go func() {
+    time.Sleep(5 * time.Second)
+    handle, _ := cancelFn(adk.WithAgentCancelMode(adk.CancelAfterChatModel))
+    handle.Wait()
+}()
+
+for {
+    event, ok := iter.Next()
+    if !ok {
+        break
+    }
+    if event.Err != nil {
+        if cancelErr, ok := event.Err.(*adk.CancelError); ok {
+            fmt.Printf("Cancelled (mode=%v)\n", cancelErr.Info.Mode)
+            // cancelErr.InterruptContexts can be used for resume
+            break
+        }
+        log.Fatal(event.Err)
+    }
+    // Handle normal events...
 }
 ```
 
@@ -199,7 +228,7 @@ func (ai *AsyncIterator[T]) Next() (T, bool)
 type MyAgent struct{}
 
 func (a *MyAgent) Name(ctx context.Context) string        { return "MyAgent" }
-func (a *MyAgent) Description(ctx context.Context) string  { return "My custom agent" }
+func (a *MyAgent) Description(ctx context.Context) string { return "My custom agent" }
 
 func (a *MyAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.AgentRunOption) *adk.AsyncIterator[*adk.AgentEvent] {
     iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
@@ -211,6 +240,36 @@ func (a *MyAgent) Run(ctx context.Context, input *adk.AgentInput, opts ...adk.Ag
         ))
     }()
     return iter
+}
+```
+
+## Typed Runner (AgenticMessage)
+
+For the agentic path using `*schema.AgenticMessage`:
+
+```go
+runner := adk.NewTypedRunner(adk.TypedRunnerConfig[*schema.AgenticMessage]{
+    Agent:          myAgenticAgent,
+    EnableStreaming: true,
+})
+
+iter := runner.Run(ctx, []*schema.AgenticMessage{
+    schema.UserAgenticMessage("hello"),
+})
+for {
+    event, ok := iter.Next()
+    if !ok {
+        break
+    }
+    // event is *TypedAgentEvent[*schema.AgenticMessage]
+    if event.Output != nil && event.Output.MessageOutput != nil {
+        msg, _ := event.Output.MessageOutput.GetMessage()
+        for _, block := range msg.ContentBlocks {
+            if block.Type == schema.ContentBlockTypeAssistantGenText {
+                fmt.Print(block.AssistantGenText.Text)
+            }
+        }
+    }
 }
 ```
 

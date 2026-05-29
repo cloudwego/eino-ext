@@ -80,6 +80,10 @@ type EmbeddingConfig struct {
 	// MaxConcurrentRequests specifies the maximum number of concurrent multi-modal embedding api calls allowed
 	// Optional. Default: 5
 	MaxConcurrentRequests *int `json:"max_concurrent_requests"`
+
+	// Dimensions specifies the dimension of the embedding vector
+	// Optional. Default: nil, which means use the default dimensionality of the model.
+	Dimensions *int `json:"dimensions"`
 }
 
 type APIType string
@@ -182,11 +186,16 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	var usage *embedding.TokenUsage
 
 	if e.conf.APIType == nil || *e.conf.APIType == APITypeText {
-		resp, err := e.client.CreateEmbeddings(ctx, model.EmbeddingRequestStrings{
+		req := model.EmbeddingRequestStrings{
 			Input:          texts,
 			Model:          conf.Model,
 			EncodingFormat: encodingFormat,
-		})
+		}
+		if e.conf.Dimensions != nil {
+			req.Dimensions = *e.conf.Dimensions
+		}
+
+		resp, err := e.client.CreateEmbeddings(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("[Ark] CreateEmbeddings error: %w", err)
 		}
@@ -219,6 +228,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 					},
 					Model:          conf.Model,
 					EncodingFormat: &encodingFormat,
+					Dimensions:     e.conf.Dimensions,
 				})
 				if err != nil {
 					return fmt.Errorf("[Ark] CreateMultiModalEmbeddings error: %w", err)

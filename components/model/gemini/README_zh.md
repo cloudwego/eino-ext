@@ -205,6 +205,13 @@ type Config struct {
 	// Cache controls prefix cache settings for the model.
 	// Optional. used to CreatePrefixCache for reused inputs.
 	Cache *CacheConfig
+
+	// 是否返回每一步生成 token 的 log probabilities。开启后结果填充到
+	// Message.ResponseMeta.LogProbs。可选，默认 false。
+	ResponseLogprobs bool
+
+	// 每一步返回 top-K 候选 token 的数量。仅在 ResponseLogprobs=true 时生效。
+	Logprobs *int32
 }
 
 // CacheConfig controls prefix cache settings for the model.
@@ -251,6 +258,40 @@ msg, err := cm.Generate(ctx, []*schema.Message{
 		},
 	}, gemini.WithCachedContentName(cacheInfo.Name))
 ```
+
+## Logprobs（token 概率）
+
+Gemini 可返回每一步生成 token 的对数概率，以及该步骤的 top-K 候选 token。
+
+- 通过 `Config.ResponseLogprobs = true`（或单次调用 `gemini.WithResponseLogprobs(true)`）开启。
+- 通过 `Config.Logprobs`（或单次调用 `gemini.WithLogprobs(k)`）配置 top-K 候选数量。
+- 结果在 `message.ResponseMeta.LogProbs`：
+  - `LogProbs.Content[i].Token` / `LogProb` —— 第 `i` 步选中的 token 与其对数概率
+  - `LogProbs.Content[i].TopLogProbs` —— 第 `i` 步的 top-K 候选 token
+
+```go
+topK := int32(5)
+cm, _ := gemini.NewChatModel(ctx, &gemini.Config{
+    Client:           client,
+    Model:            "gemini-2.0-flash",
+    ResponseLogprobs: true,
+    Logprobs:         &topK,
+})
+
+// 也可在单次调用时覆盖：
+msg, _ := cm.Generate(ctx, input,
+    gemini.WithResponseLogprobs(true),
+    gemini.WithLogprobs(3),
+)
+
+if lp := msg.ResponseMeta.LogProbs; lp != nil {
+    for _, item := range lp.Content {
+        fmt.Printf("token=%s logprob=%f\n", item.Token, item.LogProb)
+    }
+}
+```
+
+> 注意：`Logprobs` 仅在 `ResponseLogprobs=true` 时生效。若想在单次调用中关闭 logprobs，请使用 `gemini.WithResponseLogprobs(false)`。
 
 
 ## 示例
