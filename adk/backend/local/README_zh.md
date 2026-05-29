@@ -10,6 +10,17 @@
 go get github.com/cloudwego/eino-ext/adk/backend/local
 ```
 
+#### `MultiModalRead` 的原生依赖（PDF 渲染）
+
+`MultiModalRead` 通过 [`go-fitz`](https://github.com/gen2brain/go-fitz) 将 PDF 页面光栅化,
+该库通过 `purego` 在运行时加载 MuPDF。运行前请安装 MuPDF：
+
+- macOS: `brew install mupdf`
+- Ubuntu/Debian: `sudo apt-get install -y libmupdf-dev`
+- CentOS/RHEL: `sudo yum install -y mupdf-devel`
+
+如果不使用 `MultiModalRead`，则运行时不需要 MuPDF。
+
 ### 基本用法
 
 ```go
@@ -20,7 +31,7 @@ import (
 )
 
 // 初始化后端
-backend, err := local.NewLocalBackend(context.Background(), &local.Config{})
+backend, err := local.NewBackend(context.Background(), &local.Config{})
 if err != nil {
     panic(err)
 }
@@ -43,7 +54,7 @@ content, err := backend.Read(ctx, &filesystem.ReadRequest{
 - **直接文件系统访问** - 使用本地性能操作本地文件
 - **完整后端实现** - 支持所有 `filesystem.Backend` 操作
 - **路径安全** - 强制使用绝对路径以防止目录遍历
-- **安全写入** - 默认情况下防止意外覆盖文件
+- **多模态读取** - 将图片和 PDF 读取为结构化的多模态片段（PDF 支持整文或分页渲染）
 
 ## 配置
 
@@ -52,6 +63,18 @@ type Config struct {
     // 可选：Execute() 方法安全性的命令验证器
     // 建议在生产环境中使用以防止命令注入
     ValidateCommand func(string) error
+
+    // 可选：MultiModalRead 的图片/PDF/DPI 限制。
+    // 字段为 0 或负数时使用默认值；超过硬上限时会被静默截断到上限。
+    MultiModalRead MultiModalReadConfig
+}
+
+type MultiModalReadConfig struct {
+    MaxImageSizeMB        int     // 单张图片读取大小上限（MB）。   默认 10，  硬上限 2048
+    MaxPDFSizeMB          int     // 整文 PDF 读取大小上限（MB）。 默认 20，  硬上限 2048
+    MaxPagedPDFSizeMB     int     // 分页 PDF 读取大小上限（MB）。 默认 100， 硬上限 2048
+    MaxPDFPagesPerRequest int     // 单次分页读取的最大页数。      默认 20，  硬上限 1000
+    PDFRenderDPI          float64 // PDF 页面光栅化时使用的 DPI。  默认 150， 硬上限 600
 }
 ```
 
@@ -67,7 +90,7 @@ func validateCommand(cmd string) error {
     return nil
 }
 
-backend, _ := local.NewLocalBackend(ctx, &local.Config{
+backend, _ := local.NewBackend(ctx, &local.Config{
     ValidateCommand: validateCommand,
 })
 ```
@@ -85,7 +108,8 @@ backend, _ := local.NewLocalBackend(ctx, &local.Config{
 
 - **`LsInfo(ctx, req)`** - 列出目录内容
 - **`Read(ctx, req)`** - 读取文件，支持可选的行偏移/限制
-- **`Write(ctx, req)`** - 创建新文件（如果存在则失败）
+- **`MultiModalRead(ctx, req)`** - 将图片/PDF 读取为结构化的多模态片段；非图片/非 PDF 文件回退到 `Read`。默认值：图片 10 MB / 整文 PDF 20 MB / 分页 PDF 100 MB，单次最多 20 页 @ 150 DPI。可通过 `Config.MultiModalRead` 调优。`Pages` 支持单页（`"3"`）或包含范围（`"1-5"`）。
+- **`Write(ctx, req)`** - 写入文件内容；文件不存在时创建，否则**覆盖**现有内容（父目录会自动创建）。
 - **`Edit(ctx, req)`** - 在文件中搜索和替换
 - **`GrepRaw(ctx, req)`** - 在文件中搜索模式
 - **`GlobInfo(ctx, req)`** - 按 glob 模式查找文件
@@ -113,11 +137,11 @@ backend, _ := local.NewLocalBackend(ctx, &local.Config{
 
 ```go
 // 不好：没有验证
-backend, _ := local.NewLocalBackend(ctx, &local.Config{})
+backend, _ := local.NewBackend(ctx, &local.Config{})
 // 有命令注入风险！
 
 // 好：有验证
-backend, _ := local.NewLocalBackend(ctx, &local.Config{
+backend, _ := local.NewBackend(ctx, &local.Config{
     ValidateCommand: myValidator,
 })
 ```
@@ -126,9 +150,6 @@ backend, _ := local.NewLocalBackend(ctx, &local.Config{
 
 **问：为什么所有路径都需要是绝对路径？**  
 答：这可以防止目录遍历攻击。使用 `filepath.Abs()` 转换相对路径。
-
-**问：为什么 Write 在文件存在时会失败？**  
-答：这是一个安全功能，可以防止意外的数据丢失。使用 `Edit()` 修改现有文件。
 
 **问：可以在生产环境中使用吗？**  
 答：可以，但要确保进行适当的输入验证、命令验证和适当的权限设置。

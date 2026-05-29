@@ -533,6 +533,7 @@ func (cm *ChatModel) generateStreamRequest(ctx context.Context, in []*schema.Mes
 		LogProbs:         origReq.LogProbs,
 		TopLogProbs:      origReq.TopLogProbs,
 		ExtraFields:      origReq.ExtraFields,
+		Thinking:         origReq.Thinking,
 	}
 	return req, cbIn, nil
 }
