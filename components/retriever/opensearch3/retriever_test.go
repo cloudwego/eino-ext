@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	. "github.com/bytedance/mockey"
@@ -252,6 +253,61 @@ func TestRetrieve(t *testing.T) {
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(len(docs), convey.ShouldEqual, 0)
 		})
+
+		PatchConvey("test with index option", func() {
+			var searchModeIndex string
+			var searchPath string
+			scoreThreshold := 0.5
+			searchResp := `{"hits": {"hits": []}}`
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/_search") {
+					searchPath = r.URL.Path
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(searchResp))
+			}))
+			defer server.Close()
+
+			client, err := opensearchapi.NewClient(opensearchapi.Config{
+				Client: opensearch.Config{
+					Addresses: []string{server.URL},
+				},
+			})
+			convey.So(err, convey.ShouldBeNil)
+
+			r := &Retriever{
+				client: client,
+				config: &RetrieverConfig{
+					Index:          "default_index",
+					TopK:           10,
+					ScoreThreshold: &scoreThreshold,
+					SearchMode: &mockSearchMode{
+						buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
+							searchModeIndex = conf.Index
+							*conf.ScoreThreshold = 0.9
+							return map[string]any{
+								"query": map[string]any{
+									"match": map[string]any{
+										"content": query,
+									},
+								},
+							}, nil
+						},
+					},
+					ResultParser: defaultResultParser,
+				},
+			}
+
+			docs, err := r.Retrieve(ctx, "test_query", retriever.WithIndex("override_index"))
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(docs, convey.ShouldBeEmpty)
+			convey.So(searchPath, convey.ShouldContainSubstring, "override_index")
+			convey.So(searchPath, convey.ShouldNotContainSubstring, "default_index")
+			convey.So(searchModeIndex, convey.ShouldEqual, "override_index")
+			convey.So(r.config.Index, convey.ShouldEqual, "default_index")
+			convey.So(*r.config.ScoreThreshold, convey.ShouldEqual, 0.5)
+		})
 	})
 }
 
@@ -422,12 +478,16 @@ func TestGetTypeFunc(t *testing.T) {
 
 // mockSearchMode implements SearchMode interface for testing
 type mockSearchMode struct {
-	err error
+	err            error
+	buildRequestFn func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error)
 }
 
 func (m *mockSearchMode) BuildRequest(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
 	if m.err != nil {
 		return nil, m.err
+	}
+	if m.buildRequestFn != nil {
+		return m.buildRequestFn(ctx, conf, query, opts...)
 	}
 	return map[string]any{
 		"query": map[string]any{
