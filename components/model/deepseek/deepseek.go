@@ -808,6 +808,9 @@ func toMessageRole(role string) schema.RoleType {
 		return schema.System
 	case roleTool:
 		return schema.Tool
+	case "":
+		// Streaming deltas often omit role after the first assistant chunk.
+		return schema.Assistant
 	default:
 		return schema.RoleType(role)
 	}
