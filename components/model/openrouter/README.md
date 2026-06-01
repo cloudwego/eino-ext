@@ -200,6 +200,14 @@ type Config struct {
     // Keys are strings with a maximum length of 64 characters. Values are strings with a maximum length of 512 characters.
     Metadata map[string]string `json:"metadata,omitempty"`
     
+    // CacheControl sets the top-level cache_control for all requests from this model instance.
+    // This enables automatic prompt caching for supported providers:
+    //   - Anthropic Claude: auto-caching (recommended for multi-turn conversations)
+    //   - Gemini 2.5: explicit breakpoints
+    // Can be overridden per-request via WithCacheControl option.
+    // Optional.
+    CacheControl *CacheControl `json:"cache_control,omitempty"`
+    
     // ExtraFields will override any existing fields with the same key.
     // Optional. Useful for experimental features not yet officially supported.
     ExtraFields map[string]any `json:"extra_fields,omitempty"`
@@ -269,370 +277,40 @@ type Reasoning struct {
     Enabled *bool `json:"enabled,omitempty"`
 }
 
-```
-## examples
-### generate
+type CacheControlTTL string
 
-```go
-
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-	"os"
-
-	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/model/openrouter"
+const (
+    CacheControlTTL5Minutes  CacheControlTTL = "5m"
+    CacheControlTTL1Hour     CacheControlTTL = "1h"
 )
 
-func main() {
-	ctx := context.Background()
-
-	chatModel, err := openrouter.NewChatModel(ctx, &openrouter.Config{
-		APIKey:  os.Getenv("API_KEY"),
-		Model:   os.Getenv("MODEL"),
-		BaseURL: os.Getenv("BASE_URL"),
-		Reasoning: &openrouter.Reasoning{
-			Effort: openrouter.EffortOfMedium,
-		},
-	})
-	if err != nil {
-		log.Fatalf("NewChatModel failed, err=%v", err)
-	}
-
-	resp, err := chatModel.Generate(ctx, []*schema.Message{
-		{
-			Role:    schema.User,
-			Content: "as a machine, how do you answer user's question?",
-		},
-	})
-	if err != nil {
-		log.Fatalf("Generate failed, err=%v", err)
-	}
-	fmt.Printf("output: \n%v", resp)
-
+// CacheControl is the cache control configuration for prompt caching.
+// If TTL is empty, it defaults to CacheControlTTL5Minutes.
+type CacheControl struct {
+    TTL CacheControlTTL `json:"ttl,omitempty"`
 }
 
 ```
 
-### generate_with_image
+## Request Options
 
-```go
+Per-request options can override Config-level settings:
 
-package main
+- `WithModels(models []string)` — Override model fallback list
+- `WithReasoning(r *Reasoning)` — Override reasoning configuration
+- `WithMetadata(m map[string]string)` — Override metadata
+- `WithCacheControl(ctrl CacheControl)` — Override cache control
+- `WithResponseFormat(rf *ChatCompletionResponseFormat)` — Override response format
 
-import (
-	"context"
-	"fmt"
-	"log"
-	"os"
+## Examples
 
-	"github.com/cloudwego/eino/schema"
+See the following examples for more usage:
 
-	"github.com/cloudwego/eino-ext/components/model/openrouter"
-)
-
-func main() {
-	ctx := context.Background()
-	chatModel, err := openrouter.NewChatModel(ctx, &openrouter.Config{
-		APIKey:  os.Getenv("API_KEY"),
-		Model:   os.Getenv("MODEL"), // model support image generate example: google/gemini-2.5-flash-image
-		BaseURL: os.Getenv("BASE_URL"),
-		Reasoning: &openrouter.Reasoning{
-			Effort: openrouter.EffortOfMedium,
-		},
-	})
-	if err != nil {
-		log.Fatalf("NewChatModel failed, err=%v", err)
-
-	}
-
-	multiModalMsg := &schema.Message{
-		Role: schema.User,
-		UserInputMultiContent: []schema.MessageInputPart{
-
-			{
-				Type: schema.ChatMessagePartTypeText,
-				Text: "this picture is a landscape photo, what's the picture's content",
-			},
-			{
-				Type: schema.ChatMessagePartTypeImageURL,
-				Image: &schema.MessageInputImage{
-					MessagePartCommon: schema.MessagePartCommon{
-						URL: of("https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcT11qEDxU4X_MVKYQVU5qiAVFidA58f8GG0bQ&s"),
-					},
-					Detail: schema.ImageURLDetailAuto,
-				},
-			},
-		},
-	}
-
-	resp, err := chatModel.Generate(ctx, []*schema.Message{
-		multiModalMsg,
-	})
-	if err != nil {
-		log.Fatalf("Generate failed, err=%v", err)
-	}
-
-	fmt.Printf("output: \n%v", resp)
-}
-
-func of[T any](a T) *T {
-	return &a
-}
-
-```
-
-### stream
-
-```go
-
-package main
-
-import (
-	"context"
-	"fmt"
-	"io"
-	"log"
-	"os"
-
-	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/model/openrouter"
-)
-
-func main() {
-
-	ctx := context.Background()
-
-	cm, err := openrouter.NewChatModel(ctx, &openrouter.Config{
-		APIKey:  os.Getenv("API_KEY"),
-		Model:   os.Getenv("MODEL"),
-		BaseURL: os.Getenv("BASE_URL"),
-		Reasoning: &openrouter.Reasoning{
-			Effort: openrouter.EffortOfMedium,
-		},
-	})
-	if err != nil {
-		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
-	}
-	stream, err := cm.Stream(ctx, []*schema.Message{
-		{
-			Role:    schema.User,
-			Content: "Write a short poem about spring.",
-		},
-	})
-	if err != nil {
-		log.Fatalf("Stream error: %v", err)
-	}
-
-	fmt.Println("Assistant: ")
-	for {
-		resp, err := stream.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatalf("Stream receive error: %v", err)
-		}
-
-		fmt.Println("frame: ")
-		if len(resp.Content) > 0 {
-			fmt.Println("content: ", resp.Content)
-		}
-		if len(resp.ReasoningContent) > 0 {
-			fmt.Printf("ReasoningContent: %s\n", resp.ReasoningContent)
-		}
-	}
-	fmt.Println()
-}
-
-```
-
-### intent_tool
-
-```go
-
-package main
-
-import (
-	"context"
-	"fmt"
-	"io"
-	"log"
-	"os"
-
-	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/model/openrouter"
-)
-
-package main
-
-import (
-"context"
-"fmt"
-"io"
-"log"
-"os"
-
-"github.com/cloudwego/eino/schema"
-
-"github.com/cloudwego/eino-ext/components/model/openrouter"
-)
-
-func main() {
-	ctx := context.Background()
-	chatModel, err := openrouter.NewChatModel(ctx, &openrouter.Config{
-		APIKey:  os.Getenv("API_KEY"),
-		Model:   os.Getenv("MODEL"),
-		BaseURL: os.Getenv("BASE_URL"),
-		Reasoning: &openrouter.Reasoning{
-			Effort: openrouter.EffortOfMedium,
-		},
-	})
-	if err != nil {
-		log.Fatalf("NewChatModel of openai failed, err=%v", err)
-	}
-	cm, err := chatModel.WithTools([]*schema.ToolInfo{
-		{
-			Name: "user_company",
-			Desc: "Retrieve the user's company and position based on their name and email.",
-			ParamsOneOf: schema.NewParamsOneOfByParams(
-				map[string]*schema.ParameterInfo{
-					"name":  {Type: "string", Desc: "user's name"},
-					"email": {Type: "string", Desc: "user's email"}}),
-		}, {
-			Name: "user_salary",
-			Desc: "Retrieve the user's salary based on their name and email.\n",
-			ParamsOneOf: schema.NewParamsOneOfByParams(
-				map[string]*schema.ParameterInfo{
-					"name":  {Type: "string", Desc: "user's name"},
-					"email": {Type: "string", Desc: "user's email"},
-				}),
-		}})
-	if err != nil {
-		log.Fatalf("BindForcedTools of openai failed, err=%v", err)
-	}
-	resp, err := cm.Generate(ctx, []*schema.Message{{
-		Role:    schema.System,
-		Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
-	}, {
-		Role:    schema.User,
-		Content: "My name is John and my email is john@abc.com，Please recommend some houses that suit me.",
-	}})
-	if err != nil {
-		log.Fatalf("Generate of openai failed, err=%v", err)
-	}
-	fmt.Printf("output: \n%v", resp)
-
-	streamResp, err := cm.Stream(ctx, []*schema.Message{
-		{
-			Role:    schema.System,
-			Content: "As a real estate agent, provide relevant property information based on the user's salary and job using the user_company and user_salary APIs. An email address is required.",
-		}, {
-			Role:    schema.User,
-			Content: "My name is John and my email is john@abc.com，Please recommend some houses that suit me.",
-		},
-	})
-	if err != nil {
-		log.Fatalf("Stream of openai failed, err=%v", err)
-	}
-	var messages []*schema.Message
-	for {
-		chunk, err := streamResp.Recv()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatalf("Recv of streamResp failed, err=%v", err)
-		}
-		messages = append(messages, chunk)
-	}
-	resp, err = schema.ConcatMessages(messages)
-	if err != nil {
-		log.Fatalf("ConcatMessages of openai failed, err=%v", err)
-	}
-	fmt.Printf("stream output: \n%v", resp)
-}
-
-
-```
-
-### image_generate
-
-```go
-
-package main
-
-import (
-	"context"
-	"encoding/json"
-	"log"
-	"os"
-
-	"github.com/cloudwego/eino/schema"
-
-	"github.com/cloudwego/eino-ext/components/model/openrouter"
-)
-
-func main() {
-	ctx := context.Background()
-	cm, err := openrouter.NewChatModel(ctx, &openrouter.Config{
-		APIKey:  os.Getenv("API_KEY"),
-		Model:   os.Getenv("MODEL"), // model should support image generate
-		BaseURL: os.Getenv("BASE_URL"),
-		Reasoning: &openrouter.Reasoning{
-			Effort: openrouter.EffortOfMedium,
-		},
-	})
-	if err != nil {
-		log.Fatalf("NewChatModel of gemini failed, err=%v", err)
-	}
-
-	/*
-		The generated multimodal content is stored in the `AssistantGenMultiContent` field.
-		For this example, the resulting message will have a structure similar to this:
-
-		resp := &schema.Message{
-			Role: schema.Assistant,
-			AssistantGenMultiContent: []schema.MessageOutputPart{
-				{
-					Type: schema.ChatMessagePartTypeImageURL,
-					Image: &schema.MessageOutputImage{
-						MessagePartCommon: schema.MessagePartCommon{
-							Base64Data: &base64String, // The base64 encoded image data
-							MIMEType:   "image/png",
-						},
-					},
-				},
-			},
-		}
-	*/
-	resp, err := cm.Generate(ctx, []*schema.Message{
-		{
-			Role: schema.User,
-			UserInputMultiContent: []schema.MessageInputPart{
-				{
-					Type: schema.ChatMessagePartTypeText,
-					Text: "Generate an image of a cat",
-				},
-			},
-		},
-	})
-	if err != nil {
-		log.Fatalf("Generate error: %v", err)
-	}
-	log.Printf("\ngenerate output: \n")
-	respBody, _ := json.MarshalIndent(resp, "  ", "  ")
-	log.Printf("  body: %s\n", string(respBody))
-
-}
-
-```
+- [Basic Generation](./examples/generate/)
+- [Image Input](./examples/generate_with_image/)
+- [Image Generation](./examples/image_generate/)
+- [Intent & Tool Calling](./examples/intent_tool/)
+- [Streaming Response](./examples/stream/)
 
 
 

@@ -7,8 +7,19 @@ A secure filesystem backend for EINO ADK that executes operations in Volcengine'
 ### Installation
 
 ```bash
-go get github.com/cloudwego/eino-ext/adk/backend/arksandbox
+go get github.com/cloudwego/eino-ext/adk/backend/agentkit
 ```
+
+#### Native dependency for `MultiModalRead` (PDF rendering)
+
+`MultiModalRead` rasterises PDF pages via [`go-fitz`](https://github.com/gen2brain/go-fitz),
+which loads MuPDF at runtime through `purego`. Install MuPDF before running:
+
+- macOS: `brew install mupdf`
+- Ubuntu/Debian: `sudo apt-get install -y libmupdf-dev`
+- CentOS/RHEL: `sudo yum install -y mupdf-devel`
+
+If you don't use `MultiModalRead`, MuPDF is not required at runtime.
 
 ### Basic Usage
 
@@ -18,21 +29,21 @@ import (
     "os"
     "time"
     
-    "github.com/cloudwego/eino-ext/adk/backend/arksandbox"
+    "github.com/cloudwego/eino-ext/adk/backend/agentkit"
     "github.com/cloudwego/eino/adk/middlewares/filesystem"
 )
 
 // Configure with credentials
-config := &arksandbox.Config{
+config := &agentkit.Config{
     AccessKeyID:     os.Getenv("VOLC_ACCESS_KEY_ID"),
     SecretAccessKey: os.Getenv("VOLC_SECRET_ACCESS_KEY"),
     ToolID:          os.Getenv("VOLC_TOOL_ID"),
     UserSessionID:   "session-" + time.Now().Format("20060102-150405"),
-    Region:          arksandbox.RegionOfBeijing,
+    Region:          agentkit.RegionOfBeijing,
 }
 
 // Initialize backend
-backend, err := arksandbox.NewArkSandboxBackend(config)
+backend, err := agentkit.NewSandboxToolBackend(config)
 if err != nil {
     panic(err)
 }
@@ -67,6 +78,18 @@ type Config struct {
     SessionTTL    int          // Default: 1800 seconds (30 min)
     ExecutionTimeout int       
     Timeout       time.Duration // HTTP client timeout
+
+    // Optional: image/PDF/DPI limits for MultiModalRead.
+    // Zero/negative fields fall back to defaults; values above hard-caps are silently clamped.
+    MultiModalRead MultiModalReadConfig
+}
+
+type MultiModalReadConfig struct {
+    MaxImageSizeMB        int     // image read size limit (MB).      Default 10,  hard-cap 2048
+    MaxPDFSizeMB          int     // full PDF read size limit (MB).   Default 20,  hard-cap 2048
+    MaxPagedPDFSizeMB     int     // paged PDF read size limit (MB).  Default 100, hard-cap 2048
+    MaxPDFPagesPerRequest int     // max pages per paged read.        Default 20,  hard-cap 1000
+    PDFRenderDPI          float64 // DPI when rasterising PDF pages.  Default 150, hard-cap 600
 }
 ```
 
@@ -87,138 +110,10 @@ export VOLC_TOOL_ID="your_tool_id"
 
 ## Examples
 
-### Example 1: File Operations
+See the following examples for more usage:
 
-Basic file operations in the sandbox environment.
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "log"
-    "os"
-    "time"
-    
-    "github.com/cloudwego/eino-ext/adk/backend/arksandbox"
-    "github.com/cloudwego/eino/adk/middlewares/filesystem"
-)
-
-func main() {
-    ctx := context.Background()
-    
-    // Initialize backend
-    backend, err := arksandbox.NewArkSandboxBackend(&arksandbox.Config{
-        AccessKeyID:     os.Getenv("VOLC_ACCESS_KEY_ID"),
-        SecretAccessKey: os.Getenv("VOLC_SECRET_ACCESS_KEY"),
-        ToolID:          os.Getenv("VOLC_TOOL_ID"),
-        UserSessionID:   "example-" + time.Now().Format("20060102-150405"),
-        Region:          arksandbox.RegionOfBeijing,
-    })
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    // Write file
-    backend.Write(ctx, &filesystem.WriteRequest{
-        FilePath: "/home/gem/test.txt",
-        Content:  "Hello from Ark Sandbox!",
-    })
-    
-    // Read file
-    content, _ := backend.Read(ctx, &filesystem.ReadRequest{
-        FilePath: "/home/gem/test.txt",
-    })
-    fmt.Println("Content:", content)
-    
-    // List directory
-    files, _ := backend.LsInfo(ctx, &filesystem.LsInfoRequest{
-        Path: "/home/gem",
-    })
-    fmt.Printf("Found %d files\n", len(files))
-}
-```
-
-**Output:**
-```
-Content:      1	Hello from Ark Sandbox!
-Found 1 files
-```
-
-### Example 2: Search Operations
-
-Search and pattern matching in sandbox files.
-
-```go
-// Search for pattern
-matches, _ := backend.GrepRaw(ctx, &filesystem.GrepRequest{
-    Path:    "/home/gem",
-    Pattern: "Sandbox",
-    Glob:    "*.txt",
-})
-
-for _, match := range matches {
-    fmt.Printf("%s:%d - %s\n", match.Path, match.Line, match.Content)
-}
-
-// Find files by pattern
-files, _ := backend.GlobInfo(ctx, &filesystem.GlobInfoRequest{
-    Path:    "/home/gem",
-    Pattern: "**/*.txt",
-})
-
-fmt.Printf("Found %d .txt files\n", len(files))
-```
-
-**Output:**
-```
-/home/gem/test.txt:1 - Hello from Ark Sandbox!
-Found 1 .txt files
-```
-
-### Example 3: Agent Integration
-
-Build AI-powered filesystem assistant with sandbox backend.
-
-```go
-import (
-    "github.com/cloudwego/eino/adk"
-    "github.com/cloudwego/eino/components/model/openai"
-)
-
-// Create backend
-backend, _ := arksandbox.NewArkSandboxBackend(config)
-
-// Create middleware
-middleware, _ := filesystem.NewMiddleware(ctx, &filesystem.Config{
-    Backend: backend,
-})
-
-// Create agent with ChatModel
-chatModel, _ := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-    APIKey: os.Getenv("OPENAI_API_KEY"),
-    Model:  "gpt-4",
-})
-
-agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-    Name:        "SandboxAgent",
-    Description: "AI agent for secure filesystem operations",
-    Model:       chatModel,
-    Middlewares: []adk.AgentMiddleware{middleware},
-})
-
-// Execute user query
-input := &adk.AgentInput{
-    Messages: []*schema.Message{
-        schema.UserMessage("List all files in /home/gem and show their details"),
-    },
-}
-
-for event := range agent.Run(ctx, input) {
-    // Process agent events
-}
-```
+- [Backend Usage](./examples/backend/)
+- [Middleware Integration](./examples/middlewares/)
 
 ## API Reference
 
@@ -226,7 +121,8 @@ for event := range agent.Run(ctx, input) {
 
 - **`LsInfo(ctx, req)`** - List directory contents
 - **`Read(ctx, req)`** - Read file with optional line offset/limit
-- **`Write(ctx, req)`** - Create new file (fails if exists)
+- **`MultiModalRead(ctx, req)`** - Read images/PDFs as structured multimodal parts; non-image/non-PDF files fall back to `Read`. Defaults: image 10 MB / PDF 20 MB / paged-PDF 100 MB up to 20 pages @ 150 DPI. Tunable via `Config.MultiModalRead`. `Pages` accepts a single page (`"3"`) or an inclusive range (`"1-5"`).
+- **`Write(ctx, req)`** - Write file content; creates the file if it doesn't exist, otherwise **overwrites** existing content (parent directories are created automatically).
 - **`Edit(ctx, req)`** - Search and replace in file
 - **`GrepRaw(ctx, req)`** - Search pattern in files
 - **`GlobInfo(ctx, req)`** - Find files by glob pattern
@@ -247,17 +143,13 @@ for event := range agent.Run(ctx, input) {
 
 ```go
 // Each user/context should have unique session ID
-config := &arksandbox.Config{
+config := &agentkit.Config{
     UserSessionID: fmt.Sprintf("user-%s-%d", userID, time.Now().Unix()),
     SessionTTL:    3600,  // 1 hour
 }
 ```
 
 ## Troubleshooting
-
-**File Already Exists**
-- `Write()` fails if file exists (safety feature)
-- Delete file first or use unique filenames
 
 **Authentication Errors**
 - Verify credentials are correct

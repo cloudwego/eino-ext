@@ -20,8 +20,9 @@ const (
 	readPythonCodeTemplate = `
 import os
 import sys
+import base64
 
-file_path = '{file_path}'
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
 offset = {offset}
 limit = {limit}
 
@@ -35,27 +36,49 @@ if os.path.getsize(file_path) == 0:
     print('System reminder: File exists but has empty contents')
     sys.exit(0)
 
-# Read file with offset and limit
+# Read file with offset and limit (offset is 1-indexed, where 1 means the first line)
 with open(file_path, 'r') as f:
-    lines = f.readlines()
+    collected = []
+    for i, line in enumerate(f, 1):
+        if i < offset:
+            continue
+        if i >= offset + limit:
+            break
+        collected.append(line)
 
-# Apply offset and limit
-start_idx = offset
-end_idx = offset + limit
-selected_lines = lines[start_idx:end_idx]
+sys.stdout.write("".join(collected))
+`
+	readAllBytesPythonCodeTemplate = `
+import os
+import sys
+import base64
 
-# Format with line numbers (1-indexed, starting from offset + 1)
-for i, line in enumerate(selected_lines):
-    line_num = offset + i + 1
-    # Remove trailing newline for formatting, then add it back
-    line_content = line.rstrip('\n')
-    print(f'{{line_num:6d}}\t{{line_content}}')
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
+max_bytes = {max_bytes}
+
+if not os.path.isfile(file_path):
+    sys.stdout.write(f'Error: File not found: {{file_path}}')
+    sys.exit(1)
+
+# Size gate: emit a sentinel prefix that the Go side (readAllBytes) matches on
+# to distinguish "too large" from other failures. The prefix must stay in sync
+# with the tooLargeMarker constant in sandbox.go.
+size = os.path.getsize(file_path)
+if size > max_bytes:
+    sys.stdout.write(f'__READALLBYTES_TOO_LARGE__ size={{size}} max={{max_bytes}}')
+    sys.exit(1)
+
+with open(file_path, 'rb') as f:
+    data = f.read()
+
+sys.stdout.write(base64.b64encode(data).decode('ascii'))
 `
 	lsInfoPythonCodeTemplate = `
 import os
 import json
+import base64
 
-path = '{path}'
+path = base64.b64decode('{path_b64}').decode('utf-8')
 
 try:
     with os.scandir(path) as it:
@@ -72,31 +95,27 @@ except PermissionError:
 `
 	writePythonCodeTemplate = `
 import os
-import sys
 import base64
 
-file_path = '{file_path}'
-
-# Check if file already exists (atomic with write)
-if os.path.exists(file_path):
-    print(f"Error: File '{{file_path}}' already exists", file=sys.stderr)
-    sys.exit(-1)
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
 
 # Create parent directory if needed
 parent_dir = os.path.dirname(file_path) or '.'
 os.makedirs(parent_dir, exist_ok=True)
 
 # Decode and write content
-content = base64.b64decode('{content_b64}').decode('utf-8')
-with open(file_path, 'w') as f:
+content = base64.b64decode('{content_b64}')
+with open(file_path, 'wb') as f:
     f.write(content)
 `
 	editPythonCodeTemplate = `
 import sys
 import base64
 
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
+
 # Read file content
-with open('{file_path}', 'r') as f:
+with open(file_path, 'r') as f:
     text = f.read()
 
 # Decode base64-encoded strings
@@ -121,62 +140,109 @@ else:
     result = text.replace(old, new, 1)
 
 # Write back to file
-with open('{file_path}', 'w') as f:
+with open(file_path, 'w') as f:
     f.write(result)
 
-print(count)
+print(count, end="")
 `
+
 	grepPythonCodeTemplate = `
-import os
-import sys
+import fnmatch
 import json
+import base64
 import subprocess
+from pathlib import Path
 
-pattern = '{pattern}'
-path = '{path}'
-glob_pattern = '{glob_pattern}'
 
-search_path = path or '.'
+def build_ripgrep_cmd(file_type, glob_pattern, after_lines, before_lines, pattern, search_path, case_insensitive, multiline):
+    cmd = ["rg", "--json"]
+    if case_insensitive:
+        cmd.append("-i")
+    if multiline:
+        cmd.extend(["-U", "--multiline-dotall"])
+    if file_type:
+        cmd.extend(["--type", file_type])
+    elif glob_pattern:
+        cmd.extend(["--glob", glob_pattern])
+    if after_lines and after_lines > 0:
+        cmd.extend(["-A", str(after_lines)])
+    if before_lines and before_lines > 0:
+        cmd.extend(["-B", str(before_lines)])
 
-# Build grep command: recursive, with filename, with line number, fixed-strings (literal)
-grep_cmd = ['grep', '-rHnF']
+    cmd.extend(["-e", pattern])
+    if search_path:
+        cmd.extend(["--", search_path])
+    return cmd
 
-if glob_pattern:
-    grep_cmd.extend(['--include', glob_pattern])
 
-grep_cmd.extend(['-e', pattern, search_path])
-
-try:
-    result = subprocess.run(grep_cmd, capture_output=True, text=True, check=False)
-
-    # grep exits with 1 if no lines were selected. We can ignore this case.
-    if result.returncode > 1:
-        print(f"Grep error: {{result.stderr}}", file=sys.stderr)
-        sys.exit(result.returncode)
-
-    output = result.stdout.strip()
+def parse_ripgrep_output(output, file_type, glob_pattern):
+    responses = []
     if not output:
-        sys.exit(0)
+        return responses
 
-    for line in output.splitlines():
-        # Format is: path:line_number:content
-        parts = line.split(':', 2)
-        if len(parts) >= 3:
-            try:
-                line_num = int(parts[1])
-                match = {{
-                    'Path': parts[0],
-                    'Line': line_num,
-                    'Content': parts[2]
-                }}
-                print(json.dumps(match))
-            except (ValueError, IndexError):
-                # Ignore malformed lines, e.g., "grep: ...: Is a directory"
-                continue
-except Exception as e:
-    print(f"Error executing grep script: {{e}}", file=sys.stderr)
-    sys.exit(1)
+    empty_dict = dict()
+    for line in output.split("\n"):
+        try:
+            data = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        if data.get("type") not in ("match", "context"):
+            continue
+
+        match_data = data.get("data", empty_dict)
+        match_path = match_data.get("path", empty_dict).get("text", "")
+        lines_data = match_data.get("lines", empty_dict)
+        response = dict(
+            Path=match_path,
+            Line=match_data.get("line_number", 0),
+            Content=lines_data.get("text", "").rstrip("\n")
+        )
+
+        if file_type and glob_pattern:
+            if fnmatch.fnmatch(match_path, glob_pattern) or fnmatch.fnmatch(Path(match_path).name, glob_pattern):
+                responses.append(response)
+        else:
+            responses.append(response)
+
+    return responses
+
+
+def run_ripgrep(file_type, glob_pattern, after_lines, before_lines, pattern, search_path, case_insensitive, multiline):
+    if not search_path:
+        return []
+
+    cmd = build_ripgrep_cmd(file_type, glob_pattern, after_lines, before_lines, pattern, search_path, case_insensitive, multiline)
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        raise RuntimeError("ripgrep (rg) is not installed or not in PATH")
+
+    if result.returncode not in (0, 1):
+        raise RuntimeError(f"ripgrep failed: {{result.stderr}}")
+
+    return parse_ripgrep_output(result.stdout.strip(), file_type, glob_pattern)
+
+
+file_type = base64.b64decode('{fileType_b64}').decode('utf-8')
+glob_pattern = base64.b64decode('{glob_b64}').decode('utf-8')
+pattern = base64.b64decode('{pattern_b64}').decode('utf-8')
+search_path = base64.b64decode('{path_b64}').decode('utf-8')
+
+responses = run_ripgrep(
+    file_type=file_type,
+    glob_pattern=glob_pattern,
+    after_lines={afterLines},
+    before_lines={beforeLines},
+    pattern=pattern,
+    search_path=search_path,
+    case_insensitive={caseInsensitive},
+    multiline={enableMultiline}
+)
+print(json.dumps(responses), end="")
 `
+
 	globPythonCodeTemplate = `
 import glob
 import os
@@ -189,6 +255,7 @@ pattern = base64.b64decode('{pattern_b64}').decode('utf-8')
 
 os.chdir(path)
 matches = sorted(glob.glob(pattern, recursive=True))
+results = []
 for m in matches:
     stat = os.stat(m)
     result = {{
@@ -197,7 +264,8 @@ for m in matches:
         'mtime': stat.st_mtime,
         'is_dir': os.path.isdir(m)
     }}
-    print(json.dumps(result))
+    results.append(result)
+print(json.dumps(results), end="")
 `
 	executePythonCodeTemplate = `
 import sys
@@ -213,7 +281,11 @@ try:
 
     # Check for stderr
     if result.stderr:
-        print(f"Error executing command: {{result.stderr}}", file=sys.stderr)
+        output_parts = []
+        if result.stdout:
+            output_parts.append(f"[stdout]:\n{{result.stdout.rstrip()}}")
+        output_parts.append(f"[stderr]:\n{{result.stderr.rstrip()}}")
+        print('\n'.join(output_parts), end='')
         sys.exit(result.returncode if result.returncode != 0 else 1)
     
     # Print stdout

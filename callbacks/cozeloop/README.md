@@ -43,5 +43,9 @@ func main() {
 }
 ```
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 - [CozeLoop Documentation](https://github.com/coze-dev/cozeloop-go)

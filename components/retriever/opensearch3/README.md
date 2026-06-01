@@ -147,3 +147,11 @@ type RetrieverConfig struct {
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [OpenSearch Go Client Documentation](https://github.com/opensearch-project/opensearch-go)
+## Examples
+
+See the following examples for more usage:
+
+- [Approximate Search](./examples/approximate/)
+- [Dense Vector Similarity](./examples/dense_vector_similarity/)
+- [Neural Sparse](./examples/neural_sparse/)
+

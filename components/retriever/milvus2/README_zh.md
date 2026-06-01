@@ -238,17 +238,17 @@ docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023
 
 ## 示例
 
-查看 [examples](./examples) 目录获取完整的示例代码：
+查看以下示例了解更多用法：
 
-- [approximate](./examples/approximate) - 基础 ANN 搜索
-- [range](./examples/range) - 范围搜索示例
-- [hybrid](./examples/hybrid) - 混合多向量搜索 (稠密 + BM25)
-- [hybrid_chinese](./examples/hybrid_chinese) - 中文混合搜索示例
-- [iterator](./examples/iterator) - 批次迭代器搜索
-- [scalar](./examples/scalar) - 标量/元数据过滤
-- [grouping](./examples/grouping) - 分组搜索结果
-- [filtered](./examples/filtered) - 带过滤的向量搜索
-- [sparse](./examples/sparse) - 纯稀疏搜索示例 (BM25)
+- [近似搜索](./examples/approximate/)
+- [过滤搜索](./examples/filtered/)
+- [分组结果](./examples/grouping/)
+- [混合搜索](./examples/hybrid/)
+- [中文混合搜索](./examples/hybrid_chinese/)
+- [迭代器搜索](./examples/iterator/)
+- [范围搜索](./examples/range/)
+- [标量过滤](./examples/scalar/)
+- [稀疏向量](./examples/sparse/)
 
 ## 许可证
 

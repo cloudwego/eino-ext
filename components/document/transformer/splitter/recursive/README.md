@@ -31,3 +31,9 @@ func main() {
     })
 }
 ```
+## Examples
+
+See the following examples for more usage:
+
+- [Test Data Example](./examples/testdata/)
+

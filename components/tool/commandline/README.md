@@ -146,3 +146,10 @@ func main() {
 ## For More Details
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
+## Examples
+
+See the following examples for more usage:
+
+- [Code Editor](./examples/editor/)
+- [Python Executor](./examples/pyexecutor/)
+

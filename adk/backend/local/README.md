@@ -10,6 +10,17 @@ A filesystem backend for EINO ADK that operates directly on the local machine's 
 go get github.com/cloudwego/eino-ext/adk/backend/local
 ```
 
+#### Native dependency for `MultiModalRead` (PDF rendering)
+
+`MultiModalRead` rasterises PDF pages via [`go-fitz`](https://github.com/gen2brain/go-fitz),
+which loads MuPDF at runtime through `purego`. Install MuPDF before running:
+
+- macOS: `brew install mupdf`
+- Ubuntu/Debian: `sudo apt-get install -y libmupdf-dev`
+- CentOS/RHEL: `sudo yum install -y mupdf-devel`
+
+If you don't use `MultiModalRead`, MuPDF is not required at runtime.
+
 ### Basic Usage
 
 ```go
@@ -20,7 +31,7 @@ import (
 )
 
 // Initialize backend
-backend, err := local.NewLocalBackend(context.Background(), &local.Config{})
+backend, err := local.NewBackend(context.Background(), &local.Config{})
 if err != nil {
     panic(err)
 }
@@ -43,7 +54,7 @@ content, err := backend.Read(ctx, &filesystem.ReadRequest{
 - **Direct Filesystem Access** - Operates on local files with native performance
 - **Full Backend Implementation** - Supports all `filesystem.Backend` operations
 - **Path Security** - Enforces absolute paths to prevent directory traversal
-- **Safe Write** - Prevents accidental file overwrites by default
+- **Multimodal Read** - Reads images and PDFs as structured parts (PDF supports full or paged rendering)
 
 ## Configuration
 
@@ -52,6 +63,18 @@ type Config struct {
     // Optional: Command validator for Execute() method security
     // Recommended for production use to prevent command injection
     ValidateCommand func(string) error
+
+    // Optional: image/PDF/DPI limits for MultiModalRead.
+    // Zero/negative fields fall back to defaults; values above hard-caps are silently clamped.
+    MultiModalRead MultiModalReadConfig
+}
+
+type MultiModalReadConfig struct {
+    MaxImageSizeMB        int     // image read size limit (MB).      Default 10,  hard-cap 2048
+    MaxPDFSizeMB          int     // full PDF read size limit (MB).   Default 20,  hard-cap 2048
+    MaxPagedPDFSizeMB     int     // paged PDF read size limit (MB).  Default 100, hard-cap 2048
+    MaxPDFPagesPerRequest int     // max pages per paged read.        Default 20,  hard-cap 1000
+    PDFRenderDPI          float64 // DPI when rasterising PDF pages.  Default 150, hard-cap 600
 }
 ```
 
@@ -67,151 +90,17 @@ func validateCommand(cmd string) error {
     return nil
 }
 
-backend, _ := local.NewLocalBackend(ctx, &local.Config{
+backend, _ := local.NewBackend(ctx, &local.Config{
     ValidateCommand: validateCommand,
 })
 ```
 
 ## Examples
 
-### Example 1: File Operations
+See the following examples for more usage:
 
-Complete example demonstrating write, read, edit, and list operations.
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "log"
-    "os"
-    "path/filepath"
-    
-    "github.com/cloudwego/eino-ext/adk/backend/local"
-    "github.com/cloudwego/eino/adk/middlewares/filesystem"
-)
-
-func main() {
-    ctx := context.Background()
-    
-    // Create temporary directory
-    tempDir, _ := os.MkdirTemp("", "example-*")
-    defer os.RemoveAll(tempDir)
-    
-    // Initialize backend
-    backend, err := local.NewLocalBackend(ctx, &local.Config{})
-    if err != nil {
-        log.Fatal(err)
-    }
-    
-    filePath := filepath.Join(tempDir, "test.txt")
-    
-    // Write file
-    backend.Write(ctx, &filesystem.WriteRequest{
-        FilePath: filePath,
-        Content:  "Hello, Local Backend!",
-    })
-    
-    // Read file
-    content, _ := backend.Read(ctx, &filesystem.ReadRequest{
-        FilePath: filePath,
-    })
-    fmt.Println("Content:", content)
-    
-    // Edit file
-    backend.Edit(ctx, &filesystem.EditRequest{
-        FilePath:  filePath,
-        OldString: "Hello",
-        NewString: "Hi",
-    })
-    
-    // List directory
-    files, _ := backend.LsInfo(ctx, &filesystem.LsInfoRequest{
-        Path: tempDir,
-    })
-    fmt.Printf("Found %d files\n", len(files))
-}
-```
-
-**Output:**
-```
-Content:      1	Hello, Local Backend!
-Found 1 files
-```
-
-### Example 2: Search Operations
-
-Search file content and find files by pattern.
-
-```go
-// Search for pattern in files
-matches, _ := backend.GrepRaw(ctx, &filesystem.GrepRequest{
-    Path:    "/path/to/directory",
-    Pattern: "search-term",
-    Glob:    "*.txt",  // Only search .txt files
-})
-
-for _, match := range matches {
-    fmt.Printf("%s:%d - %s\n", match.Path, match.Line, match.Content)
-}
-
-// Find files by glob pattern
-files, _ := backend.GlobInfo(ctx, &filesystem.GlobInfoRequest{
-    Path:    "/path/to/directory",
-    Pattern: "**/*.go",  // Recursive search for .go files
-})
-```
-
-**Output:**
-```
-/path/to/file.txt:5 - This line contains search-term
-/path/to/another.txt:12 - Another match for search-term
-```
-
-### Example 3: Agent Integration
-
-Integrate with EINO Agent for AI-powered filesystem operations.
-
-```go
-import (
-    "github.com/cloudwego/eino/adk"
-    "github.com/cloudwego/eino/components/model/openai"
-)
-
-// Create backend
-backend, _ := local.NewLocalBackend(ctx, &local.Config{})
-
-// Create middleware
-middleware, _ := filesystem.NewMiddleware(ctx, &filesystem.Config{
-    Backend: backend,
-})
-
-// Create chat model
-chatModel, _ := openai.NewChatModel(ctx, &openai.ChatModelConfig{
-    APIKey: os.Getenv("OPENAI_API_KEY"),
-    Model:  "gpt-4",
-})
-
-// Create agent
-agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
-    Name:        "FileSystemAgent",
-    Description: "AI agent for filesystem operations",
-    Model:       chatModel,
-    Middlewares: []adk.AgentMiddleware{middleware},
-})
-
-// Run agent
-input := &adk.AgentInput{
-    Messages: []*schema.Message{
-        schema.UserMessage("List all .go files in the current directory"),
-    },
-}
-
-for event := range agent.Run(ctx, input) {
-    // Process agent events
-}
-```
+- [Backend Usage](./examples/backend/)
+- [Middleware Integration](./examples/middlewares/)
 
 ## API Reference
 
@@ -219,7 +108,8 @@ for event := range agent.Run(ctx, input) {
 
 - **`LsInfo(ctx, req)`** - List directory contents
 - **`Read(ctx, req)`** - Read file with optional line offset/limit
-- **`Write(ctx, req)`** - Create new file (fails if exists)
+- **`MultiModalRead(ctx, req)`** - Read images/PDFs as structured multimodal parts; non-image/non-PDF files fall back to `Read`. Defaults: image 10 MB / PDF 20 MB / paged-PDF 100 MB up to 20 pages @ 150 DPI. Tunable via `Config.MultiModalRead`. `Pages` accepts a single page (`"3"`) or an inclusive range (`"1-5"`).
+- **`Write(ctx, req)`** - Write file content; creates the file if it doesn't exist, otherwise **overwrites** existing content (parent directories are created automatically).
 - **`Edit(ctx, req)`** - Search and replace in file
 - **`GrepRaw(ctx, req)`** - Search pattern in files
 - **`GlobInfo(ctx, req)`** - Find files by glob pattern
@@ -247,11 +137,11 @@ The `Execute()` method requires command validation:
 
 ```go
 // Bad: No validation
-backend, _ := local.NewLocalBackend(ctx, &local.Config{})
+backend, _ := local.NewBackend(ctx, &local.Config{})
 // Command injection risk!
 
 // Good: With validation
-backend, _ := local.NewLocalBackend(ctx, &local.Config{
+backend, _ := local.NewBackend(ctx, &local.Config{
     ValidateCommand: myValidator,
 })
 ```
@@ -260,9 +150,6 @@ backend, _ := local.NewLocalBackend(ctx, &local.Config{
 
 **Q: Why do all paths need to be absolute?**  
 A: This prevents directory traversal attacks. Use `filepath.Abs()` to convert relative paths.
-
-**Q: Why does Write fail if the file exists?**  
-A: This is a safety feature to prevent accidental data loss. Use `Edit()` to modify existing files.
 
 **Q: Can I use this in production?**  
 A: Yes, but ensure proper input validation, command validation, and appropriate permissions.

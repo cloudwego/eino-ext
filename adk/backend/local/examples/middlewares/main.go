@@ -35,14 +35,14 @@ func main() {
 	ctx := context.Background()
 
 	fmt.Println("========================================")
-	fmt.Println("Local Backend Middleware Example")
+	fmt.Println("Local Local Middleware Example")
 	fmt.Println("========================================")
 	fmt.Println()
 
 	// ========================================
-	// Step 1: Initialize Local Backend
+	// Step 1: Initialize Local Local
 	// ========================================
-	fmt.Println("Step 1: Initializing Local Backend...")
+	fmt.Println("Step 1: Initializing Local Local...")
 
 	// The local backend operates directly on the local filesystem
 	// Optionally provide ValidateCommand for Execute() method security
@@ -53,7 +53,7 @@ func main() {
 		log.Fatalf("✗ Failed to create LocalBackend: %v", err)
 	}
 
-	fmt.Println("✓ Local Backend initialized")
+	fmt.Println("✓ Local Local initialized")
 	fmt.Println()
 
 	// ========================================
@@ -69,7 +69,7 @@ func main() {
 	defer os.RemoveAll(tempDir)
 
 	testFilePath := filepath.Join(tempDir, "example_file.txt")
-	testContent := "Hello from Local Backend!\nThis is a test for file operations.\n"
+	testContent := "Hello from Local Local!\nThis is a test for file operations.\n"
 
 	err = backend.Write(ctx, &filesystem.WriteRequest{
 		FilePath: testFilePath,

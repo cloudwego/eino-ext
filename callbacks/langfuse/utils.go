@@ -19,6 +19,7 @@ package langfuse
 import (
 	"fmt"
 
+	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -66,14 +67,11 @@ func convModelCallbackOutput(out []callbacks.CallbackOutput) []*model.CallbackOu
 	return ret
 }
 
-func extractModelOutput(outs []*model.CallbackOutput) (usage *model.TokenUsage, message *schema.Message, extra map[string]interface{}, err error) {
+func extractModelOutput(outs []*model.CallbackOutput) (message *schema.Message, extra map[string]interface{}, err error) {
 	var mas []*schema.Message
 	for _, out := range outs {
 		if out == nil {
 			continue
-		}
-		if out.TokenUsage != nil {
-			usage = out.TokenUsage
 		}
 		if out.Message != nil {
 			mas = append(mas, out.Message)
@@ -83,13 +81,31 @@ func extractModelOutput(outs []*model.CallbackOutput) (usage *model.TokenUsage, 
 		}
 	}
 	if len(mas) == 0 {
-		return usage, &schema.Message{}, extra, nil
+		return &schema.Message{}, extra, nil
 	}
 	message, err = schema.ConcatMessages(mas)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("concat message failed: %v", err)
+		return nil, nil, fmt.Errorf("concat message failed: %v", err)
 	}
-	return usage, message, extra, nil
+
+	return message, extra, nil
+}
+
+func mapUsageDetail(usage *schema.TokenUsage) *langfuse.UsageDetail {
+	if usage == nil {
+		return nil
+	}
+	return &langfuse.UsageDetail{
+		CompletionTokens: usage.CompletionTokens,
+		PromptTokens:     usage.PromptTokens,
+		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: &langfuse.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+		PromptTokensDetails: &langfuse.PromptTokensDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
+	}
 }
 
 func concatMessageArray(mas [][]*schema.Message) ([]*schema.Message, error) {
