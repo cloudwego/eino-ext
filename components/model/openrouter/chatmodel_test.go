@@ -175,6 +175,9 @@ func TestChatModel_buildRequestModifier(t *testing.T) {
 	}
 	modifier := cm.buildRequestModifier(&openrouterOption{
 		models: []string{"option_v1", "option_v2"},
+		responseFormat: &ChatCompletionResponseFormat{
+			Type: "json_object",
+		},
 	})
 
 	inMsg := []*schema.Message{
@@ -376,4 +379,237 @@ func TestChatModel_Tools(t *testing.T) {
 
 	assert.NoError(t, err)
 
+}
+
+func TestChatModel_buildRequestModifier_CacheControl(t *testing.T) {
+	cm := &ChatModel{}
+
+	t.Run("UserInputMultiContent text part with cache control", func(t *testing.T) {
+		part := schema.MessageInputPart{
+			Type: schema.ChatMessagePartTypeText,
+			Text: "hello",
+		}
+		EnableMessageInputPartCacheControl(&part)
+
+		msg := &schema.Message{
+			Role:                  schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{part},
+		}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "messages", 0, "content", 0, "cache_control")
+		assert.Equal(t, "ephemeral", cacheCtrl.Get("type").ToString())
+	})
+
+	t.Run("UserInputMultiContent text part without cache control skipped", func(t *testing.T) {
+		part := schema.MessageInputPart{
+			Type: schema.ChatMessagePartTypeText,
+			Text: "hello",
+		}
+
+		msg := &schema.Message{
+			Role:                  schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{part},
+		}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "messages", 0, "content", 0, "cache_control")
+		assert.Equal(t, jsoniter.InvalidValue, cacheCtrl.ValueType())
+	})
+
+	t.Run("UserInputMultiContent non-text part without cache control skipped", func(t *testing.T) {
+		textPart := schema.MessageInputPart{
+			Type: schema.ChatMessagePartTypeText,
+			Text: "hello",
+		}
+		imgPart := schema.MessageInputPart{
+			Type: schema.ChatMessagePartTypeImageURL,
+		}
+
+		msg := &schema.Message{
+			Role:                  schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{textPart, imgPart},
+		}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"image_url"}]}]}`))
+		assert.NoError(t, err)
+		assert.NotNil(t, body)
+	})
+
+	t.Run("UserInputMultiContent non-text part with cache control injects cache_control", func(t *testing.T) {
+		imgPart := schema.MessageInputPart{
+			Type: schema.ChatMessagePartTypeImageURL,
+		}
+		EnableMessageInputPartCacheControl(&imgPart)
+
+		msg := &schema.Message{
+			Role:                  schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{imgPart},
+		}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"user","content":[{"type":"image_url"}]}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "messages", 0, "content", 0, "cache_control")
+		assert.Equal(t, "ephemeral", cacheCtrl.Get("type").ToString())
+	})
+
+	t.Run("AssistantGenMultiContent text part with cache control", func(t *testing.T) {
+		part := schema.MessageOutputPart{
+			Type: schema.ChatMessagePartTypeText,
+			Text: "response",
+		}
+		EnableMessageOutputPartCacheControl(&part)
+
+		msg := &schema.Message{
+			Role:                     schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{part},
+		}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"assistant","content":[{"type":"text","text":"response"}]}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "messages", 0, "content", 0, "cache_control")
+		assert.Equal(t, "ephemeral", cacheCtrl.Get("type").ToString())
+	})
+
+	t.Run("AssistantGenMultiContent non-text part without cache control skipped", func(t *testing.T) {
+		textPart := schema.MessageOutputPart{
+			Type: schema.ChatMessagePartTypeText,
+			Text: "response",
+		}
+		imgPart := schema.MessageOutputPart{
+			Type: schema.ChatMessagePartTypeImageURL,
+		}
+
+		msg := &schema.Message{
+			Role:                     schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{textPart, imgPart},
+		}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"assistant","content":[{"type":"text","text":"response"},{"type":"image_url"}]}]}`))
+		assert.NoError(t, err)
+		assert.NotNil(t, body)
+	})
+
+	t.Run("AssistantGenMultiContent non-text part with cache control injects cache_control", func(t *testing.T) {
+		imgPart := schema.MessageOutputPart{
+			Type: schema.ChatMessagePartTypeImageURL,
+		}
+		EnableMessageOutputPartCacheControl(&imgPart)
+
+		msg := &schema.Message{
+			Role:                     schema.Assistant,
+			AssistantGenMultiContent: []schema.MessageOutputPart{imgPart},
+		}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"assistant","content":[{"type":"image_url"}]}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "messages", 0, "content", 0, "cache_control")
+		assert.Equal(t, "ephemeral", cacheCtrl.Get("type").ToString())
+	})
+
+	t.Run("message content with cache control", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:    schema.User,
+			Content: "hello",
+		}
+		EnableMessageContentCacheControl(msg)
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "messages", 0, "cache_control")
+		assert.Equal(t, "ephemeral", cacheCtrl.Get("type").ToString())
+	})
+
+	t.Run("top-level cache_control via option", func(t *testing.T) {
+		msg := &schema.Message{Role: schema.User, Content: "hello"}
+
+		ctrl := CacheControl{TTL: CacheControlTTL1Hour}
+		modifier := cm.buildRequestModifier(&openrouterOption{cacheControl: ctrl.toInternal()})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "cache_control")
+		assert.Equal(t, "ephemeral", cacheCtrl.Get("type").ToString())
+		assert.Equal(t, "1h", cacheCtrl.Get("ttl").ToString())
+	})
+
+	t.Run("top-level cache_control not set when option is nil", func(t *testing.T) {
+		msg := &schema.Message{Role: schema.User, Content: "hello"}
+
+		modifier := cm.buildRequestModifier(&openrouterOption{})
+		body, err := modifier(t.Context(), []*schema.Message{msg}, []byte(`{"messages":[{"role":"user","content":"hello"}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "cache_control")
+		assert.Equal(t, jsoniter.InvalidValue, cacheCtrl.ValueType())
+	})
+}
+
+func TestChatModel_buildOptions_CacheControlFallback(t *testing.T) {
+	configCtrl := &CacheControl{TTL: CacheControlTTL5Minutes}
+	cm := &ChatModel{
+		cacheControl: configCtrl.toInternal(),
+	}
+
+	t.Run("config-level cacheControl used when no option override", func(t *testing.T) {
+		modifier := cm.buildRequestModifier(&openrouterOption{cacheControl: cm.cacheControl})
+		body, err := modifier(t.Context(), []*schema.Message{{Role: schema.User, Content: "hi"}}, []byte(`{"messages":[{"role":"user","content":"hi"}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "cache_control")
+		assert.Equal(t, "ephemeral", cacheCtrl.Get("type").ToString())
+		assert.Equal(t, "5m", cacheCtrl.Get("ttl").ToString())
+	})
+
+	t.Run("option-level cacheControl overrides config", func(t *testing.T) {
+		optCtrl := CacheControl{TTL: CacheControlTTL1Hour}
+		modifier := cm.buildRequestModifier(&openrouterOption{cacheControl: optCtrl.toInternal()})
+		body, err := modifier(t.Context(), []*schema.Message{{Role: schema.User, Content: "hi"}}, []byte(`{"messages":[{"role":"user","content":"hi"}]}`))
+		assert.NoError(t, err)
+
+		cacheCtrl := jsoniter.Get(body, "cache_control")
+		assert.Equal(t, "1h", cacheCtrl.Get("ttl").ToString())
+	})
+}
+
+func TestChatModel_WithTools_PreservesFields(t *testing.T) {
+	ctrl := &CacheControl{TTL: CacheControlTTL1Hour}
+	rf := &ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText}
+	cm := &ChatModel{
+		models:         []string{"model-a", "model-b"},
+		reasoning:      &Reasoning{Effort: "high"},
+		metadata:       map[string]string{"key": "value"},
+		cacheControl:   ctrl.toInternal(),
+		responseFormat: rf,
+	}
+
+	mockey.PatchConvey("WithTools preserves all fields", t, func() {
+		mockey.Mock((*openai.Client).WithToolsForClient).Return(&openai.Client{}, nil).Build()
+
+		toolModel, err := cm.WithTools([]*schema.ToolInfo{{Name: "test"}})
+		assert.NoError(t, err)
+
+		newCM := toolModel.(*ChatModel)
+		assert.Equal(t, cm.models, newCM.models)
+		assert.Equal(t, cm.reasoning, newCM.reasoning)
+		assert.Equal(t, cm.metadata, newCM.metadata)
+		assert.Equal(t, cm.cacheControl, newCM.cacheControl)
+		assert.Equal(t, cm.responseFormat, newCM.responseFormat)
+	})
 }

@@ -20,8 +20,9 @@ const (
 	readPythonCodeTemplate = `
 import os
 import sys
+import base64
 
-file_path = '{file_path}'
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
 offset = {offset}
 limit = {limit}
 
@@ -47,11 +48,37 @@ with open(file_path, 'r') as f:
 
 sys.stdout.write("".join(collected))
 `
+	readAllBytesPythonCodeTemplate = `
+import os
+import sys
+import base64
+
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
+max_bytes = {max_bytes}
+
+if not os.path.isfile(file_path):
+    sys.stdout.write(f'Error: File not found: {{file_path}}')
+    sys.exit(1)
+
+# Size gate: emit a sentinel prefix that the Go side (readAllBytes) matches on
+# to distinguish "too large" from other failures. The prefix must stay in sync
+# with the tooLargeMarker constant in sandbox.go.
+size = os.path.getsize(file_path)
+if size > max_bytes:
+    sys.stdout.write(f'__READALLBYTES_TOO_LARGE__ size={{size}} max={{max_bytes}}')
+    sys.exit(1)
+
+with open(file_path, 'rb') as f:
+    data = f.read()
+
+sys.stdout.write(base64.b64encode(data).decode('ascii'))
+`
 	lsInfoPythonCodeTemplate = `
 import os
 import json
+import base64
 
-path = '{path}'
+path = base64.b64decode('{path_b64}').decode('utf-8')
 
 try:
     with os.scandir(path) as it:
@@ -70,23 +97,25 @@ except PermissionError:
 import os
 import base64
 
-file_path = '{file_path}'
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
 
 # Create parent directory if needed
 parent_dir = os.path.dirname(file_path) or '.'
 os.makedirs(parent_dir, exist_ok=True)
 
 # Decode and write content
-content = base64.b64decode('{content_b64}').decode('utf-8')
-with open(file_path, 'w') as f:
+content = base64.b64decode('{content_b64}')
+with open(file_path, 'wb') as f:
     f.write(content)
 `
 	editPythonCodeTemplate = `
 import sys
 import base64
 
+file_path = base64.b64decode('{file_path_b64}').decode('utf-8')
+
 # Read file content
-with open('{file_path}', 'r') as f:
+with open(file_path, 'r') as f:
     text = f.read()
 
 # Decode base64-encoded strings
@@ -111,15 +140,16 @@ else:
     result = text.replace(old, new, 1)
 
 # Write back to file
-with open('{file_path}', 'w') as f:
+with open(file_path, 'w') as f:
     f.write(result)
 
-print(count)
+print(count, end="")
 `
 
 	grepPythonCodeTemplate = `
 import fnmatch
 import json
+import base64
 import subprocess
 from pathlib import Path
 
@@ -138,9 +168,10 @@ def build_ripgrep_cmd(file_type, glob_pattern, after_lines, before_lines, patter
         cmd.extend(["-A", str(after_lines)])
     if before_lines and before_lines > 0:
         cmd.extend(["-B", str(before_lines)])
-    cmd.append(pattern)
+
+    cmd.extend(["-e", pattern])
     if search_path:
-        cmd.append(search_path)
+        cmd.extend(["--", search_path])
     return cmd
 
 
@@ -194,17 +225,22 @@ def run_ripgrep(file_type, glob_pattern, after_lines, before_lines, pattern, sea
     return parse_ripgrep_output(result.stdout.strip(), file_type, glob_pattern)
 
 
+file_type = base64.b64decode('{fileType_b64}').decode('utf-8')
+glob_pattern = base64.b64decode('{glob_b64}').decode('utf-8')
+pattern = base64.b64decode('{pattern_b64}').decode('utf-8')
+search_path = base64.b64decode('{path_b64}').decode('utf-8')
+
 responses = run_ripgrep(
-    file_type='{fileType}',
-    glob_pattern='{glob}',
+    file_type=file_type,
+    glob_pattern=glob_pattern,
     after_lines={afterLines},
     before_lines={beforeLines},
-    pattern='{pattern}',
-    search_path='{path}',
+    pattern=pattern,
+    search_path=search_path,
     case_insensitive={caseInsensitive},
     multiline={enableMultiline}
 )
-print(json.dumps(responses))
+print(json.dumps(responses), end="")
 `
 
 	globPythonCodeTemplate = `
@@ -219,6 +255,7 @@ pattern = base64.b64decode('{pattern_b64}').decode('utf-8')
 
 os.chdir(path)
 matches = sorted(glob.glob(pattern, recursive=True))
+results = []
 for m in matches:
     stat = os.stat(m)
     result = {{
@@ -227,7 +264,8 @@ for m in matches:
         'mtime': stat.st_mtime,
         'is_dir': os.path.isdir(m)
     }}
-    print(json.dumps(result))
+    results.append(result)
+print(json.dumps(results), end="")
 `
 	executePythonCodeTemplate = `
 import sys
@@ -243,7 +281,11 @@ try:
 
     # Check for stderr
     if result.stderr:
-        print(f"Error executing command: {{result.stderr}}", file=sys.stderr)
+        output_parts = []
+        if result.stdout:
+            output_parts.append(f"[stdout]:\n{{result.stdout.rstrip()}}")
+        output_parts.append(f"[stderr]:\n{{result.stderr.rstrip()}}")
+        print('\n'.join(output_parts), end='')
         sys.exit(result.returncode if result.returncode != 0 else 1)
     
     # Print stdout

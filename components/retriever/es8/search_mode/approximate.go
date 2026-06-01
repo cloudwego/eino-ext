@@ -99,7 +99,7 @@ func (a *approximate) BuildRequest(ctx context.Context, conf *es8.RetrieverConfi
 
 	if a.config.QueryVectorBuilderModelID != nil {
 		knn.QueryVectorBuilder = &types.QueryVectorBuilder{TextEmbedding: &types.TextEmbedding{
-			ModelId:   *a.config.QueryVectorBuilderModelID,
+			ModelId:   a.config.QueryVectorBuilderModelID,
 			ModelText: query,
 		}}
 	} else {
