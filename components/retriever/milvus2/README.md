@@ -245,17 +245,17 @@ docs, err := retriever.Retrieve(ctx, `category == "electronics" AND year >= 2023
 
 ## Examples
 
-See the [examples](./examples) directory for complete working examples:
+See the following examples for more usage:
 
-- [approximate](./examples/approximate) - Basic ANN search
-- [range](./examples/range) - Range search example
-- [hybrid](./examples/hybrid) - Hybrid multi-vector search (Dense + BM25)
-- [hybrid_chinese](./examples/hybrid_chinese) - Chinese text hybrid search with BM25
-- [iterator](./examples/iterator) - Batch iterator search
-- [scalar](./examples/scalar) - Scalar/metadata filtering
-- [grouping](./examples/grouping) - Grouping search results
-- [filtered](./examples/filtered) - Filtered vector search
-- [sparse](./examples/sparse) - Sparse-only search example (BM25)
+- [Approximate Search](./examples/approximate/)
+- [Filtered Search](./examples/filtered/)
+- [Grouped Results](./examples/grouping/)
+- [Hybrid Search](./examples/hybrid/)
+- [Hybrid Chinese Search](./examples/hybrid_chinese/)
+- [Iterator Search](./examples/iterator/)
+- [Range Search](./examples/range/)
+- [Scalar Filter](./examples/scalar/)
+- [Sparse Vector](./examples/sparse/)
 
 ## License
 

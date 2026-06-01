@@ -188,3 +188,9 @@ type RetrieverConfig struct {
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [Elasticsearch Go Client Documentation](https://github.com/elastic/go-elasticsearch)
+## Examples
+
+See the following examples for more usage:
+
+- [Approximate Search](./examples/approximate/)
+

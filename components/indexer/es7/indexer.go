@@ -156,6 +156,7 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 	}()
 
 	options := indexer.GetCommonOptions(&indexer.Options{
+		Index:     &i.config.Index,
 		Embedding: i.config.Embedding,
 	}, opts...)
 
@@ -172,8 +173,13 @@ func (i *Indexer) Store(ctx context.Context, docs []*schema.Document, opts ...in
 
 func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options *indexer.Options) error {
 	emb := options.Embedding
+	effectiveIndex := i.config.Index
+	if options.Index != nil {
+		effectiveIndex = *options.Index
+	}
+
 	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
-		Index:  i.config.Index,
+		Index:  effectiveIndex,
 		Client: i.client,
 	})
 	if err != nil {
@@ -215,7 +221,7 @@ func (i *Indexer) bulkAdd(ctx context.Context, docs []*schema.Document, options 
 			}
 
 			if err = bi.Add(ctx, esutil.BulkIndexerItem{
-				Index:      i.config.Index,
+				Index:      effectiveIndex,
 				Action:     "index",
 				DocumentID: t.id,
 				Body:       bytes.NewReader(b),

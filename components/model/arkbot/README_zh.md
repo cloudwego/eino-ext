@@ -178,6 +178,11 @@ func WithCustomHeader(m map[string]string) model.Option {}
 
 ## 示例
 
+查看以下示例了解更多用法：
+
+- [基础生成](./examples/generate/)
+- [流式响应](./examples/stream/)
+
 ### 文本生成
 
 ```go

@@ -62,3 +62,7 @@ func main() {
   - Currently, [Redis](./redis) is supported.
 - **Generator**: The cache embedder uses a generator to create unique keys for caching embeddings.
   - Currently, a simple generator and a hash generator base on hash.Hash interface are supported.
+
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.

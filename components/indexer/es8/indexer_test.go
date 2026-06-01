@@ -45,9 +45,11 @@ func TestBulkAdd(t *testing.T) {
 
 		var mockRetBI esutil.BulkIndexer
 		var mockRetErr error
+		var mockRetCfg esutil.BulkIndexerConfig
 		mockErr := fmt.Errorf("test err")
 
 		Mock(esutil.NewBulkIndexer).To(func(cfg esutil.BulkIndexerConfig) (esutil.BulkIndexer, error) {
+			mockRetCfg = cfg
 			return mockRetBI, mockRetErr
 		}).Build()
 
@@ -229,6 +231,37 @@ func TestBulkAdd(t *testing.T) {
 				convey.So(mp["vk1"], convey.ShouldEqual, []any{2.1})
 				convey.So(mp["vk2"], convey.ShouldEqual, []any{2.1})
 				convey.So(item.OnFailure, convey.ShouldNotBeNil)
+			}
+		})
+
+		PatchConvey("test WithIndex overrides configured index", func() {
+			mbi := &mockBulkIndexer{}
+			mockRetBI = mbi
+			mockRetErr = nil
+			var mps []esutil.BulkIndexerItem
+			mbi.addFunc = func(ctx context.Context, item esutil.BulkIndexerItem) error {
+				mps = append(mps, item)
+				return nil
+			}
+
+			i := &Indexer{
+				config: &IndexerConfig{
+					Index: "mock_index",
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (field2Value map[string]FieldValue, err error) {
+						return map[string]FieldValue{
+							"k0": {Value: doc.Content},
+						}, nil
+					},
+				},
+			}
+
+			ids, err := i.Store(ctx, docs, indexer.WithIndex("override_index"))
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ids, convey.ShouldResemble, []string{"123", "456"})
+			convey.So(mockRetCfg.Index, convey.ShouldEqual, "override_index")
+			convey.So(len(mps), convey.ShouldEqual, 2)
+			for _, item := range mps {
+				convey.So(item.Index, convey.ShouldEqual, "override_index")
 			}
 		})
 	})

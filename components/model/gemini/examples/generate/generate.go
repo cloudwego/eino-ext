@@ -31,11 +31,19 @@ import (
 func main() {
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	modelName := os.Getenv("GEMINI_MODEL")
+	baseURL := os.Getenv("GEMINI_BASE_URL")
 
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+	clientConfig := &genai.ClientConfig{
 		APIKey: apiKey,
-	})
+	}
+	// Optional: route request to custom Gemini-compatible endpoint
+	if baseURL != "" {
+		clientConfig.HTTPOptions = genai.HTTPOptions{
+			BaseURL: baseURL,
+		}
+	}
+	client, err := genai.NewClient(ctx, clientConfig)
 	if err != nil {
 		log.Fatalf("NewClient of gemini failed, err=%v", err)
 	}

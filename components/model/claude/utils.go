@@ -19,20 +19,3 @@ package claude
 func of[T any](v T) *T {
 	return &v
 }
-
-func from[T any](v *T) T {
-	if v == nil {
-		var t T
-		return t
-	}
-
-	return *v
-}
-
-func fromOrDefault[T any](v *T, d T) T {
-	if v == nil {
-		return d
-	}
-
-	return *v
-}

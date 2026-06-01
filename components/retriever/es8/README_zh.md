@@ -187,3 +187,13 @@ type RetrieverConfig struct {
 
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
 - [Elasticsearch Go Client 文档](https://github.com/elastic/go-elasticsearch)
+## 示例
+
+查看以下示例了解更多用法：
+
+- [近似搜索](./examples/approximate/)
+- [稠密向量相似度](./examples/dense_vector_similarity/)
+- [精确匹配](./examples/exact_match/)
+- [原始字符串查询](./examples/raw_string/)
+- [稀疏向量查询](./examples/sparse_vector_query/)
+
