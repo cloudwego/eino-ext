@@ -296,6 +296,20 @@ func TestGrepRaw(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "pattern is required")
 	})
+
+	t.Run("grep follows symlinks by default", func(t *testing.T) {
+		mockOutput := `{"type":"match","data":{"path":{"text":"/tmp/test/linked/file.txt"},"line_number":1,"lines":{"text":"hello go\n"}}}`
+
+		mockRgBin := createMockRgExpectArg(t, "--follow", mockOutput, 0)
+		t.Setenv("PATH", mockRgBin+":"+os.Getenv("PATH"))
+
+		req := &filesystem.GrepRequest{Path: "/tmp/test", Pattern: "go"}
+		matches, err := s.GrepRaw(ctx, req)
+		assert.NoError(t, err)
+		assert.Len(t, matches, 1)
+		assert.Equal(t, "/tmp/test/linked/file.txt", matches[0].Path)
+	})
+
 }
 
 // createMockRg creates a fake "rg" script in a temp directory that outputs the given content
@@ -304,6 +318,30 @@ func createMockRg(t *testing.T, output string, exitCode int) string {
 	t.Helper()
 	dir := t.TempDir()
 	script := fmt.Sprintf("#!/bin/sh\ncat <<'MOCK_EOF'\n%s\nMOCK_EOF\nexit %d\n", output, exitCode)
+	rgPath := filepath.Join(dir, "rg")
+	assert.NoError(t, os.WriteFile(rgPath, []byte(script), 0755))
+	return dir
+}
+
+func createMockRgExpectArg(t *testing.T, requiredArg, output string, exitCode int) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := fmt.Sprintf(`#!/bin/sh
+found=0
+for arg in "$@"; do
+  if [ "$arg" = %q ]; then
+    found=1
+  fi
+done
+if [ "$found" -ne 1 ]; then
+  echo "missing required arg %s" >&2
+  exit 2
+fi
+cat <<'MOCK_EOF'
+%s
+MOCK_EOF
+exit %d
+`, requiredArg, requiredArg, output, exitCode)
 	rgPath := filepath.Join(dir, "rg")
 	assert.NoError(t, os.WriteFile(rgPath, []byte(script), 0755))
 	return dir
@@ -400,6 +438,67 @@ func TestGlobInfo(t *testing.T) {
 			actual = append(actual, f.Path)
 		}
 		assert.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("glob follows symlink root directory", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+
+		realSkills := filepath.Join(dir, "real-skills")
+		assert.NoError(t, os.MkdirAll(filepath.Join(realSkills, "eino-guide"), 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(realSkills, "eino-guide", "SKILL.md"), []byte("---\nname: eino-guide\n---\n"), 0644))
+
+		symlinkRoot := filepath.Join(dir, "skills")
+		assert.NoError(t, os.Symlink(realSkills, symlinkRoot))
+
+		req := &filesystem.GlobInfoRequest{Path: symlinkRoot, Pattern: "*/SKILL.md"}
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		assert.Equal(t, []filesystem.FileInfo{{Path: "eino-guide/SKILL.md"}}, files)
+	})
+
+	t.Run("glob follows symlink skill directory", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+
+		baseSkills := filepath.Join(dir, "skills")
+		realSkill := filepath.Join(dir, "real", "eino-agent")
+		assert.NoError(t, os.MkdirAll(baseSkills, 0755))
+		assert.NoError(t, os.MkdirAll(realSkill, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(realSkill, "SKILL.md"), []byte("---\nname: eino-agent\n---\n"), 0644))
+		assert.NoError(t, os.Symlink(realSkill, filepath.Join(baseSkills, "eino-agent")))
+
+		req := &filesystem.GlobInfoRequest{Path: baseSkills, Pattern: "*/SKILL.md"}
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		assert.Equal(t, []filesystem.FileInfo{{Path: "eino-agent/SKILL.md"}}, files)
+	})
+
+	t.Run("glob skips symlink directory cycles", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+
+		base := filepath.Join(dir, "base")
+		assert.NoError(t, os.MkdirAll(base, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(base, "root.txt"), []byte("root"), 0644))
+		assert.NoError(t, os.Symlink(base, filepath.Join(base, "loop")))
+
+		req := &filesystem.GlobInfoRequest{Path: base, Pattern: "**/*.txt"}
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		assert.Equal(t, []filesystem.FileInfo{{Path: "root.txt"}}, files)
+	})
+
+	t.Run("glob skips broken symlinks", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+
+		assert.NoError(t, os.Symlink(filepath.Join(dir, "missing"), filepath.Join(dir, "broken")))
+
+		req := &filesystem.GlobInfoRequest{Path: dir, Pattern: "*"}
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		assert.Empty(t, files)
 	})
 }
 

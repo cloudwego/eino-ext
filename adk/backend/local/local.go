@@ -607,7 +607,7 @@ func (s *Local) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) ([]fil
 	}
 	path := filepath.Clean(req.Path)
 
-	cmd := []string{"rg", "--json"}
+	cmd := []string{"rg", "--json", "--follow"}
 	if req.CaseInsensitive {
 		cmd = append(cmd, "-i")
 	}
@@ -685,20 +685,7 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 	path := filepath.Clean(req.Path)
 
 	var matches []string
-	err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err != nil {
-			if os.IsPermission(err) {
-				return filepath.SkipDir
-			}
-			return err
-		}
-
+	visit := func(p string) error {
 		relPath, err := filepath.Rel(path, p)
 		if err != nil {
 			return fmt.Errorf("failed to get relative path: %w", err)
@@ -716,9 +703,9 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 		}
 
 		return nil
-	})
+	}
 
-	if err != nil {
+	if err := walkFollowSymlinkDirs(ctx, path, path, map[string]struct{}{}, visit); err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
 	}
 
@@ -732,6 +719,93 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 	}
 
 	return files, nil
+}
+
+func walkFollowSymlinkDirs(ctx context.Context, physicalPath, logicalPath string, visited map[string]struct{}, visit func(string) error) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	info, err := os.Lstat(physicalPath)
+	if err != nil {
+		if os.IsPermission(err) {
+			return nil
+		}
+		return err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := filepath.EvalSymlinks(physicalPath)
+		if err != nil {
+			// Broken symlink: skip it like an unreadable entry instead of failing
+			// the whole traversal.
+			return nil
+		}
+
+		targetInfo, err := os.Stat(target)
+		if err != nil {
+			if os.IsPermission(err) || os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+
+		if err := visit(logicalPath); err != nil {
+			return err
+		}
+		if !targetInfo.IsDir() {
+			return nil
+		}
+		if markVisitedDir(target, visited) {
+			return nil
+		}
+		return walkFollowSymlinkChildren(ctx, target, logicalPath, visited, visit)
+	}
+
+	if err := visit(logicalPath); err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return nil
+	}
+	if markVisitedDir(physicalPath, visited) {
+		return nil
+	}
+
+	return walkFollowSymlinkChildren(ctx, physicalPath, logicalPath, visited, visit)
+}
+
+func walkFollowSymlinkChildren(ctx context.Context, physicalDir, logicalDir string, visited map[string]struct{}, visit func(string) error) error {
+	entries, err := os.ReadDir(physicalDir)
+	if err != nil {
+		if os.IsPermission(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if err := walkFollowSymlinkDirs(ctx, filepath.Join(physicalDir, name), filepath.Join(logicalDir, name), visited, visit); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func markVisitedDir(path string, visited map[string]struct{}) bool {
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		realPath = filepath.Clean(path)
+	}
+	if _, ok := visited[realPath]; ok {
+		return true
+	}
+	visited[realPath] = struct{}{}
+	return false
 }
 
 func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
