@@ -519,7 +519,7 @@ func (cm *ChatModel) generateStreamRequest(ctx context.Context, in []*schema.Mes
 	}
 	req := &deepseek.StreamChatCompletionRequest{
 		Stream:           true,
-		StreamOptions:    deepseek.StreamOptions{IncludeUsage: false},
+		StreamOptions:    deepseek.StreamOptions{IncludeUsage: true},
 		Model:            origReq.Model,
 		Messages:         origReq.Messages,
 		FrequencyPenalty: origReq.FrequencyPenalty,
@@ -808,6 +808,9 @@ func toMessageRole(role string) schema.RoleType {
 		return schema.System
 	case roleTool:
 		return schema.Tool
+	case "":
+		// Streaming deltas often omit role after the first assistant chunk.
+		return schema.Assistant
 	default:
 		return schema.RoleType(role)
 	}
