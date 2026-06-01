@@ -35,6 +35,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/elastic/go-elasticsearch/v7"
 
+	"github.com/cloudwego/eino-ext/components/embedding/ark"
 	"github.com/cloudwego/eino-ext/components/retriever/es7"
 	"github.com/cloudwego/eino-ext/components/retriever/es7/search_mode"
 )
@@ -52,8 +53,12 @@ func main() {
 		Password:  password,
 	})
 
-	// 创建用于向量搜索的 embedding 组件
-	emb := createYourEmbedding()
+	// 使用 Volcengine ARK 创建用于向量搜索的 embedding 组件
+	emb, _ := ark.NewEmbedder(ctx, &ark.EmbeddingConfig{
+		APIKey: os.Getenv("ARK_API_KEY"),
+		Region: os.Getenv("ARK_REGION"),
+		Model:  os.Getenv("ARK_MODEL"),
+	})
 
 	// 创建带有稠密向量相似度搜索的检索器
 	retriever, _ := es7.NewRetriever(ctx, &es7.RetrieverConfig{
@@ -68,7 +73,7 @@ func main() {
 	docs, _ := retriever.Retrieve(ctx, "search query")
 
 	for _, doc := range docs {
-		fmt.Printf("ID: %s, Content: %s, Score: %v\n", doc.ID, doc.Content, doc.MetaData["score"])
+		fmt.Printf("ID: %s, Content: %s, Score: %v\n", doc.ID, doc.Content, doc.Score())
 	}
 }
 ```
@@ -144,7 +149,13 @@ docs, _ := retriever.Retrieve(ctx, "query", es7.WithFilters(filters))
 
 ## 完整示例
 
-- [索引器示例](../../indexer/es7/examples/indexer)
+
+- [稠密向量相似度示例](./examples/dense_vector_similarity)
+- [精确匹配示例](./examples/exact_match)
+- [原始字符串请求示例](./examples/raw_string)
+
+## 完整示例
+
 - [稠密向量相似度示例](./examples/dense_vector_similarity)
 - [精确匹配示例](./examples/exact_match)
 - [原始字符串请求示例](./examples/raw_string)
@@ -154,3 +165,11 @@ docs, _ := retriever.Retrieve(ctx, "query", es7.WithFilters(filters))
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
 - [Elasticsearch Go 客户端文档](https://github.com/elastic/go-elasticsearch)
 - [Elasticsearch 7.10 Query DSL](https://www.elastic.co/guide/en/elasticsearch/reference/7.10/query-dsl.html)
+## 示例
+
+查看以下示例了解更多用法：
+
+- [稠密向量相似度](./examples/dense_vector_similarity/)
+- [精确匹配](./examples/exact_match/)
+- [原始字符串查询](./examples/raw_string/)
+

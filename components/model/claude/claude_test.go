@@ -19,11 +19,14 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
@@ -31,7 +34,37 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestDirectAnthropicAuthSelection(t *testing.T) {
+	t.Run("config auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key"}))
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{AuthToken: "auth-token"}))
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key", AuthToken: "auth-token"}))
+	})
+
+	t.Run("env auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		t.Setenv("ANTHROPIC_API_KEY", "env-api-key")
+		model, err := NewChatModel(context.Background(), &Config{
+			Model: "claude-3-opus-20240229",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, model)
+	})
+
+	t.Run("missing auth still allows creation", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		model, err := NewChatModel(context.Background(), &Config{
+			Model: "claude-3-opus-20240229",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, model)
+	})
+}
+
 func TestClaude(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+
 	ctx := context.Background()
 	model, err := NewChatModel(ctx, &Config{
 		APIKey: "test-key",
@@ -215,6 +248,21 @@ func TestClaude(t *testing.T) {
 	})
 }
 
+func clearAnthropicAuthEnv(t *testing.T) {
+	t.Helper()
+	// Use os.Unsetenv to truly remove the env vars, since the SDK uses
+	// os.LookupEnv — an empty string is still "present".
+	for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"} {
+		prev, existed := os.LookupEnv(key)
+		os.Unsetenv(key)
+		if existed {
+			t.Cleanup(func() { os.Setenv(key, prev) })
+		} else {
+			t.Cleanup(func() { os.Unsetenv(key) })
+		}
+	}
+}
+
 func TestConvStreamEvent(t *testing.T) {
 	streamCtx := &streamContext{}
 
@@ -343,19 +391,19 @@ func TestWithTools(t *testing.T) {
 
 func TestPopulateContentBlockBreakPoint(t *testing.T) {
 	block := anthropic.NewTextBlock("input")
-	populateContentBlockBreakPoint(block)
+	populateContentBlockBreakPoint(block, nil)
 	assert.NotEmpty(t, block.OfText.CacheControl.Type)
 
 	block = anthropic.NewImageBlock[anthropic.URLImageSourceParam](anthropic.URLImageSourceParam{})
-	populateContentBlockBreakPoint(block)
+	populateContentBlockBreakPoint(block, nil)
 	assert.NotEmpty(t, block.OfImage.CacheControl.Type)
 
 	block = anthropic.NewToolResultBlock("userID", "input", false)
-	populateContentBlockBreakPoint(block)
+	populateContentBlockBreakPoint(block, nil)
 	assert.NotEmpty(t, block.OfToolResult.CacheControl.Type)
 
 	block = anthropic.NewToolUseBlock("123", "input", "test_tool")
-	populateContentBlockBreakPoint(block)
+	populateContentBlockBreakPoint(block, nil)
 	assert.NotEmpty(t, block.OfToolUse.CacheControl.Type)
 }
 
@@ -577,5 +625,432 @@ func Test_convSchemaMessage_MultiContent(t *testing.T) {
 		_, err := convSchemaMessage(msg)
 		assert.Error(t, err)
 		assert.ErrorContains(t, err, "image field must not be nil")
+	})
+}
+
+func TestPopulateToolChoice(t *testing.T) {
+	t.Run("nil tool choice", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		options := &model.Options{}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+
+	})
+
+	t.Run("tool choice forbidden", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceForbidden
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfNone)
+	})
+
+	t.Run("tool choice allowed", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceAllowed
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAuto)
+	})
+
+	t.Run("tool choice allowed with disable parallel tool use", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceAllowed
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		disableParallelToolUse := true
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, &disableParallelToolUse)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAuto)
+		assert.Equal(t, param.NewOpt(true), params.ToolChoice.OfAuto.DisableParallelToolUse)
+	})
+
+	t.Run("tool choice forced with no tools", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "tool choice is forced but tool is not provided", err.Error())
+	})
+
+	t.Run("tool choice forced with one tool", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.Equal(t, "test_tool", params.ToolChoice.OfTool.Name)
+	})
+
+	t.Run("tool choice forced with multiple tools", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_2",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice: &toolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.NotNil(t, params.ToolChoice.OfAny)
+	})
+
+	t.Run("tool choice forced with allowed tool name", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_2",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"test_tool_1"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.NoError(t, err)
+		assert.NotNil(t, params.ToolChoice)
+		assert.Equal(t, "test_tool_1", params.ToolChoice.OfTool.Name)
+	})
+
+	t.Run("tool choice forced with non-existent allowed tool name", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"non_existent_tool"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "allowed tool name 'non_existent_tool' not found in tools list", err.Error())
+	})
+
+	t.Run("tool choice forced with multiple allowed tool names", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{
+			Tools: []anthropic.ToolUnionParam{
+				{
+					OfTool: &anthropic.ToolParam{
+						Name: "test_tool_1",
+					},
+				},
+			},
+		}
+		toolChoice := schema.ToolChoiceForced
+		options := &model.Options{
+			ToolChoice:       &toolChoice,
+			AllowedToolNames: []string{"test_tool_1", "test_tool_2"},
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "only one allowed tool name can be configured", err.Error())
+	})
+
+	t.Run("unsupported tool choice", func(t *testing.T) {
+		params := &anthropic.MessageNewParams{}
+		unsupportedToolChoice := schema.ToolChoice("unsupported")
+		options := &model.Options{
+			ToolChoice: &unsupportedToolChoice,
+		}
+		err := populateToolChoice(params, options.ToolChoice, options.AllowedToolNames, nil)
+		assert.Error(t, err)
+		assert.Equal(t, "tool choice=unsupported not support", err.Error())
+	})
+}
+
+func TestCacheTTL(t *testing.T) {
+	t.Run("SetMessageBreakpoint without TTL", func(t *testing.T) {
+		msg := schema.UserMessage("hello")
+		bp := SetMessageBreakpoint(msg)
+		assert.True(t, isBreakpointMessage(bp))
+		ctrl := getMessageBreakpointCacheControl(bp)
+		assert.Nil(t, ctrl)
+	})
+
+	t.Run("SetMessageCacheControl with TTL", func(t *testing.T) {
+		msg := schema.UserMessage("hello")
+		bp := SetMessageCacheControl(msg, &CacheControl{TTL: CacheTTL1h})
+		assert.True(t, isBreakpointMessage(bp))
+		ctrl := getMessageBreakpointCacheControl(bp)
+		assert.Equal(t, CacheTTL1h, ctrl.TTL)
+	})
+
+	t.Run("SetToolInfoBreakpoint without TTL", func(t *testing.T) {
+		tool := &schema.ToolInfo{Name: "test"}
+		bp := SetToolInfoBreakpoint(tool)
+		assert.True(t, isBreakpointTool(bp))
+		ctrl := getToolBreakpointCacheControl(bp)
+		assert.Nil(t, ctrl)
+	})
+
+	t.Run("SetToolInfoCacheControl with TTL", func(t *testing.T) {
+		tool := &schema.ToolInfo{Name: "test"}
+		bp := SetToolInfoCacheControl(tool, &CacheControl{TTL: CacheTTL5m})
+		assert.True(t, isBreakpointTool(bp))
+		ctrl := getToolBreakpointCacheControl(bp)
+		assert.Equal(t, CacheTTL5m, ctrl.TTL)
+	})
+
+	t.Run("newCacheControlParam without TTL", func(t *testing.T) {
+		p := newCacheControlParam(nil)
+		assert.Equal(t, CacheTTL(""), p.TTL)
+		assert.NotEmpty(t, p.Type)
+	})
+
+	t.Run("newCacheControlParam with TTL", func(t *testing.T) {
+		p := newCacheControlParam(&CacheControl{TTL: CacheTTL1h})
+		assert.Equal(t, CacheTTL1h, p.TTL)
+		assert.NotEmpty(t, p.Type)
+	})
+
+	t.Run("newCacheControlParam with invalid TTL passthrough", func(t *testing.T) {
+		p := newCacheControlParam(&CacheControl{TTL: "invalid_ttl"})
+		assert.Equal(t, CacheTTL("invalid_ttl"), p.TTL)
+		assert.NotEmpty(t, p.Type)
+	})
+
+	t.Run("populateContentBlockBreakPoint with TTL", func(t *testing.T) {
+		block := anthropic.NewTextBlock("input")
+		populateContentBlockBreakPoint(block, &CacheControl{TTL: CacheTTL1h})
+		assert.NotEmpty(t, block.OfText.CacheControl.Type)
+		assert.Equal(t, CacheTTL1h, block.OfText.CacheControl.TTL)
+	})
+
+	t.Run("manual breakpoint TTL flows to params", func(t *testing.T) {
+		cm := &ChatModel{model: "test", maxTokens: 100}
+		msg := schema.UserMessage("hello")
+		sysMsg := schema.SystemMessage("system")
+		bpSys := SetMessageCacheControl(sysMsg, &CacheControl{TTL: CacheTTL1h})
+
+		params, err := cm.genMessageNewParams([]*schema.Message{bpSys, msg})
+		assert.NoError(t, err)
+		assert.Equal(t, CacheTTL1h, params.System[0].CacheControl.TTL)
+	})
+
+	t.Run("WithAutoCacheControl with TTL", func(t *testing.T) {
+		cm := &ChatModel{model: "test", maxTokens: 100}
+		msg := schema.UserMessage("hello")
+		sysMsg := schema.SystemMessage("system")
+
+		params, err := cm.genMessageNewParams(
+			[]*schema.Message{sysMsg, msg},
+			WithAutoCacheControl(&CacheControl{TTL: CacheTTL1h}),
+		)
+		assert.NoError(t, err)
+		// auto cache should set TTL on last system message
+		assert.Equal(t, CacheTTL1h, params.System[0].CacheControl.TTL)
+	})
+}
+
+func TestToolSearchResultInput(t *testing.T) {
+	t.Run("tool search result in tool message", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "tool_search_call_1",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeToolSearchResult,
+					ToolSearchResult: &schema.ToolSearchResult{
+						Tools: []*schema.ToolInfo{
+							{Name: "found_tool_1"},
+							{Name: "found_tool_2"},
+						},
+					},
+				},
+			},
+		}
+
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+		assert.Len(t, result.Content, 1)
+		assert.NotNil(t, result.Content[0].OfToolResult)
+		assert.Equal(t, "tool_search_call_1", result.Content[0].OfToolResult.ToolUseID)
+		assert.Len(t, result.Content[0].OfToolResult.Content, 2)
+		assert.Equal(t, "found_tool_1", result.Content[0].OfToolResult.Content[0].OfToolReference.ToolName)
+		assert.Equal(t, "found_tool_2", result.Content[0].OfToolResult.Content[1].OfToolReference.ToolName)
+	})
+
+	t.Run("nil ToolSearchResult errors", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "call_1",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type:             schema.ChatMessagePartTypeToolSearchResult,
+					ToolSearchResult: nil,
+				},
+			},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "ToolSearchResult field must not be nil")
+	})
+}
+
+func TestDuplicateToolError(t *testing.T) {
+	params := &anthropic.MessageNewParams{
+		Tools: []anthropic.ToolUnionParam{
+			{OfTool: &anthropic.ToolParam{Name: "existing_tool"}},
+		},
+	}
+
+	msgs := []*schema.Message{
+		{
+			Role:       schema.Tool,
+			ToolCallID: "call_1",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeToolSearchResult,
+					ToolSearchResult: &schema.ToolSearchResult{
+						Tools: []*schema.ToolInfo{
+							{Name: "existing_tool"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := populateToolSearchResultTools(params, msgs)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tool 'existing_tool' from ToolSearchResult already exists in tool list")
+}
+
+func TestToolSearchEventsRoundTrip(t *testing.T) {
+	t.Run("server tool use event round trip", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:  schema.Assistant,
+			Extra: make(map[string]any),
+		}
+
+		// Simulate storing a server_tool_use event
+		appendToolSearchEvent(msg, ToolSearchEvent{
+			Type:  "server_tool_use",
+			ID:    "stu_1",
+			Name:  "tool_search_tool_bm25",
+			Input: json.RawMessage(`{"query":"search query"}`),
+		})
+
+		// Simulate storing a tool_search_tool_result event
+		appendToolSearchEvent(msg, ToolSearchEvent{
+			Type:      "tool_search_tool_result",
+			ToolUseID: "stu_1",
+			Content: &ToolSearchEventContent{
+				Type: "tool_search_tool_search_result",
+				ToolReferences: []ToolSearchEventToolReference{
+					{ToolName: "matched_tool"},
+				},
+			},
+		})
+
+		// Verify events were stored
+		events := getToolSearchEvents(msg)
+		assert.Len(t, events, 2)
+
+		// Convert to message param (round-trip)
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+
+		// Should have the two tool search event blocks in the content
+		hasServerToolUse := false
+		hasToolSearchResult := false
+		for _, block := range result.Content {
+			if block.OfServerToolUse != nil {
+				hasServerToolUse = true
+				assert.Equal(t, "stu_1", block.OfServerToolUse.ID)
+				assert.Equal(t, anthropic.ServerToolUseBlockParamName("tool_search_tool_bm25"), block.OfServerToolUse.Name)
+			}
+			if block.OfToolSearchToolResult != nil {
+				hasToolSearchResult = true
+				assert.Equal(t, "stu_1", block.OfToolSearchToolResult.ToolUseID)
+				searchResult := block.OfToolSearchToolResult.Content.OfRequestToolSearchToolSearchResultBlock
+				assert.NotNil(t, searchResult)
+				assert.Len(t, searchResult.ToolReferences, 1)
+				assert.Equal(t, "matched_tool", searchResult.ToolReferences[0].ToolName)
+			}
+		}
+		assert.True(t, hasServerToolUse, "should have server_tool_use block")
+		assert.True(t, hasToolSearchResult, "should have tool_search_tool_result block")
+	})
+
+	t.Run("error event round trip", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:  schema.Assistant,
+			Extra: make(map[string]any),
+		}
+
+		appendToolSearchEvent(msg, ToolSearchEvent{
+			Type:      "tool_search_tool_result",
+			ToolUseID: "stu_2",
+			Content: &ToolSearchEventContent{
+				Type:      "tool_search_tool_result_error",
+				ErrorCode: "unavailable",
+			},
+		})
+
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+
+		hasErrorResult := false
+		for _, block := range result.Content {
+			if block.OfToolSearchToolResult != nil {
+				hasErrorResult = true
+				errParam := block.OfToolSearchToolResult.Content.OfRequestToolSearchToolResultError
+				assert.NotNil(t, errParam)
+				assert.Equal(t, anthropic.ToolSearchToolResultErrorCode("unavailable"), errParam.ErrorCode)
+			}
+		}
+		assert.True(t, hasErrorResult, "should have error result block")
 	})
 }

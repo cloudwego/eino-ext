@@ -88,6 +88,10 @@ type Config struct {
 }
 ```
 
+## 示例
+
+查看 [examples](./examples/) 目录获取完整的使用示例。
+
 ## 更多详情
 
 - [火山引擎 APMPlus 文档](https://www.volcengine.com/docs/6431/69092)

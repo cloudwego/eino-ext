@@ -127,17 +127,28 @@ type Config struct {
 	// Keys are strings with a maximum length of 64 characters. Values are strings with a maximum length of 512 characters.
 	Metadata map[string]string `json:"metadata,omitempty"`
 
+	// CacheControl sets the top-level cache_control for all requests from this model instance.
+	// This enables automatic prompt caching for supported providers:
+	//   - Anthropic Claude: auto-caching (recommended for multi-turn conversations)
+	//   - Gemini models: explicit breakpoints
+	// Can be overridden per-request via WithCacheControl option.
+	// See https://openrouter.ai/docs/guides/best-practices/prompt-caching for details.
+	// Optional.
+	CacheControl *CacheControl `json:"cache_control,omitempty"`
+
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"extra_fields,omitempty"`
 }
 
 type ChatModel struct {
-	cli            *openai.Client
+	cli *openai.Client
+
 	models         []string
 	reasoning      *Reasoning
 	responseFormat *ChatCompletionResponseFormat
 	metadata       map[string]string
+	cacheControl   *cacheControl
 }
 
 func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
@@ -189,14 +200,14 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 	chatModel.reasoning = config.Reasoning
 	chatModel.metadata = config.Metadata
 	chatModel.responseFormat = config.ResponseFormat
+	chatModel.cacheControl = config.CacheControl.toInternal()
 
 	return chatModel, nil
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (outMsg *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opt := cm.buildOptions(ctx, false, opts...)
-	out, err := cm.cli.Generate(ctx, in, opt...)
+	out, err := cm.cli.Generate(ctx, in, cm.buildOptions(ctx, false, opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +216,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-	opts = cm.buildOptions(ctx, true, opts...)
-	out, err := cm.cli.Stream(ctx, in, opts...)
+	out, err := cm.cli.Stream(ctx, in, cm.buildOptions(ctx, true, opts...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -221,10 +231,18 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 			models          = option.models
 			reasoning       = option.reasoning
 			metadata        = option.metadata
+			responseFormat  = option.responseFormat
 			modifiedRawBody = make([]byte, len(rawBody))
 		)
 
 		_ = copy(modifiedRawBody, rawBody)
+
+		if responseFormat != nil {
+			modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, "response_format", responseFormat)
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		if len(models) > 0 {
 			modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, "models", models)
@@ -232,6 +250,7 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 				return nil, err
 			}
 		}
+
 		if reasoning != nil {
 			modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, "reasoning", reasoning)
 			if err != nil {
@@ -239,15 +258,14 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 			}
 		}
 
-		if cm.metadata != nil {
+		if metadata != nil {
 			modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, "metadata", metadata)
 			if err != nil {
 				return nil, err
 			}
 		}
-
-		if cm.responseFormat != nil {
-			modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, "response_format", cm.responseFormat)
+		if option.cacheControl != nil {
+			modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, "cache_control", option.cacheControl)
 			if err != nil {
 				return nil, err
 			}
@@ -263,30 +281,25 @@ func (cm *ChatModel) buildRequestModifier(option *openrouterOption) openai.Reque
 
 			if len(msg.UserInputMultiContent) > 0 {
 				for cIdx, part := range msg.UserInputMultiContent {
-					if part.Type == schema.ChatMessagePartTypeText {
-						if ctrl, ok := getMessageInputPartCacheControl(&part); ok {
-							modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, fmt.Sprintf("messages.%d.content.%d.cache_control", index, cIdx), ctrl)
-							if err != nil {
-								return nil, err
-							}
-						}
-					} else {
-						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageInputPart', but got part type '%s'", part.Type)
+					ctrl, ok := getMessageInputPartCacheControl(&part)
+					if !ok {
+						continue
+					}
+					modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, fmt.Sprintf("messages.%d.content.%d.cache_control", index, cIdx), ctrl)
+					if err != nil {
+						return nil, err
 					}
 				}
 
 			} else if len(msg.AssistantGenMultiContent) > 0 {
 				for cIdx, part := range msg.AssistantGenMultiContent {
-					if part.Type == schema.ChatMessagePartTypeText {
-						if ctrl, ok := getMessageOutputPartCacheControl(&part); ok {
-							modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, fmt.Sprintf("messages.%d.content.%d.cache_control", index, cIdx), ctrl)
-							if err != nil {
-								return nil, err
-							}
-						}
-					} else {
-						return nil, fmt.Errorf("only 'ChatMessagePartTypeText' support cache control in 'MessageOutputPart', but got part type '%s'", part.Type)
-
+					ctrl, ok := getMessageOutputPartCacheControl(&part)
+					if !ok {
+						continue
+					}
+					modifiedRawBody, err = sjson.SetBytes(modifiedRawBody, fmt.Sprintf("messages.%d.content.%d.cache_control", index, cIdx), ctrl)
+					if err != nil {
+						return nil, err
 					}
 				}
 			} else if msg.Content != "" {
@@ -377,37 +390,39 @@ func (cm *ChatModel) buildResponseChunkMessageModifier() openai.ResponseChunkMes
 
 func (cm *ChatModel) buildOptions(_ context.Context, isStream bool, opts ...model.Option) []model.Option {
 	specificOption := model.GetImplSpecificOptions(&openrouterOption{
-		models:    cm.models,
-		reasoning: cm.reasoning,
-		metadata:  cm.metadata,
+		models:         cm.models,
+		reasoning:      cm.reasoning,
+		metadata:       cm.metadata,
+		cacheControl:   cm.cacheControl,
+		responseFormat: cm.responseFormat,
 	}, opts...)
 
-	modelOption := model.GetCommonOptions(&model.Options{}, opts...)
+	modelOptions := model.GetCommonOptions(&model.Options{}, opts...)
 
 	options := make([]model.Option, 0, len(opts))
 
-	if modelOption.Model != nil {
-		options = append(options, model.WithModel(*modelOption.Model))
+	if modelOptions.Model != nil {
+		options = append(options, model.WithModel(*modelOptions.Model))
 	}
 
-	if modelOption.MaxTokens != nil {
-		options = append(options, model.WithMaxTokens(*modelOption.MaxTokens))
+	if modelOptions.MaxTokens != nil {
+		options = append(options, model.WithMaxTokens(*modelOptions.MaxTokens))
 	}
 
-	if modelOption.TopP != nil {
-		options = append(options, model.WithTopP(*modelOption.TopP))
+	if modelOptions.TopP != nil {
+		options = append(options, model.WithTopP(*modelOptions.TopP))
 	}
 
-	if len(modelOption.Stop) > 0 {
-		options = append(options, model.WithStop(modelOption.Stop))
+	if len(modelOptions.Stop) > 0 {
+		options = append(options, model.WithStop(modelOptions.Stop))
 	}
 
-	if len(modelOption.Tools) > 0 {
-		options = append(options, model.WithTools(modelOption.Tools))
+	if len(modelOptions.Tools) > 0 {
+		options = append(options, model.WithTools(modelOptions.Tools))
 	}
 
-	if modelOption.ToolChoice != nil {
-		options = append(options, model.WithToolChoice(*modelOption.ToolChoice))
+	if modelOptions.ToolChoice != nil {
+		options = append(options, model.WithToolChoice(*modelOptions.ToolChoice, modelOptions.AllowedToolNames...))
 	}
 
 	options = append(options, openai.WithRequestPayloadModifier(cm.buildRequestModifier(specificOption)))
@@ -436,7 +451,15 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatM
 	if err != nil {
 		return nil, err
 	}
-	return &ChatModel{cli: cli}, nil
+	return &ChatModel{
+		cli: cli,
+
+		models:         cm.models,
+		reasoning:      cm.reasoning,
+		responseFormat: cm.responseFormat,
+		metadata:       cm.metadata,
+		cacheControl:   cm.cacheControl,
+	}, nil
 }
 
 func populateSchemaMessageFields(msg *schema.Message, message *message) {

@@ -387,31 +387,63 @@ func (cm *ChatModel) genRequest(input []*schema.Message, isStream bool, opts ...
 		req.StreamOptions = &qianfan.StreamOptions{IncludeUsage: true}
 	}
 
-	if options.ToolChoice != nil {
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, fmt.Errorf("[qianfan][genRequest] tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = qianfan.ToolChoice{
-					Type: "function",
-					Function: &qianfan.Function{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, fmt.Errorf("[qianfan][genRequest] tool choice=%s not support", *options.ToolChoice)
-		}
+	err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return req, cbInput, nil
+}
+
+func populateToolChoice(req *qianfan.ChatCompletionV2Request, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+	case schema.ToolChoiceAllowed:
+		req.ToolChoice = toolChoiceAuto
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+		var onlyOneToolName string
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+			onlyOneToolName = allowedToolName
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+
+		if onlyOneToolName != "" {
+			req.ToolChoice = qianfan.ToolChoice{
+				Type: "function",
+				Function: &qianfan.Function{
+					Name: onlyOneToolName,
+				},
+			}
+
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+	default:
+		return fmt.Errorf("[qianfan][genRequest] tool choice=%s not support", *tc)
+	}
+
+	return nil
 }
 
 func toQianfanMultiModalMessages(input []*schema.Message) ([]chatCompletionV3Message, error) {

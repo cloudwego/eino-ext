@@ -6,6 +6,8 @@ An Milvus 2.x indexer implementation for [Eino](https://github.com/cloudwego/ein
 interface. This enables seamless integration
 with Eino's vector storage and retrieval system for enhanced semantic search capabilities.
 
+> **Note**: This package supports **Milvus 2.4.x**. For Milvus 2.5+ features (BM25, server-side functions, hybrid search), use the [`milvus2`](../milvus2) package instead.
+
 ## Quick Start
 
 ### Installation
@@ -187,3 +189,7 @@ our vector undergoes an additional 8-fold expansion.
 
 Therefore, we can derive the conversion relationship between the `dim` parameter of the Milvus vector column and the
 output dimension of the embedding model: `dim = embedding model output * 4 * 8`
+
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.

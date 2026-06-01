@@ -27,6 +27,7 @@ import (
 	"slices"
 	"sort"
 
+	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/meguminnnnnnnnn/go-openai"
 
@@ -74,18 +75,18 @@ type Config struct {
 	// APIKey is your authentication key
 	// Use OpenAI API key or Azure API key depending on the service
 	// Required
-	APIKey string `json:"api_key"`
+	APIKey string
 
 	// HTTPClient is used to send HTTP requests
 	// Optional. Default: http.DefaultClient
-	HTTPClient *http.Client `json:"-"`
+	HTTPClient *http.Client
 
 	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
 	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
 
 	// ByAzure indicates whether to use Azure OpenAI Service
 	// Required for Azure
-	ByAzure bool `json:"by_azure"`
+	ByAzure bool
 
 	// AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
 	// This is useful when the model name is different from the deployment name.
@@ -95,77 +96,81 @@ type Config struct {
 	// BaseURL is the Azure OpenAI endpoint URL
 	// Format: https://{YOUR_RESOURCE_NAME}.openai.azure.com. YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
 	// Required for Azure
-	BaseURL string `json:"base_url"`
+	BaseURL string
 
 	// APIVersion specifies the Azure OpenAI API version
 	// Required for Azure
-	APIVersion string `json:"api_version"`
+	APIVersion string
 
 	// The following fields correspond to OpenAI's chat completion API parameters
 	// Ref: https://platform.openai.com/docs/api-reference/chat/create
 
 	// Model specifies the ID of the model to use
 	// Required
-	Model string `json:"model"`
+	Model string
 
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
-	MaxTokens *int `json:"max_tokens,omitempty"`
+	MaxTokens *int
 
 	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
-	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
+	MaxCompletionTokens *int
 
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both.
 	// Range: 0.0 to 2.0. Higher values make output more random
 	// Optional. Default: 1.0
-	Temperature *float32 `json:"temperature,omitempty"`
+	Temperature *float32
 
 	// TopP controls diversity via nucleus sampling
 	// Generally recommend altering this or Temperature but not both.
 	// Range: 0.0 to 1.0. Lower values make output more focused
 	// Optional. Default: 1.0
-	TopP *float32 `json:"top_p,omitempty"`
+	TopP *float32
 
 	// Stop sequences where the API will stop generating further tokens
 	// Optional. Example: []string{"\n", "User:"}
-	Stop []string `json:"stop,omitempty"`
+	Stop []string
 
 	// PresencePenalty prevents repetition by penalizing tokens based on presence
 	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics
 	// Optional. Default: 0
-	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
+	PresencePenalty *float32
 
 	// ResponseFormat specifies the format of the model's response
 	// Optional. Use for structured outputs
-	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
+	ResponseFormat *ChatCompletionResponseFormat
 
 	// Seed enables deterministic sampling for consistent outputs
 	// Optional. Set for reproducible results
-	Seed *int `json:"seed,omitempty"`
+	Seed *int
 
 	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
 	// Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
 	// Optional. Default: 0
-	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+	FrequencyPenalty *float32
 
 	// LogitBias modifies likelihood of specific tokens appearing in completion
 	// Optional. Map token IDs to bias values from -100 to 100
-	LogitBias map[string]int `json:"logit_bias,omitempty"`
+	LogitBias map[string]int
 
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
-	User *string `json:"user,omitempty"`
+	User *string
 
 	// LogProbs specifies whether to return log probabilities of the output tokens.
-	LogProbs bool `json:"log_probs"`
+	LogProbs bool
 
 	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
-	TopLogProbs int `json:"top_log_probs"`
+	TopLogProbs int
 
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
-	ExtraFields map[string]any `json:"-"`
+	ExtraFields map[string]any
+
+	// CustomHeaders adds extra HTTP headers to each request.
+	// Optional. Useful for custom routing, tracing, or experimental gateway features.
+	CustomHeaders map[string]string
 
 	// ReasoningEffort will override the default reasoning level of "medium"
 	// Optional. Useful for fine tuning response latency vs. accuracy
@@ -174,10 +179,10 @@ type Config struct {
 	// Modalities are output types that you would like the model to generate.
 	// Allowed values: ["text", "audio"]
 	// Default: ["text"]
-	Modalities []Modality `json:"modalities,omitempty"`
+	Modalities []Modality
 
 	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
-	Audio *Audio `json:"audio,omitempty"`
+	Audio *Audio
 }
 
 // Audio specifies the audio output settings
@@ -388,10 +393,9 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 // It processes various message parts like text, images, and audio, converting them into
 // the format expected by the OpenAI API.
 func buildMessageFromUserInputMultiContent(inMsg *schema.Message) (openai.ChatCompletionMessage, error) {
-	if inMsg.Role != schema.User {
-		return openai.ChatCompletionMessage{}, errors.New("invalid role for UserInputMultiContent: role must be 'user'")
+	if inMsg.Role != schema.User && inMsg.Role != schema.Tool {
+		return openai.ChatCompletionMessage{}, fmt.Errorf("user input multi content only support user&tool role, got %s", inMsg.Role)
 	}
-
 	comMessage := openai.ChatCompletionMessage{
 		Role:       toOpenAIRole(inMsg.Role),
 		Content:    inMsg.Content,
@@ -499,8 +503,10 @@ func buildMessageFromAssistantGenMultiContent(inMsg *schema.Message) (openai.Cha
 	}
 	// Initialize the message with role and name.
 	comMessage := openai.ChatCompletionMessage{
-		Role: toOpenAIRole(inMsg.Role),
-		Name: inMsg.Name,
+		Role:             toOpenAIRole(inMsg.Role),
+		Name:             inMsg.Name,
+		ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+		ReasoningContent: inMsg.ReasoningContent,
 	}
 
 partsLoop:
@@ -511,6 +517,10 @@ partsLoop:
 				Type: openai.ChatMessagePartTypeText,
 				Text: part.Text,
 			})
+		case schema.ChatMessagePartTypeReasoning:
+			if part.Reasoning != nil {
+				comMessage.ReasoningContent = part.Reasoning.Text
+			}
 		case schema.ChatMessagePartTypeAudioURL:
 			audioID, ok := getMessageOutputAudioID(part.Audio)
 			if !ok {
@@ -522,6 +532,8 @@ partsLoop:
 				Audio: &openai.Audio{
 					ID: string(audioID),
 				},
+				ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+				ReasoningContent: inMsg.ReasoningContent,
 			}
 			break partsLoop
 
@@ -565,6 +577,7 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
 		ExtraFields:                  c.config.ExtraFields,
+		ExtraHeader:                  c.config.CustomHeaders,
 		ReasoningEffort:              c.config.ReasoningEffort,
 		MaxCompletionTokens:          c.config.MaxCompletionTokens,
 		RequestBodyModifier:          nil,
@@ -659,41 +672,9 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 		}
 	}
 
-	if options.ToolChoice != nil {
-		/*
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
-
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
-
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
-		*/
-
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = openai.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: openai.ToolFunction{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
-		}
+	err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 
 	msgs := make([]openai.ChatCompletionMessage, 0, len(in))
@@ -715,13 +696,13 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 			msg, err = buildMessageFromMultiContent(inMsg)
 		} else {
 			msg = openai.ChatCompletionMessage{
-				Role:       toOpenAIRole(inMsg.Role),
-				Content:    inMsg.Content,
-				Name:       inMsg.Name,
-				ToolCalls:  toOpenAIToolCalls(inMsg.ToolCalls),
-				ToolCallID: inMsg.ToolCallID,
+				Role:             toOpenAIRole(inMsg.Role),
+				Content:          inMsg.Content,
+				Name:             inMsg.Name,
+				ToolCalls:        toOpenAIToolCalls(inMsg.ToolCalls),
+				ToolCallID:       inMsg.ToolCallID,
+				ReasoningContent: inMsg.ReasoningContent,
 			}
-
 		}
 
 		if err != nil {
@@ -781,9 +762,33 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
+	outMsg, err = buildGenerateResponse(resp, c.config)
+	if err != nil {
+		return nil, err
+	}
+
+	if specOptions.ResponseMessageModifier != nil {
+		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to modify response message: %w", err)
+		}
+	}
+
+	callbacks.OnEnd(ctx, &model.CallbackOutput{
+		Message:    outMsg,
+		Config:     cbInput.Config,
+		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
+	})
+
+	return outMsg, nil
+}
+
+func buildGenerateResponse(resp openai.ChatCompletionResponse, config *Config) (*schema.Message, error) {
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("received empty choices from OpenAI API response")
 	}
+
+	var outMsg *schema.Message
 
 	for _, choice := range resp.Choices {
 		if choice.Index != 0 {
@@ -811,9 +816,12 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
-			mimeType, ok := audioFormat2MimeTypes[c.config.Audio.Format]
+			if config.Audio == nil {
+				return nil, fmt.Errorf("audio config must be set when audio data is present")
+			}
+			mimeType, ok := audioFormat2MimeTypes[config.Audio.Format]
 			if !ok {
-				return nil, fmt.Errorf("audio mime type not found for config audio format %v", c.config.Audio.Format)
+				return nil, fmt.Errorf("audio mime type not found for config audio format %v", config.Audio.Format)
 			}
 
 			messageOutputPart := schema.MessageOutputPart{
@@ -843,19 +851,6 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 	}
 
 	setRequestID(outMsg, resp.ID)
-
-	if specOptions.ResponseMessageModifier != nil {
-		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to modify response message: %w", err)
-		}
-	}
-
-	callbacks.OnEnd(ctx, &model.CallbackOutput{
-		Message:    outMsg,
-		Config:     cbInput.Config,
-		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
-	})
 
 	return outMsg, nil
 }
@@ -1001,6 +996,106 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 	return outStream, nil
 }
 
+type allowedTools struct {
+	Mode  string              `json:"mode"`
+	Tools []openai.ToolChoice `json:"tools"`
+}
+
+func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	validateAllowedNamesTools := func() error {
+		if len(allowedToolNames) > 0 {
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			for _, name := range allowedToolNames {
+				if !toolsMap[name] {
+					return fmt.Errorf("allowed tool %s not found in request tools", name)
+				}
+			}
+		}
+		return nil
+	}
+
+	buildToolChoices := func() []openai.ToolChoice {
+		choices := make([]openai.ToolChoice, len(allowedToolNames))
+		for i, n := range allowedToolNames {
+			choices[i] = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: n,
+				},
+			}
+		}
+		return choices
+	}
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+		return nil
+	case schema.ToolChoiceAllowed:
+		if len(allowedToolNames) > 0 {
+			if err := validateAllowedNamesTools(); err != nil {
+				return err
+			}
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceAuto,
+					Tools: buildToolChoices(),
+				},
+			}
+
+		} else {
+			req.ToolChoice = toolChoiceAuto
+		}
+		return nil
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool_choice is forced but no tools are provided")
+		}
+
+		err := validateAllowedNamesTools()
+		if err != nil {
+			return err
+		}
+
+		var onlyOneToolName string
+		if len(allowedToolNames) == 1 {
+			onlyOneToolName = allowedToolNames[0]
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+
+		if onlyOneToolName != "" {
+			req.ToolChoice = openai.ToolChoice{
+				Type: openai.ToolTypeFunction,
+				Function: openai.ToolFunction{
+					Name: onlyOneToolName,
+				},
+			}
+		} else if len(allowedToolNames) > 1 {
+			req.ToolChoice = map[string]any{
+				"type": "allowed_tools",
+				"allowed_tools": allowedTools{
+					Mode:  toolChoiceRequired,
+					Tools: buildToolChoices(),
+				},
+			}
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("unsupported tool_choice: %s", *tc)
+	}
+}
 func toStreamProbs(probs *openai.ChatCompletionStreamChoiceLogprobs) *schema.LogProbs {
 	if probs == nil {
 		return nil
@@ -1114,11 +1209,15 @@ func populateRCFromExtra(extra map[string]json.RawMessage, msg *schema.Message) 
 	if extra == nil {
 		return
 	}
+
 	for _, key := range otherReasoningKeys {
-		if reasoningRawMessage, ok := extra[key]; ok && len(reasoningRawMessage) > 0 && string(reasoningRawMessage) != "null" {
-			msg.ReasoningContent = string(reasoningRawMessage)
-			setReasoningContent(msg, string(reasoningRawMessage))
-			break
+		if reasoningRawMessage, ok := extra[key]; ok {
+			var reasoningContent string
+			if err := sonic.Unmarshal(reasoningRawMessage, &reasoningContent); err == nil && reasoningContent != "" {
+				msg.ReasoningContent = reasoningContent
+				setReasoningContent(msg, reasoningContent)
+				break
+			}
 		}
 	}
 }

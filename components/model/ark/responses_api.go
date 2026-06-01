@@ -21,12 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"runtime/debug"
 	"strings"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/callbacks"
+	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
@@ -35,7 +37,180 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
-type responsesAPIChatModel struct {
+type Thinking = arkModel.Thinking
+type ThinkingType = arkModel.ThinkingType
+type ReasoningEffort = arkModel.ReasoningEffort
+type ResponsesAPIConfig struct {
+	// Timeout specifies the timeout for the HTTP client making requests to the ResponsesAPI.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default: 10 minutes
+	Timeout *time.Duration `json:"timeout"`
+
+	// HTTPClient specifies the client to send HTTP requests.
+	// If HTTPClient is set, Timeout will not be used.
+	// Optional. Default &http.Client{Timeout: Timeout}
+	HTTPClient *http.Client `json:"http_client"`
+
+	// RetryTimes specifies the number of retry attempts for failed API calls
+	// Optional. Default: 2
+	RetryTimes *int `json:"retry_times"`
+
+	// BaseURL specifies the base URL for Ark service
+	// Optional. Default: "https://ark.cn-beijing.volces.com/api/v3"
+	BaseURL string `json:"base_url"`
+
+	// Region specifies the region where Ark service is located
+	// Optional. Default: "cn-beijing"
+	Region string `json:"region"`
+
+	// The following three fields are about authentication - either APIKey or AccessKey/SecretKey pair is required
+	// For authentication details, see: https://www.volcengine.com/docs/82379/1298459
+	// APIKey takes precedence if both are provided
+	APIKey string `json:"api_key"`
+
+	AccessKey string `json:"access_key"`
+
+	SecretKey string `json:"secret_key"`
+
+	// Model specifies the ID of endpoint on ark platform
+	// Required
+	Model string `json:"model"`
+
+	// MaxOutputTokens specifies the maximum number of tokens for model output, including both model responses and thought chain content.
+	// Optional.
+	MaxOutputTokens *int `json:"max_output_tokens,omitempty"`
+
+	// Temperature specifies what sampling temperature to use
+	// Generally recommend altering this or TopP but not both
+	// Range: 0.0 to 2.0. Higher values make output more random
+	// Optional. Default: 1.0
+	Temperature *float32 `json:"temperature,omitempty"`
+
+	// TopP controls diversity via nucleus sampling
+	// Generally recommend altering this or Temperature but not both
+	// Range: 0.0 to 1.0. Lower values make output more focused
+	// Optional. Default: 0.7
+	TopP *float32 `json:"top_p,omitempty"`
+
+	// CustomHeader the http header passed to model when requesting model
+	// Optional.
+	CustomHeader map[string]string `json:"custom_header"`
+
+	// ResponseFormat specifies the format that the model must output.
+	// Optional.
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
+
+	// Thinking controls whether the model is set to activate the deep thinking mode.
+	// It is set to be enabled by default.
+	// Optional.
+	Thinking *Thinking `json:"thinking,omitempty"`
+
+	// ServiceTier specifies whether to use the TPM guarantee package. The effective target has purchased the inference access point for the guarantee package.
+	// Optional.
+	ServiceTier *string `json:"service_tier"`
+
+	// ReasoningEffort specifies the reasoning effort of the model.
+	// Optional.
+	ReasoningEffort *ReasoningEffort `json:"reasoning_effort,omitempty"`
+
+	// SessionCache is the configuration of ResponsesAPI session cache.
+	// It can be overridden by [WithCache].
+	// Optional.
+	SessionCache *SessionCacheConfig `json:"session_cache,omitempty"`
+
+	// EnableToolWebSearch enables the web search tool.
+	// Web Search is a basic internet search tool that can obtain real-time public network information
+	// (such as news, products, weather, etc.) for your large model through the Responses API.
+	// This tool can solve core issues such as data timeliness, knowledge gaps, and information synchronization,
+	// and you do not need to develop your own search engine or maintain data resources.
+	// Note: This option is only effective for the Responses API.
+	// For more details, see https://www.volcengine.com/docs/82379/1756990?lang=zh
+	// Optional.
+	EnableToolWebSearch *ToolWebSearch `json:"enable_tool_web_search,omitempty"`
+
+	// MaxToolCalls specifies the maximum number of tool-calling rounds.
+	// The value must be in the range [1, 10].
+	// After this limit is reached, the model is prompted to stop making further tool calls and generate a response.
+	// Note: This is a best-effort parameter, and the actual number of calls may be affected by model performance and tool results.
+	// The default value for the Web Search tool is 3.
+	// For more details, see https://www.volcengine.com/docs/82379/1569618?lang=zh
+	// Optional.
+	MaxToolCalls *int64 `json:"max_tool_calls,omitempty"`
+
+	// EnableReasoningContentPassback controls whether reasoning content
+	// from assistant messages is passed back to the model in multi-turn conversations.
+	// When enabled, reasoning content is included as reasoning summary items in the input,
+	// allowing the model to be aware of its prior chain-of-thought.
+	// However, if a valid previous_response_id is set (via session cache), the passback is
+	// automatically skipped because previous_response_id already preserves the full conversation
+	// context including the chain-of-thought on the server side.
+	// Note: This feature requires doubao models v1.8+. Earlier versions (e.g., v1.6) do not
+	// support reasoning items in the input and will return an error.
+	// For more details, see https://www.volcengine.com/docs/82379/1449737
+	// Default: false.
+	// Optional.
+	EnableReasoningContentPassback bool `json:"enable_reasoning_content_passback,omitempty"`
+}
+
+func NewResponsesAPIChatModel(_ context.Context, config *ResponsesAPIConfig) (*ResponsesAPIChatModel, error) {
+	if config == nil {
+		return nil, fmt.Errorf("config cannot be nil")
+	}
+
+	var opts []arkruntime.ConfigOption
+
+	if config.Region == "" {
+		opts = append(opts, arkruntime.WithRegion(defaultRegion))
+	} else {
+		opts = append(opts, arkruntime.WithRegion(config.Region))
+	}
+	if config.Timeout != nil {
+		opts = append(opts, arkruntime.WithTimeout(*config.Timeout))
+	}
+	if config.HTTPClient != nil {
+		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
+	}
+	if config.BaseURL != "" {
+		opts = append(opts, arkruntime.WithBaseUrl(config.BaseURL))
+	} else {
+		opts = append(opts, arkruntime.WithBaseUrl(defaultBaseURL))
+	}
+	if config.RetryTimes != nil {
+		opts = append(opts, arkruntime.WithRetryTimes(*config.RetryTimes))
+	} else {
+		opts = append(opts, arkruntime.WithRetryTimes(defaultRetryTimes))
+	}
+
+	var client *arkruntime.Client
+	if len(config.APIKey) > 0 {
+		client = arkruntime.NewClientWithApiKey(config.APIKey, opts...)
+	} else if config.AccessKey != "" && config.SecretKey != "" {
+		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
+	} else {
+		return nil, fmt.Errorf("new client fail, missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
+	}
+
+	return &ResponsesAPIChatModel{
+		client:          client,
+		model:           config.Model,
+		maxTokens:       config.MaxOutputTokens,
+		temperature:     config.Temperature,
+		topP:            config.TopP,
+		customHeader:    config.CustomHeader,
+		responseFormat:  config.ResponseFormat,
+		thinking:        config.Thinking,
+		cache:           &CacheConfig{SessionCache: config.SessionCache},
+		serviceTier:     config.ServiceTier,
+		reasoningEffort: config.ReasoningEffort,
+
+		enableToolWebSearch: config.EnableToolWebSearch,
+		maxToolCalls:        config.MaxToolCalls,
+
+		enableReasoningContentPassback: config.EnableReasoningContentPassback,
+	}, nil
+}
+
+type ResponsesAPIChatModel struct {
 	client     *arkruntime.Client
 	tools      []*responses.ResponsesTool
 	rawTools   []*schema.ToolInfo
@@ -51,14 +226,26 @@ type responsesAPIChatModel struct {
 	cache           *CacheConfig
 	serviceTier     *string
 	reasoningEffort *arkModel.ReasoningEffort
+
+	enableToolWebSearch *ToolWebSearch
+
+	maxToolCalls *int64
+
+	enableReasoningContentPassback bool
 }
 type cacheConfig struct {
 	Enabled  bool
 	ExpireAt *int64
 }
 
-func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
+func (cm *ResponsesAPIChatModel) GetType() string {
+	return "ResponsesAPI"
+}
+
+func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outMsg *schema.Message, err error) {
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
+
 	options, specOptions, err := cm.getOptions(opts)
 	if err != nil {
 		return nil, err
@@ -124,9 +311,9 @@ func (cm *responsesAPIChatModel) Generate(ctx context.Context, input []*schema.M
 
 }
 
-func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
+func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, input []*schema.Message,
 	opts ...model.Option) (outStream *schema.StreamReader[*schema.Message], err error) {
-
+	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	options, specOptions, err := cm.getOptions(opts)
 	if err != nil {
 		return nil, err
@@ -213,7 +400,11 @@ func (cm *responsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 	return outStream, err
 }
 
-func (cm *responsesAPIChatModel) prePopulateConfig(responseReq *responses.ResponsesRequest, options *model.Options,
+func (cm *ResponsesAPIChatModel) IsCallbacksEnabled() bool {
+	return true
+}
+
+func (cm *ResponsesAPIChatModel) prePopulateConfig(responseReq *responses.ResponsesRequest, options *model.Options,
 	specOptions *arkOptions) error {
 
 	if cm.responseFormat != nil {
@@ -305,7 +496,7 @@ func (cm *responsesAPIChatModel) prePopulateConfig(responseReq *responses.Respon
 	return nil
 }
 
-func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options,
+func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, options *model.Options,
 	specOptions *arkOptions) (responseReq *responses.ResponsesRequest, err error) {
 	responseReq = &responses.ResponsesRequest{}
 
@@ -313,17 +504,19 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 	if err != nil {
 		return nil, err
 	}
+
 	in, err = cm.populateCache(in, responseReq, specOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cm.populateInput(in, responseReq)
+	err = cm.populateInput(in, responseReq, specOptions.enableReasoningContentPassback)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
+	err = cm.populateTools(responseReq, options, specOptions.enableWebSearch, specOptions.maxToolCalls)
+
 	if err != nil {
 		return nil, err
 	}
@@ -332,12 +525,12 @@ func (cm *responsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 
 }
 
-func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq *responses.ResponsesRequest, arkOpts *arkOptions,
+func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq *responses.ResponsesRequest, arkOpts *arkOptions,
 ) ([]*schema.Message, error) {
 
 	var (
 		store       = false
-		cacheStatus = cachingDisabled
+		cacheStatus *caching
 		cacheTTL    *int
 		headRespID  *string
 		contextID   *string
@@ -345,11 +538,15 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 
 	if cm.cache != nil {
 		if sCache := cm.cache.SessionCache; sCache != nil {
+			cacheTTL = &sCache.TTL
 			if sCache.EnableCache {
 				store = true
-				cacheStatus = cachingEnabled
+				cacheStatus = ptrOf(cachingEnabled)
+			} else {
+				store = false
+				cacheStatus = ptrOf(cachingDisabled)
 			}
-			cacheTTL = &sCache.TTL
+
 		}
 	}
 
@@ -363,10 +560,10 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 
 			if sCacheOpt.EnableCache {
 				store = true
-				cacheStatus = cachingEnabled
+				cacheStatus = ptrOf(cachingEnabled)
 			} else {
 				store = false
-				cacheStatus = cachingDisabled
+				cacheStatus = ptrOf(cachingDisabled)
 			}
 		}
 	}
@@ -382,7 +579,7 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 	// ContextID and ResponseID will exist at the same time.
 	// Using ContextID is prioritized to maintain compatibility with the old logic.
 	// In this usage scenario, ResponseID cannot be used.
-	if cacheStatus == cachingEnabled && contextID == nil {
+	if cacheStatus != nil && *cacheStatus == cachingEnabled && contextID == nil {
 		for i := len(in) - 1; i >= 0; i-- {
 			msg := in[i]
 			inputIdx = i
@@ -418,21 +615,23 @@ func (cm *responsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 		responseReq.ExpireAt = ptrOf(now + int64(*cacheTTL))
 	}
 
-	var cacheType *responses.CacheType_Enum
-	if cacheStatus == cachingDisabled {
-		cacheType = responses.CacheType_disabled.Enum()
-	} else {
-		cacheType = responses.CacheType_enabled.Enum()
-	}
-
-	responseReq.Caching = &responses.ResponsesCaching{
-		Type: cacheType,
+	if cacheStatus != nil {
+		switch *cacheStatus {
+		case cachingEnabled:
+			responseReq.Caching = &responses.ResponsesCaching{
+				Type: responses.CacheType_enabled.Enum(),
+			}
+		case cachingDisabled:
+			responseReq.Caching = &responses.ResponsesCaching{
+				Type: responses.CacheType_disabled.Enum(),
+			}
+		}
 	}
 
 	return in, nil
 }
 
-func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq *responses.ResponsesRequest) error {
+func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq *responses.ResponsesRequest, enableReasoningPassback bool) error {
 	itemList := make([]*responses.InputItem, 0, len(in))
 	if len(in) == 0 {
 		return nil
@@ -446,6 +645,15 @@ func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
+			if enableReasoningPassback && responseReq.PreviousResponseId == nil && msg.ReasoningContent != "" {
+				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_Reasoning{Reasoning: &responses.ItemReasoning{
+					Type: responses.ItemType_reasoning,
+					Summary: []*responses.ReasoningSummaryPart{
+						{Text: msg.ReasoningContent},
+					},
+				}}})
+			}
+
 			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
 			if err != nil {
 				return err
@@ -497,43 +705,81 @@ func (cm *responsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 	return nil
 }
 
-func (cm *responsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, optTools []*schema.ToolInfo, toolChoice *schema.ToolChoice) error {
+func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options, enableToolWebSearch *ToolWebSearch, maxToolCalls *int64) error {
+
 	if responseReq.PreviousResponseId != nil {
 		return nil
 	}
 	tools := cm.tools
-	if optTools != nil {
+	if options.Tools != nil {
 		var err error
-		if tools, err = cm.toTools(optTools); err != nil {
+		if tools, err = cm.toTools(options.Tools); err != nil {
 			return err
 		}
 	}
+	responseReq.Tools = tools
 
-	if toolChoice != nil {
-		var mode responses.ToolChoiceMode_Enum
-		switch *toolChoice {
-		case schema.ToolChoiceForbidden:
-			mode = responses.ToolChoiceMode_none
-		case schema.ToolChoiceAllowed:
-			mode = responses.ToolChoiceMode_auto
-		case schema.ToolChoiceForced:
-			mode = responses.ToolChoiceMode_required
-		default:
-			mode = responses.ToolChoiceMode_auto
+	err := populateResponseAPIToolChoice(responseReq, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return err
+	}
+
+	if enableToolWebSearch != nil {
+		toolWebSearch, err := convToolWebSearch(enableToolWebSearch)
+		if err != nil {
+			return err
 		}
-		responseReq.ToolChoice = &responses.ResponsesToolChoice{
-			Union: &responses.ResponsesToolChoice_Mode{
-				Mode: mode,
+		tools = append(tools, &responses.ResponsesTool{
+			Union: &responses.ResponsesTool_ToolWebSearch{
+				ToolWebSearch: toolWebSearch,
 			},
-		}
+		})
+	}
 
+	if maxToolCalls != nil {
+		responseReq.MaxToolCalls = maxToolCalls
 	}
 
 	responseReq.Tools = tools
+
 	return nil
 }
 
-func (cm *responsesAPIChatModel) toArkUserRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
+func convToolWebSearch(enableToolWebSearch *ToolWebSearch) (*responses.ToolWebSearch, error) {
+	tl := &responses.ToolWebSearch{
+		Type:       responses.ToolType_web_search,
+		Limit:      enableToolWebSearch.Limit,
+		MaxKeyword: enableToolWebSearch.MaxKeyword,
+		Sources:    make([]responses.SourceType_Enum, 0, len(enableToolWebSearch.Sources)),
+	}
+
+	if enableToolWebSearch.UserLocation != nil {
+		tl.UserLocation = &responses.UserLocation{
+			City:     enableToolWebSearch.UserLocation.City,
+			Country:  enableToolWebSearch.UserLocation.Country,
+			Region:   enableToolWebSearch.UserLocation.Region,
+			Timezone: enableToolWebSearch.UserLocation.Timezone,
+		}
+	}
+
+	for _, source := range enableToolWebSearch.Sources {
+		switch source {
+		case SourceOfDouyin:
+			tl.Sources = append(tl.Sources, responses.SourceType_douyin)
+		case SourceOfMoji:
+			tl.Sources = append(tl.Sources, responses.SourceType_moji)
+		case SourceOfToutiao:
+			tl.Sources = append(tl.Sources, responses.SourceType_toutiao)
+		default:
+			return nil, fmt.Errorf("unknown source: %s", source)
+		}
+	}
+
+	return tl, nil
+
+}
+
+func (cm *ResponsesAPIChatModel) toArkUserRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
 	inputItemMessage := &responses.ItemInputMessage{
 		Type: responses.ItemType_message.Enum(),
 		Role: responses.MessageRole_user,
@@ -575,10 +821,15 @@ func (cm *responsesAPIChatModel) toArkUserRoleItemInputMessage(msg *schema.Messa
 
 }
 
-func (cm *responsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
+func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
 	inputItemMessage := &responses.ItemInputMessage{
 		Type: responses.ItemType_message.Enum(),
 		Role: responses.MessageRole_assistant,
+	}
+
+	if getPartial(msg) {
+		b := true
+		inputItemMessage.Partial = &b
 	}
 
 	if len(msg.UserInputMultiContent) > 0 {
@@ -629,7 +880,7 @@ func (cm *responsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 
 }
 
-func (cm *responsesAPIChatModel) toArkSystemRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
+func (cm *ResponsesAPIChatModel) toArkSystemRoleItemInputMessage(msg *schema.Message) (*responses.ItemInputMessage, error) {
 	inputItemMessage := &responses.ItemInputMessage{
 		Type: responses.ItemType_message.Enum(),
 		Role: responses.MessageRole_system,
@@ -672,7 +923,7 @@ func (cm *responsesAPIChatModel) toArkSystemRoleItemInputMessage(msg *schema.Mes
 
 }
 
-func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options, *arkOptions, error) {
+func (cm *ResponsesAPIChatModel) getOptions(opts []model.Option) (*model.Options, *arkOptions, error) {
 	options := model.GetCommonOptions(&model.Options{
 		Temperature: cm.temperature,
 		MaxTokens:   cm.maxTokens,
@@ -682,9 +933,12 @@ func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 	}, opts...)
 
 	arkOpts := model.GetImplSpecificOptions(&arkOptions{
-		customHeaders:   cm.customHeader,
-		thinking:        cm.thinking,
-		reasoningEffort: cm.reasoningEffort,
+		customHeaders:                  cm.customHeader,
+		thinking:                       cm.thinking,
+		reasoningEffort:                cm.reasoningEffort,
+		enableWebSearch:                cm.enableToolWebSearch,
+		maxToolCalls:                   cm.maxToolCalls,
+		enableReasoningContentPassback: cm.enableReasoningContentPassback,
 	}, opts...)
 
 	if err := cm.checkOptions(options, arkOpts); err != nil {
@@ -693,7 +947,7 @@ func (cm *responsesAPIChatModel) getOptions(opts []model.Option) (*model.Options
 	return options, arkOpts, nil
 }
 
-func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.ResponsesTool, error) {
+func (cm *ResponsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.ResponsesTool, error) {
 	tools := make([]*responses.ResponsesTool, len(tis))
 	for i := range tis {
 		ti := tis[i]
@@ -728,7 +982,7 @@ func (cm *responsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.R
 	return tools, nil
 }
 
-func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject, cache *cacheConfig) (*schema.Message, error) {
+func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject, cache *cacheConfig) (*schema.Message, error) {
 	msg := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
@@ -815,7 +1069,7 @@ func (cm *responsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 	return msg, nil
 }
 
-func (cm *responsesAPIChatModel) toEinoTokenUsage(usage *responses.Usage) *schema.TokenUsage {
+func (cm *ResponsesAPIChatModel) toEinoTokenUsage(usage *responses.Usage) *schema.TokenUsage {
 	tokenUsage := &schema.TokenUsage{
 		PromptTokens:     int(usage.InputTokens),
 		CompletionTokens: int(usage.OutputTokens),
@@ -831,7 +1085,7 @@ func (cm *responsesAPIChatModel) toEinoTokenUsage(usage *responses.Usage) *schem
 	return tokenUsage
 }
 
-func (cm *responsesAPIChatModel) toModelTokenUsage(usage *responses.Usage) *model.TokenUsage {
+func (cm *ResponsesAPIChatModel) toModelTokenUsage(usage *responses.Usage) *model.TokenUsage {
 	tokenUsage := &model.TokenUsage{
 		PromptTokens:     int(usage.InputTokens),
 		CompletionTokens: int(usage.OutputTokens),
@@ -848,14 +1102,14 @@ func (cm *responsesAPIChatModel) toModelTokenUsage(usage *responses.Usage) *mode
 	return tokenUsage
 }
 
-func (cm *responsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOptions) error {
+func (cm *ResponsesAPIChatModel) checkOptions(mOpts *model.Options, _ *arkOptions) error {
 	if len(mOpts.Stop) > 0 {
 		return fmt.Errorf("'Stop' is not supported by responses API")
 	}
 	return nil
 }
 
-func (cm *responsesAPIChatModel) toCallbackConfig(req *responses.ResponsesRequest) *model.Config {
+func (cm *ResponsesAPIChatModel) toCallbackConfig(req *responses.ResponsesRequest) *model.Config {
 	return &model.Config{
 		Model:       req.Model,
 		MaxTokens:   int(ptrFromOrZero(req.MaxOutputTokens)),
@@ -864,7 +1118,7 @@ func (cm *responsesAPIChatModel) toCallbackConfig(req *responses.ResponsesReques
 	}
 }
 
-func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
+func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 	config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
 	var itemFunctionToolCall *responses.ItemFunctionToolCall
 
@@ -993,7 +1247,7 @@ func (cm *responsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 
 }
 
-func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message, object *responses.ResponseObject,
+func (cm *ResponsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message, object *responses.ResponseObject,
 	cacheConfig *cacheConfig) {
 
 	if cacheConfig.Enabled {
@@ -1007,7 +1261,7 @@ func (cm *responsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message,
 
 }
 
-func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
+func (cm *ResponsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
 	msg *schema.Message) {
 
 	var token *model.TokenUsage
@@ -1037,7 +1291,7 @@ func (cm *responsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 	}, nil)
 }
 
-func (cm *responsesAPIChatModel) handleCompletedStreamEvent(RespObject *responses.ResponseObject) *schema.Message {
+func (cm *ResponsesAPIChatModel) handleCompletedStreamEvent(RespObject *responses.ResponseObject) *schema.Message {
 	return &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
@@ -1175,6 +1429,16 @@ func convUserInputMultiContentToContentItems(parts []schema.MessageInputPart) ([
 			}
 			items = append(items, item)
 
+		case schema.ChatMessagePartTypeAudioURL:
+			if part.Audio == nil {
+				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL")
+			}
+			item, err := convMsgInputAudioToResponseContentItem(part.Audio)
+			if err != nil {
+				return nil, err
+			}
+			items = append(items, item)
+
 		default:
 			return nil, fmt.Errorf("unsupported content type in UserInputMultiContent: %s", part.Type)
 		}
@@ -1221,6 +1485,25 @@ func convMsgInputVideoToResponseContentItem(video *schema.MessageInputVideo) (*r
 	return &responses.ContentItem{
 		Union: &responses.ContentItem_Video{
 			Video: contentItemVideo,
+		},
+	}, nil
+
+}
+
+func convMsgInputAudioToResponseContentItem(audio *schema.MessageInputAudio) (*responses.ContentItem, error) {
+	audioURL, err := convMessagePartCommonToURL(audio.MessagePartCommon)
+	if err != nil {
+		return nil, fmt.Errorf("convert message input audio failed err: %w", err)
+	}
+
+	contentItemAudio := &responses.ContentItemAudio{
+		Type:     responses.ContentItemType_input_audio,
+		AudioUrl: audioURL,
+	}
+
+	return &responses.ContentItem{
+		Union: &responses.ContentItem_Audio{
+			Audio: contentItemAudio,
 		},
 	}, nil
 
@@ -1311,15 +1594,131 @@ func toContentItemImageDetail(cImage *responses.ContentItemImage, detail schema.
 	return nil
 }
 
-func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Context, prefix []*schema.Message, ttl int, opts ...model.Option) (info *CacheInfo, err error) {
+func populateResponseAPIToolChoice(responseReq *responses.ResponsesRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+
+	if tc == nil {
+		return nil
+	}
+
+	var mode responses.ToolChoiceMode_Enum
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		mode = responses.ToolChoiceMode_none
+	case schema.ToolChoiceAllowed:
+		mode = responses.ToolChoiceMode_auto
+	case schema.ToolChoiceForced:
+		mode = responses.ToolChoiceMode_required
+	default:
+		mode = responses.ToolChoiceMode_auto
+	}
+
+	if mode == responses.ToolChoiceMode_required && len(responseReq.Tools) == 0 {
+		return fmt.Errorf("tool_choice is forced but no tools are provided")
+	}
+
+	if mode == responses.ToolChoiceMode_required {
+		var onlyOneToolName string
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(responseReq.Tools))
+			for _, t := range responseReq.Tools {
+				if t.GetToolFunction() != nil {
+					toolsMap[t.GetToolFunction().Name] = true
+				}
+			}
+
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+
+			onlyOneToolName = allowedToolName
+		} else if len(responseReq.Tools) == 1 && responseReq.Tools[0].GetToolFunction() != nil {
+			onlyOneToolName = responseReq.Tools[0].GetToolFunction().GetName()
+		}
+
+		if onlyOneToolName != "" {
+			responseReq.ToolChoice = &responses.ResponsesToolChoice{
+				Union: &responses.ResponsesToolChoice_FunctionToolChoice{
+					FunctionToolChoice: &responses.FunctionToolChoice{
+						Type: responses.ToolType_function,
+						Name: onlyOneToolName,
+					},
+				},
+			}
+			return nil
+		}
+	}
+
+	responseReq.ToolChoice = &responses.ResponsesToolChoice{
+		Union: &responses.ResponsesToolChoice_Mode{
+			Mode: mode,
+		},
+	}
+
+	return nil
+
+}
+
+func (cm *ResponsesAPIChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	if len(tools) == 0 {
+		return nil, errors.New("no tools to bind")
+	}
+
+	respTools, err := cm.toTools(tools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert to ark responsesAPI tools: %w", err)
+	}
+	nrcm := *cm
+	nrcm.rawTools = tools
+	nrcm.tools = respTools
+
+	return &nrcm, nil
+}
+
+// CreatePrefixCache establishes a server-side cache for a prefix context, which is ideal for storing
+// initial information like system prompts, user roles, or background details.
+//
+// Once the cache is created, you can reuse it in subsequent conversational turns by passing the
+// returned ResponseID with the [WithCache] option. The server will then automatically combine the
+// cached prefix context with the new input before processing it with the model.
+//
+// This approach is particularly beneficial for applications with repetitive or standardized opening prompts,
+// as it reduces token consumption, minimizes redundant computations, and lowers overall usage costs.
+//
+// Note:
+//   - The number of input tokens needs to be greater than or equal to 1024; otherwise, an error will be reported.
+//   - The stream parameter cannot be set to true.
+//   - When creating a prefix cache, in the returned usage, total_tokens=input_tokens, and output_tokens is always 0.
+//   - It is unavailable for doubao models of version 1.6 and above.
+//
+// Parameters:
+//   - ctx: The context for the request.
+//   - prefix: The initial messages to be cached, such as roles and backgrounds.
+//   - ttl: Time-to-live in seconds for the cached prefix, default: 86400.
+//
+// Returns:
+//   - info: Information about the created prefix cache, including the response id and token usage.
+//   - err: Any error encountered during the operation.
+//
+// ref: https://www.volcengine.com/docs/82379/1602228?lang=zh
+func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int, opts ...model.Option) (info *CacheInfo, err error) {
+	if len(prefix) == 0 {
+		return nil, errors.New("prefix messages cannot be empty")
+	}
 	responseReq := &responses.ResponsesRequest{
-		Model:    cm.model,
-		ExpireAt: ptrOf(time.Now().Unix() + int64(ttl)),
-		Store:    ptrOf(true),
+		Model: cm.model,
+		Store: ptrOf(true),
 		Caching: &responses.ResponsesCaching{
 			Type:   responses.CacheType_enabled.Enum(),
 			Prefix: ptrOf(true),
 		},
+	}
+	if ttl > 0 {
+		responseReq.ExpireAt = ptrOf(time.Now().Unix() + int64(ttl))
 	}
 
 	options, specOptions, err := cm.getOptions(opts)
@@ -1331,12 +1730,12 @@ func (cm *responsesAPIChatModel) createPrefixCacheByResponseAPI(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	err = cm.populateInput(prefix, responseReq)
+	err = cm.populateInput(prefix, responseReq, specOptions.enableReasoningContentPassback)
 	if err != nil {
 		return nil, err
 	}
 
-	err = cm.populateTools(responseReq, options.Tools, options.ToolChoice)
+	err = cm.populateTools(responseReq, options, specOptions.enableWebSearch, specOptions.maxToolCalls)
 	if err != nil {
 		return nil, err
 	}

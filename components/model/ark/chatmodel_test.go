@@ -78,7 +78,7 @@ func TestWithTools(t *testing.T) {
 				},
 			},
 		},
-		respChatModel: &responsesAPIChatModel{
+		respChatModel: &ResponsesAPIChatModel{
 			model: "test model",
 			rawTools: []*schema.ToolInfo{
 				{
@@ -102,7 +102,7 @@ func TestWithTools(t *testing.T) {
 func TestCallByResponsesAPI(t *testing.T) {
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{},
+			respChatModel: &ResponsesAPIChatModel{},
 		}
 		opt := WithCache(&CacheOption{
 			APIType: ResponsesAPI,
@@ -115,7 +115,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: ptrOf(ContextAPI),
 				},
@@ -132,7 +132,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: ptrOf(ResponsesAPI),
 				},
@@ -149,7 +149,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: (*APIType)(ptrOf("")),
 				},
@@ -165,7 +165,7 @@ func TestCallByResponsesAPI(t *testing.T) {
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{
 					APIType: (*APIType)(ptrOf("")),
 				},
@@ -173,13 +173,14 @@ func TestCallByResponsesAPI(t *testing.T) {
 		}
 		opt := WithCache(&CacheOption{})
 
-		_, err := cm.callByResponsesAPI(opt)
-		assert.NotNil(t, err)
+		f, err := cm.callByResponsesAPI(opt)
+		assert.Nil(t, err)
+		assert.False(t, f)
 	})
 
 	mockey.PatchConvey("", t, func() {
 		cm := &ChatModel{
-			respChatModel: &responsesAPIChatModel{
+			respChatModel: &ResponsesAPIChatModel{
 				cache: &CacheConfig{},
 			},
 		}

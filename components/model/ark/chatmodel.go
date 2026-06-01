@@ -27,8 +27,6 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model"
 
-	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
@@ -180,9 +178,11 @@ type CacheConfig struct {
 	// Note that if the type is ResponsesAPI,
 	// the following configuration will not be available (ARK may support it in the future):
 	// `Region`, `AccessKey`, `SecretKey`, `Stop`, `FrequencyPenalty`, `LogitBias`, `PresencePenalty`,
-	// `LogProbs`, `TopLogProbs`, `ResponseFormat.JSONSchema`.
+	// `LogProbs`, `TopLogProbs`.
 	// It can be overridden by [WithCache].
 	// Optional. Default: ContextAPI.
+	//
+	// Deprecated: This field defaults to ContextAPI. To use the ResponsesAPI, use NewResponsesAPIChatModel to create a ResponsesAPIChatModel instead of setting APIType to ResponsesAPI.
 	APIType *APIType `json:"api_type,omitempty"`
 
 	// SessionCache is the configuration of ResponsesAPI session cache.
@@ -284,7 +284,7 @@ func buildChatCompletionAPIChatModel(config *ChatModelConfig) (*completionAPICha
 	return cm, nil
 }
 
-func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel, error) {
+func buildResponsesAPIChatModel(config *ChatModelConfig) (*ResponsesAPIChatModel, error) {
 	if config.Cache != nil && ptrFromOrZero(config.Cache.APIType) == ResponsesAPI {
 		if err := checkResponsesAPIConfig(config); err != nil {
 			return nil, err
@@ -326,7 +326,7 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 		return nil, fmt.Errorf("new client fail, missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
 	}
 
-	cm := &responsesAPIChatModel{
+	cm := &ResponsesAPIChatModel{
 		client:         client,
 		model:          config.Model,
 		maxTokens:      config.MaxTokens,
@@ -342,7 +342,6 @@ func buildResponsesAPIChatModel(config *ChatModelConfig) (*responsesAPIChatModel
 }
 
 func checkResponsesAPIConfig(config *ChatModelConfig) error {
-
 	if config.APIKey == "" && (config.AccessKey == "" && config.SecretKey == "") {
 		return fmt.Errorf("missing credentials: set 'APIKey' or both 'AccessKey' and 'SecretKey'")
 	}
@@ -365,14 +364,11 @@ func checkResponsesAPIConfig(config *ChatModelConfig) error {
 	if config.TopLogProbs > 0 {
 		return fmt.Errorf("'TopLogProbs' is not supported by ResponsesAPI")
 	}
-	if config.ResponseFormat != nil && config.ResponseFormat.JSONSchema != nil {
-		return fmt.Errorf("'ResponseFormat.JSONSchema' is not supported by ResponsesAPI")
-	}
 	return nil
 }
 
 type ChatModel struct {
-	respChatModel *responsesAPIChatModel
+	respChatModel *ResponsesAPIChatModel
 	chatModel     *completionAPIChatModel
 }
 
@@ -387,9 +383,6 @@ type CacheInfo struct {
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
 	outMsg *schema.Message, err error) {
-
-	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
-
 	ok, err := cm.callByResponsesAPI(opts...)
 	if err != nil {
 		return nil, err
@@ -403,8 +396,6 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
 	outStream *schema.StreamReader[*schema.Message], err error) {
-
-	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
 	ok, err := cm.callByResponsesAPI(opts...)
 	if err != nil {
@@ -436,6 +427,9 @@ func (cm *ChatModel) callByResponsesAPI(opts ...fmodel.Option) (bool, error) {
 	}, opts...)
 
 	if arkOpts.cache != nil {
+		if arkOpts.cache.APIType == "" {
+			arkOpts.cache.APIType = ContextAPI
+		}
 		switch arkOpts.cache.APIType {
 		case ResponsesAPI:
 			return true, nil
@@ -464,18 +458,12 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 		return nil, fmt.Errorf("failed to convert to ark responsesAPI tools: %w", err)
 	}
 
-	tc := schema.ToolChoiceAllowed
-
 	ncm := *cm.chatModel
 	ncm.rawTools = tools
 	ncm.tools = arkTools
-	ncm.toolChoice = &tc
-
 	nrcm := *cm.respChatModel
 	nrcm.rawTools = tools
 	nrcm.tools = respTools
-	nrcm.toolChoice = &tc
-
 	return &ChatModel{
 		chatModel:     &ncm,
 		respChatModel: &nrcm,
@@ -486,11 +474,6 @@ func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) (err error) {
 	if err = cm.tryBindTools(tools); err != nil {
 		return err
 	}
-
-	tc := schema.ToolChoiceAllowed
-	cm.chatModel.toolChoice = &tc
-	cm.respChatModel.toolChoice = &tc
-
 	return nil
 }
 
@@ -498,11 +481,9 @@ func (cm *ChatModel) BindForcedTools(tools []*schema.ToolInfo) (err error) {
 	if err = cm.tryBindTools(tools); err != nil {
 		return err
 	}
-
 	tc := schema.ToolChoiceForced
 	cm.chatModel.toolChoice = &tc
 	cm.respChatModel.toolChoice = &tc
-
 	return nil
 }
 
@@ -555,7 +536,7 @@ func (cm *ChatModel) IsCallbacksEnabled() bool {
 //   - It is unavailable for doubao models of version 1.6 and above.
 func (cm *ChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int, opts ...fmodel.Option) (info *CacheInfo, err error) {
 	if cm.respChatModel.cache != nil && ptrFromOrZero(cm.respChatModel.cache.APIType) == ResponsesAPI {
-		return cm.respChatModel.createPrefixCacheByResponseAPI(ctx, prefix, ttl, opts...)
+		return cm.respChatModel.CreatePrefixCache(ctx, prefix, ttl, opts...)
 	}
 	return cm.createContextByContextAPI(ctx, prefix, ttl, model.ContextModeCommonPrefix, nil)
 }

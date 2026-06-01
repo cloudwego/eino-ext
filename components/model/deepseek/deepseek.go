@@ -45,6 +45,8 @@ const (
 	ResponseFormatTypeJSONObject = "json_object"
 )
 
+type ThinkingConfig = deepseek.ThinkingConfig
+
 const (
 	toolChoiceNone     = "none"     // none means the model will not call any tool and instead generates a message.
 	toolChoiceAuto     = "auto"     // auto means the model can pick between generating a message or calling one or more tools.
@@ -119,6 +121,9 @@ type ChatModelConfig struct {
 
 	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
 	TopLogProbs int `json:"top_log_probs"`
+
+	// ThinkingConfig controls the switch between thinking and non-thinking mode.
+	ThinkingConfig *ThinkingConfig `json:"thinking_config,omitempty"`
 }
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
@@ -514,7 +519,7 @@ func (cm *ChatModel) generateStreamRequest(ctx context.Context, in []*schema.Mes
 	}
 	req := &deepseek.StreamChatCompletionRequest{
 		Stream:           true,
-		StreamOptions:    deepseek.StreamOptions{IncludeUsage: false},
+		StreamOptions:    deepseek.StreamOptions{IncludeUsage: true},
 		Model:            origReq.Model,
 		Messages:         origReq.Messages,
 		FrequencyPenalty: origReq.FrequencyPenalty,
@@ -527,6 +532,8 @@ func (cm *ChatModel) generateStreamRequest(ctx context.Context, in []*schema.Mes
 		Tools:            origReq.Tools,
 		LogProbs:         origReq.LogProbs,
 		TopLogProbs:      origReq.TopLogProbs,
+		ExtraFields:      origReq.ExtraFields,
+		Thinking:         origReq.Thinking,
 	}
 	return req, cbIn, nil
 }
@@ -543,6 +550,8 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 
+	specOpts := model.GetImplSpecificOptions(&deepseekOptions{}, opts...)
+
 	req := &deepseek.ChatCompletionRequest{
 		Model:            *options.Model,
 		MaxTokens:        dereferenceOrZero(options.MaxTokens),
@@ -553,6 +562,8 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		FrequencyPenalty: cm.conf.FrequencyPenalty,
 		LogProbs:         cm.conf.LogProbs,
 		TopLogProbs:      cm.conf.TopLogProbs,
+		Thinking:         cm.conf.ThinkingConfig,
+		ExtraFields:      specOpts.extraFields,
 	}
 
 	cbInput := &model.CallbackInput{
@@ -577,50 +588,13 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 		cbInput.Tools = options.Tools
 	}
 
-	if len(tools) > 0 {
-		req.Tools = make([]deepseek.Tool, len(tools))
-		for i := range tools {
-			req.Tools[i] = tools[i]
-		}
+	req.Tools = make([]deepseek.Tool, len(tools))
+	copy(req.Tools, tools)
+
+	err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	if err != nil {
+		return nil, nil, err
 	}
-
-	if options.ToolChoice != nil {
-		/*
-			tool_choice is string or object
-			Controls which (if any) tool is called by the model.
-			"none" means the model will not call any tool and instead generates a message.
-			"auto" means the model can pick between generating a message or calling one or more tools.
-			"required" means the model must call one or more tools.
-
-			Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
-
-			"none" is the default when no tools are present.
-			"auto" is the default if tools are present.
-		*/
-
-		switch *options.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			req.ToolChoice = toolChoiceNone
-		case schema.ToolChoiceAllowed:
-			req.ToolChoice = toolChoiceAuto
-		case schema.ToolChoiceForced:
-			if len(req.Tools) == 0 {
-				return nil, nil, fmt.Errorf("tool choice is forced but tool is not provided")
-			} else if len(req.Tools) > 1 {
-				req.ToolChoice = toolChoiceRequired
-			} else {
-				req.ToolChoice = deepseek.ToolChoice{
-					Type: req.Tools[0].Type,
-					Function: deepseek.ToolChoiceFunction{
-						Name: req.Tools[0].Function.Name,
-					},
-				}
-			}
-		default:
-			return nil, nil, fmt.Errorf("tool choice=%s not support", *options.ToolChoice)
-		}
-	}
-
 	msgs := make([]deepseek.ChatCompletionMessage, 0, len(in))
 	for _, inMsg := range in {
 		msg, e := toDeepSeekMessage(inMsg)
@@ -642,6 +616,69 @@ func (cm *ChatModel) generateRequest(_ context.Context, in []*schema.Message, op
 	return req, cbInput, nil
 }
 
+func populateToolChoice(req *deepseek.ChatCompletionRequest, tc *schema.ToolChoice, allowedToolNames []string) error {
+	if tc == nil {
+		return nil
+	}
+
+	/*
+		tool_choice is string or object
+		Controls which (if any) tool is called by the model.
+		"none" means the model will not call any tool and instead generates a message.
+		"auto" means the model can pick between generating a message or calling one or more tools.
+		"required" means the model must call one or more tools.
+
+		Specifying a particular tool via {"type": "function", "function": {"name": "my_function"}} forces the model to call that tool.
+
+		"none" is the default when no tools are present.
+		"auto" is the default if tools are present.
+	*/
+
+	switch *tc {
+	case schema.ToolChoiceForbidden:
+		req.ToolChoice = toolChoiceNone
+	case schema.ToolChoiceAllowed:
+		req.ToolChoice = toolChoiceAuto
+	case schema.ToolChoiceForced:
+		if len(req.Tools) == 0 {
+			return fmt.Errorf("tool choice is forced but tool is not provided")
+		}
+
+		onlyOneToolName := ""
+		if len(allowedToolNames) > 0 {
+			if len(allowedToolNames) > 1 {
+				return fmt.Errorf("only one allowed tool name can be configured")
+			}
+			allowedToolName := allowedToolNames[0]
+			toolsMap := make(map[string]bool, len(req.Tools))
+			for _, t := range req.Tools {
+				toolsMap[t.Function.Name] = true
+			}
+			if _, ok := toolsMap[allowedToolName]; !ok {
+				return fmt.Errorf("allowed tool name '%s' not found in tools list", allowedToolName)
+			}
+			onlyOneToolName = allowedToolName
+		} else if len(req.Tools) == 1 {
+			onlyOneToolName = req.Tools[0].Function.Name
+		}
+		if onlyOneToolName != "" {
+			req.ToolChoice = deepseek.ToolChoice{
+				Type: "function",
+				Function: deepseek.ToolChoiceFunction{
+					Name: onlyOneToolName,
+				},
+			}
+		} else {
+			req.ToolChoice = toolChoiceRequired
+		}
+
+	default:
+		return fmt.Errorf("tool choice=%s not support", *tc)
+	}
+
+	return nil
+}
+
 const (
 	roleAssistant = "assistant"
 	roleSystem    = "system"
@@ -649,17 +686,52 @@ const (
 	roleTool      = "tool"
 )
 
+func concatTextParts[T any](parts []T, extract func(T) (schema.ChatMessagePartType, string)) (string, error) {
+	var texts []string
+	unsupported := make(map[schema.ChatMessagePartType]struct{})
+	for _, part := range parts {
+		typ, text := extract(part)
+		if typ == schema.ChatMessagePartTypeText {
+			texts = append(texts, text)
+		} else {
+			unsupported[typ] = struct{}{}
+		}
+	}
+	if len(unsupported) > 0 {
+		types := make([]string, 0, len(unsupported))
+		for typ := range unsupported {
+			types = append(types, string(typ))
+		}
+		return "", fmt.Errorf("deepseek does not support %s type", strings.Join(types, ", "))
+	}
+	return strings.Join(texts, "\n\n"), nil
+}
+
 func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, error) {
 	if len(m.MultiContent) > 0 {
 		return nil, fmt.Errorf("multi content is not supported in deepseek")
 	}
 
+	content := m.Content
+
 	if len(m.UserInputMultiContent) > 0 {
-		return nil, fmt.Errorf("user input multi content is not supported in deepseek")
+		var err error
+		content, err = concatTextParts(m.UserInputMultiContent, func(p schema.MessageInputPart) (schema.ChatMessagePartType, string) {
+			return p.Type, p.Text
+		})
+		if err != nil {
+			return nil, fmt.Errorf("user input multi content: %w", err)
+		}
 	}
 
 	if len(m.AssistantGenMultiContent) > 0 {
-		return nil, fmt.Errorf("assistan gen multi content is not supported in deepseek")
+		var err error
+		content, err = concatTextParts(m.AssistantGenMultiContent, func(p schema.MessageOutputPart) (schema.ChatMessagePartType, string) {
+			return p.Type, p.Text
+		})
+		if err != nil {
+			return nil, fmt.Errorf("assistant gen multi content: %w", err)
+		}
 	}
 
 	var role string
@@ -677,7 +749,7 @@ func toDeepSeekMessage(m *schema.Message) (*deepseek.ChatCompletionMessage, erro
 	}
 	ret := &deepseek.ChatCompletionMessage{
 		Role:    role,
-		Content: m.Content,
+		Content: content,
 		// TODO: tool call id
 		Prefix: HasPrefix(m),
 	}
@@ -736,6 +808,9 @@ func toMessageRole(role string) schema.RoleType {
 		return schema.System
 	case roleTool:
 		return schema.Tool
+	case "":
+		// Streaming deltas often omit role after the first assistant chunk.
+		return schema.Assistant
 	default:
 		return schema.RoleType(role)
 	}

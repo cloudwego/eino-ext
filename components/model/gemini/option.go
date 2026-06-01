@@ -28,8 +28,10 @@ type options struct {
 	ResponseJSONSchema *jsonschema.Schema
 	ThinkingConfig     *genai.ThinkingConfig
 	ResponseModalities []GeminiResponseModality
-
-	CachedContentName string
+	ImageConfig        *genai.ImageConfig
+	CachedContentName  string
+	ResponseLogprobs   *bool
+	Logprobs           *int32
 }
 
 func WithTopK(k int32) model.Option {
@@ -61,5 +63,31 @@ func WithResponseModalities(m []GeminiResponseModality) model.Option {
 func WithCachedContentName(name string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.CachedContentName = name
+	})
+}
+
+// WithImageConfig sets the image generation configuration.
+// Note: an error will be returned for a model that does not support the configuration options.
+// Optional.
+func WithImageConfig(cfg *genai.ImageConfig) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ImageConfig = cfg
+	})
+}
+
+// WithResponseLogprobs sets whether to return the log probabilities of the
+// tokens chosen by the model at each step. This overrides Config.ResponseLogprobs.
+func WithResponseLogprobs(enable bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseLogprobs = &enable
+	})
+}
+
+// WithLogprobs sets the number of top candidate tokens to return the log
+// probabilities for at each generation step. Only takes effect when
+// ResponseLogprobs is enabled.
+func WithLogprobs(k int32) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.Logprobs = &k
 	})
 }
