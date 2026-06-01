@@ -53,7 +53,7 @@ content, err := backend.Read(ctx, &filesystem.ReadRequest{
 - **Zero Configuration** - Works out of the box with no setup required
 - **Direct Filesystem Access** - Operates on local files with native performance
 - **Full Backend Implementation** - Supports all `filesystem.Backend` operations
-- **Symlink-Aware Discovery** - Traversal-based operations follow symlinked directories by default
+- **Symlink-Aware Discovery** - Traversal-based operations support traversing symlinked directories
 - **Path Security** - Enforces absolute paths to prevent directory traversal
 - **Multimodal Read** - Reads images and PDFs as structured parts (PDF supports full or paged rendering)
 
@@ -113,8 +113,8 @@ See the following examples for more usage:
 - **`MultiModalRead(ctx, req)`** - Read images/PDFs as structured multimodal parts; non-image/non-PDF files fall back to `Read`. Defaults: image 10 MB / PDF 20 MB / paged-PDF 100 MB up to 20 pages @ 150 DPI. Tunable via `Config.MultiModalRead`. `Pages` accepts a single page (`"3"`) or an inclusive range (`"1-5"`).
 - **`Write(ctx, req)`** - Write file content; creates the file if it doesn't exist, otherwise **overwrites** existing content (parent directories are created automatically).
 - **`Edit(ctx, req)`** - Search and replace in file
-- **`GrepRaw(ctx, req)`** - Search pattern in files; follows symlinked directories by default
-- **`GlobInfo(ctx, req)`** - Find files by glob pattern; follows symlinked directories by default and protects against symlink cycles
+- **`GrepRaw(ctx, req)`** - Search pattern in files; supports following symlinked directories
+- **`GlobInfo(ctx, req)`** - Find files by glob pattern; traverses symlinked directories and protects against symlink cycles
 
 ### Additional Methods
 

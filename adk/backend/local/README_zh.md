@@ -53,7 +53,7 @@ content, err := backend.Read(ctx, &filesystem.ReadRequest{
 - **零配置** - 开箱即用，无需设置
 - **直接文件系统访问** - 使用本地性能操作本地文件
 - **完整后端实现** - 支持所有 `filesystem.Backend` 操作
-- **感知软链接的发现能力** - 基于遍历的操作默认跟随软链接目录
+- **感知软链接的发现能力** - 基于遍历的操作支持进入软链接目录
 - **路径安全** - 强制使用绝对路径以防止目录遍历
 - **多模态读取** - 将图片和 PDF 读取为结构化的多模态片段（PDF 支持整文或分页渲染）
 
@@ -113,8 +113,8 @@ backend, _ := local.NewBackend(ctx, &local.Config{
 - **`MultiModalRead(ctx, req)`** - 将图片/PDF 读取为结构化的多模态片段；非图片/非 PDF 文件回退到 `Read`。默认值：图片 10 MB / 整文 PDF 20 MB / 分页 PDF 100 MB，单次最多 20 页 @ 150 DPI。可通过 `Config.MultiModalRead` 调优。`Pages` 支持单页（`"3"`）或包含范围（`"1-5"`）。
 - **`Write(ctx, req)`** - 写入文件内容；文件不存在时创建，否则**覆盖**现有内容（父目录会自动创建）。
 - **`Edit(ctx, req)`** - 在文件中搜索和替换
-- **`GrepRaw(ctx, req)`** - 在文件中搜索模式；默认跟随软链接目录
-- **`GlobInfo(ctx, req)`** - 按 glob 模式查找文件；默认跟随软链接目录，并防止软链接循环
+- **`GrepRaw(ctx, req)`** - 在文件中搜索模式；支持跟随软链接目录
+- **`GlobInfo(ctx, req)`** - 按 glob 模式查找文件；会进入软链接目录，并防止软链接循环
 
 ### 其他方法
 
