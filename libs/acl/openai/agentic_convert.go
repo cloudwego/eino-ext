@@ -88,12 +88,12 @@ func messageToAgenticMessage(msg *schema.Message) (*schema.AgenticMessage, error
 }
 
 type chunkConverter struct {
-	curIndex              int
-	lastContentType       schema.ContentBlockType
-	lastContentPartIndex  int
-	lastToolCallIndex     int
-	started               bool
-	inToolCalls           bool
+	curIndex             int
+	lastContentType      schema.ContentBlockType
+	lastContentPartIndex int
+	lastToolCallIndex    int
+	started              bool
+	inToolCalls          bool
 }
 
 func newChunkConverter() *chunkConverter {
@@ -292,6 +292,12 @@ func agenticUserToMessages(msg *schema.AgenticMessage) ([]*schema.Message, error
 		case schema.ContentBlockTypeUserInputVideo:
 			inputParts = append(inputParts, videoBlockToInputPart(block.UserInputVideo, block.Extra))
 
+		case schema.ContentBlockTypeUserInputFile:
+			if block.UserInputFile == nil {
+				return nil, fmt.Errorf("file content is nil in user message")
+			}
+			inputParts = append(inputParts, fileBlockToInputPart(block.UserInputFile, block.Extra))
+
 		default:
 			return nil, fmt.Errorf("unsupported content block type %q in user message", block.Type)
 		}
@@ -419,6 +425,28 @@ func videoBlockToInputPart(video *schema.UserInputVideo, extra map[string]any) s
 		part.Video.URL = &video.URL
 	} else if video.Base64Data != "" {
 		part.Video.Base64Data = &video.Base64Data
+	}
+
+	return part
+}
+
+func fileBlockToInputPart(file *schema.UserInputFile, extra map[string]any) schema.MessageInputPart {
+	part := schema.MessageInputPart{
+		Type: schema.ChatMessagePartTypeFileURL,
+		File: &schema.MessageInputFile{
+			MessagePartCommon: schema.MessagePartCommon{
+				MIMEType: file.MIMEType,
+			},
+			Name: file.Name,
+		},
+		Extra: extra,
+	}
+
+	if file.URL != "" {
+		part.File.URL = &file.URL
+	}
+	if file.Base64Data != "" {
+		part.File.Base64Data = &file.Base64Data
 	}
 
 	return part
@@ -584,6 +612,11 @@ func functionToolResultContentToInputParts(content []*schema.FunctionToolResultC
 				part.Video.Base64Data = &block.Video.Base64Data
 			}
 			parts = append(parts, part)
+		case schema.FunctionToolResultContentBlockTypeFile:
+			if block.File == nil {
+				return nil, fmt.Errorf("file content is nil for function tool result content block")
+			}
+			parts = append(parts, fileBlockToInputPart(block.File, block.Extra))
 		default:
 			return nil, fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
 		}

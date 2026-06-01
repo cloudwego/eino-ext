@@ -319,6 +319,11 @@ func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatMessagePart
 					URL: part.VideoURL.URL,
 				},
 			})
+		case schema.ChatMessagePartTypeFileURL:
+			if part.FileURL == nil {
+				return nil, fmt.Errorf("FileURL field must not be nil when Type is ChatMessagePartTypeFileURL")
+			}
+			return nil, errors.New("for OpenAI Chat Completions, file URL message part is not supported; use Responses API or UserInputMultiContent with base64 data")
 		default:
 			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
 		}
@@ -484,6 +489,24 @@ func buildMessageFromUserInputMultiContent(inMsg *schema.Message) (openai.ChatCo
 				})
 			} else {
 				return comMessage, errors.New("video message part must have url or base64 data")
+			}
+
+		case schema.ChatMessagePartTypeFileURL:
+			if part.File == nil {
+				return comMessage, errors.New("the 'file' field is required for parts of type 'file_url'")
+			}
+			if part.File.Base64Data != nil {
+				comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
+					Type: openai.ChatMessagePartTypeFile,
+					File: &openai.ChatMessageFile{
+						FileData: *part.File.Base64Data,
+						FileName: part.File.Name,
+					},
+				})
+			} else if part.File.URL != nil {
+				return comMessage, errors.New("for OpenAI Chat Completions, file message part does not accept URL; use Responses API or provide base64 data")
+			} else {
+				return comMessage, errors.New("file message part must have url or base64 data")
 			}
 
 		default:

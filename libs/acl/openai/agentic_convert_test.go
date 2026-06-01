@@ -152,6 +152,30 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 		assert.Equal(t, "https://example.com/vid.mp4", *result[0].UserInputMultiContent[0].Video.URL)
 	})
 
+	t.Run("user message with file base64", func(t *testing.T) {
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputFile{
+						Base64Data: "filedata",
+						MIMEType:   "application/pdf",
+						Name:       "report.pdf",
+					}),
+				},
+			},
+		}
+
+		result, err := agenticMessagesToMessages(msgs)
+		assert.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Len(t, result[0].UserInputMultiContent, 1)
+		assert.Equal(t, schema.ChatMessagePartTypeFileURL, result[0].UserInputMultiContent[0].Type)
+		assert.Equal(t, "filedata", *result[0].UserInputMultiContent[0].File.Base64Data)
+		assert.Equal(t, "application/pdf", result[0].UserInputMultiContent[0].File.MIMEType)
+		assert.Equal(t, "report.pdf", result[0].UserInputMultiContent[0].File.Name)
+	})
+
 	t.Run("user message with tool results", func(t *testing.T) {
 		msgs := []*schema.AgenticMessage{
 			{
@@ -241,6 +265,37 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 		assert.Equal(t, "here is the image", result[0].UserInputMultiContent[0].Text)
 		assert.Equal(t, schema.ChatMessagePartTypeImageURL, result[0].UserInputMultiContent[1].Type)
 		assert.Equal(t, imgURL, *result[0].UserInputMultiContent[1].Image.URL)
+	})
+
+	t.Run("user message with file tool result", func(t *testing.T) {
+		fileURL := "https://example.com/result.pdf"
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.FunctionToolResult{
+						CallID: "call_1",
+						Name:   "fetch_file",
+						Content: []*schema.FunctionToolResultContentBlock{
+							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "here is the file"}},
+							{Type: schema.FunctionToolResultContentBlockTypeFile, File: &schema.UserInputFile{URL: fileURL, MIMEType: "application/pdf", Name: "result.pdf"}},
+						},
+					}),
+				},
+			},
+		}
+
+		result, err := agenticMessagesToMessages(msgs)
+		assert.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Equal(t, schema.Tool, result[0].Role)
+		assert.Equal(t, "call_1", result[0].ToolCallID)
+		assert.Len(t, result[0].UserInputMultiContent, 2)
+		assert.Equal(t, schema.ChatMessagePartTypeText, result[0].UserInputMultiContent[0].Type)
+		assert.Equal(t, schema.ChatMessagePartTypeFileURL, result[0].UserInputMultiContent[1].Type)
+		assert.Equal(t, fileURL, *result[0].UserInputMultiContent[1].File.URL)
+		assert.Equal(t, "application/pdf", result[0].UserInputMultiContent[1].File.MIMEType)
+		assert.Equal(t, "result.pdf", result[0].UserInputMultiContent[1].File.Name)
 	})
 
 	t.Run("user message with empty tool result content", func(t *testing.T) {
