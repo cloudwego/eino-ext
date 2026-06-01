@@ -17,13 +17,36 @@
 package claude
 
 import (
+	"encoding/json"
+
+	"github.com/anthropics/anthropic-sdk-go"
+
 	"github.com/cloudwego/eino/schema"
 )
+
+// CacheTTL is a type alias for the Anthropic SDK's cache control TTL.
+// Supported values: CacheTTL5m ("5m", default) and CacheTTL1h ("1h").
+type CacheTTL = anthropic.CacheControlEphemeralTTL
+
+const (
+	// CacheTTL5m sets the cache TTL to 5 minutes (default).
+	CacheTTL5m CacheTTL = anthropic.CacheControlEphemeralTTLTTL5m
+	// CacheTTL1h sets the cache TTL to 1 hour.
+	CacheTTL1h CacheTTL = anthropic.CacheControlEphemeralTTLTTL1h
+)
+
+// CacheControl configures cache control behavior for manual cache breakpoints.
+// A nil CacheControl or zero-value TTL means the SDK default (5 minutes) is used.
+type CacheControl struct {
+	TTL CacheTTL
+}
 
 const (
 	keyOfThinking          = "_eino_claude_thinking"
 	keyOfBreakPoint        = "_eino_claude_breakpoint"
+	keyOfBreakPointTTL     = "_eino_claude_breakpoint_ttl"
 	keyOfThinkingSignature = "_eino_claude_thinking_signature"
+	keyOfToolSearchEvents  = "_eino_claude_tool_search_events"
 )
 
 func GetThinking(msg *schema.Message) (string, bool) {
@@ -35,34 +58,52 @@ func setThinking(msg *schema.Message, reasoningContent string) {
 	setMsgExtra(msg, keyOfThinking, reasoningContent)
 }
 
+// Deprecated: Use SetMessageCacheControl instead.
 func SetMessageBreakpoint(msg *schema.Message) *schema.Message {
+	return SetMessageCacheControl(msg, nil)
+}
+
+// Deprecated: Use SetToolInfoCacheControl instead.
+func SetToolInfoBreakpoint(toolInfo *schema.ToolInfo) *schema.ToolInfo {
+	return SetToolInfoCacheControl(toolInfo, nil)
+}
+
+// SetMessageCacheControl sets a cache breakpoint on the message with the given cache control settings.
+// A nil CacheControl or zero-value TTL means the SDK default (5 minutes) is used.
+func SetMessageCacheControl(msg *schema.Message, ctrl *CacheControl) *schema.Message {
 	msg_ := *msg
-
-	extra := make(map[string]any, len(msg.Extra))
-	for k, v := range msg.Extra {
-		extra[k] = v
-	}
-
-	msg_.Extra = extra
+	msg_.Extra = copyExtra(msg.Extra)
 
 	setMsgExtra(&msg_, keyOfBreakPoint, true)
+
+	if ctrl != nil && ctrl.TTL != "" {
+		setMsgExtra(&msg_, keyOfBreakPointTTL, string(ctrl.TTL))
+	}
 
 	return &msg_
 }
 
-func SetToolInfoBreakpoint(toolInfo *schema.ToolInfo) *schema.ToolInfo {
+// SetToolInfoCacheControl sets a cache breakpoint on the tool info with the given cache control settings.
+// A nil CacheControl or zero-value TTL means the SDK default (5 minutes) is used.
+func SetToolInfoCacheControl(toolInfo *schema.ToolInfo, ctrl *CacheControl) *schema.ToolInfo {
 	toolInfo_ := *toolInfo
-
-	extra := make(map[string]any, len(toolInfo.Extra))
-	for k, v := range toolInfo.Extra {
-		extra[k] = v
-	}
-
-	toolInfo_.Extra = extra
+	toolInfo_.Extra = copyExtra(toolInfo.Extra)
 
 	setToolInfoExtra(&toolInfo_, keyOfBreakPoint, true)
 
+	if ctrl != nil && ctrl.TTL != "" {
+		setToolInfoExtra(&toolInfo_, keyOfBreakPointTTL, string(ctrl.TTL))
+	}
+
 	return &toolInfo_
+}
+
+func copyExtra(src map[string]any) map[string]any {
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 func getMsgExtraValue[T any](msg *schema.Message, key string) (T, bool) {
@@ -120,4 +161,69 @@ func getThinkingSignature(msg *schema.Message) (string, bool) {
 
 func setThinkingSignature(msg *schema.Message, signature string) {
 	setMsgExtra(msg, keyOfThinkingSignature, signature)
+}
+
+func getMessageBreakpointCacheControl(msg *schema.Message) *CacheControl {
+	ttl, _ := getMsgExtraValue[string](msg, keyOfBreakPointTTL)
+	if ttl == "" {
+		return nil
+	}
+	return &CacheControl{TTL: CacheTTL(ttl)}
+}
+
+func getToolBreakpointCacheControl(toolInfo *schema.ToolInfo) *CacheControl {
+	ttl, _ := getToolInfoExtraValue[string](toolInfo, keyOfBreakPointTTL)
+	if ttl == "" {
+		return nil
+	}
+	return &CacheControl{TTL: CacheTTL(ttl)}
+}
+
+// ToolSearchEvent represents a tool search related event from the Claude API.
+// It stores either a server_tool_use event (the model requesting a tool search)
+// or a tool_search_tool_result event (the search results).
+type ToolSearchEvent struct {
+	// Type is "server_tool_use" or "tool_search_tool_result".
+	Type string
+
+	// ID is the block ID, set when Type is "server_tool_use".
+	ID string
+	// Name is the server tool name (e.g. "tool_search_tool_bm25"), set when Type is "server_tool_use".
+	Name string
+	// Input is the server tool input as raw JSON, set when Type is "server_tool_use".
+	Input json.RawMessage
+
+	// ToolUseID references the server_tool_use block, set when Type is "tool_search_tool_result".
+	ToolUseID string
+	// Content holds the search result or error, set when Type is "tool_search_tool_result".
+	Content *ToolSearchEventContent
+}
+
+// ToolSearchEventContent represents the content of a tool_search_tool_result event.
+type ToolSearchEventContent struct {
+	// Type is "tool_search_tool_search_result" or "tool_search_tool_result_error".
+	Type string
+
+	// ToolReferences lists matched tool names, set when Type is "tool_search_tool_search_result".
+	ToolReferences []ToolSearchEventToolReference
+	// ErrorCode is the error code, set when Type is "tool_search_tool_result_error".
+	ErrorCode string
+	// ErrorMessage is the error message, set when Type is "tool_search_tool_result_error".
+	ErrorMessage string
+}
+
+// ToolSearchEventToolReference represents a single tool reference in a search result.
+type ToolSearchEventToolReference struct {
+	ToolName string
+}
+
+func appendToolSearchEvent(msg *schema.Message, event ToolSearchEvent) {
+	events, _ := getMsgExtraValue[[]ToolSearchEvent](msg, keyOfToolSearchEvents)
+	events = append(events, event)
+	setMsgExtra(msg, keyOfToolSearchEvents, events)
+}
+
+func getToolSearchEvents(msg *schema.Message) []ToolSearchEvent {
+	events, _ := getMsgExtraValue[[]ToolSearchEvent](msg, keyOfToolSearchEvents)
+	return events
 }

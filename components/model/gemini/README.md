@@ -205,6 +205,17 @@ type Config struct {
 	// Cache controls prefix cache settings for the model.
 	// Optional. used to CreatePrefixCache for reused inputs.
 	Cache *CacheConfig
+
+	// ResponseLogprobs controls whether to return the log probabilities of the
+	// tokens chosen by the model at each step. When enabled, logprobs are
+	// populated in Message.ResponseMeta.LogProbs.
+	// Optional. Default: false.
+	ResponseLogprobs bool
+
+	// Logprobs specifies the number of top candidate tokens whose log
+	// probabilities are returned at each generation step.
+	// Optional. Only takes effect when ResponseLogprobs is true.
+	Logprobs *int32
 }
 
 // CacheConfig controls prefix cache settings for the model.
@@ -252,6 +263,40 @@ msg, err := cm.Generate(ctx, []*schema.Message{
 ```
 
 The example above shows how to create a prefix cache and reuse it in a follow-up call.
+
+## Logprobs
+
+Gemini can return the log probabilities of the tokens chosen at each generation step, plus the top-K candidate tokens at each step.
+
+- Enable via `Config.ResponseLogprobs = true` (or per-call `gemini.WithResponseLogprobs(true)`).
+- Configure the number of top candidates via `Config.Logprobs` (or per-call `gemini.WithLogprobs(k)`).
+- Results are populated in `message.ResponseMeta.LogProbs`:
+  - `LogProbs.Content[i].Token` / `LogProb` — chosen token at step `i`
+  - `LogProbs.Content[i].TopLogProbs` — top-K candidate tokens at step `i`
+
+```go
+topK := int32(5)
+cm, _ := gemini.NewChatModel(ctx, &gemini.Config{
+    Client:           client,
+    Model:            "gemini-2.0-flash",
+    ResponseLogprobs: true,
+    Logprobs:         &topK,
+})
+
+// Per-call override is also supported:
+msg, _ := cm.Generate(ctx, input,
+    gemini.WithResponseLogprobs(true),
+    gemini.WithLogprobs(3),
+)
+
+if lp := msg.ResponseMeta.LogProbs; lp != nil {
+    for _, item := range lp.Content {
+        fmt.Printf("token=%s logprob=%f\n", item.Token, item.LogProb)
+    }
+}
+```
+
+> Note: `Logprobs` only takes effect when `ResponseLogprobs` is true. To disable logprobs at call time, use `gemini.WithResponseLogprobs(false)`.
 
 ## Examples
 
