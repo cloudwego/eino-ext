@@ -173,8 +173,19 @@ func main() {
                 log.Fatal(event.Err)
             }
             if event.Output != nil && event.Output.MessageOutput != nil {
-                msg := event.Output.MessageOutput.Message
-                if msg != nil {
+                if event.Output.MessageOutput.IsStreaming {
+                    stream := event.Output.MessageOutput.MessageStream
+                    // Note: In real applications, stream should be closed properly
+                    for {
+                        chunk, err := stream.Recv()
+                        if err != nil {
+                            break
+                        }
+                        content += chunk.Content
+                        fmt.Print(chunk.Content)
+                    }
+                    stream.Close()
+                } else if msg := event.Output.MessageOutput.Message; msg != nil {
                     content += msg.Content
                     fmt.Print(msg.Content)
                 }
@@ -225,13 +236,10 @@ func main() {
     }
 
     // Create ChatTemplate
-    tpl, err := prompt.FromMessages(schema.Jinja2,
-        schema.SystemMessage("You are a {{role}} expert."),
-        schema.UserMessage("{{query}}"),
+    tpl := prompt.FromMessages(schema.FString,
+        schema.SystemMessage("You are a {role} expert."),
+        schema.UserMessage("{query}"),
     )
-    if err != nil {
-        log.Fatal(err)
-    }
 
     // Build a Chain: template -> model
     chain, err := compose.NewChain[map[string]any, *schema.Message]().

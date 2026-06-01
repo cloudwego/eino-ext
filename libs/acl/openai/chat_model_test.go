@@ -586,6 +586,40 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 				},
 			},
 			{
+				name: "tool role success",
+				inMsg: &schema.Message{
+					Role: schema.Tool,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: text,
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleTool,
+					MultiContent: []openai.ChatMessagePart{
+						{
+							Type: openai.ChatMessagePartTypeText,
+							Text: text,
+						},
+					},
+				},
+			},
+			{
+				name: "unsupported role",
+				inMsg: &schema.Message{
+					Role: schema.System,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeText,
+							Text: text,
+						},
+					},
+				},
+				wantErr: true,
+			},
+			{
 				name: "unsupported type",
 				inMsg: &schema.Message{
 					Role: schema.User,
@@ -714,6 +748,18 @@ func Test_genRequest(t *testing.T) {
 		_, _, reqOpts, _, err := c.genRequest(t.Context(), in, opts...)
 		assert.NoError(t, err)
 		assert.Len(t, reqOpts, 2)
+	})
+
+	t.Run("config custom headers", func(t *testing.T) {
+		c := &Client{config: &Config{
+			Model:         "test-model",
+			CustomHeaders: map[string]string{"x-test": "y"},
+		}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+
+		_, _, reqOpts, _, err := c.genRequest(t.Context(), in)
+		assert.NoError(t, err)
+		assert.Len(t, reqOpts, 1)
 	})
 
 	t.Run("forced tool choice without tools returns error", func(t *testing.T) {

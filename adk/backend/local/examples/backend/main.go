@@ -222,6 +222,46 @@ func main() {
 	}
 	fmt.Println()
 
+	// ========================================
+	// Example 8: MultiModalRead (image / PDF / fallback)
+	// ========================================
+	fmt.Println("Example 8: MultiModalRead")
+	fmt.Println("-------------------------")
+	fmt.Println("Reading the .txt file via MultiModalRead (delegates to Read for non-media)")
+
+	mmResp, err := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: filePath},
+	})
+	if err != nil {
+		log.Fatalf("✗ Failed to multimodal read: %v", err)
+	}
+	if mmResp.FileContent != nil {
+		fmt.Println("✓ Got text content via fallback Read path:")
+		fmt.Println("─────────────────────────")
+		fmt.Print(mmResp.FileContent.Content)
+		fmt.Println("─────────────────────────")
+	} else {
+		fmt.Printf("✓ Got %d multimodal part(s)\n", len(mmResp.Parts))
+	}
+	fmt.Println()
+
+	// For images / PDFs, MultiModalRead returns structured Parts:
+	//
+	//   resp, _ := backend.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+	//       ReadRequest: filesystem.ReadRequest{FilePath: "/path/to/file.pdf"},
+	//       Pages:       "1-5", // optional: render pages 1..5 as images
+	//   })
+	//   for _, part := range resp.Parts {
+	//       // part.Type is FileContentPartTypeImage or FileContentPartTypePDF
+	//       // part.MIMEType identifies the format; part.Data holds the bytes.
+	//       _ = part
+	//   }
+	//
+	// Tune limits (image/PDF size, page count, render DPI) via:
+	//   local.NewBackend(ctx, &local.Config{
+	//       MultiModalRead: local.MultiModalReadConfig{MaxImageSizeMB: 30, PDFRenderDPI: 200},
+	//   })
+
 	fmt.Println("========================================")
 	fmt.Println("✓ All examples completed successfully!")
 	fmt.Println("========================================")

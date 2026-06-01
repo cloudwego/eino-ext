@@ -53,7 +53,7 @@ High-level abstractions for building AI agents. Encapsulates the model-tool-loop
 | **Runner** | Executes agents, manages checkpoints, emits event streams |
 | **Middleware (Handlers)** | Intercept and extend agent behavior (filesystem, summarization, plan-task, etc.) |
 | **Interrupt/Resume** | Human-in-the-loop: pause agent, get user input, resume from checkpoint |
-| **AgentAsTool** | Wrap an agent as a tool callable by another agent |
+| **AgentTool** | Wrap an agent as a tool callable by another agent |
 
 -> Use `/eino-agent` for building agents, configuring middleware, runners, and human-in-the-loop.
 
@@ -80,7 +80,7 @@ Shared data types used across all layers:
 | Package | Contains |
 |---------|----------|
 | `schema` | Message, Document, ToolInfo, StreamReader |
-| `components/model` | ChatModel interfaces |
+| `components/model` | ChatModel and AgenticModel interfaces |
 | `components/tool` | Tool interfaces (BaseTool, InvokableTool, StreamableTool, Enhanced variants) |
 | `components/embedding` | Embedder interface |
 | `components/retriever` | Retriever interface |
@@ -129,5 +129,5 @@ Shared data types used across all layers:
 1. Route to the appropriate skill (`/eino-component`, `/eino-compose`, `/eino-agent`) when the question is specific. Consult the "Choosing Your Approach" table.
 2. Always provide Go code examples using real import paths from `github.com/cloudwego/eino` and `github.com/cloudwego/eino-ext`.
 3. For component implementation details, always read the provider's reference file before generating code. Do not assume constructor or config naming conventions.
-4. Prefer ADK (ChatModelAgent + Runner) for agent use cases over manually building ReAct loops with compose graphs.
+4. Prefer ADK (ChatModelAgent + Runner) for agent use cases over manually building ReAct loops with compose graphs. For interactive multi-turn applications needing preemption and lifecycle management, recommend TurnLoop.
 5. When showing streaming code, always include `defer stream.Close()`.

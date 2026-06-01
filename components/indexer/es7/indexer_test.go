@@ -28,8 +28,10 @@ import (
 
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
+	einoindexer "github.com/cloudwego/eino/components/indexer"
 	"github.com/cloudwego/eino/schema"
 	elasticsearch "github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v7/esutil"
 	. "github.com/smartystreets/goconvey/convey"
 )
 
@@ -374,6 +376,42 @@ func TestIndexer_bulkAdd(t *testing.T) {
 			_, err := indexer.Store(ctx, docs)
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldContainSubstring, "assert value as string failed")
+		})
+
+		PatchConvey("with index option", func() {
+			bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{})
+			So(err, ShouldBeNil)
+
+			var (
+				addedItems []esutil.BulkIndexerItem
+				bulkConfig esutil.BulkIndexerConfig
+			)
+			Mock(esutil.NewBulkIndexer).To(func(cfg esutil.BulkIndexerConfig) (esutil.BulkIndexer, error) {
+				bulkConfig = cfg
+				return bi, nil
+			}).Build()
+			Mock(GetMethod(bi, "Add")).To(func(ctx context.Context, item esutil.BulkIndexerItem) error {
+				addedItems = append(addedItems, item)
+				return nil
+			}).Build()
+			Mock(GetMethod(bi, "Close")).Return(nil).Build()
+
+			idx, _ := NewIndexer(ctx, &IndexerConfig{
+				Client: client,
+				Index:  "default_index",
+				DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+					return map[string]FieldValue{
+						"content": {Value: doc.Content},
+					}, nil
+				},
+			})
+
+			ids, err := idx.Store(ctx, []*schema.Document{{ID: "1", Content: "test"}}, einoindexer.WithIndex("override_index"))
+			So(err, ShouldBeNil)
+			So(ids, ShouldResemble, []string{"1"})
+			So(bulkConfig.Index, ShouldEqual, "override_index")
+			So(addedItems, ShouldHaveLength, 1)
+			So(addedItems[0].Index, ShouldEqual, "override_index")
 		})
 	})
 }
