@@ -129,12 +129,22 @@ type Config struct {
     
     // Public determines if traces are publicly accessible (Optional)
     Public bool
+
+    // DisableTraceIO disables automatically writing root run input/output
+    // to trace input/output (Optional)
+    DisableTraceIO bool
 }
 ```
 
 ## Trace Options
 
 You can customize individual traces using the `SetTrace` function:
+
+By default, the callback writes the root run input/output to the trace
+input/output fields. Use `WithInput` when you want to provide the trace input
+manually; use `UpdateTraceOutput` after the run when you want to override the
+trace output manually. Set `DisableTraceIO` to `true` to turn off automatic
+trace input/output updates.
 
 ```go
 ctx = langfuse.SetTrace(ctx,

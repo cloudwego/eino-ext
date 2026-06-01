@@ -54,6 +54,7 @@ func WithUserID(userID string) TraceOption {
 func WithInput(input string) TraceOption {
 	return func(o *traceOptions) {
 		o.Input = input
+		o.inputSet = true
 	}
 }
 func WithSessionID(sessionID string) TraceOption {
@@ -97,6 +98,7 @@ type traceOptions struct {
 	Name        string
 	UserID      string
 	Input       string
+	inputSet    bool
 	SessionID   string
 	Release     string
 	Tags        []string
@@ -127,7 +129,8 @@ func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) 
 		return nil, fmt.Errorf("create trace error: %v", err)
 	}
 	s := &langfuseState{
-		traceID: traceID,
+		traceID:       traceID,
+		traceInputSet: options.inputSet,
 	}
 	return s, nil
 }

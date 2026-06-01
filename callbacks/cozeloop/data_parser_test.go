@@ -376,6 +376,116 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 	})
 }
 
+func Test_defaultDataParser_ParseChatModelStreamOutput_MergeCumulativeTokenUsage(t *testing.T) {
+	mockey.PatchConvey("测试 ChatModel 流式输出合并 token usage", t, func() {
+		outsr, outsw := schema.Pipe[callbacks.CallbackOutput](3)
+		outsw.Send(&model.CallbackOutput{
+			Message: &schema.Message{Role: schema.Assistant, Content: "assistant"},
+			TokenUsage: &model.TokenUsage{
+				PromptTokens: 6900,
+				PromptTokenDetails: model.PromptTokenDetails{
+					CachedTokens: 3265,
+				},
+				CompletionTokens: 1,
+				TotalTokens:      6901,
+			},
+		}, nil)
+		outsw.Send(&model.CallbackOutput{
+			Message: &schema.Message{Role: schema.Assistant, Content: " message"},
+			TokenUsage: &model.TokenUsage{
+				CompletionTokens: 69,
+			},
+		}, nil)
+		outsw.Close()
+
+		d := defaultDataParser{}
+		result := d.ParseChatModelStreamOutput(context.Background(), outsr)
+
+		convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 6900)
+		convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 3265)
+		convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 69)
+		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 6969)
+	})
+
+	mockey.PatchConvey("测试 ChatModel 流式输出使用最终累计 token usage", t, func() {
+		outsr, outsw := schema.Pipe[callbacks.CallbackOutput](3)
+		outsw.Send(&model.CallbackOutput{
+			Message: &schema.Message{Role: schema.Assistant, Content: "assistant"},
+			TokenUsage: &model.TokenUsage{
+				PromptTokens:     2679,
+				CompletionTokens: 3,
+				TotalTokens:      2682,
+			},
+		}, nil)
+		outsw.Send(&model.CallbackOutput{
+			Message: &schema.Message{Role: schema.Assistant, Content: " message"},
+			TokenUsage: &model.TokenUsage{
+				PromptTokens:     10682,
+				CompletionTokens: 510,
+				TotalTokens:      11192,
+			},
+		}, nil)
+		outsw.Close()
+
+		d := defaultDataParser{}
+		result := d.ParseChatModelStreamOutput(context.Background(), outsr)
+
+		convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 10682)
+		convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 510)
+		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 11192)
+	})
+}
+
+func Test_defaultDataParser_ParseAgenticModelStreamOutput_MergeMessageMetaTokenUsage(t *testing.T) {
+	mockey.PatchConvey("测试 AgenticModel 流式输出合并 message meta token usage", t, func() {
+		outsr, outsw := schema.Pipe[callbacks.CallbackOutput](3)
+		outsw.Send(&model.AgenticCallbackOutput{
+			Message: &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.AssistantGenText{Text: "assistant"}),
+				},
+				ResponseMeta: &schema.AgenticResponseMeta{
+					TokenUsage: &schema.TokenUsage{
+						PromptTokens: 6900,
+						PromptTokenDetails: schema.PromptTokenDetails{
+							CachedTokens: 3265,
+						},
+						CompletionTokens: 1,
+						TotalTokens:      6901,
+					},
+				},
+			},
+		}, nil)
+		outsw.Send(&model.AgenticCallbackOutput{
+			Message: &schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.AssistantGenText{Text: " message"}),
+				},
+				ResponseMeta: &schema.AgenticResponseMeta{
+					TokenUsage: &schema.TokenUsage{
+						CompletionTokens: 69,
+						CompletionTokensDetails: schema.CompletionTokensDetails{
+							ReasoningTokens: 12,
+						},
+					},
+				},
+			},
+		}, nil)
+		outsw.Close()
+
+		d := defaultDataParser{}
+		result := d.ParseAgenticModelStreamOutput(context.Background(), outsr)
+
+		convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 6900)
+		convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 3265)
+		convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 69)
+		convey.So(result[tracespec.ReasoningTokens], convey.ShouldEqual, 12)
+		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 6969)
+	})
+}
+
 // Test_defaultDataParser_tryConcatChunks 为 defaultDataParser 的 tryConcatChunks 方法编写单元测试
 func Test_defaultDataParser_tryConcatChunks(t *testing.T) {
 	mockey.PatchConvey("测试 defaultDataParser 的 tryConcatChunks 方法", t, func() {

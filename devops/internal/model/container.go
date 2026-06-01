@@ -383,7 +383,7 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddEmbeddingNode(node, ins, newOpts...)
-		
+
 	case components.ComponentOfRetriever:
 		ins, ok := gni.Instance.(retriever.Retriever)
 		if !ok {
@@ -405,6 +405,13 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 		}
 		return g.AddChatModelNode(node, ins, newOpts...)
 
+	case components.ComponentOfAgenticModel:
+		ins, ok := gni.Instance.(model.AgenticModel)
+		if !ok {
+			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
+		}
+		return g.AddAgenticModelNode(node, ins, newOpts...)
+
 	case components.ComponentOfPrompt:
 		ins, ok := gni.Instance.(prompt.ChatTemplate)
 		if !ok {
@@ -412,12 +419,26 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 		}
 		return g.AddChatTemplateNode(node, ins, newOpts...)
 
+	case components.ComponentOfAgenticPrompt:
+		ins, ok := gni.Instance.(prompt.AgenticChatTemplate)
+		if !ok {
+			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
+		}
+		return g.AddAgenticChatTemplateNode(node, ins, newOpts...)
+
 	case compose.ComponentOfToolsNode:
 		ins, ok := gni.Instance.(*compose.ToolsNode)
 		if !ok {
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddToolsNode(node, ins, newOpts...)
+
+	case compose.ComponentOfAgenticToolsNode:
+		ins, ok := gni.Instance.(*compose.AgenticToolsNode)
+		if !ok {
+			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
+		}
+		return g.AddAgenticToolsNode(node, ins, newOpts...)
 
 	case compose.ComponentOfLambda:
 		ins, ok := gni.Instance.(*compose.Lambda)

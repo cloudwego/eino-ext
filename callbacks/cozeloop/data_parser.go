@@ -458,13 +458,7 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 			chunks = append(chunks, cbOutput.Message)
 		}
 
-		if cbOutput.TokenUsage != nil {
-			usage = &model.TokenUsage{
-				PromptTokens:     cbOutput.TokenUsage.PromptTokens,
-				CompletionTokens: cbOutput.TokenUsage.CompletionTokens,
-				TotalTokens:      cbOutput.TokenUsage.TotalTokens,
-			}
-		}
+		usage = mergeCumulativeTokenUsage(usage, cbOutput.TokenUsage)
 
 		if cbOutput.Config != nil && !onceSet {
 			onceSet = true
@@ -532,14 +526,9 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 			chunks = append(chunks, cbOutput.Message)
 		}
 
-		if cbOutput.TokenUsage != nil {
-			usage = &model.TokenUsage{
-				PromptTokens:            cbOutput.TokenUsage.PromptTokens,
-				CompletionTokens:        cbOutput.TokenUsage.CompletionTokens,
-				TotalTokens:             cbOutput.TokenUsage.TotalTokens,
-				PromptTokenDetails:      cbOutput.TokenUsage.PromptTokenDetails,
-				CompletionTokensDetails: cbOutput.TokenUsage.CompletionTokensDetails,
-			}
+		usage = mergeCumulativeTokenUsage(usage, cbOutput.TokenUsage)
+		if cbOutput.Message != nil && cbOutput.Message.ResponseMeta != nil {
+			usage = mergeCumulativeTokenUsage(usage, schemaTokenUsageToModelTokenUsage(cbOutput.Message.ResponseMeta.TokenUsage))
 		}
 
 		if cbOutput.Config != nil && !onceSet {
@@ -584,6 +573,59 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 	}
 
 	return tags
+}
+
+// mergeCumulativeTokenUsage keeps the final request-level token usage from a
+// stream. Streaming callbacks may carry partial cumulative snapshots, and
+// TokenUsage does not preserve field-presence metadata, so each monotonically
+// increasing counter is merged by its largest observed value.
+func mergeCumulativeTokenUsage(dst, src *model.TokenUsage) *model.TokenUsage {
+	if src == nil {
+		return dst
+	}
+	if dst == nil {
+		dst = &model.TokenUsage{}
+	}
+
+	if src.PromptTokens > dst.PromptTokens {
+		dst.PromptTokens = src.PromptTokens
+	}
+	if src.CompletionTokens > dst.CompletionTokens {
+		dst.CompletionTokens = src.CompletionTokens
+	}
+	if src.TotalTokens > dst.TotalTokens {
+		dst.TotalTokens = src.TotalTokens
+	}
+	if src.PromptTokenDetails.CachedTokens > dst.PromptTokenDetails.CachedTokens {
+		dst.PromptTokenDetails.CachedTokens = src.PromptTokenDetails.CachedTokens
+	}
+	if src.CompletionTokensDetails.ReasoningTokens > dst.CompletionTokensDetails.ReasoningTokens {
+		dst.CompletionTokensDetails.ReasoningTokens = src.CompletionTokensDetails.ReasoningTokens
+	}
+
+	if total := dst.PromptTokens + dst.CompletionTokens; total > dst.TotalTokens {
+		dst.TotalTokens = total
+	}
+
+	return dst
+}
+
+func schemaTokenUsageToModelTokenUsage(usage *schema.TokenUsage) *model.TokenUsage {
+	if usage == nil {
+		return nil
+	}
+
+	return &model.TokenUsage{
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
+		CompletionTokens: usage.CompletionTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+		TotalTokens: usage.TotalTokens,
+	}
 }
 
 func (d defaultDataParser) ParseDefaultStreamInput(ctx context.Context, input *schema.StreamReader[callbacks.CallbackInput]) (chunks []any, err error) {

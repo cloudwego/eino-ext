@@ -118,6 +118,11 @@ type Config struct {
 	// Default: false
 	// Example: true
 	Public bool
+
+	// DisableTraceIO disables automatically writing root run input/output to the
+	// Langfuse trace input/output fields (Optional)
+	// Default: false
+	DisableTraceIO bool
 }
 
 func NewLangfuseHandler(cfg *Config) (handler *CallbackHandler, flusher func()) {
@@ -166,6 +171,8 @@ func NewLangfuseHandler(cfg *Config) (handler *CallbackHandler, flusher func()) 
 		release:   cfg.Release,
 		tags:      cfg.Tags,
 		public:    cfg.Public,
+
+		disableTraceIO: cfg.DisableTraceIO,
 	}, cli.Flush
 }
 
@@ -178,12 +185,16 @@ type CallbackHandler struct {
 	release   string
 	tags      []string
 	public    bool
+
+	disableTraceIO bool
 }
 
 type langfuseStateKey struct{}
 type langfuseState struct {
 	traceID       string
 	observationID string
+	traceInputSet bool
+	isRoot        bool
 }
 
 func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
@@ -195,6 +206,7 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	if state == nil {
 		return ctx
 	}
+	isRoot := state.observationID == ""
 	if info.Component == components.ComponentOfChatModel {
 		mcbi := model.ConvCallbackInput(input)
 
@@ -219,10 +231,21 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 			log.Printf("create generation error: %v, runinfo: %+v", err, info)
 			return ctx
 		}
-		return context.WithValue(ctx, langfuseStateKey{}, &langfuseState{
+		nState := &langfuseState{
 			traceID:       state.traceID,
 			observationID: generationID,
-		})
+			traceInputSet: state.traceInputSet,
+			isRoot:        isRoot,
+		}
+		if c.shouldUpdateTraceInput(nState) {
+			in, err_ := sonic.MarshalString(input)
+			if err_ != nil {
+				log.Printf("marshal trace input error: %v, runinfo: %+v", err_, info)
+			} else {
+				c.updateTraceInput(ctx, state.traceID, in)
+			}
+		}
+		return context.WithValue(ctx, langfuseStateKey{}, nState)
 	}
 
 	in, err := sonic.MarshalString(input)
@@ -245,10 +268,16 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 		log.Printf("create span error: %v", err)
 		return ctx
 	}
-	return context.WithValue(ctx, langfuseStateKey{}, &langfuseState{
+	nState := &langfuseState{
 		traceID:       state.traceID,
 		observationID: spanID,
-	})
+		traceInputSet: state.traceInputSet,
+		isRoot:        isRoot,
+	}
+	if c.shouldUpdateTraceInput(nState) {
+		c.updateTraceInput(ctx, state.traceID, in)
+	}
+	return context.WithValue(ctx, langfuseStateKey{}, nState)
 }
 
 func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, output callbacks.CallbackOutput) context.Context {
@@ -283,6 +312,14 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 		if err != nil {
 			log.Printf("end generation error: %v, runinfo: %+v", err, info)
 		}
+		if c.shouldUpdateTraceOutput(state) {
+			out, err_ := sonic.MarshalString(output)
+			if err_ != nil {
+				log.Printf("marshal trace output error: %v, runinfo: %+v", err_, info)
+			} else {
+				c.UpdateTraceOutput(ctx, state.traceID, out)
+			}
+		}
 		return ctx
 	}
 
@@ -302,6 +339,9 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 	})
 	if err != nil {
 		log.Printf("end span fail: %v, runinfo: %+v", err, info)
+	}
+	if c.shouldUpdateTraceOutput(state) {
+		c.UpdateTraceOutput(ctx, state.traceID, out)
 	}
 	return ctx
 }
@@ -334,6 +374,9 @@ func (c *CallbackHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 		if reportErr != nil {
 			log.Printf("end generation fail: %v, runinfo: %+v, execute error: %v", reportErr, info, err)
 		}
+		if c.shouldUpdateTraceOutput(state) {
+			c.UpdateTraceOutput(ctx, state.traceID, err.Error())
+		}
 		return ctx
 	}
 
@@ -350,6 +393,9 @@ func (c *CallbackHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 	if reportErr != nil {
 		log.Printf("end span fail: %v, runinfo: %+v, execute error: %v", reportErr, info, err)
 	}
+	if c.shouldUpdateTraceOutput(state) {
+		c.UpdateTraceOutput(ctx, state.traceID, err.Error())
+	}
 	return ctx
 }
 
@@ -362,6 +408,7 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 	if state == nil {
 		return ctx
 	}
+	isRoot := state.observationID == ""
 
 	if info.Component == components.ComponentOfChatModel {
 		generationID, err := c.cli.CreateGeneration(&langfuse.GenerationEventBody{
@@ -377,6 +424,12 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 		if err != nil {
 			log.Printf("create generation error: %v, runinfo: %+v", err, info)
 			return ctx
+		}
+		nState := &langfuseState{
+			traceID:       state.traceID,
+			observationID: generationID,
+			traceInputSet: state.traceInputSet,
+			isRoot:        isRoot,
 		}
 
 		go func() {
@@ -420,12 +473,17 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 			if err != nil {
 				log.Printf("update stream generation fail: %v, runinfo: %+v", err, info)
 			}
+			if c.shouldUpdateTraceInput(nState) {
+				in, err__ := sonic.MarshalString(ins)
+				if err__ != nil {
+					log.Printf("marshal trace stream input error: %v, runinfo: %+v", err__, info)
+				} else {
+					c.updateTraceInput(ctx, nState.traceID, in)
+				}
+			}
 		}()
 
-		return context.WithValue(ctx, langfuseStateKey{}, &langfuseState{
-			traceID:       state.traceID,
-			observationID: generationID,
-		})
+		return context.WithValue(ctx, langfuseStateKey{}, nState)
 	}
 
 	spanID, err := c.cli.CreateSpan(&langfuse.SpanEventBody{
@@ -441,6 +499,12 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 	if err != nil {
 		log.Printf("create span error: %v", err)
 		return ctx
+	}
+	nState := &langfuseState{
+		traceID:       state.traceID,
+		observationID: spanID,
+		traceInputSet: state.traceInputSet,
+		isRoot:        isRoot,
 	}
 
 	go func() {
@@ -480,12 +544,12 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 		if err != nil {
 			log.Printf("update stream span error: %v", err)
 		}
+		if c.shouldUpdateTraceInput(nState) {
+			c.updateTraceInput(ctx, nState.traceID, in)
+		}
 	}()
 
-	return context.WithValue(ctx, langfuseStateKey{}, &langfuseState{
-		traceID:       state.traceID,
-		observationID: spanID,
-	})
+	return context.WithValue(ctx, langfuseStateKey{}, nState)
 }
 
 func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callbacks.RunInfo, output *schema.StreamReader[callbacks.CallbackOutput]) context.Context {
@@ -545,6 +609,14 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 			if err != nil {
 				log.Printf("end stream generation error: %v, runinfo: %+v", err, info)
 			}
+			if c.shouldUpdateTraceOutput(state) {
+				out, err_ := sonic.MarshalString(outs)
+				if err_ != nil {
+					log.Printf("marshal trace stream output error: %v, runinfo: %+v", err_, info)
+				} else {
+					c.UpdateTraceOutput(ctx, state.traceID, out)
+				}
+			}
 		}()
 		return ctx
 	}
@@ -585,9 +657,37 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 		if err != nil {
 			log.Printf("end stream span fail: %v, runinfo: %+v", err, info)
 		}
+		if c.shouldUpdateTraceOutput(state) {
+			c.UpdateTraceOutput(ctx, state.traceID, out)
+		}
 	}()
 
 	return ctx
+}
+
+func (c *CallbackHandler) updateTraceInput(ctx context.Context, traceID string, input string) {
+	_ = ctx
+	err := c.cli.EndTrace(&langfuse.TraceEventBody{
+		BaseEventBody: langfuse.BaseEventBody{
+			ID: traceID,
+		},
+		Input: input,
+	})
+	if err != nil {
+		log.Printf("input end trace fail: %v, traceID: %s", err, traceID)
+	}
+}
+
+func (c *CallbackHandler) shouldUpdateTraceInput(state *langfuseState) bool {
+	return c.shouldUpdateTraceIO(state) && !state.traceInputSet
+}
+
+func (c *CallbackHandler) shouldUpdateTraceOutput(state *langfuseState) bool {
+	return c.shouldUpdateTraceIO(state)
+}
+
+func (c *CallbackHandler) shouldUpdateTraceIO(state *langfuseState) bool {
+	return state != nil && state.isRoot && !c.disableTraceIO && len(state.traceID) > 0
 }
 
 // UpdateTraceOutput pushes final trace output to Langfuse (via ACL EndTrace).

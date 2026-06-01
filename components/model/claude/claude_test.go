@@ -354,6 +354,32 @@ func TestConvStreamEvent(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "end_turn", message.ResponseMeta.FinishReason)
 		assert.Equal(t, 10, message.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 0, message.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 0, message.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
+		assert.Equal(t, 0, message.ResponseMeta.Usage.TotalTokens)
+	})
+
+	mockey.PatchConvey("message delta event with prompt usage", t, func() {
+		event := anthropic.MessageStreamEventUnion{}
+		defer mockey.Mock(anthropic.MessageStreamEventUnion.AsAny).Return(anthropic.MessageDeltaEvent{
+			Delta: anthropic.MessageDeltaEventDelta{
+				StopReason: "end_turn",
+			},
+			Usage: anthropic.MessageDeltaUsage{
+				InputTokens:              5,
+				CacheReadInputTokens:     3,
+				CacheCreationInputTokens: 2,
+				OutputTokens:             10,
+			},
+		}).Build().UnPatch()
+
+		message, err := convStreamEvent(event, streamCtx)
+		assert.NoError(t, err)
+		assert.Equal(t, "end_turn", message.ResponseMeta.FinishReason)
+		assert.Equal(t, 10, message.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 3, message.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
+		assert.Equal(t, 10, message.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 20, message.ResponseMeta.Usage.TotalTokens)
 	})
 
 	mockey.PatchConvey("content block start event", t, func() {
@@ -374,6 +400,53 @@ func TestConvStreamEvent(t *testing.T) {
 		assert.Equal(t, message.ToolCalls[0].Function.Name, "tool")
 		assert.Equal(t, message.ToolCalls[0].Function.Arguments, "xxx")
 	})
+}
+
+func TestMergeClaudeStreamTokenUsage(t *testing.T) {
+	usage := mergeClaudeStreamTokenUsage(nil, &schema.TokenUsage{
+		PromptTokens: 6900,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: 3265,
+		},
+		CompletionTokens: 1,
+		TotalTokens:      6901,
+	})
+	usage = mergeClaudeStreamTokenUsage(usage, &schema.TokenUsage{
+		CompletionTokens: 69,
+	})
+
+	assert.Equal(t, 6900, usage.PromptTokens)
+	assert.Equal(t, 3265, usage.PromptTokenDetails.CachedTokens)
+	assert.Equal(t, 69, usage.CompletionTokens)
+	assert.Equal(t, 6969, usage.TotalTokens)
+}
+
+func TestApplyClaudeStreamUsageClonesCumulativeUsage(t *testing.T) {
+	var usage *schema.TokenUsage
+	first := &schema.Message{
+		ResponseMeta: &schema.ResponseMeta{
+			Usage: &schema.TokenUsage{
+				PromptTokens:     10,
+				CompletionTokens: 1,
+				TotalTokens:      11,
+			},
+		},
+	}
+	usage = applyClaudeStreamUsage(first, usage)
+
+	second := &schema.Message{
+		ResponseMeta: &schema.ResponseMeta{
+			Usage: &schema.TokenUsage{
+				CompletionTokens: 5,
+			},
+		},
+	}
+	usage = applyClaudeStreamUsage(second, usage)
+
+	assert.Equal(t, 11, first.ResponseMeta.Usage.TotalTokens)
+	assert.Equal(t, 10, second.ResponseMeta.Usage.PromptTokens)
+	assert.Equal(t, 5, second.ResponseMeta.Usage.CompletionTokens)
+	assert.Equal(t, 15, second.ResponseMeta.Usage.TotalTokens)
 }
 
 func TestPanicErr(t *testing.T) {
