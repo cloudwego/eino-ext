@@ -7,8 +7,19 @@ A secure filesystem backend for EINO ADK that executes operations in Volcengine'
 ### Installation
 
 ```bash
-go get github.com/cloudwego/eino-ext/adk/backend/arksandbox
+go get github.com/cloudwego/eino-ext/adk/backend/agentkit
 ```
+
+#### Native dependency for `MultiModalRead` (PDF rendering)
+
+`MultiModalRead` rasterises PDF pages via [`go-fitz`](https://github.com/gen2brain/go-fitz),
+which loads MuPDF at runtime through `purego`. Install MuPDF before running:
+
+- macOS: `brew install mupdf`
+- Ubuntu/Debian: `sudo apt-get install -y libmupdf-dev`
+- CentOS/RHEL: `sudo yum install -y mupdf-devel`
+
+If you don't use `MultiModalRead`, MuPDF is not required at runtime.
 
 ### Basic Usage
 
@@ -18,21 +29,21 @@ import (
     "os"
     "time"
     
-    "github.com/cloudwego/eino-ext/adk/backend/arksandbox"
+    "github.com/cloudwego/eino-ext/adk/backend/agentkit"
     "github.com/cloudwego/eino/adk/middlewares/filesystem"
 )
 
 // Configure with credentials
-config := &arksandbox.Config{
+config := &agentkit.Config{
     AccessKeyID:     os.Getenv("VOLC_ACCESS_KEY_ID"),
     SecretAccessKey: os.Getenv("VOLC_SECRET_ACCESS_KEY"),
     ToolID:          os.Getenv("VOLC_TOOL_ID"),
     UserSessionID:   "session-" + time.Now().Format("20060102-150405"),
-    Region:          arksandbox.RegionOfBeijing,
+    Region:          agentkit.RegionOfBeijing,
 }
 
 // Initialize backend
-backend, err := arksandbox.NewArkSandboxBackend(config)
+backend, err := agentkit.NewSandboxToolBackend(config)
 if err != nil {
     panic(err)
 }
@@ -67,6 +78,18 @@ type Config struct {
     SessionTTL    int          // Default: 1800 seconds (30 min)
     ExecutionTimeout int       
     Timeout       time.Duration // HTTP client timeout
+
+    // Optional: image/PDF/DPI limits for MultiModalRead.
+    // Zero/negative fields fall back to defaults; values above hard-caps are silently clamped.
+    MultiModalRead MultiModalReadConfig
+}
+
+type MultiModalReadConfig struct {
+    MaxImageSizeMB        int     // image read size limit (MB).      Default 10,  hard-cap 2048
+    MaxPDFSizeMB          int     // full PDF read size limit (MB).   Default 20,  hard-cap 2048
+    MaxPagedPDFSizeMB     int     // paged PDF read size limit (MB).  Default 100, hard-cap 2048
+    MaxPDFPagesPerRequest int     // max pages per paged read.        Default 20,  hard-cap 1000
+    PDFRenderDPI          float64 // DPI when rasterising PDF pages.  Default 150, hard-cap 600
 }
 ```
 
@@ -98,7 +121,8 @@ See the following examples for more usage:
 
 - **`LsInfo(ctx, req)`** - List directory contents
 - **`Read(ctx, req)`** - Read file with optional line offset/limit
-- **`Write(ctx, req)`** - Create new file (fails if exists)
+- **`MultiModalRead(ctx, req)`** - Read images/PDFs as structured multimodal parts; non-image/non-PDF files fall back to `Read`. Defaults: image 10 MB / PDF 20 MB / paged-PDF 100 MB up to 20 pages @ 150 DPI. Tunable via `Config.MultiModalRead`. `Pages` accepts a single page (`"3"`) or an inclusive range (`"1-5"`).
+- **`Write(ctx, req)`** - Write file content; creates the file if it doesn't exist, otherwise **overwrites** existing content (parent directories are created automatically).
 - **`Edit(ctx, req)`** - Search and replace in file
 - **`GrepRaw(ctx, req)`** - Search pattern in files
 - **`GlobInfo(ctx, req)`** - Find files by glob pattern
@@ -119,17 +143,13 @@ See the following examples for more usage:
 
 ```go
 // Each user/context should have unique session ID
-config := &arksandbox.Config{
+config := &agentkit.Config{
     UserSessionID: fmt.Sprintf("user-%s-%d", userID, time.Now().Unix()),
     SessionTTL:    3600,  // 1 hour
 }
 ```
 
 ## Troubleshooting
-
-**File Already Exists**
-- `Write()` fails if file exists (safety feature)
-- Delete file first or use unique filenames
 
 **Authentication Errors**
 - Verify credentials are correct

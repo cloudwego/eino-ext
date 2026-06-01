@@ -485,6 +485,44 @@ func TestBulkAdd(t *testing.T) {
 			convey.So(addedItems[1].DocumentID, convey.ShouldEqual, "456")
 		})
 
+		PatchConvey("test WithIndex overrides configured index", func() {
+			var (
+				addedItems []opensearchutil.BulkIndexerItem
+				bulkConfig opensearchutil.BulkIndexerConfig
+			)
+			Mock(opensearchutil.NewBulkIndexer).To(func(cfg opensearchutil.BulkIndexerConfig) (opensearchutil.BulkIndexer, error) {
+				bulkConfig = cfg
+				return bi, nil
+			}).Build()
+			Mock(GetMethod(bi, "Add")).To(func(ctx context.Context, item opensearchutil.BulkIndexerItem) error {
+				addedItems = append(addedItems, item)
+				return nil
+			}).Build()
+			Mock(GetMethod(bi, "Close")).Return(nil).Build()
+
+			i := &Indexer{
+				client: client,
+				config: &IndexerConfig{
+					Index:     "mock_index",
+					BatchSize: 5,
+					DocumentToFields: func(ctx context.Context, doc *schema.Document) (map[string]FieldValue, error) {
+						return map[string]FieldValue{
+							"content": {Value: doc.Content},
+							"field":   {Value: doc.MetaData["field"]},
+						}, nil
+					},
+				},
+			}
+			overrideIndex := "override_index"
+			err := i.bulkAdd(ctx, docs, &indexer.Options{Index: &overrideIndex})
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(bulkConfig.Index, convey.ShouldEqual, "override_index")
+			convey.So(addedItems, convey.ShouldHaveLength, 2)
+			for _, item := range addedItems {
+				convey.So(item.Index, convey.ShouldEqual, "override_index")
+			}
+		})
+
 		PatchConvey("test success with embedding", func() {
 			var addedItems []opensearchutil.BulkIndexerItem
 			Mock(opensearchutil.NewBulkIndexer).Return(bi, nil).Build()
