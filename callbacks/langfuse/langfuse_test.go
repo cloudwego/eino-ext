@@ -399,14 +399,17 @@ func TestTraceIOAutoPromotionStream(t *testing.T) {
 	mockLangfuse.EXPECT().CreateSpan(gomock.Any()).Return("span-id", nil).Times(1)
 	mockLangfuse.EXPECT().EndSpan(gomock.Any()).Return(nil).Times(2)
 
-	var traceInputs, traceOutputs []string
+	type traceIOEvent struct {
+		id     string
+		input  string
+		output string
+	}
+	traceEvents := make(chan traceIOEvent, 2)
 	mockLangfuse.EXPECT().EndTrace(gomock.Any()).DoAndReturn(func(body *langfuse.TraceEventBody) error {
-		assert.Equal(t, "trace-id", body.ID)
-		if body.Input != "" {
-			traceInputs = append(traceInputs, body.Input)
-		}
-		if body.Output != "" {
-			traceOutputs = append(traceOutputs, body.Output)
+		traceEvents <- traceIOEvent{
+			id:     body.ID,
+			input:  body.Input,
+			output: body.Output,
 		}
 		return nil
 	}).Times(2)
@@ -421,7 +424,21 @@ func TestTraceIOAutoPromotionStream(t *testing.T) {
 	outsw.Close()
 	cbh.OnEndWithStreamOutput(ctx, &callbacks.RunInfo{Name: "root"}, outsr)
 
-	time.Sleep(100 * time.Millisecond)
+	var traceInputs, traceOutputs []string
+	for i := 0; i < 2; i++ {
+		select {
+		case event := <-traceEvents:
+			assert.Equal(t, "trace-id", event.id)
+			if event.input != "" {
+				traceInputs = append(traceInputs, event.input)
+			}
+			if event.output != "" {
+				traceOutputs = append(traceOutputs, event.output)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for trace IO update")
+		}
+	}
 
 	assert.Equal(t, []string{"[\"stream input\"]"}, traceInputs)
 	assert.Equal(t, []string{"[\"stream output\"]"}, traceOutputs)
