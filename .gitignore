@@ -40,7 +40,10 @@ output/*
 
 # Claude files
 .claude/
+.claude-trace
 
 # Data files
 *.jsonl
 *.csv
+
+*.local.md

@@ -17,6 +17,7 @@
 package ark
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -203,6 +204,71 @@ func TestFPSFunctions(t *testing.T) {
 		// Boundary case: nil input
 		setOutputVideoFPS(nil, 4.0)
 		assert.Nil(t, GetOutputVideoFPS(nil))
+	})
+}
+
+func TestGetCacheExpirationAfterJSONUnmarshal(t *testing.T) {
+	t.Run("json unmarshal loses int64 to float64", func(t *testing.T) {
+		// Simulate: message extra set with original typed value, then serialized and deserialized.
+		// After json.Unmarshal into map[string]any, int64 becomes float64.
+		msg := &schema.Message{}
+		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(1718000000))
+
+		data, err := json.Marshal(msg)
+		assert.NoError(t, err)
+
+		var unmarshaled schema.Message
+		err = json.Unmarshal(data, &unmarshaled)
+		assert.NoError(t, err)
+
+		// After unmarshal, the value in Extra is float64, not arkResponseCacheExpireAt.
+		raw := unmarshaled.Extra[keyOfResponseCacheExpireAt]
+		_, isOriginalType := raw.(arkResponseCacheExpireAt)
+		assert.False(t, isOriginalType, "after json unmarshal, original type should be lost")
+		_, isFloat64 := raw.(float64)
+		assert.True(t, isFloat64, "after json unmarshal, numeric value should be float64")
+
+		// GetCacheExpiration should still return the correct value via float64 fallback.
+		expireAt, ok := GetCacheExpiration(&unmarshaled)
+		assert.True(t, ok)
+		assert.Equal(t, int64(1718000000), expireAt)
+	})
+
+	t.Run("direct typed value", func(t *testing.T) {
+		msg := &schema.Message{}
+		setResponseCacheExpireAt(msg, arkResponseCacheExpireAt(1718000000))
+
+		expireAt, ok := GetCacheExpiration(msg)
+		assert.True(t, ok)
+		assert.Equal(t, int64(1718000000), expireAt)
+	})
+
+	t.Run("raw float64 in extra", func(t *testing.T) {
+		msg := &schema.Message{
+			Extra: map[string]any{
+				keyOfResponseCacheExpireAt: float64(1718000000),
+			},
+		}
+
+		expireAt, ok := GetCacheExpiration(msg)
+		assert.True(t, ok)
+		assert.Equal(t, int64(1718000000), expireAt)
+	})
+
+	t.Run("nil message", func(t *testing.T) {
+		expireAt, ok := GetCacheExpiration(nil)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), expireAt)
+	})
+
+	t.Run("missing key", func(t *testing.T) {
+		msg := &schema.Message{
+			Extra: map[string]any{},
+		}
+
+		expireAt, ok := GetCacheExpiration(msg)
+		assert.False(t, ok)
+		assert.Equal(t, int64(0), expireAt)
 	})
 }
 

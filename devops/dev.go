@@ -25,14 +25,18 @@ import (
 	"github.com/cloudwego/eino-ext/devops/internal/utils/safego"
 )
 
-// Init start eino devops server
+// Init start eino devops server.
+// By default, the server listens on 127.0.0.1:52538.
+// Use WithDevServerIP and WithDevServerPort to customize the listen address.
+// If the IP is unknown, you can set it to "0.0.0.0" to listen on all interfaces,
+// but be aware this may expose the server to external access and pose security risks.
 func Init(ctx context.Context, opts ...model.DevOption) error {
 	opt := model.NewDevOpt(opts)
 	apihandler.InitDebug(opt)
 
 	errCh := make(chan error)
 	safego.Go(ctx, func() {
-		errCh <- apihandler.StartHTTPServer(ctx, opt.DevServerPort)
+		errCh <- apihandler.StartHTTPServer(ctx, opt.DevServerIP, opt.DevServerPort)
 	})
 
 	select {

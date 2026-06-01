@@ -42,8 +42,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
-var _ model.ToolCallingChatModel = (*ChatModel)(nil)
-
 // NewChatModel creates a new Claude chat model instance
 //
 // Parameters:
@@ -107,8 +105,12 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		// Use direct Anthropic API
 		var opts []option.RequestOption
 
-		opts = append(opts, option.WithAPIKey(config.APIKey))
-
+		if config.APIKey != "" {
+			opts = append(opts, option.WithAPIKey(config.APIKey))
+		}
+		if config.AuthToken != "" {
+			opts = append(opts, option.WithAuthToken(config.AuthToken))
+		}
 		if config.BaseURL != nil {
 			opts = append(opts, option.WithBaseURL(*config.BaseURL))
 		}
@@ -125,7 +127,11 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, option.WithJSONSet(key, value))
 		}
 
-		cli = anthropic.NewClient(opts...)
+		if hasDirectAnthropicConfigAuth(config) {
+			cli = newDirectAnthropicClient(opts...)
+		} else {
+			cli = anthropic.NewClient(opts...)
+		}
 	}
 
 	// Auto-detect model from config or environment variable
@@ -147,6 +153,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		topK:                   config.TopK,
 		topP:                   config.TopP,
 		disableParallelToolUse: config.DisableParallelToolUse,
+		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
 	}, nil
 }
 
@@ -200,10 +207,14 @@ type Config struct {
 	// Optional. Example: "https://custom-claude-api.example.com"
 	BaseURL *string
 
-	// APIKey is your Anthropic API key
+	// APIKey is your Anthropic API key for direct Anthropic API access.
 	// Obtain from: https://console.anthropic.com/account/keys
-	// Required
+	// Optional when AuthToken is set.
 	APIKey string
+
+	// AuthToken is your Anthropic auth token for direct Anthropic API access.
+	// Optional when APIKey is set.
+	AuthToken string
 
 	// Model specifies which Claude model to use.
 	// If not set, auto-detected from ANTHROPIC_MODEL environment variable.
@@ -240,6 +251,10 @@ type Config struct {
 
 	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 
+	// ToolSearchAlgorithm specifies the server-side tool search algorithm.
+	// "bm25" or "regex". Default "bm25" when WithDeferredTools is used.
+	ToolSearchAlgorithm ToolSearchAlgorithm `json:"tool_search_algorithm"`
+
 	// Additional fields to set in the HTTP request header.
 	AdditionalHeaderFields map[string]string `json:"additional_header_fields"`
 
@@ -247,6 +262,13 @@ type Config struct {
 	// The values of the map must be JSON serializable.
 	AdditionalRequestFields map[string]any `json:"additional_request_fields"`
 }
+
+type ToolSearchAlgorithm string
+
+const (
+	ToolSearchAlgorithmBM25  ToolSearchAlgorithm = "bm25"
+	ToolSearchAlgorithmRegex ToolSearchAlgorithm = "regex"
+)
 
 type Thinking struct {
 	Enable       bool `json:"enable"`
@@ -267,6 +289,28 @@ type ChatModel struct {
 	origTools              []*schema.ToolInfo
 	toolChoice             *schema.ToolChoice
 	disableParallelToolUse *bool
+	origDeferredTools      []*schema.ToolInfo
+	toolSearchAlgorithm    ToolSearchAlgorithm
+}
+
+func hasDirectAnthropicConfigAuth(config *Config) bool {
+	return config.APIKey != "" || config.AuthToken != ""
+}
+
+func newDirectAnthropicClient(opts ...option.RequestOption) (r anthropic.Client) {
+	defaults := []option.RequestOption{option.WithEnvironmentProduction()}
+	if o, ok := os.LookupEnv("ANTHROPIC_BASE_URL"); ok {
+		defaults = append(defaults, option.WithBaseURL(o))
+	}
+	opts = append(defaults, opts...)
+
+	r = anthropic.Client{Options: opts}
+	r.Completions = anthropic.NewCompletionService(opts...)
+	r.Messages = anthropic.NewMessageService(opts...)
+	r.Models = anthropic.NewModelService(opts...)
+	r.Beta = anthropic.NewBetaService(opts...)
+
+	return
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -481,6 +525,19 @@ func toAnthropicToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam,
 	return result, nil
 }
 
+func toAnthropicDeferredToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUnionParam, error) {
+	result, err := toAnthropicToolParam(tools)
+	if err != nil {
+		return nil, err
+	}
+	for i := range result {
+		if result[i].OfTool != nil {
+			result[i].OfTool.DeferLoading = param.NewOpt(true)
+		}
+	}
+	return result, nil
+}
+
 func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.Message, error) {
 	userMsgIdx := -1
 	for i, msg := range input {
@@ -516,13 +573,14 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	}
 
 	commonOptions := model.GetCommonOptions(&model.Options{
-		Model:       &cm.model,
-		Temperature: cm.temperature,
-		MaxTokens:   &cm.maxTokens,
-		TopP:        cm.topP,
-		Stop:        cm.stopSequences,
-		Tools:       nil,
-		ToolChoice:  cm.toolChoice,
+		Model:         &cm.model,
+		Temperature:   cm.temperature,
+		MaxTokens:     &cm.maxTokens,
+		TopP:          cm.topP,
+		Stop:          cm.stopSequences,
+		Tools:         nil,
+		DeferredTools: nil,
+		ToolChoice:    cm.toolChoice,
 	}, opts...)
 	specOptions := model.GetImplSpecificOptions(&options{
 		TopK:                   cm.topK,
@@ -566,6 +624,11 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		return anthropic.MessageNewParams{}, err
 	}
 
+	// Collect tools from ToolSearchResult in Tool-role messages and add to params.Tools
+	if err = populateToolSearchResultTools(&params, msgs); err != nil {
+		return anthropic.MessageNewParams{}, err
+	}
+
 	return params, nil
 }
 
@@ -595,8 +658,10 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 			return fmt.Errorf("convert schema message fail: %w", err)
 		}
 
-		if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
-			hasSetMsgBreakPoint = true
+		if len(msgParam.Content) > 0 {
+			if ctrl := msgParam.Content[len(msgParam.Content)-1].GetCacheControl(); ctrl != nil && ctrl.Type != "" {
+				hasSetMsgBreakPoint = true
+			}
 		}
 
 		msgParams = append(msgParams, msgParam)
@@ -613,6 +678,42 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 	return nil
 }
 
+func populateToolSearchResultTools(params *anthropic.MessageNewParams, msgs []*schema.Message) error {
+	// Build set of existing tool names
+	existingNames := make(map[string]bool)
+	for _, t := range params.Tools {
+		if name := t.GetName(); name != nil {
+			existingNames[*name] = true
+		}
+	}
+
+	// Scan Tool-role messages for ToolSearchResult parts
+	for _, msg := range msgs {
+		if msg.Role != schema.Tool {
+			continue
+		}
+		for _, part := range msg.UserInputMultiContent {
+			if part.Type != schema.ChatMessagePartTypeToolSearchResult || part.ToolSearchResult == nil {
+				continue
+			}
+			for _, tool := range part.ToolSearchResult.Tools {
+				if existingNames[tool.Name] {
+					return fmt.Errorf("tool '%s' from ToolSearchResult already exists in tool list", tool.Name)
+				}
+				existingNames[tool.Name] = true
+			}
+			// Convert to deferred tool params and append
+			deferredTools, err := toAnthropicDeferredToolParam(part.ToolSearchResult.Tools)
+			if err != nil {
+				return fmt.Errorf("convert tool search result tools fail: %w", err)
+			}
+			params.Tools = append(params.Tools, deferredTools...)
+		}
+	}
+
+	return nil
+}
+
 func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOptions *model.Options, specOptions *options) error {
 	tools := cm.tools
 
@@ -621,6 +722,43 @@ func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOpt
 		if tools, err = toAnthropicToolParam(commonOptions.Tools); err != nil {
 			return err
 		}
+	}
+
+	toolSearchAlgorithm := cm.toolSearchAlgorithm
+	if len(commonOptions.DeferredTools) > 0 {
+		dt, err := toAnthropicDeferredToolParam(commonOptions.DeferredTools)
+		if err != nil {
+			return err
+		}
+		tools = append(tools, dt...)
+
+		if len(toolSearchAlgorithm) == 0 {
+			// if deferred tools have been configured, use bm25 by default
+			toolSearchAlgorithm = ToolSearchAlgorithmBM25
+		}
+	}
+
+	if len(toolSearchAlgorithm) > 0 {
+		switch toolSearchAlgorithm {
+		case ToolSearchAlgorithmBM25:
+			tools = append(tools, anthropic.ToolUnionParam{
+				OfToolSearchToolBm25_20251119: &anthropic.ToolSearchToolBm25_20251119Param{},
+			})
+		case ToolSearchAlgorithmRegex:
+			tools = append(tools, anthropic.ToolUnionParam{
+				OfToolSearchToolRegex20251119: &anthropic.ToolSearchToolRegex20251119Param{},
+			})
+		default:
+			return fmt.Errorf("unknown tool search algorithm: %s", toolSearchAlgorithm)
+		}
+	}
+
+	if commonOptions.ToolSearchTool != nil {
+		searchTools, err := toAnthropicToolParam([]*schema.ToolInfo{commonOptions.ToolSearchTool})
+		if err != nil {
+			return err
+		}
+		tools = append(tools, searchTools...)
 	}
 
 	if len(tools) > 0 && specOptions.AutoCacheControl != nil {
@@ -633,7 +771,12 @@ func (cm *ChatModel) populateTools(params *anthropic.MessageNewParams, commonOpt
 		}
 		// if no breakpoint has been set, a breakpoint will be set for the last tool
 		if !hasBreakpoint {
-			tools[len(tools)-1].OfTool.CacheControl = newCacheControlParam(specOptions.AutoCacheControl)
+			for i := len(tools) - 1; i >= 0; i-- {
+				if tools[i].OfTool != nil {
+					tools[i].OfTool.CacheControl = newCacheControlParam(specOptions.AutoCacheControl)
+					break
+				}
+			}
 		}
 	}
 
@@ -782,6 +925,17 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 				messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
 			}
 		}
+
+		// Restore tool_search events from Extra
+		if events := getToolSearchEvents(message); len(events) > 0 {
+			for _, event := range events {
+				block, err := restoreToolSearchEventBlock(event)
+				if err != nil {
+					return mp, fmt.Errorf("restore tool search event fail: %w", err)
+				}
+				messageParams = append(messageParams, block)
+			}
+		}
 	}
 
 	if len(message.UserInputMultiContent) > 0 && len(message.AssistantGenMultiContent) > 0 {
@@ -793,11 +947,45 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 			return mp, fmt.Errorf("user input multi content only support user role, got %s", message.Role)
 		}
 		if message.Role == schema.Tool {
-			m, err := convToolMultiContent(message.ToolCallID, message.UserInputMultiContent)
-			if err != nil {
-				return mp, err
+			// Check if this contains tool search results
+			hasToolSearchResult := false
+			for _, part := range message.UserInputMultiContent {
+				if part.Type == schema.ChatMessagePartTypeToolSearchResult {
+					hasToolSearchResult = true
+					break
+				}
 			}
-			messageParams = append(messageParams, m)
+
+			if hasToolSearchResult {
+				for _, part := range message.UserInputMultiContent {
+					if part.Type != schema.ChatMessagePartTypeToolSearchResult {
+						continue
+					}
+					if part.ToolSearchResult == nil {
+						return mp, fmt.Errorf("ToolSearchResult field must not be nil when Type is ChatMessagePartTypeToolSearchResult")
+					}
+					refs := make([]anthropic.ToolResultBlockParamContentUnion, 0, len(part.ToolSearchResult.Tools))
+					for _, tool := range part.ToolSearchResult.Tools {
+						refs = append(refs, anthropic.ToolResultBlockParamContentUnion{
+							OfToolReference: &anthropic.ToolReferenceBlockParam{
+								ToolName: tool.Name,
+							},
+						})
+					}
+					messageParams = append(messageParams, anthropic.ContentBlockParamUnion{
+						OfToolResult: &anthropic.ToolResultBlockParam{
+							ToolUseID: message.ToolCallID,
+							Content:   refs,
+						},
+					})
+				}
+			} else {
+				m, err := convToolMultiContent(message.ToolCallID, message.UserInputMultiContent)
+				if err != nil {
+					return mp, err
+				}
+				messageParams = append(messageParams, m)
+			}
 		} else {
 			for i := range message.UserInputMultiContent {
 				switch message.UserInputMultiContent[i].Type {
@@ -867,13 +1055,11 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		} else {
 			messageParams = append(messageParams, anthropic.NewTextBlock(message.Content))
 		}
-	} else {
+	} else if len(message.MultiContent) > 0 {
 		// The `MultiContent` field is deprecated. In its design, the `URL` field of `ImageURL`
 		// could contain either an HTTP URL or a Base64-encoded DATA URL. This is different from the new
 		// `UserInputMultiContent` and `AssistantGenMultiContent` fields, where `URL` and `Base64Data` are separate.
-		if len(message.MultiContent) > 0 {
-			log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
-		}
+		log.Printf("MultiContent is deprecated, please use UserInputMultiContent or AssistantGenMultiContent instead")
 		for i := range message.MultiContent {
 			switch message.MultiContent[i].Type {
 			case schema.ChatMessagePartTypeText:
@@ -916,6 +1102,11 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	if len(messageParams) > 0 && isBreakpointMessage(message) {
 		populateContentBlockBreakPoint(messageParams[len(messageParams)-1], getMessageBreakpointCacheControl(message))
 	}
+	if len(messageParams) == 0 {
+		// Compatibility handling for empty messages: an empty message is treated as
+		// one whose Content field is set but contains an empty string.
+		messageParams = append(messageParams, anthropic.NewTextBlock(""))
+	}
 
 	switch message.Role {
 	case schema.Assistant:
@@ -927,6 +1118,51 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	}
 
 	return mp, nil
+}
+
+func restoreToolSearchEventBlock(event ToolSearchEvent) (anthropic.ContentBlockParamUnion, error) {
+	switch event.Type {
+	case "server_tool_use":
+		return anthropic.ContentBlockParamUnion{
+			OfServerToolUse: &anthropic.ServerToolUseBlockParam{
+				ID:    event.ID,
+				Name:  anthropic.ServerToolUseBlockParamName(event.Name),
+				Input: event.Input,
+				Type:  "server_tool_use",
+			},
+		}, nil
+	case "tool_search_tool_result":
+		p := &anthropic.ToolSearchToolResultBlockParam{
+			ToolUseID: event.ToolUseID,
+			Type:      "tool_search_tool_result",
+		}
+
+		if event.Content != nil && event.Content.Type == "tool_search_tool_search_result" {
+			refs := make([]anthropic.ToolReferenceBlockParam, 0, len(event.Content.ToolReferences))
+			for _, ref := range event.Content.ToolReferences {
+				refs = append(refs, anthropic.ToolReferenceBlockParam{
+					ToolName: ref.ToolName,
+				})
+			}
+			p.Content = anthropic.ToolSearchToolResultBlockParamContentUnion{
+				OfRequestToolSearchToolSearchResultBlock: &anthropic.ToolSearchToolSearchResultBlockParam{
+					ToolReferences: refs,
+				},
+			}
+		} else if event.Content != nil {
+			p.Content = anthropic.ToolSearchToolResultBlockParamContentUnion{
+				OfRequestToolSearchToolResultError: &anthropic.ToolSearchToolResultErrorParam{
+					ErrorCode: anthropic.ToolSearchToolResultErrorCode(event.Content.ErrorCode),
+				},
+			}
+		}
+
+		return anthropic.ContentBlockParamUnion{
+			OfToolSearchToolResult: p,
+		}, nil
+	default:
+		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("unknown tool search event type: %s", event.Type)
+	}
 }
 
 func convToolMultiContent(callID string, parts []schema.MessageInputPart) (anthropic.ContentBlockParamUnion, error) {
@@ -1053,7 +1289,43 @@ func convContentBlockToEinoMsg(
 		dstMsg.ToolCalls = append(dstMsg.ToolCalls,
 			toolEvent(true, block.ID, block.Name, block.Input, streamCtx))
 	case anthropic.ServerToolUseBlock:
-		return fmt.Errorf("server_tool_use not supported")
+		name := string(block.Name)
+		if strings.Contains(name, "tool_search_tool_") {
+			inputJSON, err := json.Marshal(block.Input)
+			if err != nil {
+				return fmt.Errorf("marshal server_tool_use input fail: %w", err)
+			}
+			appendToolSearchEvent(dstMsg, ToolSearchEvent{
+				Type:  "server_tool_use",
+				ID:    block.ID,
+				Name:  name,
+				Input: inputJSON,
+			})
+		} else {
+			return fmt.Errorf("server_tool_use not supported: %s", name)
+		}
+	case anthropic.ToolSearchToolResultBlock:
+		event := ToolSearchEvent{
+			Type:      "tool_search_tool_result",
+			ToolUseID: block.ToolUseID,
+		}
+		content := block.Content
+		var toolRefs []ToolSearchEventToolReference
+		if len(content.ToolReferences) > 0 {
+			toolRefs = make([]ToolSearchEventToolReference, 0, len(content.ToolReferences))
+			for _, ref := range content.ToolReferences {
+				toolRefs = append(toolRefs, ToolSearchEventToolReference{
+					ToolName: ref.ToolName,
+				})
+			}
+		}
+		event.Content = &ToolSearchEventContent{
+			Type:           content.Type,
+			ToolReferences: toolRefs,
+			ErrorCode:      string(content.ErrorCode),
+			ErrorMessage:   content.ErrorMessage,
+		}
+		appendToolSearchEvent(dstMsg, event)
 	case anthropic.WebSearchToolResultBlock:
 		return fmt.Errorf("web_search tool not supported")
 	case anthropic.ThinkingBlock:

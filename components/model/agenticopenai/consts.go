@@ -1,0 +1,62 @@
+/*
+ * Copyright 2026 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package agenticopenai
+
+const chatImplType = "AgenticOpenAI/Chat"
+
+const responsesImplType = "AgenticOpenAI/Responses"
+
+const defaultBaseURL = "https://api.openai.com/v1"
+
+type ServerToolName string
+
+const (
+	ServerToolNameWebSearch       ServerToolName = "web_search"
+	ServerToolNameFileSearch      ServerToolName = "file_search"
+	ServerToolNameCodeInterpreter ServerToolName = "code_interpreter"
+	ServerToolNameImageGeneration ServerToolName = "image_generation"
+	ServerToolNameShell           ServerToolName = "shell"
+)
+
+type WebSearchAction string
+
+const (
+	WebSearchActionSearch   WebSearchAction = "search"
+	WebSearchActionOpenPage WebSearchAction = "open_page"
+	WebSearchActionFind     WebSearchAction = "find"
+)
+
+type ShellOutputOutcomeType string
+
+const (
+	ShellOutputOutcomeTypeTimeout ShellOutputOutcomeType = "timeout"
+	ShellOutputOutcomeTypeExit    ShellOutputOutcomeType = "exit"
+)
+
+type ShellEnvironmentType string
+
+const (
+	ShellEnvironmentTypeLocal              ShellEnvironmentType = "local"
+	ShellEnvironmentTypeContainerReference ShellEnvironmentType = "container_reference"
+)
+
+type CodeInterpreterOutputType string
+
+const (
+	CodeInterpreterOutputTypeLogs  CodeInterpreterOutputType = "logs"
+	CodeInterpreterOutputTypeImage CodeInterpreterOutputType = "image"
+)

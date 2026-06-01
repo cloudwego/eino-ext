@@ -33,6 +33,8 @@ type arkOptions struct {
 	enableWebSearch *ToolWebSearch
 
 	maxToolCalls *int64
+
+	enableReasoningContentPassback bool
 }
 
 // WithCustomHeader sets custom headers for a single request
@@ -140,4 +142,14 @@ func WithMaxToolCalls(n int64) model.Option {
 		o.maxToolCalls = &n
 	})
 
+}
+
+// WithEnableReasoningContentPassback controls whether reasoning content is passed back
+// to the model in multi-turn conversations.
+// This option is only supported for the ResponsesAPIChatModel.
+// See [ResponsesAPIConfig.EnableReasoningContentPassback].
+func WithEnableReasoningContentPassback(enable bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.enableReasoningContentPassback = enable
+	})
 }
