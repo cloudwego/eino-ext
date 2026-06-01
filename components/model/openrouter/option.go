@@ -19,9 +19,11 @@ package openrouter
 import "github.com/cloudwego/eino/components/model"
 
 type openrouterOption struct {
-	models    []string
-	reasoning *Reasoning
-	metadata  map[string]string
+	models         []string
+	reasoning      *Reasoning
+	metadata       map[string]string
+	cacheControl   *cacheControl
+	responseFormat *ChatCompletionResponseFormat
 }
 
 // WithModels provider an array of model IDs in priority order.
@@ -49,5 +51,23 @@ func WithMetadata(m map[string]string) model.Option {
 		for k, v := range m {
 			o.metadata[k] = v
 		}
+	})
+}
+
+// WithCacheControl sets the top-level cache_control for the request.
+// This enables automatic prompt caching for supported providers (e.g. Anthropic Claude, Gemini models).
+// When set, it overrides the CacheControl field configured in Config for this specific request.
+// See https://openrouter.ai/docs/guides/best-practices/prompt-caching for details.
+func WithCacheControl(ctrl CacheControl) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openrouterOption) {
+		o.cacheControl = ctrl.toInternal()
+	})
+}
+
+// WithResponseFormat sets the response format for the request.
+// When set, it overrides the ResponseFormat field configured in Config for this specific request.
+func WithResponseFormat(rf *ChatCompletionResponseFormat) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openrouterOption) {
+		o.responseFormat = rf
 	})
 }

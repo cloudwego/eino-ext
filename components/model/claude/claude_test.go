@@ -19,6 +19,7 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -33,7 +34,37 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestDirectAnthropicAuthSelection(t *testing.T) {
+	t.Run("config auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key"}))
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{AuthToken: "auth-token"}))
+		assert.True(t, hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key", AuthToken: "auth-token"}))
+	})
+
+	t.Run("env auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		t.Setenv("ANTHROPIC_API_KEY", "env-api-key")
+		model, err := NewChatModel(context.Background(), &Config{
+			Model: "claude-3-opus-20240229",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, model)
+	})
+
+	t.Run("missing auth still allows creation", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		model, err := NewChatModel(context.Background(), &Config{
+			Model: "claude-3-opus-20240229",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, model)
+	})
+}
+
 func TestClaude(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+
 	ctx := context.Background()
 	model, err := NewChatModel(ctx, &Config{
 		APIKey: "test-key",
@@ -215,6 +246,21 @@ func TestClaude(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "I see a beautiful sunset image", resp.Content)
 	})
+}
+
+func clearAnthropicAuthEnv(t *testing.T) {
+	t.Helper()
+	// Use os.Unsetenv to truly remove the env vars, since the SDK uses
+	// os.LookupEnv — an empty string is still "present".
+	for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"} {
+		prev, existed := os.LookupEnv(key)
+		os.Unsetenv(key)
+		if existed {
+			t.Cleanup(func() { os.Setenv(key, prev) })
+		} else {
+			t.Cleanup(func() { os.Unsetenv(key) })
+		}
+	}
 }
 
 func TestConvStreamEvent(t *testing.T) {
@@ -844,5 +890,167 @@ func TestCacheTTL(t *testing.T) {
 		assert.NoError(t, err)
 		// auto cache should set TTL on last system message
 		assert.Equal(t, CacheTTL1h, params.System[0].CacheControl.TTL)
+	})
+}
+
+func TestToolSearchResultInput(t *testing.T) {
+	t.Run("tool search result in tool message", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "tool_search_call_1",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeToolSearchResult,
+					ToolSearchResult: &schema.ToolSearchResult{
+						Tools: []*schema.ToolInfo{
+							{Name: "found_tool_1"},
+							{Name: "found_tool_2"},
+						},
+					},
+				},
+			},
+		}
+
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+		assert.Len(t, result.Content, 1)
+		assert.NotNil(t, result.Content[0].OfToolResult)
+		assert.Equal(t, "tool_search_call_1", result.Content[0].OfToolResult.ToolUseID)
+		assert.Len(t, result.Content[0].OfToolResult.Content, 2)
+		assert.Equal(t, "found_tool_1", result.Content[0].OfToolResult.Content[0].OfToolReference.ToolName)
+		assert.Equal(t, "found_tool_2", result.Content[0].OfToolResult.Content[1].OfToolReference.ToolName)
+	})
+
+	t.Run("nil ToolSearchResult errors", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:       schema.Tool,
+			ToolCallID: "call_1",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type:             schema.ChatMessagePartTypeToolSearchResult,
+					ToolSearchResult: nil,
+				},
+			},
+		}
+		_, err := convSchemaMessage(msg)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "ToolSearchResult field must not be nil")
+	})
+}
+
+func TestDuplicateToolError(t *testing.T) {
+	params := &anthropic.MessageNewParams{
+		Tools: []anthropic.ToolUnionParam{
+			{OfTool: &anthropic.ToolParam{Name: "existing_tool"}},
+		},
+	}
+
+	msgs := []*schema.Message{
+		{
+			Role:       schema.Tool,
+			ToolCallID: "call_1",
+			UserInputMultiContent: []schema.MessageInputPart{
+				{
+					Type: schema.ChatMessagePartTypeToolSearchResult,
+					ToolSearchResult: &schema.ToolSearchResult{
+						Tools: []*schema.ToolInfo{
+							{Name: "existing_tool"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := populateToolSearchResultTools(params, msgs)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "tool 'existing_tool' from ToolSearchResult already exists in tool list")
+}
+
+func TestToolSearchEventsRoundTrip(t *testing.T) {
+	t.Run("server tool use event round trip", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:  schema.Assistant,
+			Extra: make(map[string]any),
+		}
+
+		// Simulate storing a server_tool_use event
+		appendToolSearchEvent(msg, ToolSearchEvent{
+			Type:  "server_tool_use",
+			ID:    "stu_1",
+			Name:  "tool_search_tool_bm25",
+			Input: json.RawMessage(`{"query":"search query"}`),
+		})
+
+		// Simulate storing a tool_search_tool_result event
+		appendToolSearchEvent(msg, ToolSearchEvent{
+			Type:      "tool_search_tool_result",
+			ToolUseID: "stu_1",
+			Content: &ToolSearchEventContent{
+				Type: "tool_search_tool_search_result",
+				ToolReferences: []ToolSearchEventToolReference{
+					{ToolName: "matched_tool"},
+				},
+			},
+		})
+
+		// Verify events were stored
+		events := getToolSearchEvents(msg)
+		assert.Len(t, events, 2)
+
+		// Convert to message param (round-trip)
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+
+		// Should have the two tool search event blocks in the content
+		hasServerToolUse := false
+		hasToolSearchResult := false
+		for _, block := range result.Content {
+			if block.OfServerToolUse != nil {
+				hasServerToolUse = true
+				assert.Equal(t, "stu_1", block.OfServerToolUse.ID)
+				assert.Equal(t, anthropic.ServerToolUseBlockParamName("tool_search_tool_bm25"), block.OfServerToolUse.Name)
+			}
+			if block.OfToolSearchToolResult != nil {
+				hasToolSearchResult = true
+				assert.Equal(t, "stu_1", block.OfToolSearchToolResult.ToolUseID)
+				searchResult := block.OfToolSearchToolResult.Content.OfRequestToolSearchToolSearchResultBlock
+				assert.NotNil(t, searchResult)
+				assert.Len(t, searchResult.ToolReferences, 1)
+				assert.Equal(t, "matched_tool", searchResult.ToolReferences[0].ToolName)
+			}
+		}
+		assert.True(t, hasServerToolUse, "should have server_tool_use block")
+		assert.True(t, hasToolSearchResult, "should have tool_search_tool_result block")
+	})
+
+	t.Run("error event round trip", func(t *testing.T) {
+		msg := &schema.Message{
+			Role:  schema.Assistant,
+			Extra: make(map[string]any),
+		}
+
+		appendToolSearchEvent(msg, ToolSearchEvent{
+			Type:      "tool_search_tool_result",
+			ToolUseID: "stu_2",
+			Content: &ToolSearchEventContent{
+				Type:      "tool_search_tool_result_error",
+				ErrorCode: "unavailable",
+			},
+		})
+
+		result, err := convSchemaMessage(msg)
+		assert.NoError(t, err)
+
+		hasErrorResult := false
+		for _, block := range result.Content {
+			if block.OfToolSearchToolResult != nil {
+				hasErrorResult = true
+				errParam := block.OfToolSearchToolResult.Content.OfRequestToolSearchToolResultError
+				assert.NotNil(t, errParam)
+				assert.Equal(t, anthropic.ToolSearchToolResultErrorCode("unavailable"), errParam.ErrorCode)
+			}
+		}
+		assert.True(t, hasErrorResult, "should have error result block")
 	})
 }
