@@ -38,12 +38,29 @@ func TestGetServerToolCallArguments(t *testing.T) {
 		}
 	})
 
+	t.Run("map[string]any success", func(t *testing.T) {
+		got, err := getServerToolCallArguments(&schema.ServerToolCall{
+			Name: string(ServerToolNameWebSearch),
+			Arguments: map[string]any{
+				"web_search": map[string]any{
+					"query": "test query",
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("getServerToolCallArguments() error = %v", err)
+		}
+		if got.WebSearch == nil || got.WebSearch.Query != "test query" {
+			t.Fatalf("getServerToolCallArguments() web_search.query = %v, want 'test query'", got.WebSearch)
+		}
+	})
+
 	t.Run("unexpected type", func(t *testing.T) {
 		_, err := getServerToolCallArguments(&schema.ServerToolCall{
 			Name:      string(ServerToolNameWebSearch),
-			Arguments: map[string]any{"query": "q"},
+			Arguments: "invalid",
 		})
-		if err == nil || !strings.Contains(err.Error(), "unexpected type map[string]interface {} for server tool call arguments") {
+		if err == nil || !strings.Contains(err.Error(), "unexpected type string for server tool call arguments") {
 			t.Fatalf("getServerToolCallArguments() error = %v", err)
 		}
 	})
@@ -64,12 +81,35 @@ func TestGetServerToolResult(t *testing.T) {
 		}
 	})
 
+	t.Run("map[string]any success", func(t *testing.T) {
+		got, err := getServerToolResult(&schema.ServerToolResult{
+			Name: string(ServerToolNameWebFetch),
+			Content: map[string]any{
+				"web_fetch": map[string]any{
+					"type": string(WebFetchResultTypeResult),
+					"result": map[string]any{
+						"url": "https://example.com",
+					},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("getServerToolResult() error = %v", err)
+		}
+		if got.WebFetch == nil || got.WebFetch.Type != WebFetchResultTypeResult {
+			t.Fatalf("getServerToolResult() web_fetch.type = %v, want %v", got.WebFetch, WebFetchResultTypeResult)
+		}
+		if got.WebFetch.Result == nil || got.WebFetch.Result.URL != "https://example.com" {
+			t.Fatalf("getServerToolResult() web_fetch.result.url = %v, want 'https://example.com'", got.WebFetch.Result)
+		}
+	})
+
 	t.Run("unexpected type", func(t *testing.T) {
 		_, err := getServerToolResult(&schema.ServerToolResult{
 			Name:    string(ServerToolNameWebFetch),
-			Content: map[string]any{"url": "https://example.com"},
+			Content: "invalid",
 		})
-		if err == nil || !strings.Contains(err.Error(), "unexpected type map[string]interface {} for server tool result") {
+		if err == nil || !strings.Contains(err.Error(), "unexpected type string for server tool result") {
 			t.Fatalf("getServerToolResult() error = %v", err)
 		}
 	})

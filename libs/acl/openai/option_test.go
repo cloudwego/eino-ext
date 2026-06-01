@@ -34,6 +34,15 @@ func Test_OpenAIOptions_Setters(t *testing.T) {
 		assert.Equal(t, fields, spec.ExtraFields)
 	})
 
+	t.Run("WithExtraFields merges on multiple calls", func(t *testing.T) {
+		opts := []model.Option{
+			WithExtraFields(map[string]any{"a": 1}),
+			WithExtraFields(map[string]any{"b": 2}),
+		}
+		spec := model.GetImplSpecificOptions(&openaiOptions{}, opts...)
+		assert.Equal(t, map[string]any{"a": 1, "b": 2}, spec.ExtraFields)
+	})
+
 	t.Run("WithReasoningEffort", func(t *testing.T) {
 		opts := []model.Option{WithReasoningEffort(ReasoningEffortLevelHigh)}
 		spec := model.GetImplSpecificOptions(&openaiOptions{}, opts...)

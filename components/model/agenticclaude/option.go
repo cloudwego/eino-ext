@@ -38,7 +38,8 @@ func WithCustomHeaders(headers map[string]string) model.Option {
 	})
 }
 
-// WithExtraFields specifies additional fields that will be directly added to the HTTP request body.
+// WithExtraFields sets extra fields to include in the request body.
+// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
 //
 // Example:
 //

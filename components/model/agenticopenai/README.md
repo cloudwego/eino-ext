@@ -197,8 +197,25 @@ type ResponsesConfig struct {
     // Optional.
     CustomHeaders map[string]string
 
-    // ExtraFields specifies additional fields that will be directly added to the HTTP request body.
+    // ExtraFields specifies extra fields to include in the request body.
+    // These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
     // Optional.
+    //
+    // Example:
+    //
+    //	ExtraFields: map[string]any{
+    //	    "reasoning_effort": "high",
+    //	    "service_tier": "default",
+    //	}
+    //
+    // The resulting request body will be:
+    //
+    //	{
+    //	    "model": "o1",
+    //	    "messages": [...],
+    //	    "reasoning_effort": "high",
+    //	    "service_tier": "default"
+    //	}
     ExtraFields map[string]any
 }
 ```
@@ -288,7 +305,24 @@ type ChatConfig struct {
     CustomHeaders map[string]string
 
     // ExtraFields specifies extra fields to include in the request body.
+    // These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
     // Optional.
+    //
+    // Example:
+    //
+    //	ExtraFields: map[string]any{
+    //	    "reasoning_effort": "high",
+    //	    "service_tier": "default",
+    //	}
+    //
+    // The resulting request body will be:
+    //
+    //	{
+    //	    "model": "o1",
+    //	    "messages": [...],
+    //	    "reasoning_effort": "high",
+    //	    "service_tier": "default"
+    //	}
     ExtraFields map[string]any
 }
 ```

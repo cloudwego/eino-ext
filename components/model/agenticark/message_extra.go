@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	keyOfResponseAutoCached = "_eino_ext_agenticark_auto_cached"
+	keyOfResponseAutoCached  = "_eino_ext_agenticark_auto_cached"
+	keyOfGeneratedByAgentic = "_eino_ext_generated_by_agenticark"
 )
 
 // allowedNonSelfGeneratedBlockTypes defines the whitelist of ContentBlockTypes
@@ -52,7 +53,18 @@ func isAllowedNonSelfGeneratedBlockType(blockType schema.ContentBlockType) bool 
 }
 
 func isSelfGeneratedMessage(msg *schema.AgenticMessage) bool {
-	return msg != nil && msg.ResponseMeta != nil && getResponseMeta(msg.ResponseMeta) != nil
+	if msg == nil || msg.Extra == nil {
+		return false
+	}
+	v, ok := msg.Extra[keyOfGeneratedByAgentic]
+	return ok && v == true
+}
+
+func markSelfGenerated(msg *schema.AgenticMessage) {
+	if msg.Extra == nil {
+		msg.Extra = map[string]any{}
+	}
+	msg.Extra[keyOfGeneratedByAgentic] = true
 }
 
 func setAutoCached(msg *schema.AgenticMessage) *schema.AgenticMessage {

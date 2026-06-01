@@ -147,9 +147,25 @@ type Config struct {
     // 可选。
     CustomHeaders map[string]string
 
-    // ExtraFields 指定直接添加到 HTTP 请求体的额外字段。
-    // 允许使用尚未显式支持的供应商特定参数或未来参数。
+    // ExtraFields 指定请求体中包含的额外字段。
+    // 这些字段将合并到顶层 JSON 请求体中，覆盖具有相同键的任何现有字段。
     // 可选。
+    //
+    // 示例：
+    //
+    //	ExtraFields: map[string]any{
+    //	    "reasoning_effort": "high",
+    //	    "service_tier": "default",
+    //	}
+    //
+    // 生成的请求体将为：
+    //
+    //	{
+    //	    "model": "o1",
+    //	    "messages": [...],
+    //	    "reasoning_effort": "high",
+    //	    "service_tier": "default"
+    //	}
     ExtraFields map[string]any
 
     // CacheControl 配置自动提示缓存行为。

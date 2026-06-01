@@ -686,6 +686,19 @@ func TestResolveStreamResponse(t *testing.T) {
 		assert.Equal(t, "thinking...", rc)
 		assert.Equal(t, "thinking...", msg.ReasoningContent)
 	})
+
+	t.Run("empty delta role defaults to assistant", func(t *testing.T) {
+		resp := &deepseek.StreamChatCompletionResponse{
+			Choices: []deepseek.StreamChoices{
+				{Index: 0, Delta: deepseek.StreamDelta{Content: "hello"}},
+			},
+		}
+		msg, found, err := resolveStreamResponse(resp)
+		assert.Nil(t, err)
+		assert.True(t, found)
+		assert.Equal(t, schema.Assistant, msg.Role)
+		assert.Equal(t, "hello", msg.Content)
+	})
 }
 
 func TestConcatTextParts(t *testing.T) {
@@ -873,6 +886,7 @@ func TestToMessageRole(t *testing.T) {
 	assert.Equal(t, schema.Assistant, toMessageRole("assistant"))
 	assert.Equal(t, schema.System, toMessageRole("system"))
 	assert.Equal(t, schema.Tool, toMessageRole("tool"))
+	assert.Equal(t, schema.Assistant, toMessageRole(""))
 	assert.Equal(t, schema.RoleType("custom"), toMessageRole("custom"))
 }
 

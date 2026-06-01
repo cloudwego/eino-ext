@@ -292,6 +292,8 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 		ResponseMeta: meta,
 	}
 
+	markSelfGenerated(msg)
+
 	if block != nil {
 		msg.ContentBlocks = []*schema.ContentBlock{block}
 	}
