@@ -211,12 +211,12 @@ func TestEnableMessageContentCacheControl(t *testing.T) {
 		assert.Equal(t, CacheControlTTL1Hour, ctrl.TTL)
 	})
 
-	t.Run("nil extra should be initialized", func(t *testing.T) {
+	t.Run("nil extra should not be initialized on get", func(t *testing.T) {
 		msg := &schema.Message{}
 		ctrl, ok := getMessageContentCacheControl(msg)
 		assert.False(t, ok)
 		assert.Nil(t, ctrl)
-		assert.NotNil(t, msg.Extra)
+		assert.Nil(t, msg.Extra)
 	})
 }
 

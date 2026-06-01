@@ -51,6 +51,11 @@ func WithUserID(userID string) TraceOption {
 		o.UserID = userID
 	}
 }
+func WithInput(input string) TraceOption {
+	return func(o *traceOptions) {
+		o.Input = input
+	}
+}
 func WithSessionID(sessionID string) TraceOption {
 	return func(o *traceOptions) {
 		o.SessionID = sessionID
@@ -91,6 +96,7 @@ type traceOptions struct {
 	ID          string
 	Name        string
 	UserID      string
+	Input       string
 	SessionID   string
 	Release     string
 	Tags        []string
@@ -106,11 +112,12 @@ func initState(_ context.Context, cli langfuse.Langfuse, options *traceOptions) 
 			ID:          options.ID,
 			Name:        options.Name,
 			MetaData:    options.Metadata,
-			Environment: options.Environment,
 			Version:     options.Version,
+			Environment: options.Environment,
 		},
 		TimeStamp: time.Now(),
 		UserID:    options.UserID,
+		Input:     options.Input,
 		SessionID: options.SessionID,
 		Release:   options.Release,
 		Tags:      options.Tags,
