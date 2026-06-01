@@ -32,11 +32,15 @@ import (
 )
 
 type mockTransport struct {
-	Response *http.Response
-	Err      error
+	Response      *http.Response
+	Err           error
+	RoundTripFunc func(req *http.Request) (*http.Response, error)
 }
 
 func (m *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if m.RoundTripFunc != nil {
+		return m.RoundTripFunc(req)
+	}
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -286,6 +290,57 @@ func TestRetriever_Retrieve(t *testing.T) {
 			_, err := retriever.Retrieve(ctx, "query")
 			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldContainSubstring, "decode response failed")
+		})
+
+		Convey("with index option", func() {
+			var searchModeIndex string
+			var searchPath string
+			scoreThreshold := 0.5
+			mockT := &mockTransport{
+				RoundTripFunc: func(req *http.Request) (*http.Response, error) {
+					header := http.Header{"X-Elastic-Product": []string{"Elasticsearch"}}
+					if req.Method == http.MethodGet && req.URL.Path == "/" {
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader(`{"version":{"number":"7.17.0"}}`)),
+							Header:     header,
+						}, nil
+					}
+					if strings.HasSuffix(req.URL.Path, "/_search") {
+						searchPath = req.URL.Path
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader(`{"hits":{"hits":[]}}`)),
+							Header:     header,
+						}, nil
+					}
+					return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+				},
+			}
+			client, _ := elasticsearch.NewClient(elasticsearch.Config{
+				Transport: mockT,
+			})
+			r, _ := NewRetriever(ctx, &RetrieverConfig{
+				Client:         client,
+				Index:          "default_index",
+				ScoreThreshold: &scoreThreshold,
+				SearchMode: &mockSearchMode{
+					buildRequestFn: func(ctx context.Context, conf *RetrieverConfig, query string, opts ...retriever.Option) (map[string]any, error) {
+						searchModeIndex = conf.Index
+						*conf.ScoreThreshold = 0.9
+						return map[string]any{"query": map[string]any{"match_all": map[string]any{}}}, nil
+					},
+				},
+			})
+
+			docs, err := r.Retrieve(ctx, "query", retriever.WithIndex("override_index"))
+			So(err, ShouldBeNil)
+			So(docs, ShouldBeEmpty)
+			So(searchPath, ShouldContainSubstring, "override_index")
+			So(searchPath, ShouldNotContainSubstring, "default_index")
+			So(searchModeIndex, ShouldEqual, "override_index")
+			So(r.config.Index, ShouldEqual, "default_index")
+			So(*r.config.ScoreThreshold, ShouldEqual, 0.5)
 		})
 
 		Convey("success", func() {

@@ -867,6 +867,82 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 				assert.ErrorContains(t, err, "image field must not be nil")
 			})
 
+			PatchConvey("Audio success with URL", func() {
+				audioURL := "https://example.com/audio.mp3"
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{URL: &audioURL},
+						}},
+					},
+				}
+				inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.Nil(t, err)
+				assert.Len(t, inputMessage.Content, 1)
+				audioItem := inputMessage.Content[0].GetAudio()
+				assert.NotNil(t, audioItem)
+				assert.Equal(t, audioURL, audioItem.AudioUrl)
+				assert.Equal(t, responses.ContentItemType_input_audio, audioItem.Type)
+			})
+
+			PatchConvey("Audio success with Base64 and MIMEType", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/mpeg"},
+						}},
+					},
+				}
+				inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.Nil(t, err)
+				assert.Len(t, inputMessage.Content, 1)
+				audioItem := inputMessage.Content[0].GetAudio()
+				assert.NotNil(t, audioItem)
+				assert.Contains(t, audioItem.AudioUrl, "data:audio/mpeg;base64,")
+			})
+
+			PatchConvey("Audio error on nil Audio", func() {
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil},
+					},
+				}
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.NotNil(t, err)
+				assert.ErrorContains(t, err, "audio field must not be nil")
+			})
+
+			PatchConvey("Audio error on missing URL and Base64", func() {
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{}},
+					},
+				}
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.NotNil(t, err)
+				assert.ErrorContains(t, err, "must have URL or Base64Data")
+			})
+
+			PatchConvey("Audio error on missing MIMEType for Base64", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64},
+						}},
+					},
+				}
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.NotNil(t, err)
+				assert.ErrorContains(t, err, "must have MIMEType when use Base64Data")
+			})
+
 		})
 
 		PatchConvey("AssistantGenMultiContent", func() {

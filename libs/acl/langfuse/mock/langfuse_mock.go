@@ -138,6 +138,20 @@ func (mr *MockLangfuseMockRecorder) EndSpan(body interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndSpan", reflect.TypeOf((*MockLangfuse)(nil).EndSpan), body)
 }
 
+// EndTrace mocks base method.
+func (m *MockLangfuse) EndTrace(body *langfuse.TraceEventBody) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EndTrace", body)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EndTrace indicates an expected call of EndTrace.
+func (mr *MockLangfuseMockRecorder) EndTrace(body interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EndTrace", reflect.TypeOf((*MockLangfuse)(nil).EndTrace), body)
+}
+
 // Flush mocks base method.
 func (m *MockLangfuse) Flush() {
 	m.ctrl.T.Helper()
