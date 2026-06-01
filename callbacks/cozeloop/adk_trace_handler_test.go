@@ -80,6 +80,28 @@ func TestEinoTracer_OnAgentStart(t *testing.T) {
 			convey.So(ctx, convey.ShouldNotBeNil)
 		})
 
+		mockey.PatchConvey("test OnStart sets agent_name and agent_run_id baggage", func() {
+			input := &adk.AgentCallbackInput{
+				Input: &adk.AgentInput{
+					Messages: []*schema.Message{
+						{Role: schema.User, Content: "hello"},
+					},
+				},
+			}
+
+			ctx := tracer.OnStart(context.Background(), info, input)
+			convey.So(ctx, convey.ShouldNotBeNil)
+
+			span := client.GetSpanFromContext(ctx)
+			convey.So(span, convey.ShouldNotBeNil)
+
+			baggage := span.GetBaggage()
+			convey.So(baggage, convey.ShouldNotBeNil)
+			convey.So(baggage[attrKeyAgentName], convey.ShouldEqual, "test-agent")
+			convey.So(baggage[attrKeyAgentRunID], convey.ShouldNotBeEmpty)
+			convey.So(len(baggage[attrKeyAgentRunID]), convey.ShouldEqual, 32)
+		})
+
 		mockey.PatchConvey("test OnStart with nil info", func() {
 			input := &adk.AgentCallbackInput{
 				Input: &adk.AgentInput{
@@ -193,6 +215,30 @@ func TestEinoTracer_OnStartWithStreamInput_Agent(t *testing.T) {
 
 			ctx := tracer.OnStartWithStreamInput(context.Background(), info, reader)
 			convey.So(ctx, convey.ShouldNotBeNil)
+		})
+
+		mockey.PatchConvey("test OnStartWithStreamInput sets agent_name and agent_run_id baggage", func() {
+			reader, writer := schema.Pipe[callbacks.CallbackInput](2)
+			go func() {
+				defer writer.Close()
+				writer.Send(&adk.AgentCallbackInput{
+					Input: &adk.AgentInput{
+						Messages: []*schema.Message{{Role: schema.User, Content: "hello"}},
+					},
+				}, nil)
+			}()
+
+			ctx := tracer.OnStartWithStreamInput(context.Background(), info, reader)
+			convey.So(ctx, convey.ShouldNotBeNil)
+
+			span := client.GetSpanFromContext(ctx)
+			convey.So(span, convey.ShouldNotBeNil)
+
+			baggage := span.GetBaggage()
+			convey.So(baggage, convey.ShouldNotBeNil)
+			convey.So(baggage[attrKeyAgentName], convey.ShouldEqual, "test-agent")
+			convey.So(baggage[attrKeyAgentRunID], convey.ShouldNotBeEmpty)
+			convey.So(len(baggage[attrKeyAgentRunID]), convey.ShouldEqual, 32)
 		})
 
 		mockey.PatchConvey("test OnStartWithStreamInput with nil info", func() {

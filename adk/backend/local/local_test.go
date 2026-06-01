@@ -17,7 +17,9 @@
 package local
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +28,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/adk/filesystem"
+	"github.com/gen2brain/go-fitz"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -863,4 +866,268 @@ func TestExecute(t *testing.T) {
 		assert.NotNil(t, resp.ExitCode)
 		assert.NotEqual(t, 0, *resp.ExitCode)
 	})
+}
+
+func TestResolveMultiModalReadConfig(t *testing.T) {
+	t.Run("zero values fall back to defaults", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{})
+		assert.Equal(t, defaultMaxImageSizeMB, got.MaxImageSizeMB)
+		assert.Equal(t, defaultMaxPDFSizeMB, got.MaxPDFSizeMB)
+		assert.Equal(t, defaultMaxPagedPDFSizeMB, got.MaxPagedPDFSizeMB)
+		assert.Equal(t, defaultMaxPDFPagesPerRequest, got.MaxPDFPagesPerRequest)
+		assert.InDelta(t, defaultPDFRenderDPI, got.PDFRenderDPI, 0.001)
+	})
+
+	t.Run("user values within caps are preserved", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{
+			MaxImageSizeMB:        15,
+			MaxPDFSizeMB:          25,
+			MaxPagedPDFSizeMB:     200,
+			MaxPDFPagesPerRequest: 50,
+			PDFRenderDPI:          200,
+		})
+		assert.Equal(t, 15, got.MaxImageSizeMB)
+		assert.Equal(t, 25, got.MaxPDFSizeMB)
+		assert.Equal(t, 200, got.MaxPagedPDFSizeMB)
+		assert.Equal(t, 50, got.MaxPDFPagesPerRequest)
+		assert.InDelta(t, 200.0, got.PDFRenderDPI, 0.001)
+	})
+
+	t.Run("over-cap values are clamped", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{
+			MaxImageSizeMB:        9999,
+			MaxPDFSizeMB:          9999,
+			MaxPagedPDFSizeMB:     9999,
+			MaxPDFPagesPerRequest: 99999,
+			PDFRenderDPI:          5000,
+		})
+		assert.Equal(t, maxConfigurableMB, got.MaxImageSizeMB)
+		assert.Equal(t, maxConfigurableMB, got.MaxPDFSizeMB)
+		assert.Equal(t, maxConfigurableMB, got.MaxPagedPDFSizeMB)
+		assert.Equal(t, maxConfigurablePDFPagesPerRequest, got.MaxPDFPagesPerRequest)
+		assert.InDelta(t, maxConfigurablePDFRenderDPI, got.PDFRenderDPI, 0.001)
+	})
+
+	t.Run("negative values fall back to defaults", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{
+			MaxImageSizeMB: -1, PDFRenderDPI: -10,
+		})
+		assert.Equal(t, defaultMaxImageSizeMB, got.MaxImageSizeMB)
+		assert.InDelta(t, defaultPDFRenderDPI, got.PDFRenderDPI, 0.001)
+	})
+}
+
+func TestParsePagesParam(t *testing.T) {
+	cases := []struct {
+		name      string
+		pages     string
+		maxPages  int
+		wantStart int
+		wantEnd   int
+		wantErr   bool
+	}{
+		{name: "single page", pages: "5", maxPages: 20, wantStart: 5, wantEnd: 5},
+		{name: "valid range", pages: "1-3", maxPages: 20, wantStart: 1, wantEnd: 3},
+		{name: "with whitespace", pages: " 2 - 4 ", maxPages: 20, wantStart: 2, wantEnd: 4},
+		{name: "empty", pages: "", maxPages: 20, wantErr: true},
+		{name: "open-ended", pages: "1-", maxPages: 20, wantErr: true},
+		{name: "multi range", pages: "1-2-3", maxPages: 20, wantErr: true},
+		{name: "non integer", pages: "a-b", maxPages: 20, wantErr: true},
+		{name: "zero start", pages: "0", maxPages: 20, wantErr: true},
+		{name: "end before start", pages: "5-2", maxPages: 20, wantErr: true},
+		{name: "exceeds maxPages", pages: "1-30", maxPages: 20, wantErr: true},
+		{name: "non-positive maxPages defaults", pages: "1-3", maxPages: 0, wantStart: 1, wantEnd: 3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end, err := parsePagesParam(tc.pages, tc.maxPages)
+			if tc.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tc.wantStart, start)
+			assert.Equal(t, tc.wantEnd, end)
+		})
+	}
+}
+
+func TestDetectImageMIME(t *testing.T) {
+	cases := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{name: "png", data: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00}, want: "image/png"},
+		{name: "jpeg", data: []byte{0xFF, 0xD8, 0xFF, 0xE0}, want: "image/jpeg"},
+		{name: "gif87", data: []byte("GIF87a..."), want: "image/gif"},
+		{name: "gif89", data: []byte("GIF89a..."), want: "image/gif"},
+		{name: "bmp", data: []byte("BM12345"), want: "image/bmp"},
+		{name: "webp", data: append([]byte("RIFF1234WEBP"), 0x00), want: "image/webp"},
+		{name: "tiff-le", data: []byte{0x49, 0x49, 0x2A, 0x00, 0x00}, want: "image/tiff"},
+		{name: "tiff-be", data: []byte{0x4D, 0x4D, 0x00, 0x2A, 0x00}, want: "image/tiff"},
+		{name: "unknown", data: []byte("hello world"), want: ""},
+		{name: "too short", data: []byte{0x89}, want: ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, detectImageMIME(tc.data))
+		})
+	}
+}
+
+func TestIsPDFBytes(t *testing.T) {
+	assert.True(t, isPDFBytes([]byte("%PDF-1.7\n...")))
+	assert.False(t, isPDFBytes([]byte("not a pdf")))
+	assert.False(t, isPDFBytes([]byte("%PDF")))
+}
+
+func TestLocal_MultiModalRead_NonMedia(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "hello.txt")
+	assert.NoError(t, os.WriteFile(path, []byte("line1\nline2"), 0644))
+
+	resp, err := s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: path},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, resp)
+	assert.NotNil(t, resp.FileContent)
+	assert.Contains(t, resp.FileContent.Content, "line1")
+	assert.Empty(t, resp.Parts)
+}
+
+func TestLocal_MultiModalRead_Image(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+
+	cases := []struct {
+		ext      string
+		header   []byte
+		wantMIME string
+	}{
+		{ext: ".png", header: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01}, wantMIME: "image/png"},
+		{ext: ".jpg", header: []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10}, wantMIME: "image/jpeg"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.ext, func(t *testing.T) {
+			path := filepath.Join(dir, "img"+tc.ext)
+			assert.NoError(t, os.WriteFile(path, tc.header, 0644))
+			resp, err := s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+				ReadRequest: filesystem.ReadRequest{FilePath: path},
+			})
+			assert.NoError(t, err)
+			assert.Len(t, resp.Parts, 1)
+			assert.Equal(t, filesystem.FileContentPartTypeImage, resp.Parts[0].Type)
+			assert.Equal(t, tc.wantMIME, resp.Parts[0].MIMEType)
+			assert.True(t, bytes.Equal(resp.Parts[0].Data, tc.header))
+		})
+	}
+}
+
+func TestLocal_MultiModalRead_BadImageContent(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "fake.png")
+	assert.NoError(t, os.WriteFile(path, []byte("not really png"), 0644))
+
+	_, err = s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: path},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a recognized image format")
+}
+
+func TestLocal_MultiModalRead_OversizeImage(t *testing.T) {
+	ctx := context.Background()
+	// Use a tiny limit so we can exceed it cheaply.
+	s, err := NewBackend(ctx, &Config{
+		MultiModalRead: MultiModalReadConfig{MaxImageSizeMB: 1},
+	})
+	assert.NoError(t, err)
+
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "big.png")
+	// 2 MB > 1 MB limit; content doesn't need to be a real PNG since size check fires first.
+	assert.NoError(t, os.WriteFile(path, make([]byte, 2*1024*1024), 0644))
+
+	_, err = s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: path},
+	})
+	assert.Error(t, err)
+	assert.True(t, errors.Is(err, errReadAllBytesTooLarge))
+}
+
+func TestLocal_MultiModalRead_BadPDFContent(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "fake.pdf")
+	assert.NoError(t, os.WriteFile(path, []byte("not a pdf"), 0644))
+
+	_, err = s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+		ReadRequest: filesystem.ReadRequest{FilePath: path},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not a valid PDF")
+}
+
+func TestLocal_ReadAllBytes_NotFound(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	_, err = s.readAllBytes(ctx, "/no/such/file/here", 1024)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "file not found")
+}
+
+func TestLocal_ReadAllBytes_Directory(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+
+	_, err = s.readAllBytes(ctx, dir, 1024)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "directory")
+}
+
+// minimalValidPDF is a hand-crafted single-page PDF, kept small enough to
+// embed inline. Used to verify rendering plumbing (cancellation, page bounds)
+// without committing a binary fixture.
+const minimalValidPDF = "%PDF-1.1\n%\xa5\xb1\xeb\n\n1 0 obj\n  << /Type /Catalog\n     /Pages 2 0 R\n  >>\nendobj\n\n2 0 obj\n  << /Type /Pages\n     /Kids [3 0 R]\n     /Count 1\n     /MediaBox [0 0 100 100]\n  >>\nendobj\n\n3 0 obj\n  <<  /Type /Page\n      /Parent 2 0 R\n      /Resources << >>\n  >>\nendobj\n\nxref\n0 4\n0000000000 65535 f \n0000000018 00000 n \n0000000077 00000 n \n0000000178 00000 n \ntrailer\n  <<  /Root 1 0 R\n      /Size 4\n  >>\nstartxref\n240\n%%EOF\n"
+
+func TestRenderPDFPagesToImages_RespectsCanceledCtx(t *testing.T) {
+	doc, err := fitz.NewFromMemory([]byte(minimalValidPDF))
+	if err != nil || doc.NumPage() < 1 {
+		t.Skipf("minimal PDF fixture not parseable in this environment: err=%v", err)
+	}
+	defer doc.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before invocation; the loop's select must fire on first iteration.
+
+	parts, err := renderPDFPagesToImages(ctx, doc, 1, 1, "fixture.pdf", 72)
+	assert.Nil(t, parts)
+	assert.ErrorIs(t, err, context.Canceled)
 }

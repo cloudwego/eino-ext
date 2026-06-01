@@ -20,6 +20,7 @@ Every `Add*Node` method takes a string key, the component instance, and optional
 g.AddChatModelNode(key string, node model.BaseChatModel, opts ...GraphAddNodeOpt) error
 g.AddChatTemplateNode(key string, node prompt.ChatTemplate, opts ...GraphAddNodeOpt) error
 g.AddToolsNode(key string, node *compose.ToolsNode, opts ...GraphAddNodeOpt) error
+g.AddAgenticToolsNode(key string, node *compose.AgenticToolsNode, opts ...GraphAddNodeOpt) error
 g.AddRetrieverNode(key string, node retriever.Retriever, opts ...GraphAddNodeOpt) error
 g.AddEmbeddingNode(key string, node embedding.Embedder, opts ...GraphAddNodeOpt) error
 g.AddIndexerNode(key string, node indexer.Indexer, opts ...GraphAddNodeOpt) error
@@ -183,7 +184,7 @@ g.Compile(ctx,
     compose.WithCheckPointStore(store),       // Enable checkpointing
     compose.WithInterruptBeforeNodes([]string{"node1"}),
     compose.WithInterruptAfterNodes([]string{"node2"}),
-    compose.WithEagerExecution(),             // DAG mode: run nodes as soon as ready
+    // compose.WithEagerExecution(), // Deprecated: Eager execution is automatically enabled by default when a node's trigger mode is set to AllPredecessor.
 )
 ```
 
@@ -192,7 +193,7 @@ g.Compile(ctx,
 A minimal ReAct loop: model → branch (has tool calls?) → tools → model cycle.
 
 ```go
-func buildReActGraph(ctx context.Context, cm model.ToolCallingChatModel) (compose.Runnable[map[string]any, *schema.Message], error) {
+func buildReActGraph(ctx context.Context, cm model.BaseChatModel) (compose.Runnable[map[string]any, *schema.Message], error) {
     // Create ChatTemplate inline
     tpl := prompt.FromMessages(schema.FString,
         schema.SystemMessage("You are a helpful assistant."),

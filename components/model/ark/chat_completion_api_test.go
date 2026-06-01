@@ -446,6 +446,87 @@ func TestCompletionAPIChatModel_toArkContent(t *testing.T) {
 				_, err := cm.toArkContent(msg)
 				convey.So(err, convey.ShouldNotBeNil)
 			})
+
+			PatchConvey("Audio success with URL", func() {
+				audioURL := "https://example.com/audio.mp3"
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{URL: &audioURL, MIMEType: "audio/mp3"},
+						}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 1)
+				convey.So(content.ListValue[0].InputAudio.URL, convey.ShouldEqual, audioURL)
+				convey.So(content.ListValue[0].InputAudio.Format, convey.ShouldEqual, "mp3")
+				convey.So(content.ListValue[0].InputAudio.Data, convey.ShouldEqual, "")
+			})
+
+			PatchConvey("Audio success with Base64Data", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/wav"},
+						}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 1)
+				convey.So(content.ListValue[0].InputAudio.Data, convey.ShouldEqual, audioB64)
+				convey.So(content.ListValue[0].InputAudio.Format, convey.ShouldEqual, "wav")
+				convey.So(content.ListValue[0].InputAudio.URL, convey.ShouldEqual, "")
+			})
+
+			PatchConvey("Error on nil audio", func() {
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "audio field must not be nil")
+			})
+
+			PatchConvey("Error on empty audio data", func() {
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "must contain either a URL or Base64Data")
+			})
+
+			PatchConvey("Error on missing MIMEType for audio Base64Data", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "must have MIMEType when using Base64Data")
+			})
+
+			PatchConvey("Audio Format strips RFC 2045 parameters", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/mpeg; codecs=mp3"},
+						}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue[0].InputAudio.Format, convey.ShouldEqual, "mpeg")
+			})
+
+			PatchConvey("Error on audio Base64Data with data: prefix", func() {
+				audioB64 := "data:audio/mp3;base64,SGVsbG9BdWRpbw=="
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/mp3"}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "audio Base64Data must be a raw base64 string")
+			})
 		})
 
 		PatchConvey("AssistantGenMultiContent", func() {

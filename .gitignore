@@ -45,3 +45,5 @@ output/*
 # Data files
 *.jsonl
 *.csv
+
+*.local.md

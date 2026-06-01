@@ -18,6 +18,7 @@ package cozeloop
 
 import (
 	"context"
+	"encoding/hex"
 	"testing"
 
 	"fmt"
@@ -29,6 +30,24 @@ import (
 	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 	"github.com/smartystreets/goconvey/convey"
 )
+
+func Test_genAgentRunID(t *testing.T) {
+	convey.Convey("test genAgentRunID", t, func() {
+		convey.Convey("should return a 32-char hex string", func() {
+			id := genAgentRunID()
+			convey.So(len(id), convey.ShouldEqual, 32)
+
+			_, err := hex.DecodeString(id)
+			convey.So(err, convey.ShouldBeNil)
+		})
+
+		convey.Convey("should generate unique IDs", func() {
+			id1 := genAgentRunID()
+			id2 := genAgentRunID()
+			convey.So(id1, convey.ShouldNotEqual, id2)
+		})
+	})
+}
 
 // Test_spanTags_setTags 为 spanTags 的 setTags 方法编写单元测试
 func Test_spanTags_setTags(t *testing.T) {

@@ -46,4 +46,4 @@ See the following examples for more usage:
 
 ## License
 
-This project is licensed under the [Apache-2.0 License](LICENSE.txt).
+This project is licensed under the [Apache-2.0 License](../../../../LICENSE).
