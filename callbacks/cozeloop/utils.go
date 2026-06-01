@@ -18,10 +18,14 @@ package cozeloop
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
+	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/callbacks/cozeloop/internal/async"
@@ -33,6 +37,11 @@ import (
 )
 
 func getErrorTags(_ context.Context, err error) spanTags {
+	if _, ok := compose.ExtractInterruptInfo(err); ok {
+		return make(spanTags).
+			set(tracespec.Output, err.Error())
+	}
+
 	return make(spanTags).
 		set(tracespec.Error, err.Error())
 }
@@ -121,6 +130,14 @@ func toJson(v any, bStream bool) string {
 	return b
 }
 
+func genAgentRunID() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 16)
+	}
+	return hex.EncodeToString(b)
+}
+
 func getGraphNodeLevelFromCtx(ctx context.Context) int64 {
 	level, ok := ctx.Value(consts.CozeLoopGraphNodeLevel).(int64)
 	if ok {
@@ -154,10 +171,22 @@ func getAggrMessageOutputHookFromCtx(ctx context.Context) (*AggrMessageOutput, b
 func injectToolIDNameMapToCtx(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
 	if info.Component == compose.ComponentOfToolsNode {
 		message, ok := input.(*schema.Message)
-		if ok {
+		if ok && message != nil {
 			toolIDNameMap := make(map[string]string)
 			for _, toolCall := range message.ToolCalls {
 				toolIDNameMap[toolCall.ID] = toolCall.Function.Name
+			}
+			ctx = context.WithValue(ctx, consts.CozeLoopToolIDNameMap, toolIDNameMap)
+		}
+	}
+	if info.Component == compose.ComponentOfAgenticToolsNode {
+		message, ok := input.(*schema.AgenticMessage)
+		if ok && message != nil {
+			toolIDNameMap := make(map[string]string)
+			for _, block := range message.ContentBlocks {
+				if block != nil && block.Type == schema.ContentBlockTypeFunctionToolCall && block.FunctionToolCall != nil {
+					toolIDNameMap[block.FunctionToolCall.CallID] = block.FunctionToolCall.Name
+				}
 			}
 			ctx = context.WithValue(ctx, consts.CozeLoopToolIDNameMap, toolIDNameMap)
 		}

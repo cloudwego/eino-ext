@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
@@ -230,6 +231,9 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 						CompletionTokens: 1,
 						PromptTokens:     2,
 						TotalTokens:      3,
+						CompletionTokensDetails: model.CompletionTokensDetails{
+							ReasoningTokens: 10,
+						},
 					},
 					Choices: []*model.ChatCompletionChoice{
 						{
@@ -253,6 +257,57 @@ func TestChatCompletionAPIGenerate(t *testing.T) {
 				}, nil).Build()
 
 			outMsg, err := m.Generate(ctx, msgs,
+				fmodel.WithTemperature(1),
+				fmodel.WithMaxTokens(321),
+				fmodel.WithModel("asd"),
+				fmodel.WithTopP(123))
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(outMsg, convey.ShouldNotBeNil)
+			convey.So(outMsg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens, convey.ShouldEqual, 10)
+			convey.So(outMsg.ResponseMeta.Usage.PromptTokens, convey.ShouldEqual, 2)
+			convey.So(outMsg.Role, convey.ShouldEqual, schema.Assistant)
+			convey.So(len(outMsg.ToolCalls), convey.ShouldEqual, 1)
+		})
+
+		PatchConvey("test use batch success", func() {
+			Mock(GetMethod(cli, "CreateBatchChatCompletion")).Return(
+				model.ChatCompletionResponse{
+					Usage: model.Usage{
+						CompletionTokens: 1,
+						PromptTokens:     2,
+						TotalTokens:      3,
+					},
+					Choices: []*model.ChatCompletionChoice{
+						{
+							Message: model.ChatCompletionMessage{
+								Content:    &model.ChatCompletionMessageContent{StringValue: ptrOf("test_content")},
+								Role:       model.ChatMessageRoleAssistant,
+								ToolCallID: "",
+								ToolCalls: []*model.ToolCall{
+									{
+										Function: model.FunctionCall{
+											Arguments: "ccc",
+											Name:      "qqq",
+										},
+										ID:   "123",
+										Type: model.ToolTypeFunction,
+									},
+								},
+							},
+						},
+					},
+				}, nil).Build()
+			bm, err := NewChatModel(ctx, &ChatModelConfig{
+				APIKey: "asd",
+				Model:  "asd",
+				BatchChat: &BatchChatConfig{
+					EnableBatchChat:            true,
+					BatchChatAsyncRetryTimeout: 2 * time.Hour,
+					BatchMaxParallel:           ptrOf(3000),
+				},
+				Timeout: ptrOf(10 * time.Second),
+			})
+			outMsg, err := bm.Generate(ctx, msgs,
 				fmodel.WithTemperature(1),
 				fmodel.WithMaxTokens(321),
 				fmodel.WithModel("asd"),
@@ -391,6 +446,87 @@ func TestCompletionAPIChatModel_toArkContent(t *testing.T) {
 				_, err := cm.toArkContent(msg)
 				convey.So(err, convey.ShouldNotBeNil)
 			})
+
+			PatchConvey("Audio success with URL", func() {
+				audioURL := "https://example.com/audio.mp3"
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{URL: &audioURL, MIMEType: "audio/mp3"},
+						}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 1)
+				convey.So(content.ListValue[0].InputAudio.URL, convey.ShouldEqual, audioURL)
+				convey.So(content.ListValue[0].InputAudio.Format, convey.ShouldEqual, "mp3")
+				convey.So(content.ListValue[0].InputAudio.Data, convey.ShouldEqual, "")
+			})
+
+			PatchConvey("Audio success with Base64Data", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/wav"},
+						}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue, convey.ShouldHaveLength, 1)
+				convey.So(content.ListValue[0].InputAudio.Data, convey.ShouldEqual, audioB64)
+				convey.So(content.ListValue[0].InputAudio.Format, convey.ShouldEqual, "wav")
+				convey.So(content.ListValue[0].InputAudio.URL, convey.ShouldEqual, "")
+			})
+
+			PatchConvey("Error on nil audio", func() {
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "audio field must not be nil")
+			})
+
+			PatchConvey("Error on empty audio data", func() {
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "must contain either a URL or Base64Data")
+			})
+
+			PatchConvey("Error on missing MIMEType for audio Base64Data", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "must have MIMEType when using Base64Data")
+			})
+
+			PatchConvey("Audio Format strips RFC 2045 parameters", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/mpeg; codecs=mp3"},
+						}},
+					},
+				}
+				content, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldBeNil)
+				convey.So(content.ListValue[0].InputAudio.Format, convey.ShouldEqual, "mpeg")
+			})
+
+			PatchConvey("Error on audio Base64Data with data: prefix", func() {
+				audioB64 := "data:audio/mp3;base64,SGVsbG9BdWRpbw=="
+				msg := &schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/mp3"}}}}}
+				_, err := cm.toArkContent(msg)
+				convey.So(err, convey.ShouldNotBeNil)
+				convey.So(err.Error(), convey.ShouldContainSubstring, "audio Base64Data must be a raw base64 string")
+			})
 		})
 
 		PatchConvey("AssistantGenMultiContent", func() {
@@ -503,4 +639,156 @@ func Test_completionAPIChatModel_genRequest(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Len(t, req.Messages, 1)
 	assert.Equal(t, *req.Messages[0].ReasoningContent, "keyOfReasoningContent")
+}
+
+func Test_populateCompletionAPIToolChoice(t *testing.T) {
+
+	convey.Convey("Test_populateCompletionAPIToolChoice", t, func() {
+		convey.Convey("no tool choice", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool choice forbidden", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForbidden),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceNone)
+		})
+
+		convey.Convey("tool choice allowed", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceAllowed),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceAuto)
+		})
+
+		convey.Convey("tool choice forced with one tool", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldResemble, model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: "test_tool",
+				},
+			})
+		})
+
+		convey.Convey("tool choice forced with one allowed tool name", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+					{
+						Function: &model.FunctionDefinition{
+							Name: "another_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"test_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldResemble, model.ToolChoice{
+				Type: model.ToolTypeFunction,
+				Function: model.ToolChoiceFunction{
+					Name: "test_tool",
+				},
+			})
+		})
+
+		convey.Convey("tool choice forced with multiple tools", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+					{
+						Function: &model.FunctionDefinition{
+							Name: "another_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(req.ToolChoice, convey.ShouldEqual, toolChoiceRequired)
+		})
+
+		convey.Convey("tool choice forced with no tools", func() {
+			req := &model.CreateChatCompletionRequest{}
+			options := &fmodel.Options{
+				ToolChoice: ptrOf(schema.ToolChoiceForced),
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "tool_choice is forced but no tools are provided")
+		})
+
+		convey.Convey("tool choice forced with multiple allowed tool names", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"test_tool", "another_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "only one allowed tool name can be configured")
+		})
+
+		convey.Convey("tool choice forced with allowed tool name not in tools list", func() {
+			req := &model.CreateChatCompletionRequest{
+				Tools: []*model.Tool{
+					{
+						Function: &model.FunctionDefinition{
+							Name: "test_tool",
+						},
+					},
+				},
+			}
+			options := &fmodel.Options{
+				ToolChoice:       ptrOf(schema.ToolChoiceForced),
+				AllowedToolNames: []string{"non_existent_tool"},
+			}
+			err := populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "allowed tool name 'non_existent_tool' not found in tools list")
+		})
+	})
 }

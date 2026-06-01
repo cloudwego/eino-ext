@@ -128,7 +128,8 @@ func (i *Indexer) batchUpsert(ctx context.Context, docs []*schema.Document, opti
 		for _, doc := range batch {
 			texts = append(texts, doc.Content)
 		}
-		vectors, err := emb.EmbedStrings(ctx, texts)
+
+		vectors, err := emb.EmbedStrings(i.makeEmbeddingCtx(ctx, emb), texts)
 		if err != nil {
 			return fmt.Errorf("[batchUpsert] embedding failed, %w", err)
 		}
@@ -151,7 +152,7 @@ func (i *Indexer) batchUpsert(ctx context.Context, docs []*schema.Document, opti
 			Points:         points,
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("[batchUpsert] failed to upsert points to qdrant, %w", err)
 		}
 	}
 	return nil
@@ -191,4 +192,19 @@ func float64SliceToFloat32(v []float64) []float32 {
 		f[i] = float32(x)
 	}
 	return f
+}
+
+// makeEmbeddingCtx creates a context with embedding callback information.
+func (i *Indexer) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder) context.Context {
+	runInfo := &callbacks.RunInfo{
+		Component: components.ComponentOfEmbedding,
+	}
+
+	if embType, ok := components.GetType(emb); ok {
+		runInfo.Type = embType
+	}
+
+	runInfo.Name = runInfo.Type + string(runInfo.Component)
+
+	return callbacks.ReuseHandlers(ctx, runInfo)
 }

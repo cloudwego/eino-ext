@@ -257,7 +257,7 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 	}
 
 	state, ok := ctx.Value(langfuseStateKey{}).(*langfuseState)
-	if !ok {
+	if !ok || state == nil {
 		log.Printf("no state in context, runinfo: %+v", info)
 		return ctx
 	}
@@ -275,12 +275,8 @@ func (c *CallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 			EndTime:             time.Now(),
 			CompletionStartTime: time.Now(),
 		}
-		if mcbo.TokenUsage != nil {
-			body.Usage = &langfuse.Usage{
-				PromptTokens:     mcbo.TokenUsage.PromptTokens,
-				CompletionTokens: mcbo.TokenUsage.CompletionTokens,
-				TotalTokens:      mcbo.TokenUsage.TotalTokens,
-			}
+		if mcbo.Message != nil && mcbo.Message.ResponseMeta != nil && mcbo.Message.ResponseMeta.Usage != nil {
+			body.Usage = mapUsageDetail(mcbo.Message.ResponseMeta.Usage)
 		}
 
 		err := c.cli.EndGeneration(body)
@@ -316,7 +312,7 @@ func (c *CallbackHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 	}
 
 	state, ok := ctx.Value(langfuseStateKey{}).(*langfuseState)
-	if !ok {
+	if !ok || state == nil {
 		log.Printf("no state in context, runinfo: %+v, execute error: %v", info, err)
 		return ctx
 	}
@@ -498,7 +494,7 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	}
 
 	state, ok := ctx.Value(langfuseStateKey{}).(*langfuseState)
-	if !ok {
+	if !ok || state == nil {
 		log.Printf("no state in context, runinfo: %+v", info)
 		return ctx
 	}
@@ -525,7 +521,11 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 				outs = append(outs, chunk)
 			}
 
-			usage, outMessage, extra, err := extractModelOutput(convModelCallbackOutput(outs))
+			outMessage, extra, err := extractModelOutput(convModelCallbackOutput(outs))
+			if err != nil {
+				log.Printf("extract stream model output error: %v, runinfo: %+v", err, info)
+				return
+			}
 			body := &langfuse.GenerationEventBody{
 				BaseObservationEventBody: langfuse.BaseObservationEventBody{
 					BaseEventBody: langfuse.BaseEventBody{
@@ -537,12 +537,8 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 				EndTime:             time.Now(),
 				CompletionStartTime: startTime,
 			}
-			if usage != nil {
-				body.Usage = &langfuse.Usage{
-					PromptTokens:     usage.PromptTokens,
-					CompletionTokens: usage.CompletionTokens,
-					TotalTokens:      usage.TotalTokens,
-				}
+			if outMessage != nil && outMessage.ResponseMeta != nil && outMessage.ResponseMeta.Usage != nil {
+				body.Usage = mapUsageDetail(outMessage.ResponseMeta.Usage)
 			}
 
 			err = c.cli.EndGeneration(body)
@@ -594,10 +590,29 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 	return ctx
 }
 
+// UpdateTraceOutput pushes final trace output to Langfuse (via ACL EndTrace).
+// ctx is reserved for future cancellation / deadline propagation; callers may pass context.Background() for now.
+func (c *CallbackHandler) UpdateTraceOutput(ctx context.Context, traceID string, output string) {
+	_ = ctx
+	err := c.cli.EndTrace(&langfuse.TraceEventBody{
+		BaseEventBody: langfuse.BaseEventBody{
+			ID: traceID,
+		},
+		Output: output,
+	})
+	if err != nil {
+		log.Printf("output end trace fail: %v, traceID: %s", err, traceID)
+	}
+}
+
 func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (context.Context, *langfuseState) {
 	state := ctx.Value(langfuseStateKey{})
 	if state != nil {
-		return ctx, state.(*langfuseState)
+		s, _ := state.(*langfuseState)
+		if s == nil {
+			return ctx, nil
+		}
+		return ctx, s
 	}
 
 	traceOpts := ctx.Value(langfuseTraceOptionKey{})
@@ -615,7 +630,7 @@ func (c *CallbackHandler) getOrInitState(ctx context.Context, curName string) (c
 		name = curName
 	}
 	nState, err := initState(ctx, c.cli, &traceOptions{
-		Name:      c.name,
+		Name:      name,
 		UserID:    c.userID,
 		SessionID: c.sessionID,
 		Release:   c.release,

@@ -1,0 +1,281 @@
+/*
+ * Copyright 2026 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package agenticopenai
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/bytedance/mockey"
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
+	"github.com/openai/openai-go/v3/packages/ssestream"
+	"github.com/openai/openai-go/v3/responses"
+	"github.com/stretchr/testify/assert"
+)
+
+func TestNew(t *testing.T) {
+	mockey.PatchConvey("TestNew", t, func() {
+		mockey.PatchConvey("success", func() {
+			config := &ResponsesConfig{
+				APIKey: "test",
+			}
+			m, err := NewResponsesModel(context.Background(), config)
+			assert.NoError(t, err)
+			assert.NotNil(t, m)
+			assert.Equal(t, responsesImplType, m.GetType())
+		})
+		mockey.PatchConvey("config nil", func() {
+			m, err := NewResponsesModel(context.Background(), nil)
+			assert.NoError(t, err)
+			assert.NotNil(t, m)
+		})
+	})
+}
+
+func TestModelGenerate(t *testing.T) {
+	mockey.PatchConvey("TestModelGenerate", t, func() {
+		ctx := context.Background()
+		config := &ResponsesConfig{APIKey: "test"}
+		m, err := NewResponsesModel(ctx, config)
+		assert.NoError(t, err)
+
+		input := []*schema.AgenticMessage{
+			{Role: schema.AgenticRoleTypeUser, ContentBlocks: []*schema.ContentBlock{schema.NewContentBlock(&schema.UserInputText{Text: "hi"})}},
+		}
+
+		mockey.PatchConvey("success", func() {
+			mockey.Mock((*responses.ResponseService).New).Return(&responses.Response{}, nil).Build()
+
+			mockey.Mock(toOutputMessage).Return(&schema.AgenticMessage{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.AssistantGenText{Text: "hello"}),
+				},
+			}, nil).Build()
+
+			out, err := m.Generate(ctx, input)
+			assert.NoError(t, err)
+			assert.NotNil(t, out)
+			if assert.NotEmpty(t, out.ContentBlocks) {
+				assert.Equal(t, "hello", out.ContentBlocks[0].AssistantGenText.Text)
+			}
+		})
+
+		mockey.PatchConvey("genRequest error", func() {
+			invalidInput := []*schema.AgenticMessage{
+				{Role: "invalid", ContentBlocks: []*schema.ContentBlock{schema.NewContentBlock(&schema.UserInputText{Text: "hi"})}},
+			}
+			out, err := m.Generate(ctx, invalidInput)
+			assert.Error(t, err)
+			assert.Nil(t, out)
+			assert.Contains(t, err.Error(), "invalid role")
+		})
+
+		mockey.PatchConvey("cli.New error", func() {
+			mockey.Mock((*responses.ResponseService).New).Return(nil, errors.New("api error")).Build()
+			out, err := m.Generate(ctx, input)
+			assert.Error(t, err)
+			assert.Nil(t, out)
+			assert.Contains(t, err.Error(), "api error")
+		})
+
+		mockey.PatchConvey("toOutputMessage error", func() {
+			mockey.Mock((*responses.ResponseService).New).Return(&responses.Response{}, nil).Build()
+			mockey.Mock(toOutputMessage).Return(nil, errors.New("convert error")).Build()
+
+			out, err := m.Generate(ctx, input)
+			assert.Error(t, err)
+			assert.Nil(t, out)
+		})
+	})
+}
+
+func TestModelStream(t *testing.T) {
+	mockey.PatchConvey("TestModelStream", t, func() {
+		ctx := context.Background()
+		config := &ResponsesConfig{APIKey: "test", Model: "gpt-4"}
+		m, err := NewResponsesModel(ctx, config)
+		assert.NoError(t, err)
+
+		input := []*schema.AgenticMessage{
+			{Role: schema.AgenticRoleTypeUser, ContentBlocks: []*schema.ContentBlock{schema.NewContentBlock(&schema.UserInputText{Text: "hi"})}},
+		}
+
+		mockey.PatchConvey("success", func() {
+			// Create a real stream with a mock decoder to avoid mockey ARM64 issues with generic methods
+			mockStream := ssestream.NewStream[responses.ResponseStreamEventUnion](&modelTestMockDecoder{}, nil)
+
+			mockey.Mock((*responses.ResponseService).NewStreaming).Return(mockStream).Build()
+
+			// Mock AsAny to return a completed event
+			mockey.Mock(responses.ResponseStreamEventUnion.AsAny).Return(responses.ResponseCompletedEvent{
+				Response: responses.Response{
+					Output: []responses.ResponseOutputItemUnion{
+						{Type: "message", ID: "m1", Status: "completed"},
+					},
+				},
+			}).Build()
+
+			s, err := m.Stream(ctx, input)
+			assert.NoError(t, err)
+			assert.NotNil(t, s)
+			defer s.Close()
+
+			// The stream should eventually close without errors
+			// We just verify it was created successfully
+		})
+
+		mockey.PatchConvey("genRequest error", func() {
+			invalidInput := []*schema.AgenticMessage{
+				{Role: "invalid", ContentBlocks: []*schema.ContentBlock{schema.NewContentBlock(&schema.UserInputText{Text: "hi"})}},
+			}
+			s, err := m.Stream(ctx, invalidInput)
+			assert.Error(t, err)
+			assert.Nil(t, s)
+		})
+	})
+}
+
+func TestModelGetType(t *testing.T) {
+	mockey.PatchConvey("TestModelGetType", t, func() {
+		m, err := NewResponsesModel(context.Background(), &ResponsesConfig{APIKey: "test"})
+		assert.NoError(t, err)
+		assert.Equal(t, responsesImplType, m.GetType())
+	})
+}
+
+func TestModelIsCallbacksEnabled(t *testing.T) {
+	mockey.PatchConvey("TestModelIsCallbacksEnabled", t, func() {
+		m, err := NewResponsesModel(context.Background(), &ResponsesConfig{APIKey: "test"})
+		assert.NoError(t, err)
+		assert.True(t, m.IsCallbacksEnabled())
+	})
+}
+
+type modelTestMockDecoder struct {
+	index int
+}
+
+func (d *modelTestMockDecoder) Next() bool {
+	if d.index < 1 {
+		d.index++
+		return true
+	}
+	return false
+}
+
+func (d *modelTestMockDecoder) Event() ssestream.Event {
+	return ssestream.Event{
+		Type: "response.completed",
+		Data: []byte(`{"type":"response.completed"}`),
+	}
+}
+
+func (d *modelTestMockDecoder) Close() error { return nil }
+
+func TestPopulateToolsWithDeferredTools(t *testing.T) {
+	mockey.PatchConvey("populateToolsWithDeferredTools", t, func() {
+		ctx := context.Background()
+		m, err := NewResponsesModel(ctx, &ResponsesConfig{APIKey: "test", Model: "gpt-4"})
+		assert.NoError(t, err)
+
+		mockey.PatchConvey("adds_hosted_tool_search_when_deferred_tools_set", func() {
+			deferredTools := []*schema.ToolInfo{
+				{Name: "deferred1", Desc: "d", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+			}
+			mOpts := &model.Options{
+				DeferredTools: deferredTools,
+			}
+			specOptions := &options{}
+			req := &responses.ResponseNewParams{}
+			err := m.populateTools(req, mOpts, specOptions)
+			assert.NoError(t, err)
+
+			hasToolSearch := false
+			for _, tool := range req.Tools {
+				if tool.OfToolSearch != nil {
+					hasToolSearch = true
+					break
+				}
+			}
+			assert.True(t, hasToolSearch, "should add hosted tool search when deferred tools are set")
+		})
+
+		mockey.PatchConvey("adds_client_tool_search_when_tool_search_tool_set", func() {
+			toolSearchTool := &schema.ToolInfo{
+				Name:        "my_search",
+				Desc:        "search tools",
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"}),
+			}
+			mOpts := &model.Options{
+				ToolSearchTool: toolSearchTool,
+			}
+			specOptions := &options{}
+			req := &responses.ResponseNewParams{}
+			err := m.populateTools(req, mOpts, specOptions)
+			assert.NoError(t, err)
+
+			hasToolSearch := false
+			for _, tool := range req.Tools {
+				if tool.OfToolSearch != nil {
+					hasToolSearch = true
+					assert.Equal(t, responses.ToolSearchToolExecutionClient, tool.OfToolSearch.Execution)
+					break
+				}
+			}
+			assert.True(t, hasToolSearch, "should add client tool search when ToolSearchTool is set")
+		})
+
+		mockey.PatchConvey("uses_client_tool_search_when_deferred_tools_and_tool_search_tool_are_set", func() {
+			deferredTools := []*schema.ToolInfo{
+				{Name: "deferred1", Desc: "d", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"})},
+			}
+			toolSearchTool := &schema.ToolInfo{
+				Name:        "my_search",
+				Desc:        "search tools",
+				ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{Type: "object"}),
+			}
+			mOpts := &model.Options{
+				DeferredTools:  deferredTools,
+				ToolSearchTool: toolSearchTool,
+			}
+			specOptions := &options{}
+			req := &responses.ResponseNewParams{}
+			err := m.populateTools(req, mOpts, specOptions)
+			assert.NoError(t, err)
+
+			toolSearchCount := 0
+			hasDeferredTool := false
+			for _, tool := range req.Tools {
+				if tool.OfFunction != nil && tool.OfFunction.Name == "deferred1" {
+					hasDeferredTool = true
+				}
+				if tool.OfToolSearch != nil {
+					toolSearchCount++
+					assert.Equal(t, responses.ToolSearchToolExecutionClient, tool.OfToolSearch.Execution)
+				}
+			}
+			assert.True(t, hasDeferredTool, "should keep deferred tools registered")
+			assert.Equal(t, 1, toolSearchCount, "should not add both hosted and client tool search")
+		})
+	})
+}
+
+func (d *modelTestMockDecoder) Err() error { return nil }

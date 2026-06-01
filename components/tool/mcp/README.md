@@ -155,6 +155,10 @@ type Config struct {
 }
 ```
 
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
+
 ## For More Details
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

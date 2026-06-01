@@ -16,6 +16,7 @@
 
 package es8
 
+// GetType returns the type of the indexer.
 func GetType() string {
 	return typ
 }

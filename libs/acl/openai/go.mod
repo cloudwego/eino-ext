@@ -4,9 +4,10 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.3.0
-	github.com/cloudwego/eino v0.6.0
+	github.com/bytedance/sonic v1.15.0
+	github.com/cloudwego/eino v0.9.1
 	github.com/eino-contrib/jsonschema v1.0.3
-	github.com/meguminnnnnnnnn/go-openai v0.1.1 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
+	github.com/meguminnnnnnnnn/go-openai v0.1.2 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
 	github.com/stretchr/testify v1.11.1
 )
 
@@ -14,12 +15,12 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
-	github.com/bytedance/sonic v1.14.1 // indirect
-	github.com/bytedance/sonic/loader v0.3.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -42,6 +43,6 @@ require (
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

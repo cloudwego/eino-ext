@@ -24,6 +24,7 @@ import (
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -59,6 +60,64 @@ func TestChatModel(t *testing.T) {
 			})
 			convey.So(err, convey.ShouldNotBeNil)
 			convey.So(sr, convey.ShouldBeNil)
+		})
+	})
+}
+
+func TestValidateToolOptions(t *testing.T) {
+	PatchConvey("test validateToolOptions", t, func() {
+		convey.Convey("no options", func() {
+			err := validateToolOptions()
+			convey.So(err, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool_choice 'allowed' with allowed_tools", func() {
+			toolChoice := schema.ToolChoiceAllowed
+			err := validateToolOptions(
+				model.WithToolChoice(toolChoice, "tool1"),
+				model.WithTools([]*schema.ToolInfo{{Name: "tool1"}}),
+			)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "tool_choice 'allowed' is not supported when allowed tool names are present")
+		})
+
+		convey.Convey("tool_choice 'allowed' without allowed_tools", func() {
+			toolChoice := schema.ToolChoiceAllowed
+			err := validateToolOptions(model.WithToolChoice(toolChoice))
+			convey.So(err, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool_choice 'forced' with more than one allowed_tool", func() {
+			toolChoice := schema.ToolChoiceForced
+			err := validateToolOptions(
+				model.WithToolChoice(toolChoice, "tool1", "tool2"),
+				model.WithTools([]*schema.ToolInfo{
+					{Name: "tool1"},
+					{Name: "tool2"},
+				}),
+			)
+			convey.So(err, convey.ShouldNotBeNil)
+			convey.So(err.Error(), convey.ShouldEqual, "only one allowed tool name can be configured for tool_choice 'forced'")
+		})
+
+		convey.Convey("tool_choice 'forced' with one allowed_tool", func() {
+			toolChoice := schema.ToolChoiceForced
+			err := validateToolOptions(
+				model.WithToolChoice(toolChoice),
+				model.WithTools([]*schema.ToolInfo{{Name: "tool1"}}),
+			)
+			convey.So(err, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool_choice 'forced' without allowed_tools", func() {
+			toolChoice := schema.ToolChoiceForced
+			err := validateToolOptions(model.WithToolChoice(toolChoice))
+			convey.So(err, convey.ShouldBeNil)
+		})
+
+		convey.Convey("tool_choice not set", func() {
+			err := validateToolOptions(model.WithTools([]*schema.ToolInfo{{Name: "tool1"}}))
+			convey.So(err, convey.ShouldBeNil)
 		})
 	})
 }

@@ -27,22 +27,23 @@ import (
 )
 
 // SearchModeSparseVectorQuery executes a query consisting of sparse vectors.
-// And text expansion query has been replaced since 8.15.
-// see: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-sparse-vector-query.html
+// Note: Text expansion query has been replaced since Elasticsearch 8.15.
+// See: https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-sparse-vector-query.html
 
 func SearchModeSparseVectorQuery(config *SparseVectorQueryConfig) es8.SearchMode {
 	return &sparseVectorQuery{config}
 }
 
+// SparseVectorQueryConfig contains configuration for the SparseVectorQuery search mode.
 type SparseVectorQueryConfig struct {
-	// Field The name of the field that contains the token-weight pairs to be searched against.
+	// Field is the name of the field containing the token-weight pairs to be searched against.
 	Field string
-	// / Boost Floating point number used to decrease or increase the relevance scores of the query.
+	// Boost is the floating-point number used to decrease or increase the relevance scores of the query.
 	Boost *float32
-	// InferenceID to use to convert the query text into token-weight pairs.
+	// InferenceID is used to convert the query text into token-weight pairs.
 	// It must be the same inference ID that was used to create the tokens from the input text.
-	// If InferenceID is not provided, this search mode will use Document.SparseVector method to get query sparse vector.
-	// see: https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html
+	// If InferenceID is not provided, this search mode will use the Document.SparseVector method to get the query sparse vector.
+	// See: https://www.elastic.co/guide/en/elasticsearch/reference/current/inference-apis.html
 	InferenceID *string
 }
 

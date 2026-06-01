@@ -21,14 +21,14 @@ import (
 	"github.com/elastic/go-elasticsearch/v8/typedapi/types"
 )
 
-// ImplOptions es specified options
+// ImplOptions contains Elasticsearch-specific options.
 // Use retriever.GetImplSpecificOptions[ImplOptions] to get ImplOptions from options.
 type ImplOptions struct {
 	Filters      []types.Query      `json:"filters,omitempty"`
 	SparseVector map[string]float32 `json:"sparse_vector,omitempty"`
 }
 
-// WithFilters set filters for retrieve query.
+// WithFilters sets filters for the retrieve query.
 // This may take effect in search modes.
 func WithFilters(filters []types.Query) retriever.Option {
 	return retriever.WrapImplSpecificOptFn(func(o *ImplOptions) {
@@ -36,7 +36,7 @@ func WithFilters(filters []types.Query) retriever.Option {
 	})
 }
 
-// WithSparseVector set sparse vector for retrieve query.
+// WithSparseVector sets the sparse vector for the retrieve query.
 // For example, a stored vector {"feature_0": 0.12, "feature_1": 1.2, "feature_2": 3.0}.
 // Eino prefers to define sparse vector as int token id to float32 vector mapping, so you may
 // convert integer token id to string token.

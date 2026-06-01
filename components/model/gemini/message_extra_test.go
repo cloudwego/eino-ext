@@ -29,29 +29,16 @@ import (
 func TestVideoMetaDataFunctions(t *testing.T) {
 	ptr := func(f float64) *float64 { return &f }
 
-	t.Run("TestSetVideoMetaData", func(t *testing.T) {
-		videoURL := &schema.ChatMessageVideoURL{}
-
-		// Success case
-		metaData := &genai.VideoMetadata{FPS: ptr(24.0)}
-		SetVideoMetaData(videoURL, metaData)
-		assert.Equal(t, metaData, GetVideoMetaData(videoURL))
-
-		// Boundary case: nil input
-		SetVideoMetaData(nil, metaData)
-		assert.Nil(t, GetVideoMetaData(nil))
-	})
-
 	t.Run("TestSetInputVideoMetaData", func(t *testing.T) {
 		inputVideo := &schema.MessageInputVideo{}
 
 		// Success case
 		metaData := &genai.VideoMetadata{FPS: ptr(10.0)}
-		setInputVideoMetaData(inputVideo, metaData)
+		SetInputVideoMetaData(inputVideo, metaData)
 		assert.Equal(t, metaData, GetInputVideoMetaData(inputVideo))
 
 		// Boundary case: nil input
-		setInputVideoMetaData(nil, metaData)
+		SetInputVideoMetaData(nil, metaData)
 		assert.Nil(t, GetInputVideoMetaData(nil))
 	})
 }
@@ -66,7 +53,8 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		// Success case
 		signature := []byte("message_thought_signature_data")
 		setMessageThoughtSignature(message, signature)
-		retrieved := getMessageThoughtSignature(message)
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 
 		// Verify it's stored in Extra
@@ -78,7 +66,9 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		// Boundary case: nil message
 		signature := []byte("test_sig")
 		setMessageThoughtSignature(nil, signature)
-		assert.Nil(t, getMessageThoughtSignature(nil))
+		retrieved, ok := GetThoughtSignatureFromExtra(nil)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestSetMessageThoughtSignature_EmptySignature", func(t *testing.T) {
@@ -86,13 +76,17 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		message := &schema.Message{Role: schema.Assistant}
 		setMessageThoughtSignature(message, []byte{})
 		// Empty signature should not be set
-		assert.Nil(t, getMessageThoughtSignature(message))
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestGetMessageThoughtSignature_NilExtra", func(t *testing.T) {
 		// Boundary case: message with nil Extra
 		message := &schema.Message{Role: schema.Assistant}
-		assert.Nil(t, getMessageThoughtSignature(message))
+		retrieved, ok := GetThoughtSignatureFromExtra(message.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("MessageThoughtSignatureCanRoundTripJSON", func(t *testing.T) {
@@ -111,7 +105,8 @@ func TestMessageThoughtSignatureFunctions(t *testing.T) {
 		err = json.Unmarshal(data, &restored)
 		assert.NoError(t, err)
 
-		retrieved := getMessageThoughtSignature(&restored)
+		retrieved, ok := GetThoughtSignatureFromExtra(restored.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 	})
 }
@@ -129,7 +124,8 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		// Success case
 		signature := []byte("toolcall_thought_signature_data")
 		setToolCallThoughtSignature(toolCall, signature)
-		retrieved := getToolCallThoughtSignature(toolCall)
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 
 		// Verify it's stored in Extra
@@ -141,7 +137,9 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		// Boundary case: nil tool call
 		signature := []byte("test_sig")
 		setToolCallThoughtSignature(nil, signature)
-		assert.Nil(t, getToolCallThoughtSignature(nil))
+		retrieved, ok := GetThoughtSignatureFromExtra(nil)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestSetToolCallThoughtSignature_EmptySignature", func(t *testing.T) {
@@ -149,13 +147,17 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		toolCall := &schema.ToolCall{ID: "test"}
 		setToolCallThoughtSignature(toolCall, []byte{})
 		// Empty signature should not be set
-		assert.Nil(t, getToolCallThoughtSignature(toolCall))
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("TestGetToolCallThoughtSignature_NilExtra", func(t *testing.T) {
 		// Boundary case: tool call with nil Extra
 		toolCall := &schema.ToolCall{ID: "test"}
-		assert.Nil(t, getToolCallThoughtSignature(toolCall))
+		retrieved, ok := GetThoughtSignatureFromExtra(toolCall.Extra)
+		assert.False(t, ok)
+		assert.Nil(t, retrieved)
 	})
 
 	t.Run("ToolCallThoughtSignatureCanRoundTripJSON", func(t *testing.T) {
@@ -177,7 +179,34 @@ func TestToolCallThoughtSignatureFunctions(t *testing.T) {
 		err = json.Unmarshal(data, &restored)
 		assert.NoError(t, err)
 
-		retrieved := getToolCallThoughtSignature(&restored)
+		retrieved, ok := GetThoughtSignatureFromExtra(restored.Extra)
+		assert.True(t, ok)
 		assert.Equal(t, signature, retrieved)
 	})
+}
+
+func TestCustomConcat(t *testing.T) {
+	extras := []map[string]any{
+		{"ExecutableCode": &genai.ExecutableCode{Code: "1", Language: "1"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "2", Language: "2"}},
+		{"ExecutableCode": &genai.ExecutableCode{Code: "3", Language: ""}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "1", Output: "1"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "2"}},
+		{"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "", Output: "3"}},
+	}
+
+	var msgs []*schema.Message
+	for _, extra := range extras {
+		msgs = append(msgs, &schema.Message{
+			Role:  schema.Assistant,
+			Extra: extra,
+		})
+	}
+
+	msg, err := schema.ConcatMessages(msgs)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"ExecutableCode":      &genai.ExecutableCode{Code: "123", Language: "2"},
+		"CodeExecutionResult": &genai.CodeExecutionResult{Outcome: "2", Output: "123"},
+	}, msg.Extra)
 }
