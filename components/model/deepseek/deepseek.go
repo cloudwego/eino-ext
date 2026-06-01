@@ -519,7 +519,7 @@ func (cm *ChatModel) generateStreamRequest(ctx context.Context, in []*schema.Mes
 	}
 	req := &deepseek.StreamChatCompletionRequest{
 		Stream:           true,
-		StreamOptions:    deepseek.StreamOptions{IncludeUsage: false},
+		StreamOptions:    deepseek.StreamOptions{IncludeUsage: true},
 		Model:            origReq.Model,
 		Messages:         origReq.Messages,
 		FrequencyPenalty: origReq.FrequencyPenalty,
