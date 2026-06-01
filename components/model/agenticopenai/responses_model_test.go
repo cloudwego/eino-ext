@@ -19,7 +19,9 @@ package agenticopenai
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/model"
@@ -47,6 +49,28 @@ func TestNew(t *testing.T) {
 			assert.NotNil(t, m)
 		})
 	})
+}
+
+func TestResponsesTimeoutConfig(t *testing.T) {
+	timeout := time.Second
+	requestTimeout := 2 * time.Second
+	responseHeaderTimeout := 3 * time.Second
+
+	m, err := NewResponsesModel(context.Background(), &ResponsesConfig{
+		APIKey:                "test",
+		Timeout:               &timeout,
+		RequestTimeout:        &requestTimeout,
+		ResponseHeaderTimeout: &responseHeaderTimeout,
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, m.requestTimeout)
+	assert.Equal(t, requestTimeout, *m.requestTimeout)
+
+	client := newHTTPClientWithResponseHeaderTimeout(responseHeaderTimeout)
+	assert.Zero(t, client.Timeout)
+	transport, ok := client.Transport.(*http.Transport)
+	assert.True(t, ok)
+	assert.Equal(t, responseHeaderTimeout, transport.ResponseHeaderTimeout)
 }
 
 func TestModelGenerate(t *testing.T) {

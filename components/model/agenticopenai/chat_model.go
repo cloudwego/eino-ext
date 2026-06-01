@@ -36,14 +36,30 @@ type ChatConfig struct {
 	// Required
 	APIKey string
 
-	// Timeout specifies the maximum duration to wait for API responses
-	// If HTTPClient is set, Timeout will not be used.
+	// Timeout specifies the maximum duration to wait for API responses.
+	// Deprecated: use RequestTimeout for non-streaming request timeout and
+	// ResponseHeaderTimeout for waiting response headers. For streaming responses,
+	// Timeout does not limit reading the response body; use context timeout to
+	// control the total stream lifetime.
 	// Optional. Default: no timeout
 	Timeout time.Duration
 
+	// RequestTimeout specifies the maximum duration of a non-streaming Generate request.
+	// If not set, Timeout will be used for backward compatibility.
+	// Optional. Default: no timeout
+	RequestTimeout time.Duration
+
+	// ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
+	// It does not limit reading a streaming response body.
+	// If not set, Timeout will be used for backward compatibility.
+	// If HTTPClient is set, ResponseHeaderTimeout will not be used.
+	// Optional. Default: no timeout
+	ResponseHeaderTimeout time.Duration
+
 	// HTTPClient specifies the client to send HTTP requests.
-	// If HTTPClient is set, Timeout will not be used.
-	// Optional. Default &http.Client{Timeout: Timeout}
+	// If HTTPClient is set, Timeout and ResponseHeaderTimeout will not be used.
+	// RequestTimeout still applies to Generate requests.
+	// Optional. Default &http.Client{Transport: cloned default transport with ResponseHeaderTimeout}
 	HTTPClient *http.Client
 
 	// ByAzure indicates whether to use Azure OpenAI Service
@@ -134,8 +150,9 @@ type ChatConfig struct {
 }
 
 type ChatModel struct {
-	cli           *openai.AgenticClient
-	customHeaders map[string]string
+	cli            *openai.AgenticClient
+	requestTimeout time.Duration
+	customHeaders  map[string]string
 }
 
 func NewChatModel(ctx context.Context, config *ChatConfig) (*ChatModel, error) {
@@ -152,7 +169,7 @@ func NewChatModel(ctx context.Context, config *ChatConfig) (*ChatModel, error) {
 	if config.HTTPClient != nil {
 		httpClient = config.HTTPClient
 	} else {
-		httpClient = &http.Client{Timeout: config.Timeout}
+		httpClient = newHTTPClientWithResponseHeaderTimeout(getChatResponseHeaderTimeout(config))
 	}
 
 	nConfig := &openai.Config{
@@ -181,13 +198,20 @@ func NewChatModel(ctx context.Context, config *ChatConfig) (*ChatModel, error) {
 	}
 
 	return &ChatModel{
-		cli:           cli,
-		customHeaders: config.CustomHeaders,
+		cli:            cli,
+		requestTimeout: getChatRequestTimeout(config),
+		customHeaders:  config.CustomHeaders,
 	}, nil
 }
 
 func (m *ChatModel) Generate(ctx context.Context, in []*schema.AgenticMessage, opts ...model.Option) (
 	*schema.AgenticMessage, error) {
+
+	if m.requestTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, m.requestTimeout)
+		defer cancel()
+	}
 
 	opts = m.parseCustomOptions(opts...)
 	opts = append(opts, responseMetaModifier())

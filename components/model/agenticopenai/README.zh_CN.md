@@ -122,8 +122,23 @@ type ResponsesConfig struct {
     APIKey string
 
     // Timeout 指定等待 API 响应的最大持续时间。
+    // Deprecated: 请使用 RequestTimeout 控制非流式请求超时，
+    // 使用 ResponseHeaderTimeout 控制等待响应头的超时。对于流式响应，
+    // Timeout 不限制读取响应体；请使用 context timeout 控制完整流生命周期。
     // 可选。
     Timeout *time.Duration
+
+    // RequestTimeout 指定非流式 Generate 请求的最大持续时间。
+    // 如果未设置，将使用 Timeout 以保持向后兼容。
+    // 可选。默认值：无超时
+    RequestTimeout *time.Duration
+
+    // ResponseHeaderTimeout 指定等待响应头的最大持续时间。
+    // 它不限制读取流式响应体。
+    // 如果未设置，将使用 Timeout 以保持向后兼容。
+    // 如果设置了 HTTPClient，则不会使用 ResponseHeaderTimeout。
+    // 可选。默认值：SDK 默认值
+    ResponseHeaderTimeout *time.Duration
 
     // HTTPClient 指定用于发送请求的 HTTP 客户端。
     // 可选。
@@ -231,12 +246,27 @@ type ChatConfig struct {
     APIKey string
 
     // Timeout 指定等待 API 响应的最大持续时间。
-    // 如果设置了 HTTPClient，则不会使用 Timeout。
+    // Deprecated: 请使用 RequestTimeout 控制非流式请求超时，
+    // 使用 ResponseHeaderTimeout 控制等待响应头的超时。对于流式响应，
+    // Timeout 不限制读取响应体；请使用 context timeout 控制完整流生命周期。
     // 可选。
     Timeout time.Duration
 
+    // RequestTimeout 指定非流式 Generate 请求的最大持续时间。
+    // 如果未设置，将使用 Timeout 以保持向后兼容。
+    // 可选。默认值：无超时
+    RequestTimeout time.Duration
+
+    // ResponseHeaderTimeout 指定等待响应头的最大持续时间。
+    // 它不限制读取流式响应体。
+    // 如果未设置，将使用 Timeout 以保持向后兼容。
+    // 如果设置了 HTTPClient，则不会使用 ResponseHeaderTimeout。
+    // 可选。默认值：无超时
+    ResponseHeaderTimeout time.Duration
+
     // HTTPClient 指定用于发送 HTTP 请求的客户端。
-    // 如果设置了 HTTPClient，则不会使用 Timeout。
+    // 如果设置了 HTTPClient，则不会使用 Timeout 和 ResponseHeaderTimeout。
+    // RequestTimeout 仍会作用于 Generate 请求。
     // 可选。
     HTTPClient *http.Client
 

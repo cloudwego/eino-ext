@@ -18,15 +18,126 @@ package agenticopenai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	nethttp "net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
 
 	"github.com/cloudwego/eino/schema"
 )
+
+func TestChatModelStreamTimeoutDoesNotInterruptActiveStream(t *testing.T) {
+	server := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(nethttp.Flusher)
+		if !ok {
+			nethttp.Error(w, "streaming unsupported", nethttp.StatusInternalServerError)
+			return
+		}
+
+		fmt.Fprint(w, `data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}`+"\n\n")
+		flusher.Flush()
+
+		time.Sleep(50 * time.Millisecond)
+
+		fmt.Fprint(w, `data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"gpt-4","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}`+"\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	m, err := NewChatModel(ctx, &ChatConfig{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Model:   "gpt-4",
+		Timeout: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stream, err := m.Stream(ctx, []*schema.AgenticMessage{
+		{
+			Role: schema.AgenticRoleTypeUser,
+			ContentBlocks: []*schema.ContentBlock{
+				schema.NewContentBlock(&schema.UserInputText{Text: "hello"}),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	var got strings.Builder
+	for {
+		msg, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("stream should not be interrupted by total timeout: %v", recvErr)
+		}
+		for _, block := range msg.ContentBlocks {
+			if block.AssistantGenText != nil {
+				got.WriteString(block.AssistantGenText.Text)
+			}
+		}
+	}
+
+	if got.String() != "hello world" {
+		t.Fatalf("unexpected stream content: %q", got.String())
+	}
+}
+
+func TestChatModelTimeoutConfig(t *testing.T) {
+	timeout := time.Second
+	requestTimeout := 2 * time.Second
+	responseHeaderTimeout := 3 * time.Second
+
+	if got := getChatRequestTimeout(&ChatConfig{Timeout: timeout}); got != timeout {
+		t.Fatalf("expected Timeout fallback for request timeout, got %s", got)
+	}
+
+	if got := getChatRequestTimeout(&ChatConfig{
+		Timeout:        timeout,
+		RequestTimeout: requestTimeout,
+		HTTPClient:     &nethttp.Client{},
+	}); got != requestTimeout {
+		t.Fatalf("expected explicit RequestTimeout with custom HTTPClient, got %s", got)
+	}
+
+	if got := getChatRequestTimeout(&ChatConfig{
+		Timeout:    timeout,
+		HTTPClient: &nethttp.Client{},
+	}); got != 0 {
+		t.Fatalf("expected deprecated Timeout to be ignored with custom HTTPClient, got %s", got)
+	}
+
+	client := newHTTPClientWithResponseHeaderTimeout(responseHeaderTimeout)
+	if client.Timeout != 0 {
+		t.Fatalf("expected zero http.Client.Timeout, got %s", client.Timeout)
+	}
+	transport, ok := client.Transport.(*nethttp.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if transport.ResponseHeaderTimeout != responseHeaderTimeout {
+		t.Fatalf("unexpected ResponseHeaderTimeout: %s", transport.ResponseHeaderTimeout)
+	}
+}
 
 func TestModel(t *testing.T) {
 	PatchConvey("test Model", t, func() {

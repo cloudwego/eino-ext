@@ -122,8 +122,24 @@ type ResponsesConfig struct {
     APIKey string
 
     // Timeout specifies the maximum duration to wait for API responses.
+    // Deprecated: use RequestTimeout for non-streaming request timeout and
+    // ResponseHeaderTimeout for waiting response headers. For streaming responses,
+    // Timeout does not limit reading the response body; use context timeout to
+    // control the total stream lifetime.
     // Optional.
     Timeout *time.Duration
+
+    // RequestTimeout specifies the maximum duration of a non-streaming Generate request.
+    // If not set, Timeout will be used for backward compatibility.
+    // Optional. Default: no timeout
+    RequestTimeout *time.Duration
+
+    // ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
+    // It does not limit reading a streaming response body.
+    // If not set, Timeout will be used for backward compatibility.
+    // If HTTPClient is set, ResponseHeaderTimeout will not be used.
+    // Optional. Default: SDK default
+    ResponseHeaderTimeout *time.Duration
 
     // HTTPClient specifies the HTTP client used to send requests.
     // Optional.
@@ -231,12 +247,28 @@ type ChatConfig struct {
     APIKey string
 
     // Timeout specifies the maximum duration to wait for API responses.
-    // If HTTPClient is set, Timeout will not be used.
+    // Deprecated: use RequestTimeout for non-streaming request timeout and
+    // ResponseHeaderTimeout for waiting response headers. For streaming responses,
+    // Timeout does not limit reading the response body; use context timeout to
+    // control the total stream lifetime.
     // Optional.
     Timeout time.Duration
 
+    // RequestTimeout specifies the maximum duration of a non-streaming Generate request.
+    // If not set, Timeout will be used for backward compatibility.
+    // Optional. Default: no timeout
+    RequestTimeout time.Duration
+
+    // ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
+    // It does not limit reading a streaming response body.
+    // If not set, Timeout will be used for backward compatibility.
+    // If HTTPClient is set, ResponseHeaderTimeout will not be used.
+    // Optional. Default: no timeout
+    ResponseHeaderTimeout time.Duration
+
     // HTTPClient specifies the client to send HTTP requests.
-    // If HTTPClient is set, Timeout will not be used.
+    // If HTTPClient is set, Timeout and ResponseHeaderTimeout will not be used.
+    // RequestTimeout still applies to Generate requests.
     // Optional.
     HTTPClient *http.Client
 

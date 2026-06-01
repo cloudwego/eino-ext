@@ -87,14 +87,30 @@ type ChatModelConfig struct {
 // Required
 APIKey string `json:"api_key"`
 
-// Timeout specifies the maximum duration to wait for API responses
-// If HTTPClient is set, Timeout will not be used.
+// Timeout specifies the maximum duration to wait for API responses.
+// Deprecated: use RequestTimeout for non-streaming request timeout and
+// ResponseHeaderTimeout for waiting response headers. For streaming responses,
+// Timeout does not limit reading the response body; use context timeout to
+// control the total stream lifetime.
 // Optional. Default: no timeout
 Timeout time.Duration `json:"timeout"`
 
+// RequestTimeout specifies the maximum duration of a non-streaming Generate request.
+// If not set, Timeout will be used for backward compatibility.
+// Optional. Default: no timeout
+RequestTimeout time.Duration `json:"request_timeout"`
+
+// ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
+// It does not limit reading a streaming response body.
+// If not set, Timeout will be used for backward compatibility.
+// If HTTPClient is set, ResponseHeaderTimeout will not be used.
+// Optional. Default: no timeout
+ResponseHeaderTimeout time.Duration `json:"response_header_timeout"`
+
 // HTTPClient specifies the client to send HTTP requests.
-// If HTTPClient is set, Timeout will not be used.
-// Optional. Default &http.Client{Timeout: Timeout}
+// If HTTPClient is set, Timeout and ResponseHeaderTimeout will not be used.
+// RequestTimeout still applies to Generate requests.
+// Optional. Default &http.Client{Transport: cloned default transport with ResponseHeaderTimeout}
 HTTPClient *http.Client `json:"http_client"`
 
 // The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
@@ -204,7 +220,6 @@ See the following examples for more usage:
 - [Intent & Tool Calling](./examples/intent_tool/)
 - [Streaming Response](./examples/stream/)
 - [Structured Output](./examples/structured/)
-- [Timeout Handling](./examples/timeout/)
 
 
 

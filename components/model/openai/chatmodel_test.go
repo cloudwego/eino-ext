@@ -19,10 +19,15 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	nethttp "net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bytedance/mockey"
 	"github.com/eino-contrib/jsonschema"
@@ -35,6 +40,101 @@ import (
 
 	protocol "github.com/cloudwego/eino-ext/libs/acl/openai"
 )
+
+func TestStreamTimeoutDoesNotInterruptActiveStream(t *testing.T) {
+	server := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(nethttp.Flusher)
+		if !ok {
+			nethttp.Error(w, "streaming unsupported", nethttp.StatusInternalServerError)
+			return
+		}
+
+		fmt.Fprint(w, `data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"gpt-4","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}`+"\n\n")
+		flusher.Flush()
+
+		time.Sleep(50 * time.Millisecond)
+
+		fmt.Fprint(w, `data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"gpt-4","choices":[{"index":0,"delta":{"content":" world"},"finish_reason":null}]}`+"\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	m, err := NewChatModel(ctx, &ChatModelConfig{
+		APIKey:  "test-key",
+		Model:   "gpt-4",
+		BaseURL: server.URL,
+		Timeout: 10 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stream, err := m.Stream(ctx, []*schema.Message{schema.UserMessage("hello")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+
+	var got strings.Builder
+	for {
+		msg, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("stream should not be interrupted by total timeout: %v", recvErr)
+		}
+		got.WriteString(msg.Content)
+	}
+
+	if got.String() != "hello world" {
+		t.Fatalf("unexpected stream content: %q", got.String())
+	}
+}
+
+func TestTimeoutConfig(t *testing.T) {
+	timeout := time.Second
+	requestTimeout := 2 * time.Second
+	responseHeaderTimeout := 3 * time.Second
+
+	if got := getRequestTimeout(&ChatModelConfig{Timeout: timeout}); got != timeout {
+		t.Fatalf("expected Timeout fallback for request timeout, got %s", got)
+	}
+
+	if got := getRequestTimeout(&ChatModelConfig{
+		Timeout:        timeout,
+		RequestTimeout: requestTimeout,
+		HTTPClient:     &nethttp.Client{},
+	}); got != requestTimeout {
+		t.Fatalf("expected explicit RequestTimeout with custom HTTPClient, got %s", got)
+	}
+
+	if got := getRequestTimeout(&ChatModelConfig{
+		Timeout:    timeout,
+		HTTPClient: &nethttp.Client{},
+	}); got != 0 {
+		t.Fatalf("expected deprecated Timeout to be ignored with custom HTTPClient, got %s", got)
+	}
+
+	client := newHTTPClientWithResponseHeaderTimeout(responseHeaderTimeout)
+	if client.Timeout != 0 {
+		t.Fatalf("expected zero http.Client.Timeout, got %s", client.Timeout)
+	}
+	transport, ok := client.Transport.(*nethttp.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", client.Transport)
+	}
+	if transport.ResponseHeaderTimeout != responseHeaderTimeout {
+		t.Fatalf("unexpected ResponseHeaderTimeout: %s", transport.ResponseHeaderTimeout)
+	}
+}
 
 func TestOpenAIGenerate(t *testing.T) {
 	js := &jsonschema.Schema{
