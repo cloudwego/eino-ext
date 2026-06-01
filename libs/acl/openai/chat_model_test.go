@@ -245,14 +245,6 @@ func TestToXXXUtils(t *testing.T) {
 		mc, err = toOpenAIMultiContent(nil)
 		assert.Nil(t, err)
 		assert.Nil(t, mc)
-
-		_, err = toOpenAIMultiContent([]schema.ChatMessagePart{
-			{
-				Type:    schema.ChatMessagePartTypeFileURL,
-				FileURL: &schema.ChatMessageFileURL{URL: "https://example.com/file.pdf"},
-			},
-		})
-		assert.ErrorContains(t, err, "file URL message part is not supported")
 	})
 }
 

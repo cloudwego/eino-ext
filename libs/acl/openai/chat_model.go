@@ -319,11 +319,6 @@ func toOpenAIMultiContent(mc []schema.ChatMessagePart) ([]openai.ChatMessagePart
 					URL: part.VideoURL.URL,
 				},
 			})
-		case schema.ChatMessagePartTypeFileURL:
-			if part.FileURL == nil {
-				return nil, fmt.Errorf("FileURL field must not be nil when Type is ChatMessagePartTypeFileURL")
-			}
-			return nil, errors.New("for OpenAI Chat Completions, file URL message part is not supported; use Responses API or UserInputMultiContent with base64 data")
 		default:
 			return nil, fmt.Errorf("unsupported chat message part type: %s", part.Type)
 		}
