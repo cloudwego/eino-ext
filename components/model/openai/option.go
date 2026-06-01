@@ -21,7 +21,36 @@ import (
 	"github.com/cloudwego/eino/components/model"
 )
 
+// RequestPayloadModifier transforms the serialized request payload
+// with access to input messages and the raw payload.
+type RequestPayloadModifier = openai.RequestPayloadModifier
+
+// ResponseMessageModifier transforms the generated message using the raw response body.
+// It must return the final message.
+type ResponseMessageModifier = openai.ResponseMessageModifier
+
+// ResponseChunkMessageModifier transforms the generated message chunk using the raw response body.
+// When end is true, msg and rawBody may be nil.
+type ResponseChunkMessageModifier = openai.ResponseChunkMessageModifier
+
 // WithExtraFields is used to set extra body fields for the request.
+// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
+//
+// Example:
+//
+//	WithExtraFields(map[string]any{
+//	    "reasoning_effort": "high",
+//	    "service_tier": "default",
+//	})
+//
+// The resulting request body will be:
+//
+//	{
+//	    "model": "o1",
+//	    "messages": [...],
+//	    "reasoning_effort": "high",
+//	    "service_tier": "default"
+//	}
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return openai.WithExtraFields(extraFields)
 }
@@ -38,4 +67,26 @@ func WithReasoningEffort(effort ReasoningEffortLevel) model.Option {
 // WithMaxCompletionTokens is used to set the max completion tokens for the request.
 func WithMaxCompletionTokens(maxCompletionTokens int) model.Option {
 	return openai.WithMaxCompletionTokens(maxCompletionTokens)
+}
+
+// WithRequestPayloadModifier registers a payload modifier to customize
+// the serialized request based on input messages.
+// This is useful for OpenAI-compatible providers that require extra fields
+// beyond what the standard API supports.
+func WithRequestPayloadModifier(modifier RequestPayloadModifier) model.Option {
+	return openai.WithRequestPayloadModifier(modifier)
+}
+
+// WithResponseMessageModifier registers a message modifier to transform
+// the output message using the raw response body.
+// This is useful for extracting provider-specific fields from the response.
+func WithResponseMessageModifier(m ResponseMessageModifier) model.Option {
+	return openai.WithResponseMessageModifier(m)
+}
+
+// WithResponseChunkMessageModifier registers a message modifier to transform
+// the output message chunk using the raw response body.
+// When end is true, msg and rawBody may be nil.
+func WithResponseChunkMessageModifier(m ResponseChunkMessageModifier) model.Option {
+	return openai.WithResponseChunkMessageModifier(m)
 }

@@ -18,14 +18,36 @@ package cozeloop
 
 import (
 	"context"
+	"encoding/hex"
 	"testing"
+
+	"fmt"
 
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"github.com/coze-dev/cozeloop-go/spec/tracespec"
 	"github.com/smartystreets/goconvey/convey"
 )
+
+func Test_genAgentRunID(t *testing.T) {
+	convey.Convey("test genAgentRunID", t, func() {
+		convey.Convey("should return a 32-char hex string", func() {
+			id := genAgentRunID()
+			convey.So(len(id), convey.ShouldEqual, 32)
+
+			_, err := hex.DecodeString(id)
+			convey.So(err, convey.ShouldBeNil)
+		})
+
+		convey.Convey("should generate unique IDs", func() {
+			id1 := genAgentRunID()
+			id2 := genAgentRunID()
+			convey.So(id1, convey.ShouldNotEqual, id2)
+		})
+	})
+}
 
 // Test_spanTags_setTags 为 spanTags 的 setTags 方法编写单元测试
 func Test_spanTags_setTags(t *testing.T) {
@@ -136,6 +158,32 @@ func Test_spanTags_set(t *testing.T) {
 
 			// Assert
 			convey.So(result[key], convey.ShouldEqual, value)
+		})
+	})
+}
+
+func Test_getErrorTags(t *testing.T) {
+	ctx := context.Background()
+
+	mockey.PatchConvey("测试 getErrorTags 函数", t, func() {
+		mockey.PatchConvey("普通错误应写入 tracespec.Error", func() {
+			err := fmt.Errorf("some error")
+			tags := getErrorTags(ctx, err)
+
+			convey.So(tags, convey.ShouldNotBeNil)
+			convey.So(tags[tracespec.Error], convey.ShouldEqual, "some error")
+			convey.So(tags[tracespec.Output], convey.ShouldBeNil)
+		})
+
+		mockey.PatchConvey("中断错误应写入 tracespec.Output", func() {
+			mockey.Mock(compose.ExtractInterruptInfo).Return(&compose.InterruptInfo{}, true).Build()
+
+			err := fmt.Errorf("interrupt happened")
+			tags := getErrorTags(ctx, err)
+
+			convey.So(tags, convey.ShouldNotBeNil)
+			convey.So(tags[tracespec.Output], convey.ShouldEqual, "interrupt happened")
+			convey.So(tags[tracespec.Error], convey.ShouldBeNil)
 		})
 	})
 }

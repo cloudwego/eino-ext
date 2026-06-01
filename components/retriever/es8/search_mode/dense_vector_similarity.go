@@ -78,11 +78,11 @@ func (d *denseVectorSimilarity) BuildRequest(ctx context.Context, conf *es8.Retr
 	}
 
 	if len(io.Filters) > 0 {
-		q.ScriptScore.Query = &types.Query{
+		q.ScriptScore.Query = types.Query{
 			Bool: &types.BoolQuery{Filter: io.Filters},
 		}
 	} else {
-		q.ScriptScore.Query = &types.Query{
+		q.ScriptScore.Query = types.Query{
 			MatchAll: &types.MatchAllQuery{},
 		}
 	}

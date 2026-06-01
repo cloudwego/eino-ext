@@ -112,7 +112,7 @@ func TestLangfuse(t *testing.T) {
 			},
 			CompletionStartTime: time.Now(),
 			EndTime:             time.Now(),
-			Usage: &Usage{
+			Usage: &UsageDetail{
 				PromptTokens:     10,
 				CompletionTokens: 100,
 				TotalTokens:      110,

@@ -143,3 +143,7 @@ type RetrieverConfig struct {
 	Embedding embedding.Embedder
 }
 ```
+
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.

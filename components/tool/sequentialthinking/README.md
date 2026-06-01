@@ -73,3 +73,7 @@ func main() {
 }
 
 ```
+
+## Examples
+
+See the [examples](./examples/) directory for complete usage examples.
