@@ -46,7 +46,7 @@ jobs:
 
       - name: Go test in go workspace
         run: |
-          modules=`find . -name "go.mod" -exec dirname {} \;`
+          modules=`find . -name "go.mod" -exec dirname {} \; | grep -v '^\./components/tool/mcp$'`
           echo "all the modules in eino-ext: "
           echo "${modules}"
 
@@ -117,6 +117,19 @@ jobs:
             ${{ steps.calculate-coverage.outputs.report && fromJSON(steps.calculate-coverage.outputs.report) || 'No coverage report available' }} ```
           reactions: heart
           reactions-edit-mode: append
+  unit-test-mcp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.6"
+
+      - name: Go test MCP
+        run: |
+          cd components/tool/mcp
+          go test -race -coverprofile=coverage.out -gcflags="all=-l -N" -coverpkg=./... ./...
+
   unit-benchmark-test:
     runs-on: ubuntu-latest
     steps:
