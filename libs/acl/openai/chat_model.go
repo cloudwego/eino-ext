@@ -491,10 +491,13 @@ func buildMessageFromUserInputMultiContent(inMsg *schema.Message) (openai.ChatCo
 				return comMessage, errors.New("the 'file' field is required for parts of type 'file_url'")
 			}
 			if part.File.Base64Data != nil {
+				if part.File.MessagePartCommon.MIMEType == "" {
+					return comMessage, fmt.Errorf("mimetype is required when using base64data")
+				}
 				comMessage.MultiContent = append(comMessage.MultiContent, openai.ChatMessagePart{
 					Type: openai.ChatMessagePartTypeFile,
 					File: &openai.ChatMessageFile{
-						FileData: *part.File.Base64Data,
+						FileData: fmt.Sprintf("data:%s;base64,%s", part.File.MIMEType, *part.File.Base64Data),
 						FileName: part.File.Name,
 					},
 				})

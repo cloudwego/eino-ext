@@ -597,7 +597,7 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 						{
 							Type: openai.ChatMessagePartTypeFile,
 							File: &openai.ChatMessageFile{
-								FileData: base64Data,
+								FileData: "data:application/pdf;base64,base64data",
 								FileName: "file.pdf",
 							},
 						},
@@ -675,6 +675,28 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 				},
 				wantErr:         true,
 				wantErrContains: "the 'file' field is required",
+			},
+			{
+				name: "file base64 missing mimetype",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeFileURL,
+							File: &schema.MessageInputFile{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: &base64Data,
+								},
+								Name: "file.pdf",
+							},
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleUser,
+				},
+				wantErr:         true,
+				wantErrContains: "mimetype is required when using base64data",
 			},
 			{
 				name: "unsupported type",
@@ -780,6 +802,35 @@ func Test_genRequest(t *testing.T) {
 		assert.Equal(t, "test-model", cbInput.Config.Model)
 		assert.Equal(t, in, cbInput.Messages)
 		assert.Len(t, reqOpts, 0)
+	})
+
+	t.Run("agentic file input builds chat completion file data URL", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in, err := agenticMessagesToMessages([]*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputText{Text: "read the file"}),
+					schema.NewContentBlock(&schema.UserInputFile{
+						Base64Data: "base64data",
+						MIMEType:   "application/pdf",
+						Name:       "file.pdf",
+					}),
+				},
+			},
+		})
+		assert.NoError(t, err)
+
+		req, _, _, _, err := c.genRequest(t.Context(), in)
+		assert.NoError(t, err)
+		assert.Len(t, req.Messages, 1)
+		assert.Len(t, req.Messages[0].MultiContent, 2)
+
+		filePart := req.Messages[0].MultiContent[1]
+		assert.Equal(t, openai.ChatMessagePartTypeFile, filePart.Type)
+		assert.NotNil(t, filePart.File)
+		assert.Equal(t, "data:application/pdf;base64,base64data", filePart.File.FileData)
+		assert.Equal(t, "file.pdf", filePart.File.FileName)
 	})
 
 	t.Run("multi-content conflict error", func(t *testing.T) {

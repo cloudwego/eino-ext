@@ -267,7 +267,7 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 		assert.Equal(t, imgURL, *result[0].UserInputMultiContent[1].Image.URL)
 	})
 
-	t.Run("user message with file tool result", func(t *testing.T) {
+	t.Run("user message with file tool result unsupported", func(t *testing.T) {
 		fileURL := "https://example.com/result.pdf"
 		msgs := []*schema.AgenticMessage{
 			{
@@ -285,17 +285,9 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 			},
 		}
 
-		result, err := agenticMessagesToMessages(msgs)
-		assert.NoError(t, err)
-		assert.Len(t, result, 1)
-		assert.Equal(t, schema.Tool, result[0].Role)
-		assert.Equal(t, "call_1", result[0].ToolCallID)
-		assert.Len(t, result[0].UserInputMultiContent, 2)
-		assert.Equal(t, schema.ChatMessagePartTypeText, result[0].UserInputMultiContent[0].Type)
-		assert.Equal(t, schema.ChatMessagePartTypeFileURL, result[0].UserInputMultiContent[1].Type)
-		assert.Equal(t, fileURL, *result[0].UserInputMultiContent[1].File.URL)
-		assert.Equal(t, "application/pdf", result[0].UserInputMultiContent[1].File.MIMEType)
-		assert.Equal(t, "result.pdf", result[0].UserInputMultiContent[1].File.Name)
+		_, err := agenticMessagesToMessages(msgs)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported function tool result content block type for OpenAI Chat Completions")
 	})
 
 	t.Run("user message with empty tool result content", func(t *testing.T) {

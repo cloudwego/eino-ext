@@ -613,10 +613,7 @@ func functionToolResultContentToInputParts(content []*schema.FunctionToolResultC
 			}
 			parts = append(parts, part)
 		case schema.FunctionToolResultContentBlockTypeFile:
-			if block.File == nil {
-				return nil, fmt.Errorf("file content is nil for function tool result content block")
-			}
-			parts = append(parts, fileBlockToInputPart(block.File, block.Extra))
+			return nil, fmt.Errorf("unsupported function tool result content block type for OpenAI Chat Completions: %s", block.Type)
 		default:
 			return nil, fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
 		}
