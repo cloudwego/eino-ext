@@ -223,7 +223,7 @@ Context modes in SKILL.md frontmatter:
 
 Package: `github.com/cloudwego/eino/adk/middlewares/patchtoolcalls`
 
-Fixes "dangling tool calls" -- assistant messages with tool calls that lack corresponding tool response messages. Common in interrupted sessions or human-in-the-loop.
+Fixes "dangling tool calls" -- assistant messages with tool calls that lack corresponding tool response messages. Common in interrupted sessions or human-in-the-loop. By default it only inserts deterministic canceled tool results for missing non-empty call IDs; stronger cleanup is opt-in.
 
 ```go
 import "github.com/cloudwego/eino/adk/middlewares/patchtoolcalls"
@@ -236,7 +236,17 @@ mw, _ := patchtoolcalls.New(ctx, &patchtoolcalls.Config{
         return fmt.Sprintf("Tool %s (call %s) was cancelled.", toolName, toolCallID), nil
     },
 })
+
+// Optional normalization
+mw, _ := patchtoolcalls.New(ctx, &patchtoolcalls.Config{
+    RemoveOrphanResults:    true, // remove results without a previous assistant tool call
+    RemoveDuplicateResults: true, // keep only the first result for each call ID
+    Strict:                 true, // validate and return an error instead of repairing
+    MarkSynthetic:          true, // mark generated AgenticMessage results in Extra
+})
 ```
+
+`Strict` mode reports missing results, orphan results, duplicate results, and empty assistant tool-call IDs without mutating state. Empty tool-call IDs are skipped in non-strict mode because they cannot be paired safely.
 
 Place this middleware first in the chain to ensure clean message history for other middleware.
 
