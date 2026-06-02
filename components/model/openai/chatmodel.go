@@ -86,30 +86,23 @@ type ChatModelConfig struct {
 	// Required
 	APIKey string `json:"api_key"`
 
-	// Timeout specifies the maximum duration to wait for API responses.
-	// Deprecated: use RequestTimeout for non-streaming request timeout and
-	// ResponseHeaderTimeout for waiting response headers. For streaming responses,
-	// Timeout does not limit reading the response body; use context timeout to
-	// control the total stream lifetime.
+	// Timeout specifies the maximum duration for the entire HTTP request lifecycle,
+	// including connection, redirects, waiting for response headers, and reading
+	// the response body. In streaming scenarios, it can be used to limit the total
+	// stream lifetime.
 	// Optional. Default: no timeout
 	Timeout time.Duration `json:"timeout"`
 
-	// RequestTimeout specifies the maximum duration of a non-streaming Generate request.
-	// If not set, Timeout will be used for backward compatibility.
-	// Optional. Default: no timeout
-	RequestTimeout time.Duration `json:"request_timeout"`
-
 	// ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
-	// It does not limit reading a streaming response body.
-	// If not set, Timeout will be used for backward compatibility.
+	// It does not limit reading the response body, so active streams can continue
+	// beyond this duration.
 	// If HTTPClient is set, ResponseHeaderTimeout will not be used.
 	// Optional. Default: no timeout
 	ResponseHeaderTimeout time.Duration `json:"response_header_timeout"`
 
 	// HTTPClient specifies the client to send HTTP requests.
 	// If HTTPClient is set, Timeout and ResponseHeaderTimeout will not be used.
-	// RequestTimeout still applies to Generate requests.
-	// Optional. Default &http.Client{Transport: cloned default transport with ResponseHeaderTimeout}
+	// Optional. Default &http.Client{Timeout: Timeout, Transport: cloned default transport with ResponseHeaderTimeout}
 	HTTPClient *http.Client `json:"http_client"`
 
 	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
@@ -208,8 +201,7 @@ type ChatModelConfig struct {
 }
 
 type ChatModel struct {
-	cli            *openai.Client
-	requestTimeout time.Duration
+	cli *openai.Client
 }
 
 func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, error) {
@@ -220,7 +212,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 		if config.HTTPClient != nil {
 			httpClient = config.HTTPClient
 		} else {
-			httpClient = newHTTPClientWithResponseHeaderTimeout(getResponseHeaderTimeout(config))
+			httpClient = newHTTPClient(config.Timeout, config.ResponseHeaderTimeout)
 		}
 
 		nConf = &openai.Config{
@@ -260,18 +252,12 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 	}
 
 	return &ChatModel{
-		cli:            cli,
-		requestTimeout: getRequestTimeout(config),
+		cli: cli,
 	}, nil
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...model.Option) (
 	outMsg *schema.Message, err error) {
-	if cm.requestTimeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cm.requestTimeout)
-		defer cancel()
-	}
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	out, err := cm.cli.Generate(ctx, in, opts...)
 	if err != nil {
@@ -294,7 +280,7 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatM
 	if err != nil {
 		return nil, err
 	}
-	return &ChatModel{cli: cli, requestTimeout: cm.requestTimeout}, nil
+	return &ChatModel{cli: cli}, nil
 }
 
 func (cm *ChatModel) BindTools(tools []*schema.ToolInfo) error {

@@ -121,22 +121,14 @@ type ResponsesConfig struct {
     // Required.
     APIKey string
 
-    // Timeout specifies the maximum duration to wait for API responses.
-    // Deprecated: use RequestTimeout for non-streaming request timeout and
-    // ResponseHeaderTimeout for waiting response headers. For streaming responses,
-    // Timeout does not limit reading the response body; use context timeout to
-    // control the total stream lifetime.
+    // Timeout specifies the maximum duration for requests made by the OpenAI SDK.
+    // In streaming scenarios, it can be used to limit the total stream lifetime.
     // Optional.
     Timeout *time.Duration
 
-    // RequestTimeout specifies the maximum duration of a non-streaming Generate request.
-    // If not set, Timeout will be used for backward compatibility.
-    // Optional. Default: no timeout
-    RequestTimeout *time.Duration
-
     // ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
-    // It does not limit reading a streaming response body.
-    // If not set, Timeout will be used for backward compatibility.
+    // It does not limit reading the response body, so active streams can continue
+    // beyond this duration.
     // If HTTPClient is set, ResponseHeaderTimeout will not be used.
     // Optional. Default: SDK default
     ResponseHeaderTimeout *time.Duration
@@ -246,30 +238,23 @@ type ChatConfig struct {
     // Required.
     APIKey string
 
-    // Timeout specifies the maximum duration to wait for API responses.
-    // Deprecated: use RequestTimeout for non-streaming request timeout and
-    // ResponseHeaderTimeout for waiting response headers. For streaming responses,
-    // Timeout does not limit reading the response body; use context timeout to
-    // control the total stream lifetime.
+    // Timeout specifies the maximum duration for the entire HTTP request lifecycle,
+    // including connection, redirects, waiting for response headers, and reading
+    // the response body. In streaming scenarios, it can be used to limit the total
+    // stream lifetime.
     // Optional.
     Timeout time.Duration
 
-    // RequestTimeout specifies the maximum duration of a non-streaming Generate request.
-    // If not set, Timeout will be used for backward compatibility.
-    // Optional. Default: no timeout
-    RequestTimeout time.Duration
-
     // ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
-    // It does not limit reading a streaming response body.
-    // If not set, Timeout will be used for backward compatibility.
+    // It does not limit reading the response body, so active streams can continue
+    // beyond this duration.
     // If HTTPClient is set, ResponseHeaderTimeout will not be used.
     // Optional. Default: no timeout
     ResponseHeaderTimeout time.Duration
 
     // HTTPClient specifies the client to send HTTP requests.
     // If HTTPClient is set, Timeout and ResponseHeaderTimeout will not be used.
-    // RequestTimeout still applies to Generate requests.
-    // Optional.
+    // Optional. Default &http.Client{Timeout: Timeout, Transport: cloned default transport with ResponseHeaderTimeout}
     HTTPClient *http.Client
 
     // ByAzure indicates whether to use Azure OpenAI Service.

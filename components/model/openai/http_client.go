@@ -21,33 +21,18 @@ import (
 	"time"
 )
 
-func newHTTPClientWithResponseHeaderTimeout(timeout time.Duration) *http.Client {
-	if timeout <= 0 {
-		return &http.Client{}
+func newHTTPClient(timeout, responseHeaderTimeout time.Duration) *http.Client {
+	client := &http.Client{Timeout: timeout}
+	if responseHeaderTimeout <= 0 {
+		return client
 	}
-
 	if transport, ok := http.DefaultTransport.(*http.Transport); ok {
 		transport = transport.Clone()
-		transport.ResponseHeaderTimeout = timeout
-		return &http.Client{Transport: transport}
+		transport.ResponseHeaderTimeout = responseHeaderTimeout
+		client.Transport = transport
+		return client
 	}
 
-	return &http.Client{Transport: http.DefaultTransport}
-}
-
-func getRequestTimeout(config *ChatModelConfig) time.Duration {
-	if config.RequestTimeout > 0 {
-		return config.RequestTimeout
-	}
-	if config.HTTPClient != nil {
-		return 0
-	}
-	return config.Timeout
-}
-
-func getResponseHeaderTimeout(config *ChatModelConfig) time.Duration {
-	if config.ResponseHeaderTimeout > 0 {
-		return config.ResponseHeaderTimeout
-	}
-	return config.Timeout
+	client.Transport = http.DefaultTransport
+	return client
 }

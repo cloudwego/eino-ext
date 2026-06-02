@@ -59,10 +59,10 @@ func TestChatModelStreamTimeoutDoesNotInterruptActiveStream(t *testing.T) {
 
 	ctx := context.Background()
 	m, err := NewChatModel(ctx, &ChatConfig{
-		BaseURL: server.URL,
-		APIKey:  "test-key",
-		Model:   "gpt-4",
-		Timeout: 10 * time.Millisecond,
+		BaseURL:               server.URL,
+		APIKey:                "test-key",
+		Model:                 "gpt-4",
+		ResponseHeaderTimeout: 10 * time.Millisecond,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestChatModelStreamTimeoutDoesNotInterruptActiveStream(t *testing.T) {
 			break
 		}
 		if recvErr != nil {
-			t.Fatalf("stream should not be interrupted by total timeout: %v", recvErr)
+			t.Fatalf("stream should not be interrupted by response header timeout: %v", recvErr)
 		}
 		for _, block := range msg.ContentBlocks {
 			if block.AssistantGenText != nil {
@@ -104,31 +104,11 @@ func TestChatModelStreamTimeoutDoesNotInterruptActiveStream(t *testing.T) {
 
 func TestChatModelTimeoutConfig(t *testing.T) {
 	timeout := time.Second
-	requestTimeout := 2 * time.Second
 	responseHeaderTimeout := 3 * time.Second
 
-	if got := getChatRequestTimeout(&ChatConfig{Timeout: timeout}); got != timeout {
-		t.Fatalf("expected Timeout fallback for request timeout, got %s", got)
-	}
-
-	if got := getChatRequestTimeout(&ChatConfig{
-		Timeout:        timeout,
-		RequestTimeout: requestTimeout,
-		HTTPClient:     &nethttp.Client{},
-	}); got != requestTimeout {
-		t.Fatalf("expected explicit RequestTimeout with custom HTTPClient, got %s", got)
-	}
-
-	if got := getChatRequestTimeout(&ChatConfig{
-		Timeout:    timeout,
-		HTTPClient: &nethttp.Client{},
-	}); got != 0 {
-		t.Fatalf("expected deprecated Timeout to be ignored with custom HTTPClient, got %s", got)
-	}
-
-	client := newHTTPClientWithResponseHeaderTimeout(responseHeaderTimeout)
-	if client.Timeout != 0 {
-		t.Fatalf("expected zero http.Client.Timeout, got %s", client.Timeout)
+	client := newHTTPClient(timeout, responseHeaderTimeout)
+	if client.Timeout != timeout {
+		t.Fatalf("expected http.Client.Timeout to keep Timeout config, got %s", client.Timeout)
 	}
 	transport, ok := client.Transport.(*nethttp.Transport)
 	if !ok {

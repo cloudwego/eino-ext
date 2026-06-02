@@ -53,20 +53,20 @@ func TestNew(t *testing.T) {
 
 func TestResponsesTimeoutConfig(t *testing.T) {
 	timeout := time.Second
-	requestTimeout := 2 * time.Second
 	responseHeaderTimeout := 3 * time.Second
 
 	m, err := NewResponsesModel(context.Background(), &ResponsesConfig{
 		APIKey:                "test",
 		Timeout:               &timeout,
-		RequestTimeout:        &requestTimeout,
 		ResponseHeaderTimeout: &responseHeaderTimeout,
 	})
 	assert.NoError(t, err)
-	assert.NotNil(t, m.requestTimeout)
-	assert.Equal(t, requestTimeout, *m.requestTimeout)
+	assert.NotNil(t, m)
+	assert.Equal(t, &responseHeaderTimeout, getResponsesResponseHeaderTimeout(&ResponsesConfig{
+		ResponseHeaderTimeout: &responseHeaderTimeout,
+	}))
 
-	client := newHTTPClientWithResponseHeaderTimeout(responseHeaderTimeout)
+	client := newHTTPClient(0, responseHeaderTimeout)
 	assert.Zero(t, client.Timeout)
 	transport, ok := client.Transport.(*http.Transport)
 	assert.True(t, ok)

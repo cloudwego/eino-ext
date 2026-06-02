@@ -121,21 +121,13 @@ type ResponsesConfig struct {
     // 必填。
     APIKey string
 
-    // Timeout 指定等待 API 响应的最大持续时间。
-    // Deprecated: 请使用 RequestTimeout 控制非流式请求超时，
-    // 使用 ResponseHeaderTimeout 控制等待响应头的超时。对于流式响应，
-    // Timeout 不限制读取响应体；请使用 context timeout 控制完整流生命周期。
+    // Timeout 指定 OpenAI SDK 请求的最长持续时间。
+    // 对于流式场景，它也可以用于限制整个流的总时长。
     // 可选。
     Timeout *time.Duration
 
-    // RequestTimeout 指定非流式 Generate 请求的最大持续时间。
-    // 如果未设置，将使用 Timeout 以保持向后兼容。
-    // 可选。默认值：无超时
-    RequestTimeout *time.Duration
-
     // ResponseHeaderTimeout 指定等待响应头的最大持续时间。
-    // 它不限制读取流式响应体。
-    // 如果未设置，将使用 Timeout 以保持向后兼容。
+    // 它不限制读取响应体，因此持续活跃的流式响应可以超过该时长继续运行。
     // 如果设置了 HTTPClient，则不会使用 ResponseHeaderTimeout。
     // 可选。默认值：SDK 默认值
     ResponseHeaderTimeout *time.Duration
@@ -245,29 +237,20 @@ type ChatConfig struct {
     // 必填。
     APIKey string
 
-    // Timeout 指定等待 API 响应的最大持续时间。
-    // Deprecated: 请使用 RequestTimeout 控制非流式请求超时，
-    // 使用 ResponseHeaderTimeout 控制等待响应头的超时。对于流式响应，
-    // Timeout 不限制读取响应体；请使用 context timeout 控制完整流生命周期。
+    // Timeout 指定整个 HTTP 请求生命周期的最长持续时间，包括连接、重定向、
+    // 等待响应头以及读取响应体。对于流式场景，它也可以用于限制整个流的总时长。
     // 可选。
     Timeout time.Duration
 
-    // RequestTimeout 指定非流式 Generate 请求的最大持续时间。
-    // 如果未设置，将使用 Timeout 以保持向后兼容。
-    // 可选。默认值：无超时
-    RequestTimeout time.Duration
-
     // ResponseHeaderTimeout 指定等待响应头的最大持续时间。
-    // 它不限制读取流式响应体。
-    // 如果未设置，将使用 Timeout 以保持向后兼容。
+    // 它不限制读取响应体，因此持续活跃的流式响应可以超过该时长继续运行。
     // 如果设置了 HTTPClient，则不会使用 ResponseHeaderTimeout。
     // 可选。默认值：无超时
     ResponseHeaderTimeout time.Duration
 
     // HTTPClient 指定用于发送 HTTP 请求的客户端。
     // 如果设置了 HTTPClient，则不会使用 Timeout 和 ResponseHeaderTimeout。
-    // RequestTimeout 仍会作用于 Generate 请求。
-    // 可选。
+    // 可选。默认值：使用带 Timeout 和 ResponseHeaderTimeout 的默认 HTTP client
     HTTPClient *http.Client
 
     // ByAzure 指定是否使用 Azure OpenAI 服务。

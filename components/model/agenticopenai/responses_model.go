@@ -50,22 +50,14 @@ type ResponsesConfig struct {
 	// Required.
 	APIKey string
 
-	// Timeout specifies the maximum duration to wait for API responses.
-	// Deprecated: use RequestTimeout for non-streaming request timeout and
-	// ResponseHeaderTimeout for waiting response headers. For streaming responses,
-	// Timeout does not limit reading the response body; use context timeout to
-	// control the total stream lifetime.
+	// Timeout specifies the maximum duration for requests made by the OpenAI SDK.
+	// In streaming scenarios, it can be used to limit the total stream lifetime.
 	// Optional.
 	Timeout *time.Duration
 
-	// RequestTimeout specifies the maximum duration of a non-streaming Generate request.
-	// If not set, Timeout will be used for backward compatibility.
-	// Optional. Default: no timeout
-	RequestTimeout *time.Duration
-
 	// ResponseHeaderTimeout specifies the maximum duration to wait for response headers.
-	// It does not limit reading a streaming response body.
-	// If not set, Timeout will be used for backward compatibility.
+	// It does not limit reading the response body, so active streams can continue
+	// beyond this duration.
 	// If HTTPClient is set, ResponseHeaderTimeout will not be used.
 	// Optional. Default: SDK default
 	ResponseHeaderTimeout *time.Duration
@@ -194,10 +186,13 @@ func NewResponsesModel(_ context.Context, config *ResponsesConfig) (*ResponsesMo
 func buildClient(config *ResponsesConfig) (*ResponsesModel, error) {
 	var opts []option.RequestOption
 
+	if config.Timeout != nil {
+		opts = append(opts, option.WithRequestTimeout(*config.Timeout))
+	}
 	if config.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
 	} else if responseHeaderTimeout := getResponsesResponseHeaderTimeout(config); responseHeaderTimeout != nil {
-		opts = append(opts, option.WithHTTPClient(newHTTPClientWithResponseHeaderTimeout(*responseHeaderTimeout)))
+		opts = append(opts, option.WithHTTPClient(newHTTPClient(0, *responseHeaderTimeout)))
 	}
 	baseURL := config.BaseURL
 	if baseURL == "" {
@@ -235,7 +230,6 @@ func buildClient(config *ResponsesConfig) (*ResponsesModel, error) {
 		promptCacheRetention: config.PromptCacheRetention,
 		customHeader:         config.CustomHeaders,
 		extraFields:          config.ExtraFields,
-		requestTimeout:       getResponsesRequestTimeout(config),
 	}
 
 	return cm, nil
@@ -261,8 +255,6 @@ type ResponsesModel struct {
 
 	customHeader map[string]string
 	extraFields  map[string]any
-
-	requestTimeout *time.Duration
 }
 
 func (m *ResponsesModel) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (
@@ -278,9 +270,6 @@ func (m *ResponsesModel) Generate(ctx context.Context, input []*schema.AgenticMe
 	req, reqOpts, err := m.genRequestAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate request: %w", err)
-	}
-	if m.requestTimeout != nil {
-		reqOpts = append(reqOpts, option.WithRequestTimeout(*m.requestTimeout))
 	}
 
 	config := toCallbackConfig(req)
