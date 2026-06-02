@@ -1,6 +1,6 @@
 module github.com/cloudwego/eino-ext/components/tool/mcp
 
-go 1.25.5
+go 1.25.10
 
 require (
 	github.com/bytedance/sonic v1.14.1
