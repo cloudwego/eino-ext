@@ -36,7 +36,3 @@ func newHTTPClient(timeout, responseHeaderTimeout time.Duration) *http.Client {
 	client.Transport = http.DefaultTransport
 	return client
 }
-
-func getResponsesResponseHeaderTimeout(config *ResponsesConfig) *time.Duration {
-	return config.ResponseHeaderTimeout
-}

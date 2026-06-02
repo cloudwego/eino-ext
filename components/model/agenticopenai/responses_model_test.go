@@ -62,9 +62,6 @@ func TestResponsesTimeoutConfig(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, m)
-	assert.Equal(t, &responseHeaderTimeout, getResponsesResponseHeaderTimeout(&ResponsesConfig{
-		ResponseHeaderTimeout: &responseHeaderTimeout,
-	}))
 
 	client := newHTTPClient(0, responseHeaderTimeout)
 	assert.Zero(t, client.Timeout)

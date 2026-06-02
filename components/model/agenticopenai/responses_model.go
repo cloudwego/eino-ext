@@ -191,8 +191,8 @@ func buildClient(config *ResponsesConfig) (*ResponsesModel, error) {
 	}
 	if config.HTTPClient != nil {
 		opts = append(opts, option.WithHTTPClient(config.HTTPClient))
-	} else if responseHeaderTimeout := getResponsesResponseHeaderTimeout(config); responseHeaderTimeout != nil {
-		opts = append(opts, option.WithHTTPClient(newHTTPClient(0, *responseHeaderTimeout)))
+	} else if config.ResponseHeaderTimeout != nil {
+		opts = append(opts, option.WithHTTPClient(newHTTPClient(0, *config.ResponseHeaderTimeout)))
 	}
 	baseURL := config.BaseURL
 	if baseURL == "" {
