@@ -207,7 +207,7 @@ func defaultResultParser(returnFields []string) func(ctx context.Context, point 
 		for _, field := range returnFields {
 			val, found := point.Payload[field]
 			if !found {
-				log.Printf("[defaultResultParser] field=%s not found in payload, point=%v", field, point)
+				log.Printf("[qdrant.retriever.defaultResultParser] field=%s not found in payload, point=%v", field, point)
 				continue
 			}
 
