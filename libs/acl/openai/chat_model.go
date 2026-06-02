@@ -1067,9 +1067,7 @@ func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice
 		}
 
 		var onlyOneToolName string
-		if len(allowedToolNames) == 1 {
-			onlyOneToolName = allowedToolNames[0]
-		} else if len(req.Tools) == 1 {
+		if len(allowedToolNames) == 0 && len(req.Tools) == 1 {
 			onlyOneToolName = req.Tools[0].Function.Name
 		}
 
@@ -1082,7 +1080,7 @@ func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice
 			// In the single-tool case, "required" is semantically equivalent
 			// to forcing that one tool, so prefer the more compatible wire form.
 			req.ToolChoice = toolChoiceRequired
-		} else if len(allowedToolNames) > 1 {
+		} else if len(allowedToolNames) > 0 {
 			req.ToolChoice = map[string]any{
 				"type": "allowed_tools",
 				"allowed_tools": allowedTools{

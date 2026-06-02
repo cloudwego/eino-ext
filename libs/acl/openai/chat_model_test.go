@@ -1071,7 +1071,19 @@ func TestPopulateToolChoice(t *testing.T) {
 		}
 		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
 		assert.NoError(t, err)
-		assert.Equal(t, "required", req.ToolChoice)
+		expected := allowedTools{
+			Mode: "required",
+			Tools: []openai.ToolChoice{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: openai.ToolFunction{
+						Name: "test-tool-1",
+					},
+				},
+			},
+		}
+		assert.Equal(t, "allowed_tools", req.ToolChoice.(map[string]any)["type"])
+		assert.Equal(t, expected, req.ToolChoice.(map[string]any)["allowed_tools"])
 	})
 
 	t.Run("tool choice forced with invalid allowed tool", func(t *testing.T) {
