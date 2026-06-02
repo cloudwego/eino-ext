@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -40,8 +41,9 @@ type Config struct {
 	ScoreThreshold *float64
 	// Number of top results to retrieve from Qdrant.
 	TopK int
-	// ReturnFields limits the attributes returned from the document's payload. num is the number of attributes following the keyword.
-	// Default []string{"content", "metadata"}
+	// ReturnFields limits the payload fields returned by Qdrant and used by the default DocumentConverter.
+	// Only these fields are requested from the server via PayloadIncludeSelector.
+	// Default []string{"metadata", "content"}
 	ReturnFields []string
 	// DocumentConverter converts retrieved raw document to eino Document, default defaultResultParser.
 	DocumentConverter func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error)
@@ -54,6 +56,7 @@ type Retriever struct {
 	scoreThreshold    *float64
 	topK              int
 	documentConverter func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error)
+	returnFields      []string
 }
 
 func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
@@ -75,8 +78,9 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		topK = 5
 	}
 
-	if len(config.ReturnFields) == 0 {
-		config.ReturnFields = []string{defaultMetadataKey, defaultContentKey}
+	returnFields := config.ReturnFields
+	if len(returnFields) == 0 {
+		returnFields = []string{defaultMetadataKey, defaultContentKey}
 	}
 
 	if config.DocumentConverter == nil {
@@ -89,6 +93,7 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		embedding:         config.Embedding,
 		scoreThreshold:    config.ScoreThreshold,
 		topK:              topK,
+		returnFields:      returnFields,
 		documentConverter: config.DocumentConverter,
 	}, nil
 }
@@ -134,7 +139,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		CollectionName: r.collection,
 		Query:          qdrant.NewQueryDense(vec32),
 		Limit:          qdrant.PtrOf(uint64(*co.TopK)),
-		WithPayload:    qdrant.NewWithPayload(true),
+		WithPayload:    qdrant.NewWithPayloadInclude(r.returnFields...),
 	}
 	if r.scoreThreshold != nil {
 		searchReq.ScoreThreshold = qdrant.PtrOf(float32(*r.scoreThreshold))
@@ -202,7 +207,8 @@ func defaultResultParser(returnFields []string) func(ctx context.Context, point 
 		for _, field := range returnFields {
 			val, found := point.Payload[field]
 			if !found {
-				return nil, fmt.Errorf("[defaultResultParser] field=%s not found in payload, point=%v", field, point)
+				log.Printf("[defaultResultParser] field=%s not found in payload, point=%v", field, point)
+				continue
 			}
 
 			if field == defaultContentKey {

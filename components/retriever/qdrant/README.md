@@ -44,11 +44,13 @@ func main() {
 
 ```go
 type Config struct {
-    Client         *qdrant.Client      // Qdrant client
-    Collection     string              // Collection name
-    Embedding      embedding.Embedder  // Query embedding component
-    ScoreThreshold *float64            // Optional score threshold
-    TopK           int                 // Number of results
+    Client            *qdrant.Client      // Qdrant client
+    Collection        string              // Collection name
+    Embedding         embedding.Embedder  // Query embedding component
+    ScoreThreshold    *float64            // Optional score threshold
+    TopK              int                 // Number of results
+    ReturnFields      []string            // Payload fields to fetch (default: ["metadata", "content"])
+    DocumentConverter  func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) // Custom document converter
 }
 ```
 
@@ -75,6 +77,38 @@ scoreThreshold := 0.7
 retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
     // ... other config
     ScoreThreshold: &scoreThreshold,
+})
+```
+
+### Return Fields
+
+By default, the retriever fetches `"metadata"` and `"content"` from the payload. You can customize which fields are returned:
+
+```go
+retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+    // ... other config
+    ReturnFields: []string{"content", "category", "author"},
+})
+```
+
+This limits the payload fields at the protocol level — Qdrant only sends the requested fields over the wire.
+
+### Custom Document Converter
+
+For full control over how Qdrant points are converted to Eino documents, provide a custom `DocumentConverter`:
+
+```go
+retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+    // ... other config
+    DocumentConverter: func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
+        return &schema.Document{
+            ID:      point.Id.GetUuid(),
+            Content: point.Payload["text"].GetStringValue(),
+            MetaData: map[string]any{
+                "score": point.Score,
+            },
+        }, nil
+    },
 })
 ```
 
