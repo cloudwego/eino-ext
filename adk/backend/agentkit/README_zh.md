@@ -7,8 +7,19 @@
 ### 安装
 
 ```bash
-go get github.com/cloudwego/eino-ext/adk/backend/arksandbox
+go get github.com/cloudwego/eino-ext/adk/backend/agentkit
 ```
+
+#### `MultiModalRead` 的本机依赖（PDF 渲染）
+
+`MultiModalRead` 通过 [`go-fitz`](https://github.com/gen2brain/go-fitz) 渲染 PDF
+页面，运行时通过 `purego` 加载 MuPDF。运行前请安装 MuPDF：
+
+- macOS：`brew install mupdf`
+- Ubuntu/Debian：`sudo apt-get install -y libmupdf-dev`
+- CentOS/RHEL：`sudo yum install -y mupdf-devel`
+
+如果不使用 `MultiModalRead`，则运行时无需 MuPDF。
 
 ### 基本用法
 
@@ -18,21 +29,21 @@ import (
     "os"
     "time"
     
-    "github.com/cloudwego/eino-ext/adk/backend/arksandbox"
+    "github.com/cloudwego/eino-ext/adk/backend/agentkit"
     "github.com/cloudwego/eino/adk/middlewares/filesystem"
 )
 
 // 使用凭证配置
-config := &arksandbox.Config{
+config := &agentkit.Config{
     AccessKeyID:     os.Getenv("VOLC_ACCESS_KEY_ID"),
     SecretAccessKey: os.Getenv("VOLC_SECRET_ACCESS_KEY"),
     ToolID:          os.Getenv("VOLC_TOOL_ID"),
     UserSessionID:   "session-" + time.Now().Format("20060102-150405"),
-    Region:          arksandbox.RegionOfBeijing,
+    Region:          agentkit.RegionOfBeijing,
 }
 
 // 初始化后端
-backend, err := arksandbox.NewArkSandboxBackend(config)
+backend, err := agentkit.NewSandboxToolBackend(config)
 if err != nil {
     panic(err)
 }
@@ -67,6 +78,18 @@ type Config struct {
     SessionTTL    int          // 默认：1800 秒（30 分钟）
     ExecutionTimeout int       
     Timeout       time.Duration // HTTP 客户端超时
+
+    // 可选：MultiModalRead 的图片/PDF/DPI 阈值。
+    // 零值或负值字段回退为默认值；超过硬上限的值会被静默截断。
+    MultiModalRead MultiModalReadConfig
+}
+
+type MultiModalReadConfig struct {
+    MaxImageSizeMB        int     // 图片读取大小上限（MB）。       默认 10，硬上限 2048
+    MaxPDFSizeMB          int     // PDF 全量读取大小上限（MB）。   默认 20，硬上限 2048
+    MaxPagedPDFSizeMB     int     // PDF 分页读取大小上限（MB）。   默认 100，硬上限 2048
+    MaxPDFPagesPerRequest int     // 单次分页读取最多页数。         默认 20，硬上限 1000
+    PDFRenderDPI          float64 // PDF 页面渲染 DPI。            默认 150，硬上限 600
 }
 ```
 
@@ -98,7 +121,8 @@ export VOLC_TOOL_ID="your_tool_id"
 
 - **`LsInfo(ctx, req)`** - 列出目录内容
 - **`Read(ctx, req)`** - 读取文件，支持可选的行偏移/限制
-- **`Write(ctx, req)`** - 创建新文件（如果存在则失败）
+- **`MultiModalRead(ctx, req)`** - 将图片/PDF 读取为结构化的多模态 parts；非图片/非 PDF 文件回退到 `Read`。默认值：图片 10 MB / PDF 20 MB / 分页 PDF 100 MB 最多 20 页 @ 150 DPI。可通过 `Config.MultiModalRead` 调整。`Pages` 字段支持单页（`"3"`）或闭区间（`"1-5"`）。
+- **`Write(ctx, req)`** - 写入文件内容；文件不存在时创建，存在时**直接覆盖**（父级目录会自动创建）。
 - **`Edit(ctx, req)`** - 在文件中搜索和替换
 - **`GrepRaw(ctx, req)`** - 在文件中搜索模式
 - **`GlobInfo(ctx, req)`** - 按 glob 模式查找文件
@@ -118,10 +142,6 @@ export VOLC_TOOL_ID="your_tool_id"
 
 
 ## 故障排除
-
-**文件已存在**
-- 如果文件存在，`Write()` 会失败（安全功能）
-- 首先删除文件或使用唯一的文件名
 
 **身份验证错误**
 - 验证凭证是否正确
