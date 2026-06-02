@@ -84,7 +84,7 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	}
 
 	if config.DocumentConverter == nil {
-		config.DocumentConverter = defaultResultParser(config.ReturnFields)
+		config.DocumentConverter = defaultResultParser(returnFields)
 	}
 
 	return &Retriever{
