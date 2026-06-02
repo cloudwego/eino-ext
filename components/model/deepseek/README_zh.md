@@ -81,7 +81,7 @@ func main() {
 		fmt.Printf("Tokens used: %d (prompt) + %d (completion) = %d (total) \n",
 			resp.ResponseMeta.Usage.PromptTokens,
 			resp.ResponseMeta.Usage.CompletionTokens,
-			resp.ResponseMetaUsage.TotalTokens)
+			resp.ResponseMeta.Usage.TotalTokens)
 	}
 
 }
