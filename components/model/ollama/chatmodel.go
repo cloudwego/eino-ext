@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/eino-contrib/jsonschema"
 	"github.com/eino-contrib/ollama/api"
 
 	"github.com/cloudwego/eino/callbacks"
@@ -493,6 +494,26 @@ func parseJSONToObject(jsonStr string) (map[string]any, error) {
 	return result, err
 }
 
+func schemaToToolProperty(s *jsonschema.Schema) api.ToolProperty {
+	var tp api.ToolProperty
+	if s.TypeEnhanced != nil {
+		tp.Type = s.TypeEnhanced
+	} else if s.Type != "" {
+		tp.Type = api.PropertyType{s.Type}
+	}
+	tp.Description = s.Description
+	tp.Enum = s.Enum
+	if len(s.AnyOf) > 0 {
+		for _, ao := range s.AnyOf {
+			tp.AnyOf = append(tp.AnyOf, schemaToToolProperty(ao))
+		}
+	}
+	if s.Items != nil {
+		tp.Items = schemaToToolProperty(s.Items)
+	}
+	return tp
+}
+
 func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 	var ollamaTools []api.Tool
 	for _, einoTool := range einoTools {
@@ -508,17 +529,7 @@ func toOllamaTools(einoTools []*schema.ToolInfo) ([]api.Tool, error) {
 			required = openTool.Required
 
 			for pair := openTool.Properties.Oldest(); pair != nil; pair = pair.Next() {
-				var typ []string
-				if pair.Value.TypeEnhanced != nil {
-					typ = pair.Value.TypeEnhanced
-				} else {
-					typ = []string{pair.Value.Type}
-				}
-				properties[pair.Key] = api.ToolProperty{
-					Type:        typ,
-					Description: pair.Value.Description,
-					Enum:        pair.Value.Enum,
-				}
+				properties[pair.Key] = schemaToToolProperty(pair.Value)
 			}
 		}
 

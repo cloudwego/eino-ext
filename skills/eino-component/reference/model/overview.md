@@ -1,15 +1,19 @@
-# ChatModel Overview
+# Model Overview
 
-All ChatModel implementations implement `ToolCallingChatModel` from `github.com/cloudwego/eino/components/model`.
+Eino has two model paths:
+- Classic ChatModel uses `*schema.Message`.
+- AgenticModel uses `*schema.AgenticMessage` and preserves native block-based content.
 
 ## Interfaces
 
 ```go
-type BaseChatModel interface {
-    Generate(ctx context.Context, input []*schema.Message, opts ...Option) (*schema.Message, error)
-    Stream(ctx context.Context, input []*schema.Message, opts ...Option) (
-        *schema.StreamReader[*schema.Message], error)
+type BaseModel[M any] interface {
+    Generate(ctx context.Context, input []M, opts ...Option) (M, error)
+    Stream(ctx context.Context, input []M, opts ...Option) (*schema.StreamReader[M], error)
 }
+
+type BaseChatModel = BaseModel[*schema.Message]
+type AgenticModel = BaseModel[*schema.AgenticMessage]
 
 type ToolCallingChatModel interface {
     BaseChatModel
@@ -68,3 +72,24 @@ chunks := make([]*schema.Message, 0)
 for { /* collect chunks */ }
 msg, err := schema.ConcatMessages(chunks)
 ```
+
+## AgenticModel
+
+AgenticModel does not add a tool-binding method to the interface. Pass tools at request time:
+
+```go
+resp, err := agenticModel.Generate(ctx,
+    []*schema.AgenticMessage{schema.UserAgenticMessage("use tools if needed")},
+    model.WithTools(toolInfos),
+)
+```
+
+Use provider-specific references for constructor and config details:
+
+| Provider | Reference |
+|----------|-----------|
+| OpenAI | `reference/model/agenticopenai.md` |
+| Gemini | `reference/model/agenticgemini.md` |
+| DeepSeek | `reference/model/agenticdeepseek.md` |
+| Ark | `reference/model/agenticark.md` |
+| Qwen | `reference/model/agenticqwen.md` |

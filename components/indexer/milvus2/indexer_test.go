@@ -503,6 +503,20 @@ func TestIndexer_Store(t *testing.T) {
 			convey.So(ids, convey.ShouldNotBeNil)
 			convey.So(len(ids), convey.ShouldEqual, 2)
 		})
+
+		PatchConvey("test store success with int64 primary key", func() {
+			indexer.config.Embedding = mockEmb
+
+			mockIDColumn := column.NewColumnInt64("id", []int64{1001, 1002})
+			mockResult := milvusclient.UpsertResult{
+				IDs: mockIDColumn,
+			}
+			Mock(GetMethod(mockClient, "Upsert")).Return(mockResult, nil).Build()
+
+			ids, err := indexer.Store(ctx, docs)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(ids, convey.ShouldResemble, []string{"1001", "1002"})
+		})
 	})
 }
 

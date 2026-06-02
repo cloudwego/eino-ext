@@ -8,10 +8,10 @@ Callback handlers observe component execution for tracing and monitoring.
 // github.com/cloudwego/eino/callbacks
 type Handler interface {
     OnStart(ctx context.Context, info *RunInfo, input CallbackInput) context.Context
-    OnEnd(ctx context.Context, info *RunInfo, output CallbackOutput)
-    OnError(ctx context.Context, info *RunInfo, err error)
+    OnEnd(ctx context.Context, info *RunInfo, output CallbackOutput) context.Context
+    OnError(ctx context.Context, info *RunInfo, err error) context.Context
     OnStartWithStreamInput(ctx context.Context, info *RunInfo, input *schema.StreamReader[CallbackInput]) context.Context
-    OnEndWithStreamOutput(ctx context.Context, info *RunInfo, output *schema.StreamReader[CallbackOutput])
+    OnEndWithStreamOutput(ctx context.Context, info *RunInfo, output *schema.StreamReader[CallbackOutput]) context.Context
 }
 ```
 

@@ -109,7 +109,18 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		}
 	}()
 
-	reqBody, err := r.config.SearchMode.BuildRequest(ctx, r.config, query, opts...)
+	effectiveIndex := r.config.Index
+	if options.Index != nil {
+		effectiveIndex = *options.Index
+	}
+	effectiveConfig := *r.config
+	effectiveConfig.Index = effectiveIndex
+	if effectiveConfig.ScoreThreshold != nil {
+		scoreThreshold := *effectiveConfig.ScoreThreshold
+		effectiveConfig.ScoreThreshold = &scoreThreshold
+	}
+
+	reqBody, err := effectiveConfig.SearchMode.BuildRequest(ctx, &effectiveConfig, query, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +140,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 	}
 
 	resp, err := r.client.Search(ctx, &opensearchapi.SearchReq{
-		Indices: []string{*options.Index},
+		Indices: []string{effectiveIndex},
 		Body:    bytes.NewReader(bodyBytes),
 	})
 	if err != nil {
