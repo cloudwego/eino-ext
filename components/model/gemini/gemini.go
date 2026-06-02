@@ -78,6 +78,8 @@ func NewChatModel(_ context.Context, cfg *Config) (*ChatModel, error) {
 		responseModalities:          cfg.ResponseModalities,
 		mediaResolution:             cfg.MediaResolution,
 		cache:                       cfg.Cache,
+		responseLogprobs:            cfg.ResponseLogprobs,
+		logprobs:                    cfg.Logprobs,
 	}, nil
 }
 
@@ -146,6 +148,17 @@ type Config struct {
 	// Cache controls prefix cache settings for the model.
 	// Optional. used to CreatePrefixCache for reused inputs.
 	Cache *CacheConfig
+
+	// ResponseLogprobs controls whether to return the log probabilities of the
+	// tokens that were chosen by the model at each step.
+	// When enabled, response logprobs are populated in Message.ResponseMeta.LogProbs.
+	// Optional. Default: false. Configure top-K candidates via Logprobs.
+	ResponseLogprobs bool
+
+	// Logprobs specifies the number of top candidate tokens to return the
+	// log probabilities for at each generation step.
+	// Optional. Only takes effect when ResponseLogprobs is true.
+	Logprobs *int32
 }
 
 // CacheConfig controls prefix cache settings for the model.
@@ -181,6 +194,8 @@ type ChatModel struct {
 	responseModalities          []GeminiResponseModality
 	mediaResolution             genai.MediaResolution
 	cache                       *CacheConfig
+	responseLogprobs            bool
+	logprobs                    *int32
 }
 
 func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (message *schema.Message, err error) {
@@ -466,6 +481,7 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		ResponseJSONSchema: cm.responseJSONSchema,
 		ResponseModalities: cm.responseModalities,
 		ImageConfig:        cm.imageConfig,
+		Logprobs:           cm.logprobs,
 	}, opts...)
 	conf := &model.Config{}
 
@@ -591,6 +607,14 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		m.SystemInstruction = nil
 		m.Tools = nil
 		m.ToolConfig = nil
+	}
+
+	m.ResponseLogprobs = cm.responseLogprobs
+	if geminiOptions.ResponseLogprobs != nil {
+		m.ResponseLogprobs = *geminiOptions.ResponseLogprobs
+	}
+	if geminiOptions.Logprobs != nil {
+		m.Logprobs = geminiOptions.Logprobs
 	}
 
 	return conf.Model, nInput, m, conf, nil
@@ -1148,7 +1172,7 @@ func convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) 
 			PromptTokenDetails: schema.PromptTokenDetails{
 				CachedTokens: int(resp.UsageMetadata.CachedContentTokenCount),
 			},
-			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount),
+			CompletionTokens: int(resp.UsageMetadata.CandidatesTokenCount) + int(resp.UsageMetadata.ThoughtsTokenCount),
 			TotalTokens:      int(resp.UsageMetadata.TotalTokenCount),
 			CompletionTokensDetails: schema.CompletionTokensDetails{
 				ReasoningTokens: int(resp.UsageMetadata.ThoughtsTokenCount),
@@ -1163,6 +1187,12 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(candidate.FinishReason),
 		},
+	}
+
+	if candidate.LogprobsResult != nil {
+		if lp := convLogprobs(candidate.LogprobsResult); lp != nil {
+			result.ResponseMeta.LogProbs = lp
+		}
 	}
 
 	if candidate.GroundingMetadata != nil {
@@ -1368,6 +1398,41 @@ func toGeminiRole(role schema.RoleType) string {
 }
 
 const typ = "Gemini"
+
+func convLogprobs(lp *genai.LogprobsResult) *schema.LogProbs {
+	if lp == nil || len(lp.ChosenCandidates) == 0 {
+		return nil
+	}
+	out := &schema.LogProbs{
+		Content: make([]schema.LogProb, 0, len(lp.ChosenCandidates)),
+	}
+	for i, chosen := range lp.ChosenCandidates {
+		if chosen == nil {
+			continue
+		}
+		item := schema.LogProb{
+			Token:   chosen.Token,
+			LogProb: float64(chosen.LogProbability),
+		}
+		if i < len(lp.TopCandidates) && lp.TopCandidates[i] != nil {
+			item.TopLogProbs = make([]schema.TopLogProb, 0, len(lp.TopCandidates[i].Candidates))
+			for _, c := range lp.TopCandidates[i].Candidates {
+				if c == nil {
+					continue
+				}
+				item.TopLogProbs = append(item.TopLogProbs, schema.TopLogProb{
+					Token:   c.Token,
+					LogProb: float64(c.LogProbability),
+				})
+			}
+		}
+		out.Content = append(out.Content, item)
+	}
+	if len(out.Content) == 0 {
+		return nil
+	}
+	return out
+}
 
 func (cm *ChatModel) GetType() string {
 	return typ

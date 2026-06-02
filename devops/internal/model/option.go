@@ -18,9 +18,11 @@ package model
 
 const (
 	defaultHttpPort = "52538"
+	defaultHttpIP   = "127.0.0.1"
 )
 
 type DevOpt struct {
+	DevServerIP   string
 	DevServerPort string
 	GoTypes       []RegisteredType
 }
@@ -29,6 +31,7 @@ type DevOption func(*DevOpt)
 
 func NewDevOpt(opts []DevOption) *DevOpt {
 	o := &DevOpt{
+		DevServerIP:   defaultHttpIP,
 		DevServerPort: defaultHttpPort,
 	}
 	for _, opt := range opts {

@@ -127,7 +127,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			Model: "test-model",
 		}
 		var in []*schema.Message
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 	})
 
@@ -142,7 +142,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
 		item := req.GetInput().GetListValue().GetListValue()[0].GetInputMessage()
@@ -161,7 +161,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
 
@@ -181,7 +181,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 
 		assert.Nil(t, err)
@@ -205,7 +205,7 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 			},
 		}
 
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.Nil(t, err)
 		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
 
@@ -224,8 +224,67 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 				Content: "some content",
 			},
 		}
-		err := cm.populateInput(in, req)
+		err := cm.populateInput(in, req, false)
 		assert.NotNil(t, err)
+	})
+}
+
+func TestResponsesAPIChatModelPopulateInputReasoningPassback(t *testing.T) {
+	cm := &ResponsesAPIChatModel{}
+
+	PatchConvey("enabled, no previous_response_id, has reasoning content", t, func() {
+		req := &responses.ResponsesRequest{Model: "test-model"}
+		in := []*schema.Message{
+			{
+				Role:             schema.Assistant,
+				Content:          "Hi",
+				ReasoningContent: "thinking step",
+			},
+		}
+		err := cm.populateInput(in, req, true)
+		assert.Nil(t, err)
+		items := req.GetInput().GetListValue().GetListValue()
+		assert.Equal(t, 2, len(items))
+		reasoning := items[0].GetReasoning()
+		assert.NotNil(t, reasoning)
+		assert.Equal(t, "thinking step", reasoning.GetSummary()[0].Text)
+		msg := items[1].GetInputMessage()
+		assert.Equal(t, responses.MessageRole_assistant, msg.Role)
+	})
+
+	PatchConvey("enabled, has previous_response_id, should skip reasoning passback", t, func() {
+		req := &responses.ResponsesRequest{
+			Model:              "test-model",
+			PreviousResponseId: ptrOf("resp_123"),
+		}
+		in := []*schema.Message{
+			{
+				Role:             schema.Assistant,
+				Content:          "Hi",
+				ReasoningContent: "thinking step",
+			},
+		}
+		err := cm.populateInput(in, req, true)
+		assert.Nil(t, err)
+		items := req.GetInput().GetListValue().GetListValue()
+		assert.Equal(t, 1, len(items))
+		assert.Nil(t, items[0].GetReasoning())
+	})
+
+	PatchConvey("disabled, has reasoning content, should not passback", t, func() {
+		req := &responses.ResponsesRequest{Model: "test-model"}
+		in := []*schema.Message{
+			{
+				Role:             schema.Assistant,
+				Content:          "Hi",
+				ReasoningContent: "thinking step",
+			},
+		}
+		err := cm.populateInput(in, req, false)
+		assert.Nil(t, err)
+		items := req.GetInput().GetListValue().GetListValue()
+		assert.Equal(t, 1, len(items))
+		assert.Nil(t, items[0].GetReasoning())
 	})
 }
 
@@ -808,6 +867,82 @@ func TestResponsesAPIChatModel_toOpenaiMultiModalContent(t *testing.T) {
 				assert.ErrorContains(t, err, "image field must not be nil")
 			})
 
+			PatchConvey("Audio success with URL", func() {
+				audioURL := "https://example.com/audio.mp3"
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{URL: &audioURL},
+						}},
+					},
+				}
+				inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.Nil(t, err)
+				assert.Len(t, inputMessage.Content, 1)
+				audioItem := inputMessage.Content[0].GetAudio()
+				assert.NotNil(t, audioItem)
+				assert.Equal(t, audioURL, audioItem.AudioUrl)
+				assert.Equal(t, responses.ContentItemType_input_audio, audioItem.Type)
+			})
+
+			PatchConvey("Audio success with Base64 and MIMEType", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64, MIMEType: "audio/mpeg"},
+						}},
+					},
+				}
+				inputMessage, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.Nil(t, err)
+				assert.Len(t, inputMessage.Content, 1)
+				audioItem := inputMessage.Content[0].GetAudio()
+				assert.NotNil(t, audioItem)
+				assert.Contains(t, audioItem.AudioUrl, "data:audio/mpeg;base64,")
+			})
+
+			PatchConvey("Audio error on nil Audio", func() {
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: nil},
+					},
+				}
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.NotNil(t, err)
+				assert.ErrorContains(t, err, "audio field must not be nil")
+			})
+
+			PatchConvey("Audio error on missing URL and Base64", func() {
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{}},
+					},
+				}
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.NotNil(t, err)
+				assert.ErrorContains(t, err, "must have URL or Base64Data")
+			})
+
+			PatchConvey("Audio error on missing MIMEType for Base64", func() {
+				audioB64 := "SGVsbG9BdWRpbw=="
+				msg := &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{
+							MessagePartCommon: schema.MessagePartCommon{Base64Data: &audioB64},
+						}},
+					},
+				}
+				_, err := cm.toArkUserRoleItemInputMessage(msg)
+				assert.NotNil(t, err)
+				assert.ErrorContains(t, err, "must have MIMEType when use Base64Data")
+			})
+
 		})
 
 		PatchConvey("AssistantGenMultiContent", func() {
@@ -1116,6 +1251,8 @@ func TestNewResponsesAPIChatModel(t *testing.T) {
 				},
 				EnableToolWebSearch: &ToolWebSearch{},
 				MaxToolCalls:        ptrOf(int64(5)),
+
+				EnableReasoningContentPassback: true,
 			}
 			m, err := NewResponsesAPIChatModel(ctx, config)
 			assert.NoError(t, err)
@@ -1133,6 +1270,7 @@ func TestNewResponsesAPIChatModel(t *testing.T) {
 			assert.NotNil(t, m.reasoningEffort)
 			assert.NotNil(t, m.enableToolWebSearch)
 			assert.Equal(t, int64(5), *m.maxToolCalls)
+			assert.True(t, m.enableReasoningContentPassback)
 		})
 	})
 }

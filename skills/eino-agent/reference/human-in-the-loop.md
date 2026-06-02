@@ -12,8 +12,6 @@ Human-in-the-loop (HITL) enables agents to pause execution, request human input,
 
 ```go
 import (
-    "github.com/cloudwego/eino/adk"
-    "github.com/cloudwego/eino/components/tool"
     "github.com/cloudwego/eino/components/tool/utils"
     "github.com/cloudwego/eino/compose"
 )
@@ -23,13 +21,21 @@ type bookInput struct {
     PassengerName string `json:"passenger_name"`
 }
 
+// Tool that interrupts for approval before executing
 bookTool, _ := utils.InferTool("BookTicket", "Book a ticket",
     func(ctx context.Context, input *bookInput) (string, error) {
-        return "success", nil
-    })
+        // Check if this is a resume after approval
+        if isResume, hasData, data := compose.GetResumeContext[bool](ctx); isResume && hasData {
+            if data {
+                // User approved, execute the action
+                return fmt.Sprintf("Booked ticket to %s for %s", input.Location, input.PassengerName), nil
+            }
+            return "Booking rejected by user", nil
+        }
 
-// Wrap with approval -- interrupts before execution
-approvalTool := &tool.InvokableApprovableTool{InvokableTool: bookTool}
+        // First run: interrupt for approval
+        return "", compose.Interrupt(ctx, fmt.Sprintf("Approve booking to %s for %s?", input.Location, input.PassengerName))
+    })
 ```
 
 ### 2. Create agent and runner with CheckPointStore
@@ -41,7 +47,7 @@ agent, _ := adk.NewChatModelAgent(ctx, &adk.ChatModelAgentConfig{
     Model:       cm,
     ToolsConfig: adk.ToolsConfig{
         ToolsNodeConfig: compose.ToolsNodeConfig{
-            Tools: []tool.BaseTool{approvalTool},
+            Tools: []tool.BaseTool{bookTool},
         },
     },
 })
@@ -80,12 +86,10 @@ for {
 ### 4. Resume with user decision
 
 ```go
-// User approves
-apResult := &tool.ApprovalResult{Approved: true}
-
+// User approves: pass true as resume data
 iter, err := runner.ResumeWithParams(ctx, "session-1", &adk.ResumeParams{
     Targets: map[string]any{
-        interruptID: apResult,
+        interruptID: true,  // matches compose.GetResumeContext[bool]
     },
 })
 if err != nil {
@@ -108,22 +112,37 @@ for {
 
 ```go
 // In a custom agent's Run method:
-return adk.Interrupt(ctx, "Please clarify your request.")
+iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+go func() {
+    defer gen.Close()
+    gen.Send(adk.Interrupt(ctx, "Please clarify your request."))
+}()
+return iter
 ```
 
 ### Stateful Interrupt
 
 ```go
-// Save internal state for later restoration
+// In a custom agent's Run method:
 state := &MyState{ProcessedItems: 42}
-return adk.StatefulInterrupt(ctx, "Need user feedback", state)
+iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+go func() {
+    defer gen.Close()
+    gen.Send(adk.StatefulInterrupt(ctx, "Need user feedback", state))
+}()
+return iter
 ```
 
 ### Composite Interrupt (for multi-agent)
 
 ```go
-// When a parent agent's sub-agent interrupts
-return adk.CompositeInterrupt(ctx, "Sub-agent needs attention", parentState, subInterruptSignals...)
+// In a custom agent's Run method (multi-agent):
+iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
+go func() {
+    defer gen.Close()
+    gen.Send(adk.CompositeInterrupt(ctx, "Sub-agent needs attention", parentState, subInterruptSignals...))
+}()
+return iter
 ```
 
 ## Interrupt APIs (Compose Layer -- for tools/graph nodes)
@@ -178,10 +197,12 @@ iter, err := runner.Resume(ctx, checkpointID,
 Agents that support interrupt/resume must implement:
 
 ```go
-type ResumableAgent interface {
-    Agent
-    Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*AgentEvent]
+type TypedResumableAgent[M MessageType] interface {
+    TypedAgent[M]
+    Resume(ctx context.Context, info *ResumeInfo, opts ...AgentRunOption) *AsyncIterator[*TypedAgentEvent[M]]
 }
+
+type ResumableAgent = TypedResumableAgent[*schema.Message]
 
 type ResumeInfo struct {
     WasInterrupted bool   // Always true when Resume is called
