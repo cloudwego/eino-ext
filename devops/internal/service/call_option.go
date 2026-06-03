@@ -140,7 +140,7 @@ func (c *callbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo, ou
 	ext := c.ConvCallbackOutput(output)
 	if ext != nil && ext.TokenUsage != nil {
 		state.Metrics.PromptTokens = int64(ext.TokenUsage.PromptTokens)
-		state.Metrics.CompletionTokens = int64(ext.TokenUsage.PromptTokens)
+		state.Metrics.CompletionTokens = int64(ext.TokenUsage.CompletionTokens)
 	}
 
 	// append result

@@ -39,6 +39,7 @@ type APIError struct {
 	Type           string  `json:"type"`
 	HTTPStatus     string  `json:"-"`
 	HTTPStatusCode int     `json:"-"`
+	InnerError     error   `json:"-"`
 }
 
 func (e *APIError) Error() string {
@@ -47,6 +48,10 @@ func (e *APIError) Error() string {
 	}
 
 	return e.Message
+}
+
+func (e *APIError) Unwrap() error {
+	return e.InnerError
 }
 
 func convOrigAPIError(err error) error {
@@ -59,6 +64,7 @@ func convOrigAPIError(err error) error {
 			Type:           apiErr.Type,
 			HTTPStatus:     apiErr.HTTPStatus,
 			HTTPStatusCode: apiErr.HTTPStatusCode,
+			InnerError:     err,
 		}
 	}
 	return err
