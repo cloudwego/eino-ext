@@ -527,9 +527,6 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 		}
 
 		usage = mergeCumulativeTokenUsage(usage, cbOutput.TokenUsage)
-		if cbOutput.Message != nil && cbOutput.Message.ResponseMeta != nil {
-			usage = mergeCumulativeTokenUsage(usage, schemaTokenUsageToModelTokenUsage(cbOutput.Message.ResponseMeta.TokenUsage))
-		}
 
 		if cbOutput.Config != nil && !onceSet {
 			onceSet = true
@@ -608,24 +605,6 @@ func mergeCumulativeTokenUsage(dst, src *model.TokenUsage) *model.TokenUsage {
 	}
 
 	return dst
-}
-
-func schemaTokenUsageToModelTokenUsage(usage *schema.TokenUsage) *model.TokenUsage {
-	if usage == nil {
-		return nil
-	}
-
-	return &model.TokenUsage{
-		PromptTokens: usage.PromptTokens,
-		PromptTokenDetails: model.PromptTokenDetails{
-			CachedTokens: usage.PromptTokenDetails.CachedTokens,
-		},
-		CompletionTokens: usage.CompletionTokens,
-		CompletionTokensDetails: model.CompletionTokensDetails{
-			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
-		},
-		TotalTokens: usage.TotalTokens,
-	}
 }
 
 func (d defaultDataParser) ParseDefaultStreamInput(ctx context.Context, input *schema.StreamReader[callbacks.CallbackInput]) (chunks []any, err error) {

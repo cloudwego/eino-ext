@@ -374,7 +374,6 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		}()
 		var waitList []*schema.Message
 		streamCtx := &streamContext{}
-		var usage *schema.TokenUsage
 		for stream.Next() {
 			message, err_ := convStreamEvent(stream.Current(), streamCtx)
 			if err_ != nil {
@@ -397,7 +396,6 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				}
 				waitList = []*schema.Message{}
 			}
-			usage = applyClaudeStreamUsage(message, usage)
 
 			closed := sw.Send(cm.getCallbackOutput(message), nil)
 			if closed {
@@ -411,7 +409,6 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				_ = sw.Send(nil, fmt.Errorf("concat empty message fail: %w", err_))
 				return
 			}
-			usage = applyClaudeStreamUsage(message, usage)
 
 			closed := sw.Send(cm.getCallbackOutput(message), nil)
 			if closed {
@@ -1359,22 +1356,11 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 	case anthropic.MessageStartEvent:
 		return convOutputMessage(&e.Message)
 	case anthropic.MessageDeltaEvent:
-		completionTokens := int(e.Usage.OutputTokens)
-		usage := &schema.TokenUsage{
-			CompletionTokens: completionTokens,
-		}
-		if hasMessageDeltaPromptUsage(e.Usage) {
-			promptTokens := int(e.Usage.InputTokens + e.Usage.CacheReadInputTokens + e.Usage.CacheCreationInputTokens)
-			usage.PromptTokens = promptTokens
-			usage.PromptTokenDetails = schema.PromptTokenDetails{
-				CachedTokens: int(e.Usage.CacheReadInputTokens),
-			}
-			usage.TotalTokens = promptTokens + completionTokens
-		}
-
 		result.ResponseMeta = &schema.ResponseMeta{
 			FinishReason: string(e.Delta.StopReason),
-			Usage:        usage,
+			Usage: &schema.TokenUsage{
+				CompletionTokens: int(e.Usage.OutputTokens),
+			},
 		}
 		return result, nil
 
@@ -1421,63 +1407,6 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 	default:
 		return nil, fmt.Errorf("unknown stream event type: %T", e)
 	}
-}
-
-func hasMessageDeltaPromptUsage(usage anthropic.MessageDeltaUsage) bool {
-	return usage.InputTokens != 0 ||
-		usage.CacheReadInputTokens != 0 ||
-		usage.CacheCreationInputTokens != 0 ||
-		usage.JSON.InputTokens.Valid() ||
-		usage.JSON.CacheReadInputTokens.Valid() ||
-		usage.JSON.CacheCreationInputTokens.Valid()
-}
-
-func applyClaudeStreamUsage(message *schema.Message, usage *schema.TokenUsage) *schema.TokenUsage {
-	if message == nil || message.ResponseMeta == nil || message.ResponseMeta.Usage == nil {
-		return usage
-	}
-
-	usage = mergeClaudeStreamTokenUsage(usage, message.ResponseMeta.Usage)
-	message.ResponseMeta.Usage = cloneClaudeStreamTokenUsage(usage)
-	return usage
-}
-
-func mergeClaudeStreamTokenUsage(dst, src *schema.TokenUsage) *schema.TokenUsage {
-	if src == nil {
-		return dst
-	}
-	if dst == nil {
-		dst = &schema.TokenUsage{}
-	}
-
-	if src.PromptTokens > dst.PromptTokens {
-		dst.PromptTokens = src.PromptTokens
-	}
-	if src.CompletionTokens > dst.CompletionTokens {
-		dst.CompletionTokens = src.CompletionTokens
-	}
-	if src.TotalTokens > dst.TotalTokens {
-		dst.TotalTokens = src.TotalTokens
-	}
-	if src.PromptTokenDetails.CachedTokens > dst.PromptTokenDetails.CachedTokens {
-		dst.PromptTokenDetails.CachedTokens = src.PromptTokenDetails.CachedTokens
-	}
-	if src.CompletionTokensDetails.ReasoningTokens > dst.CompletionTokensDetails.ReasoningTokens {
-		dst.CompletionTokensDetails.ReasoningTokens = src.CompletionTokensDetails.ReasoningTokens
-	}
-
-	if total := dst.PromptTokens + dst.CompletionTokens; total > dst.TotalTokens {
-		dst.TotalTokens = total
-	}
-	return dst
-}
-
-func cloneClaudeStreamTokenUsage(usage *schema.TokenUsage) *schema.TokenUsage {
-	if usage == nil {
-		return nil
-	}
-	cloned := *usage
-	return &cloned
 }
 
 func convImageBase64(data string) (string, string, error) {
