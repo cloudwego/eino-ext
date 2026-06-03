@@ -791,6 +791,55 @@ func TestExecuteStreaming(t *testing.T) {
 
 		assert.Less(t, elapsed, 2*time.Second, "background command should return immediately without waiting")
 	})
+
+	t.Run("ExecuteStreaming with background mode returns immediately", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{
+			Command: "sleep 5",
+			Mode:    filesystem.ExecuteModeBackground,
+		}
+
+		start := time.Now()
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+			}
+		}
+
+		assert.Less(t, time.Since(start), 2*time.Second, "background mode should return immediately")
+		assert.Contains(t, output.String(), "background")
+	})
+
+	t.Run("TestAttack_ExecuteStreamingForegroundModeOverridesLegacyBackgroundFlag", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{
+			Command:            "printf foreground",
+			RunInBackendGround: true,
+			Mode:               filesystem.ExecuteModeForeground,
+		}
+
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+			}
+		}
+
+		assert.Equal(t, "foreground", output.String())
+	})
 }
 
 func TestExecute(t *testing.T) {
@@ -868,6 +917,94 @@ func TestExecute(t *testing.T) {
 		assert.NotNil(t, resp)
 		assert.NotNil(t, resp.ExitCode)
 		assert.NotEqual(t, 0, *resp.ExitCode)
+	})
+
+	t.Run("background mode returns immediately", func(t *testing.T) {
+		start := time.Now()
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{
+			Command: "sleep 5",
+			Mode:    filesystem.ExecuteModeBackground,
+		})
+		assert.NoError(t, err)
+		assert.Less(t, time.Since(start), 2*time.Second)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 0, *resp.ExitCode)
+		assert.Contains(t, resp.Output, "background")
+	})
+
+	t.Run("background mode with wait_ms returns completed command", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{
+			Command: "echo done",
+			Mode:    filesystem.ExecuteModeBackground,
+			WaitMS:  1000,
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 0, *resp.ExitCode)
+		assert.Equal(t, "done\n", resp.Output)
+	})
+
+	t.Run("background mode with wait_ms returns completed non-zero command", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{
+			Command: "echo stdout && echo stderr >&2 && exit 7",
+			Mode:    filesystem.ExecuteModeBackground,
+			WaitMS:  1000,
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 7, *resp.ExitCode)
+		assert.Contains(t, resp.Output, "non-zero code 7")
+		assert.Contains(t, resp.Output, "[stdout]:")
+		assert.Contains(t, resp.Output, "stdout")
+		assert.Contains(t, resp.Output, "[stderr]:")
+		assert.Contains(t, resp.Output, "stderr")
+	})
+
+	t.Run("auto mode returns completed command within wait_ms", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{
+			Command: "echo fast",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  1000,
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 0, *resp.ExitCode)
+		assert.Equal(t, "fast\n", resp.Output)
+	})
+
+	t.Run("auto mode backgrounds command after wait_ms", func(t *testing.T) {
+		start := time.Now()
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{
+			Command: "sleep 5",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  100,
+		})
+		assert.NoError(t, err)
+		assert.Less(t, time.Since(start), 2*time.Second)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 0, *resp.ExitCode)
+		assert.Contains(t, resp.Output, "background")
+	})
+
+	t.Run("TestAttack_ExecuteForegroundModeOverridesLegacyBackgroundFlag", func(t *testing.T) {
+		resp, err := s.Execute(ctx, &filesystem.ExecuteRequest{
+			Command:            "printf foreground",
+			RunInBackendGround: true,
+			Mode:               filesystem.ExecuteModeForeground,
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.ExitCode)
+		assert.Equal(t, 0, *resp.ExitCode)
+		assert.Equal(t, "foreground", resp.Output)
+	})
+
+	t.Run("invalid rich mode", func(t *testing.T) {
+		_, err := s.Execute(ctx, &filesystem.ExecuteRequest{
+			Command: "echo ok",
+			Mode:    filesystem.ExecuteMode("detached"),
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown execute mode")
 	})
 }
 

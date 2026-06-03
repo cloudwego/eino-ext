@@ -53,6 +53,9 @@ const (
 	defaultMaxPDFSizeMB          = 20
 	defaultMaxPagedPDFSizeMB     = 100
 	defaultMaxPDFPagesPerRequest = 20
+	defaultAutoExecuteWaitMS     = 1000
+	maxExecuteWaitMS             = 30000
+	backgroundPreviewLimit       = 64 * 1024
 
 	// defaultPDFRenderDPI: see MultiModalReadConfig.PDFRenderDPI for the
 	// readability vs payload-size trade-off (kept as the single source of truth).
@@ -949,9 +952,12 @@ func (s *Local) ExecuteStreaming(ctx context.Context, input *filesystem.ExecuteR
 	if input.Command == "" {
 		return nil, fmt.Errorf("command is required")
 	}
+	if modeErr := validateExecuteMode(input.Mode); modeErr != nil {
+		return nil, modeErr
+	}
 
-	if err := s.validateCommand(input.Command); err != nil {
-		return nil, err
+	if validateErr := s.validateCommand(input.Command); validateErr != nil {
+		return nil, validateErr
 	}
 
 	cmd, stdout, stderr, err := s.initStreamingCmd(ctx, input.Command)
@@ -968,7 +974,7 @@ func (s *Local) ExecuteStreaming(ctx context.Context, input *filesystem.ExecuteR
 		return sr, nil
 	}
 
-	if input.RunInBackendGround {
+	if shouldExecuteInBackground(input) {
 		s.runCmdInBackground(ctx, cmd, stdout, stderr, w)
 		return sr, nil
 	}
@@ -982,9 +988,16 @@ func (s *Local) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (
 	if input.Command == "" {
 		return nil, fmt.Errorf("command is required")
 	}
+	if err := validateExecuteMode(input.Mode); err != nil {
+		return nil, err
+	}
 
 	if err := s.validateCommand(input.Command); err != nil {
 		return nil, err
+	}
+
+	if shouldUseRichExecute(input) {
+		return s.executeRich(ctx, input)
 	}
 
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", input.Command)
@@ -1019,6 +1032,201 @@ func (s *Local) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (
 		Output:   stdoutBuf.String(),
 		ExitCode: &exitCode,
 	}, nil
+}
+
+func shouldUseRichExecute(input *filesystem.ExecuteRequest) bool {
+	return (input.Mode == "" && input.RunInBackendGround) ||
+		input.Mode == filesystem.ExecuteModeBackground ||
+		input.Mode == filesystem.ExecuteModeAuto
+}
+
+func shouldExecuteInBackground(input *filesystem.ExecuteRequest) bool {
+	return (input.Mode == "" && input.RunInBackendGround) || input.Mode == filesystem.ExecuteModeBackground
+}
+
+func validateExecuteMode(mode filesystem.ExecuteMode) error {
+	switch mode {
+	case "", filesystem.ExecuteModeAuto, filesystem.ExecuteModeForeground, filesystem.ExecuteModeBackground:
+		return nil
+	default:
+		return fmt.Errorf("unknown execute mode: %s", mode)
+	}
+}
+
+func (s *Local) executeRich(ctx context.Context, input *filesystem.ExecuteRequest) (*filesystem.ExecuteResponse, error) {
+	cmd, stdout, stderr, err := s.initStreamingCmd(ctx, input.Command)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := cmd.Start(); err != nil {
+		_ = stdout.Close()
+		_ = stderr.Close()
+		return nil, fmt.Errorf("failed to start command: %w", err)
+	}
+
+	stdoutBuf := newLimitedBuffer(backgroundPreviewLimit)
+	stderrBuf := newLimitedBuffer(backgroundPreviewLimit)
+	done := waitForRichCmd(cmd, stdout, stderr, stdoutBuf, stderrBuf)
+
+	wait := executeWaitDuration(input)
+	if wait <= 0 {
+		return backgroundStartedResponse(stdoutBuf.String(), stderrBuf.String(), stdoutBuf.Truncated() || stderrBuf.Truncated()), nil
+	}
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	select {
+	case result := <-done:
+		return buildExecuteResponse(result.stdout, result.stderr, result.exitCode, result.err, result.truncated)
+	case <-timer.C:
+		return backgroundStartedResponse(stdoutBuf.String(), stderrBuf.String(), stdoutBuf.Truncated() || stderrBuf.Truncated()), nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func executeWaitDuration(input *filesystem.ExecuteRequest) time.Duration {
+	waitMS := input.WaitMS
+	if input.Mode == filesystem.ExecuteModeAuto && waitMS <= 0 {
+		waitMS = defaultAutoExecuteWaitMS
+	}
+	if waitMS <= 0 {
+		return 0
+	}
+	if waitMS > maxExecuteWaitMS {
+		waitMS = maxExecuteWaitMS
+	}
+	return time.Duration(waitMS) * time.Millisecond
+}
+
+type richCmdResult struct {
+	stdout    string
+	stderr    string
+	exitCode  int
+	err       error
+	truncated bool
+}
+
+func waitForRichCmd(cmd *exec.Cmd, stdout, stderr io.ReadCloser, stdoutBuf, stderrBuf *limitedBuffer) <-chan richCmdResult {
+	done := make(chan richCmdResult, 1)
+	go func() {
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_, _ = io.Copy(stdoutBuf, stdout)
+		}()
+		go func() {
+			defer wg.Done()
+			_, _ = io.Copy(stderrBuf, stderr)
+		}()
+
+		err := cmd.Wait()
+		wg.Wait()
+
+		exitCode := 0
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = exitErr.ExitCode()
+			err = nil
+		}
+		done <- richCmdResult{
+			stdout:    stdoutBuf.String(),
+			stderr:    stderrBuf.String(),
+			exitCode:  exitCode,
+			err:       err,
+			truncated: stdoutBuf.Truncated() || stderrBuf.Truncated(),
+		}
+	}()
+	return done
+}
+
+func buildExecuteResponse(stdoutStr, stderrStr string, exitCode int, cmdErr error, truncated bool) (*filesystem.ExecuteResponse, error) {
+	if cmdErr != nil {
+		return nil, fmt.Errorf("failed to execute command: %w", cmdErr)
+	}
+	if exitCode != 0 {
+		parts := []string{fmt.Sprintf("command exited with non-zero code %d", exitCode)}
+		if stdoutStr != "" {
+			parts = append(parts, "[stdout]:\n"+strings.TrimSuffix(stdoutStr, ""))
+		}
+		if stderrStr != "" {
+			parts = append(parts, "[stderr]:\n"+strings.TrimSuffix(stderrStr, ""))
+		}
+		return &filesystem.ExecuteResponse{
+			Output:    strings.Join(parts, "\n"),
+			ExitCode:  &exitCode,
+			Truncated: truncated,
+		}, nil
+	}
+	return &filesystem.ExecuteResponse{
+		Output:    stdoutStr,
+		ExitCode:  &exitCode,
+		Truncated: truncated,
+	}, nil
+}
+
+func backgroundStartedResponse(stdoutStr, stderrStr string, truncated bool) *filesystem.ExecuteResponse {
+	exitCode := 0
+	parts := make([]string, 0, 3)
+	if stdoutStr != "" {
+		parts = append(parts, stdoutStr)
+	}
+	if stderrStr != "" {
+		parts = append(parts, "[stderr]:\n"+stderrStr)
+	}
+	parts = append(parts, "command started in background\n")
+	return &filesystem.ExecuteResponse{
+		Output:    strings.Join(parts, ""),
+		ExitCode:  &exitCode,
+		Truncated: truncated,
+	}
+}
+
+type limitedBuffer struct {
+	mu        sync.Mutex
+	buf       bytes.Buffer
+	limit     int
+	truncated bool
+}
+
+func newLimitedBuffer(limit int) *limitedBuffer {
+	return &limitedBuffer{limit: limit}
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.limit <= 0 {
+		return len(p), nil
+	}
+	remaining := b.limit - b.buf.Len()
+	if remaining <= 0 {
+		b.truncated = true
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		b.buf.Write(p[:remaining])
+		b.truncated = true
+		return len(p), nil
+	}
+	b.buf.Write(p)
+	return len(p), nil
+}
+
+func (b *limitedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func (b *limitedBuffer) Truncated() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.truncated
 }
 
 // initStreamingCmd creates command with stdout and stderr pipes.
