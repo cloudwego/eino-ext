@@ -64,6 +64,10 @@ type Config struct {
     // 建议在生产环境中使用以防止命令注入
     ValidateCommand func(string) error
 
+    // 可选：GlobInfo 遍历时跟随软链目录。
+    // 返回路径仍保持为相对请求路径的逻辑路径。
+    FollowSymlinkDirsInGlob bool
+
     // 可选：MultiModalRead 的图片/PDF/DPI 限制。
     // 字段为 0 或负数时使用默认值；超过硬上限时会被静默截断到上限。
     MultiModalRead MultiModalReadConfig

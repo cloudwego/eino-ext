@@ -27,7 +27,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime/debug"
 	"sort"
 	"strconv"
@@ -126,6 +125,10 @@ var errReadAllBytesTooLarge = errors.New("file exceeds max allowed size")
 type Config struct {
 	ValidateCommand func(string) error
 
+	// FollowSymlinkDirsInGlob controls whether GlobInfo traverses symlink directories.
+	// Returned paths remain relative to the requested path and are not canonicalized.
+	FollowSymlinkDirsInGlob bool
+
 	// MultiModalRead overrides default size/page/DPI limits used by
 	// Local.MultiModalRead. Optional; zero-value fields fall back to
 	// package defaults (see MultiModalReadConfig field comments).
@@ -134,6 +137,8 @@ type Config struct {
 
 type Local struct {
 	validateCommand func(string) error
+
+	followSymlinkDirsInGlob bool
 
 	// multiModalReadCfg carries already-resolved (defaults applied, hard-caps
 	// enforced) limits used by MultiModalRead. Every field is guaranteed > 0.
@@ -162,8 +167,9 @@ func NewBackend(_ context.Context, cfg *Config) (*Local, error) {
 	}
 
 	return &Local{
-		validateCommand:   validateCommand,
-		multiModalReadCfg: resolveMultiModalReadConfig(cfg.MultiModalRead),
+		validateCommand:         validateCommand,
+		followSymlinkDirsInGlob: cfg.FollowSymlinkDirsInGlob,
+		multiModalReadCfg:       resolveMultiModalReadConfig(cfg.MultiModalRead),
 	}, nil
 }
 
@@ -687,7 +693,7 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 
 	var matches []string
 	var err error
-	if shouldFollowSymlinks(req) {
+	if s.followSymlinkDirsInGlob {
 		err = walkDirFollowSymlinks(ctx, path, req.Pattern, func(relPath string) {
 			matches = append(matches, relPath)
 		})
@@ -740,16 +746,6 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 	}
 
 	return files, nil
-}
-
-func shouldFollowSymlinks(req *filesystem.GlobInfoRequest) bool {
-	if req == nil {
-		return false
-	}
-
-	v := reflect.ValueOf(req).Elem()
-	field := v.FieldByName("FollowSymlinks")
-	return field.IsValid() && field.Kind() == reflect.Bool && field.Bool()
 }
 
 func walkDirFollowSymlinks(ctx context.Context, root string, pattern string, onMatch func(string)) error {
