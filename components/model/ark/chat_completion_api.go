@@ -71,7 +71,6 @@ type functionDefinition struct {
 	Description string             `json:"description,omitempty"`
 	Parameters  *jsonschema.Schema `json:"parameters"`
 	Examples    []string           `json:"examples"`
-	Strict      *bool              `json:"strict,omitempty"`
 }
 
 func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Message, opts ...fmodel.Option) (
@@ -586,18 +585,13 @@ func (cm *completionAPIChatModel) toTools(tls []*schema.ToolInfo) ([]tool, error
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
 
-		fd := &functionDefinition{
-			Name:        ti.Name,
-			Description: ti.Desc,
-			Parameters:  paramsJSONSchema,
+		tools[i] = tool{
+			Function: &functionDefinition{
+				Name:        ti.Name,
+				Description: ti.Desc,
+				Parameters:  paramsJSONSchema,
+			},
 		}
-		// Support strict tool use via ToolInfo.Extra["strict"] = true.
-		// When enabled, the API guarantees that tool call inputs conform
-		// to the declared JSON Schema exactly (OpenAI-compatible strict mode).
-		if strict, ok := ti.Extra["strict"].(bool); ok && strict {
-			fd.Strict = &strict
-		}
-		tools[i] = tool{Function: fd}
 	}
 
 	return tools, nil
