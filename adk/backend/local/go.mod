@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.0
-	github.com/cloudwego/eino v0.9.1
+	github.com/cloudwego/eino v0.9.1-0.20260603031401-cd4a2029e728
 	github.com/gen2brain/go-fitz v1.24.15
 	github.com/stretchr/testify v1.11.1
 )
@@ -45,3 +45,5 @@ require (
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/cloudwego/eino => github.com/cloudwego/eino v0.9.1-0.20260603031401-cd4a2029e728
