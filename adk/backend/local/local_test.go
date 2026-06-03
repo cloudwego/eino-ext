@@ -837,6 +837,254 @@ func TestExecuteStreaming(t *testing.T) {
 
 		assert.Equal(t, "foreground", output.String())
 	})
+
+	t.Run("ExecuteStreaming auto mode returns completed command within wait_ms", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{
+			Command: "printf auto",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  1000,
+		}
+
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		var exitCode *int
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+				exitCode = resp.ExitCode
+			}
+		}
+
+		assert.Equal(t, "auto", output.String())
+		assert.NotNil(t, exitCode)
+		assert.Equal(t, 0, *exitCode)
+	})
+
+	t.Run("ExecuteStreaming auto mode backgrounds command after wait_ms", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{
+			Command: "sleep 5",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  100,
+		}
+
+		start := time.Now()
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+			}
+		}
+
+		assert.Less(t, time.Since(start), 2*time.Second)
+		assert.Contains(t, output.String(), "background")
+	})
+
+	t.Run("ExecuteStreaming background mode with wait_ms returns completed command", func(t *testing.T) {
+		req := &filesystem.ExecuteRequest{
+			Command: "printf background",
+			Mode:    filesystem.ExecuteModeBackground,
+			WaitMS:  1000,
+		}
+
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		var exitCode *int
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+				exitCode = resp.ExitCode
+			}
+		}
+
+		assert.Equal(t, "background", output.String())
+		assert.NotNil(t, exitCode)
+		assert.Equal(t, 0, *exitCode)
+	})
+
+	t.Run("TestAttack_RichStreamingAutoModeDefaultWait", func(t *testing.T) {
+		// Mode=auto with WaitMS=0 must route to rich path and apply defaultAutoExecuteWaitMS,
+		// completing a fast command instead of returning a background-started frame.
+		req := &filesystem.ExecuteRequest{
+			Command: "printf defaultwait",
+			Mode:    filesystem.ExecuteModeAuto,
+		}
+
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		var exitCode *int
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+				exitCode = resp.ExitCode
+			}
+		}
+
+		assert.Equal(t, "defaultwait", output.String())
+		assert.NotNil(t, exitCode)
+		assert.Equal(t, 0, *exitCode)
+		assert.NotContains(t, output.String(), "background", "fast command must not emit background-started frame")
+	})
+
+	t.Run("TestAttack_RichStreamingPropagatesNonZeroExit", func(t *testing.T) {
+		// Rich streaming path must surface non-zero exit code and stderr in the single frame.
+		req := &filesystem.ExecuteRequest{
+			Command: "echo bad >&2 && exit 7",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  1000,
+		}
+
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		var exitCode *int
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+				exitCode = resp.ExitCode
+			}
+		}
+
+		assert.NotNil(t, exitCode)
+		assert.Equal(t, 7, *exitCode)
+		assert.Contains(t, output.String(), "non-zero code 7")
+		assert.Contains(t, output.String(), "bad")
+	})
+
+	t.Run("TestAttack_RichStreamingPropagatesContextCancellation", func(t *testing.T) {
+		// Context cancellation during rich streaming must surface via stream error,
+		// not block forever or panic.
+		cancelCtx, cancel := context.WithCancel(ctx)
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			cancel()
+		}()
+		req := &filesystem.ExecuteRequest{
+			Command: "sleep 5",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  3000,
+		}
+
+		sr, err := s.ExecuteStreaming(cancelCtx, req)
+		assert.NoError(t, err)
+
+		var lastErr error
+		start := time.Now()
+		for {
+			_, recvErr := sr.Recv()
+			if recvErr != nil {
+				lastErr = recvErr
+				break
+			}
+		}
+		// Either the rich path returns ctx.Err() (treated as stream error after the EOF marker
+		// in schema.Pipe), or the timer never fires because cancellation arrived first.
+		// Either way, must not exceed wait budget.
+		assert.Less(t, time.Since(start), 2*time.Second)
+		assert.NotNil(t, lastErr, "stream must terminate")
+	})
+
+	t.Run("TestAttack_RichStreamingAutoTinyWaitBackgrounds", func(t *testing.T) {
+		// Mode=auto with WaitMS=1ms must hit timer branch for a slow command and emit
+		// background-started frame, not block on cmd.Wait.
+		req := &filesystem.ExecuteRequest{
+			Command: "sleep 5",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  1,
+		}
+
+		start := time.Now()
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+			}
+		}
+		assert.Less(t, time.Since(start), 2*time.Second)
+		assert.Contains(t, output.String(), "background")
+	})
+
+	t.Run("TestAttack_RichStreamingBackgroundWithWaitPropagatesNonZeroExit", func(t *testing.T) {
+		// Mode=background with WaitMS>0 routes through rich path; if the command
+		// completes within the wait budget, exit code must be propagated rather than
+		// emitting a background-started frame.
+		req := &filesystem.ExecuteRequest{
+			Command: "exit 3",
+			Mode:    filesystem.ExecuteModeBackground,
+			WaitMS:  1000,
+		}
+
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+
+		var output strings.Builder
+		var exitCode *int
+		for {
+			resp, err := sr.Recv()
+			if err != nil {
+				break
+			}
+			if resp != nil {
+				output.WriteString(resp.Output)
+				exitCode = resp.ExitCode
+			}
+		}
+		assert.NotNil(t, exitCode)
+		assert.Equal(t, 3, *exitCode)
+		assert.Contains(t, output.String(), "non-zero code 3")
+	})
+
+	t.Run("TestAttack_RichStreamingReceiverEarlyClose", func(t *testing.T) {
+		// Closing the receiver before consuming the single frame must not leak goroutines
+		// or panic in the producer (Pipe.Send returns the closed channel error, recover handles).
+		req := &filesystem.ExecuteRequest{
+			Command: "printf early",
+			Mode:    filesystem.ExecuteModeAuto,
+			WaitMS:  1000,
+		}
+
+		sr, err := s.ExecuteStreaming(ctx, req)
+		assert.NoError(t, err)
+		sr.Close()
+		// Wait briefly so the producer goroutine can attempt to Send into the closed pipe.
+		time.Sleep(200 * time.Millisecond)
+	})
 }
 
 func TestExecute(t *testing.T) {
