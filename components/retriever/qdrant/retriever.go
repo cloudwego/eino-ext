@@ -61,16 +61,16 @@ type Retriever struct {
 
 func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	if config == nil {
-		return nil, fmt.Errorf("[NewRetriever] config is nil")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] config is nil")
 	}
 	if config.Embedding == nil {
-		return nil, fmt.Errorf("[NewRetriever] embedding not provided for qdrant retriever")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] embedding not provided for qdrant retriever")
 	}
 	if config.Collection == "" {
-		return nil, fmt.Errorf("[NewRetriever] qdrant collection not provided")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] qdrant collection not provided")
 	}
 	if config.Client == nil {
-		return nil, fmt.Errorf("[NewRetriever] qdrant client not provided")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] qdrant client not provided")
 	}
 
 	topK := config.TopK
@@ -83,8 +83,9 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		returnFields = []string{defaultMetadataKey, defaultContentKey}
 	}
 
-	if config.DocumentConverter == nil {
-		config.DocumentConverter = defaultResultParser(returnFields)
+	documentConverter := config.DocumentConverter
+	if documentConverter == nil {
+		documentConverter = defaultResultParser(returnFields)
 	}
 
 	return &Retriever{
@@ -94,7 +95,7 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		scoreThreshold:    config.ScoreThreshold,
 		topK:              topK,
 		returnFields:      returnFields,
-		documentConverter: config.DocumentConverter,
+		documentConverter: documentConverter,
 	}, nil
 }
 
@@ -121,14 +122,14 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 
 	emb := co.Embedding
 	if emb == nil {
-		return nil, fmt.Errorf("[qdrant retriever] embedding not provided")
+		return nil, fmt.Errorf("[qdrant.Retrieve] embedding not provided")
 	}
 	vectors, err := emb.EmbedStrings(r.makeEmbeddingCtx(ctx, emb), []string{query})
 	if err != nil {
 		return nil, err
 	}
 	if len(vectors) != 1 {
-		return nil, fmt.Errorf("[qdrant retriever] invalid return length of vector, got=%d, expected=1", len(vectors))
+		return nil, fmt.Errorf("[qdrant.Retrieve] invalid return length of vector, got=%d, expected=1", len(vectors))
 	}
 	vec32 := make([]float32, len(vectors[0]))
 	for i, v := range vectors[0] {
@@ -150,7 +151,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 
 	resp, err := r.client.Query(ctx, &searchReq)
 	if err != nil {
-		return nil, fmt.Errorf("[Retriever] qdrant search failed: %w", err)
+		return nil, fmt.Errorf("[qdrant.Retrieve] qdrant search failed: %w", err)
 	}
 	docs = make([]*schema.Document, 0, len(resp))
 	for _, pt := range resp {
@@ -159,7 +160,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 			return nil, err
 		}
 		if doc == nil {
-			return nil, fmt.Errorf("[qdrant retriever] document converter returned nil document")
+			return nil, fmt.Errorf("[qdrant.Retrieve] document converter returned nil document")
 		}
 		doc.WithScore(float64(pt.Score))
 
@@ -188,7 +189,7 @@ func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder
 func defaultResultParser(returnFields []string) func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
 	return func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
 		if point == nil {
-			return nil, fmt.Errorf("[defaultResultParser] point is nil")
+			return nil, fmt.Errorf("[qdrant.retriever.defaultResultParser] point is nil")
 		}
 
 		resp := &schema.Document{

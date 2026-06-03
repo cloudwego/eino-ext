@@ -100,6 +100,7 @@ For full control over how Qdrant points are converted to Eino documents, provide
 ```go
 retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
     // ... other config
+    ReturnFields: []string{"text"},
     DocumentConverter: func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
         return &schema.Document{
             ID:      point.Id.GetUuid(),
