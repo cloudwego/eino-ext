@@ -1230,8 +1230,8 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 
 			// Store thought signature at message level for non-functionCall parts
 			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil {
-				// means that we have functionCall but without thoughtSignature
-				if firstFunctionCallIdx >= 0 && len(fallbackFunctionCallSig) == 0 {
+				if firstFunctionCallIdx >= 0 && len(fallbackFunctionCallSig) == 0 &&
+					part.Text == "" && !part.Thought {
 					fallbackFunctionCallSig = part.ThoughtSignature
 				}
 				setMessageThoughtSignature(result, part.ThoughtSignature)
