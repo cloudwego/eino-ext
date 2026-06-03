@@ -129,20 +129,12 @@ type Config struct {
     
     // 是否公开可访问 (选填)
     Public bool
-
-    // 禁用自动将根运行的输入/输出写入 trace input/output (选填)
-    DisableTraceIO bool
 }
 ```
 
 ## 追踪选项
 
 您可以使用 `SetTrace` 函数自定义单个追踪：
-
-默认情况下，回调会将根运行的输入/输出写入 trace input/output 字段。使用
-`WithInput` 可以手动指定 trace input；运行结束后可调用
-`UpdateTraceOutput` 手动覆盖 trace output。将 `DisableTraceIO` 设为 `true`
-可关闭自动 trace input/output 更新。
 
 ```go
 ctx = langfuse.SetTrace(ctx,

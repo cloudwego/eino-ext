@@ -42,13 +42,12 @@ func TestLangfuseCallback(t *testing.T) {
 	mockLangfuse := mock.NewMockLangfuse(ctrl)
 	defer mockey.Mock(langfuse.NewLangfuse).Return(mockLangfuse).Build().UnPatch()
 	cbh, _ := NewLangfuseHandler(&Config{
-		Name:           "MyTrace",
-		UserID:         "user id",
-		SessionID:      "session",
-		Release:        "release",
-		Tags:           []string{"tag1", "tag2"},
-		Public:         true,
-		DisableTraceIO: true,
+		Name:      "MyTrace",
+		UserID:    "user id",
+		SessionID: "session",
+		Release:   "release",
+		Tags:      []string{"tag1", "tag2"},
+		Public:    true,
 	})
 	callbacks.InitCallbackHandlers([]callbacks.Handler{cbh})
 	ctx := context.Background()
@@ -304,144 +303,11 @@ func TestLangfuseCallback(t *testing.T) {
 			WithPublic(true),
 			WithEnvironment("development"),
 			WithVersion("version"),
-			WithInput("manual input"),
 		)
 		assert.Equal(t, "traceid", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).ID)
 		assert.Equal(t, "development", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Environment)
 		assert.Equal(t, "version", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Version)
-		assert.Equal(t, "manual input", ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).Input)
-		assert.True(t, ctx.Value(langfuseTraceOptionKey{}).(*traceOptions).inputSet)
 	})
-}
-
-func TestTraceIOAutoPromotion(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockLangfuse := mock.NewMockLangfuse(ctrl)
-	defer mockey.Mock(langfuse.NewLangfuse).Return(mockLangfuse).Build().UnPatch()
-
-	cbh, _ := NewLangfuseHandler(&Config{
-		Host: "http://localhost", PublicKey: "pk", SecretKey: "sk",
-		Name: "trace",
-	})
-
-	mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id", nil).Times(1)
-	mockLangfuse.EXPECT().CreateSpan(gomock.Any()).DoAndReturn(func(body *langfuse.SpanEventBody) (string, error) {
-		assert.Equal(t, "trace-id", body.TraceID)
-		assert.Empty(t, body.ParentObservationID)
-		assert.Equal(t, "\"input\"", body.Input)
-		return "span-id", nil
-	}).Times(1)
-	mockLangfuse.EXPECT().EndSpan(gomock.Any()).DoAndReturn(func(body *langfuse.SpanEventBody) error {
-		assert.Equal(t, "span-id", body.ID)
-		assert.Equal(t, "\"output\"", body.Output)
-		return nil
-	}).Times(1)
-
-	var traceInputs, traceOutputs []string
-	mockLangfuse.EXPECT().EndTrace(gomock.Any()).DoAndReturn(func(body *langfuse.TraceEventBody) error {
-		assert.Equal(t, "trace-id", body.ID)
-		if body.Input != "" {
-			traceInputs = append(traceInputs, body.Input)
-		}
-		if body.Output != "" {
-			traceOutputs = append(traceOutputs, body.Output)
-		}
-		return nil
-	}).Times(2)
-
-	ctx := cbh.OnStart(context.Background(), &callbacks.RunInfo{Name: "root"}, callbacks.CallbackInput("input"))
-	cbh.OnEnd(ctx, &callbacks.RunInfo{Name: "root"}, callbacks.CallbackOutput("output"))
-
-	assert.Equal(t, []string{"\"input\""}, traceInputs)
-	assert.Equal(t, []string{"\"output\""}, traceOutputs)
-}
-
-func TestTraceIOManualInputNotOverwritten(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockLangfuse := mock.NewMockLangfuse(ctrl)
-	defer mockey.Mock(langfuse.NewLangfuse).Return(mockLangfuse).Build().UnPatch()
-
-	cbh, _ := NewLangfuseHandler(&Config{
-		Host: "http://localhost", PublicKey: "pk", SecretKey: "sk",
-		Name: "trace",
-	})
-
-	mockLangfuse.EXPECT().CreateTrace(gomock.Any()).DoAndReturn(func(body *langfuse.TraceEventBody) (string, error) {
-		assert.Equal(t, "trace-id", body.ID)
-		assert.Equal(t, "manual input", body.Input)
-		return "trace-id", nil
-	}).Times(1)
-	mockLangfuse.EXPECT().CreateSpan(gomock.Any()).Return("span-id", nil).Times(1)
-	mockLangfuse.EXPECT().EndSpan(gomock.Any()).Return(nil).Times(1)
-	mockLangfuse.EXPECT().EndTrace(gomock.Any()).DoAndReturn(func(body *langfuse.TraceEventBody) error {
-		assert.Equal(t, "trace-id", body.ID)
-		assert.Empty(t, body.Input)
-		assert.Equal(t, "\"output\"", body.Output)
-		return nil
-	}).Times(1)
-
-	ctx := SetTrace(context.Background(), WithID("trace-id"), WithInput("manual input"))
-	ctx = cbh.OnStart(ctx, &callbacks.RunInfo{Name: "root"}, callbacks.CallbackInput("auto input"))
-	cbh.OnEnd(ctx, &callbacks.RunInfo{Name: "root"}, callbacks.CallbackOutput("output"))
-}
-
-func TestTraceIOAutoPromotionStream(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	mockLangfuse := mock.NewMockLangfuse(ctrl)
-	defer mockey.Mock(langfuse.NewLangfuse).Return(mockLangfuse).Build().UnPatch()
-
-	cbh, _ := NewLangfuseHandler(&Config{
-		Host: "http://localhost", PublicKey: "pk", SecretKey: "sk",
-		Name: "trace",
-	})
-
-	mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id", nil).Times(1)
-	mockLangfuse.EXPECT().CreateSpan(gomock.Any()).Return("span-id", nil).Times(1)
-	mockLangfuse.EXPECT().EndSpan(gomock.Any()).Return(nil).Times(2)
-
-	type traceIOEvent struct {
-		id     string
-		input  string
-		output string
-	}
-	traceEvents := make(chan traceIOEvent, 2)
-	mockLangfuse.EXPECT().EndTrace(gomock.Any()).DoAndReturn(func(body *langfuse.TraceEventBody) error {
-		traceEvents <- traceIOEvent{
-			id:     body.ID,
-			input:  body.Input,
-			output: body.Output,
-		}
-		return nil
-	}).Times(2)
-
-	insr, insw := schema.Pipe[callbacks.CallbackInput](1)
-	insw.Send(callbacks.CallbackInput("stream input"), nil)
-	insw.Close()
-	ctx := cbh.OnStartWithStreamInput(context.Background(), &callbacks.RunInfo{Name: "root"}, insr)
-
-	outsr, outsw := schema.Pipe[callbacks.CallbackOutput](1)
-	outsw.Send(callbacks.CallbackOutput("stream output"), nil)
-	outsw.Close()
-	cbh.OnEndWithStreamOutput(ctx, &callbacks.RunInfo{Name: "root"}, outsr)
-
-	var traceInputs, traceOutputs []string
-	for i := 0; i < 2; i++ {
-		select {
-		case event := <-traceEvents:
-			assert.Equal(t, "trace-id", event.id)
-			if event.input != "" {
-				traceInputs = append(traceInputs, event.input)
-			}
-			if event.output != "" {
-				traceOutputs = append(traceOutputs, event.output)
-			}
-		case <-time.After(time.Second):
-			t.Fatal("timed out waiting for trace IO update")
-		}
-	}
-
-	assert.Equal(t, []string{"[\"stream input\"]"}, traceInputs)
-	assert.Equal(t, []string{"[\"stream output\"]"}, traceOutputs)
 }
 
 func TestAttack_NilMessageInOnEnd(t *testing.T) {
@@ -451,8 +317,7 @@ func TestAttack_NilMessageInOnEnd(t *testing.T) {
 
 	cbh, _ := NewLangfuseHandler(&Config{
 		Host: "http://localhost", PublicKey: "pk", SecretKey: "sk",
-		Name:           "trace",
-		DisableTraceIO: true,
+		Name: "trace",
 	})
 	mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id", nil).Times(1)
 	mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).Return("generation-id", nil).Times(1)
@@ -479,7 +344,6 @@ func TestAttack_ExtractModelOutputErrorIgnored(t *testing.T) {
 
 	cbh, _ := NewLangfuseHandler(&Config{
 		Host: "http://localhost", PublicKey: "pk", SecretKey: "sk",
-		DisableTraceIO: true,
 	})
 	mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id", nil).Times(1)
 	mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).Return("generation-id", nil).Times(1)
