@@ -1,6 +1,6 @@
 module github.com/cloudwego/eino-ext/components/tool/tencentsearch
 
-go 1.24.11
+go 1.23.0
 
 require (
 	github.com/cloudwego/eino v0.8.3
