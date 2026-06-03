@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package sougousearch
+package tencentsearch
 
 import (
 	"context"
@@ -28,6 +28,19 @@ import (
 	wsa "github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/wsa/v20250508"
 )
 
+const (
+	defaultEndpoint = "wsa.tencentcloudapi.com"
+	defaultCnt      = uint64(10)
+)
+
+var validCntValues = map[uint64]struct{}{
+	10: {},
+	20: {},
+	30: {},
+	40: {},
+	50: {},
+}
+
 type Config struct {
 	SecretID  string `json:"secret_id"`
 	SecretKey string `json:"secret_key"`
@@ -40,11 +53,17 @@ type Config struct {
 }
 
 type SearchRequest struct {
-	Query    string  `json:"query" jsonschema_description:"queried string to the search engine"`
-	Mode     *int64  `json:"mode,omitempty" jsonschema_description:"0-natural, 1-VR, 2-mixed"`
-	Site     *string `json:"site,omitempty" jsonschema_description:"site domain to search within"`
-	FromTime *int64  `json:"from_time,omitempty" jsonschema_description:"start time timestamp in seconds"`
-	ToTime   *int64  `json:"to_time,omitempty" jsonschema_description:"end time timestamp in seconds"`
+	Query string `json:"query" jsonschema:"required" jsonschema_description:"queried string to the search engine"`
+	Mode  *int64 `json:"mode,omitempty" jsonschema_description:"0-natural, 1-VR, 2-mixed"`
+
+	// Site limits natural search results to the given domain.
+	Site *string `json:"site,omitempty" jsonschema_description:"site domain to search within"`
+	// FromTime filters natural search results by start timestamp in seconds.
+	FromTime *int64 `json:"from_time,omitempty" jsonschema_description:"start time timestamp in seconds"`
+	// ToTime filters natural search results by end timestamp in seconds.
+	ToTime *int64 `json:"to_time,omitempty" jsonschema_description:"end time timestamp in seconds"`
+	// Industry filters by premium-only categories: gov/news/acad/finance.
+	Industry *string `json:"industry,omitempty" jsonschema_description:"industry filter, one of gov/news/acad/finance, premium only"`
 	Cnt      *uint64 `json:"cnt,omitempty" jsonschema_description:"number of search results to return, 10/20/30/40/50"`
 }
 
@@ -68,18 +87,32 @@ type SearchResult struct {
 	RequestId string                  `json:"request_id,omitempty"`
 }
 
-type sougouSearch struct {
+type tencentSearch struct {
 	conf   *Config
 	client *wsa.Client
+}
+
+func normalizeCnt(cnt uint64) uint64 {
+	if _, ok := validCntValues[cnt]; ok {
+		return cnt
+	}
+	return defaultCnt
 }
 
 func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 	if conf == nil {
 		conf = &Config{}
 	}
+	if conf.SecretID == "" {
+		return nil, fmt.Errorf("secret_id is required")
+	}
+	if conf.SecretKey == "" {
+		return nil, fmt.Errorf("secret_key is required")
+	}
+	conf.Cnt = normalizeCnt(conf.Cnt)
 
-	toolName := "sougou_search"
-	toolDesc := "Search using Sougou search engine via Tencent Cloud API"
+	toolName := "tencent_search"
+	toolDesc := "Search using Tencent Cloud Web Search API"
 	if conf.ToolName != "" {
 		toolName = conf.ToolName
 	}
@@ -87,7 +120,7 @@ func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 		toolDesc = conf.ToolDesc
 	}
 
-	endpoint := "wsa.tencentcloudapi.com"
+	endpoint := defaultEndpoint
 	if conf.Endpoint != "" {
 		endpoint = conf.Endpoint
 	}
@@ -97,7 +130,7 @@ func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 	cpf.HttpProfile.Endpoint = endpoint
 
 	// Set Scheme to HTTP if testing with local mock server
-	if endpoint != "wsa.tencentcloudapi.com" {
+	if endpoint != defaultEndpoint {
 		cpf.HttpProfile.Scheme = "HTTP"
 	}
 
@@ -106,7 +139,7 @@ func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 		return nil, fmt.Errorf("create wsa client failed: %w", err)
 	}
 
-	ss := &sougouSearch{
+	ss := &tencentSearch{
 		conf:   conf,
 		client: client,
 	}
@@ -114,7 +147,14 @@ func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 	return utils.InferTool(toolName, toolDesc, ss.search)
 }
 
-func (s *sougouSearch) search(ctx context.Context, req *SearchRequest) (*SearchResult, error) {
+func (s *tencentSearch) search(ctx context.Context, req *SearchRequest) (*SearchResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("request is required")
+	}
+	if req.Query == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+
 	wsaReq := wsa.NewSearchProRequest()
 	wsaReq.Query = common.StringPtr(req.Query)
 
@@ -127,8 +167,8 @@ func (s *sougouSearch) search(ctx context.Context, req *SearchRequest) (*SearchR
 	}
 
 	if req.Cnt != nil {
-		wsaReq.Cnt = req.Cnt
-	} else if s.conf.Cnt > 0 {
+		wsaReq.Cnt = common.Uint64Ptr(normalizeCnt(*req.Cnt))
+	} else {
 		wsaReq.Cnt = common.Uint64Ptr(s.conf.Cnt)
 	}
 
@@ -140,6 +180,9 @@ func (s *sougouSearch) search(ctx context.Context, req *SearchRequest) (*SearchR
 	}
 	if req.ToTime != nil {
 		wsaReq.ToTime = req.ToTime
+	}
+	if req.Industry != nil {
+		wsaReq.Industry = req.Industry
 	}
 
 	wsaResp, err := s.client.SearchProWithContext(ctx, wsaReq)

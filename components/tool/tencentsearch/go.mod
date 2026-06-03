@@ -1,4 +1,4 @@
-module github.com/cloudwego/eino-ext/components/tool/sougousearch
+module github.com/cloudwego/eino-ext/components/tool/tencentsearch
 
 go 1.24.11
 

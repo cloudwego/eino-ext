@@ -23,7 +23,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/cloudwego/eino-ext/components/tool/sougousearch"
+	"github.com/cloudwego/eino-ext/components/tool/tencentsearch"
 )
 
 func main() {
@@ -37,10 +37,10 @@ func main() {
 	}
 
 	// create tool
-	searchTool, err := sougousearch.NewTool(ctx, &sougousearch.Config{
+	searchTool, err := tencentsearch.NewTool(ctx, &tencentsearch.Config{
 		SecretID:  tencentCloudSecretID,
 		SecretKey: tencentCloudSecretKey,
-		Cnt:       5,
+		Cnt:       10,
 		Mode:      0, // natural search
 	})
 	if err != nil {
@@ -48,8 +48,8 @@ func main() {
 	}
 
 	// prepare params
-	cnt := uint64(3)
-	req := sougousearch.SearchRequest{
+	cnt := uint64(20)
+	req := tencentsearch.SearchRequest{
 		Query: "Golang concurrent programming",
 		Cnt:   &cnt,
 	}
@@ -65,7 +65,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var searchResp sougousearch.SearchResult
+	var searchResp tencentsearch.SearchResult
 	if err := json.Unmarshal([]byte(resp), &searchResp); err != nil {
 		log.Fatal(err)
 	}
