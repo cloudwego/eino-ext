@@ -65,7 +65,6 @@ type Config struct {
     ValidateCommand func(string) error
 
     // Optional: follow symlink directories during GlobInfo traversal.
-    // Returned paths stay relative to the requested path.
     FollowSymlinkDirsInGlob bool
 
     // Optional: image/PDF/DPI limits for MultiModalRead.
