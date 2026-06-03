@@ -600,10 +600,6 @@ func mergeCumulativeTokenUsage(dst, src *model.TokenUsage) *model.TokenUsage {
 		dst.CompletionTokensDetails.ReasoningTokens = src.CompletionTokensDetails.ReasoningTokens
 	}
 
-	if total := dst.PromptTokens + dst.CompletionTokens; total > dst.TotalTokens {
-		dst.TotalTokens = total
-	}
-
 	return dst
 }
 

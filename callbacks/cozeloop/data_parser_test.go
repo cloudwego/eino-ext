@@ -404,7 +404,7 @@ func Test_defaultDataParser_ParseChatModelStreamOutput_MergeCumulativeTokenUsage
 		convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 6900)
 		convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 3265)
 		convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 69)
-		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 6969)
+		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 6901)
 	})
 
 	mockey.PatchConvey("测试 ChatModel 流式输出使用最终累计 token usage", t, func() {
