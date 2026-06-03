@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -30,12 +32,23 @@ import (
 	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/gen2brain/go-fitz"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupTestDir(t *testing.T) string {
 	dir, err := os.MkdirTemp("", "sandbox-test")
 	assert.NoError(t, err)
 	return dir
+}
+
+func enableFollowSymlinksForTest(t *testing.T, req *filesystem.GlobInfoRequest) {
+	t.Helper()
+
+	field := reflect.ValueOf(req).Elem().FieldByName("FollowSymlinks")
+	if !field.IsValid() {
+		t.Skip("requires github.com/cloudwego/eino with GlobInfoRequest.FollowSymlinks")
+	}
+	field.SetBool(true)
 }
 
 func TestLsInfo(t *testing.T) {
@@ -360,6 +373,155 @@ func TestGlobInfo(t *testing.T) {
 			actual = append(actual, f.Path)
 		}
 		assert.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("glob does not follow symlink directory by default", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink tests are not reliable on Windows")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		targetRoot := setupTestDir(t)
+		defer os.RemoveAll(targetRoot)
+
+		target := filepath.Join(targetRoot, "linked-skill")
+		assert.NoError(t, os.MkdirAll(target, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(target, "SKILL.md"), []byte(""), 0644))
+		assert.NoError(t, os.Symlink(target, filepath.Join(dir, "linked-skill")))
+
+		req := &filesystem.GlobInfoRequest{Path: dir, Pattern: "*/SKILL.md"}
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		assert.Empty(t, files)
+	})
+
+	t.Run("glob follows symlink directory when requested", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink tests are not reliable on Windows")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		targetRoot := setupTestDir(t)
+		defer os.RemoveAll(targetRoot)
+
+		target := filepath.Join(targetRoot, "linked-skill")
+		assert.NoError(t, os.MkdirAll(target, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(target, "SKILL.md"), []byte(""), 0644))
+		assert.NoError(t, os.Symlink(target, filepath.Join(dir, "linked-skill")))
+
+		req := &filesystem.GlobInfoRequest{Path: dir, Pattern: "*/SKILL.md"}
+		enableFollowSymlinksForTest(t, req)
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		require.Len(t, files, 1)
+		assert.Equal(t, "linked-skill/SKILL.md", files[0].Path)
+	})
+
+	t.Run("glob follows symlink root when requested", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink tests are not reliable on Windows")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		linkRoot := setupTestDir(t)
+		defer os.RemoveAll(linkRoot)
+
+		assert.NoError(t, os.MkdirAll(filepath.Join(dir, "skill"), 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "skill", "SKILL.md"), []byte(""), 0644))
+		linkPath := filepath.Join(linkRoot, "skills")
+		assert.NoError(t, os.Symlink(dir, linkPath))
+
+		req := &filesystem.GlobInfoRequest{Path: linkPath, Pattern: "*/SKILL.md"}
+		enableFollowSymlinksForTest(t, req)
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		require.Len(t, files, 1)
+		assert.Equal(t, "skill/SKILL.md", files[0].Path)
+	})
+
+	t.Run("glob keeps symlink file matches", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink tests are not reliable on Windows")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		targetRoot := setupTestDir(t)
+		defer os.RemoveAll(targetRoot)
+
+		assert.NoError(t, os.MkdirAll(filepath.Join(dir, "skill"), 0755))
+		targetFile := filepath.Join(targetRoot, "SKILL.md")
+		assert.NoError(t, os.WriteFile(targetFile, []byte(""), 0644))
+		assert.NoError(t, os.Symlink(targetFile, filepath.Join(dir, "skill", "SKILL.md")))
+
+		req := &filesystem.GlobInfoRequest{Path: dir, Pattern: "*/SKILL.md"}
+		enableFollowSymlinksForTest(t, req)
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		require.Len(t, files, 1)
+		assert.Equal(t, "skill/SKILL.md", files[0].Path)
+	})
+
+	t.Run("glob skips broken symlink while following symlinks", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink tests are not reliable on Windows")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		assert.NoError(t, os.Symlink(filepath.Join(dir, "missing"), filepath.Join(dir, "broken")))
+
+		req := &filesystem.GlobInfoRequest{Path: dir, Pattern: "*/SKILL.md"}
+		enableFollowSymlinksForTest(t, req)
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		assert.Empty(t, files)
+	})
+
+	t.Run("glob avoids symlink cycles", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink tests are not reliable on Windows")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+
+		skillDir := filepath.Join(dir, "skill")
+		assert.NoError(t, os.MkdirAll(skillDir, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(""), 0644))
+		assert.NoError(t, os.Symlink(skillDir, filepath.Join(skillDir, "loop")))
+
+		req := &filesystem.GlobInfoRequest{Path: dir, Pattern: "**/SKILL.md"}
+		enableFollowSymlinksForTest(t, req)
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		require.Len(t, files, 1)
+		assert.Equal(t, "skill/SKILL.md", files[0].Path)
+	})
+
+	t.Run("glob preserves alias and real directory paths", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("symlink tests are not reliable on Windows")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+
+		target := filepath.Join(dir, "target")
+		assert.NoError(t, os.MkdirAll(target, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(target, "SKILL.md"), []byte(""), 0644))
+		assert.NoError(t, os.Symlink(target, filepath.Join(dir, "alias")))
+
+		req := &filesystem.GlobInfoRequest{Path: dir, Pattern: "*/SKILL.md"}
+		enableFollowSymlinksForTest(t, req)
+		files, err := s.GlobInfo(ctx, req)
+		assert.NoError(t, err)
+		require.Len(t, files, 2)
+		assert.Equal(t, "alias/SKILL.md", files[0].Path)
+		assert.Equal(t, "target/SKILL.md", files[1].Path)
 	})
 
 	t.Run("glob with question mark", func(t *testing.T) {
