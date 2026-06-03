@@ -118,13 +118,24 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		}
 	}()
 
-	req, err := r.config.SearchMode.BuildRequest(ctx, r.config, query, opts...)
+	effectiveIndex := r.config.Index
+	if options.Index != nil {
+		effectiveIndex = *options.Index
+	}
+	effectiveConfig := *r.config
+	effectiveConfig.Index = effectiveIndex
+	if effectiveConfig.ScoreThreshold != nil {
+		scoreThreshold := *effectiveConfig.ScoreThreshold
+		effectiveConfig.ScoreThreshold = &scoreThreshold
+	}
+
+	req, err := effectiveConfig.SearchMode.BuildRequest(ctx, &effectiveConfig, query, opts...)
 	if err != nil {
 		return nil, err
 	}
 
 	resp, err := search.NewSearchFunc(r.client)().
-		Index(r.config.Index).
+		Index(effectiveIndex).
 		Request(req).
 		Do(ctx)
 	if err != nil {

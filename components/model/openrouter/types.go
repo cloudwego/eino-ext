@@ -70,7 +70,7 @@ type Reasoning struct {
 	// MaxTokens directly specifies the maximum tokens to allocate for reasoning.
 	// For models that only support effort-based reasoning, this value determines
 	// the appropriate effort level. See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
-	MaxTokens int `json:"maxTokens,omitempty"`
+	MaxTokens int `json:"max_tokens,omitempty"`
 
 	// Exclude indicates whether reasoning should occur internally but not appear
 	// in the response. When true, reasoning tokens appear in the "reasoning"
@@ -104,9 +104,10 @@ type responseChoice struct {
 }
 
 type reasoningDetails struct {
-	Format string `json:"format,omitempty"`
-	Index  int64  `json:"index,omitempty"`
-	Type   string `json:"type,omitempty"`
-	Data   string `json:"data,omitempty"`
-	Text   string `json:"text,omitempty"`
+	Format    string `json:"format,omitempty"`
+	Index     int64  `json:"index,omitempty"`
+	Type      string `json:"type,omitempty"`
+	Data      string `json:"data,omitempty"`
+	Text      string `json:"text,omitempty"`
+	Signature string `json:"signature,omitempty"`
 }

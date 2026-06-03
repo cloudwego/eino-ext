@@ -283,7 +283,7 @@ jobs:
           echo "has_readme_changes=$has_readme_changes" >> $GITHUB_OUTPUT
 
       - name: Find existing comment
-        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: peter-evans/find-comment@v3
         id: find-comment
         with:
@@ -292,13 +292,17 @@ jobs:
           body-includes: "### 🏷️ Tag Version Reminder"
 
       - name: Post or update PR comment
-        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request'
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
         uses: peter-evans/create-or-update-comment@v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           body-file: tag_message.txt
           edit-mode: replace
+
+      - name: Print tag reminder for forked PR
+        if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: cat tag_message.txt
 
       - name: Send tag webhook notification
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'push'

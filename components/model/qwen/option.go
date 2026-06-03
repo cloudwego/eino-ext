@@ -42,6 +42,23 @@ func WithExtraHeader(header map[string]string) model.Option {
 }
 
 // WithExtraFields is used to set extra body fields for the request.
+// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
+//
+// Example:
+//
+//	WithExtraFields(map[string]any{
+//	    "enable_thinking": true,
+//	    "chat_template_kwargs": map[string]any{"enable_thinking": true},
+//	})
+//
+// The resulting request body will be:
+//
+//	{
+//	    "model": "qwen-plus",
+//	    "messages": [...],
+//	    "enable_thinking": true,
+//	    "chat_template_kwargs": {"enable_thinking": true}
+//	}
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return openai.WithExtraFields(extraFields)
 }

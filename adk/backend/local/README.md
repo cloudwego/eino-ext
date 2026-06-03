@@ -10,6 +10,17 @@ A filesystem backend for EINO ADK that operates directly on the local machine's 
 go get github.com/cloudwego/eino-ext/adk/backend/local
 ```
 
+#### Native dependency for `MultiModalRead` (PDF rendering)
+
+`MultiModalRead` rasterises PDF pages via [`go-fitz`](https://github.com/gen2brain/go-fitz),
+which loads MuPDF at runtime through `purego`. Install MuPDF before running:
+
+- macOS: `brew install mupdf`
+- Ubuntu/Debian: `sudo apt-get install -y libmupdf-dev`
+- CentOS/RHEL: `sudo yum install -y mupdf-devel`
+
+If you don't use `MultiModalRead`, MuPDF is not required at runtime.
+
 ### Basic Usage
 
 ```go
@@ -20,7 +31,7 @@ import (
 )
 
 // Initialize backend
-backend, err := local.NewLocalBackend(context.Background(), &local.Config{})
+backend, err := local.NewBackend(context.Background(), &local.Config{})
 if err != nil {
     panic(err)
 }
@@ -43,7 +54,7 @@ content, err := backend.Read(ctx, &filesystem.ReadRequest{
 - **Direct Filesystem Access** - Operates on local files with native performance
 - **Full Backend Implementation** - Supports all `filesystem.Backend` operations
 - **Path Security** - Enforces absolute paths to prevent directory traversal
-- **Safe Write** - Prevents accidental file overwrites by default
+- **Multimodal Read** - Reads images and PDFs as structured parts (PDF supports full or paged rendering)
 
 ## Configuration
 
@@ -52,6 +63,18 @@ type Config struct {
     // Optional: Command validator for Execute() method security
     // Recommended for production use to prevent command injection
     ValidateCommand func(string) error
+
+    // Optional: image/PDF/DPI limits for MultiModalRead.
+    // Zero/negative fields fall back to defaults; values above hard-caps are silently clamped.
+    MultiModalRead MultiModalReadConfig
+}
+
+type MultiModalReadConfig struct {
+    MaxImageSizeMB        int     // image read size limit (MB).      Default 10,  hard-cap 2048
+    MaxPDFSizeMB          int     // full PDF read size limit (MB).   Default 20,  hard-cap 2048
+    MaxPagedPDFSizeMB     int     // paged PDF read size limit (MB).  Default 100, hard-cap 2048
+    MaxPDFPagesPerRequest int     // max pages per paged read.        Default 20,  hard-cap 1000
+    PDFRenderDPI          float64 // DPI when rasterising PDF pages.  Default 150, hard-cap 600
 }
 ```
 
@@ -67,7 +90,7 @@ func validateCommand(cmd string) error {
     return nil
 }
 
-backend, _ := local.NewLocalBackend(ctx, &local.Config{
+backend, _ := local.NewBackend(ctx, &local.Config{
     ValidateCommand: validateCommand,
 })
 ```
@@ -85,7 +108,8 @@ See the following examples for more usage:
 
 - **`LsInfo(ctx, req)`** - List directory contents
 - **`Read(ctx, req)`** - Read file with optional line offset/limit
-- **`Write(ctx, req)`** - Create new file (fails if exists)
+- **`MultiModalRead(ctx, req)`** - Read images/PDFs as structured multimodal parts; non-image/non-PDF files fall back to `Read`. Defaults: image 10 MB / PDF 20 MB / paged-PDF 100 MB up to 20 pages @ 150 DPI. Tunable via `Config.MultiModalRead`. `Pages` accepts a single page (`"3"`) or an inclusive range (`"1-5"`).
+- **`Write(ctx, req)`** - Write file content; creates the file if it doesn't exist, otherwise **overwrites** existing content (parent directories are created automatically).
 - **`Edit(ctx, req)`** - Search and replace in file
 - **`GrepRaw(ctx, req)`** - Search pattern in files
 - **`GlobInfo(ctx, req)`** - Find files by glob pattern
@@ -113,11 +137,11 @@ The `Execute()` method requires command validation:
 
 ```go
 // Bad: No validation
-backend, _ := local.NewLocalBackend(ctx, &local.Config{})
+backend, _ := local.NewBackend(ctx, &local.Config{})
 // Command injection risk!
 
 // Good: With validation
-backend, _ := local.NewLocalBackend(ctx, &local.Config{
+backend, _ := local.NewBackend(ctx, &local.Config{
     ValidateCommand: myValidator,
 })
 ```
@@ -126,9 +150,6 @@ backend, _ := local.NewLocalBackend(ctx, &local.Config{
 
 **Q: Why do all paths need to be absolute?**  
 A: This prevents directory traversal attacks. Use `filepath.Abs()` to convert relative paths.
-
-**Q: Why does Write fail if the file exists?**  
-A: This is a safety feature to prevent accidental data loss. Use `Edit()` to modify existing files.
 
 **Q: Can I use this in production?**  
 A: Yes, but ensure proper input validation, command validation, and appropriate permissions.
