@@ -960,6 +960,10 @@ func (s *Local) ExecuteStreaming(ctx context.Context, input *filesystem.ExecuteR
 		return nil, validateErr
 	}
 
+	if shouldUseRichStreamingExecute(input) {
+		return s.executeRichStreaming(ctx, input), nil
+	}
+
 	cmd, stdout, stderr, err := s.initStreamingCmd(ctx, input.Command)
 	if err != nil {
 		return nil, err
@@ -1044,6 +1048,11 @@ func shouldExecuteInBackground(input *filesystem.ExecuteRequest) bool {
 	return (input.Mode == "" && input.RunInBackendGround) || input.Mode == filesystem.ExecuteModeBackground
 }
 
+func shouldUseRichStreamingExecute(input *filesystem.ExecuteRequest) bool {
+	return input.Mode == filesystem.ExecuteModeAuto ||
+		(input.Mode == filesystem.ExecuteModeBackground && input.WaitMS > 0)
+}
+
 func validateExecuteMode(mode filesystem.ExecuteMode) error {
 	switch mode {
 	case "", filesystem.ExecuteModeAuto, filesystem.ExecuteModeForeground, filesystem.ExecuteModeBackground:
@@ -1051,6 +1060,26 @@ func validateExecuteMode(mode filesystem.ExecuteMode) error {
 	default:
 		return fmt.Errorf("unknown execute mode: %s", mode)
 	}
+}
+
+func (s *Local) executeRichStreaming(ctx context.Context, input *filesystem.ExecuteRequest) *schema.StreamReader[*filesystem.ExecuteResponse] {
+	sr, w := schema.Pipe[*filesystem.ExecuteResponse](100)
+	go func() {
+		defer func() {
+			if pe := recover(); pe != nil {
+				w.Send(nil, newPanicErr(pe, debug.Stack()))
+			}
+			w.Close()
+		}()
+
+		resp, err := s.executeRich(ctx, input)
+		if err != nil {
+			w.Send(nil, err)
+			return
+		}
+		w.Send(resp, nil)
+	}()
+	return sr
 }
 
 func (s *Local) executeRich(ctx context.Context, input *filesystem.ExecuteRequest) (*filesystem.ExecuteResponse, error) {
