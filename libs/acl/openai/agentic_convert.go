@@ -296,7 +296,11 @@ func agenticUserToMessages(msg *schema.AgenticMessage) ([]*schema.Message, error
 			if block.UserInputFile == nil {
 				return nil, fmt.Errorf("file content is nil in user message")
 			}
-			inputParts = append(inputParts, fileBlockToInputPart(block.UserInputFile, block.Extra))
+			part, err := fileBlockToInputPart(block.UserInputFile, block.Extra)
+			if err != nil {
+				return nil, err
+			}
+			inputParts = append(inputParts, part)
 
 		default:
 			return nil, fmt.Errorf("unsupported content block type %q in user message", block.Type)
@@ -430,7 +434,7 @@ func videoBlockToInputPart(video *schema.UserInputVideo, extra map[string]any) s
 	return part
 }
 
-func fileBlockToInputPart(file *schema.UserInputFile, extra map[string]any) schema.MessageInputPart {
+func fileBlockToInputPart(file *schema.UserInputFile, extra map[string]any) (schema.MessageInputPart, error) {
 	part := schema.MessageInputPart{
 		Type: schema.ChatMessagePartTypeFileURL,
 		File: &schema.MessageInputFile{
@@ -443,13 +447,13 @@ func fileBlockToInputPart(file *schema.UserInputFile, extra map[string]any) sche
 	}
 
 	if file.URL != "" {
-		part.File.URL = &file.URL
+		return part, fmt.Errorf("for OpenAI Chat Completions, file message part does not accept URL; use Responses API or provide base64 data")
 	}
 	if file.Base64Data != "" {
 		part.File.Base64Data = &file.Base64Data
 	}
 
-	return part
+	return part, nil
 }
 
 func assistantGenImageToOutputPart(img *schema.AssistantGenImage, extra map[string]any) schema.MessageOutputPart {
@@ -612,8 +616,6 @@ func functionToolResultContentToInputParts(content []*schema.FunctionToolResultC
 				part.Video.Base64Data = &block.Video.Base64Data
 			}
 			parts = append(parts, part)
-		case schema.FunctionToolResultContentBlockTypeFile:
-			return nil, fmt.Errorf("unsupported function tool result content block type for OpenAI Chat Completions: %s", block.Type)
 		default:
 			return nil, fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
 		}

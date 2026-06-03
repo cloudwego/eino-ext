@@ -176,6 +176,45 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 		assert.Equal(t, "report.pdf", result[0].UserInputMultiContent[0].File.Name)
 	})
 
+	t.Run("user message with file URL unsupported", func(t *testing.T) {
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputFile{
+						URL:      "https://example.com/report.pdf",
+						MIMEType: "application/pdf",
+						Name:     "report.pdf",
+					}),
+				},
+			},
+		}
+
+		_, err := agenticMessagesToMessages(msgs)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "file message part does not accept URL")
+	})
+
+	t.Run("user message with file URL and base64 unsupported", func(t *testing.T) {
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputFile{
+						URL:        "https://example.com/report.pdf",
+						Base64Data: "filedata",
+						MIMEType:   "application/pdf",
+						Name:       "report.pdf",
+					}),
+				},
+			},
+		}
+
+		_, err := agenticMessagesToMessages(msgs)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "file message part does not accept URL")
+	})
+
 	t.Run("user message with tool results", func(t *testing.T) {
 		msgs := []*schema.AgenticMessage{
 			{
@@ -265,29 +304,6 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 		assert.Equal(t, "here is the image", result[0].UserInputMultiContent[0].Text)
 		assert.Equal(t, schema.ChatMessagePartTypeImageURL, result[0].UserInputMultiContent[1].Type)
 		assert.Equal(t, imgURL, *result[0].UserInputMultiContent[1].Image.URL)
-	})
-
-	t.Run("user message with file tool result unsupported", func(t *testing.T) {
-		fileURL := "https://example.com/result.pdf"
-		msgs := []*schema.AgenticMessage{
-			{
-				Role: schema.AgenticRoleTypeUser,
-				ContentBlocks: []*schema.ContentBlock{
-					schema.NewContentBlock(&schema.FunctionToolResult{
-						CallID: "call_1",
-						Name:   "fetch_file",
-						Content: []*schema.FunctionToolResultContentBlock{
-							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "here is the file"}},
-							{Type: schema.FunctionToolResultContentBlockTypeFile, File: &schema.UserInputFile{URL: fileURL, MIMEType: "application/pdf", Name: "result.pdf"}},
-						},
-					}),
-				},
-			},
-		}
-
-		_, err := agenticMessagesToMessages(msgs)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported function tool result content block type for OpenAI Chat Completions")
 	})
 
 	t.Run("user message with empty tool result content", func(t *testing.T) {
