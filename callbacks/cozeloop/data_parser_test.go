@@ -392,74 +392,7 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 	})
 }
 
-func Test_defaultDataParser_ParseOutput_MessageMetaTokenUsage(t *testing.T) {
-	mockey.PatchConvey("测试非流式模型输出优先使用 message meta usage", t, func() {
-		d := defaultDataParser{}
-		ctx := context.Background()
-
-		mockey.PatchConvey("ChatModel 从 Message.ResponseMeta.Usage 读取 token usage", func() {
-			info := &callbacks.RunInfo{Component: components.ComponentOfChatModel}
-			output := &model.CallbackOutput{
-				Message: &schema.Message{
-					Role: schema.Assistant,
-					ResponseMeta: &schema.ResponseMeta{
-						Usage: &schema.TokenUsage{
-							PromptTokens: 11,
-							PromptTokenDetails: schema.PromptTokenDetails{
-								CachedTokens: 7,
-							},
-							CompletionTokens: 13,
-							TotalTokens:      24,
-							CompletionTokensDetails: schema.CompletionTokensDetails{
-								ReasoningTokens: 5,
-							},
-						},
-					},
-				},
-			}
-
-			result := d.ParseOutput(ctx, info, output)
-
-			convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 11)
-			convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 7)
-			convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 13)
-			convey.So(result[tracespec.ReasoningTokens], convey.ShouldEqual, 5)
-			convey.So(result[tracespec.Tokens], convey.ShouldEqual, 24)
-		})
-
-		mockey.PatchConvey("AgenticModel 从 AgenticMessage.ResponseMeta.TokenUsage 读取 token usage", func() {
-			info := &callbacks.RunInfo{Component: components.ComponentOfAgenticModel}
-			output := &model.AgenticCallbackOutput{
-				Message: &schema.AgenticMessage{
-					Role: schema.AgenticRoleTypeAssistant,
-					ResponseMeta: &schema.AgenticResponseMeta{
-						TokenUsage: &schema.TokenUsage{
-							PromptTokens: 17,
-							PromptTokenDetails: schema.PromptTokenDetails{
-								CachedTokens: 3,
-							},
-							CompletionTokens: 19,
-							TotalTokens:      36,
-							CompletionTokensDetails: schema.CompletionTokensDetails{
-								ReasoningTokens: 2,
-							},
-						},
-					},
-				},
-			}
-
-			result := d.ParseOutput(ctx, info, output)
-
-			convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 17)
-			convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 3)
-			convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 19)
-			convey.So(result[tracespec.ReasoningTokens], convey.ShouldEqual, 2)
-			convey.So(result[tracespec.Tokens], convey.ShouldEqual, 36)
-		})
-	})
-}
-
-func Test_defaultDataParser_ParseChatModelStreamOutput_MergeCumulativeTokenUsage(t *testing.T) {
+func Test_defaultDataParser_ParseChatModelStreamOutput_MessageMetaTokenUsage(t *testing.T) {
 	mockey.PatchConvey("测试 ChatModel 流式输出优先使用 concat 后的 message meta usage", t, func() {
 		outsr, outsw := schema.Pipe[callbacks.CallbackOutput](3)
 		outsw.Send(&model.CallbackOutput{
@@ -504,7 +437,7 @@ func Test_defaultDataParser_ParseChatModelStreamOutput_MergeCumulativeTokenUsage
 		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 6901)
 	})
 
-	mockey.PatchConvey("测试 ChatModel 流式输出合并 token usage", t, func() {
+	mockey.PatchConvey("测试 ChatModel 流式输出不读取 CallbackOutput.TokenUsage", t, func() {
 		outsr, outsw := schema.Pipe[callbacks.CallbackOutput](3)
 		outsw.Send(&model.CallbackOutput{
 			Message: &schema.Message{Role: schema.Assistant, Content: "assistant"},
@@ -531,39 +464,11 @@ func Test_defaultDataParser_ParseChatModelStreamOutput_MergeCumulativeTokenUsage
 		d := defaultDataParser{}
 		result := d.ParseChatModelStreamOutput(context.Background(), outsr)
 
-		convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 6900)
-		convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 3265)
-		convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 69)
-		convey.So(result[tracespec.ReasoningTokens], convey.ShouldEqual, 12)
-		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 6901)
-	})
-
-	mockey.PatchConvey("测试 ChatModel 流式输出使用最终累计 token usage", t, func() {
-		outsr, outsw := schema.Pipe[callbacks.CallbackOutput](3)
-		outsw.Send(&model.CallbackOutput{
-			Message: &schema.Message{Role: schema.Assistant, Content: "assistant"},
-			TokenUsage: &model.TokenUsage{
-				PromptTokens:     2679,
-				CompletionTokens: 3,
-				TotalTokens:      2682,
-			},
-		}, nil)
-		outsw.Send(&model.CallbackOutput{
-			Message: &schema.Message{Role: schema.Assistant, Content: " message"},
-			TokenUsage: &model.TokenUsage{
-				PromptTokens:     10682,
-				CompletionTokens: 510,
-				TotalTokens:      11192,
-			},
-		}, nil)
-		outsw.Close()
-
-		d := defaultDataParser{}
-		result := d.ParseChatModelStreamOutput(context.Background(), outsr)
-
-		convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 10682)
-		convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 510)
-		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 11192)
+		convey.So(result, convey.ShouldNotContainKey, tracespec.InputTokens)
+		convey.So(result, convey.ShouldNotContainKey, tracespec.InputCachedTokens)
+		convey.So(result, convey.ShouldNotContainKey, tracespec.OutputTokens)
+		convey.So(result, convey.ShouldNotContainKey, tracespec.ReasoningTokens)
+		convey.So(result, convey.ShouldNotContainKey, tracespec.Tokens)
 	})
 }
 
