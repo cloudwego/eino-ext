@@ -120,6 +120,17 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 				Role:    schema.Assistant,
 				Content: "Hello, how can I assist you today?",
 			},
+			TokenUsage: &model.TokenUsage{
+				PromptTokens:     1,
+				CompletionTokens: 2,
+				TotalTokens:      3,
+				PromptTokenDetails: model.PromptTokenDetails{
+					CachedTokens: 4,
+				},
+				CompletionTokensDetails: model.CompletionTokensDetails{
+					ReasoningTokens: 5,
+				},
+			},
 		}
 		var outputs callbacks.CallbackOutput = []*schema.Message{
 			{
@@ -148,6 +159,11 @@ func Test_defaultDataParser_ParseOutput(t *testing.T) {
 
 			convey.So(result, convey.ShouldNotBeNil)
 			convey.So(result, convey.ShouldContainKey, tracespec.Output)
+			convey.So(result[tracespec.Tokens], convey.ShouldEqual, 3)
+			convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 1)
+			convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 2)
+			convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 4)
+			convey.So(result[tracespec.ReasoningTokens], convey.ShouldEqual, 5)
 
 			mockConvertModelOutput.UnPatch()
 			mockGetTraceVariablesValue.UnPatch()
@@ -394,6 +410,9 @@ func Test_defaultDataParser_ParseChatModelStreamOutput_MergeCumulativeTokenUsage
 			Message: &schema.Message{Role: schema.Assistant, Content: " message"},
 			TokenUsage: &model.TokenUsage{
 				CompletionTokens: 69,
+				CompletionTokensDetails: model.CompletionTokensDetails{
+					ReasoningTokens: 12,
+				},
 			},
 		}, nil)
 		outsw.Close()
@@ -404,6 +423,7 @@ func Test_defaultDataParser_ParseChatModelStreamOutput_MergeCumulativeTokenUsage
 		convey.So(result[tracespec.InputTokens], convey.ShouldEqual, 6900)
 		convey.So(result[tracespec.InputCachedTokens], convey.ShouldEqual, 3265)
 		convey.So(result[tracespec.OutputTokens], convey.ShouldEqual, 69)
+		convey.So(result[tracespec.ReasoningTokens], convey.ShouldEqual, 12)
 		convey.So(result[tracespec.Tokens], convey.ShouldEqual, 6901)
 	})
 

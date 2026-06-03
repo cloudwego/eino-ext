@@ -208,7 +208,8 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
 					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
 					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
-					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens)
+					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens).
+					set(tracespec.ReasoningTokens, cbOutput.TokenUsage.CompletionTokensDetails.ReasoningTokens)
 			}
 		}
 
@@ -489,7 +490,8 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 		tags.set(tracespec.Tokens, usage.TotalTokens).
 			set(tracespec.InputTokens, usage.PromptTokens).
 			set(tracespec.OutputTokens, usage.CompletionTokens).
-			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens)
+			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens).
+			set(tracespec.ReasoningTokens, usage.CompletionTokensDetails.ReasoningTokens)
 	}
 
 	return tags
