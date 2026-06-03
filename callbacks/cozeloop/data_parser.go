@@ -204,13 +204,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			tags.set(tracespec.Output, finalOutput)
 			tags.set(consts.CustomSpanTagKeyExtra, cbOutput.Extra)
 
-			if cbOutput.TokenUsage != nil {
-				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
-					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
-					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
-					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens).
-					set(tracespec.ReasoningTokens, cbOutput.TokenUsage.CompletionTokensDetails.ReasoningTokens)
-			}
+			setTokenUsageTags(tags, getMessageTokenUsage(cbOutput.Message, cbOutput.TokenUsage))
 		}
 
 		tags.set(tracespec.Stream, false)
@@ -231,13 +225,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			tags.set(tracespec.Output, finalOutput)
 			tags.set(consts.CustomSpanTagKeyExtra, cbOutput.Extra)
 
-			if cbOutput.TokenUsage != nil {
-				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
-					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
-					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
-					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens).
-					set(tracespec.ReasoningTokens, cbOutput.TokenUsage.CompletionTokensDetails.ReasoningTokens)
-			}
+			setTokenUsageTags(tags, getAgenticMessageTokenUsage(cbOutput.Message, cbOutput.TokenUsage))
 
 			if cbOutput.Config != nil {
 				if cbOutput.Config.Model != "" {
@@ -470,6 +458,7 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 		}
 	}
 
+	finalUsage := usage
 	if msg, concatErr := schema.ConcatMessages(chunks); concatErr != nil { // unexpected
 		finalOutput := parseAny(ctx, chunks, true)
 		tags.set(tracespec.Output, finalOutput)
@@ -481,18 +470,13 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 		}
 	} else {
 		tags.set(tracespec.Output, convertModelOutput(&model.CallbackOutput{Message: msg}))
+		finalUsage = getMessageTokenUsage(msg, usage)
 		if level == 2 {
 			collectOutput.addMessages(convertModelMessage(msg))
 		}
 	}
 
-	if usage != nil {
-		tags.set(tracespec.Tokens, usage.TotalTokens).
-			set(tracespec.InputTokens, usage.PromptTokens).
-			set(tracespec.OutputTokens, usage.CompletionTokens).
-			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens).
-			set(tracespec.ReasoningTokens, usage.CompletionTokensDetails.ReasoningTokens)
-	}
+	setTokenUsageTags(tags, finalUsage)
 
 	return tags
 }
@@ -547,6 +531,7 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 		tags.set(tracespec.ModelName, modelName)
 	}
 
+	finalUsage := usage
 	if msg, concatErr := schema.ConcatAgenticMessages(chunks); concatErr != nil {
 		finalOutput := parseAny(ctx, chunks, true)
 		tags.set(tracespec.Output, finalOutput)
@@ -558,20 +543,57 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 		}
 	} else {
 		tags.set(tracespec.Output, convertAgenticModelOutput(&model.AgenticCallbackOutput{Message: msg}))
+		finalUsage = getAgenticMessageTokenUsage(msg, usage)
 		if level == 2 {
 			collectOutput.addMessages(expandAgenticModelMessage(msg)...)
 		}
 	}
 
-	if usage != nil {
-		tags.set(tracespec.Tokens, usage.TotalTokens).
-			set(tracespec.InputTokens, usage.PromptTokens).
-			set(tracespec.OutputTokens, usage.CompletionTokens).
-			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens).
-			set(tracespec.ReasoningTokens, usage.CompletionTokensDetails.ReasoningTokens)
-	}
+	setTokenUsageTags(tags, finalUsage)
 
 	return tags
+}
+
+func getMessageTokenUsage(msg *schema.Message, fallback *model.TokenUsage) *model.TokenUsage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return fallback
+	}
+	return mergeCumulativeTokenUsage(schemaTokenUsageToModel(msg.ResponseMeta.Usage), fallback)
+}
+
+func getAgenticMessageTokenUsage(msg *schema.AgenticMessage, fallback *model.TokenUsage) *model.TokenUsage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return fallback
+	}
+	return mergeCumulativeTokenUsage(schemaTokenUsageToModel(msg.ResponseMeta.TokenUsage), fallback)
+}
+
+func schemaTokenUsageToModel(usage *schema.TokenUsage) *model.TokenUsage {
+	if usage == nil {
+		return nil
+	}
+	return &model.TokenUsage{
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+	}
+}
+
+func setTokenUsageTags(tags spanTags, usage *model.TokenUsage) {
+	if usage == nil {
+		return
+	}
+	tags.set(tracespec.Tokens, usage.TotalTokens).
+		set(tracespec.InputTokens, usage.PromptTokens).
+		set(tracespec.OutputTokens, usage.CompletionTokens).
+		set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens).
+		set(tracespec.ReasoningTokens, usage.CompletionTokensDetails.ReasoningTokens)
 }
 
 // mergeCumulativeTokenUsage keeps the final request-level token usage from a

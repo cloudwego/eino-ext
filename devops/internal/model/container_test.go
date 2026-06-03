@@ -30,7 +30,6 @@ import (
 
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/cloudwego/eino/components"
-	componentmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
@@ -65,21 +64,6 @@ func (m mockContainerImplV2) Name() string {
 	return m.NN
 }
 
-type mockAgenticModel struct{}
-
-func (m *mockAgenticModel) Generate(ctx context.Context, input []*schema.AgenticMessage,
-	opts ...componentmodel.Option) (*schema.AgenticMessage, error) {
-	if len(input) == 0 {
-		return schema.UserAgenticMessage("mock"), nil
-	}
-	return input[0], nil
-}
-
-func (m *mockAgenticModel) Stream(ctx context.Context, input []*schema.AgenticMessage,
-	opts ...componentmodel.Option) (*schema.StreamReader[*schema.AgenticMessage], error) {
-	return nil, nil
-}
-
 type testCtxKey struct{}
 
 type testCallback struct {
@@ -94,41 +78,6 @@ func (tt *testCallback) OnFinish(ctx context.Context, graphInfo *compose.GraphIn
 }
 
 func Test_GraphInfo_BuildDevGraph(t *testing.T) {
-	t.Run("graph: agentic prompt and model", func(t *testing.T) {
-		g := compose.NewGraph[map[string]any, *schema.AgenticMessage]()
-		err := g.AddAgenticChatTemplateNode("prompt",
-			prompt.FromAgenticMessages(schema.FString, schema.UserAgenticMessage("{query}")))
-		assert.NoError(t, err)
-		err = g.AddAgenticModelNode("model", &mockAgenticModel{})
-		assert.NoError(t, err)
-		err = g.AddEdge(compose.START, "prompt")
-		assert.NoError(t, err)
-		err = g.AddEdge("prompt", "model")
-		assert.NoError(t, err)
-		err = g.AddEdge("model", compose.END)
-		assert.NoError(t, err)
-
-		tc := &testCallback{}
-		ctx := context.Background()
-		_, err = g.Compile(ctx, compose.WithGraphCompileCallbacks(tc))
-		assert.NoError(t, err)
-
-		ng, err := BuildDevGraph(tc.gi, compose.START)
-		assert.NoError(t, err)
-
-		r, err := ng.Compile()
-		assert.NoError(t, err)
-
-		input, err := UnmarshalJson([]byte(`{"query":{"_eino_go_type":"string","_value":"hello"}}`), ng.GraphInfo.InputType)
-		assert.NoError(t, err)
-		resp, err := r.Invoke(ctx, input)
-		assert.NoError(t, err)
-
-		msg, ok := resp.(*schema.AgenticMessage)
-		assert.True(t, ok)
-		assert.Equal(t, schema.AgenticRoleTypeUser, msg.Role)
-	})
-
 	t.Run("graph-chain: add chain, stateGraph，graph node", func(t *testing.T) {
 		type mockInputType struct {
 			Input string `json:"input"`
@@ -1438,41 +1387,11 @@ func Test_Graph_addNode(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("AgenticModel", func(t *testing.T) {
-		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
-		gni := compose.GraphNodeInfo{
-			Component: components.ComponentOfAgenticModel,
-			Instance:  &mockAgenticModel{},
-		}
-		err := g.addNode("node_1", gni)
-		assert.NoError(t, err)
-	})
-
-	t.Run("AgenticPrompt", func(t *testing.T) {
-		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
-		gni := compose.GraphNodeInfo{
-			Component: components.ComponentOfAgenticPrompt,
-			Instance:  prompt.FromAgenticMessages(schema.FString, schema.UserAgenticMessage("hi")),
-		}
-		err := g.addNode("node_1", gni)
-		assert.NoError(t, err)
-	})
-
 	t.Run("ToolsNode", func(t *testing.T) {
 		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
 		gni := compose.GraphNodeInfo{
 			Component: compose.ComponentOfToolsNode,
 			Instance:  &compose.ToolsNode{},
-		}
-		err := g.addNode("node_1", gni)
-		assert.NoError(t, err)
-	})
-
-	t.Run("AgenticToolsNode", func(t *testing.T) {
-		g := &Graph{Graph: compose.NewGraph[any, any](compose.WithGenLocalState(genState))}
-		gni := compose.GraphNodeInfo{
-			Component: compose.ComponentOfAgenticToolsNode,
-			Instance:  &compose.AgenticToolsNode{},
 		}
 		err := g.addNode("node_1", gni)
 		assert.NoError(t, err)
