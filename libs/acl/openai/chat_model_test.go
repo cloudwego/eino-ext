@@ -661,6 +661,30 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 				wantErrContains: "file message part does not accept URL",
 			},
 			{
+				name: "file url with base64 unsupported",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeFileURL,
+							File: &schema.MessageInputFile{
+								MessagePartCommon: schema.MessagePartCommon{
+									URL:        &fileURL,
+									Base64Data: &base64Data,
+									MIMEType:   "application/pdf",
+								},
+								Name: "file.pdf",
+							},
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleUser,
+				},
+				wantErr:         true,
+				wantErrContains: "file message part does not accept URL",
+			},
+			{
 				name: "file field missing",
 				inMsg: &schema.Message{
 					Role: schema.User,

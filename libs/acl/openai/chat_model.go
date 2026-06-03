@@ -490,6 +490,9 @@ func buildMessageFromUserInputMultiContent(inMsg *schema.Message) (openai.ChatCo
 			if part.File == nil {
 				return comMessage, errors.New("the 'file' field is required for parts of type 'file_url'")
 			}
+			if part.File.URL != nil {
+				return comMessage, errors.New("for OpenAI Chat Completions, file message part does not accept URL; use Responses API or provide base64 data")
+			}
 			if part.File.Base64Data != nil {
 				if part.File.MessagePartCommon.MIMEType == "" {
 					return comMessage, fmt.Errorf("mimetype is required when using base64data")
@@ -501,8 +504,6 @@ func buildMessageFromUserInputMultiContent(inMsg *schema.Message) (openai.ChatCo
 						FileName: part.File.Name,
 					},
 				})
-			} else if part.File.URL != nil {
-				return comMessage, errors.New("for OpenAI Chat Completions, file message part does not accept URL; use Responses API or provide base64 data")
 			} else {
 				return comMessage, errors.New("file message part must have url or base64 data")
 			}
