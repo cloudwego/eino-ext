@@ -575,10 +575,19 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		cm.enableCodeExecution || cm.enableComputerUse != nil || cm.enableURLContext != nil ||
 		cm.enableFileSearch != nil || cm.enableGoogleMaps != nil
 	if hasBuiltInTools && len(tools) > 0 {
+		if cm.cli.ClientConfig().Backend == genai.BackendVertexAI {
+			return "", nil, nil, nil, fmt.Errorf("combining built-in tools with function calling requires IncludeServerSideToolInvocations, which is not supported by the Vertex AI backend")
+		}
 		if m.ToolConfig == nil {
 			m.ToolConfig = &genai.ToolConfig{}
 		}
 		m.ToolConfig.IncludeServerSideToolInvocations = genai.Ptr(true)
+		// AUTO mode is not supported when IncludeServerSideToolInvocations is enabled; default to VALIDATED.
+		if m.ToolConfig.FunctionCallingConfig == nil {
+			m.ToolConfig.FunctionCallingConfig = &genai.FunctionCallingConfig{Mode: genai.FunctionCallingConfigModeValidated}
+		} else if mode := m.ToolConfig.FunctionCallingConfig.Mode; mode == genai.FunctionCallingConfigModeAuto || mode == genai.FunctionCallingConfigModeUnspecified || mode == "" {
+			m.ToolConfig.FunctionCallingConfig.Mode = genai.FunctionCallingConfigModeValidated
+		}
 	}
 
 	if geminiOptions.ResponseJSONSchema != nil {
