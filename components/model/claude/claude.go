@@ -1270,6 +1270,20 @@ func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 	return message, nil
 }
 
+func convMessageDeltaUsage(usage anthropic.MessageDeltaUsage) *schema.TokenUsage {
+	promptTokens := int(usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens)
+	completionTokens := int(usage.OutputTokens)
+
+	return &schema.TokenUsage{
+		PromptTokens: promptTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: int(usage.CacheReadInputTokens),
+		},
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+	}
+}
+
 type streamContext struct {
 	toolIndex *int
 }
@@ -1358,9 +1372,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 	case anthropic.MessageDeltaEvent:
 		result.ResponseMeta = &schema.ResponseMeta{
 			FinishReason: string(e.Delta.StopReason),
-			Usage: &schema.TokenUsage{
-				CompletionTokens: int(e.Usage.OutputTokens),
-			},
+			Usage:        convMessageDeltaUsage(e.Usage),
 		}
 		return result, nil
 
