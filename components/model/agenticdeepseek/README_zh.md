@@ -138,6 +138,28 @@ type Config struct {
 }
 ```
 
+## 扩展字段说明
+
+Eino agentic schema 中的若干字段被声明为 `any` 类型，以便各模型实现能够附加各自的特定数据。当你消费本包返回的响应时，
+必须先将这些 `any` 字段类型断言为本包定义的具体类型，才能读取其内容。本节列出每一个此类字段及其承载的确切类型。
+
+### ResponseMeta
+
+每个返回的 `*schema.AgenticMessage` 都携带一个 `ResponseMeta *schema.AgenticResponseMeta`。其中的 `Extension any`
+字段由本包填充，使用前**必须断言为 `*agenticdeepseek.ResponseMetaExtension`**：
+
+```go
+type ResponseMetaExtension struct {
+    FinishReason string           // 例如 "stop"、"length"、"tool_calls"
+    LogProbs     *schema.LogProbs // 仅当 ChatConfig 中启用 LogProbs 时才会填充
+}
+```
+
+```go
+// 具体类型始终为 *agenticdeepseek.ResponseMetaExtension。
+ext, ok := msg.ResponseMeta.Extension.(*agenticdeepseek.ResponseMetaExtension)
+```
+
 ## 示例
 
 查看以下示例了解更多用法：

@@ -182,6 +182,73 @@ type Config struct {
 }
 ```
 
+## Extension Fields
+
+Several fields of the Eino agentic schema are typed `any` so that each model implementation can attach its own provider-specific data. When you consume responses produced by this package, you must type-assert these fields to the concrete types defined here (all under the `agenticark` package).
+
+### ResponseMeta
+
+The schema's `AgenticResponseMeta` does not define an Ark-specific field, so this package populates the generic `Extension any` field of `*schema.AgenticMessage.ResponseMeta` with a `*agenticark.ResponseMetaExtension`. Assert it to that type before use.
+
+```go
+// agenticark.ResponseMetaExtension
+type ResponseMetaExtension struct {
+	ID                 string             // Ark response ID
+	Status             ResponseStatus     // in_progress / completed / incomplete / failed
+	IncompleteDetails  *IncompleteDetails // populated when Status is incomplete
+	Error              *ResponseError     // populated when the response carries an error
+	PreviousResponseID string             // ID of the previous response in a multi-turn chain
+	Thinking           *ResponseThinking  // thinking mode reported by the server
+	ExpireAt           *int64             // Unix timestamp when the cached response expires
+	ServiceTier        ServiceTier        // auto / default
+	StreamingError     *StreamingResponseError // error surfaced during streaming
+}
+```
+
+```go
+meta := msg.ResponseMeta.Extension.(*agenticark.ResponseMetaExtension)
+```
+
+### AssistantGenText Extension
+
+`UserInputText` (user-supplied text) carries no extension. Only model-generated `AssistantGenText` blocks do. The schema defines no Ark-specific field for it, so this package populates the generic `AssistantGenText.Extension any` field with a `*agenticark.AssistantGenTextExtension`, which carries the citation/annotation data attached to the generated text.
+
+```go
+// agenticark.AssistantGenTextExtension
+type AssistantGenTextExtension struct {
+	Annotations []*TextAnnotation // url_citation / doc_citation annotations on the text
+}
+```
+
+```go
+ext := block.AssistantGenText.Extension.(*agenticark.AssistantGenTextExtension)
+```
+
+### ServerToolCall & ServerToolResult
+
+When server-side (built-in) tools such as `web_search`, `image_process`, `doubao_app` or `knowledge_search` are enabled, this package populates the generic `ServerToolCall.Arguments any` field with a `*agenticark.ServerToolCallArguments` and the `ServerToolResult.Content any` field with a `*agenticark.ServerToolResult`. Assert them to those concrete types.
+
+```go
+// agenticark.ServerToolCallArguments — exactly one field is set per call
+type ServerToolCallArguments struct {
+	WebSearch       *WebSearchArguments       // web_search tool input
+	ImageProcess    *ImageProcessArguments    // image_process tool input
+	DoubaoApp       *DoubaoAppArguments       // doubao_app tool input
+	KnowledgeSearch *KnowledgeSearchArguments // knowledge_search tool input
+}
+
+// agenticark.ServerToolResult — exactly one field is set per result
+type ServerToolResult struct {
+	ImageProcess *ImageProcessResult // image_process tool output
+	DoubaoApp    *DoubaoAppResult    // doubao_app tool output
+}
+```
+
+```go
+args := block.ServerToolCall.Arguments.(*agenticark.ServerToolCallArguments)
+result := block.ServerToolResult.Content.(*agenticark.ServerToolResult)
+```
+
 ## Advanced Usage
 
 ### Cache
