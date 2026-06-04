@@ -138,6 +138,30 @@ type Config struct {
 }
 ```
 
+## Extension Fields
+
+Several fields in the Eino agentic schema are typed as `any` so that each model implementation can attach
+provider-specific data. When you consume responses produced by this package, you must type-assert these `any`
+fields to the concrete types defined here before you can read them. This section documents every such field and
+the exact type it carries.
+
+### ResponseMeta
+
+Each returned `*schema.AgenticMessage` carries a `ResponseMeta *schema.AgenticResponseMeta`. Its `Extension any`
+field is populated by this package and **must be asserted to `*agenticdeepseek.ResponseMetaExtension`** before use:
+
+```go
+type ResponseMetaExtension struct {
+    FinishReason string           // e.g. "stop", "length", "tool_calls"
+    LogProbs     *schema.LogProbs // populated only when LogProbs is enabled in ChatConfig
+}
+```
+
+```go
+// The concrete type is always *agenticdeepseek.ResponseMetaExtension.
+ext, ok := msg.ResponseMeta.Extension.(*agenticdeepseek.ResponseMetaExtension)
+```
+
 ## Examples
 
 See the following examples for more usage:

@@ -176,6 +176,85 @@ type Config struct {
 }
 ```
 
+## Extension Fields
+
+Several fields of the Eino agentic schema are typed `any` so that each model implementation can attach provider-specific data. To consume the data this package produces, type-assert those fields to the concrete types defined here. For the strongly-typed extension fields (`ClaudeExtension`), no assertion is required.
+
+### ResponseMeta
+
+`AgenticResponseMeta.ClaudeExtension` is populated with the strongly-typed `*claude.ResponseMetaExtension`, so no type assertion is needed. The generic `Extension any` field is not used by this package.
+
+```go
+// github.com/cloudwego/eino/schema/claude
+type ResponseMetaExtension struct {
+    ID           string       // the upstream message ID
+    StopReason   string       // why generation stopped, e.g. "end_turn", "tool_use"
+    StopSequence string       // the custom stop sequence that was hit, if any
+    StopDetails  *StopDetails // additional stop information
+}
+```
+
+```go
+ext := msg.ResponseMeta.ClaudeExtension // *claude.ResponseMetaExtension
+```
+
+### AssistantGenText Extension
+
+`UserInputText` has no extension. Only `AssistantGenText` carries one: its `ClaudeExtension` field is populated with the strongly-typed `*claude.AssistantGenTextExtension`, so no assertion is needed. The generic `Extension any` field is not used by this package.
+
+```go
+// github.com/cloudwego/eino/schema/claude
+type AssistantGenTextExtension struct {
+    Citations []*TextCitation // citations attached to the generated text, if any
+}
+```
+
+```go
+ext := block.AssistantGenText.ClaudeExtension // *claude.AssistantGenTextExtension
+```
+
+### ServerToolCall & ServerToolResult
+
+This package supports Claude server-side (built-in) tools such as web search, web fetch, code execution, and tool search. For these blocks, the generic `any` fields are populated with concrete types defined in this package.
+
+`ServerToolCall.Arguments` is populated with `*agenticclaude.ServerToolCallArguments`. Exactly one field is set, matching the invoked tool.
+
+```go
+// package agenticclaude
+type ServerToolCallArguments struct {
+    WebSearch               *WebSearchArguments               // web_search
+    WebFetch                *WebFetchArguments                // web_fetch
+    CodeExecution           *CodeExecutionArguments           // code_execution
+    BashCodeExecution       *BashCodeExecutionArguments       // bash_code_execution
+    TextEditorCodeExecution *TextEditorCodeExecutionArguments // text_editor_code_execution
+    ToolSearchToolBm25      *ToolSearchToolBm25Arguments      // tool_search_tool_bm25
+    ToolSearchToolRegex     *ToolSearchToolRegexArguments     // tool_search_tool_regex
+}
+```
+
+```go
+args := block.ServerToolCall.Arguments.(*agenticclaude.ServerToolCallArguments)
+```
+
+`ServerToolResult.Content` is populated with `*agenticclaude.ServerToolResult`. Exactly one field is set, matching the invoked tool.
+
+```go
+// package agenticclaude
+type ServerToolResult struct {
+    WebSearch               *WebSearchResult               // web_search
+    WebFetch                *WebFetchResult                // web_fetch
+    CodeExecution           *CodeExecutionResult           // code_execution
+    BashCodeExecution       *BashCodeExecutionResult       // bash_code_execution
+    TextEditorCodeExecution *TextEditorCodeExecutionResult // text_editor_code_execution
+    ToolSearchToolBm25      *ToolSearchToolResult          // tool_search_tool_bm25
+    ToolSearchToolRegex     *ToolSearchToolResult          // tool_search_tool_regex
+}
+```
+
+```go
+result := block.ServerToolResult.Content.(*agenticclaude.ServerToolResult)
+```
+
 ## Advanced Usage
 
 ### Cache
