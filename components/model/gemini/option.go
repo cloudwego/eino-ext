@@ -31,6 +31,8 @@ type options struct {
 	ImageConfig        *genai.ImageConfig
 	CachedContentName  string
 	Labels             map[string]string
+	ResponseLogprobs   *bool
+	Logprobs           *int32
 }
 
 func WithTopK(k int32) model.Option {
@@ -75,11 +77,32 @@ func WithImageConfig(cfg *genai.ImageConfig) model.Option {
 }
 
 // WithLabels sets user-defined metadata labels on the request.
-// Labels are key-value pairs that can be used for billing attribution,
-// request tracking, and filtering in Cloud Logging and Monitoring.
+// Labels are key-value pairs used for billing attribution, request tracking,
+// and filtering in Cloud Logging and Monitoring.
+//
+// Labels are only supported on the Vertex AI backend. The Gemini API backend
+// rejects requests that set labels, so this option must only be used with a
+// Vertex AI client.
 // Optional.
 func WithLabels(labels map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.Labels = labels
+	})
+}
+
+// WithResponseLogprobs sets whether to return the log probabilities of the
+// tokens chosen by the model at each step. This overrides Config.ResponseLogprobs.
+func WithResponseLogprobs(enable bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseLogprobs = &enable
+	})
+}
+
+// WithLogprobs sets the number of top candidate tokens to return the log
+// probabilities for at each generation step. Only takes effect when
+// ResponseLogprobs is enabled.
+func WithLogprobs(k int32) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.Logprobs = &k
 	})
 }

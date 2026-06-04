@@ -198,7 +198,7 @@ err := client.EndGeneration(&langfuse.GenerationEventBody{
     },
     OutMessage: responseMessage,
     EndTime:    time.Now(),
-    Usage: &langfuse.Usage{
+    Usage: &langfuse.UsageDetail{
         PromptTokens:     10,
         CompletionTokens: 20,
         TotalTokens:      30,

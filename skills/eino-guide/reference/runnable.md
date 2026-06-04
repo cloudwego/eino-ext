@@ -5,10 +5,10 @@ All compiled Graph, Chain, and Workflow produce a `Runnable[I, O]`. This is the 
 ```go
 // github.com/cloudwego/eino/compose
 type Runnable[I, O any] interface {
-    Invoke(ctx context.Context, input I, opts ...Option) (O, error)
-    Stream(ctx context.Context, input I, opts ...Option) (*schema.StreamReader[O], error)
-    Collect(ctx context.Context, input *schema.StreamReader[I], opts ...Option) (O, error)
-    Transform(ctx context.Context, input *schema.StreamReader[I], opts ...Option) (*schema.StreamReader[O], error)
+    Invoke(ctx context.Context, input I, opts ...Option) (output O, err error)
+    Stream(ctx context.Context, input I, opts ...Option) (output *schema.StreamReader[O], err error)
+    Collect(ctx context.Context, input *schema.StreamReader[I], opts ...Option) (output O, err error)
+    Transform(ctx context.Context, input *schema.StreamReader[I], opts ...Option) (output *schema.StreamReader[O], err error)
 }
 ```
 
@@ -43,9 +43,7 @@ Use `compose.WithCallbacks` and `compose.WithCallOption` to pass per-request con
 ```go
 result, err := compiled.Invoke(ctx, input,
     compose.WithCallbacks(handler),
-    compose.WithCallOption(compose.NewCallOption(
-        compose.WithNodeCallOption("ChatModel", model.WithTemperature(0.7)),
-    )),
+    compose.WithChatModelOption(model.WithTemperature(0.7)).DesignateNode("ChatModel"),
 )
 ```
 
