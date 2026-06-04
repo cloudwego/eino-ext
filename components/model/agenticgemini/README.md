@@ -146,6 +146,96 @@ type Config struct {
 ```
 
 
+## Extension Fields
+
+Several fields in the Eino agentic schema are typed as `any` so that each model implementation can attach
+provider-specific data. When you consume responses produced by this package, you must type-assert these `any`
+fields to the concrete types defined here before you can read them. This section documents every such field and
+the exact type it carries.
+
+### ResponseMeta
+
+Each returned `*schema.AgenticMessage` carries a `ResponseMeta *schema.AgenticResponseMeta`. This package
+populates the strongly-typed `GeminiExtension` field (no assertion required); the generic `Extension any` field
+is left unused.
+
+```go
+type AgenticResponseMeta struct {
+    // TokenUsage is populated with prompt / completion / total token counts.
+    TokenUsage *TokenUsage
+
+    // GeminiExtension is populated by this package (strongly typed, no assertion needed).
+    GeminiExtension *gemini.ResponseMetaExtension
+
+    // OpenAIExtension / ClaudeExtension / Extension are unused by this package.
+}
+```
+
+`GeminiExtension` is `*github.com/cloudwego/eino/schema/gemini.ResponseMetaExtension`. This package fills in the
+finish reason and, when grounding (Google Search) is used, the grounding metadata:
+
+```go
+type ResponseMetaExtension struct {
+    ID            string             // response ID (concatenated from stream chunks)
+    FinishReason  string             // e.g. "STOP", "MAX_TOKENS", "SAFETY"
+    GroundingMeta *GroundingMetadata // non-nil only when grounding/search is used
+}
+```
+
+```go
+ext := msg.ResponseMeta.GeminiExtension // strongly typed, no assertion needed
+```
+
+### ServerToolCall & ServerToolResult
+
+When the model uses the built-in code execution server tool, the resulting content blocks carry
+`*schema.ServerToolCall` and `*schema.ServerToolResult`. Both wrap their payload in an `any` field, which this
+package always populates with its own concrete types. The `Name` field is `agenticgemini.ServerToolNameCodeExecution`.
+
+```go
+type ServerToolCall struct {
+    Name      string // "CodeExecution" (agenticgemini.ServerToolNameCodeExecution)
+    CallID    string
+    Arguments any    // concrete type: *agenticgemini.ServerToolCallArguments
+}
+
+type ServerToolResult struct {
+    Name    string
+    CallID  string
+    Content any    // concrete type: *agenticgemini.ServerToolCallResult
+}
+```
+
+#### `ServerToolCall.Arguments` (`any`)
+
+Assert to `*agenticgemini.ServerToolCallArguments`. It carries the executable code the model produced:
+
+```go
+type ServerToolCallArguments struct {
+    ExecutableCode *ExecutableCode // Code string + Language (e.g. agenticgemini.LanguagePython)
+}
+```
+
+```go
+// The concrete type is always *agenticgemini.ServerToolCallArguments.
+args, ok := msg.ContentBlocks[i].ServerToolCall.Arguments.(*agenticgemini.ServerToolCallArguments)
+```
+
+#### `ServerToolResult.Content` (`any`)
+
+Assert to `*agenticgemini.ServerToolCallResult`. It carries the outcome and output of the executed code:
+
+```go
+type ServerToolCallResult struct {
+    CodeExecutionResult *CodeExecutionResult // Outcome (e.g. agenticgemini.OutcomeOK) + Output string
+}
+```
+
+```go
+// The concrete type is always *agenticgemini.ServerToolCallResult.
+result, ok := msg.ContentBlocks[i].ServerToolResult.Content.(*agenticgemini.ServerToolCallResult)
+```
+
 ## For More Details
 
 - [Eino Documentation](https://github.com/cloudwego/eino)

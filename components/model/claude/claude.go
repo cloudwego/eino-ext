@@ -1241,21 +1241,40 @@ func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion, cach
 	}
 }
 
-func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
-	promptTokens := int(resp.Usage.InputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens)
+func toTokenUsage(u anthropic.Usage) *schema.TokenUsage {
+	promptTokens := int(u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens)
+	completionTokens := int(u.OutputTokens)
 
+	return &schema.TokenUsage{
+		PromptTokens: promptTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: int(u.CacheReadInputTokens),
+		},
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+	}
+}
+
+func toDeltaTokenUsage(u anthropic.MessageDeltaUsage) *schema.TokenUsage {
+	promptTokens := int(u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens)
+	completionTokens := int(u.OutputTokens)
+
+	return &schema.TokenUsage{
+		PromptTokens: promptTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: int(u.CacheReadInputTokens),
+		},
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+	}
+}
+
+func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 	message := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.StopReason),
-			Usage: &schema.TokenUsage{
-				PromptTokens: promptTokens,
-				PromptTokenDetails: schema.PromptTokenDetails{
-					CachedTokens: int(resp.Usage.CacheReadInputTokens),
-				},
-				CompletionTokens: int(resp.Usage.OutputTokens),
-				TotalTokens:      promptTokens + int(resp.Usage.OutputTokens),
-			},
+			Usage:        toTokenUsage(resp.Usage),
 		},
 	}
 
@@ -1358,9 +1377,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 	case anthropic.MessageDeltaEvent:
 		result.ResponseMeta = &schema.ResponseMeta{
 			FinishReason: string(e.Delta.StopReason),
-			Usage: &schema.TokenUsage{
-				CompletionTokens: int(e.Usage.OutputTokens),
-			},
+			Usage:        toDeltaTokenUsage(e.Usage),
 		}
 		return result, nil
 

@@ -146,6 +146,94 @@ type Config struct {
 ```
 
 
+## 扩展字段说明
+
+Eino agentic schema 中的若干字段被声明为 `any` 类型，以便每个模型实现都能附加各自特定的数据。当你消费本包产生的
+响应时，必须先将这些 `any` 字段类型断言为本包中定义的具体类型，才能读取其内容。本节记录了每一个此类字段及其
+承载的确切类型。
+
+### ResponseMeta
+
+每个返回的 `*schema.AgenticMessage` 都带有 `ResponseMeta *schema.AgenticResponseMeta`。本包会填充强类型的
+`GeminiExtension` 字段（无需断言）；通用的 `Extension any` 字段未被使用。
+
+```go
+type AgenticResponseMeta struct {
+    // TokenUsage 填充了 prompt / completion / total 的 token 计数。
+    TokenUsage *TokenUsage
+
+    // GeminiExtension 由本包填充（强类型，无需断言）。
+    GeminiExtension *gemini.ResponseMetaExtension
+
+    // OpenAIExtension / ClaudeExtension / Extension 本包未使用。
+}
+```
+
+`GeminiExtension` 的类型是 `*github.com/cloudwego/eino/schema/gemini.ResponseMetaExtension`。本包会填充
+结束原因，以及在使用 grounding（Google 搜索）时填充 grounding 元数据：
+
+```go
+type ResponseMetaExtension struct {
+    ID            string             // 响应 ID（由流式分片拼接而来）
+    FinishReason  string             // 例如 "STOP"、"MAX_TOKENS"、"SAFETY"
+    GroundingMeta *GroundingMetadata // 仅在使用 grounding/搜索时非 nil
+}
+```
+
+```go
+ext := msg.ResponseMeta.GeminiExtension // 强类型，无需断言
+```
+
+### ServerToolCall 与 ServerToolResult
+
+当模型使用内置的代码执行（code execution）服务端工具时，生成的内容块会携带 `*schema.ServerToolCall` 与
+`*schema.ServerToolResult`。两者都将其载荷包装在 `any` 字段中，本包始终用自身的具体类型填充它们。`Name` 字段
+为 `agenticgemini.ServerToolNameCodeExecution`。
+
+```go
+type ServerToolCall struct {
+    Name      string // "CodeExecution"（agenticgemini.ServerToolNameCodeExecution）
+    CallID    string
+    Arguments any    // 具体类型：*agenticgemini.ServerToolCallArguments
+}
+
+type ServerToolResult struct {
+    Name    string
+    CallID  string
+    Content any    // 具体类型：*agenticgemini.ServerToolCallResult
+}
+```
+
+#### `ServerToolCall.Arguments`（`any`）
+
+断言为 `*agenticgemini.ServerToolCallArguments`。它承载模型生成的可执行代码：
+
+```go
+type ServerToolCallArguments struct {
+    ExecutableCode *ExecutableCode // Code 字符串 + Language（例如 agenticgemini.LanguagePython）
+}
+```
+
+```go
+// 具体类型始终为 *agenticgemini.ServerToolCallArguments。
+args, ok := msg.ContentBlocks[i].ServerToolCall.Arguments.(*agenticgemini.ServerToolCallArguments)
+```
+
+#### `ServerToolResult.Content`（`any`）
+
+断言为 `*agenticgemini.ServerToolCallResult`。它承载代码执行的结果与输出：
+
+```go
+type ServerToolCallResult struct {
+    CodeExecutionResult *CodeExecutionResult // Outcome（例如 agenticgemini.OutcomeOK）+ Output 字符串
+}
+```
+
+```go
+// 具体类型始终为 *agenticgemini.ServerToolCallResult。
+result, ok := msg.ContentBlocks[i].ServerToolResult.Content.(*agenticgemini.ServerToolCallResult)
+```
+
 ## 更多详情
 
 - [Eino 文档](https://github.com/cloudwego/eino)

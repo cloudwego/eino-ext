@@ -156,12 +156,36 @@ type Config struct {
 	// Modalities specifies the output data modalities and is only supported by the Qwen-Omni model.
 	// Possible values are:
 	// - ["text", "audio"]: Output text and audio.
-	// - ["text"]: Output text (default).
+	// - ["text"]: Output text (default).·
 	Modalities []Modality `json:"modalities,omitempty"`
 
 	// Audio parameters for audio output. Required when modalities includes "audio".
 	Audio *AudioConfig `json:"audio,omitempty"`
 }
+```
+
+## 扩展字段说明
+
+Eino agentic schema 中的若干字段被声明为 `any` 类型，以便各模型实现附加各自特定的数据。在消费本包产生的响应时，
+必须先将这些 `any` 字段类型断言为本包定义的具体类型，才能读取其内容。本节列出本包所填充的每一个此类字段，以及它所
+承载的确切类型。
+
+### ResponseMeta
+
+每个返回的 `*schema.AgenticMessage` 都带有 `ResponseMeta *schema.AgenticResponseMeta`。本包填充其通用的
+`Extension any` 字段（OpenAI / Gemini / Claude 扩展字段均未使用）。使用前**必须将其断言为
+`*agenticqwen.ResponseMetaExtension`**：
+
+```go
+type ResponseMetaExtension struct {
+    FinishReason string           // 例如 "stop"、"length"、"tool_calls"
+    LogProbs     *schema.LogProbs // 输出 token 的对数概率，仅在模型返回时填充
+}
+```
+
+```go
+// 具体类型始终为 *agenticqwen.ResponseMetaExtension。
+ext, ok := msg.ResponseMeta.Extension.(*agenticqwen.ResponseMetaExtension)
 ```
 
 ## 示例

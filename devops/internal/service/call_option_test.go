@@ -148,6 +148,28 @@ func Test_OnEnd(t *testing.T) {
 		})
 		assert.Equal(t, actualCtx, ctx)
 	})
+	PatchConvey("Test token usage is correctly assigned to metrics", t, func() {
+		cb := &callbackHandler{
+			nodeKey:  "nodeKey",
+			threadID: "threadID",
+		}
+		cb.stateCh = make(chan *model.NodeDebugState, 1)
+		Mock(getNodeDebugStateCtx).Return(&nodeDebugStateCtxValue{invokeTimeMS: int64(1728630000), callbackInput: "input"}, true).Build()
+		output := &einomodel.CallbackOutput{
+			Message: &schema.Message{},
+			TokenUsage: &einomodel.TokenUsage{
+				PromptTokens:     42,
+				CompletionTokens: 420,
+			},
+		}
+		actualCtx := cb.OnEnd(ctx, info, output)
+		safego.Go(ctx, func() {
+			res, _ := <-cb.stateCh
+			assert.Equal(t, int64(42), res.Metrics.PromptTokens)
+			assert.Equal(t, int64(420), res.Metrics.CompletionTokens)
+		})
+		assert.Equal(t, actualCtx, ctx)
+	})
 }
 
 func Test_OnError(t *testing.T) {
