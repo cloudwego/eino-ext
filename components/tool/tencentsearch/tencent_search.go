@@ -31,6 +31,7 @@ import (
 const (
 	defaultEndpoint = "wsa.tencentcloudapi.com"
 	defaultCnt      = uint64(10)
+	defaultMode     = int64(0)
 )
 
 var validCntValues = map[uint64]struct{}{
@@ -39,6 +40,12 @@ var validCntValues = map[uint64]struct{}{
 	30: {},
 	40: {},
 	50: {},
+}
+
+var validModeValues = map[int64]struct{}{
+	0: {},
+	1: {},
+	2: {},
 }
 
 type Config struct {
@@ -92,11 +99,18 @@ type tencentSearch struct {
 	client *wsa.Client
 }
 
-func normalizeCnt(cnt uint64) uint64 {
+func validateCnt(cnt uint64) error {
 	if _, ok := validCntValues[cnt]; ok {
-		return cnt
+		return nil
 	}
-	return defaultCnt
+	return fmt.Errorf("invalid cnt: %d, valid values are 10/20/30/40/50", cnt)
+}
+
+func validateMode(mode int64) error {
+	if _, ok := validModeValues[mode]; ok {
+		return nil
+	}
+	return fmt.Errorf("invalid mode: %d, valid values are 0/1/2", mode)
 }
 
 func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
@@ -109,7 +123,16 @@ func NewTool(ctx context.Context, conf *Config) (tool.InvokableTool, error) {
 	if conf.SecretKey == "" {
 		return nil, fmt.Errorf("secret_key is required")
 	}
-	conf.Cnt = normalizeCnt(conf.Cnt)
+	if conf.Cnt == 0 {
+		conf.Cnt = defaultCnt
+	} else if err := validateCnt(conf.Cnt); err != nil {
+		return nil, err
+	}
+	if conf.Mode != defaultMode {
+		if err := validateMode(conf.Mode); err != nil {
+			return nil, err
+		}
+	}
 
 	toolName := "tencent_search"
 	toolDesc := "Search using Tencent Cloud Web Search API"
@@ -159,15 +182,21 @@ func (s *tencentSearch) search(ctx context.Context, req *SearchRequest) (*Search
 	wsaReq.Query = common.StringPtr(req.Query)
 
 	if req.Mode != nil {
+		if err := validateMode(*req.Mode); err != nil {
+			return nil, err
+		}
 		wsaReq.Mode = req.Mode
-	} else if s.conf.Mode > 0 {
+	} else if s.conf.Mode != defaultMode {
 		wsaReq.Mode = common.Int64Ptr(s.conf.Mode)
 	} else {
-		wsaReq.Mode = common.Int64Ptr(0)
+		wsaReq.Mode = common.Int64Ptr(defaultMode)
 	}
 
 	if req.Cnt != nil {
-		wsaReq.Cnt = common.Uint64Ptr(normalizeCnt(*req.Cnt))
+		if err := validateCnt(*req.Cnt); err != nil {
+			return nil, err
+		}
+		wsaReq.Cnt = common.Uint64Ptr(*req.Cnt)
 	} else {
 		wsaReq.Cnt = common.Uint64Ptr(s.conf.Cnt)
 	}

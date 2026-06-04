@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -91,16 +92,26 @@ func TestTencentSearch(t *testing.T) {
 	ctx := context.Background()
 
 	expectedCntByQuery := map[string]uint64{
-		"eino framework":      10,
-		"config invalid cnt":  10,
-		"industry filter":     10,
-		"request invalid cnt": 10,
-		"request valid cnt":   20,
-		"error":               10,
+		"eino framework":    10,
+		"config defaults":   10,
+		"config values":     20,
+		"industry filter":   10,
+		"request overrides": 20,
+		"error":             10,
+	}
+	expectedModeByQuery := map[string]int64{
+		"eino framework":    0,
+		"config defaults":   0,
+		"config values":     2,
+		"industry filter":   0,
+		"request overrides": 1,
+		"error":             0,
 	}
 	expectedIndustryByQuery := map[string]string{
 		"industry filter": "news",
 	}
+	requestCounts := map[string]int{}
+	var mu sync.Mutex
 
 	// Mock server for Tencent Cloud WSA API
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -122,9 +133,19 @@ func TestTencentSearch(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
+		mu.Lock()
+		requestCounts[query]++
+		mu.Unlock()
 		if expectedCnt, ok := expectedCntByQuery[query]; ok {
 			gotCnt, ok := reqBody["Cnt"].(float64)
 			if !ok || uint64(gotCnt) != expectedCnt {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+		}
+		if expectedMode, ok := expectedModeByQuery[query]; ok {
+			gotMode, ok := reqBody["Mode"].(float64)
+			if !ok || int64(gotMode) != expectedMode {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -201,6 +222,54 @@ func TestTencentSearch(t *testing.T) {
 		}
 	})
 
+	t.Run("default config uses default cnt and mode", func(t *testing.T) {
+		conf := &Config{
+			SecretID:  "test_id",
+			SecretKey: "test_key",
+			Endpoint:  endpoint,
+		}
+
+		tl, err := NewTool(ctx, conf)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if conf.Cnt != defaultCnt {
+			t.Fatalf("expected default cnt %d, got %d", defaultCnt, conf.Cnt)
+		}
+		if conf.Mode != defaultMode {
+			t.Fatalf("expected default mode %d, got %d", defaultMode, conf.Mode)
+		}
+
+		req := &SearchRequest{Query: "config defaults"}
+		reqJSON, _ := json.Marshal(req)
+
+		if _, err = tl.InvokableRun(ctx, string(reqJSON)); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+
+	t.Run("config values are used when request omits cnt and mode", func(t *testing.T) {
+		conf := &Config{
+			SecretID:  "test_id",
+			SecretKey: "test_key",
+			Endpoint:  endpoint,
+			Cnt:       20,
+			Mode:      2,
+		}
+
+		tl, err := NewTool(ctx, conf)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		req := &SearchRequest{Query: "config values"}
+		reqJSON, _ := json.Marshal(req)
+
+		if _, err = tl.InvokableRun(ctx, string(reqJSON)); err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+	})
+
 	t.Run("http error", func(t *testing.T) {
 		conf := &Config{
 			SecretID:  "test_id",
@@ -245,7 +314,7 @@ func TestTencentSearch(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid config cnt falls back to default", func(t *testing.T) {
+	t.Run("invalid config cnt returns error", func(t *testing.T) {
 		conf := &Config{
 			SecretID:  "test_id",
 			SecretKey: "test_key",
@@ -253,25 +322,27 @@ func TestTencentSearch(t *testing.T) {
 			Cnt:       3,
 		}
 
-		tl, err := NewTool(ctx, conf)
-		if err != nil {
-			t.Fatalf("expected no error, got %v", err)
-		}
-		if conf.Cnt != defaultCnt {
-			t.Fatalf("expected config cnt normalized to %d, got %d", defaultCnt, conf.Cnt)
-		}
-
-		req := &SearchRequest{
-			Query: "config invalid cnt",
-		}
-		reqJSON, _ := json.Marshal(req)
-
-		if _, err = tl.InvokableRun(ctx, string(reqJSON)); err != nil {
-			t.Fatalf("expected no error, got %v", err)
+		_, err := NewTool(ctx, conf)
+		if err == nil || !strings.Contains(err.Error(), "invalid cnt: 3") {
+			t.Fatalf("expected invalid cnt error, got %v", err)
 		}
 	})
 
-	t.Run("invalid request cnt falls back to default", func(t *testing.T) {
+	t.Run("invalid config mode returns error", func(t *testing.T) {
+		conf := &Config{
+			SecretID:  "test_id",
+			SecretKey: "test_key",
+			Endpoint:  endpoint,
+			Mode:      3,
+		}
+
+		_, err := NewTool(ctx, conf)
+		if err == nil || !strings.Contains(err.Error(), "invalid mode: 3") {
+			t.Fatalf("expected invalid mode error, got %v", err)
+		}
+	})
+
+	t.Run("invalid request cnt returns error without sending request", func(t *testing.T) {
 		conf := &Config{
 			SecretID:  "test_id",
 			SecretKey: "test_key",
@@ -291,8 +362,47 @@ func TestTencentSearch(t *testing.T) {
 		}
 		reqJSON, _ := json.Marshal(req)
 
-		if _, err = tl.InvokableRun(ctx, string(reqJSON)); err != nil {
+		_, err = tl.InvokableRun(ctx, string(reqJSON))
+		if err == nil || !strings.Contains(err.Error(), "invalid cnt: 3") {
+			t.Fatalf("expected invalid cnt error, got %v", err)
+		}
+		mu.Lock()
+		gotRequests := requestCounts["request invalid cnt"]
+		mu.Unlock()
+		if gotRequests != 0 {
+			t.Fatalf("expected invalid request cnt to be blocked before request, got %d requests", gotRequests)
+		}
+	})
+
+	t.Run("invalid request mode returns error without sending request", func(t *testing.T) {
+		conf := &Config{
+			SecretID:  "test_id",
+			SecretKey: "test_key",
+			Endpoint:  endpoint,
+			Mode:      1,
+		}
+
+		tl, err := NewTool(ctx, conf)
+		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
+		}
+
+		mode := int64(3)
+		req := &SearchRequest{
+			Query: "request invalid mode",
+			Mode:  &mode,
+		}
+		reqJSON, _ := json.Marshal(req)
+
+		_, err = tl.InvokableRun(ctx, string(reqJSON))
+		if err == nil || !strings.Contains(err.Error(), "invalid mode: 3") {
+			t.Fatalf("expected invalid mode error, got %v", err)
+		}
+		mu.Lock()
+		gotRequests := requestCounts["request invalid mode"]
+		mu.Unlock()
+		if gotRequests != 0 {
+			t.Fatalf("expected invalid request mode to be blocked before request, got %d requests", gotRequests)
 		}
 	})
 
@@ -320,7 +430,7 @@ func TestTencentSearch(t *testing.T) {
 		}
 	})
 
-	t.Run("valid request cnt passthrough", func(t *testing.T) {
+	t.Run("valid request cnt and mode passthrough", func(t *testing.T) {
 		conf := &Config{
 			SecretID:  "test_id",
 			SecretKey: "test_key",
@@ -333,9 +443,11 @@ func TestTencentSearch(t *testing.T) {
 		}
 
 		cnt := uint64(20)
+		mode := int64(1)
 		req := &SearchRequest{
-			Query: "request valid cnt",
+			Query: "request overrides",
 			Cnt:   &cnt,
+			Mode:  &mode,
 		}
 		reqJSON, _ := json.Marshal(req)
 

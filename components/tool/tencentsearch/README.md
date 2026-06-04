@@ -45,8 +45,8 @@ type Config struct {
 - `SecretID`: Tencent Cloud API SecretID.
 - `SecretKey`: Tencent Cloud API SecretKey.
 - `Endpoint`: API endpoint (default: `wsa.tencentcloudapi.com`).
-- `Mode`: Result type, 0-natural, 1-VR, 2-mixed (default: `0`).
-- `Cnt`: Default number of results to fetch per request. Valid values are `10/20/30/40/50`; invalid values fall back to `10`.
+- `Mode`: Result type, `0` natural, `1` VR, `2` mixed (default: `0`). Passing any other explicit value returns an error during initialization.
+- `Cnt`: Default number of results to fetch per request. If omitted, the default is `10`. Explicit values must be `10/20/30/40/50`; any other value returns an error during initialization.
 - `ToolName`: Override default tool name (default: `tencent_search`).
 - `ToolDesc`: Override default tool description.
 
@@ -67,12 +67,12 @@ type SearchRequest struct {
 ```
 
 - `Query`: Required search query. Empty values return `query is required`.
-- `Mode`: Optional result type, `0` natural, `1` VR, `2` mixed.
+- `Mode`: Optional result type, `0` natural, `1` VR, `2` mixed. If omitted, the tool uses the configured value or default `0`. Any other explicit value returns an error.
 - `Site`: Optional site domain to search within.
 - `FromTime`: Optional start time, Unix timestamp in seconds.
 - `ToTime`: Optional end time, Unix timestamp in seconds.
 - `Industry`: Optional industry filter. Valid values are `gov/news/acad/finance`.
-- `Cnt`: Optional number of results. Valid values are `10/20/30/40/50`; invalid values fall back to `10`.
+- `Cnt`: Optional number of results. If omitted, the tool uses the configured value or default `10`. Explicit values must be `10/20/30/40/50`; any other value returns an error.
 
 ## Examples
 
@@ -170,8 +170,9 @@ cd examples && go run main.go
 Please note the limitations of the Tencent Cloud Web Search API:
 - `Query` must not be empty
 - Each query can return 10/20/30/40/50 results
+- `Mode` only supports `0/1/2`
 - `Industry` is only available for the premium edition
-- Invalid `Cnt` values are normalized by this tool to `10` before calling the API
+- Explicit invalid `Cnt` or `Mode` values are rejected by this tool before calling the API
 
 ## More Details
 
