@@ -28,8 +28,11 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/adk/filesystem"
-	"github.com/gen2brain/go-fitz"
+	"github.com/klippa-app/go-pdfium"
+	"github.com/klippa-app/go-pdfium/references"
+	"github.com/klippa-app/go-pdfium/requests"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func setupTestDir(t *testing.T) string {
@@ -875,7 +878,8 @@ func TestResolveMultiModalReadConfig(t *testing.T) {
 		assert.Equal(t, defaultMaxPDFSizeMB, got.MaxPDFSizeMB)
 		assert.Equal(t, defaultMaxPagedPDFSizeMB, got.MaxPagedPDFSizeMB)
 		assert.Equal(t, defaultMaxPDFPagesPerRequest, got.MaxPDFPagesPerRequest)
-		assert.InDelta(t, defaultPDFRenderDPI, got.PDFRenderDPI, 0.001)
+		assert.Equal(t, defaultPDFRenderDPI, got.PDFRenderDPI)
+		assert.Equal(t, defaultPDFiumAcquireTimeout, got.PDFiumAcquireTimeout)
 	})
 
 	t.Run("user values within caps are preserved", func(t *testing.T) {
@@ -885,12 +889,14 @@ func TestResolveMultiModalReadConfig(t *testing.T) {
 			MaxPagedPDFSizeMB:     200,
 			MaxPDFPagesPerRequest: 50,
 			PDFRenderDPI:          200,
+			PDFiumAcquireTimeout:  5 * time.Second,
 		})
 		assert.Equal(t, 15, got.MaxImageSizeMB)
 		assert.Equal(t, 25, got.MaxPDFSizeMB)
 		assert.Equal(t, 200, got.MaxPagedPDFSizeMB)
 		assert.Equal(t, 50, got.MaxPDFPagesPerRequest)
-		assert.InDelta(t, 200.0, got.PDFRenderDPI, 0.001)
+		assert.Equal(t, 200, got.PDFRenderDPI)
+		assert.Equal(t, 5*time.Second, got.PDFiumAcquireTimeout)
 	})
 
 	t.Run("over-cap values are clamped", func(t *testing.T) {
@@ -905,15 +911,16 @@ func TestResolveMultiModalReadConfig(t *testing.T) {
 		assert.Equal(t, maxConfigurableMB, got.MaxPDFSizeMB)
 		assert.Equal(t, maxConfigurableMB, got.MaxPagedPDFSizeMB)
 		assert.Equal(t, maxConfigurablePDFPagesPerRequest, got.MaxPDFPagesPerRequest)
-		assert.InDelta(t, maxConfigurablePDFRenderDPI, got.PDFRenderDPI, 0.001)
+		assert.Equal(t, maxConfigurablePDFRenderDPI, got.PDFRenderDPI)
 	})
 
 	t.Run("negative values fall back to defaults", func(t *testing.T) {
 		got := resolveMultiModalReadConfig(MultiModalReadConfig{
-			MaxImageSizeMB: -1, PDFRenderDPI: -10,
+			MaxImageSizeMB: -1, PDFRenderDPI: -10, PDFiumAcquireTimeout: -1,
 		})
 		assert.Equal(t, defaultMaxImageSizeMB, got.MaxImageSizeMB)
-		assert.InDelta(t, defaultPDFRenderDPI, got.PDFRenderDPI, 0.001)
+		assert.Equal(t, defaultPDFRenderDPI, got.PDFRenderDPI)
+		assert.Equal(t, defaultPDFiumAcquireTimeout, got.PDFiumAcquireTimeout)
 	})
 }
 
@@ -1117,17 +1124,192 @@ func TestLocal_ReadAllBytes_Directory(t *testing.T) {
 // without committing a binary fixture.
 const minimalValidPDF = "%PDF-1.1\n%\xa5\xb1\xeb\n\n1 0 obj\n  << /Type /Catalog\n     /Pages 2 0 R\n  >>\nendobj\n\n2 0 obj\n  << /Type /Pages\n     /Kids [3 0 R]\n     /Count 1\n     /MediaBox [0 0 100 100]\n  >>\nendobj\n\n3 0 obj\n  <<  /Type /Page\n      /Parent 2 0 R\n      /Resources << >>\n  >>\nendobj\n\nxref\n0 4\n0000000000 65535 f \n0000000018 00000 n \n0000000077 00000 n \n0000000178 00000 n \ntrailer\n  <<  /Root 1 0 R\n      /Size 4\n  >>\nstartxref\n240\n%%EOF\n"
 
-func TestRenderPDFPagesToImages_RespectsCanceledCtx(t *testing.T) {
-	doc, err := fitz.NewFromMemory([]byte(minimalValidPDF))
-	if err != nil || doc.NumPage() < 1 {
-		t.Skipf("minimal PDF fixture not parseable in this environment: err=%v", err)
+// openMinimalPDF acquires a pdfium instance and opens minimalValidPDF, returning
+// a teardown func the caller must defer. Any failure (pool init, instance
+// acquire, document open) is reported via t.Fatalf — the WASM-backed pdfium
+// runtime ships with the binary and works on every supported platform, so a
+// failure here is a real regression that must surface in CI rather than be
+// silently skipped.
+func openMinimalPDF(t *testing.T) (pdfium.Pdfium, references.FPDF_DOCUMENT, func()) {
+	t.Helper()
+	pool, err := getPdfiumPool(PDFiumPoolConfig{})
+	require.NoError(t, err, "init pdfium pool")
+	inst, err := pool.GetInstance(0)
+	require.NoError(t, err, "acquire pdfium instance")
+	data := []byte(minimalValidPDF)
+	doc, err := inst.OpenDocument(&requests.OpenDocument{File: &data})
+	if err != nil {
+		_ = inst.Close()
+		t.Fatalf("open minimal PDF fixture: %v", err)
 	}
-	defer doc.Close()
+	cleanup := func() {
+		_, _ = inst.FPDF_CloseDocument(&requests.FPDF_CloseDocument{Document: doc.Document})
+		_ = inst.Close()
+	}
+	return inst, doc.Document, cleanup
+}
+
+func TestRenderPDFPagesToImages_Success(t *testing.T) {
+	inst, docRef, cleanup := openMinimalPDF(t)
+	defer cleanup()
+
+	parts, err := renderPDFPagesToImages(context.Background(), inst, docRef, 1, 1, "fixture.pdf", 72)
+	assert.NoError(t, err)
+	if assert.Len(t, parts, 1) {
+		assert.Equal(t, filesystem.FileContentPartTypeImage, parts[0].Type)
+		assert.Equal(t, "image/png", parts[0].MIMEType)
+		assert.NotEmpty(t, parts[0].Data)
+	}
+}
+
+func TestRenderPDFPagesToImages_DefaultDPI(t *testing.T) {
+	inst, docRef, cleanup := openMinimalPDF(t)
+	defer cleanup()
+
+	parts, err := renderPDFPagesToImages(context.Background(), inst, docRef, 1, 1, "fixture.pdf", 0)
+	assert.NoError(t, err)
+	assert.Len(t, parts, 1)
+}
+
+func TestRenderPDFPagesToImages_RespectsCanceledCtx(t *testing.T) {
+	inst, docRef, cleanup := openMinimalPDF(t)
+	defer cleanup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before invocation; the loop's select must fire on first iteration.
 
-	parts, err := renderPDFPagesToImages(ctx, doc, 1, 1, "fixture.pdf", 72)
+	parts, err := renderPDFPagesToImages(ctx, inst, docRef, 1, 1, "fixture.pdf", 72)
 	assert.Nil(t, parts)
 	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// withNumCPUFn temporarily swaps numCPUFn for the duration of a test. The
+// returned cleanup must be deferred. Callers MUST NOT use t.Parallel() in any
+// subtest using this helper — numCPUFn is a package-level variable and
+// concurrent swaps would race.
+func withNumCPUFn(fn func() int) func() {
+	old := numCPUFn
+	numCPUFn = fn
+	return func() { numCPUFn = old }
+}
+
+func TestResolvePDFiumPoolConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		numCPU    int
+		input     PDFiumPoolConfig
+		wantMin   int
+		wantIdle  int
+		wantTotal int
+	}{
+		{
+			name:      "all zero → defaults; MaxTotal from numCPUFn (=4)",
+			numCPU:    4,
+			input:     PDFiumPoolConfig{},
+			wantMin:   defaultPDFiumPoolMinIdle,
+			wantIdle:  defaultPDFiumPoolMaxIdle,
+			wantTotal: 4,
+		},
+		{
+			name:      "all negative treated as unset",
+			numCPU:    8,
+			input:     PDFiumPoolConfig{MinIdle: -1, MaxIdle: -1, MaxTotal: -1},
+			wantMin:   defaultPDFiumPoolMinIdle,
+			wantIdle:  defaultPDFiumPoolMaxIdle,
+			wantTotal: 8,
+		},
+		{
+			name:      "1-vCPU host: MaxTotal floored to minPDFiumPoolMaxTotal",
+			numCPU:    1,
+			input:     PDFiumPoolConfig{},
+			wantMin:   defaultPDFiumPoolMinIdle,
+			wantIdle:  defaultPDFiumPoolMaxIdle,
+			wantTotal: minPDFiumPoolMaxTotal,
+		},
+		{
+			name:      "MaxIdle exceeds MaxTotal → MaxIdle clamped to MaxTotal",
+			numCPU:    4,
+			input:     PDFiumPoolConfig{MinIdle: 1, MaxIdle: 10, MaxTotal: 2},
+			wantMin:   1,
+			wantIdle:  2,
+			wantTotal: 2,
+		},
+		{
+			name:      "MinIdle exceeds MaxIdle → MinIdle clamped to MaxIdle",
+			numCPU:    4,
+			input:     PDFiumPoolConfig{MinIdle: 5, MaxIdle: 2, MaxTotal: 4},
+			wantMin:   2,
+			wantIdle:  2,
+			wantTotal: 4,
+		},
+		{
+			name:      "explicit values fully preserved",
+			numCPU:    16,
+			input:     PDFiumPoolConfig{MinIdle: 1, MaxIdle: 3, MaxTotal: 6},
+			wantMin:   1,
+			wantIdle:  3,
+			wantTotal: 6,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restore := withNumCPUFn(func() int { return tt.numCPU })
+			defer restore()
+			got := resolvePDFiumPoolConfig(tt.input)
+			assert.Equal(t, tt.wantMin, got.MinIdle, "MinIdle")
+			assert.Equal(t, tt.wantIdle, got.MaxIdle, "MaxIdle")
+			assert.Equal(t, tt.wantTotal, got.MaxTotal, "MaxTotal")
+		})
+	}
+}
+
+// TestLocal_MultiModalRead_PagedPDF exercises the full paged-PDF path:
+// write fixture → open via NewBackend → MultiModalRead(Pages: "1") → assert
+// the returned part is a PNG. This is the only end-to-end coverage for the
+// pdfium pool acquire + open + render + PNG-encode chain; lower-level tests
+// above only exercise renderPDFPagesToImages directly.
+func TestLocal_MultiModalRead_PagedPDF(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	require.NoError(t, err)
+
+	dir := setupTestDir(t)
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "doc.pdf")
+	require.NoError(t, os.WriteFile(path, []byte(minimalValidPDF), 0644))
+
+	t.Run("happy path: single page rendered to PNG", func(t *testing.T) {
+		resp, err := s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+			ReadRequest: filesystem.ReadRequest{FilePath: path},
+			Pages:       "1",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Len(t, resp.Parts, 1)
+		part := resp.Parts[0]
+		assert.Equal(t, filesystem.FileContentPartTypeImage, part.Type)
+		assert.Equal(t, "image/png", part.MIMEType)
+		pngMagic := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+		assert.True(t, bytes.HasPrefix(part.Data, pngMagic), "data does not start with PNG magic bytes")
+	})
+
+	t.Run("range exceeding totalPages is clamped to last page", func(t *testing.T) {
+		resp, err := s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+			ReadRequest: filesystem.ReadRequest{FilePath: path},
+			Pages:       "1-10",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		// minimalValidPDF has 1 page; range "1-10" must clamp to [1,1].
+		assert.Len(t, resp.Parts, 1)
+	})
+
+	t.Run("start page beyond totalPages returns error", func(t *testing.T) {
+		resp, err := s.MultiModalRead(ctx, &filesystem.MultiModalReadRequest{
+			ReadRequest: filesystem.ReadRequest{FilePath: path},
+			Pages:       "5",
+		})
+		assert.Error(t, err)
+		assert.Nil(t, resp)
+	})
 }
