@@ -10,16 +10,22 @@
 go get github.com/cloudwego/eino-ext/adk/backend/agentkit
 ```
 
-#### `MultiModalRead` 的本机依赖（PDF 渲染）
+#### `MultiModalRead` 的 PDF 渲染
 
-`MultiModalRead` 通过 [`go-fitz`](https://github.com/gen2brain/go-fitz) 渲染 PDF
-页面，运行时通过 `purego` 加载 MuPDF。运行前请安装 MuPDF：
+`MultiModalRead` 通过 [`klippa-app/go-pdfium`](https://github.com/klippa-app/go-pdfium)
+的 **WebAssembly** 后端（由 [`wazero`](https://github.com/tetratelabs/wazero) 在进程内执行）
+光栅化 PDF 页面。**无需 CGO 工具链，也无需 MuPDF/PDFium 等系统级原生库**，在 Linux、
+macOS 和 Windows 上开箱即用。
 
-- macOS：`brew install mupdf`
-- Ubuntu/Debian：`sudo apt-get install -y libmupdf-dev`
-- CentOS/RHEL：`sudo yum install -y mupdf-devel`
+行为说明：
 
-如果不使用 `MultiModalRead`，则运行时无需 MuPDF。
+- 进程内会在第一次分页 PDF 请求时延迟初始化一个全局 PDFium worker pool（首次约几百
+  毫秒），后续调用复用。每个 WASM worker 占用约数十 MB 内存，默认 `MaxTotal=max(NumCPU, 2)`。
+- pool 在整个进程内是单例；若第二个 backend 传入不同的 `PDFiumPool` sizing，第二份配置
+  会被忽略并打印 `WARN` 日志。
+- `agentkit` 与 `local` backend 分别属于独立 Go module，因此 **各自维护一份** 进程级 pool。
+  同时引入两个 backend 的应用会运行两套 pdfium WASM runtime。
+- 可通过 `MultiModalReadConfig.PDFiumPool` 调整 pool 大小（见下文）。
 
 ### 基本用法
 
@@ -85,11 +91,25 @@ type Config struct {
 }
 
 type MultiModalReadConfig struct {
-    MaxImageSizeMB        int     // 图片读取大小上限（MB）。       默认 10，硬上限 2048
-    MaxPDFSizeMB          int     // PDF 全量读取大小上限（MB）。   默认 20，硬上限 2048
-    MaxPagedPDFSizeMB     int     // PDF 分页读取大小上限（MB）。   默认 100，硬上限 2048
-    MaxPDFPagesPerRequest int     // 单次分页读取最多页数。         默认 20，硬上限 1000
-    PDFRenderDPI          float64 // PDF 页面渲染 DPI。            默认 150，硬上限 600
+    MaxImageSizeMB        int           // 图片读取大小上限（MB）。       默认 10，硬上限 2048
+    MaxPDFSizeMB          int           // PDF 全量读取大小上限（MB）。   默认 20，硬上限 2048
+    MaxPagedPDFSizeMB     int           // PDF 分页读取大小上限（MB）。   默认 100，硬上限 2048
+    MaxPDFPagesPerRequest int           // 单次分页读取最多页数。         默认 20，硬上限 1000
+    PDFRenderDPI          int           // PDF 页面渲染 DPI。            默认 150，硬上限 600
+
+    // PDFiumPool 用于调整分页 PDF 渲染所使用的进程级 PDFium worker pool。
+    // 仅在首次延迟初始化时生效；后续调用方传入不同 sizing 会触发 WARN 日志，沿用已有 pool。
+    PDFiumPool PDFiumPoolConfig
+
+    // PDFiumAcquireTimeout 限制调用方 ctx 无 deadline 时获取 pdfium worker 的等待上限。
+    // 是 per-read 配置（不同调用方可使用不同值）。默认 30s。
+    PDFiumAcquireTimeout time.Duration
+}
+
+type PDFiumPoolConfig struct {
+    MinIdle  int // 保持存活的最小空闲 worker 数。      默认 1
+    MaxIdle  int // 保持存活的最大空闲 worker 数。      默认 2
+    MaxTotal int // 最大 worker 数（>= 2）。            默认 max(2, NumCPU)
 }
 ```
 
