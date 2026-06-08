@@ -701,31 +701,6 @@ func TestResolveStreamResponse(t *testing.T) {
 	})
 }
 
-func TestConcatTextParts(t *testing.T) {
-	t.Run("text parts joined", func(t *testing.T) {
-		parts := []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeText, Text: "a"},
-			{Type: schema.ChatMessagePartTypeText, Text: "b"},
-		}
-		result, err := concatTextParts(parts, func(p schema.MessageInputPart) (schema.ChatMessagePartType, string) {
-			return p.Type, p.Text
-		})
-		assert.Nil(t, err)
-		assert.Equal(t, "a\n\nb", result)
-	})
-
-	t.Run("unsupported type returns error", func(t *testing.T) {
-		parts := []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeImageURL, Text: "img"},
-		}
-		_, err := concatTextParts(parts, func(p schema.MessageInputPart) (schema.ChatMessagePartType, string) {
-			return p.Type, p.Text
-		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "does not support")
-	})
-}
-
 func TestExtractLogProbs(t *testing.T) {
 	t.Run("nil returns nil", func(t *testing.T) {
 		result, err := extractLogProbs(nil)

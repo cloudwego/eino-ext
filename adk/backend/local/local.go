@@ -23,20 +23,27 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/cloudwego/eino/adk/filesystem"
 	"github.com/cloudwego/eino/schema"
-	"github.com/gen2brain/go-fitz"
+	"github.com/klippa-app/go-pdfium"
+	"github.com/klippa-app/go-pdfium/references"
+	"github.com/klippa-app/go-pdfium/requests"
+	"github.com/klippa-app/go-pdfium/webassembly"
 )
 
 const defaultRootPath = "/"
@@ -49,7 +56,7 @@ const (
 
 	// defaultPDFRenderDPI: see MultiModalReadConfig.PDFRenderDPI for the
 	// readability vs payload-size trade-off (kept as the single source of truth).
-	defaultPDFRenderDPI = 150.0
+	defaultPDFRenderDPI = 150
 
 	// maxConfigurableMB caps any user-supplied MB value. Combined with int64 size
 	// arithmetic in readAllBytes, the cap ensures `int64(MB) * 1024 * 1024` never
@@ -59,8 +66,113 @@ const (
 	// memory pressure when rasterising. Tune via MultiModalReadConfig.
 	maxConfigurablePDFPagesPerRequest = 1000
 	// maxConfigurablePDFRenderDPI bounds DPI to a sane print-grade ceiling.
-	maxConfigurablePDFRenderDPI = 600.0
+	maxConfigurablePDFRenderDPI = 600
 )
+
+const (
+	defaultPDFiumPoolMinIdle = 1
+	defaultPDFiumPoolMaxIdle = 2
+	minPDFiumPoolMaxTotal    = 2
+	// defaultPDFiumAcquireTimeout bounds the wait for a pdfium worker when the
+	// caller's context has no deadline. 30s is generous enough to absorb
+	// worker cold-start (a few hundred ms) plus contention spikes when the
+	// pool is fully saturated, while still failing fast on a stuck pool.
+	defaultPDFiumAcquireTimeout = 30 * time.Second
+)
+
+var (
+	// pdfiumPool is the process-global pdfium worker pool, set once on first
+	// successful init by getPdfiumPool.
+	pdfiumPool pdfium.Pool
+	// pdfiumPoolCfg is the resolved cfg used to init pdfiumPool. Read only for
+	// divergence-WARN reporting; not consulted for behavior.
+	pdfiumPoolCfg PDFiumPoolConfig
+	// pdfiumPoolMu guards init and read of pdfiumPool / pdfiumPoolCfg.
+	pdfiumPoolMu sync.Mutex
+)
+
+// numCPUFn is indirected through a var so tests can simulate constrained hosts
+// (e.g. 1-vCPU containers) without depending on the runner's actual NumCPU.
+// Production code MUST NOT mutate this variable; reserved for tests.
+var numCPUFn = runtime.NumCPU
+
+// PDFiumPoolConfig configures the process-global go-pdfium worker pool used by
+// MultiModalRead for paged PDF rendering. Zero/negative fields fall back to
+// package defaults; the pool is initialized lazily on first paged PDF read.
+//
+// Note: agentkit and local backends each maintain a separate process-global
+// pool because they live in independent go modules and cannot share an
+// internal package. Apps that import both backends will run two pdfium WASM
+// runtimes concurrently.
+type PDFiumPoolConfig struct {
+	// MinIdle is the minimum number of workers kept warm. Default 1.
+	MinIdle int
+	// MaxIdle is the maximum number of workers kept idle. Default 2.
+	MaxIdle int
+	// MaxTotal is the hard cap on concurrent workers. When zero/negative,
+	// defaults to max(runtime.NumCPU(), minPDFiumPoolMaxTotal) so that the
+	// default MaxIdle (=2) is satisfiable on 1-vCPU hosts.
+	MaxTotal int
+}
+
+func resolvePDFiumPoolConfig(cfg PDFiumPoolConfig) PDFiumPoolConfig {
+	if cfg.MinIdle <= 0 {
+		cfg.MinIdle = defaultPDFiumPoolMinIdle
+	}
+	if cfg.MaxIdle <= 0 {
+		cfg.MaxIdle = defaultPDFiumPoolMaxIdle
+	}
+	if cfg.MaxTotal <= 0 {
+		cfg.MaxTotal = numCPUFn()
+		if cfg.MaxTotal < minPDFiumPoolMaxTotal {
+			cfg.MaxTotal = minPDFiumPoolMaxTotal
+		}
+	}
+	if cfg.MaxIdle > cfg.MaxTotal {
+		cfg.MaxIdle = cfg.MaxTotal
+	}
+	if cfg.MinIdle > cfg.MaxIdle {
+		cfg.MinIdle = cfg.MaxIdle
+	}
+	return cfg
+}
+
+func samePoolSizing(a, b PDFiumPoolConfig) bool {
+	return a.MinIdle == b.MinIdle && a.MaxIdle == b.MaxIdle && a.MaxTotal == b.MaxTotal
+}
+
+// getPdfiumPool returns the process-global pdfium pool, initializing it on
+// first call. Subsequent calls with diverging sizing emit a WARN log and reuse
+// the existing pool — the pool is process-global and cannot be reconfigured at
+// runtime.
+func getPdfiumPool(cfg PDFiumPoolConfig) (pdfium.Pool, error) {
+	cfg = resolvePDFiumPoolConfig(cfg)
+	pdfiumPoolMu.Lock()
+	defer pdfiumPoolMu.Unlock()
+	if pdfiumPool != nil {
+		if !samePoolSizing(cfg, pdfiumPoolCfg) {
+			log.Printf("[WARN] local: PDFiumPool already initialized with min=%d max_idle=%d max_total=%d; "+
+				"reusing existing pool (pool is process-global and cannot be reconfigured at runtime; "+
+				"later caller's PDFiumPoolConfig min=%d max_idle=%d max_total=%d is ignored)",
+				pdfiumPoolCfg.MinIdle, pdfiumPoolCfg.MaxIdle, pdfiumPoolCfg.MaxTotal,
+				cfg.MinIdle, cfg.MaxIdle, cfg.MaxTotal)
+		}
+		return pdfiumPool, nil
+	}
+	pool, err := webassembly.Init(webassembly.Config{
+		MinIdle:  cfg.MinIdle,
+		MaxIdle:  cfg.MaxIdle,
+		MaxTotal: cfg.MaxTotal,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to init pdfium pool: %w", err)
+	}
+	pdfiumPool = pool
+	pdfiumPoolCfg = cfg
+	log.Printf("[INFO] local: PDFium pool initialized min=%d max_idle=%d max_total=%d",
+		cfg.MinIdle, cfg.MaxIdle, cfg.MaxTotal)
+	return pdfiumPool, nil
+}
 
 // MultiModalReadConfig configures runtime limits for Local.MultiModalRead.
 // Any field left at its zero (or negative) value falls back to the package default.
@@ -80,7 +192,19 @@ type MultiModalReadConfig struct {
 	// typical screens are 72-96 DPI, 150 DPI ≈ 2x sharpness with manageable size,
 	// 300 DPI is print-grade but produces ~4x larger images.
 	// Default 150. Hard-cap 600.
-	PDFRenderDPI float64
+	PDFRenderDPI int
+	// PDFiumPool overrides the process-global go-pdfium worker pool sizing
+	// used for paged PDF rendering. The pool is initialized on first paged
+	// read; later constructors with diverging sizing emit a WARN log and
+	// reuse the existing pool. Optional.
+	PDFiumPool PDFiumPoolConfig
+	// PDFiumAcquireTimeout limits how long MultiModalRead waits to acquire a
+	// pdfium worker from the pool when the caller's context has no deadline.
+	// Has no effect when the caller's context already has a deadline.
+	// Per-read setting (applied at acquire time, not at pool init), so
+	// different MultiModalRead callers in the same process can use
+	// different timeouts. Default 30s.
+	PDFiumAcquireTimeout time.Duration
 }
 
 // resolveMultiModalReadConfig fills any zero/negative field of cfg with the
@@ -91,23 +215,16 @@ func resolveMultiModalReadConfig(cfg MultiModalReadConfig) MultiModalReadConfig 
 	cfg.MaxPDFSizeMB = clampInt(cfg.MaxPDFSizeMB, defaultMaxPDFSizeMB, maxConfigurableMB)
 	cfg.MaxPagedPDFSizeMB = clampInt(cfg.MaxPagedPDFSizeMB, defaultMaxPagedPDFSizeMB, maxConfigurableMB)
 	cfg.MaxPDFPagesPerRequest = clampInt(cfg.MaxPDFPagesPerRequest, defaultMaxPDFPagesPerRequest, maxConfigurablePDFPagesPerRequest)
-	cfg.PDFRenderDPI = clampFloat(cfg.PDFRenderDPI, defaultPDFRenderDPI, maxConfigurablePDFRenderDPI)
+	cfg.PDFRenderDPI = clampInt(cfg.PDFRenderDPI, defaultPDFRenderDPI, maxConfigurablePDFRenderDPI)
+	cfg.PDFiumPool = resolvePDFiumPoolConfig(cfg.PDFiumPool)
+	if cfg.PDFiumAcquireTimeout <= 0 {
+		cfg.PDFiumAcquireTimeout = defaultPDFiumAcquireTimeout
+	}
 	return cfg
 }
 
 // clampInt returns def when v <= 0, max when v > max, otherwise v.
 func clampInt(v, def, max int) int {
-	if v <= 0 {
-		return def
-	}
-	if v > max {
-		return max
-	}
-	return v
-}
-
-// clampFloat returns def when v <= 0, max when v > max, otherwise v.
-func clampFloat(v, def, max float64) float64 {
 	if v <= 0 {
 		return def
 	}
@@ -268,11 +385,8 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 // it is silently clamped to the last page. For example, requesting pages "1-100"
 // on a 5-page PDF returns pages 1 through 5.
 //
-// PDF rendering relies on go-fitz (MuPDF via purego/ffi, no classic CGO).
-// If build fails due to missing MuPDF libs, install them:
-//   - macOS:  brew install mupdf
-//   - Linux(Ubuntu/Debian): apt-get install -y libmupdf-dev
-//   - Linux(CentOS/RHEL):   yum install -y mupdf-devel
+// PDF rendering uses github.com/klippa-app/go-pdfium with a WebAssembly backend
+// (no CGO required). The worker pool is initialized lazily on first paged read.
 func (s *Local) MultiModalRead(ctx context.Context, req *filesystem.MultiModalReadRequest) (*filesystem.MultiFileContent, error) {
 	path := filepath.Clean(req.FilePath)
 	ext := strings.ToLower(filepath.Ext(path))
@@ -338,40 +452,67 @@ func (s *Local) MultiModalRead(ctx context.Context, req *filesystem.MultiModalRe
 		return nil, fmt.Errorf("file %s has .pdf extension but content is not a valid PDF", path)
 	}
 
-	doc, err := fitz.NewFromMemory(data)
+	if !paged {
+		return &filesystem.MultiFileContent{
+			Parts: []filesystem.FileContentPart{
+				{
+					Type:     filesystem.FileContentPartTypePDF,
+					MIMEType: "application/pdf",
+					Data:     data,
+				},
+			},
+		}, nil
+	}
+
+	pool, err := getPdfiumPool(s.multiModalReadCfg.PDFiumPool)
+	if err != nil {
+		return nil, err
+	}
+	instanceCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		instanceCtx, cancel = context.WithTimeout(ctx, s.multiModalReadCfg.PDFiumAcquireTimeout)
+		defer cancel()
+	}
+	instance, err := pool.GetInstanceWithContext(instanceCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pdfium instance for %s: %w", path, err)
+	}
+	defer func() {
+		if cerr := instance.Close(); cerr != nil {
+			log.Printf("[WARN] local: pdfium instance close failed for %s: %v", path, cerr)
+		}
+	}()
+
+	doc, err := instance.OpenDocument(&requests.OpenDocument{File: &data})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open PDF %s: %w", path, err)
 	}
-	defer doc.Close()
+	defer func() {
+		if _, cerr := instance.FPDF_CloseDocument(&requests.FPDF_CloseDocument{Document: doc.Document}); cerr != nil {
+			log.Printf("[WARN] local: pdfium FPDF_CloseDocument failed for %s: %v", path, cerr)
+		}
+	}()
 
-	totalPages := doc.NumPage()
+	pageCountResp, err := instance.FPDF_GetPageCount(&requests.FPDF_GetPageCount{Document: doc.Document})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get page count for %s: %w", path, err)
+	}
+	totalPages := pageCountResp.PageCount
 	if totalPages == 0 {
 		return nil, fmt.Errorf("file %s has 0 pages, cannot read", path)
 	}
-
-	if paged {
-		if pagedStart > totalPages {
-			return nil, fmt.Errorf("invalid pages parameter: %q (start page %d exceeds total pages %d in file %s)", req.Pages, pagedStart, totalPages, path)
-		}
-		if pagedEnd > totalPages {
-			pagedEnd = totalPages
-		}
-		parts, err := renderPDFPagesToImages(ctx, doc, pagedStart, pagedEnd, path, s.multiModalReadCfg.PDFRenderDPI)
-		if err != nil {
-			return nil, err
-		}
-		return &filesystem.MultiFileContent{Parts: parts}, nil
+	if pagedStart > totalPages {
+		return nil, fmt.Errorf("invalid pages parameter: %q (start page %d exceeds total pages %d in file %s)", req.Pages, pagedStart, totalPages, path)
 	}
-
-	return &filesystem.MultiFileContent{
-		Parts: []filesystem.FileContentPart{
-			{
-				Type:     filesystem.FileContentPartTypePDF,
-				MIMEType: "application/pdf",
-				Data:     data,
-			},
-		},
-	}, nil
+	if pagedEnd > totalPages {
+		pagedEnd = totalPages
+	}
+	parts, err := renderPDFPagesToImages(ctx, instance, doc.Document, pagedStart, pagedEnd, path, s.multiModalReadCfg.PDFRenderDPI)
+	if err != nil {
+		return nil, err
+	}
+	return &filesystem.MultiFileContent{Parts: parts}, nil
 }
 
 // readAllBytes reads the entire file at path from the local filesystem,
@@ -502,27 +643,40 @@ func validatePagesRange(start, end, maxPages int, pages string) error {
 }
 
 // renderPDFPagesToImages converts the specified page range [start, end] (1-based)
-// from the PDF document to PNG images at the given DPI. A non-positive dpi is
-// silently replaced with the default to defend against misuse from future
-// internal callers. The loop checks ctx between pages so callers can cancel
-// long-running renders.
-func renderPDFPagesToImages(ctx context.Context, doc *fitz.Document, start, end int, path string, dpi float64) ([]filesystem.FileContentPart, error) {
+// to PNG images at the given DPI using a pdfium worker instance and returns them
+// as FileContentParts. A non-positive dpi is silently replaced with the default
+// to defend against misuse from future internal callers. The loop checks ctx
+// between pages so callers can cancel long-running renders.
+func renderPDFPagesToImages(ctx context.Context, instance pdfium.Pdfium, docRef references.FPDF_DOCUMENT, start, end int, path string, dpi int) ([]filesystem.FileContentPart, error) {
 	if dpi <= 0 {
 		dpi = defaultPDFRenderDPI
 	}
 	count := end - start + 1
 	parts := make([]filesystem.FileContentPart, 0, count)
+	var buf bytes.Buffer
 	for i := start - 1; i < end; i++ {
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
 		}
-		pngData, err := doc.ImagePNG(i, dpi)
+		pageRender, err := instance.RenderPageInDPI(&requests.RenderPageInDPI{
+			DPI: dpi,
+			Page: requests.Page{
+				ByIndex: &requests.PageByIndex{
+					Document: docRef,
+					Index:    i,
+				},
+			},
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert page %d to image for %s: %w", i+1, path, err)
 		}
-		parts = append(parts, newImageContentPart("image/png", pngData))
+		buf.Reset()
+		if err := png.Encode(&buf, pageRender.Result.Image); err != nil {
+			return nil, fmt.Errorf("failed to encode page %d to PNG for %s: %w", i+1, path, err)
+		}
+		parts = append(parts, newImageContentPart("image/png", bytes.Clone(buf.Bytes())))
 	}
 	return parts, nil
 }

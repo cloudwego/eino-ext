@@ -10,16 +10,24 @@ A filesystem backend for EINO ADK that operates directly on the local machine's 
 go get github.com/cloudwego/eino-ext/adk/backend/local
 ```
 
-#### Native dependency for `MultiModalRead` (PDF rendering)
+#### PDF rendering for `MultiModalRead`
 
-`MultiModalRead` rasterises PDF pages via [`go-fitz`](https://github.com/gen2brain/go-fitz),
-which loads MuPDF at runtime through `purego`. Install MuPDF before running:
+`MultiModalRead` rasterises PDF pages via [`klippa-app/go-pdfium`](https://github.com/klippa-app/go-pdfium)
+on its **WebAssembly** backend (executed in-process by [`wazero`](https://github.com/tetratelabs/wazero)).
+No CGO toolchain or system-level MuPDF/PDFium libraries are required — it works out of the box
+across Linux, macOS and Windows.
 
-- macOS: `brew install mupdf`
-- Ubuntu/Debian: `sudo apt-get install -y libmupdf-dev`
-- CentOS/RHEL: `sudo yum install -y mupdf-devel`
+Behaviour notes:
 
-If you don't use `MultiModalRead`, MuPDF is not required at runtime.
+- A process-global PDFium worker pool is initialised lazily on the first paged-PDF request
+  (a few hundred ms one-time cost) and reused thereafter. Each WASM worker uses tens of MB
+  of memory; default `MaxTotal` is `max(NumCPU, 2)`.
+- The pool is a single shared instance per process; if a second backend passes a different
+  `PDFiumPool` sizing, the second config is ignored and a `WARN` log is emitted.
+- The `agentkit` and `local` backends live in independent Go modules and therefore each
+  maintain their **own** process-global pool. Apps importing both will run two pdfium WASM
+  runtimes concurrently.
+- Sizing can be tuned via `MultiModalReadConfig.PDFiumPool` (see below).
 
 ### Basic Usage
 
@@ -70,11 +78,27 @@ type Config struct {
 }
 
 type MultiModalReadConfig struct {
-    MaxImageSizeMB        int     // image read size limit (MB).      Default 10,  hard-cap 2048
-    MaxPDFSizeMB          int     // full PDF read size limit (MB).   Default 20,  hard-cap 2048
-    MaxPagedPDFSizeMB     int     // paged PDF read size limit (MB).  Default 100, hard-cap 2048
-    MaxPDFPagesPerRequest int     // max pages per paged read.        Default 20,  hard-cap 1000
-    PDFRenderDPI          float64 // DPI when rasterising PDF pages.  Default 150, hard-cap 600
+    MaxImageSizeMB        int           // image read size limit (MB).      Default 10,  hard-cap 2048
+    MaxPDFSizeMB          int           // full PDF read size limit (MB).   Default 20,  hard-cap 2048
+    MaxPagedPDFSizeMB     int           // paged PDF read size limit (MB).  Default 100, hard-cap 2048
+    MaxPDFPagesPerRequest int           // max pages per paged read.        Default 20,  hard-cap 1000
+    PDFRenderDPI          int           // DPI when rasterising PDF pages.  Default 150, hard-cap 600
+
+    // PDFiumPool tunes the process-global PDFium worker pool used for paged PDF rendering.
+    // Only honoured on the first lazy initialisation; subsequent callers passing a different
+    // sizing trigger a WARN log and continue with the existing pool.
+    PDFiumPool PDFiumPoolConfig
+
+    // PDFiumAcquireTimeout caps how long MultiModalRead waits for a pdfium worker
+    // when the caller's ctx has no deadline. Per-read setting (different callers
+    // may use different values). Default 30s.
+    PDFiumAcquireTimeout time.Duration
+}
+
+type PDFiumPoolConfig struct {
+    MinIdle  int // minimum idle workers kept alive.   Default 1
+    MaxIdle  int // maximum idle workers kept alive.   Default 2
+    MaxTotal int // maximum total workers (>= 2).      Default max(2, NumCPU)
 }
 ```
 

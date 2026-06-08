@@ -181,6 +181,73 @@ type Config struct {
 }
 ```
 
+## 扩展字段说明
+
+Eino agentic schema 中有若干字段的类型为 `any`，以便各模型实现挂载各自特有的数据。当你消费本包产生的响应时，需要将这些字段类型断言为此处定义的具体类型（均位于 `agenticark` 包内）。
+
+### ResponseMeta
+
+schema 的 `AgenticResponseMeta` 未定义 Ark 专属字段，因此本包将 `*schema.AgenticMessage.ResponseMeta` 的通用 `Extension any` 字段填充为 `*agenticark.ResponseMetaExtension`，使用前请断言为该类型。
+
+```go
+// agenticark.ResponseMetaExtension
+type ResponseMetaExtension struct {
+	ID                 string             // Ark 响应 ID
+	Status             ResponseStatus     // in_progress / completed / incomplete / failed
+	IncompleteDetails  *IncompleteDetails // Status 为 incomplete 时填充
+	Error              *ResponseError     // 响应携带错误时填充
+	PreviousResponseID string             // 多轮链路中上一条响应的 ID
+	Thinking           *ResponseThinking  // 服务端上报的思考模式
+	ExpireAt           *int64             // 缓存响应过期的 Unix 时间戳
+	ServiceTier        ServiceTier        // auto / default
+	StreamingError     *StreamingResponseError // 流式过程中暴露的错误
+}
+```
+
+```go
+meta := msg.ResponseMeta.Extension.(*agenticark.ResponseMetaExtension)
+```
+
+### AssistantGenText 扩展
+
+`UserInputText`（用户输入文本）不携带扩展，只有模型生成的 `AssistantGenText` 块才有。schema 未为其定义 Ark 专属字段，因此本包将通用的 `AssistantGenText.Extension any` 字段填充为 `*agenticark.AssistantGenTextExtension`，其中携带挂载在生成文本上的引用/标注数据。
+
+```go
+// agenticark.AssistantGenTextExtension
+type AssistantGenTextExtension struct {
+	Annotations []*TextAnnotation // 文本上的 url_citation / doc_citation 标注
+}
+```
+
+```go
+ext := block.AssistantGenText.Extension.(*agenticark.AssistantGenTextExtension)
+```
+
+### ServerToolCall 与 ServerToolResult
+
+当启用 `web_search`、`image_process`、`doubao_app` 或 `knowledge_search` 等服务端（内置）工具时，本包将通用的 `ServerToolCall.Arguments any` 字段填充为 `*agenticark.ServerToolCallArguments`，将 `ServerToolResult.Content any` 字段填充为 `*agenticark.ServerToolResult`，请断言为这些具体类型。
+
+```go
+// agenticark.ServerToolCallArguments —— 每次调用仅设置其中一个字段
+type ServerToolCallArguments struct {
+	WebSearch       *WebSearchArguments       // web_search 工具输入
+	ImageProcess    *ImageProcessArguments    // image_process 工具输入
+	DoubaoApp       *DoubaoAppArguments       // doubao_app 工具输入
+	KnowledgeSearch *KnowledgeSearchArguments // knowledge_search 工具输入
+}
+
+// agenticark.ServerToolResult —— 每个结果仅设置其中一个字段
+type ServerToolResult struct {
+	ImageProcess *ImageProcessResult // image_process 工具输出
+	DoubaoApp    *DoubaoAppResult    // doubao_app 工具输出
+}
+```
+
+```go
+args := block.ServerToolCall.Arguments.(*agenticark.ServerToolCallArguments)
+result := block.ServerToolResult.Content.(*agenticark.ServerToolResult)
+```
+
 ## 高级用法
 
 ### 缓存
