@@ -17,13 +17,19 @@
 package agentkit
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/eino/adk/filesystem"
+	"github.com/klippa-app/go-pdfium"
+	"github.com/klippa-app/go-pdfium/references"
+	"github.com/klippa-app/go-pdfium/requests"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -326,6 +332,80 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		assert.Contains(t, resp.Output, "command failed")
 	})
 
+	// Special character path tests — verify base64 encoding prevents template breakage.
+	t.Run("LsInfo: Special Characters in Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, `{"path": "a.txt", "is_dir": false}`, "", ""))
+		}
+		specialPaths := []string{
+			"/data/it's a dir",
+			"/data/文档/测试",
+			`/data/back\slash`,
+			"/data/new\nline",
+			"/data/path with spaces",
+		}
+		for _, p := range specialPaths {
+			res, err := s.LsInfo(context.Background(), &filesystem.LsInfoRequest{Path: p})
+			require.NoError(t, err, "path=%q", p)
+			require.Len(t, res, 1, "path=%q", p)
+		}
+	})
+
+	t.Run("GrepRaw: Special Characters in Pattern and Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, `[]`, "", ""))
+		}
+		cases := []struct {
+			pattern string
+			path    string
+		}{
+			{`\bfoo\b`, "/data/it's here"},
+			{`hello'world`, "/data/文档"},
+			{`line1\nline2`, `/data/back\slash`},
+		}
+		for _, tc := range cases {
+			_, err := s.GrepRaw(context.Background(), &filesystem.GrepRequest{
+				Pattern: tc.pattern,
+				Path:    tc.path,
+			})
+			require.NoError(t, err, "pattern=%q path=%q", tc.pattern, tc.path)
+		}
+	})
+
+	t.Run("Write: Special Characters in Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, "", "", ""))
+		}
+		specialPaths := []string{
+			"/data/it's a file.txt",
+			"/data/文档/新文件.txt",
+			`/data/back\slash.txt`,
+		}
+		for _, p := range specialPaths {
+			err := s.Write(context.Background(), &filesystem.WriteRequest{FilePath: p, Content: "content"})
+			require.NoError(t, err, "path=%q", p)
+		}
+	})
+
+	t.Run("Edit: Special Characters in Path", func(t *testing.T) {
+		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			w.Write(createMockResponse(t, true, "1", "", ""))
+		}
+		specialPaths := []string{
+			"/data/it's a file.txt",
+			"/data/文档/新文件.txt",
+			`/data/back\slash.txt`,
+		}
+		for _, p := range specialPaths {
+			err := s.Edit(context.Background(), &filesystem.EditRequest{FilePath: p, OldString: "old", NewString: "new"})
+			require.NoError(t, err, "path=%q", p)
+		}
+	})
+
 	t.Run("Execute: RunInBackendGround returns immediately", func(t *testing.T) {
 		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
@@ -337,5 +417,448 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.Contains(t, res.Output, "background")
+	})
+}
+
+func TestParsePagesParam(t *testing.T) {
+	const dflt = defaultMaxPDFPagesPerRequest
+	tests := []struct {
+		name      string
+		pages     string
+		maxPages  int
+		wantStart int
+		wantEnd   int
+		wantErr   string
+	}{
+		{name: "single page", pages: "1", maxPages: dflt, wantStart: 1, wantEnd: 1},
+		{name: "single page with spaces", pages: " 3 ", maxPages: dflt, wantStart: 3, wantEnd: 3},
+		{name: "range", pages: "1-5", maxPages: dflt, wantStart: 1, wantEnd: 5},
+		{name: "range with spaces", pages: " 3 - 10 ", maxPages: dflt, wantStart: 3, wantEnd: 10},
+		{name: "same start and end", pages: "7-7", maxPages: dflt, wantStart: 7, wantEnd: 7},
+		{name: "max allowed range", pages: "1-20", maxPages: dflt, wantStart: 1, wantEnd: 20},
+		{name: "custom maxPages happy path", pages: "1-5", maxPages: 5, wantStart: 1, wantEnd: 5},
+		{name: "non-positive maxPages falls back to default", pages: "1-20", maxPages: 0, wantStart: 1, wantEnd: 20},
+
+		{name: "empty string", pages: "", maxPages: dflt, wantErr: `invalid pages parameter: "" (empty)`},
+		{name: "blank string", pages: "   ", maxPages: dflt, wantErr: `invalid pages parameter: "   " (empty)`},
+		{name: "non-numeric", pages: "abc", maxPages: dflt, wantErr: "start page must be a positive integer"},
+		{name: "zero start", pages: "0", maxPages: dflt, wantErr: "start page must be a positive integer"},
+		{name: "negative start", pages: "-3", maxPages: dflt, wantErr: "start page must be a positive integer"},
+		{name: "non-numeric end", pages: "1-abc", maxPages: dflt, wantErr: "end page must be a positive integer"},
+		{name: "zero end", pages: "1-0", maxPages: dflt, wantErr: "end page must be a positive integer"},
+		{name: "open-ended range", pages: "1-", maxPages: dflt, wantErr: "open-ended range is not supported"},
+		{name: "multi range 2-2-5", pages: "2-2-5", maxPages: dflt, wantErr: "only a single range is supported"},
+		{name: "multi range 1-2-3", pages: "1-2-3", maxPages: dflt, wantErr: "only a single range is supported"},
+		{name: "end less than start", pages: "5-3", maxPages: dflt, wantErr: "end page 3 < start page 5"},
+		{name: "exceeds page limit", pages: "1-21", maxPages: dflt, wantErr: "range spans 21 pages, exceeds limit 20"},
+		{name: "exceeds custom maxPages=5", pages: "1-6", maxPages: 5, wantErr: "range spans 6 pages, exceeds limit 5"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start, end, err := parsePagesParam(tt.pages, tt.maxPages)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Contains(t, err.Error(), "invalid pages parameter:", "all errors must share the unified prefix")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantStart, start)
+			assert.Equal(t, tt.wantEnd, end)
+		})
+	}
+}
+
+func TestSplitPagesRange(t *testing.T) {
+	tests := []struct {
+		name      string
+		pages     string
+		wantStart string
+		wantEnd   string
+		wantRange bool
+		wantErr   string
+	}{
+		{name: "single", pages: "1", wantStart: "1"},
+		{name: "single trimmed", pages: " 5 ", wantStart: "5"},
+		{name: "range", pages: "1-5", wantStart: "1", wantEnd: "5", wantRange: true},
+		{name: "range trimmed", pages: " 3 - 10 ", wantStart: "3", wantEnd: "10", wantRange: true},
+		{name: "empty", pages: "", wantErr: `invalid pages parameter: "" (empty)`},
+		{name: "blanks only", pages: "   ", wantErr: "(empty)"},
+		{name: "open ended", pages: "3-", wantErr: "open-ended range is not supported"},
+		{name: "multi range", pages: "1-2-3", wantErr: "only a single range is supported"},
+		{name: "multi range with spaces", pages: " 1 - 2 - 3 ", wantErr: "only a single range is supported"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, e, hasRange, err := splitPagesRange(tt.pages)
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantStart, s)
+			assert.Equal(t, tt.wantEnd, e)
+			assert.Equal(t, tt.wantRange, hasRange)
+		})
+	}
+}
+
+func TestValidatePagesRange(t *testing.T) {
+	tests := []struct {
+		name     string
+		start    int
+		end      int
+		maxPages int
+		wantErr  string
+	}{
+		{name: "happy single", start: 1, end: 1, maxPages: 20},
+		{name: "happy range", start: 1, end: 5, maxPages: 20},
+		{name: "boundary equal to max", start: 1, end: 20, maxPages: 20},
+		{name: "boundary maxPages 1", start: 7, end: 7, maxPages: 1},
+		{name: "end < start", start: 5, end: 3, maxPages: 20, wantErr: "end page 3 < start page 5"},
+		{name: "exceeds limit", start: 1, end: 21, maxPages: 20, wantErr: "range spans 21 pages, exceeds limit 20"},
+		{name: "exceeds custom limit", start: 1, end: 2, maxPages: 1, wantErr: "range spans 2 pages, exceeds limit 1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validatePagesRange(tt.start, tt.end, tt.maxPages, "raw-input")
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Contains(t, err.Error(), "invalid pages parameter:")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestDetectImageMIME(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want string
+	}{
+		{name: "png", data: []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00}, want: "image/png"},
+		{name: "png too short", data: []byte{0x89, 0x50, 0x4E, 0x47}, want: ""},
+		{name: "jpeg", data: []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00}, want: "image/jpeg"},
+		{name: "jpeg too short", data: []byte{0xFF, 0xD8}, want: ""},
+		{name: "gif87a", data: []byte("GIF87a---"), want: "image/gif"},
+		{name: "gif89a", data: []byte("GIF89a---"), want: "image/gif"},
+		{name: "gif88a not recognized", data: []byte("GIF88a---"), want: ""},
+		{name: "bmp", data: []byte("BM" + "\x00\x00\x00\x00"), want: "image/bmp"},
+		{name: "webp", data: []byte("RIFF\x00\x00\x00\x00WEBP-extra"), want: "image/webp"},
+		{name: "webp wrong tag", data: []byte("RIFF\x00\x00\x00\x00WAVE-extra"), want: ""},
+		{name: "tiff little endian", data: []byte{0x49, 0x49, 0x2A, 0x00, 0x00}, want: "image/tiff"},
+		{name: "tiff big endian", data: []byte{0x4D, 0x4D, 0x00, 0x2A, 0x00}, want: "image/tiff"},
+		{name: "empty", data: []byte{}, want: ""},
+		{name: "random", data: []byte("hello world"), want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, detectImageMIME(tt.data))
+		})
+	}
+}
+
+func TestIsPDFBytes(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want bool
+	}{
+		{name: "valid pdf header", data: []byte("%PDF-1.4\n%..."), want: true},
+		{name: "exactly 5 bytes", data: []byte("%PDF-"), want: true},
+		{name: "missing percent", data: []byte("PDF-1.4"), want: false},
+		{name: "too short", data: []byte("%PDF"), want: false},
+		{name: "empty", data: []byte{}, want: false},
+		{name: "random", data: []byte("not a pdf"), want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isPDFBytes(tt.data))
+		})
+	}
+}
+
+func TestResolveMultiModalReadConfig(t *testing.T) {
+	t.Run("zero input → all defaults", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{})
+		assert.Equal(t, defaultMaxImageSizeMB, got.MaxImageSizeMB)
+		assert.Equal(t, defaultMaxPDFSizeMB, got.MaxPDFSizeMB)
+		assert.Equal(t, defaultMaxPagedPDFSizeMB, got.MaxPagedPDFSizeMB)
+		assert.Equal(t, defaultMaxPDFPagesPerRequest, got.MaxPDFPagesPerRequest)
+		assert.Equal(t, defaultPDFRenderDPI, got.PDFRenderDPI)
+		assert.Equal(t, defaultPDFiumAcquireTimeout, got.PDFiumAcquireTimeout)
+	})
+
+	t.Run("partial override preserved", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{
+			MaxImageSizeMB:       25,
+			PDFRenderDPI:         200,
+			PDFiumAcquireTimeout: 5 * time.Second,
+		})
+		assert.Equal(t, 25, got.MaxImageSizeMB)
+		assert.Equal(t, 200, got.PDFRenderDPI)
+		assert.Equal(t, 5*time.Second, got.PDFiumAcquireTimeout)
+		// untouched fields fall back to default
+		assert.Equal(t, defaultMaxPDFSizeMB, got.MaxPDFSizeMB)
+		assert.Equal(t, defaultMaxPagedPDFSizeMB, got.MaxPagedPDFSizeMB)
+		assert.Equal(t, defaultMaxPDFPagesPerRequest, got.MaxPDFPagesPerRequest)
+	})
+
+	t.Run("negative treated as unset", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{
+			MaxImageSizeMB:        -1,
+			MaxPDFSizeMB:          -100,
+			MaxPagedPDFSizeMB:     -1,
+			MaxPDFPagesPerRequest: -1,
+			PDFRenderDPI:          -1,
+			PDFiumAcquireTimeout:  -1,
+		})
+		assert.Equal(t, defaultMaxImageSizeMB, got.MaxImageSizeMB)
+		assert.Equal(t, defaultMaxPDFSizeMB, got.MaxPDFSizeMB)
+		assert.Equal(t, defaultMaxPagedPDFSizeMB, got.MaxPagedPDFSizeMB)
+		assert.Equal(t, defaultMaxPDFPagesPerRequest, got.MaxPDFPagesPerRequest)
+		assert.Equal(t, defaultPDFRenderDPI, got.PDFRenderDPI)
+		assert.Equal(t, defaultPDFiumAcquireTimeout, got.PDFiumAcquireTimeout)
+	})
+
+	t.Run("values exceeding hard-cap are clamped", func(t *testing.T) {
+		got := resolveMultiModalReadConfig(MultiModalReadConfig{
+			MaxImageSizeMB:        maxConfigurableMB + 1,
+			MaxPDFSizeMB:          maxConfigurableMB * 10,
+			MaxPagedPDFSizeMB:     maxConfigurableMB + 1,
+			MaxPDFPagesPerRequest: maxConfigurablePDFPagesPerRequest + 1,
+			PDFRenderDPI:          maxConfigurablePDFRenderDPI + 1,
+		})
+		assert.Equal(t, maxConfigurableMB, got.MaxImageSizeMB)
+		assert.Equal(t, maxConfigurableMB, got.MaxPDFSizeMB)
+		assert.Equal(t, maxConfigurableMB, got.MaxPagedPDFSizeMB)
+		assert.Equal(t, maxConfigurablePDFPagesPerRequest, got.MaxPDFPagesPerRequest)
+		assert.Equal(t, maxConfigurablePDFRenderDPI, got.PDFRenderDPI)
+	})
+}
+
+// minimalValidPDF is a hand-crafted single-page PDF kept inline so the test
+// suite needs no binary fixture.
+const minimalValidPDF = "%PDF-1.1\n%\xa5\xb1\xeb\n\n1 0 obj\n  << /Type /Catalog\n     /Pages 2 0 R\n  >>\nendobj\n\n2 0 obj\n  << /Type /Pages\n     /Kids [3 0 R]\n     /Count 1\n     /MediaBox [0 0 100 100]\n  >>\nendobj\n\n3 0 obj\n  <<  /Type /Page\n      /Parent 2 0 R\n      /Resources << >>\n  >>\nendobj\n\nxref\n0 4\n0000000000 65535 f \n0000000018 00000 n \n0000000077 00000 n \n0000000178 00000 n \ntrailer\n  <<  /Root 1 0 R\n      /Size 4\n  >>\nstartxref\n240\n%%EOF\n"
+
+// openMinimalPDF acquires a pdfium instance and opens minimalValidPDF, returning
+// a teardown func the caller must defer. Any failure (pool init, instance
+// acquire, document open) is reported via t.Fatalf — the WASM-backed pdfium
+// runtime ships with the binary and works on every supported platform, so a
+// failure here is a real regression that must surface in CI rather than be
+// silently skipped.
+func openMinimalPDF(t *testing.T) (pdfium.Pdfium, references.FPDF_DOCUMENT, func()) {
+	t.Helper()
+	pool, err := getPdfiumPool(PDFiumPoolConfig{})
+	require.NoError(t, err, "init pdfium pool")
+	inst, err := pool.GetInstance(0)
+	require.NoError(t, err, "acquire pdfium instance")
+	data := []byte(minimalValidPDF)
+	doc, err := inst.OpenDocument(&requests.OpenDocument{File: &data})
+	if err != nil {
+		_ = inst.Close()
+		t.Fatalf("open minimal PDF fixture: %v", err)
+	}
+	cleanup := func() {
+		_, _ = inst.FPDF_CloseDocument(&requests.FPDF_CloseDocument{Document: doc.Document})
+		_ = inst.Close()
+	}
+	return inst, doc.Document, cleanup
+}
+
+func TestIsImageExt(t *testing.T) {
+	for _, ext := range []string{".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"} {
+		assert.True(t, isImageExt(ext), ext)
+	}
+	for _, ext := range []string{".pdf", ".txt", ".go", "", ".PNG"} {
+		assert.False(t, isImageExt(ext), ext)
+	}
+}
+
+func TestIsPDFExt(t *testing.T) {
+	assert.True(t, isPDFExt(".pdf"))
+	assert.False(t, isPDFExt(".PDF"))
+	assert.False(t, isPDFExt(".txt"))
+	assert.False(t, isPDFExt(""))
+}
+
+func TestNewImageContentPart(t *testing.T) {
+	data := []byte("fake-image-data")
+	part := newImageContentPart("image/png", data)
+	assert.Equal(t, filesystem.FileContentPartTypeImage, part.Type)
+	assert.Equal(t, "image/png", part.MIMEType)
+	assert.Equal(t, data, part.Data)
+}
+
+func TestRenderPDFPagesToImages_Success(t *testing.T) {
+	inst, docRef, cleanup := openMinimalPDF(t)
+	defer cleanup()
+
+	parts, err := renderPDFPagesToImages(context.Background(), inst, docRef, 1, 1, "fixture.pdf", 72)
+	require.NoError(t, err)
+	require.Len(t, parts, 1)
+	assert.Equal(t, filesystem.FileContentPartTypeImage, parts[0].Type)
+	assert.Equal(t, "image/png", parts[0].MIMEType)
+	assert.NotEmpty(t, parts[0].Data)
+}
+
+func TestRenderPDFPagesToImages_DefaultDPI(t *testing.T) {
+	inst, docRef, cleanup := openMinimalPDF(t)
+	defer cleanup()
+
+	parts, err := renderPDFPagesToImages(context.Background(), inst, docRef, 1, 1, "fixture.pdf", 0)
+	require.NoError(t, err)
+	require.Len(t, parts, 1)
+}
+
+func TestRenderPDFPagesToImages_RespectsCanceledCtx(t *testing.T) {
+	inst, docRef, cleanup := openMinimalPDF(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel before invocation; the loop's select must fire on first iteration.
+
+	parts, err := renderPDFPagesToImages(ctx, inst, docRef, 1, 1, "fixture.pdf", 72)
+	assert.Nil(t, parts)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+// withNumCPUFn temporarily swaps numCPUFn for the duration of a test. The
+// returned cleanup must be deferred. Callers MUST NOT use t.Parallel() in any
+// subtest using this helper — numCPUFn is a package-level variable and
+// concurrent swaps would race.
+func withNumCPUFn(fn func() int) func() {
+	old := numCPUFn
+	numCPUFn = fn
+	return func() { numCPUFn = old }
+}
+
+func TestResolvePDFiumPoolConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		numCPU    int
+		input     PDFiumPoolConfig
+		wantMin   int
+		wantIdle  int
+		wantTotal int
+	}{
+		{
+			name:      "all zero → defaults; MaxTotal from numCPUFn (=4)",
+			numCPU:    4,
+			input:     PDFiumPoolConfig{},
+			wantMin:   defaultPDFiumPoolMinIdle,
+			wantIdle:  defaultPDFiumPoolMaxIdle,
+			wantTotal: 4,
+		},
+		{
+			name:      "all negative treated as unset",
+			numCPU:    8,
+			input:     PDFiumPoolConfig{MinIdle: -1, MaxIdle: -1, MaxTotal: -1},
+			wantMin:   defaultPDFiumPoolMinIdle,
+			wantIdle:  defaultPDFiumPoolMaxIdle,
+			wantTotal: 8,
+		},
+		{
+			name:      "1-vCPU host: MaxTotal floored to minPDFiumPoolMaxTotal",
+			numCPU:    1,
+			input:     PDFiumPoolConfig{},
+			wantMin:   defaultPDFiumPoolMinIdle,
+			wantIdle:  defaultPDFiumPoolMaxIdle,
+			wantTotal: minPDFiumPoolMaxTotal,
+		},
+		{
+			name:      "MaxIdle exceeds MaxTotal → MaxIdle clamped to MaxTotal",
+			numCPU:    4,
+			input:     PDFiumPoolConfig{MinIdle: 1, MaxIdle: 10, MaxTotal: 2},
+			wantMin:   1,
+			wantIdle:  2,
+			wantTotal: 2,
+		},
+		{
+			name:      "MinIdle exceeds MaxIdle → MinIdle clamped to MaxIdle",
+			numCPU:    4,
+			input:     PDFiumPoolConfig{MinIdle: 5, MaxIdle: 2, MaxTotal: 4},
+			wantMin:   2,
+			wantIdle:  2,
+			wantTotal: 4,
+		},
+		{
+			name:      "explicit values fully preserved",
+			numCPU:    16,
+			input:     PDFiumPoolConfig{MinIdle: 1, MaxIdle: 3, MaxTotal: 6},
+			wantMin:   1,
+			wantIdle:  3,
+			wantTotal: 6,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			restore := withNumCPUFn(func() int { return tt.numCPU })
+			defer restore()
+			got := resolvePDFiumPoolConfig(tt.input)
+			assert.Equal(t, tt.wantMin, got.MinIdle, "MinIdle")
+			assert.Equal(t, tt.wantIdle, got.MaxIdle, "MaxIdle")
+			assert.Equal(t, tt.wantTotal, got.MaxTotal, "MaxTotal")
+		})
+	}
+}
+
+// TestSandbox_MultiModalRead_PagedPDF exercises the full paged-PDF path:
+// mock the sandbox readAllBytes response with a base64-encoded minimal PDF →
+// MultiModalRead(Pages: "1") → assert the returned part is a PNG. This is the
+// only end-to-end coverage for the pdfium pool acquire + open + render +
+// PNG-encode chain in the agentkit backend.
+func TestSandbox_MultiModalRead_PagedPDF(t *testing.T) {
+	s, server := setupTest(t)
+	defer server.Close()
+
+	pdfB64 := base64.StdEncoding.EncodeToString([]byte(minimalValidPDF))
+	mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(createMockResponse(t, true, pdfB64, "", ""))
+	}
+
+	t.Run("happy path: single page rendered to PNG", func(t *testing.T) {
+		resp, err := s.MultiModalRead(context.Background(), &filesystem.MultiModalReadRequest{
+			ReadRequest: filesystem.ReadRequest{FilePath: "/data/doc.pdf"},
+			Pages:       "1",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		require.Len(t, resp.Parts, 1)
+		part := resp.Parts[0]
+		assert.Equal(t, filesystem.FileContentPartTypeImage, part.Type)
+		assert.Equal(t, "image/png", part.MIMEType)
+		pngMagic := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+		assert.True(t, bytes.HasPrefix(part.Data, pngMagic), "data does not start with PNG magic bytes")
+	})
+
+	t.Run("range exceeding totalPages is clamped to last page", func(t *testing.T) {
+		resp, err := s.MultiModalRead(context.Background(), &filesystem.MultiModalReadRequest{
+			ReadRequest: filesystem.ReadRequest{FilePath: "/data/doc.pdf"},
+			Pages:       "1-10",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		// minimalValidPDF has 1 page; range "1-10" must clamp to [1,1].
+		assert.Len(t, resp.Parts, 1)
+	})
+
+	t.Run("start page beyond totalPages returns error", func(t *testing.T) {
+		resp, err := s.MultiModalRead(context.Background(), &filesystem.MultiModalReadRequest{
+			ReadRequest: filesystem.ReadRequest{FilePath: "/data/doc.pdf"},
+			Pages:       "5",
+		})
+		assert.Error(t, err)
+		assert.Nil(t, resp)
 	})
 }

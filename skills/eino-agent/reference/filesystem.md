@@ -71,8 +71,8 @@ backend, _ := local.NewBackend(ctx, &local.Config{
 })
 
 agent, _ := deep.New(ctx, &deep.Config{
-    Model:   chatModel,
-    Backend: backend,
+    ChatModel: chatModel,
+    Backend:   backend,
 })
 ```
 

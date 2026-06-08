@@ -7,8 +7,27 @@ A secure filesystem backend for EINO ADK that executes operations in Volcengine'
 ### Installation
 
 ```bash
-go get github.com/cloudwego/eino-ext/adk/backend/arksandbox
+go get github.com/cloudwego/eino-ext/adk/backend/agentkit
 ```
+
+#### PDF rendering for `MultiModalRead`
+
+`MultiModalRead` rasterises PDF pages via [`klippa-app/go-pdfium`](https://github.com/klippa-app/go-pdfium)
+on its **WebAssembly** backend (executed in-process by [`wazero`](https://github.com/tetratelabs/wazero)).
+No CGO toolchain or system-level MuPDF/PDFium libraries are required — it works out of the box
+across Linux, macOS and Windows.
+
+Behaviour notes:
+
+- A process-global PDFium worker pool is initialised lazily on the first paged-PDF request
+  (a few hundred ms one-time cost) and reused thereafter. Each WASM worker uses tens of MB
+  of memory; default `MaxTotal` is `max(NumCPU, 2)`.
+- The pool is a single shared instance per process; if a second backend passes a different
+  `PDFiumPool` sizing, the second config is ignored and a `WARN` log is emitted.
+- The `agentkit` and `local` backends live in independent Go modules and therefore each
+  maintain their **own** process-global pool. Apps importing both will run two pdfium WASM
+  runtimes concurrently.
+- Sizing can be tuned via `MultiModalReadConfig.PDFiumPool` (see below).
 
 ### Basic Usage
 
@@ -18,21 +37,21 @@ import (
     "os"
     "time"
     
-    "github.com/cloudwego/eino-ext/adk/backend/arksandbox"
+    "github.com/cloudwego/eino-ext/adk/backend/agentkit"
     "github.com/cloudwego/eino/adk/middlewares/filesystem"
 )
 
 // Configure with credentials
-config := &arksandbox.Config{
+config := &agentkit.Config{
     AccessKeyID:     os.Getenv("VOLC_ACCESS_KEY_ID"),
     SecretAccessKey: os.Getenv("VOLC_SECRET_ACCESS_KEY"),
     ToolID:          os.Getenv("VOLC_TOOL_ID"),
     UserSessionID:   "session-" + time.Now().Format("20060102-150405"),
-    Region:          arksandbox.RegionOfBeijing,
+    Region:          agentkit.RegionOfBeijing,
 }
 
 // Initialize backend
-backend, err := arksandbox.NewArkSandboxBackend(config)
+backend, err := agentkit.NewSandboxToolBackend(config)
 if err != nil {
     panic(err)
 }
@@ -67,6 +86,34 @@ type Config struct {
     SessionTTL    int          // Default: 1800 seconds (30 min)
     ExecutionTimeout int       
     Timeout       time.Duration // HTTP client timeout
+
+    // Optional: image/PDF/DPI limits for MultiModalRead.
+    // Zero/negative fields fall back to defaults; values above hard-caps are silently clamped.
+    MultiModalRead MultiModalReadConfig
+}
+
+type MultiModalReadConfig struct {
+    MaxImageSizeMB        int           // image read size limit (MB).      Default 10,  hard-cap 2048
+    MaxPDFSizeMB          int           // full PDF read size limit (MB).   Default 20,  hard-cap 2048
+    MaxPagedPDFSizeMB     int           // paged PDF read size limit (MB).  Default 100, hard-cap 2048
+    MaxPDFPagesPerRequest int           // max pages per paged read.        Default 20,  hard-cap 1000
+    PDFRenderDPI          int           // DPI when rasterising PDF pages.  Default 150, hard-cap 600
+
+    // PDFiumPool tunes the process-global PDFium worker pool used for paged PDF rendering.
+    // Only honoured on the first lazy initialisation; subsequent callers passing a different
+    // sizing trigger a WARN log and continue with the existing pool.
+    PDFiumPool PDFiumPoolConfig
+
+    // PDFiumAcquireTimeout caps how long MultiModalRead waits for a pdfium worker
+    // when the caller's ctx has no deadline. Per-read setting (different callers
+    // may use different values). Default 30s.
+    PDFiumAcquireTimeout time.Duration
+}
+
+type PDFiumPoolConfig struct {
+    MinIdle  int // minimum idle workers kept alive.   Default 1
+    MaxIdle  int // maximum idle workers kept alive.   Default 2
+    MaxTotal int // maximum total workers (>= 2).      Default max(2, NumCPU)
 }
 ```
 
@@ -98,7 +145,8 @@ See the following examples for more usage:
 
 - **`LsInfo(ctx, req)`** - List directory contents
 - **`Read(ctx, req)`** - Read file with optional line offset/limit
-- **`Write(ctx, req)`** - Create new file (fails if exists)
+- **`MultiModalRead(ctx, req)`** - Read images/PDFs as structured multimodal parts; non-image/non-PDF files fall back to `Read`. Defaults: image 10 MB / PDF 20 MB / paged-PDF 100 MB up to 20 pages @ 150 DPI. Tunable via `Config.MultiModalRead`. `Pages` accepts a single page (`"3"`) or an inclusive range (`"1-5"`).
+- **`Write(ctx, req)`** - Write file content; creates the file if it doesn't exist, otherwise **overwrites** existing content (parent directories are created automatically).
 - **`Edit(ctx, req)`** - Search and replace in file
 - **`GrepRaw(ctx, req)`** - Search pattern in files
 - **`GlobInfo(ctx, req)`** - Find files by glob pattern
@@ -119,17 +167,13 @@ See the following examples for more usage:
 
 ```go
 // Each user/context should have unique session ID
-config := &arksandbox.Config{
+config := &agentkit.Config{
     UserSessionID: fmt.Sprintf("user-%s-%d", userID, time.Now().Unix()),
     SessionTTL:    3600,  // 1 hour
 }
 ```
 
 ## Troubleshooting
-
-**File Already Exists**
-- `Write()` fails if file exists (safety feature)
-- Delete file first or use unique filenames
 
 **Authentication Errors**
 - Verify credentials are correct

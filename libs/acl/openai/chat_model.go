@@ -75,18 +75,18 @@ type Config struct {
 	// APIKey is your authentication key
 	// Use OpenAI API key or Azure API key depending on the service
 	// Required
-	APIKey string `json:"api_key"`
+	APIKey string
 
 	// HTTPClient is used to send HTTP requests
 	// Optional. Default: http.DefaultClient
-	HTTPClient *http.Client `json:"-"`
+	HTTPClient *http.Client
 
 	// The following three fields are only required when using Azure OpenAI Service, otherwise they can be ignored.
 	// For more details, see: https://learn.microsoft.com/en-us/azure/ai-services/openai/
 
 	// ByAzure indicates whether to use Azure OpenAI Service
 	// Required for Azure
-	ByAzure bool `json:"by_azure"`
+	ByAzure bool
 
 	// AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
 	// This is useful when the model name is different from the deployment name.
@@ -96,77 +96,81 @@ type Config struct {
 	// BaseURL is the Azure OpenAI endpoint URL
 	// Format: https://{YOUR_RESOURCE_NAME}.openai.azure.com. YOUR_RESOURCE_NAME is the name of your resource that you have created on Azure.
 	// Required for Azure
-	BaseURL string `json:"base_url"`
+	BaseURL string
 
 	// APIVersion specifies the Azure OpenAI API version
 	// Required for Azure
-	APIVersion string `json:"api_version"`
+	APIVersion string
 
 	// The following fields correspond to OpenAI's chat completion API parameters
 	// Ref: https://platform.openai.com/docs/api-reference/chat/create
 
 	// Model specifies the ID of the model to use
 	// Required
-	Model string `json:"model"`
+	Model string
 
 	// MaxTokens limits the maximum number of tokens that can be generated in the chat completion
 	// Optional. Default: model's maximum
-	MaxTokens *int `json:"max_tokens,omitempty"`
+	MaxTokens *int
 
 	// MaxCompletionTokens specifies an upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
-	MaxCompletionTokens *int `json:"max_completion_tokens,omitempty"`
+	MaxCompletionTokens *int
 
 	// Temperature specifies what sampling temperature to use
 	// Generally recommend altering this or TopP but not both.
 	// Range: 0.0 to 2.0. Higher values make output more random
 	// Optional. Default: 1.0
-	Temperature *float32 `json:"temperature,omitempty"`
+	Temperature *float32
 
 	// TopP controls diversity via nucleus sampling
 	// Generally recommend altering this or Temperature but not both.
 	// Range: 0.0 to 1.0. Lower values make output more focused
 	// Optional. Default: 1.0
-	TopP *float32 `json:"top_p,omitempty"`
+	TopP *float32
 
 	// Stop sequences where the API will stop generating further tokens
 	// Optional. Example: []string{"\n", "User:"}
-	Stop []string `json:"stop,omitempty"`
+	Stop []string
 
 	// PresencePenalty prevents repetition by penalizing tokens based on presence
 	// Range: -2.0 to 2.0. Positive values increase likelihood of new topics
 	// Optional. Default: 0
-	PresencePenalty *float32 `json:"presence_penalty,omitempty"`
+	PresencePenalty *float32
 
 	// ResponseFormat specifies the format of the model's response
 	// Optional. Use for structured outputs
-	ResponseFormat *ChatCompletionResponseFormat `json:"response_format,omitempty"`
+	ResponseFormat *ChatCompletionResponseFormat
 
 	// Seed enables deterministic sampling for consistent outputs
 	// Optional. Set for reproducible results
-	Seed *int `json:"seed,omitempty"`
+	Seed *int
 
 	// FrequencyPenalty prevents repetition by penalizing tokens based on frequency
 	// Range: -2.0 to 2.0. Positive values decrease likelihood of repetition
 	// Optional. Default: 0
-	FrequencyPenalty *float32 `json:"frequency_penalty,omitempty"`
+	FrequencyPenalty *float32
 
 	// LogitBias modifies likelihood of specific tokens appearing in completion
 	// Optional. Map token IDs to bias values from -100 to 100
-	LogitBias map[string]int `json:"logit_bias,omitempty"`
+	LogitBias map[string]int
 
 	// User unique identifier representing end-user
 	// Optional. Helps OpenAI monitor and detect abuse
-	User *string `json:"user,omitempty"`
+	User *string
 
 	// LogProbs specifies whether to return log probabilities of the output tokens.
-	LogProbs bool `json:"log_probs"`
+	LogProbs bool
 
 	// TopLogProbs specifies the number of most likely tokens to return at each token position, each with an associated log probability.
-	TopLogProbs int `json:"top_log_probs"`
+	TopLogProbs int
 
 	// ExtraFields will override any existing fields with the same key.
 	// Optional. Useful for experimental features not yet officially supported.
-	ExtraFields map[string]any `json:"-"`
+	ExtraFields map[string]any
+
+	// CustomHeaders adds extra HTTP headers to each request.
+	// Optional. Useful for custom routing, tracing, or experimental gateway features.
+	CustomHeaders map[string]string
 
 	// ReasoningEffort will override the default reasoning level of "medium"
 	// Optional. Useful for fine tuning response latency vs. accuracy
@@ -175,10 +179,10 @@ type Config struct {
 	// Modalities are output types that you would like the model to generate.
 	// Allowed values: ["text", "audio"]
 	// Default: ["text"]
-	Modalities []Modality `json:"modalities,omitempty"`
+	Modalities []Modality
 
 	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
-	Audio *Audio `json:"audio,omitempty"`
+	Audio *Audio
 }
 
 // Audio specifies the audio output settings
@@ -513,6 +517,10 @@ partsLoop:
 				Type: openai.ChatMessagePartTypeText,
 				Text: part.Text,
 			})
+		case schema.ChatMessagePartTypeReasoning:
+			if part.Reasoning != nil {
+				comMessage.ReasoningContent = part.Reasoning.Text
+			}
 		case schema.ChatMessagePartTypeAudioURL:
 			audioID, ok := getMessageOutputAudioID(part.Audio)
 			if !ok {
@@ -569,6 +577,7 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
 		ExtraFields:                  c.config.ExtraFields,
+		ExtraHeader:                  c.config.CustomHeaders,
 		ReasoningEffort:              c.config.ReasoningEffort,
 		MaxCompletionTokens:          c.config.MaxCompletionTokens,
 		RequestBodyModifier:          nil,
@@ -753,9 +762,33 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
 
+	outMsg, err = buildGenerateResponse(resp, c.config)
+	if err != nil {
+		return nil, err
+	}
+
+	if specOptions.ResponseMessageModifier != nil {
+		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to modify response message: %w", err)
+		}
+	}
+
+	callbacks.OnEnd(ctx, &model.CallbackOutput{
+		Message:    outMsg,
+		Config:     cbInput.Config,
+		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
+	})
+
+	return outMsg, nil
+}
+
+func buildGenerateResponse(resp openai.ChatCompletionResponse, config *Config) (*schema.Message, error) {
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("received empty choices from OpenAI API response")
 	}
+
+	var outMsg *schema.Message
 
 	for _, choice := range resp.Choices {
 		if choice.Index != 0 {
@@ -783,9 +816,12 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 		}
 
 		if msg.Audio != nil && (msg.Audio.Data != "" || msg.Audio.Transcript != "") {
-			mimeType, ok := audioFormat2MimeTypes[c.config.Audio.Format]
+			if config.Audio == nil {
+				return nil, fmt.Errorf("audio config must be set when audio data is present")
+			}
+			mimeType, ok := audioFormat2MimeTypes[config.Audio.Format]
 			if !ok {
-				return nil, fmt.Errorf("audio mime type not found for config audio format %v", c.config.Audio.Format)
+				return nil, fmt.Errorf("audio mime type not found for config audio format %v", config.Audio.Format)
 			}
 
 			messageOutputPart := schema.MessageOutputPart{
@@ -815,19 +851,6 @@ func (c *Client) Generate(ctx context.Context, in []*schema.Message, opts ...mod
 	}
 
 	setRequestID(outMsg, resp.ID)
-
-	if specOptions.ResponseMessageModifier != nil {
-		outMsg, err = specOptions.ResponseMessageModifier(ctx, outMsg, resp.RawBody)
-		if err != nil {
-			return nil, fmt.Errorf("failed to modify response message: %w", err)
-		}
-	}
-
-	callbacks.OnEnd(ctx, &model.CallbackOutput{
-		Message:    outMsg,
-		Config:     cbInput.Config,
-		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
-	})
 
 	return outMsg, nil
 }

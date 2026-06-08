@@ -24,17 +24,26 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"image/png"
 	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/adk/filesystem"
+	"github.com/klippa-app/go-pdfium"
+	"github.com/klippa-app/go-pdfium/references"
+	"github.com/klippa-app/go-pdfium/requests"
+	"github.com/klippa-app/go-pdfium/webassembly"
 	"github.com/slongfield/pyfmt"
 )
 
@@ -52,6 +61,206 @@ const (
 	RegionOfBeijing  Region = "cn-beijing"
 	RegionOfShangHai Region = "cn-shanghai"
 )
+
+const (
+	defaultMaxImageSizeMB        = 10
+	defaultMaxPDFSizeMB          = 20
+	defaultMaxPagedPDFSizeMB     = 100
+	defaultMaxPDFPagesPerRequest = 20
+
+	// defaultPDFRenderDPI: see MultiModalReadConfig.PDFRenderDPI for the
+	// readability vs payload-size trade-off (kept as the single source of truth).
+	defaultPDFRenderDPI = 150
+
+	// maxConfigurableMB caps any user-supplied MB value. Combined with int64 size
+	// arithmetic in readAllBytes, the cap ensures `int64(MB) * 1024 * 1024` never
+	// overflows on any platform.
+	maxConfigurableMB = 2048
+	// maxConfigurablePDFPagesPerRequest hard-caps page count to avoid unbounded
+	// memory pressure when rasterising. Tune via MultiModalReadConfig.
+	maxConfigurablePDFPagesPerRequest = 1000
+	// maxConfigurablePDFRenderDPI bounds DPI to a sane print-grade ceiling.
+	maxConfigurablePDFRenderDPI = 600
+)
+
+const (
+	defaultPDFiumPoolMinIdle = 1
+	defaultPDFiumPoolMaxIdle = 2
+	minPDFiumPoolMaxTotal    = 2
+	// defaultPDFiumAcquireTimeout bounds the wait for a pdfium worker when the
+	// caller's context has no deadline. 30s is generous enough to absorb
+	// worker cold-start (a few hundred ms) plus contention spikes when the
+	// pool is fully saturated, while still failing fast on a stuck pool.
+	defaultPDFiumAcquireTimeout = 30 * time.Second
+)
+
+var (
+	// pdfiumPool is the process-global pdfium worker pool, set once on first
+	// successful init by getPdfiumPool.
+	pdfiumPool pdfium.Pool
+	// pdfiumPoolCfg is the resolved cfg used to init pdfiumPool. Read only for
+	// divergence-WARN reporting; not consulted for behavior.
+	pdfiumPoolCfg PDFiumPoolConfig
+	// pdfiumPoolMu guards init and read of pdfiumPool / pdfiumPoolCfg.
+	pdfiumPoolMu sync.Mutex
+)
+
+// numCPUFn is indirected through a var so tests can simulate constrained hosts
+// (e.g. 1-vCPU containers) without depending on the runner's actual NumCPU.
+// Production code MUST NOT mutate this variable; reserved for tests.
+var numCPUFn = runtime.NumCPU
+
+// PDFiumPoolConfig configures the process-global go-pdfium worker pool used by
+// MultiModalRead for paged PDF rendering. Zero/negative fields fall back to
+// package defaults; the pool is initialized lazily on first paged PDF read.
+//
+// Note: agentkit and local backends each maintain a separate process-global
+// pool because they live in independent go modules and cannot share an
+// internal package. Apps that import both backends will run two pdfium WASM
+// runtimes concurrently.
+type PDFiumPoolConfig struct {
+	// MinIdle is the minimum number of workers kept warm. Default 1.
+	MinIdle int
+	// MaxIdle is the maximum number of workers kept idle. Default 2.
+	MaxIdle int
+	// MaxTotal is the hard cap on concurrent workers. When zero/negative,
+	// defaults to max(runtime.NumCPU(), minPDFiumPoolMaxTotal) so that the
+	// default MaxIdle (=2) is satisfiable on 1-vCPU hosts.
+	MaxTotal int
+}
+
+func resolvePDFiumPoolConfig(cfg PDFiumPoolConfig) PDFiumPoolConfig {
+	if cfg.MinIdle <= 0 {
+		cfg.MinIdle = defaultPDFiumPoolMinIdle
+	}
+	if cfg.MaxIdle <= 0 {
+		cfg.MaxIdle = defaultPDFiumPoolMaxIdle
+	}
+	if cfg.MaxTotal <= 0 {
+		cfg.MaxTotal = numCPUFn()
+		if cfg.MaxTotal < minPDFiumPoolMaxTotal {
+			cfg.MaxTotal = minPDFiumPoolMaxTotal
+		}
+	}
+	if cfg.MaxIdle > cfg.MaxTotal {
+		cfg.MaxIdle = cfg.MaxTotal
+	}
+	if cfg.MinIdle > cfg.MaxIdle {
+		cfg.MinIdle = cfg.MaxIdle
+	}
+	return cfg
+}
+
+func samePoolSizing(a, b PDFiumPoolConfig) bool {
+	return a.MinIdle == b.MinIdle && a.MaxIdle == b.MaxIdle && a.MaxTotal == b.MaxTotal
+}
+
+// getPdfiumPool returns the process-global pdfium pool, initializing it on
+// first call. Subsequent calls with diverging sizing emit a WARN log and reuse
+// the existing pool — the pool is process-global and cannot be reconfigured at
+// runtime.
+func getPdfiumPool(cfg PDFiumPoolConfig) (pdfium.Pool, error) {
+	cfg = resolvePDFiumPoolConfig(cfg)
+	pdfiumPoolMu.Lock()
+	defer pdfiumPoolMu.Unlock()
+	if pdfiumPool != nil {
+		if !samePoolSizing(cfg, pdfiumPoolCfg) {
+			log.Printf("[WARN] agentkit: PDFiumPool already initialized with min=%d max_idle=%d max_total=%d; "+
+				"reusing existing pool (pool is process-global and cannot be reconfigured at runtime; "+
+				"later caller's PDFiumPoolConfig min=%d max_idle=%d max_total=%d is ignored)",
+				pdfiumPoolCfg.MinIdle, pdfiumPoolCfg.MaxIdle, pdfiumPoolCfg.MaxTotal,
+				cfg.MinIdle, cfg.MaxIdle, cfg.MaxTotal)
+		}
+		return pdfiumPool, nil
+	}
+	pool, err := webassembly.Init(webassembly.Config{
+		MinIdle:  cfg.MinIdle,
+		MaxIdle:  cfg.MaxIdle,
+		MaxTotal: cfg.MaxTotal,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to init pdfium pool: %w", err)
+	}
+	pdfiumPool = pool
+	pdfiumPoolCfg = cfg
+	log.Printf("[INFO] agentkit: PDFium pool initialized min=%d max_idle=%d max_total=%d",
+		cfg.MinIdle, cfg.MaxIdle, cfg.MaxTotal)
+	return pdfiumPool, nil
+}
+
+// MultiModalReadConfig configures runtime limits for SandboxTool.MultiModalRead.
+// Any field left at its zero (or negative) value falls back to the package default.
+// Values exceeding the package hard-caps are silently clamped to those caps to
+// keep size/page math safe (see maxConfigurable* constants).
+type MultiModalReadConfig struct {
+	// MaxImageSizeMB caps the size of a single image read. Default 10. Hard-cap 2048.
+	MaxImageSizeMB int
+	// MaxPDFSizeMB caps the size of a full PDF read (no 'pages' param). Default 20. Hard-cap 2048.
+	MaxPDFSizeMB int
+	// MaxPagedPDFSizeMB caps the size of a paged PDF read (with 'pages' param). Default 100. Hard-cap 2048.
+	MaxPagedPDFSizeMB int
+	// MaxPDFPagesPerRequest caps the number of pages rendered per paged read. Default 20. Hard-cap 1000.
+	MaxPDFPagesPerRequest int
+	// PDFRenderDPI is dots-per-inch used when rasterizing each PDF page to PNG.
+	// Higher DPI yields sharper images at the cost of larger payloads:
+	// typical screens are 72-96 DPI, 150 DPI ≈ 2x sharpness with manageable size,
+	// 300 DPI is print-grade but produces ~4x larger images.
+	// Default 150. Hard-cap 600.
+	PDFRenderDPI int
+	// PDFiumPool overrides the process-global go-pdfium worker pool sizing
+	// used for paged PDF rendering. The pool is initialized on first paged
+	// read; later constructors with diverging sizing emit a WARN log and
+	// reuse the existing pool. Optional.
+	PDFiumPool PDFiumPoolConfig
+	// PDFiumAcquireTimeout limits how long MultiModalRead waits to acquire a
+	// pdfium worker from the pool when the caller's context has no deadline.
+	// Has no effect when the caller's context already has a deadline.
+	// Per-read setting (applied at acquire time, not at pool init), so
+	// different MultiModalRead callers in the same process can use
+	// different timeouts. Default 30s.
+	PDFiumAcquireTimeout time.Duration
+}
+
+// resolveMultiModalReadConfig fills any zero/negative field of cfg with the
+// corresponding package default, then clamps each field to its hard-cap. The
+// returned config has every field guaranteed > 0 and ≤ the hard-cap.
+func resolveMultiModalReadConfig(cfg MultiModalReadConfig) MultiModalReadConfig {
+	cfg.MaxImageSizeMB = clampInt(cfg.MaxImageSizeMB, defaultMaxImageSizeMB, maxConfigurableMB)
+	cfg.MaxPDFSizeMB = clampInt(cfg.MaxPDFSizeMB, defaultMaxPDFSizeMB, maxConfigurableMB)
+	cfg.MaxPagedPDFSizeMB = clampInt(cfg.MaxPagedPDFSizeMB, defaultMaxPagedPDFSizeMB, maxConfigurableMB)
+	cfg.MaxPDFPagesPerRequest = clampInt(cfg.MaxPDFPagesPerRequest, defaultMaxPDFPagesPerRequest, maxConfigurablePDFPagesPerRequest)
+	cfg.PDFRenderDPI = clampInt(cfg.PDFRenderDPI, defaultPDFRenderDPI, maxConfigurablePDFRenderDPI)
+	cfg.PDFiumPool = resolvePDFiumPoolConfig(cfg.PDFiumPool)
+	if cfg.PDFiumAcquireTimeout <= 0 {
+		cfg.PDFiumAcquireTimeout = defaultPDFiumAcquireTimeout
+	}
+	return cfg
+}
+
+// clampInt returns def when v <= 0, max when v > max, otherwise v.
+func clampInt(v, def, max int) int {
+	if v <= 0 {
+		return def
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// errReadAllBytesTooLarge signals that readAllBytes rejected a file because its
+// size exceeded the caller-supplied maxBytes. Use errors.Is to detect it and
+// wrap with additional context (e.g. suggesting the 'pages' parameter for PDFs).
+var errReadAllBytesTooLarge = errors.New("file exceeds max allowed size")
+
+// tooLargeMarker is the unique sentinel prefix the Python side prints to stdout
+// when it rejects a file by size. Go-side matches on this prefix instead of the
+// exit code because exit-code numbers are not reserved and collide with
+// unrelated Python/system errors.
+//
+// Safety: the success path writes base64 ([A-Za-z0-9+/=]) only, which cannot
+// start with "__", so the marker cannot collide with a valid payload.
+const tooLargeMarker = "__READALLBYTES_TOO_LARGE__"
 
 // Config holds the configuration for the Ark Sandbox.
 type Config struct {
@@ -102,6 +311,11 @@ type Config struct {
 	// Unit: seconds.
 	// For more details, see: https://www.volcengine.com/docs/86681/2155980
 	ExecutionTimeout int
+
+	// MultiModalRead overrides default size/page/DPI limits used by
+	// SandboxTool.MultiModalRead. Optional; zero-value fields fall back to
+	// package defaults (see MultiModalReadConfig field comments).
+	MultiModalRead MultiModalReadConfig
 }
 
 type SandboxTool struct {
@@ -115,6 +329,10 @@ type SandboxTool struct {
 	sessionID        string
 	sessionTTL       int
 	executionTimeout int
+
+	// multiModalReadCfg carries already-resolved (defaults applied, hard-caps
+	// enforced) limits used by MultiModalRead. Every field is guaranteed > 0.
+	multiModalReadCfg MultiModalReadConfig
 }
 
 // NewSandboxToolBackend creates a new SandboxTool instance.
@@ -160,16 +378,17 @@ func NewSandboxToolBackend(config *Config) (*SandboxTool, error) {
 	}
 
 	return &SandboxTool{
-		accessKeyID:      config.AccessKeyID,
-		secretAccessKey:  config.SecretAccessKey,
-		httpClient:       httpClient,
-		region:           region,
-		baseURL:          baseURL,
-		toolID:           config.ToolID,
-		sessionID:        config.SessionID,
-		userSessionID:    config.UserSessionID,
-		sessionTTL:       config.SessionTTL,
-		executionTimeout: config.ExecutionTimeout,
+		accessKeyID:       config.AccessKeyID,
+		secretAccessKey:   config.SecretAccessKey,
+		httpClient:        httpClient,
+		region:            region,
+		baseURL:           baseURL,
+		toolID:            config.ToolID,
+		sessionID:         config.SessionID,
+		userSessionID:     config.UserSessionID,
+		sessionTTL:        config.SessionTTL,
+		executionTimeout:  config.ExecutionTimeout,
+		multiModalReadCfg: resolveMultiModalReadConfig(config.MultiModalRead),
 	}, nil
 }
 
@@ -178,7 +397,7 @@ func (s *SandboxTool) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest)
 	path := filepath.Clean(req.Path)
 
 	params := map[string]any{
-		"path": path,
+		"path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
 	}
 
 	script, err := pyfmt.Fmt(lsInfoPythonCodeTemplate, params)
@@ -224,9 +443,9 @@ func (s *SandboxTool) Read(ctx context.Context, req *filesystem.ReadRequest) (*f
 	}
 
 	params := map[string]any{
-		"file_path": path,
-		"offset":    req.Offset,
-		"limit":     req.Limit,
+		"file_path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
+		"offset":        req.Offset,
+		"limit":         req.Limit,
 	}
 
 	script, err := pyfmt.Fmt(readPythonCodeTemplate, params)
@@ -254,12 +473,12 @@ func (s *SandboxTool) GrepRaw(ctx context.Context, req *filesystem.GrepRequest) 
 	}
 	path := filepath.Clean(req.Path)
 	params := map[string]any{
-		"fileType":    req.FileType,
-		"glob":        req.Glob,
-		"afterLines":  req.AfterLines,
-		"beforeLines": req.BeforeLines,
-		"pattern":     req.Pattern,
-		"path":        path,
+		"fileType_b64": base64.StdEncoding.EncodeToString([]byte(req.FileType)),
+		"glob_b64":     base64.StdEncoding.EncodeToString([]byte(req.Glob)),
+		"afterLines":   req.AfterLines,
+		"beforeLines":  req.BeforeLines,
+		"pattern_b64":  base64.StdEncoding.EncodeToString([]byte(req.Pattern)),
+		"path_b64":     base64.StdEncoding.EncodeToString([]byte(path)),
 	}
 	if req.CaseInsensitive {
 		params["caseInsensitive"] = 1
@@ -336,8 +555,8 @@ func (s *SandboxTool) Write(ctx context.Context, req *filesystem.WriteRequest) e
 	path := filepath.Clean(req.FilePath)
 
 	params := map[string]any{
-		"file_path":   path,
-		"content_b64": base64.StdEncoding.EncodeToString([]byte(req.Content)),
+		"file_path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
+		"content_b64":   base64.StdEncoding.EncodeToString([]byte(req.Content)),
 	}
 
 	script, err := pyfmt.Fmt(writePythonCodeTemplate, params)
@@ -373,10 +592,10 @@ func (s *SandboxTool) Edit(ctx context.Context, req *filesystem.EditRequest) err
 		replaceAll = 0
 	}
 	params := map[string]any{
-		"file_path":   path,
-		"old_b64":     base64.StdEncoding.EncodeToString([]byte(req.OldString)),
-		"new_b64":     base64.StdEncoding.EncodeToString([]byte(req.NewString)),
-		"replace_all": replaceAll,
+		"file_path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
+		"old_b64":       base64.StdEncoding.EncodeToString([]byte(req.OldString)),
+		"new_b64":       base64.StdEncoding.EncodeToString([]byte(req.NewString)),
+		"replace_all":   replaceAll,
 	}
 
 	script, err := pyfmt.Fmt(editPythonCodeTemplate, params)
@@ -394,6 +613,386 @@ func (s *SandboxTool) Edit(ctx context.Context, req *filesystem.EditRequest) err
 	}
 
 	return nil
+}
+
+// MultiModalRead reads file content with multimodal support for images and PDFs.
+// For non-image/non-PDF files, it delegates to the standard Read method.
+//
+// Limits and DPI are configurable via Config.MultiModalRead and enforced both
+// in the Python sandbox and on the Go side. Defaults:
+//   - image: 10 MB
+//   - PDF full read (no 'pages' param): 20 MB
+//   - PDF paged read (with 'pages' param): 100 MB, max 20 pages per request
+//   - PDF render DPI: 150
+//
+// For paged PDF reads, if the requested end page exceeds the actual total pages,
+// it is silently clamped to the last page. For example, requesting pages "1-100"
+// on a 5-page PDF returns pages 1 through 5.
+//
+// PDF rendering uses github.com/klippa-app/go-pdfium with a WebAssembly backend
+// (no CGO required). The worker pool is initialized lazily on first paged read.
+func (s *SandboxTool) MultiModalRead(ctx context.Context, req *filesystem.MultiModalReadRequest) (*filesystem.MultiFileContent, error) {
+	path := filepath.Clean(req.FilePath)
+	ext := strings.ToLower(filepath.Ext(path))
+
+	// If the file is not an image or PDF, delegate to the standard Read method.
+	if !isImageExt(ext) && !isPDFExt(ext) {
+		content, err := s.Read(ctx, &req.ReadRequest)
+		if err != nil {
+			return nil, err
+		}
+		return &filesystem.MultiFileContent{
+			FileContent: content,
+		}, nil
+	}
+	// Image branch.
+	if isImageExt(ext) {
+		maxImageSizeMB := s.multiModalReadCfg.MaxImageSizeMB
+		data, err := s.readAllBytes(ctx, path, int64(maxImageSizeMB)*1024*1024)
+		if err != nil {
+			if errors.Is(err, errReadAllBytesTooLarge) {
+				return nil, fmt.Errorf("%w; image size limit is %dMB, please compress or downsample the image before reading", err, maxImageSizeMB)
+			}
+			return nil, fmt.Errorf("failed to read file bytes: %w", err)
+		}
+		mime := detectImageMIME(data)
+		if mime == "" {
+			return nil, fmt.Errorf("file %s has image extension but content is not a recognized image format", path)
+		}
+		return &filesystem.MultiFileContent{
+			Parts: []filesystem.FileContentPart{newImageContentPart(mime, data)},
+		}, nil
+	}
+
+	// PDF branch — fail fast on offline validations before reading bytes or opening the doc.
+	paged := req.Pages != ""
+	var pagedStart, pagedEnd int
+	if paged {
+		var err error
+		pagedStart, pagedEnd, err = parsePagesParam(req.Pages, s.multiModalReadCfg.MaxPDFPagesPerRequest)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	maxPDFSizeMB := s.multiModalReadCfg.MaxPDFSizeMB
+	maxPagedPDFSizeMB := s.multiModalReadCfg.MaxPagedPDFSizeMB
+	sizeLimit := int64(maxPDFSizeMB) * 1024 * 1024
+	if paged {
+		sizeLimit = int64(maxPagedPDFSizeMB) * 1024 * 1024
+	}
+	data, err := s.readAllBytes(ctx, path, sizeLimit)
+	if err != nil {
+		if errors.Is(err, errReadAllBytesTooLarge) {
+			if paged {
+				return nil, fmt.Errorf("%w; paged PDF size limit is %dMB, the file is too large even for paged reading", err, maxPagedPDFSizeMB)
+			}
+			return nil, fmt.Errorf("%w; PDF full-read size limit is %dMB, use the 'pages' parameter to read page ranges (limit raised to %dMB)", err, maxPDFSizeMB, maxPagedPDFSizeMB)
+		}
+		return nil, fmt.Errorf("failed to read file bytes: %w", err)
+	}
+
+	if !isPDFBytes(data) {
+		return nil, fmt.Errorf("file %s has .pdf extension but content is not a valid PDF", path)
+	}
+
+	if !paged {
+		return &filesystem.MultiFileContent{
+			Parts: []filesystem.FileContentPart{
+				{
+					Type:     filesystem.FileContentPartTypePDF,
+					MIMEType: "application/pdf",
+					Data:     data,
+				},
+			},
+		}, nil
+	}
+
+	pool, err := getPdfiumPool(s.multiModalReadCfg.PDFiumPool)
+	if err != nil {
+		return nil, err
+	}
+	instanceCtx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		instanceCtx, cancel = context.WithTimeout(ctx, s.multiModalReadCfg.PDFiumAcquireTimeout)
+		defer cancel()
+	}
+	instance, err := pool.GetInstanceWithContext(instanceCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pdfium instance for %s: %w", path, err)
+	}
+	defer func() {
+		if cerr := instance.Close(); cerr != nil {
+			log.Printf("[WARN] agentkit: pdfium instance close failed for %s: %v", path, cerr)
+		}
+	}()
+
+	doc, err := instance.OpenDocument(&requests.OpenDocument{File: &data})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open PDF %s: %w", path, err)
+	}
+	defer func() {
+		if _, cerr := instance.FPDF_CloseDocument(&requests.FPDF_CloseDocument{Document: doc.Document}); cerr != nil {
+			log.Printf("[WARN] agentkit: pdfium FPDF_CloseDocument failed for %s: %v", path, cerr)
+		}
+	}()
+
+	pageCountResp, err := instance.FPDF_GetPageCount(&requests.FPDF_GetPageCount{Document: doc.Document})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get page count for %s: %w", path, err)
+	}
+	totalPages := pageCountResp.PageCount
+	if totalPages == 0 {
+		return nil, fmt.Errorf("file %s has 0 pages, cannot read", path)
+	}
+	if pagedStart > totalPages {
+		return nil, fmt.Errorf("invalid pages parameter: %q (start page %d exceeds total pages %d in file %s)", req.Pages, pagedStart, totalPages, path)
+	}
+	if pagedEnd > totalPages {
+		pagedEnd = totalPages
+	}
+	parts, err := renderPDFPagesToImages(ctx, instance, doc.Document, pagedStart, pagedEnd, path, s.multiModalReadCfg.PDFRenderDPI)
+	if err != nil {
+		return nil, err
+	}
+	return &filesystem.MultiFileContent{Parts: parts}, nil
+}
+
+// parsePagesParam parses and validates the pages parameter format.
+// It only enforces syntax rules and the per-request page-count ceiling
+// (maxPages); it does NOT know about the actual PDF page count, so callers
+// must clamp against totalPages after opening the document.
+//
+// Supported formats:
+//   - "1"   → single page
+//   - "1-3" → inclusive range
+//
+// Open-ended ranges like "1-" and multi-range strings like "1-2-3" are
+// rejected. Returned start, end are 1-based inclusive.
+//
+// All errors are uniformly prefixed with `invalid pages parameter: %q (...)`
+// so callers can surface a single, recognizable error pattern.
+//
+// Defensive: a non-positive maxPages is silently replaced with the package
+// default, so misuse from internal callers cannot produce a "limit 0" false
+// positive that rejects every valid range.
+func parsePagesParam(pages string, maxPages int) (start, end int, err error) {
+	if maxPages <= 0 {
+		maxPages = defaultMaxPDFPagesPerRequest
+	}
+	startStr, endStr, hasRange, err := splitPagesRange(pages)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	start, err = strconv.Atoi(startStr)
+	if err != nil || start < 1 {
+		return 0, 0, fmt.Errorf("invalid pages parameter: %q (start page must be a positive integer)", pages)
+	}
+
+	if !hasRange {
+		return start, start, nil
+	}
+
+	end, err = strconv.Atoi(endStr)
+	if err != nil || end < 1 {
+		return 0, 0, fmt.Errorf("invalid pages parameter: %q (end page must be a positive integer)", pages)
+	}
+
+	if err := validatePagesRange(start, end, maxPages, pages); err != nil {
+		return 0, 0, err
+	}
+	return start, end, nil
+}
+
+// splitPagesRange splits the raw pages string by '-' and handles whitespace,
+// empty input, multi-range input, and the open-ended case. It does not parse
+// numbers. The original (pre-trim) input is included verbatim in error
+// messages so users see exactly what they typed.
+func splitPagesRange(pages string) (startStr, endStr string, hasRange bool, err error) {
+	trimmed := strings.TrimSpace(pages)
+	if trimmed == "" {
+		return "", "", false, fmt.Errorf("invalid pages parameter: %q (empty)", pages)
+	}
+	if strings.Count(trimmed, "-") > 1 {
+		return "", "", false, fmt.Errorf("invalid pages parameter: %q (only a single range is supported, e.g. \"1-5\")", pages)
+	}
+	parts := strings.SplitN(trimmed, "-", 2)
+	startStr = strings.TrimSpace(parts[0])
+	if len(parts) == 1 {
+		return startStr, "", false, nil
+	}
+	endStr = strings.TrimSpace(parts[1])
+	if endStr == "" {
+		return "", "", false, fmt.Errorf("invalid pages parameter: %q (open-ended range is not supported, end page is required)", pages)
+	}
+	return startStr, endStr, true, nil
+}
+
+// validatePagesRange enforces the business rules for a parsed [start, end]
+// range: end must not precede start, and the inclusive length must fit within
+// maxPages. totalPages-based clamping is a caller concern.
+func validatePagesRange(start, end, maxPages int, pages string) error {
+	if end < start {
+		return fmt.Errorf("invalid pages parameter: %q (end page %d < start page %d)", pages, end, start)
+	}
+	if end-start+1 > maxPages {
+		return fmt.Errorf("invalid pages parameter: %q (range spans %d pages, exceeds limit %d)", pages, end-start+1, maxPages)
+	}
+	return nil
+}
+
+// renderPDFPagesToImages converts the specified page range [start, end] (1-based)
+// to PNG images at the given DPI using a pdfium worker instance and returns them
+// as FileContentParts. A non-positive dpi is silently replaced with the default
+// to defend against misuse from future internal callers. The loop checks ctx
+// between pages so callers can cancel long-running renders; cancellation
+// granularity is per-page (a single in-progress render cannot be interrupted).
+func renderPDFPagesToImages(ctx context.Context, instance pdfium.Pdfium, docRef references.FPDF_DOCUMENT, start, end int, path string, dpi int) ([]filesystem.FileContentPart, error) {
+	if dpi <= 0 {
+		dpi = defaultPDFRenderDPI
+	}
+	count := end - start + 1
+	parts := make([]filesystem.FileContentPart, 0, count)
+	var buf bytes.Buffer
+	for i := start - 1; i < end; i++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+		pageRender, err := instance.RenderPageInDPI(&requests.RenderPageInDPI{
+			DPI: dpi,
+			Page: requests.Page{
+				ByIndex: &requests.PageByIndex{
+					Document: docRef,
+					Index:    i,
+				},
+			},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert page %d to image for %s: %w", i+1, path, err)
+		}
+		buf.Reset()
+		if err := png.Encode(&buf, pageRender.Result.Image); err != nil {
+			return nil, fmt.Errorf("failed to encode page %d to PNG for %s: %w", i+1, path, err)
+		}
+		parts = append(parts, newImageContentPart("image/png", bytes.Clone(buf.Bytes())))
+	}
+	return parts, nil
+}
+
+// newImageContentPart builds a FileContentPart with image type and the given
+// MIME type and payload.
+func newImageContentPart(mime string, data []byte) filesystem.FileContentPart {
+	return filesystem.FileContentPart{
+		Type:     filesystem.FileContentPartTypeImage,
+		MIMEType: mime,
+		Data:     data,
+	}
+}
+
+// readAllBytes reads all bytes of the file at the given path from the sandbox.
+//
+// Size enforcement has two layers:
+//   - Primary check (Python side): before reading, the script compares the
+//     file size against maxBytes. If exceeded, it emits the tooLargeMarker
+//     prefix and exits non-zero, so oversize payloads never traverse the
+//     sandbox API response in the normal path.
+//   - Defense-in-depth (Go side): after decoding, the decoded length is
+//     re-checked. This branch is unreachable when the Python script behaves
+//     correctly, and exists only as a safety net against a buggy or tampered
+//     script.
+func (s *SandboxTool) readAllBytes(ctx context.Context, path string, maxBytes int64) ([]byte, error) {
+	params := map[string]any{
+		"file_path_b64": base64.StdEncoding.EncodeToString([]byte(path)),
+		"max_bytes":     maxBytes,
+	}
+
+	script, err := pyfmt.Fmt(readAllBytesPythonCodeTemplate, params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render readAllBytes template: %w", err)
+	}
+
+	content, exitCode, err := s.execute(ctx, script)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute readAllBytes script: %w", err)
+	}
+	if exitCode != nil && *exitCode != 0 {
+		if strings.HasPrefix(content, tooLargeMarker) {
+			return nil, fmt.Errorf("%w: file %s (limit %dMB)", errReadAllBytesTooLarge, path, maxBytes/1024/1024)
+		}
+		return nil, fmt.Errorf("readAllBytes script exited with non-zero code %d: %s", *exitCode, content)
+	}
+
+	data, err := base64.StdEncoding.DecodeString(content)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode base64 content: %w", err)
+	}
+
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%w: file %s (%d bytes, limit %dMB)", errReadAllBytesTooLarge, path, len(data), maxBytes/1024/1024)
+	}
+
+	return data, nil
+}
+
+// isImageExt checks if the file extension represents an image.
+func isImageExt(ext string) bool {
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif":
+		return true
+	}
+	return false
+}
+
+// isPDFExt checks if the file extension represents a PDF.
+func isPDFExt(ext string) bool {
+	return ext == ".pdf"
+}
+
+// detectImageMIME detects the MIME type from image file bytes using magic number headers.
+// Returns the MIME type string or empty string if not a recognized image.
+// Each branch guards its own minimum length so new formats added later don't
+// have to rely on a shared top-level length check.
+func detectImageMIME(data []byte) string {
+	// PNG: 89 50 4E 47 0D 0A 1A 0A
+	if len(data) >= 8 && bytes.Equal(data[:8], []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}) {
+		return "image/png"
+	}
+
+	// JPEG: FF D8 FF
+	if len(data) >= 3 && bytes.Equal(data[:3], []byte{0xFF, 0xD8, 0xFF}) {
+		return "image/jpeg"
+	}
+
+	// GIF: GIF87a or GIF89a
+	if len(data) >= 6 && (bytes.Equal(data[:6], []byte("GIF87a")) || bytes.Equal(data[:6], []byte("GIF89a"))) {
+		return "image/gif"
+	}
+
+	// BMP: BM
+	if len(data) >= 2 && bytes.Equal(data[:2], []byte("BM")) {
+		return "image/bmp"
+	}
+
+	// WebP: RIFF....WEBP
+	if len(data) >= 12 && bytes.Equal(data[:4], []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")) {
+		return "image/webp"
+	}
+
+	// TIFF: 49 49 2A 00 (little-endian) or 4D 4D 00 2A (big-endian)
+	if len(data) >= 4 && (bytes.Equal(data[:4], []byte{0x49, 0x49, 0x2A, 0x00}) || bytes.Equal(data[:4], []byte{0x4D, 0x4D, 0x00, 0x2A})) {
+		return "image/tiff"
+	}
+
+	return ""
+}
+
+// isPDFBytes checks if the data starts with the PDF magic number (%PDF-).
+func isPDFBytes(data []byte) bool {
+	return len(data) >= 5 && bytes.Equal(data[:5], []byte("%PDF-"))
 }
 
 // execute executes a command in the sandbox.
