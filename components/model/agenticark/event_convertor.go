@@ -946,8 +946,8 @@ func (r *streamReceiver) doubaoAppOutputTextDeltaToContentBlock(ev *responses.Re
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeOutputText,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeOutputText,
 			OutputText: &DoubaoAppOutputText{
 				Text: ev.GetDelta(),
 			},
@@ -985,8 +985,8 @@ func (r *streamReceiver) doubaoAppReasoningTextDeltaToContentBlock(ev *responses
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeReasoningText,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeReasoningText,
 			ReasoningText: &DoubaoAppReasoningText{
 				ReasoningText: ev.GetDelta(),
 			},
@@ -1010,8 +1010,8 @@ func (r *streamReceiver) doubaoAppSearchSearchingToContentBlock(ev *responses.Re
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeSearch,
 			Search: &DoubaoAppSearch{
 				SearchingState: ev.GetSearchingState(),
 			},
@@ -1046,8 +1046,8 @@ func (r *streamReceiver) doubaoAppSearchCompletedToContentBlock(ev *responses.Re
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeSearch,
 			Search: &DoubaoAppSearch{
 				Summary: ev.GetSummary(),
 				Queries: ev.Queries,
@@ -1073,8 +1073,8 @@ func (r *streamReceiver) doubaoAppReasoningSearchSearchingToContentBlock(ev *res
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeReasoningSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeReasoningSearch,
 			ReasoningSearch: &DoubaoAppReasoningSearch{
 				SearchingState: ev.GetSearchingState(),
 			},
@@ -1109,8 +1109,8 @@ func (r *streamReceiver) doubaoAppReasoningSearchCompletedToContentBlock(ev *res
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeReasoningSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeReasoningSearch,
 			ReasoningSearch: &DoubaoAppReasoningSearch{
 				Summary: ev.GetSummary(),
 				Queries: ev.Queries,

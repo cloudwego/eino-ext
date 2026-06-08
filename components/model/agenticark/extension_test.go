@@ -387,36 +387,36 @@ func TestConcatDoubaoAppResults(t *testing.T) {
 	chunk1 := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{
 			{
-				StreamingMeta: &DoubaoAppStreamingMeta{Index: 0},
-				Type:          DoubaoAppBlockTypeOutputText,
-				OutputText:    &DoubaoAppOutputText{ID: "text1", Text: "hello "},
+				Index:      ptrOf(0),
+				Type:       DoubaoAppBlockTypeOutputText,
+				OutputText: &DoubaoAppOutputText{ID: "text1", Text: "hello "},
 			},
 		},
 	}
 	chunk2 := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{
 			{
-				StreamingMeta: &DoubaoAppStreamingMeta{Index: 0},
-				Type:          DoubaoAppBlockTypeOutputText,
-				OutputText:    &DoubaoAppOutputText{Text: "world"},
+				Index:      ptrOf(0),
+				Type:       DoubaoAppBlockTypeOutputText,
+				OutputText: &DoubaoAppOutputText{Text: "world"},
 			},
 		},
 	}
 	chunk3 := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{
 			{
-				StreamingMeta: &DoubaoAppStreamingMeta{Index: 1},
-				Type:          DoubaoAppBlockTypeSearch,
-				Search:        &DoubaoAppSearch{ID: "s1", SearchingState: "searching"},
+				Index:  ptrOf(1),
+				Type:   DoubaoAppBlockTypeSearch,
+				Search: &DoubaoAppSearch{ID: "s1", SearchingState: "searching"},
 			},
 		},
 	}
 	chunk4 := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{
 			{
-				StreamingMeta: &DoubaoAppStreamingMeta{Index: 1},
-				Type:          DoubaoAppBlockTypeSearch,
-				Search:        &DoubaoAppSearch{Summary: "done", Queries: []string{"q1"}},
+				Index:  ptrOf(1),
+				Type:   DoubaoAppBlockTypeSearch,
+				Search: &DoubaoAppSearch{Summary: "done", Queries: []string{"q1"}},
 			},
 		},
 	}
