@@ -313,15 +313,25 @@ func TestItemDoneEventOutputMessageToContentBlockSuccess(t *testing.T) {
 }
 
 func TestContentPartAddedEventToContentBlockInvalidType(t *testing.T) {
-	mockey.PatchConvey("TestContentPartAddedEventToContentBlockInvalidType", t, func() {
-		r := newStreamReceiver(&model.Options{})
-		ev := responses.ResponseContentPartAddedEvent{}
+	r := newStreamReceiver(&model.Options{})
+	// A zero-value part matches none of the known content part types.
+	ev := responses.ResponseContentPartAddedEvent{}
 
-		mockey.Mock(responses.ResponseOutputMessageContentUnion.AsAny).Return("invalid").Build()
+	// Unknown content part types are ignored rather than failing the stream.
+	block, err := r.contentPartAddedEventToContentBlock(ev)
+	assert.NoError(t, err)
+	assert.Nil(t, block)
+}
 
-		_, err := r.contentPartAddedEventToContentBlock(ev)
-		assert.Error(t, err)
-	})
+func TestContentPartDoneEventToContentBlockInvalidType(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+	// A zero-value part matches none of the known content part types.
+	ev := responses.ResponseContentPartDoneEvent{}
+
+	// Unknown content part types are ignored rather than failing the stream.
+	block, err := r.contentPartDoneEventToContentBlock(ev)
+	assert.NoError(t, err)
+	assert.Nil(t, block)
 }
 
 func TestContentPartDoneEventToContentBlockNoIndex(t *testing.T) {
@@ -333,7 +343,7 @@ func TestContentPartDoneEventToContentBlockNoIndex(t *testing.T) {
 			ContentIndex: 2,
 		}
 
-		mockey.Mock(responses.ResponseOutputMessageContentUnion.AsAny).Return(responses.ResponseOutputText{}).Build()
+		mockey.Mock(responses.ResponseContentPartDoneEventPartUnion.AsAny).Return(responses.ResponseOutputText{}).Build()
 
 		_, err := r.contentPartDoneEventToContentBlock(ev)
 		assert.Error(t, err)
@@ -430,6 +440,28 @@ func TestReasoningSummaryTextDeltaEventToContentBlock(t *testing.T) {
 	id, ok := getItemID(block)
 	assert.True(t, ok)
 	assert.Equal(t, "iid", id)
+}
+
+func TestContentPartDoneEventToContentBlockRefusal(t *testing.T) {
+	mockey.PatchConvey("TestContentPartDoneEventToContentBlockRefusal", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseContentPartDoneEvent{
+			ItemID:       "iid",
+			OutputIndex:  1,
+			ContentIndex: 2,
+		}
+
+		// Register the block as the added event would have.
+		blockIdx := r.getBlockIndex(makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex))
+		r.ProcessingAssistantGenTextBlockIndex["iid"] = map[int]bool{blockIdx: true}
+
+		mockey.Mock(responses.ResponseContentPartDoneEventPartUnion.AsAny).
+			Return(responses.ResponseOutputRefusal{}).Build()
+
+		block, err := r.contentPartDoneEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.NotNil(t, block.AssistantGenText)
+	})
 }
 
 func TestFunctionCallArgumentsDeltaEventToContentBlock(t *testing.T) {
