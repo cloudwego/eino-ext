@@ -1242,7 +1242,7 @@ func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion, cach
 }
 
 func toTokenUsage(u anthropic.Usage) *schema.TokenUsage {
-	promptTokens := int(u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens)
+	promptTokens := int(u.InputTokens + u.CacheCreationInputTokens)
 	completionTokens := int(u.OutputTokens)
 
 	return &schema.TokenUsage{
@@ -1256,7 +1256,7 @@ func toTokenUsage(u anthropic.Usage) *schema.TokenUsage {
 }
 
 func toDeltaTokenUsage(u anthropic.MessageDeltaUsage) *schema.TokenUsage {
-	promptTokens := int(u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens)
+	promptTokens := int(u.InputTokens + u.CacheCreationInputTokens)
 	completionTokens := int(u.OutputTokens)
 
 	return &schema.TokenUsage{

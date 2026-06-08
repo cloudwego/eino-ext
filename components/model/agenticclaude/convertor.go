@@ -1197,7 +1197,7 @@ func toWebFetchDocumentBlockParam(document *WebFetchDocument) (anthropic.Documen
 }
 
 func toDeltaResponseMeta(delta anthropic.MessageDeltaEvent) *schema.AgenticResponseMeta {
-	promptTokens := int(delta.Usage.InputTokens + delta.Usage.CacheReadInputTokens + delta.Usage.CacheCreationInputTokens)
+	promptTokens := int(delta.Usage.InputTokens + delta.Usage.CacheCreationInputTokens)
 	completionTokens := int(delta.Usage.OutputTokens)
 
 	return &schema.AgenticResponseMeta{
@@ -1229,7 +1229,7 @@ func toClaudeStopDetails(details anthropic.RefusalStopDetails) *claude.StopDetai
 }
 
 func toTokenUsage(usage anthropic.Usage) *schema.TokenUsage {
-	promptTokens := int(usage.InputTokens + usage.CacheReadInputTokens + usage.CacheCreationInputTokens)
+	promptTokens := int(usage.InputTokens + usage.CacheCreationInputTokens)
 	completionTokens := int(usage.OutputTokens)
 	return &schema.TokenUsage{
 		PromptTokens: promptTokens,

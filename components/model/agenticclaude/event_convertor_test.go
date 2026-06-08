@@ -110,7 +110,7 @@ func TestToMessageStreamingChunk(t *testing.T) {
 		if chunk == nil || chunk.ResponseMeta == nil || chunk.ResponseMeta.TokenUsage == nil {
 			t.Fatalf("chunk = %#v", chunk)
 		}
-		if chunk.ResponseMeta.TokenUsage.TotalTokens != 9 {
+		if chunk.ResponseMeta.TokenUsage.TotalTokens != 8 {
 			t.Fatalf("token usage = %#v", chunk.ResponseMeta.TokenUsage)
 		}
 	})

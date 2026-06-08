@@ -174,7 +174,7 @@ func TestToDeltaResponseMeta(t *testing.T) {
 	if meta == nil || meta.TokenUsage == nil || meta.ClaudeExtension == nil {
 		t.Fatalf("toDeltaResponseMeta() = %#v", meta)
 	}
-	if meta.TokenUsage.PromptTokens != 15 || meta.TokenUsage.CompletionTokens != 7 || meta.TokenUsage.TotalTokens != 22 {
+	if meta.TokenUsage.PromptTokens != 12 || meta.TokenUsage.CompletionTokens != 7 || meta.TokenUsage.TotalTokens != 19 {
 		t.Fatalf("token usage = %#v", meta.TokenUsage)
 	}
 	if meta.TokenUsage.PromptTokenDetails.CachedTokens != 3 {
