@@ -652,7 +652,37 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 	msgParams := make([]anthropic.MessageParam, 0, len(msgs))
 	hasSetMsgBreakPoint := false
 
-	for _, msg := range msgs {
+	for i := 0; i < len(msgs); {
+		msg := msgs[i]
+
+		// Merge consecutive tool messages into a single UserMessage.
+		// Anthropic API requires all tool_result blocks for a given
+		// assistant turn to be in the same user message.
+		if msg.Role == schema.Tool {
+			// Collect all consecutive tool messages
+			toolMsgs := []*schema.Message{msg}
+			j := i + 1
+			for j < len(msgs) && msgs[j].Role == schema.Tool {
+				toolMsgs = append(toolMsgs, msgs[j])
+				j++
+			}
+
+			// Convert each and merge content blocks into one UserMessage
+			blocks := make([]anthropic.ContentBlockParamUnion, 0, len(toolMsgs))
+			for _, tm := range toolMsgs {
+				mp, err := convSchemaMessage(tm)
+				if err != nil {
+					return fmt.Errorf("convert schema message fail: %w", err)
+				}
+				blocks = append(blocks, mp.Content...)
+			}
+
+			msgParam := anthropic.NewUserMessage(blocks...)
+			msgParams = append(msgParams, msgParam)
+			i = j
+			continue
+		}
+
 		msgParam, err := convSchemaMessage(msg)
 		if err != nil {
 			return fmt.Errorf("convert schema message fail: %w", err)
@@ -665,6 +695,7 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 		}
 
 		msgParams = append(msgParams, msgParam)
+		i++
 	}
 
 	if !hasSetMsgBreakPoint && specOptions.AutoCacheControl != nil {

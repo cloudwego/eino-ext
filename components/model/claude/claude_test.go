@@ -1054,3 +1054,111 @@ func TestToolSearchEventsRoundTrip(t *testing.T) {
 		assert.True(t, hasErrorResult, "should have error result block")
 	})
 }
+
+// TestPopulateInputMergeConsecutiveTools verifies that consecutive
+// Tool messages are merged into a single Anthropic UserMessage.
+// Anthropic API requires all tool_result blocks for the same assistant
+// turn to be in the same user message.
+func TestPopulateInputMergeConsecutiveTools(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+	ctx := context.Background()
+
+	cm, err := NewChatModel(ctx, &Config{
+		APIKey: "test-key",
+		Model:  "claude-3-opus-20240229",
+	})
+	assert.NoError(t, err)
+
+	toolMsg := func(id, name, content string) *schema.Message {
+		return &schema.Message{
+			Role:       schema.Tool,
+			Content:    content,
+			ToolCallID: id,
+			ToolName:   name,
+		}
+	}
+
+	t.Run("single tool message unchanged", func(t *testing.T) {
+		params, err := cm.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "tool1", "result1"),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, params.Messages, 2)
+		// The tool message becomes a UserMessage with one tool_result block
+		assert.Len(t, params.Messages[1].Content, 1)
+		assert.NotNil(t, params.Messages[1].Content[0].OfToolResult)
+	})
+
+	t.Run("two consecutive tool messages merged", func(t *testing.T) {
+		params, err := cm.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "tool1", "result1"),
+			toolMsg("call_2", "tool2", "result2"),
+		})
+		assert.NoError(t, err)
+		// User + merged tool = 2 messages
+		assert.Len(t, params.Messages, 2)
+		// Merged message has 2 content blocks
+		assert.Len(t, params.Messages[1].Content, 2)
+	})
+
+	t.Run("three consecutive tools merged", func(t *testing.T) {
+		params, err := cm.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "t1", "r1"),
+			toolMsg("call_2", "t2", "r2"),
+			toolMsg("call_3", "t3", "r3"),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, params.Messages, 2)
+		assert.Len(t, params.Messages[1].Content, 3)
+	})
+
+	t.Run("tool messages separated by non-tool are not merged", func(t *testing.T) {
+		params, err := cm.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "t1", "r1"),
+			schema.AssistantMessage("ok", nil),
+			toolMsg("call_2", "t2", "r2"),
+		})
+		assert.NoError(t, err)
+		// User + Tool(r1) + Assistant + Tool(r2) = 4 messages
+		assert.Len(t, params.Messages, 4)
+		assert.Len(t, params.Messages[1].Content, 1)
+		assert.Len(t, params.Messages[3].Content, 1)
+	})
+
+	t.Run("no tool messages unchanged", func(t *testing.T) {
+		params, err := cm.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+			schema.AssistantMessage("hi", nil),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, params.Messages, 2)
+	})
+
+	t.Run("real world pattern: user assistant(tool_calls) tool tool", func(t *testing.T) {
+		params, err := cm.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("what's the weather in Paris and London?"),
+			{
+				Role:    schema.Assistant,
+				Content: "",
+				ToolCalls: []schema.ToolCall{
+					{ID: "call_1", Function: schema.FunctionCall{Name: "get_weather", Arguments: `{"city":"Paris"}`}},
+					{ID: "call_2", Function: schema.FunctionCall{Name: "get_weather", Arguments: `{"city":"London"}`}},
+				},
+			},
+			toolMsg("call_1", "get_weather", "Paris: sunny, 22°C"),
+			toolMsg("call_2", "get_weather", "London: cloudy, 15°C"),
+		})
+		assert.NoError(t, err)
+		// User + Assistant + merged_tool = 3 messages
+		assert.Len(t, params.Messages, 3)
+		// Assistant has tool_use blocks
+		assert.Equal(t, anthropic.MessageParamRoleAssistant, params.Messages[1].Role)
+		// Merged tool message has 2 tool_result blocks
+		assert.Equal(t, anthropic.MessageParamRoleUser, params.Messages[2].Role)
+		assert.Len(t, params.Messages[2].Content, 2)
+	})
+}
