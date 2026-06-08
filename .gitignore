@@ -42,6 +42,9 @@ output/*
 .claude/
 .claude-trace
 
+# Kiro files
+.kiro/
+
 # Data files
 *.jsonl
 *.csv
