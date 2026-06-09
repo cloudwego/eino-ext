@@ -37,11 +37,11 @@ func TestNewChatModel(t *testing.T) {
 	})
 
 	t.Run("default base url", func(t *testing.T) {
-		var captured *modelopenai.ChatModelConfig
+		var capturedBaseURL string
 
 		patch := mockey.Mock(modelopenai.NewChatModel).
 			To(func(_ context.Context, config *modelopenai.ChatModelConfig) (*modelopenai.ChatModel, error) {
-				captured = config
+				capturedBaseURL = config.BaseURL
 				return &modelopenai.ChatModel{}, nil
 			}).Build()
 		defer patch.UnPatch()
@@ -52,15 +52,15 @@ func TestNewChatModel(t *testing.T) {
 		})
 		assert.NoError(t, err)
 		assert.NotNil(t, chatModel)
-		assert.Equal(t, DefaultBaseURL, captured.BaseURL)
+		assert.Equal(t, DefaultBaseURL, capturedBaseURL)
 	})
 
 	t.Run("custom base url preserved", func(t *testing.T) {
-		var captured *modelopenai.ChatModelConfig
+		var capturedBaseURL string
 
 		patch := mockey.Mock(modelopenai.NewChatModel).
 			To(func(_ context.Context, config *modelopenai.ChatModelConfig) (*modelopenai.ChatModel, error) {
-				captured = config
+				capturedBaseURL = config.BaseURL
 				return &modelopenai.ChatModel{}, nil
 			}).Build()
 		defer patch.UnPatch()
@@ -72,7 +72,7 @@ func TestNewChatModel(t *testing.T) {
 		})
 		assert.NoError(t, err)
 		assert.NotNil(t, chatModel)
-		assert.Equal(t, "https://custom.example/v1", captured.BaseURL)
+		assert.Equal(t, "https://custom.example/v1", capturedBaseURL)
 	})
 }
 
@@ -80,7 +80,7 @@ func TestChatModelDelegates(t *testing.T) {
 	t.Run("generate and stream", func(t *testing.T) {
 		patchGenerate := mockey.Mock((*modelopenai.ChatModel).Generate).
 			To(func(_ *modelopenai.ChatModel, _ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
-				return schema.AssistantMessage("ok"), nil
+				return schema.AssistantMessage("ok", nil), nil
 			}).Build()
 		defer patchGenerate.UnPatch()
 
