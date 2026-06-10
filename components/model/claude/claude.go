@@ -652,37 +652,7 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 	msgParams := make([]anthropic.MessageParam, 0, len(msgs))
 	hasSetMsgBreakPoint := false
 
-	for i := 0; i < len(msgs); {
-		msg := msgs[i]
-
-		// Merge consecutive tool messages into a single UserMessage.
-		// Anthropic API requires all tool_result blocks for a given
-		// assistant turn to be in the same user message.
-		if msg.Role == schema.Tool {
-			// Collect all consecutive tool messages
-			toolMsgs := []*schema.Message{msg}
-			j := i + 1
-			for j < len(msgs) && msgs[j].Role == schema.Tool {
-				toolMsgs = append(toolMsgs, msgs[j])
-				j++
-			}
-
-			// Convert each and merge content blocks into one UserMessage
-			blocks := make([]anthropic.ContentBlockParamUnion, 0, len(toolMsgs))
-			for _, tm := range toolMsgs {
-				mp, err := convSchemaMessage(tm)
-				if err != nil {
-					return fmt.Errorf("convert schema message fail: %w", err)
-				}
-				blocks = append(blocks, mp.Content...)
-			}
-
-			msgParam := anthropic.NewUserMessage(blocks...)
-			msgParams = append(msgParams, msgParam)
-			i = j
-			continue
-		}
-
+	for _, msg := range msgs {
 		msgParam, err := convSchemaMessage(msg)
 		if err != nil {
 			return fmt.Errorf("convert schema message fail: %w", err)
@@ -695,8 +665,9 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 		}
 
 		msgParams = append(msgParams, msgParam)
-		i++
 	}
+
+	msgParams = mergeAdjacentToolResults(msgParams)
 
 	if !hasSetMsgBreakPoint && specOptions.AutoCacheControl != nil {
 		lastMsgParam := msgParams[len(msgParams)-1]
@@ -707,6 +678,39 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 	params.Messages = msgParams
 
 	return nil
+}
+
+// mergeAdjacentToolResults merges adjacent tool-result user messages into one.
+// Anthropic requires all tool_result blocks for an assistant turn in a single
+// user message.
+func mergeAdjacentToolResults(msgParams []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgParams) <= 1 {
+		return msgParams
+	}
+
+	result := make([]anthropic.MessageParam, 0, len(msgParams))
+	for _, mp := range msgParams {
+		if len(result) > 0 && isToolResultMessage(mp) && isToolResultMessage(result[len(result)-1]) {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
+		} else {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+// isToolResultMessage reports whether a message consists solely of tool_result
+// content blocks.
+func isToolResultMessage(mp anthropic.MessageParam) bool {
+	if mp.Role != anthropic.MessageParamRoleUser || len(mp.Content) == 0 {
+		return false
+	}
+	for _, block := range mp.Content {
+		if block.OfToolResult == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func populateToolSearchResultTools(params *anthropic.MessageNewParams, msgs []*schema.Message) error {

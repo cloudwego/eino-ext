@@ -771,8 +771,12 @@ func isToolResponseContent(content *genai.Content) bool {
 	if content == nil || len(content.Parts) == 0 {
 		return false
 	}
-	// Check if the first part is a FunctionResponse
-	return content.Parts[0].FunctionResponse != nil
+	for _, part := range content.Parts {
+		if part.FunctionResponse == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
