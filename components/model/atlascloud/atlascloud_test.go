@@ -126,4 +126,69 @@ func TestChatModelDelegates(t *testing.T) {
 		assert.Error(t, err)
 		assert.Nil(t, toolModel)
 	})
+
+	t.Run("with tools unexpected type", func(t *testing.T) {
+		patch := mockey.Mock((*modelopenai.ChatModel).WithTools).
+			To(func(_ *modelopenai.ChatModel, _ []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+				// Return a non-*modelopenai.ChatModel to trigger the !ok path.
+				return &ChatModel{inner: &modelopenai.ChatModel{}}, nil
+			}).Build()
+		defer patch.UnPatch()
+
+		cm := &ChatModel{inner: &modelopenai.ChatModel{}}
+		toolModel, err := cm.WithTools([]*schema.ToolInfo{{Name: "test-tool"}})
+		assert.Error(t, err)
+		assert.Nil(t, toolModel)
+	})
+}
+
+func TestNewChatModelInnerError(t *testing.T) {
+	patch := mockey.Mock(modelopenai.NewChatModel).
+		To(func(_ context.Context, _ *modelopenai.ChatModelConfig) (*modelopenai.ChatModel, error) {
+			return nil, errors.New("inner error")
+		}).Build()
+	defer patch.UnPatch()
+
+	chatModel, err := NewChatModel(context.Background(), &ChatModelConfig{APIKey: "k", Model: "m"})
+	assert.Error(t, err)
+	assert.Nil(t, chatModel)
+}
+
+func TestChatModelMethods(t *testing.T) {
+	cm := &ChatModel{inner: &modelopenai.ChatModel{}}
+
+	t.Run("GetType", func(t *testing.T) {
+		assert.Equal(t, "AtlasCloud", cm.GetType())
+	})
+
+	t.Run("IsCallbacksEnabled", func(t *testing.T) {
+		patch := mockey.Mock((*modelopenai.ChatModel).IsCallbacksEnabled).
+			To(func(_ *modelopenai.ChatModel) bool { return true }).Build()
+		defer patch.UnPatch()
+		assert.True(t, cm.IsCallbacksEnabled())
+	})
+
+	t.Run("BindTools", func(t *testing.T) {
+		patch := mockey.Mock((*modelopenai.ChatModel).BindTools).
+			To(func(_ *modelopenai.ChatModel, _ []*schema.ToolInfo) error { return nil }).Build()
+		defer patch.UnPatch()
+		assert.NoError(t, cm.BindTools([]*schema.ToolInfo{{Name: "t"}}))
+	})
+
+	t.Run("BindForcedTools", func(t *testing.T) {
+		patch := mockey.Mock((*modelopenai.ChatModel).BindForcedTools).
+			To(func(_ *modelopenai.ChatModel, _ []*schema.ToolInfo) error { return nil }).Build()
+		defer patch.UnPatch()
+		assert.NoError(t, cm.BindForcedTools([]*schema.ToolInfo{{Name: "t"}}))
+	})
+}
+
+func TestOptionFunctions(t *testing.T) {
+	assert.NotNil(t, WithExtraFields(map[string]any{"k": "v"}))
+	assert.NotNil(t, WithExtraHeader(map[string]string{"X-Test": "1"}))
+	assert.NotNil(t, WithReasoningEffort(ReasoningEffortLevelHigh))
+	assert.NotNil(t, WithMaxCompletionTokens(100))
+	assert.NotNil(t, WithRequestPayloadModifier(nil))
+	assert.NotNil(t, WithResponseMessageModifier(nil))
+	assert.NotNil(t, WithResponseChunkMessageModifier(nil))
 }
