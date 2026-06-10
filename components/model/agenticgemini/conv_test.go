@@ -1192,3 +1192,70 @@ func TestConvGroundingMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestConvAgenticMessages_MergeToolResults(t *testing.T) {
+	toolMsg := func(name, text string) *schema.AgenticMessage {
+		return &schema.AgenticMessage{
+			Role: schema.AgenticRoleTypeUser,
+			ContentBlocks: []*schema.ContentBlock{
+				{
+					Type: schema.ContentBlockTypeFunctionToolResult,
+					FunctionToolResult: &schema.FunctionToolResult{
+						Name: name,
+						Content: []*schema.FunctionToolResultContentBlock{
+							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: text}},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	t.Run("two consecutive tool results merged", func(t *testing.T) {
+		contents, err := convAgenticMessages([]*schema.AgenticMessage{
+			schema.UserAgenticMessage("hello"),
+			toolMsg("a", `{"x":1}`),
+			toolMsg("b", `{"y":2}`),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, contents, 2)
+		assert.Len(t, contents[1].Parts, 2)
+		assert.NotNil(t, contents[1].Parts[0].FunctionResponse)
+		assert.NotNil(t, contents[1].Parts[1].FunctionResponse)
+	})
+
+	t.Run("three consecutive tool results merged", func(t *testing.T) {
+		contents, err := convAgenticMessages([]*schema.AgenticMessage{
+			toolMsg("a", `{"x":1}`),
+			toolMsg("b", `{"y":2}`),
+			toolMsg("c", `{"z":3}`),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, contents, 1)
+		assert.Len(t, contents[0].Parts, 3)
+	})
+
+	t.Run("tool results separated by assistant not merged", func(t *testing.T) {
+		contents, err := convAgenticMessages([]*schema.AgenticMessage{
+			toolMsg("a", `{"x":1}`),
+			{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					{Type: schema.ContentBlockTypeAssistantGenText, AssistantGenText: &schema.AssistantGenText{Text: "ok"}},
+				},
+			},
+			toolMsg("b", `{"y":2}`),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, contents, 3)
+	})
+
+	t.Run("user text not merged with tool result", func(t *testing.T) {
+		contents, err := convAgenticMessages([]*schema.AgenticMessage{
+			toolMsg("a", `{"x":1}`),
+			schema.UserAgenticMessage("more"),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, contents, 2)
+	})
+}

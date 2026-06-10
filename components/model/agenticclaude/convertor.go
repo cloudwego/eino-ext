@@ -66,7 +66,42 @@ func toAnthropicMessages(input []*schema.AgenticMessage) (systemBlocks []anthrop
 		}
 	}
 
+	msgParams = mergeAdjacentToolResults(msgParams)
+
 	return systemBlocks, msgParams, nil
+}
+
+// mergeAdjacentToolResults merges adjacent tool-result user messages into one.
+// Anthropic requires all tool_result blocks for an assistant turn in a single
+// user message.
+func mergeAdjacentToolResults(msgParams []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgParams) <= 1 {
+		return msgParams
+	}
+
+	result := make([]anthropic.MessageParam, 0, len(msgParams))
+	for _, mp := range msgParams {
+		if len(result) > 0 && isToolResultMessage(mp) && isToolResultMessage(result[len(result)-1]) {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
+		} else {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+// isToolResultMessage reports whether a message consists solely of tool_result
+// content blocks.
+func isToolResultMessage(mp anthropic.MessageParam) bool {
+	if mp.Role != anthropic.MessageParamRoleUser || len(mp.Content) == 0 {
+		return false
+	}
+	for _, block := range mp.Content {
+		if block.OfToolResult == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func toSystemBlocks(msg *schema.AgenticMessage) ([]anthropic.TextBlockParam, error) {
