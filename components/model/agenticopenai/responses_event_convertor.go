@@ -99,6 +99,10 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 			block, err := receiver.annotationAddedEventToContentBlock(variant)
 			sender.sendBlock(block, err)
 
+		case responses.ResponseReasoningTextDeltaEvent:
+			block := receiver.reasoningTextDeltaEventToContentBlock(variant)
+			sender.sendBlock(block, nil)
+
 		case responses.ResponseReasoningSummaryTextDeltaEvent:
 			block := receiver.reasoningSummaryTextDeltaEventToContentBlock(variant)
 			sender.sendBlock(block, nil)
@@ -781,7 +785,7 @@ func (r *streamReceiver) itemDoneEventShellOutputToContentBlock(outputIdx int64,
 }
 
 func (r *streamReceiver) contentPartAddedEventToContentBlock(ev responses.ResponseContentPartAddedEvent) (block *schema.ContentBlock, err error) {
-	switch ev.Part.AsAny().(type) {
+	switch part := ev.Part.AsAny().(type) {
 	case responses.ResponseOutputText, responses.ResponseOutputRefusal:
 		key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
 		blockIdx := r.getBlockIndex(key)
@@ -796,6 +800,20 @@ func (r *streamReceiver) contentPartAddedEventToContentBlock(ev responses.Respon
 
 		meta := &schema.StreamingMeta{Index: blockIdx}
 		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
+
+	case responses.ResponseContentPartAddedEventPartReasoningText:
+		reasoning := &schema.Reasoning{
+			OpenAIExtension: &openai.ReasoningExtension{
+				Content: []*openai.ReasoningContent{
+					{
+						Text:  part.Text,
+						Index: ptrOf(int(ev.ContentIndex)),
+					},
+				},
+			},
+		}
+		meta := &schema.StreamingMeta{Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex))}
+		block = schema.NewContentBlockChunk(reasoning, meta)
 
 	default:
 		// Unknown content part types are ignored rather than failing the stream.
@@ -823,6 +841,10 @@ func (r *streamReceiver) contentPartDoneEventToContentBlock(ev responses.Respons
 
 		meta := &schema.StreamingMeta{Index: blockIdx}
 		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
+
+	case responses.ResponseContentPartDoneEventPartReasoningText:
+		meta := &schema.StreamingMeta{Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex))}
+		block = schema.NewContentBlockChunk(&schema.Reasoning{}, meta)
 
 	default:
 		// Unknown content part types are ignored rather than failing the stream.
@@ -907,6 +929,28 @@ func (r *streamReceiver) reasoningSummaryTextDeltaEventToContentBlock(ev respons
 
 	reasoning := &schema.Reasoning{
 		Text: text,
+	}
+
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex)),
+	}
+	block := schema.NewContentBlockChunk(reasoning, meta)
+
+	setItemID(block, ev.ItemID)
+
+	return block
+}
+
+func (r *streamReceiver) reasoningTextDeltaEventToContentBlock(ev responses.ResponseReasoningTextDeltaEvent) *schema.ContentBlock {
+	reasoning := &schema.Reasoning{
+		OpenAIExtension: &openai.ReasoningExtension{
+			Content: []*openai.ReasoningContent{
+				{
+					Text:  ev.Delta,
+					Index: ptrOf(int(ev.ContentIndex)),
+				},
+			},
+		},
 	}
 
 	meta := &schema.StreamingMeta{
