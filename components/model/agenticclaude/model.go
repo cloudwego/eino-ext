@@ -60,10 +60,14 @@ type Config struct {
 	// Optional.
 	BaseURL string
 
-	// APIKey is your Anthropic API key
+	// APIKey is your Anthropic API key for direct Anthropic API access.
 	// Obtain from: https://console.anthropic.com/account/keys
-	// Required for direct Anthropic API requests.
+	// Optional when AuthToken is set.
 	APIKey string
+
+	// AuthToken is your Anthropic auth token for direct Anthropic API access.
+	// Optional when APIKey is set.
+	AuthToken string
 
 	// Model specifies which Claude model to use.
 	// Required.
@@ -197,9 +201,6 @@ func (cfg *Config) check() error {
 	if cfg.Model == "" {
 		return errors.New("model is required")
 	}
-	if cfg.ByBedrock == nil && cfg.ByGoogleVertexAI == nil && cfg.APIKey == "" {
-		return errors.New("api key is required for direct Anthropic API requests")
-	}
 	if cfg.MaxTokens <= 0 {
 		return errors.New("max_tokens must be positive")
 	}
@@ -272,8 +273,22 @@ func newClient(ctx context.Context, cfg *Config) (anthropic.Client, error) {
 
 	default:
 		var opts []option.RequestOption
+		if hasDirectAnthropicConfigAuth(cfg) {
+			// Explicit credential in Config takes precedence: disable the
+			// SDK's environment credential autoload (ANTHROPIC_API_KEY,
+			// ANTHROPIC_AUTH_TOKEN, profiles, etc.) so the environment cannot
+			// contribute a second, conflicting credential.
+			// ANTHROPIC_BASE_URL is still honored; cfg.BaseURL overrides it below.
+			opts = append(opts, option.WithoutEnvironmentDefaults())
+			if baseURL, ok := os.LookupEnv("ANTHROPIC_BASE_URL"); ok {
+				opts = append(opts, option.WithBaseURL(baseURL))
+			}
+		}
 		if cfg.APIKey != "" {
 			opts = append(opts, option.WithAPIKey(cfg.APIKey))
+		}
+		if cfg.AuthToken != "" {
+			opts = append(opts, option.WithAuthToken(cfg.AuthToken))
 		}
 		if cfg.BaseURL != "" {
 			opts = append(opts, option.WithBaseURL(cfg.BaseURL))
@@ -283,6 +298,10 @@ func newClient(ctx context.Context, cfg *Config) (anthropic.Client, error) {
 		}
 		return anthropic.NewClient(opts...), nil
 	}
+}
+
+func hasDirectAnthropicConfigAuth(cfg *Config) bool {
+	return cfg.APIKey != "" || cfg.AuthToken != ""
 }
 
 func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (outMsg *schema.AgenticMessage, err error) {
