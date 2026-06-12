@@ -188,10 +188,11 @@ When helping users build orchestration:
 1. Default to **Graph** for most use cases. Use Chain only for simple linear pipelines. Use Workflow when field-level mapping between different struct types is needed.
 2. Always show the **Compile** step -- `g.Compile(ctx)` returns `Runnable[I,O]`.
 3. Always **close StreamReaders** -- use `defer sr.Close()` immediately after obtaining a stream.
-4. Upstream output type must match downstream input type (or use `WithInputKey`/`WithOutputKey` for map conversion).
-5. For cyclic graphs (e.g., ReAct agent), use default Pregel mode (`AnyPredecessor`). For DAGs, set `AllPredecessor`.
-6. Use `compose.WithCallbacks(handler)` to inject logging/tracing at runtime.
-7. Use `compose.WithCheckPointStore(store)` with interrupt nodes for pause/resume workflows.
+4. **Never mutate stream elements in place** -- `StreamReader.Copy` fan-out shares element pointers across branches, so writing to a received message (especially `msg.Extra[k] = v`) can cause concurrent map read/write panics. Use copy-on-write: shallow-copy the message, clone the map/slice you change, modify the clone, return the copy. See reference/stream.md.
+5. Upstream output type must match downstream input type (or use `WithInputKey`/`WithOutputKey` for map conversion).
+6. For cyclic graphs (e.g., ReAct agent), use default Pregel mode (`AnyPredecessor`). For DAGs, set `AllPredecessor`.
+7. Use `compose.WithCallbacks(handler)` to inject logging/tracing at runtime.
+8. Use `compose.WithCheckPointStore(store)` with interrupt nodes for pause/resume workflows.
 
 ## Reference Files
 
