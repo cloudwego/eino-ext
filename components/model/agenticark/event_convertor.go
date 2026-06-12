@@ -46,22 +46,6 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 		sender.errHeader = fmt.Sprintf("failed to convert event %q", event.GetEventType())
 
 		switch ev := event.Event.(type) {
-		case *responses.Event_TextDone,
-			*responses.Event_ReasoningPart,
-			*responses.Event_ReasoningPartDone,
-			*responses.Event_ReasoningTextDone,
-			*responses.Event_FunctionCallArgumentsDone,
-			*responses.Event_ResponseMcpCallArgumentsDone,
-			*responses.Event_ResponseMcpApprovalRequest,
-			*responses.Event_ResponseDoubaoAppCallBlockAdded,
-			*responses.Event_ResponseDoubaoAppCallBlockDone,
-			*responses.Event_ResponseDoubaoAppCallOutputTextDone,
-			*responses.Event_ResponseDoubaoAppCallReasoningTextDone,
-			*responses.Event_ResponseDoubaoAppCallSearchInProgress,
-			*responses.Event_ResponseDoubaoAppCallReasoningSearchInProgress:
-			// Do nothing.
-			continue
-
 		case *responses.Event_Error:
 			meta := receiver.errorEventToResponseMeta(ev.Error)
 			sender.sendMeta(meta, nil)
@@ -255,7 +239,8 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 			sender.sendBlock(block, nil)
 
 		default:
-			sw.Send(nil, fmt.Errorf("unknown event type: %T", ev))
+			// Unhandled event types are ignored rather than failing the stream.
+			continue
 		}
 	}
 }
@@ -278,7 +263,9 @@ func (s *callbackSender) sendMeta(meta *schema.AgenticResponseMeta, err error) {
 }
 
 func (s *callbackSender) sendBlock(block *schema.ContentBlock, err error) {
-	s.send(nil, block, err)
+	if block != nil || err != nil {
+		s.send(nil, block, err)
+	}
 }
 
 func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.ContentBlock, err error) {
@@ -419,17 +406,9 @@ func (r *streamReceiver) itemAddedEventToContentBlock(ev *responses.ItemEvent) (
 		k := makeMCPListToolsItemAddedEventCacheKey(item.FunctionMcpListTools.GetId(), ev.OutputIndex)
 		r.ItemAddedEventCache[k] = item.FunctionMcpListTools
 
-	case *responses.OutputItem_OutputMessage,
-		*responses.OutputItem_FunctionWebSearch,
-		*responses.OutputItem_FunctionImageProcess,
-		*responses.OutputItem_FunctionDoubaoAppCall,
-		*responses.OutputItem_FunctionKnowledgeSearch,
-		*responses.OutputItem_FunctionMcpApprovalRequest:
-
-		// Do nothing.
-
 	default:
-		return nil, fmt.Errorf("unknown item type %T with 'output_item.added' event", item)
+		// Unknown item types are ignored rather than failing the stream.
+		return nil, nil
 	}
 
 	return blocks, nil
@@ -463,10 +442,6 @@ func (r *streamReceiver) itemAddedEventReasoningToContentBlock(outputIdx int64, 
 
 func (r *streamReceiver) itemDoneEventToContentBlocks(ev *responses.ItemDoneEvent) (blocks []*schema.ContentBlock, err error) {
 	switch item := ev.Item.Union.(type) {
-	case *responses.OutputItem_FunctionDoubaoAppCall:
-		// Do nothing.
-		return nil, nil
-
 	case *responses.OutputItem_OutputMessage:
 		blocks, err = r.itemDoneEventOutputMessageToContentBlock(item)
 		if err != nil {
@@ -536,7 +511,8 @@ func (r *streamReceiver) itemDoneEventToContentBlocks(ev *responses.ItemDoneEven
 		blocks = append(blocks, block)
 
 	default:
-		return nil, fmt.Errorf("unknown item type %T with 'output_item.done' event", item)
+		// Unknown item types are ignored rather than failing the stream.
+		return nil, nil
 	}
 
 	return blocks, nil
@@ -749,11 +725,12 @@ func (r *streamReceiver) eventContentPartToContentBlock(itemID string, content *
 
 	meta := &schema.StreamingMeta{Index: blockIdx}
 
-	switch part := content.Union.(type) {
+	switch content.Union.(type) {
 	case *responses.OutputContentItem_Text:
 		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
 	default:
-		return nil, fmt.Errorf("unknown content part type: %T", part)
+		// Unknown content part types are ignored rather than failing the stream.
+		return nil, nil
 	}
 
 	setItemStatus(block, status.String())
@@ -969,8 +946,8 @@ func (r *streamReceiver) doubaoAppOutputTextDeltaToContentBlock(ev *responses.Re
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeOutputText,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeOutputText,
 			OutputText: &DoubaoAppOutputText{
 				Text: ev.GetDelta(),
 			},
@@ -1008,8 +985,8 @@ func (r *streamReceiver) doubaoAppReasoningTextDeltaToContentBlock(ev *responses
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeReasoningText,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeReasoningText,
 			ReasoningText: &DoubaoAppReasoningText{
 				ReasoningText: ev.GetDelta(),
 			},
@@ -1033,8 +1010,8 @@ func (r *streamReceiver) doubaoAppSearchSearchingToContentBlock(ev *responses.Re
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeSearch,
 			Search: &DoubaoAppSearch{
 				SearchingState: ev.GetSearchingState(),
 			},
@@ -1069,8 +1046,8 @@ func (r *streamReceiver) doubaoAppSearchCompletedToContentBlock(ev *responses.Re
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeSearch,
 			Search: &DoubaoAppSearch{
 				Summary: ev.GetSummary(),
 				Queries: ev.Queries,
@@ -1096,8 +1073,8 @@ func (r *streamReceiver) doubaoAppReasoningSearchSearchingToContentBlock(ev *res
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeReasoningSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeReasoningSearch,
 			ReasoningSearch: &DoubaoAppReasoningSearch{
 				SearchingState: ev.GetSearchingState(),
 			},
@@ -1132,8 +1109,8 @@ func (r *streamReceiver) doubaoAppReasoningSearchCompletedToContentBlock(ev *res
 
 	result := &DoubaoAppResult{
 		Blocks: []*DoubaoAppBlock{{
-			StreamingMeta: &DoubaoAppStreamingMeta{Index: ev.BlockIndex},
-			Type:          DoubaoAppBlockTypeReasoningSearch,
+			Index: ptrOf(int(ev.BlockIndex)),
+			Type:  DoubaoAppBlockTypeReasoningSearch,
 			ReasoningSearch: &DoubaoAppReasoningSearch{
 				Summary: ev.GetSummary(),
 				Queries: ev.Queries,

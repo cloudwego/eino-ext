@@ -313,15 +313,25 @@ func TestItemDoneEventOutputMessageToContentBlockSuccess(t *testing.T) {
 }
 
 func TestContentPartAddedEventToContentBlockInvalidType(t *testing.T) {
-	mockey.PatchConvey("TestContentPartAddedEventToContentBlockInvalidType", t, func() {
-		r := newStreamReceiver(&model.Options{})
-		ev := responses.ResponseContentPartAddedEvent{}
+	r := newStreamReceiver(&model.Options{})
+	// A zero-value part matches none of the known content part types.
+	ev := responses.ResponseContentPartAddedEvent{}
 
-		mockey.Mock(responses.ResponseOutputMessageContentUnion.AsAny).Return("invalid").Build()
+	// Unknown content part types are ignored rather than failing the stream.
+	block, err := r.contentPartAddedEventToContentBlock(ev)
+	assert.NoError(t, err)
+	assert.Nil(t, block)
+}
 
-		_, err := r.contentPartAddedEventToContentBlock(ev)
-		assert.Error(t, err)
-	})
+func TestContentPartDoneEventToContentBlockInvalidType(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+	// A zero-value part matches none of the known content part types.
+	ev := responses.ResponseContentPartDoneEvent{}
+
+	// Unknown content part types are ignored rather than failing the stream.
+	block, err := r.contentPartDoneEventToContentBlock(ev)
+	assert.NoError(t, err)
+	assert.Nil(t, block)
 }
 
 func TestContentPartDoneEventToContentBlockNoIndex(t *testing.T) {
@@ -333,7 +343,7 @@ func TestContentPartDoneEventToContentBlockNoIndex(t *testing.T) {
 			ContentIndex: 2,
 		}
 
-		mockey.Mock(responses.ResponseOutputMessageContentUnion.AsAny).Return(responses.ResponseOutputText{}).Build()
+		mockey.Mock(responses.ResponseContentPartDoneEventPartUnion.AsAny).Return(responses.ResponseOutputText{}).Build()
 
 		_, err := r.contentPartDoneEventToContentBlock(ev)
 		assert.Error(t, err)
@@ -430,6 +440,148 @@ func TestReasoningSummaryTextDeltaEventToContentBlock(t *testing.T) {
 	id, ok := getItemID(block)
 	assert.True(t, ok)
 	assert.Equal(t, "iid", id)
+}
+
+func TestReasoningTextDeltaEventToContentBlock(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+	ev := responses.ResponseReasoningTextDeltaEvent{
+		ItemID:       "iid",
+		OutputIndex:  2,
+		ContentIndex: 1,
+		Delta:        "raw reasoning text",
+	}
+
+	block := r.reasoningTextDeltaEventToContentBlock(ev)
+	assert.NotNil(t, block.Reasoning)
+	// Raw reasoning text must go to the OpenAI extension, not the summary Text field.
+	assert.Equal(t, "", block.Reasoning.Text)
+	assert.NotNil(t, block.Reasoning.OpenAIExtension)
+	assert.Len(t, block.Reasoning.OpenAIExtension.Content, 1)
+	assert.Equal(t, "raw reasoning text", block.Reasoning.OpenAIExtension.Content[0].Text)
+	assert.NotNil(t, block.Reasoning.OpenAIExtension.Content[0].Index)
+	assert.Equal(t, 1, *block.Reasoning.OpenAIExtension.Content[0].Index)
+
+	id, ok := getItemID(block)
+	assert.True(t, ok)
+	assert.Equal(t, "iid", id)
+}
+
+func TestReasoningTextDeltaEventContentIndexAndSharedBlockIndex(t *testing.T) {
+	r := newStreamReceiver(&model.Options{})
+
+	// Two text deltas at different ContentIndex on the same OutputIndex.
+	b0 := r.reasoningTextDeltaEventToContentBlock(responses.ResponseReasoningTextDeltaEvent{
+		ItemID: "iid", OutputIndex: 2, ContentIndex: 0, Delta: "a",
+	})
+	b1 := r.reasoningTextDeltaEventToContentBlock(responses.ResponseReasoningTextDeltaEvent{
+		ItemID: "iid", OutputIndex: 2, ContentIndex: 1, Delta: "b",
+	})
+	assert.Equal(t, 0, *b0.Reasoning.OpenAIExtension.Content[0].Index)
+	assert.Equal(t, 1, *b1.Reasoning.OpenAIExtension.Content[0].Index)
+
+	// A summary delta and a text delta on the same OutputIndex share the block index,
+	// so they concatenate into one logical reasoning block.
+	summary := r.reasoningSummaryTextDeltaEventToContentBlock(responses.ResponseReasoningSummaryTextDeltaEvent{
+		ItemID: "iid", OutputIndex: 2, SummaryIndex: 0, Delta: "s",
+	})
+	raw0 := r.reasoningTextDeltaEventToContentBlock(responses.ResponseReasoningTextDeltaEvent{
+		ItemID: "iid", OutputIndex: 2, ContentIndex: 0, Delta: "t0",
+	})
+	raw1 := r.reasoningTextDeltaEventToContentBlock(responses.ResponseReasoningTextDeltaEvent{
+		ItemID: "iid", OutputIndex: 2, ContentIndex: 1, Delta: "t1",
+	})
+	assert.Equal(t, summary.StreamingMeta.Index, raw0.StreamingMeta.Index)
+	assert.Equal(t, summary.StreamingMeta.Index, raw1.StreamingMeta.Index)
+
+	// End-to-end concat: the summary and the indexed raw reasoning chunks must
+	// merge into a single reasoning block, with the summary in Reasoning.Text and
+	// the raw content reassembled in order under OpenAIExtension.Content.
+	got, err := schema.ConcatAgenticMessages([]*schema.AgenticMessage{
+		{Role: schema.AgenticRoleTypeAssistant, ContentBlocks: []*schema.ContentBlock{summary}},
+		{Role: schema.AgenticRoleTypeAssistant, ContentBlocks: []*schema.ContentBlock{raw0}},
+		{Role: schema.AgenticRoleTypeAssistant, ContentBlocks: []*schema.ContentBlock{raw1}},
+	})
+	assert.NoError(t, err)
+	assert.Len(t, got.ContentBlocks, 1)
+	assert.NotNil(t, got.ContentBlocks[0].Reasoning)
+	assert.Equal(t, "s", got.ContentBlocks[0].Reasoning.Text)
+	assert.NotNil(t, got.ContentBlocks[0].Reasoning.OpenAIExtension)
+	assert.Len(t, got.ContentBlocks[0].Reasoning.OpenAIExtension.Content, 2)
+	assert.Equal(t, "t0", got.ContentBlocks[0].Reasoning.OpenAIExtension.Content[0].Text)
+	assert.Equal(t, "t1", got.ContentBlocks[0].Reasoning.OpenAIExtension.Content[1].Text)
+}
+
+func TestContentPartDoneEventToContentBlockRefusal(t *testing.T) {
+	mockey.PatchConvey("TestContentPartDoneEventToContentBlockRefusal", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseContentPartDoneEvent{
+			ItemID:       "iid",
+			OutputIndex:  1,
+			ContentIndex: 2,
+		}
+
+		// Register the block as the added event would have.
+		blockIdx := r.getBlockIndex(makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex))
+		r.ProcessingAssistantGenTextBlockIndex["iid"] = map[int]bool{blockIdx: true}
+
+		mockey.Mock(responses.ResponseContentPartDoneEventPartUnion.AsAny).
+			Return(responses.ResponseOutputRefusal{}).Build()
+
+		block, err := r.contentPartDoneEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.NotNil(t, block.AssistantGenText)
+	})
+}
+
+func TestContentPartAddedEventToContentBlockReasoningText(t *testing.T) {
+	mockey.PatchConvey("TestContentPartAddedEventToContentBlockReasoningText", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseContentPartAddedEvent{
+			ItemID:       "iid",
+			OutputIndex:  1,
+			ContentIndex: 2,
+		}
+
+		mockey.Mock(responses.ResponseContentPartAddedEventPartUnion.AsAny).
+			Return(responses.ResponseContentPartAddedEventPartReasoningText{Text: "raw"}).Build()
+
+		block, err := r.contentPartAddedEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.NotNil(t, block.Reasoning)
+		assert.NotNil(t, block.Reasoning.OpenAIExtension)
+		assert.Len(t, block.Reasoning.OpenAIExtension.Content, 1)
+		assert.Equal(t, "raw", block.Reasoning.OpenAIExtension.Content[0].Text)
+		assert.Equal(t, 2, *block.Reasoning.OpenAIExtension.Content[0].Index)
+
+		id, ok := getItemID(block)
+		assert.True(t, ok)
+		assert.Equal(t, "iid", id)
+	})
+}
+
+func TestContentPartDoneEventToContentBlockReasoningText(t *testing.T) {
+	mockey.PatchConvey("TestContentPartDoneEventToContentBlockReasoningText", t, func() {
+		r := newStreamReceiver(&model.Options{})
+		ev := responses.ResponseContentPartDoneEvent{
+			ItemID:       "iid",
+			OutputIndex:  1,
+			ContentIndex: 2,
+		}
+
+		mockey.Mock(responses.ResponseContentPartDoneEventPartUnion.AsAny).
+			Return(responses.ResponseContentPartDoneEventPartReasoningText{}).Build()
+
+		block, err := r.contentPartDoneEventToContentBlock(ev)
+		assert.NoError(t, err)
+		assert.NotNil(t, block.Reasoning)
+		// Terminator chunk carries no text; deltas already streamed it.
+		assert.Nil(t, block.Reasoning.OpenAIExtension)
+		assert.Equal(t, "", block.Reasoning.Text)
+
+		status, ok := GetItemStatus(block)
+		assert.True(t, ok)
+		assert.Equal(t, string(responses.ResponseStatusCompleted), status)
+	})
 }
 
 func TestFunctionCallArgumentsDeltaEventToContentBlock(t *testing.T) {

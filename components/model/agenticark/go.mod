@@ -9,7 +9,7 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/stretchr/testify v1.10.0
-	github.com/volcengine/volcengine-go-sdk v1.2.27
+	github.com/volcengine/volcengine-go-sdk v1.2.34
 	github.com/wk8/go-ordered-map/v2 v2.1.8
 	golang.org/x/sync v0.8.0
 	google.golang.org/protobuf v1.31.0

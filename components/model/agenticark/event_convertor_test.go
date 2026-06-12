@@ -114,13 +114,15 @@ func TestItemAddedEventToContentBlockReasoning(t *testing.T) {
 	assert.NotNil(t, blocks[0].Reasoning)
 }
 
-func TestItemAddedEventToContentBlockInvalid(t *testing.T) {
+func TestItemAddedEventToContentBlockUnknown(t *testing.T) {
 	r := newStreamReceiver()
 	ev := &responses.ItemEvent{
 		Item: &responses.OutputItem{Union: nil},
 	}
-	_, err := r.itemAddedEventToContentBlock(ev)
-	assert.Error(t, err)
+	// Unknown item types are ignored rather than failing the stream.
+	blocks, err := r.itemAddedEventToContentBlock(ev)
+	assert.NoError(t, err)
+	assert.Empty(t, blocks)
 }
 
 func TestItemDoneEventToContentBlocksReasoning(t *testing.T) {
@@ -160,13 +162,15 @@ func TestItemDoneEventToContentBlocksFunctionToolCall(t *testing.T) {
 	assert.NotNil(t, blocks[0].FunctionToolCall)
 }
 
-func TestItemDoneEventToContentBlocksInvalid(t *testing.T) {
+func TestItemDoneEventToContentBlocksUnknown(t *testing.T) {
 	r := newStreamReceiver()
 	ev := &responses.ItemDoneEvent{
 		Item: &responses.OutputItem{Union: nil},
 	}
-	_, err := r.itemDoneEventToContentBlocks(ev)
-	assert.Error(t, err)
+	// Unknown item types are ignored rather than failing the stream.
+	blocks, err := r.itemDoneEventToContentBlocks(ev)
+	assert.NoError(t, err)
+	assert.Empty(t, blocks)
 }
 
 func TestItemDoneEventOutputMessageToContentBlockMissingProcessing(t *testing.T) {
@@ -332,10 +336,12 @@ func TestContentPartDoneEventToContentBlockOK(t *testing.T) {
 	assert.Equal(t, responses.ItemStatus_completed.String(), status)
 }
 
-func TestEventContentPartToContentBlockInvalid(t *testing.T) {
+func TestEventContentPartToContentBlockUnknown(t *testing.T) {
 	r := newStreamReceiver()
-	_, err := r.eventContentPartToContentBlock("id", &responses.OutputContentItem{}, 1, responses.ItemStatus_in_progress)
-	assert.Error(t, err)
+	// Unknown content part types are ignored rather than failing the stream.
+	block, err := r.eventContentPartToContentBlock("id", &responses.OutputContentItem{}, 1, responses.ItemStatus_in_progress)
+	assert.NoError(t, err)
+	assert.Nil(t, block)
 }
 
 func TestOutputTextDeltaEventToContentBlock(t *testing.T) {
