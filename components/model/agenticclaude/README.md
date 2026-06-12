@@ -114,10 +114,14 @@ type Config struct {
     // Optional.
     BaseURL string
 
-    // APIKey is your Anthropic API key
+    // APIKey is your Anthropic API key for direct Anthropic API access.
     // Obtain from: https://console.anthropic.com/account/keys
-    // Required for direct Anthropic API requests.
+    // Optional when AuthToken is set.
     APIKey string
+
+    // AuthToken is your Anthropic auth token for direct Anthropic API access.
+    // Optional when APIKey is set.
+    AuthToken string
 
     // Model specifies which Claude model to use.
     // Required.
@@ -175,6 +179,14 @@ type Config struct {
     CacheControl *anthropic.CacheControlEphemeralParam
 }
 ```
+
+For direct Anthropic API access, authentication resolution works as follows:
+
+- If `Config.APIKey` or `Config.AuthToken` is set, `Config` takes precedence and environment auth settings (e.g. `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) are ignored.
+- Otherwise, it falls back to environment variables.
+- Within the chosen source, `APIKey` and `AuthToken` can both be set and will both be passed through as-is.
+- If neither source provides auth, client creation still succeeds and auth errors surface later when requests are sent.
+- `ANTHROPIC_BASE_URL` is still honored in both cases; `Config.BaseURL` takes precedence when set.
 
 ## Extension Fields
 

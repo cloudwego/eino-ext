@@ -114,10 +114,14 @@ type Config struct {
     // 可选。
     BaseURL string
 
-    // APIKey 是 Anthropic API 密钥。
+    // APIKey 是 Anthropic API 密钥，用于直连 Anthropic API。
     // 获取地址：https://console.anthropic.com/account/keys
-    // 直接使用 Anthropic API 时必填。
+    // 设置了 AuthToken 时可选。
     APIKey string
+
+    // AuthToken 是 Anthropic auth token，用于直连 Anthropic API。
+    // 设置了 APIKey 时可选。
+    AuthToken string
 
     // Model 指定使用的 Claude 模型。
     // 必填。
@@ -174,6 +178,14 @@ type Config struct {
     CacheControl *anthropic.CacheControlEphemeralParam
 }
 ```
+
+对于直连 Anthropic API 的场景，鉴权配置解析规则如下：
+
+- 如果在 `Config` 中配置了 `APIKey` 或 `AuthToken`，则以 `Config` 为准，并忽略环境变量中的鉴权配置（如 `ANTHROPIC_API_KEY`、`ANTHROPIC_AUTH_TOKEN`）
+- 如果 `Config` 中未配置鉴权，则回退使用环境变量中的配置
+- 在被选中的来源内，`APIKey` 和 `AuthToken` 可以同时存在，并会原样一起透传
+- 如果两边都没有配置鉴权，client 仍可创建成功，鉴权错误会在后续实际发请求时暴露
+- 两种情况下均仍支持 `ANTHROPIC_BASE_URL`；设置了 `Config.BaseURL` 时以 `Config.BaseURL` 为准
 
 ## 扩展字段说明
 
