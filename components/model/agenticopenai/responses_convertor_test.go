@@ -529,6 +529,26 @@ func TestReasoningToInputItem(t *testing.T) {
 		assert.Equal(t, "r", item.OfReasoning.ID)
 		assert.True(t, item.OfReasoning.EncryptedContent.Valid())
 		assert.Equal(t, "e", item.OfReasoning.EncryptedContent.Value)
+		assert.Empty(t, item.OfReasoning.Content)
+	})
+
+	mockey.PatchConvey("reasoningToInputItem with content", t, func() {
+		block := schema.NewContentBlock(&schema.Reasoning{
+			Text: "s",
+			OpenAIExtension: &openaischema.ReasoningExtension{
+				Content: []*openaischema.ReasoningContent{
+					{Text: "raw0", Index: ptrOf(0)},
+					{Text: "raw1", Index: ptrOf(1)},
+				},
+			},
+		})
+		setItemID(block, "r")
+		item, err := reasoningToInputItem(block)
+		assert.NoError(t, err)
+		assert.NotNil(t, item.OfReasoning)
+		assert.Len(t, item.OfReasoning.Content, 2)
+		assert.Equal(t, "raw0", item.OfReasoning.Content[0].Text)
+		assert.Equal(t, "raw1", item.OfReasoning.Content[1].Text)
 	})
 }
 
@@ -1000,6 +1020,27 @@ func TestReasoningToContentBlocks(t *testing.T) {
 		assert.Equal(t, "r1", id)
 		assert.NotNil(t, block.Reasoning)
 		assert.Equal(t, "s", block.Reasoning.Text)
+		// No raw reasoning content => no OpenAI extension.
+		assert.Nil(t, block.Reasoning.OpenAIExtension)
+	})
+
+	mockey.PatchConvey("reasoningToContentBlocks with content", t, func() {
+		item := responses.ResponseReasoningItem{
+			ID:      "r1",
+			Status:  "completed",
+			Summary: []responses.ResponseReasoningItemSummary{{Text: "s"}},
+			Content: []responses.ResponseReasoningItemContent{{Text: "raw0"}, {Text: "raw1"}},
+		}
+		block, err := reasoningToContentBlocks(item)
+		assert.NoError(t, err)
+		assert.NotNil(t, block.Reasoning)
+		assert.Equal(t, "s", block.Reasoning.Text)
+		assert.NotNil(t, block.Reasoning.OpenAIExtension)
+		assert.Len(t, block.Reasoning.OpenAIExtension.Content, 2)
+		assert.Equal(t, "raw0", block.Reasoning.OpenAIExtension.Content[0].Text)
+		assert.Nil(t, block.Reasoning.OpenAIExtension.Content[0].Index)
+		assert.Equal(t, "raw1", block.Reasoning.OpenAIExtension.Content[1].Text)
+		assert.Nil(t, block.Reasoning.OpenAIExtension.Content[1].Index)
 	})
 }
 

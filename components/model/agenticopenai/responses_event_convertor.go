@@ -44,18 +44,6 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 		sender.errHeader = fmt.Sprintf("failed to convert event '%s'", event.Type)
 
 		switch variant := event.AsAny().(type) {
-		case responses.ResponseTextDoneEvent,
-			responses.ResponseReasoningSummaryPartAddedEvent,
-			responses.ResponseReasoningSummaryPartDoneEvent,
-			responses.ResponseReasoningSummaryTextDoneEvent,
-			responses.ResponseFunctionCallArgumentsDoneEvent,
-			responses.ResponseMcpCallArgumentsDoneEvent,
-			responses.ResponseRefusalDoneEvent,
-			responses.ResponseCodeInterpreterCallCodeDoneEvent:
-
-			// Do nothing.
-			continue
-
 		case responses.ResponseErrorEvent:
 			_ = sw.Send(nil, fmt.Errorf("received error event: code=%s message=%s", variant.Code, variant.Message))
 
@@ -110,6 +98,10 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 		case responses.ResponseOutputTextAnnotationAddedEvent:
 			block, err := receiver.annotationAddedEventToContentBlock(variant)
 			sender.sendBlock(block, err)
+
+		case responses.ResponseReasoningTextDeltaEvent:
+			block := receiver.reasoningTextDeltaEventToContentBlock(variant)
+			sender.sendBlock(block, nil)
 
 		case responses.ResponseReasoningSummaryTextDeltaEvent:
 			block := receiver.reasoningSummaryTextDeltaEventToContentBlock(variant)
@@ -208,7 +200,8 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 			sender.sendBlock(block, nil)
 
 		default:
-			sw.Send(nil, fmt.Errorf("unknown event type: %s", event.Type))
+			// Unhandled event types are ignored rather than failing the stream.
+			continue
 		}
 	}
 
@@ -236,7 +229,9 @@ func (s *callbackSender) sendMeta(meta *schema.AgenticResponseMeta, err error) {
 }
 
 func (s *callbackSender) sendBlock(block *schema.ContentBlock, err error) {
-	s.send(nil, block, err)
+	if block != nil || err != nil {
+		s.send(nil, block, err)
+	}
 }
 
 func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.ContentBlock, err error) {
@@ -387,15 +382,9 @@ func (r *streamReceiver) itemAddedEventToContentBlock(ev responses.ResponseOutpu
 		}
 		blocks = append(blocks, block)
 
-	case responses.ResponseOutputMessage,
-		responses.ResponseFunctionWebSearch,
-		responses.ResponseFileSearchToolCall,
-		responses.ResponseOutputItemImageGenerationCall,
-		responses.ResponseOutputItemMcpApprovalRequest:
-		// Do nothing.
-
 	default:
-		return nil, fmt.Errorf("unknown item type %T with 'output_item.added' event", item)
+		// Unhandled event types are ignored rather than failing the stream.
+		return nil, nil
 	}
 
 	return blocks, nil
@@ -570,7 +559,8 @@ func (r *streamReceiver) itemDoneEventToContentBlocks(ev responses.ResponseOutpu
 		blocks = append(blocks, block)
 
 	default:
-		return nil, fmt.Errorf("unknown item type %T with 'output_item.done' event", item)
+		// Unhandled event types are ignored rather than failing the stream.
+		return nil, nil
 	}
 
 	return blocks, nil
@@ -795,24 +785,39 @@ func (r *streamReceiver) itemDoneEventShellOutputToContentBlock(outputIdx int64,
 }
 
 func (r *streamReceiver) contentPartAddedEventToContentBlock(ev responses.ResponseContentPartAddedEvent) (block *schema.ContentBlock, err error) {
-	key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
-	blockIdx := r.getBlockIndex(key)
-
-	indices, ok := r.ProcessingAssistantGenTextBlockIndex[ev.ItemID]
-	if !ok {
-		indices = map[int]bool{}
-		r.ProcessingAssistantGenTextBlockIndex[ev.ItemID] = indices
-	}
-
-	indices[blockIdx] = true
-
-	meta := &schema.StreamingMeta{Index: blockIdx}
-
-	switch ev.Part.AsAny().(type) {
+	switch part := ev.Part.AsAny().(type) {
 	case responses.ResponseOutputText, responses.ResponseOutputRefusal:
+		key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
+		blockIdx := r.getBlockIndex(key)
+
+		indices, ok := r.ProcessingAssistantGenTextBlockIndex[ev.ItemID]
+		if !ok {
+			indices = map[int]bool{}
+			r.ProcessingAssistantGenTextBlockIndex[ev.ItemID] = indices
+		}
+
+		indices[blockIdx] = true
+
+		meta := &schema.StreamingMeta{Index: blockIdx}
 		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
+
+	case responses.ResponseContentPartAddedEventPartReasoningText:
+		reasoning := &schema.Reasoning{
+			OpenAIExtension: &openai.ReasoningExtension{
+				Content: []*openai.ReasoningContent{
+					{
+						Text:  part.Text,
+						Index: ptrOf(int(ev.ContentIndex)),
+					},
+				},
+			},
+		}
+		meta := &schema.StreamingMeta{Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex))}
+		block = schema.NewContentBlockChunk(reasoning, meta)
+
 	default:
-		return nil, fmt.Errorf("unknown content part type: %T", ev.Part)
+		// Unknown content part types are ignored rather than failing the stream.
+		return nil, nil
 	}
 
 	setItemStatus(block, string(responses.ResponseStatusInProgress))
@@ -822,27 +827,28 @@ func (r *streamReceiver) contentPartAddedEventToContentBlock(ev responses.Respon
 }
 
 func (r *streamReceiver) contentPartDoneEventToContentBlock(ev responses.ResponseContentPartDoneEvent) (block *schema.ContentBlock, err error) {
-	key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
-	blockIdx := r.getBlockIndex(key)
-
-	indices, ok := r.ProcessingAssistantGenTextBlockIndex[ev.ItemID]
-	if !ok {
-		return nil, fmt.Errorf("item %q has no processing assistant gen text block index", ev.ItemID)
-	}
-
-	delete(indices, blockIdx)
-
-	meta := &schema.StreamingMeta{Index: blockIdx}
-
 	switch ev.Part.AsAny().(type) {
-	case responses.ResponseOutputText:
-		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
-	default:
-		return nil, fmt.Errorf("unknown content part type: %T", ev.Part)
-	}
+	case responses.ResponseOutputText, responses.ResponseOutputRefusal:
+		key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
+		blockIdx := r.getBlockIndex(key)
 
-	block.StreamingMeta = &schema.StreamingMeta{
-		Index: blockIdx,
+		indices, ok := r.ProcessingAssistantGenTextBlockIndex[ev.ItemID]
+		if !ok {
+			return nil, fmt.Errorf("item %q has no processing assistant gen text block index", ev.ItemID)
+		}
+
+		delete(indices, blockIdx)
+
+		meta := &schema.StreamingMeta{Index: blockIdx}
+		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
+
+	case responses.ResponseContentPartDoneEventPartReasoningText:
+		meta := &schema.StreamingMeta{Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex))}
+		block = schema.NewContentBlockChunk(&schema.Reasoning{}, meta)
+
+	default:
+		// Unknown content part types are ignored rather than failing the stream.
+		return nil, nil
 	}
 
 	setItemStatus(block, string(responses.ResponseStatusCompleted))
@@ -923,6 +929,28 @@ func (r *streamReceiver) reasoningSummaryTextDeltaEventToContentBlock(ev respons
 
 	reasoning := &schema.Reasoning{
 		Text: text,
+	}
+
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex)),
+	}
+	block := schema.NewContentBlockChunk(reasoning, meta)
+
+	setItemID(block, ev.ItemID)
+
+	return block
+}
+
+func (r *streamReceiver) reasoningTextDeltaEventToContentBlock(ev responses.ResponseReasoningTextDeltaEvent) *schema.ContentBlock {
+	reasoning := &schema.Reasoning{
+		OpenAIExtension: &openai.ReasoningExtension{
+			Content: []*openai.ReasoningContent{
+				{
+					Text:  ev.Delta,
+					Index: ptrOf(int(ev.ContentIndex)),
+				},
+			},
+		},
 	}
 
 	meta := &schema.StreamingMeta{

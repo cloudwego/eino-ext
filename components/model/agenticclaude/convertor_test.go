@@ -1309,3 +1309,89 @@ func TestAssistantGenTextToBlockParamWithCitations(t *testing.T) {
 		t.Fatalf("json = %s", mustJSON(t, blockParam))
 	}
 }
+
+func TestToAnthropicMessagesMergeToolOnly(t *testing.T) {
+	toolMsg := func(callID string) *schema.AgenticMessage {
+		return &schema.AgenticMessage{
+			Role: schema.AgenticRoleTypeUser,
+			ContentBlocks: []*schema.ContentBlock{
+				schema.NewContentBlock(&schema.FunctionToolResult{
+					CallID: callID,
+					Name:   "get_weather",
+					Content: []*schema.FunctionToolResultContentBlock{
+						{
+							Type: schema.FunctionToolResultContentBlockTypeText,
+							Text: &schema.UserInputText{Text: "ok"},
+						},
+					},
+				}),
+			},
+		}
+	}
+
+	t.Run("two consecutive tool-only messages merged", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			schema.UserAgenticMessage("hello"),
+			toolMsg("call_1"),
+			toolMsg("call_2"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 2 {
+			t.Fatalf("len(msgParams) = %d, want 2", len(msgParams))
+		}
+		if len(msgParams[1].Content) != 2 {
+			t.Fatalf("len(merged content) = %d, want 2", len(msgParams[1].Content))
+		}
+	})
+
+	t.Run("three consecutive tool-only messages merged", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			toolMsg("call_1"),
+			toolMsg("call_2"),
+			toolMsg("call_3"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 1 {
+			t.Fatalf("len(msgParams) = %d, want 1", len(msgParams))
+		}
+		if len(msgParams[0].Content) != 3 {
+			t.Fatalf("len(merged content) = %d, want 3", len(msgParams[0].Content))
+		}
+	})
+
+	t.Run("tool messages separated by assistant not merged", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			toolMsg("call_1"),
+			{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.AssistantGenText{Text: "ok"}),
+				},
+			},
+			toolMsg("call_2"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 3 {
+			t.Fatalf("len(msgParams) = %d, want 3", len(msgParams))
+		}
+	})
+
+	t.Run("user message with text not merged with tool message", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			toolMsg("call_1"),
+			schema.UserAgenticMessage("more"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 2 {
+			t.Fatalf("len(msgParams) = %d, want 2", len(msgParams))
+		}
+	})
+}

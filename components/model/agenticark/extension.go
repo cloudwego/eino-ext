@@ -68,9 +68,9 @@ type DoubaoAppResult struct {
 }
 
 type DoubaoAppBlock struct {
-	// StreamingMeta contains streaming metadata for this block.
-	// Only present when processing streaming response.
-	StreamingMeta *DoubaoAppStreamingMeta `json:"streaming_meta,omitempty" mapstructure:"streaming_meta,omitempty"`
+	// Index is the index of this block within DoubaoApp result.
+	// Only available in streaming response.
+	Index *int `json:"index,omitempty" mapstructure:"index,omitempty"`
 
 	Type            DoubaoAppBlockType        `json:"type,omitempty" mapstructure:"type,omitempty"`
 	OutputText      *DoubaoAppOutputText      `json:"output_text,omitempty" mapstructure:"output_text,omitempty"`
@@ -79,19 +79,13 @@ type DoubaoAppBlock struct {
 	ReasoningSearch *DoubaoAppReasoningSearch `json:"reasoning_search,omitempty" mapstructure:"reasoning_search,omitempty"`
 }
 
-// DoubaoAppStreamingMeta contains streaming metadata for DoubaoAppBlock.
-type DoubaoAppStreamingMeta struct {
-	// Index is the index of this block within DoubaoApp result.
-	Index int64 `json:"index,omitempty" mapstructure:"index,omitempty"`
-}
-
 type DoubaoAppOutputText struct {
 	ID       string `json:"id,omitempty" mapstructure:"id,omitempty"`
 	ParentID string `json:"parent_id,omitempty" mapstructure:"parent_id,omitempty"`
 	Text     string `json:"text,omitempty" mapstructure:"text,omitempty"`
 
 	// Status represents the status of the output text.
-	// It is only available in non-streaming response.
+	// Only available in non-streaming response.
 	Status string `json:"status,omitempty" mapstructure:"status,omitempty"`
 }
 
@@ -101,7 +95,7 @@ type DoubaoAppReasoningText struct {
 	ReasoningText string `json:"reasoning_text,omitempty" mapstructure:"reasoning_text,omitempty"`
 
 	// Status represents the status of the reasoning text.
-	// It is only available in non-streaming response.
+	// Only available in non-streaming response.
 	Status string `json:"status,omitempty" mapstructure:"status,omitempty"`
 }
 
@@ -113,11 +107,11 @@ type DoubaoAppSearch struct {
 	Results  []*DoubaoAppSearchResult `json:"results,omitempty" mapstructure:"results,omitempty"`
 
 	// SearchingState represents the state of searching.
-	// It is only available in streaming response.
+	// Only available in streaming response.
 	SearchingState string `json:"searching_state,omitempty" mapstructure:"searching_state,omitempty"`
 
 	// Status represents the status of the search.
-	// It is only available in non-streaming response.
+	// Only available in non-streaming response.
 	Status string `json:"status,omitempty" mapstructure:"status,omitempty"`
 }
 
@@ -556,8 +550,8 @@ func concatDoubaoAppResults(chunks []*DoubaoAppResult) (*DoubaoAppResult, error)
 	ret := &DoubaoAppResult{}
 	var (
 		blocks        []*DoubaoAppBlock
-		blockIndices  []int64
-		indexToBlocks = make(map[int64][]*DoubaoAppBlock)
+		blockIndices  []int
+		indexToBlocks = make(map[int][]*DoubaoAppBlock)
 	)
 
 	for _, chunk := range chunks {
@@ -568,7 +562,7 @@ func concatDoubaoAppResults(chunks []*DoubaoAppResult) (*DoubaoAppResult, error)
 			if block == nil {
 				continue
 			}
-			if block.StreamingMeta == nil {
+			if block.Index == nil {
 				if len(blockIndices) > 0 {
 					return nil, fmt.Errorf("found non-streaming block after streaming blocks")
 				}
@@ -577,7 +571,7 @@ func concatDoubaoAppResults(chunks []*DoubaoAppResult) (*DoubaoAppResult, error)
 				if len(blocks) > 0 {
 					return nil, fmt.Errorf("found streaming block after non-streaming blocks")
 				}
-				idx := block.StreamingMeta.Index
+				idx := *block.Index
 				if _, ok := indexToBlocks[idx]; !ok {
 					blockIndices = append(blockIndices, idx)
 				}
@@ -592,7 +586,7 @@ func concatDoubaoAppResults(chunks []*DoubaoAppResult) (*DoubaoAppResult, error)
 	}
 
 	if len(blockIndices) > 0 {
-		indexToBlock := make(map[int64]*DoubaoAppBlock)
+		indexToBlock := make(map[int]*DoubaoAppBlock)
 		for idx, bs := range indexToBlocks {
 			indexToBlock[idx] = concatDoubaoAppBlocks(bs)
 		}

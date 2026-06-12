@@ -44,7 +44,40 @@ func convAgenticMessages(messages []*schema.AgenticMessage) ([]*genai.Content, e
 		}
 		result[i] = content
 	}
-	return result, nil
+	return mergeAdjacentToolContents(result), nil
+}
+
+// mergeAdjacentToolContents merges adjacent tool response contents into one.
+// Gemini requires all tool responses to be in a single message when responding
+// to parallel tool calls.
+func mergeAdjacentToolContents(contents []*genai.Content) []*genai.Content {
+	if len(contents) <= 1 {
+		return contents
+	}
+
+	result := make([]*genai.Content, 0, len(contents))
+	for _, content := range contents {
+		if len(result) > 0 && isToolResponseContent(content) && isToolResponseContent(result[len(result)-1]) {
+			result[len(result)-1].Parts = append(result[len(result)-1].Parts, content.Parts...)
+		} else {
+			result = append(result, content)
+		}
+	}
+	return result
+}
+
+// isToolResponseContent reports whether a content consists solely of tool
+// response parts.
+func isToolResponseContent(content *genai.Content) bool {
+	if content == nil || len(content.Parts) == 0 {
+		return false
+	}
+	for _, part := range content.Parts {
+		if part.FunctionResponse == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // convAgenticMessage converts a single AgenticMessage to genai.Content
