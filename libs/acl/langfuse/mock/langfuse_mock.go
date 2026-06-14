@@ -65,6 +65,21 @@ func (mr *MockLangfuseMockRecorder) CreateEvent(body interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateEvent", reflect.TypeOf((*MockLangfuse)(nil).CreateEvent), body)
 }
 
+// CreateScore mocks base method.
+func (m *MockLangfuse) CreateScore(body *langfuse.ScoreEventBody) (string, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CreateScore", body)
+	ret0, _ := ret[0].(string)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CreateScore indicates an expected call of CreateScore.
+func (mr *MockLangfuseMockRecorder) CreateScore(body interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateScore", reflect.TypeOf((*MockLangfuse)(nil).CreateScore), body)
+}
+
 // CreateGeneration mocks base method.
 func (m *MockLangfuse) CreateGeneration(body *langfuse.GenerationEventBody) (string, error) {
 	m.ctrl.T.Helper()
