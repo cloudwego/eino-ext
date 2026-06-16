@@ -118,7 +118,64 @@ type Config struct {
 
 查看 [examples](./examples/) 目录获取完整的使用示例。
 
+## 动态凭据注入（streamable-http / SSE）
+
+如果授权在带外完成——例如由凭据保险库（Vault）对每个 server 预授权、在请求时返回
+已就绪的鉴权 header——你并不需要交互式 OAuth，只需要在每次建连请求时注入 header 的
+能力。相比配置阶段就固定的静态 header map，按请求调用的 provider 可以让凭据更晚解析
+（减少 secret 在内存中的停留）并跨请求刷新（例如会过期的 token）。
+
+officialmcp 消费的是调用方构建的 `*mcp.ClientSession`，因此这一步在调用方交给 transport
+的 `http.Client` 上接线。这个 seam 就是一个小的 `http.RoundTripper`，在每次请求前向
+provider 取 header：
+
+```go
+type CredentialProvider interface {
+    Credentials(ctx context.Context) (headers map[string]string, err error)
+}
+
+type credentialRoundTripper struct {
+    base     http.RoundTripper
+    headers  map[string]string  // 静态底
+    provider CredentialProvider // 动态，覆盖同名静态项；可为 nil
+}
+
+func (rt credentialRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+    clone := req.Clone(req.Context()) // 不要改动传入的请求
+    for k, v := range rt.headers {
+        clone.Header.Set(k, v)
+    }
+    if rt.provider != nil {
+        dyn, err := rt.provider.Credentials(req.Context()) // 继承请求的 deadline
+        if err != nil {
+            return nil, err
+        }
+        for k, v := range dyn {
+            clone.Header.Set(k, v)
+        }
+    }
+    base := rt.base
+    if base == nil {
+        base = http.DefaultTransport
+    }
+    return base.RoundTrip(clone)
+}
+
+client := &http.Client{Transport: credentialRoundTripper{base: http.DefaultTransport, provider: p}}
+transport := &mcp.StreamableClientTransport{Endpoint: serverURL, HTTPClient: client}
+session, _ := mcp.NewClient(impl, nil).Connect(ctx, transport, nil)
+tools, _ := omcp.GetTools(ctx, &omcp.Config{Cli: session})
+```
+
+provider 为 nil 时即退化为纯静态 header 行为，可与现有配置无缝组合。它不涉及 401 处理、
+不依赖 `oauthex`、不需要 build tag，并且适用于任何暴露 `Transport.HTTPClient` 的 go-sdk
+版本。SSE server 用 `SSEClientTransport{Endpoint, HTTPClient}`。完整程序见
+[examples/credentialprovider](./examples/credentialprovider/)。
+
 ## 远程（streamable-http）服务器的 OAuth 授权
+
+> 这是更重的*交互式*路径（授权码流程、401 challenge）。如果你的凭据已在带外解析完成，
+> 优先使用上面的 CredentialProvider seam——两者是正交的。
 
 许多托管的 MCP 服务器（Notion、Linear、GitHub 等）要求 OAuth 授权，而非静态
 token。officialmcp 消费的是调用方构建的 `*mcp.ClientSession`，因此 OAuth 在调用方
