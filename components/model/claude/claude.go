@@ -83,7 +83,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
 		}
 		if len(config.VertexServiceAccountJSON) > 0 {
-			googleCreds, err := google.CredentialsFromJSONWithType(ctx, config.VertexServiceAccountJSON, google.ServiceAccount,
+			googleCreds, err := google.CredentialsFromJSON(ctx, config.VertexServiceAccountJSON,
 				"https://www.googleapis.com/auth/cloud-platform")
 			if err != nil {
 				return nil, fmt.Errorf("create vertex credentials from service account JSON: %w", err)

@@ -51,9 +51,13 @@ func main() {
 		// Region:          "us-west-2",
 
 		// If you want to use Google Vertex AI, set ByVertex: true.
-		// Project ID and region are auto-detected from environment variables.
+		// Project ID and region are auto-detected from environment variables when omitted.
+		// For BYOS, pass raw service account JSON via VertexServiceAccountJSON instead of ADC.
 		// See: https://claude.ai/docs/en/google-vertex-ai
-		// ByVertex: true,
+		// ByVertex:                true,
+		// VertexProjectID:         "my-gcp-project",
+		// VertexRegion:            "us-east5",
+		// VertexServiceAccountJSON: serviceAccountJSON,
 
 		APIKey: apiKey,
 		// Model:     "claude-3-5-sonnet-20240620",
