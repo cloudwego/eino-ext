@@ -118,6 +118,45 @@ type Config struct {
 
 查看 [examples](./examples/) 目录获取完整的使用示例。
 
+## 远程（streamable-http）服务器的 OAuth 授权
+
+许多托管的 MCP 服务器（Notion、Linear、GitHub 等）要求 OAuth 授权，而非静态
+token。officialmcp 消费的是调用方构建的 `*mcp.ClientSession`，因此 OAuth 在调用方
+构建的 transport 上接线——而不在 officialmcp 内部。
+
+go-sdk 自身驱动整个流程：正常发送请求，仅当服务端返回 `401`/`403` + `WWW-Authenticate`
+时才触发 OAuth（challenge-driven，符合 MCP Authorization 规范）。不需要授权的服务器
+永远不会触发它，因此无需提前判断，现有服务器的行为也完全不变。
+
+在 `mcp.StreamableClientTransport` 上设置 `OAuthHandler` 即可接入：
+
+```go
+oauthHandler, err := auth.NewAuthorizationCodeHandler(&auth.AuthorizationCodeHandlerConfig{
+    RedirectURL: redirectURL,
+    DynamicClientRegistrationConfig: &auth.DynamicClientRegistrationConfig{
+        Metadata: &oauthex.ClientRegistrationMetadata{
+            ClientName:   "my-app",
+            RedirectURIs: []string{redirectURL},
+        },
+    },
+    // 唯一需要你提供的交互：把 args.URL 呈现给用户，并返回重定向得到的 code/state。
+    // 使用带超时的 ctx——授权流程期间 transport 会持锁。
+    AuthorizationCodeFetcher: fetchAuthorizationCode,
+})
+// ...
+transport := &mcp.StreamableClientTransport{Endpoint: serverURL, OAuthHandler: oauthHandler}
+session, _ := mcp.NewClient(impl, nil).Connect(ctx, transport, nil)
+tools, _ := omcp.GetTools(ctx, &omcp.Config{Cli: session})
+```
+
+`auth.AuthorizationCodeHandler` 是 SDK 内置的 handler，实现了 PRM 发现 → Auth Server
+Metadata → 可选的动态客户端注册（DCR）→ 授权码 + PKCE，你只需提供交互步骤。如需更底层
+的控制，`oauthex` 包直接暴露了发现/注册原语。完整程序见
+[examples/oauth](./examples/oauth/)。
+
+> 需要 go-sdk v1.6.x+：该版本将 `OAuthHandler` 设为 transport 的一等字段，且不再需要
+> build tag。`SSEClientTransport` 没有 OAuth 字段——OAuth 请使用 streamable-http。
+
 ## 更多详情
 
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
