@@ -32,6 +32,7 @@ import (
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/schema"
+	"golang.org/x/oauth2/google"
 )
 
 func TestDirectAnthropicAuthSelection(t *testing.T) {
@@ -1185,5 +1186,19 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 		model, err := NewChatModel(ctx, base)
 		assert.NoError(t, err)
 		assert.NotNil(t, model)
+	})
+
+	t.Run("service account JSON uses WithCredentials path", func(t *testing.T) {
+		mockey.PatchConvey("", t, func() {
+			mockey.Mock(google.CredentialsFromJSON).Return(&google.Credentials{
+				ProjectID: "from-sa",
+			}, nil).Build()
+
+			cfg := *base
+			cfg.VertexServiceAccountJSON = []byte(`{"type":"service_account","project_id":"from-sa"}`)
+			model, err := NewChatModel(ctx, &cfg)
+			assert.NoError(t, err)
+			assert.NotNil(t, model)
+		})
 	})
 }
