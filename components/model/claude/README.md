@@ -60,7 +60,7 @@ func main() {
 		// Region:          "us-west-2",
 
 		// if you want to use Google Vertex AI, set ByVertex: true.
-		// For BYOS, pass raw service account JSON via VertexServiceAccountJSON.
+		// Pass raw service account JSON via VertexServiceAccountJSON for explicit credentials.
 		// ByVertex:                 true,
 		// VertexProjectID:          "my-gcp-project",
 		// VertexRegion:             "us-east5",
@@ -156,7 +156,7 @@ type Config struct {
     // If not set, auto-detected from CLOUD_ML_REGION environment variable.
     VertexRegion string
 
-    // VertexServiceAccountJSON is raw GCP service account JSON for Vertex BYOS.
+    // VertexServiceAccountJSON is raw GCP service account JSON for Vertex.
     // When non-empty, credentials are built in-memory and passed to vertex.WithCredentials.
     // When empty and ByVertex is true, vertex.WithGoogleAuth (ADC) is used instead.
     VertexServiceAccountJSON []byte
