@@ -1228,9 +1228,15 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 	})
 
 	t.Run("ADC path when service account JSON empty", func(t *testing.T) {
-		model, err := NewChatModel(ctx, base)
-		assert.NoError(t, err)
-		assert.NotNil(t, model)
+		mockey.PatchConvey("", t, func() {
+			mockey.Mock(google.FindDefaultCredentials).Return(&google.Credentials{
+				ProjectID: "from-adc",
+			}, nil).Build()
+
+			model, err := NewChatModel(ctx, base)
+			assert.NoError(t, err)
+			assert.NotNil(t, model)
+		})
 	})
 
 	t.Run("service account JSON uses WithCredentials path", func(t *testing.T) {
