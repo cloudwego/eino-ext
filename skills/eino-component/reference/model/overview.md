@@ -4,6 +4,8 @@ Eino has two model paths:
 - Classic ChatModel uses `*schema.Message`.
 - AgenticModel uses `*schema.AgenticMessage` and preserves native block-based content.
 
+Common providers in `eino-ext` include `openai`, `atlascloud`, `deepseek`, `openrouter`, `qwen`, `claude`, `gemini`, `ark`, and `ollama`.
+
 ## Interfaces
 
 ```go

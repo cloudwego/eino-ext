@@ -27,6 +27,12 @@ For more details about component implementations, please refer to the [Eino ecos
 - **callback handlers**: official callback handlers implementing Eino's CallbackHandler interface, such as [Langfuse tracing](https://langfuse.com/docs/tracing) callback.
 - **DevOps tools**: IDE plugin for Eino that enables visualized debugging, UI based graph editing and more. For more details, please refer to the  [Eino Dev tooling documentation.](https://www.cloudwego.io/zh/docs/eino/core_modules/devops/)
 
+## Atlas Cloud
+
+**[Atlas Cloud](https://www.atlascloud.ai/?utm_source=github&utm_medium=link&utm_campaign=eino-ext)** is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities.
+
+Check out Atlas Cloud's new coding plan promotion for more budget-friendly API access: [https://www.atlascloud.ai/console/coding-plan](https://www.atlascloud.ai/console/coding-plan)
+
 ## Security
 
 If you discover a potential security issue in this project, or think you may
