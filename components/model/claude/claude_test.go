@@ -1207,3 +1207,28 @@ func TestPopulateInputMergeConsecutiveTools(t *testing.T) {
 		assert.Len(t, params.Messages[2].Content, 2)
 	})
 }
+
+func TestVertexServiceAccountJSON(t *testing.T) {
+	ctx := context.Background()
+	base := &Config{
+		ByVertex:        true,
+		VertexProjectID: "test-project",
+		VertexRegion:    "us-east5",
+		Model:           "claude-3-opus-20240229",
+		MaxTokens:       1,
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		cfg := *base
+		cfg.VertexServiceAccountJSON = []byte(`not-json`)
+		_, err := NewChatModel(ctx, &cfg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "create vertex credentials from service account JSON")
+	})
+
+	t.Run("ADC path when service account JSON empty", func(t *testing.T) {
+		model, err := NewChatModel(ctx, base)
+		assert.NoError(t, err)
+		assert.NotNil(t, model)
+	})
+}
