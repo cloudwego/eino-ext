@@ -53,16 +53,16 @@ func TestConnectSSEAndCloseIdempotent(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	require.NotNil(t, managed.Session)
+	require.NotNil(t, managed)
 
-	result, err := managed.Session.CallTool(context.Background(), &mcp.CallToolParams{
+	result, err := managed.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "add",
 		Arguments: map[string]any{"x": 1, "y": 2},
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "3", result.Content[0].(*mcp.TextContent).Text)
-	assert.NoError(t, managed.Close(context.Background()))
-	assert.NoError(t, managed.Close(context.Background()))
+	assert.NoError(t, managed.Close())
+	assert.NoError(t, managed.Close())
 }
 
 func TestConnectStreamableHTTPWithHeaders(t *testing.T) {
@@ -88,9 +88,9 @@ func TestConnectStreamableHTTPWithHeaders(t *testing.T) {
 		},
 	})
 	require.NoError(t, err)
-	defer managed.Close(context.Background())
+	defer managed.Close()
 
-	result, err := managed.Session.CallTool(context.Background(), &mcp.CallToolParams{
+	result, err := managed.CallTool(context.Background(), &mcp.CallToolParams{
 		Name:      "add",
 		Arguments: map[string]any{"x": 2, "y": 3},
 	})
@@ -121,9 +121,9 @@ func TestNewTransportRejectsEmptyStdioCommand(t *testing.T) {
 	assert.Contains(t, err.Error(), "stdio command is empty")
 }
 
-func TestManagedSessionCloseNil(t *testing.T) {
-	var managed *ManagedSession
-	assert.NoError(t, managed.Close(context.Background()))
+func TestSessionCloseNil(t *testing.T) {
+	var managed *Session
+	assert.NoError(t, managed.Close())
 }
 
 func TestConnectRejectsInvalidURL(t *testing.T) {
@@ -148,5 +148,5 @@ func TestConnectUnsupportedTransport(t *testing.T) {
 	require.Error(t, err)
 	var startupErr *StartupError
 	require.ErrorAs(t, err, &startupErr)
-	assert.True(t, officialmcp.IsErrorKind(startupErr.Err, officialmcp.ErrorKindUnsupportedTransport))
+	assert.True(t, officialmcp.IsErrorKind(startupErr.Err, ErrorKindUnsupportedTransport))
 }

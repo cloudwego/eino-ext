@@ -35,6 +35,11 @@ const (
 	TransportStreamableHTTP = "streamable_http"
 )
 
+// ErrorKindUnsupportedTransport tags an unsupported TransportConfig.Type. It
+// lives here rather than in the officialmcp package because only the session
+// layer constructs transports.
+const ErrorKindUnsupportedTransport officialmcp.ErrorKind = "unsupported_transport"
+
 type ServerConfig struct {
 	Name              string
 	Transport         TransportConfig
@@ -53,13 +58,31 @@ type TransportConfig struct {
 	CWD     string
 }
 
-type ManagedSession struct {
-	Name    string
-	Session *mcp.ClientSession
+// Session is an officialmcp.ClientSession backed by a go-sdk session that
+// it rebuilds when a call fails with a connection-level error.
+//
+// A go-sdk session cannot be revived: once its connection fails the failure is
+// terminal and every subsequent call on it errors. The only recovery is to
+// discard it and connect again. Session owns the ServerConfig so it can
+// do exactly that — transparently to the officialmcp tools, which only see the
+// ClientSession interface.
+//
+// Reconnection is triggered only by officialmcp.IsConnectionError (the go-sdk
+// terminal sentinels). Protocol-level rejections (unknown tool, invalid params)
+// and application-level tool errors (result.IsError) leave the session healthy
+// and are returned to the caller unchanged — they never trigger a reconnect, so
+// a model repeatedly calling a tool with bad arguments cannot cause reconnect
+// churn.
+type Session struct {
+	Name string
 
-	closeOnce sync.Once
-	closeErr  error
+	cfg ServerConfig
+
+	mu      sync.Mutex
+	session *mcp.ClientSession
 }
+
+var _ officialmcp.ClientSession = (*Session)(nil)
 
 type StartupError struct {
 	ServerName    string
@@ -75,7 +98,18 @@ func (e *StartupError) Unwrap() error {
 	return e.Err
 }
 
-func Connect(ctx context.Context, cfg ServerConfig) (*ManagedSession, error) {
+// Connect establishes a session for cfg and returns a Session that will
+// transparently reconnect (with the same cfg) on connection-level failures.
+func Connect(ctx context.Context, cfg ServerConfig) (*Session, error) {
+	session, err := connect(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &Session{Name: cfg.Name, cfg: cfg, session: session}, nil
+}
+
+// connect builds the transport and dials a single go-sdk session.
+func connect(ctx context.Context, cfg ServerConfig) (*mcp.ClientSession, error) {
 	transport, err := newTransport(cfg.Transport)
 	if err != nil {
 		return nil, startupError(cfg, err)
@@ -90,26 +124,94 @@ func Connect(ctx context.Context, cfg ServerConfig) (*ManagedSession, error) {
 	if err != nil {
 		return nil, startupError(cfg, err)
 	}
-	return &ManagedSession{Name: cfg.Name, Session: session}, nil
+	return session, nil
 }
 
-func (m *ManagedSession) Close(ctx context.Context) error {
-	if m == nil || m.Session == nil {
+// Close closes the current underlying session. It is safe to call concurrently
+// with in-flight calls, but the session must not be used afterwards.
+func (s *Session) Close() error {
+	if s == nil {
 		return nil
 	}
-	done := make(chan error, 1)
-	go func() {
-		m.closeOnce.Do(func() {
-			m.closeErr = m.Session.Close()
-		})
-		done <- m.closeErr
-	}()
-	select {
-	case err := <-done:
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
+	s.mu.Lock()
+	cur := s.session
+	s.mu.Unlock()
+	if cur == nil {
+		return nil
 	}
+	return cur.Close()
+}
+
+func (s *Session) current() *mcp.ClientSession {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.session
+}
+
+// reconnect rebuilds the session, but only if stale is still the current one.
+// If another goroutine already reconnected (current != stale), it returns the
+// fresh session without connecting again, so a burst of concurrent connection
+// errors yields a single reconnect.
+func (s *Session) reconnect(ctx context.Context, stale *mcp.ClientSession) (*mcp.ClientSession, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.session != stale {
+		return s.session, nil
+	}
+	if stale != nil {
+		_ = stale.Close()
+	}
+	cur, err := connect(ctx, s.cfg)
+	if err != nil {
+		return nil, err
+	}
+	s.session = cur
+	return s.session, nil
+}
+
+// ListTools calls the underlying session, reconnecting and retrying once on a
+// connection-level failure.
+func (s *Session) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
+	cur := s.current()
+	res, err := cur.ListTools(ctx, params)
+	if err == nil || !officialmcp.IsConnectionError(err) {
+		return res, err
+	}
+	cur, rerr := s.reconnect(ctx, cur)
+	if rerr != nil {
+		return nil, rerr
+	}
+	return cur.ListTools(ctx, params)
+}
+
+// CallTool calls the underlying session, reconnecting and retrying once on a
+// connection-level failure.
+func (s *Session) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+	cur := s.current()
+	res, err := cur.CallTool(ctx, params)
+	if err == nil || !officialmcp.IsConnectionError(err) {
+		return res, err
+	}
+	cur, rerr := s.reconnect(ctx, cur)
+	if rerr != nil {
+		return nil, rerr
+	}
+	return cur.CallTool(ctx, params)
+}
+
+// Ping pings the underlying session, reconnecting and retrying once on a
+// connection-level failure.
+func (s *Session) Ping(ctx context.Context, params *mcp.PingParams) error {
+	cur := s.current()
+	err := cur.Ping(ctx, params)
+	if err == nil || !officialmcp.IsConnectionError(err) {
+		return err
+	}
+	cur, rerr := s.reconnect(ctx, cur)
+	if rerr != nil {
+		return rerr
+	}
+	return cur.Ping(ctx, params)
 }
 
 func newTransport(cfg TransportConfig) (mcp.Transport, error) {
@@ -136,7 +238,7 @@ func newTransport(cfg TransportConfig) (mcp.Transport, error) {
 		return &mcp.CommandTransport{Command: cmd}, nil
 	default:
 		return nil, &officialmcp.Error{
-			Kind: officialmcp.ErrorKindUnsupportedTransport,
+			Kind: ErrorKindUnsupportedTransport,
 			Err:  fmt.Errorf("unsupported official mcp transport: %s", cfg.Type),
 		}
 	}
