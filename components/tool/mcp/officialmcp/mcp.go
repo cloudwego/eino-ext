@@ -149,20 +149,18 @@ func IsConnectionError(err error) bool {
 // ClientSession is the anti-corruption boundary between officialmcp and the
 // go-sdk session. It is the subset of *mcp.ClientSession that the tools require.
 // *mcp.ClientSession satisfies it directly, so a raw session can still be passed
-// as Cli. A reconnecting wrapper (see the session sub-package) can also implement
+// as Cli. A session wrapper (see the session sub-package) can also implement
 // it to rebuild the underlying session on connection-level failures, transparently
 // to the tools.
 type ClientSession interface {
 	ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error)
 	CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
-	Ping(ctx context.Context, params *mcp.PingParams) error
-	Close() error
 }
 
 type Config struct {
 	// Cli is the MCP client session. *mcp.ClientSession satisfies this directly;
 	// for transparent reconnection on connection-level failures, pass a
-	// session.ReconnectingSession. ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// session.Session. ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// Notice: should Initialize with server before use
 	Cli ClientSession
 

@@ -74,7 +74,8 @@ func TestSessionReconnectsAfterServerRestart(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "3", res.Content[0].(*mcp.TextContent).Text)
 
-	sessionBefore := rs.current()
+	sessionBefore, err := rs.current()
+	require.NoError(t, err)
 
 	// Replace the server with a brand-new one. The old session's sessionID is now
 	// unknown to the server, so the next call fails connection-level and triggers
@@ -87,7 +88,9 @@ func TestSessionReconnectsAfterServerRestart(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "9", res.Content[0].(*mcp.TextContent).Text)
 
-	assert.NotSame(t, sessionBefore, rs.current(), "expected a new underlying session after reconnect")
+	sessionAfter, err := rs.current()
+	require.NoError(t, err)
+	assert.NotSame(t, sessionBefore, sessionAfter, "expected a new underlying session after reconnect")
 }
 
 func TestReconnectOnlyOncePerStaleSession(t *testing.T) {
@@ -102,7 +105,8 @@ func TestReconnectOnlyOncePerStaleSession(t *testing.T) {
 	require.NoError(t, err)
 	defer rs.Close()
 
-	stale := rs.current()
+	stale, err := rs.current()
+	require.NoError(t, err)
 
 	// Concurrent reconnect calls referencing the same stale session must collapse
 	// into a single Connect: only the first swaps, the rest observe the fresh one.

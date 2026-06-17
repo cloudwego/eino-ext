@@ -18,6 +18,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -56,7 +57,18 @@ type TransportConfig struct {
 	Env     map[string]string
 	Headers map[string]string
 	CWD     string
+
+	// HTTPClient overrides the client used for URL-based transports (SSE,
+	// streamable-http). When set, it is used as the base client, so a caller can install a
+	// RoundTripper that injects per-request auth (e.g. a credential vault whose
+	// token is resolved fresh on every request and survives reconnects). Headers,
+	// when set, are pre-set on each request before the supplied client's
+	// RoundTripper runs, so that RoundTripper sees them and may override them.
+	// Ignored for stdio.
+	HTTPClient *http.Client
 }
+
+var ErrSessionClosed = errors.New("official mcp session is closed")
 
 // Session is an officialmcp.ClientSession backed by a go-sdk session that
 // it rebuilds when a call fails with a connection-level error.
@@ -80,6 +92,7 @@ type Session struct {
 
 	mu      sync.Mutex
 	session *mcp.ClientSession
+	closed  bool
 }
 
 var _ officialmcp.ClientSession = (*Session)(nil)
@@ -134,7 +147,13 @@ func (s *Session) Close() error {
 		return nil
 	}
 	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
 	cur := s.session
+	s.session = nil
 	s.mu.Unlock()
 	if cur == nil {
 		return nil
@@ -142,10 +161,13 @@ func (s *Session) Close() error {
 	return cur.Close()
 }
 
-func (s *Session) current() *mcp.ClientSession {
+func (s *Session) current() (*mcp.ClientSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.session
+	if s.closed || s.session == nil {
+		return nil, ErrSessionClosed
+	}
+	return s.session, nil
 }
 
 // reconnect rebuilds the session, but only if stale is still the current one.
@@ -155,6 +177,9 @@ func (s *Session) current() *mcp.ClientSession {
 func (s *Session) reconnect(ctx context.Context, stale *mcp.ClientSession) (*mcp.ClientSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return nil, ErrSessionClosed
+	}
 	if s.session != stale {
 		return s.session, nil
 	}
@@ -172,7 +197,10 @@ func (s *Session) reconnect(ctx context.Context, stale *mcp.ClientSession) (*mcp
 // ListTools calls the underlying session, reconnecting and retrying once on a
 // connection-level failure.
 func (s *Session) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
-	cur := s.current()
+	cur, err := s.current()
+	if err != nil {
+		return nil, err
+	}
 	res, err := cur.ListTools(ctx, params)
 	if err == nil || !officialmcp.IsConnectionError(err) {
 		return res, err
@@ -187,7 +215,10 @@ func (s *Session) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*
 // CallTool calls the underlying session, reconnecting and retrying once on a
 // connection-level failure.
 func (s *Session) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
-	cur := s.current()
+	cur, err := s.current()
+	if err != nil {
+		return nil, err
+	}
 	res, err := cur.CallTool(ctx, params)
 	if err == nil || !officialmcp.IsConnectionError(err) {
 		return res, err
@@ -202,8 +233,11 @@ func (s *Session) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mc
 // Ping pings the underlying session, reconnecting and retrying once on a
 // connection-level failure.
 func (s *Session) Ping(ctx context.Context, params *mcp.PingParams) error {
-	cur := s.current()
-	err := cur.Ping(ctx, params)
+	cur, err := s.current()
+	if err != nil {
+		return err
+	}
+	err = cur.Ping(ctx, params)
 	if err == nil || !officialmcp.IsConnectionError(err) {
 		return err
 	}
@@ -220,12 +254,12 @@ func newTransport(cfg TransportConfig) (mcp.Transport, error) {
 		if err := validateAbsoluteURL(cfg.URL); err != nil {
 			return nil, err
 		}
-		return &mcp.SSEClientTransport{Endpoint: cfg.URL, HTTPClient: httpClientWithHeaders(cfg.Headers)}, nil
+		return &mcp.SSEClientTransport{Endpoint: cfg.URL, HTTPClient: httpClientFor(cfg)}, nil
 	case TransportStreamableHTTP:
 		if err := validateAbsoluteURL(cfg.URL); err != nil {
 			return nil, err
 		}
-		return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: httpClientWithHeaders(cfg.Headers)}, nil
+		return &mcp.StreamableClientTransport{Endpoint: cfg.URL, HTTPClient: httpClientFor(cfg)}, nil
 	case TransportStdio:
 		if cfg.Command == "" {
 			return nil, fmt.Errorf("stdio command is empty")
@@ -272,6 +306,27 @@ func flattenEnv(env map[string]string) []string {
 		ret = append(ret, k+"="+v)
 	}
 	return ret
+}
+
+// httpClientFor returns the HTTP client for a URL-based transport. A caller-
+// supplied HTTPClient becomes the base client; static Headers are layered on top.
+func httpClientFor(cfg TransportConfig) *http.Client {
+	if cfg.HTTPClient == nil {
+		return httpClientWithHeaders(cfg.Headers)
+	}
+	if len(cfg.Headers) == 0 {
+		return cfg.HTTPClient
+	}
+	copied := *cfg.HTTPClient
+	base := copied.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	copied.Transport = headerRoundTripper{
+		base:    base,
+		headers: cfg.Headers,
+	}
+	return &copied
 }
 
 func httpClientWithHeaders(headers map[string]string) *http.Client {

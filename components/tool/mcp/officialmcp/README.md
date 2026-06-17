@@ -105,9 +105,11 @@ The tool can be configured using the `mcp.Config` struct:
 
 ```go
 type Config struct {
-	// Cli is the MCP (Model Control Protocol) client, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Cli is the MCP client session. *mcp.ClientSession satisfies this directly;
+	// for transparent reconnection on connection-level failures, pass a
+	// session.Session. ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// Notice: should Initialize with server before use
-	Cli *mcp.ClientSession
+	Cli ClientSession
 
 	ServerName string
 

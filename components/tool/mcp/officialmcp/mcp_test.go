@@ -413,8 +413,8 @@ func jsonRoundTrip(v any) error {
 // stubSession is a fake ClientSession that returns canned errors, used to test
 // error classification without a live transport.
 type stubSession struct {
-	tools     *mcp.ListToolsResult
-	callErr   error
+	tools      *mcp.ListToolsResult
+	callErr    error
 	callResult *mcp.CallToolResult
 }
 
@@ -428,10 +428,6 @@ func (s *stubSession) ListTools(ctx context.Context, params *mcp.ListToolsParams
 func (s *stubSession) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	return s.callResult, s.callErr
 }
-
-func (s *stubSession) Ping(ctx context.Context, params *mcp.PingParams) error { return nil }
-
-func (s *stubSession) Close() error { return nil }
 
 func newStubTool(t *testing.T, s *stubSession) tool.InvokableTool {
 	t.Helper()
