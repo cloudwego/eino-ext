@@ -90,12 +90,12 @@ type DescriptionPolicy struct {
 type ErrorKind string
 
 const (
-	ErrorKindListTools            ErrorKind = "list_tools"
-	ErrorKindSchemaConvert        ErrorKind = "schema_convert"
-	ErrorKindCallTool             ErrorKind = "call_tool"
-	ErrorKindServerToolError      ErrorKind = "server_tool_error"
-	ErrorKindResultPolicy         ErrorKind = "result_policy"
-	ErrorKindUnsupportedTransport ErrorKind = "unsupported_transport"
+	ErrorKindListTools       ErrorKind = "list_tools"
+	ErrorKindSchemaConvert   ErrorKind = "schema_convert"
+	ErrorKindCallTool        ErrorKind = "call_tool"
+	ErrorKindConnection      ErrorKind = "connection"
+	ErrorKindServerToolError ErrorKind = "server_tool_error"
+	ErrorKindResultPolicy    ErrorKind = "result_policy"
 )
 
 type Error struct {
@@ -128,10 +128,43 @@ func IsErrorKind(err error, kind ErrorKind) bool {
 	return errors.As(err, &e) && e.Kind == kind
 }
 
+// IsConnectionError reports whether err stems from a connection-level failure
+// (the session is dead and must be rebuilt), as opposed to a protocol-level
+// rejection (unknown tool, invalid params) or an application-level tool error
+// (result.IsError), on both of which the session remains usable.
+//
+// It matches the go-sdk's terminal sentinels as well as officialmcp's own
+// ErrorKindConnection, so callers can use it on either a raw CallTool/ListTools
+// error or an officialmcp *Error.
+func IsConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if IsErrorKind(err, ErrorKindConnection) {
+		return true
+	}
+	return errors.Is(err, mcp.ErrConnectionClosed) || errors.Is(err, mcp.ErrSessionMissing)
+}
+
+// ClientSession is the anti-corruption boundary between officialmcp and the
+// go-sdk session. It is the subset of *mcp.ClientSession that the tools require.
+// *mcp.ClientSession satisfies it directly, so a raw session can still be passed
+// as Cli. A reconnecting wrapper (see the session sub-package) can also implement
+// it to rebuild the underlying session on connection-level failures, transparently
+// to the tools.
+type ClientSession interface {
+	ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error)
+	CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	Ping(ctx context.Context, params *mcp.PingParams) error
+	Close() error
+}
+
 type Config struct {
-	// Cli is the MCP (Model Control Protocol) client, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Cli is the MCP client session. *mcp.ClientSession satisfies this directly;
+	// for transparent reconnection on connection-level failures, pass a
+	// session.ReconnectingSession. ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// Notice: should Initialize with server before use
-	Cli *mcp.ClientSession
+	Cli ClientSession
 
 	ServerName string
 
@@ -247,7 +280,7 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 }
 
 type toolHelper struct {
-	cli                     *mcp.ClientSession
+	cli                     ClientSession
 	info                    *schema.ToolInfo
 	serverName              string
 	rawToolName             string
@@ -268,7 +301,11 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		Arguments: json.RawMessage(argumentsInJSON),
 	})
 	if err != nil {
-		return "", &Error{Kind: ErrorKindCallTool, ServerName: m.serverName, RawToolName: m.rawToolName, ExposedToolName: m.exposedToolName, Err: fmt.Errorf("failed to call official mcp tool: %w", err)}
+		kind := ErrorKindCallTool
+		if IsConnectionError(err) {
+			kind = ErrorKindConnection
+		}
+		return "", &Error{Kind: kind, ServerName: m.serverName, RawToolName: m.rawToolName, ExposedToolName: m.exposedToolName, Err: fmt.Errorf("failed to call official mcp tool: %w", err)}
 	}
 	if result == nil {
 		return "", &Error{Kind: ErrorKindResultPolicy, ServerName: m.serverName, RawToolName: m.rawToolName, ExposedToolName: m.exposedToolName, Err: errors.New("official mcp tool result is nil")}
@@ -350,7 +387,11 @@ func listTools(ctx context.Context, conf *Config) ([]*mcp.Tool, error) {
 		}
 		listResults, err := conf.Cli.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
 		if err != nil {
-			return nil, &Error{Kind: ErrorKindListTools, ServerName: conf.ServerName, Err: fmt.Errorf("list official mcp tools fail: %w", err)}
+			kind := ErrorKindListTools
+			if IsConnectionError(err) {
+				kind = ErrorKindConnection
+			}
+			return nil, &Error{Kind: kind, ServerName: conf.ServerName, Err: fmt.Errorf("list official mcp tools fail: %w", err)}
 		}
 		tools = append(tools, listResults.Tools...)
 		if mode == ListToolsSinglePage || listResults.NextCursor == "" {

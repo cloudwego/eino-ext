@@ -19,11 +19,13 @@ package officialmcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/schema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -406,4 +408,71 @@ func jsonRoundTrip(v any) error {
 	}
 	var out any
 	return json.Unmarshal(b, &out)
+}
+
+// stubSession is a fake ClientSession that returns canned errors, used to test
+// error classification without a live transport.
+type stubSession struct {
+	tools     *mcp.ListToolsResult
+	callErr   error
+	callResult *mcp.CallToolResult
+}
+
+func (s *stubSession) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
+	if s.tools != nil {
+		return s.tools, nil
+	}
+	return &mcp.ListToolsResult{}, nil
+}
+
+func (s *stubSession) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
+	return s.callResult, s.callErr
+}
+
+func (s *stubSession) Ping(ctx context.Context, params *mcp.PingParams) error { return nil }
+
+func (s *stubSession) Close() error { return nil }
+
+func newStubTool(t *testing.T, s *stubSession) tool.InvokableTool {
+	t.Helper()
+	return &toolHelper{cli: s, rawToolName: "greet", exposedToolName: "greet", info: &schema.ToolInfo{Name: "greet"}}
+}
+
+func TestInvokableRunClassifiesConnectionError(t *testing.T) {
+	ctx := context.Background()
+	// A connection-level failure (go-sdk terminal sentinel) must be tagged
+	// ErrorKindConnection so callers can reconnect, not ErrorKindCallTool.
+	connErr := fmt.Errorf("calling %q: %w", "tools/call", mcp.ErrConnectionClosed)
+	_, err := newStubTool(t, &stubSession{callErr: connErr}).InvokableRun(ctx, "{}")
+	require.Error(t, err)
+	assert.True(t, IsErrorKind(err, ErrorKindConnection), "want ErrorKindConnection, got %v", err)
+	assert.True(t, IsConnectionError(err))
+
+	sessErr := fmt.Errorf("wrap: %w", mcp.ErrSessionMissing)
+	_, err = newStubTool(t, &stubSession{callErr: sessErr}).InvokableRun(ctx, "{}")
+	require.Error(t, err)
+	assert.True(t, IsErrorKind(err, ErrorKindConnection))
+}
+
+func TestInvokableRunClassifiesProtocolErrorAsCallTool(t *testing.T) {
+	ctx := context.Background()
+	// A protocol-level rejection (unknown tool / invalid params) leaves the
+	// session healthy: it must stay ErrorKindCallTool and NOT be treated as a
+	// connection error, otherwise a model calling with bad args causes reconnect
+	// churn.
+	protoErr := errors.New("calling \"tools/call\": jsonrpc2: code -32602: invalid params")
+	_, err := newStubTool(t, &stubSession{callErr: protoErr}).InvokableRun(ctx, "{}")
+	require.Error(t, err)
+	assert.True(t, IsErrorKind(err, ErrorKindCallTool))
+	assert.False(t, IsErrorKind(err, ErrorKindConnection))
+	assert.False(t, IsConnectionError(err))
+}
+
+func TestIsConnectionError(t *testing.T) {
+	assert.False(t, IsConnectionError(nil))
+	assert.False(t, IsConnectionError(errors.New("plain")))
+	assert.True(t, IsConnectionError(fmt.Errorf("x: %w", mcp.ErrConnectionClosed)))
+	assert.True(t, IsConnectionError(fmt.Errorf("x: %w", mcp.ErrSessionMissing)))
+	assert.True(t, IsConnectionError(&Error{Kind: ErrorKindConnection}))
+	assert.False(t, IsConnectionError(&Error{Kind: ErrorKindCallTool}))
 }
