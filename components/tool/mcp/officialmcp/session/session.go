@@ -32,7 +32,7 @@ import (
 const (
 	TransportSSE            = "sse"
 	TransportStdio          = "stdio"
-	TransportStreamableHTTP = "streamable_http"
+	TransportStreamableHTTP = "streamable-http"
 )
 
 // ErrorKindUnsupportedTransport tags an unsupported TransportConfig.Type. It
