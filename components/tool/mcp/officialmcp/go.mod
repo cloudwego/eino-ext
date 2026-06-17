@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.9.1-0.20260601061207-ecad01a25e71
+	github.com/cloudwego/eino v0.9.7
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	github.com/stretchr/testify v1.10.0
