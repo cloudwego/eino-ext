@@ -105,9 +105,11 @@ func startMCPServer() *httptest.Server {
 
 ```go
 type Config struct {
-	// Cli 是 MCP（Model Control Protocol）客户端，参考：https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Cli 是 MCP 客户端会话。*mcp.ClientSession 可直接满足该接口；
+	// 如需在连接级错误上透明重连，可传入 session.Session。
+	// 参考：https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// 注意：使用前应先与服务器进行初始化
-	Cli *mcp.ClientSession
+	Cli ClientSession
 
 	ServerName string
 

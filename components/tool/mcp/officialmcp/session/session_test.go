@@ -19,6 +19,7 @@ package session
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -33,6 +34,12 @@ import (
 type addParams struct {
 	X int `json:"x"`
 	Y int `json:"y"`
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
 
 func TestConnectSSEAndCloseIdempotent(t *testing.T) {
@@ -62,6 +69,11 @@ func TestConnectSSEAndCloseIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "3", result.Content[0].(*mcp.TextContent).Text)
 	assert.NoError(t, managed.Close())
+	_, err = managed.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "add",
+		Arguments: map[string]any{"x": 1, "y": 2},
+	})
+	require.ErrorIs(t, err, ErrSessionClosed)
 	assert.NoError(t, managed.Close())
 }
 
@@ -96,6 +108,33 @@ func TestConnectStreamableHTTPWithHeaders(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "5", result.Content[0].(*mcp.TextContent).Text)
+}
+
+func TestHTTPClientAndHeadersCompose(t *testing.T) {
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		assert.Equal(t, "token", req.Header.Get("Authorization"))
+		assert.Equal(t, "base", req.Header.Get("X-Base-Transport"))
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer httpServer.Close()
+
+	var customTransportCalled bool
+	client := httpClientFor(TransportConfig{
+		Headers: map[string]string{"Authorization": "token"},
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			customTransportCalled = true
+			assert.Equal(t, "token", req.Header.Get("Authorization"))
+			req.Header.Set("X-Base-Transport", "base")
+			return http.DefaultTransport.RoundTrip(req)
+		})},
+	})
+
+	resp, err := client.Get(httpServer.URL)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	_, err = io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	assert.True(t, customTransportCalled)
 }
 
 func TestNewTransportStdioConfig(t *testing.T) {
