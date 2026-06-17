@@ -23,8 +23,10 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
@@ -1184,9 +1186,7 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 
 	t.Run("ADC path when service account JSON empty", func(t *testing.T) {
 		mockey.PatchConvey("", t, func() {
-			mockey.Mock(google.FindDefaultCredentials).Return(&google.Credentials{
-				ProjectID: "from-adc",
-			}, nil).Build()
+			mockey.Mock(vertex.WithGoogleAuth).Return(option.WithAPIKey("adc-test")).Build()
 
 			model, err := NewChatModel(ctx, base)
 			assert.NoError(t, err)
@@ -1199,6 +1199,7 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 			mockey.Mock(google.CredentialsFromJSON).Return(&google.Credentials{
 				ProjectID: "from-sa",
 			}, nil).Build()
+			mockey.Mock(vertex.WithCredentials).Return(option.WithAPIKey("sa-test")).Build()
 
 			cfg := *base
 			cfg.VertexServiceAccountJSON = []byte(`{"type":"service_account","project_id":"from-sa"}`)
