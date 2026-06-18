@@ -625,6 +625,9 @@ func splitPagesRange(pages string) (startStr, endStr string, hasRange bool, err 
 	}
 	parts := strings.SplitN(trimmed, "-", 2)
 	startStr = strings.TrimSpace(parts[0])
+	if startStr == "" {
+		return "", "", false, fmt.Errorf("invalid pages parameter: %q (open-start range is not supported, start page is required)", pages)
+	}
 	if len(parts) == 1 {
 		return startStr, "", false, nil
 	}
