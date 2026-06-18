@@ -322,6 +322,9 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("%s is a directory, not a file", path)
+	}
 	if info.Size() == 0 {
 		return &filesystem.FileContent{}, nil
 	}
