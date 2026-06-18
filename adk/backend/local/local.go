@@ -314,6 +314,9 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("file not found: %s", path)
 		}
+		if os.IsPermission(err) {
+			return nil, fmt.Errorf("permission denied: %s", path)
+		}
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
