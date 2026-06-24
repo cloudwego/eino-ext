@@ -1269,3 +1269,46 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 		})
 	})
 }
+
+func Test_convSchemaMessage_ToolCallArguments(t *testing.T) {
+	// A tool call whose Function.Arguments is empty or invalid JSON (e.g. a
+	// streamed tool_use truncated mid-payload) must not crash request
+	// re-assembly: convSchemaMessage collapses it to a valid empty object so
+	// ToolUseBlockParam.MarshalJSON succeeds. Valid JSON passes through unchanged.
+	cases := []struct {
+		name string
+		args string
+		want string
+	}{
+		{name: "valid passes through", args: `{"city":"Paris"}`, want: `{"city":"Paris"}`},
+		{name: "empty becomes empty object", args: "", want: "{}"},
+		{name: "truncated becomes empty object", args: `{"file_path":"/tmp/x.json","content":"{\"items\":[`, want: "{}"},
+		{name: "malformed becomes empty object", args: `{"a":}`, want: "{}"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.Assistant,
+				ToolCalls: []schema.ToolCall{{
+					ID: "call-1",
+					Function: schema.FunctionCall{
+						Name:      "write_file",
+						Arguments: tc.args,
+					},
+				}},
+			}
+
+			mp, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, mp.Content, 1)
+
+			tu := mp.Content[0].OfToolUse
+			assert.NotNil(t, tu)
+			assert.Equal(t, tc.want, string(tu.Input.(json.RawMessage)))
+
+			// The whole message must marshal without "unexpected end of JSON input".
+			_, err = mp.MarshalJSON()
+			assert.NoError(t, err)
+		})
+	}
+}

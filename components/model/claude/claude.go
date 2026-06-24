@@ -1196,7 +1196,10 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		tc := message.ToolCalls[i]
 
 		args := tc.Function.Arguments
-		if args == "" {
+		// Empty or invalid (e.g. truncated streamed) Arguments would make
+		// ToolUseBlockParam.MarshalJSON fail on re-assembly; collapse both to a
+		// valid empty object (extends the empty-arg fix from #462).
+		if args == "" || !json.Valid([]byte(args)) {
 			args = "{}"
 		}
 		// Arguments are limited to object type.
