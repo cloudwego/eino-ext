@@ -16,6 +16,7 @@
 
 package claude
 
+// of returns a pointer to the given value.
 func of[T any](v T) *T {
 	return &v
 }
