@@ -38,6 +38,7 @@ type Langfuse interface {
 	CreateGeneration(body *GenerationEventBody) (string, error)
 	EndGeneration(body *GenerationEventBody) error
 	CreateEvent(body *EventEventBody) (string, error)
+	CreateScore(body *ScoreEventBody) (string, error)
 	Flush()
 }
 
@@ -218,6 +219,25 @@ func (l *langfuseIns) CreateEvent(body *EventEventBody) (string, error) {
 		ID:   uuid.NewString(),
 		Type: EventTypeEventCreate,
 		Body: eventBodyUnion{Event: body},
+	})
+}
+
+// CreateScore creates a new score for evaluating LLM outputs
+//
+// Parameters:
+//   - body: The score event details. If ID is empty, a new UUID will be generated
+//
+// Returns:
+//   - string: The ID of the created score
+//   - error: Any error that occurred during creation
+func (l *langfuseIns) CreateScore(body *ScoreEventBody) (string, error) {
+	if len(body.ID) == 0 {
+		body.ID = uuid.NewString()
+	}
+	return body.ID, l.tm.push(&event{
+		ID:   uuid.NewString(),
+		Type: EventTypeScoreCreate,
+		Body: eventBodyUnion{Score: body},
 	})
 }
 
