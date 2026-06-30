@@ -45,18 +45,26 @@ func TestTool(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}", result)
 
+	meta := &mcp.Meta{
+		AdditionalFields: map[string]any{"tenant_id": "tenant_1"},
+	}
 	tools, err = GetTools(ctx, &Config{
 		Cli:           cli,
 		ToolNameList:  []string{"name"},
 		CustomHeaders: map[string]string{"key": "value"},
+		Meta:          meta,
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(tools))
+	assert.Equal(t, "value", cli.listToolsRequest.Header.Get("key"))
+	assert.Equal(t, meta, cli.listToolsRequest.Params.Meta)
 	helper := tools[0].(*toolHelper)
 	assert.Equal(t, map[string]string{"key": "value"}, helper.customHeaders)
 }
 
-type mockMCPClient struct{}
+type mockMCPClient struct {
+	listToolsRequest mcp.ListToolsRequest
+}
 
 func (m *mockMCPClient) ListResourcesByPage(ctx context.Context, request mcp.ListResourcesRequest) (*mcp.ListResourcesResult, error) {
 	//TODO implement me
@@ -115,6 +123,7 @@ func (m *mockMCPClient) GetPrompt(ctx context.Context, request mcp.GetPromptRequ
 }
 
 func (m *mockMCPClient) ListTools(ctx context.Context, request mcp.ListToolsRequest) (*mcp.ListToolsResult, error) {
+	m.listToolsRequest = request
 	return &mcp.ListToolsResult{
 		Tools: []mcp.Tool{
 			{
