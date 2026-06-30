@@ -204,12 +204,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			tags.set(tracespec.Output, finalOutput)
 			tags.set(consts.CustomSpanTagKeyExtra, cbOutput.Extra)
 
-			if cbOutput.TokenUsage != nil {
-				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
-					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
-					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
-					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens)
-			}
+			setTokenUsageTags(tags, cbOutput.TokenUsage)
 		}
 
 		tags.set(tracespec.Stream, false)
@@ -230,13 +225,7 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 			tags.set(tracespec.Output, finalOutput)
 			tags.set(consts.CustomSpanTagKeyExtra, cbOutput.Extra)
 
-			if cbOutput.TokenUsage != nil {
-				tags.set(tracespec.Tokens, cbOutput.TokenUsage.TotalTokens).
-					set(tracespec.InputTokens, cbOutput.TokenUsage.PromptTokens).
-					set(tracespec.OutputTokens, cbOutput.TokenUsage.CompletionTokens).
-					set(tracespec.InputCachedTokens, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens).
-					set(tracespec.ReasoningTokens, cbOutput.TokenUsage.CompletionTokensDetails.ReasoningTokens)
-			}
+			setTokenUsageTags(tags, cbOutput.TokenUsage)
 
 			if cbOutput.Config != nil {
 				if cbOutput.Config.Model != "" {
@@ -433,7 +422,6 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 		chunks  []*schema.Message
 		onceSet bool
 		tags    = make(spanTags)
-		usage   *model.TokenUsage
 	)
 
 	level := getGraphNodeLevelFromCtx(ctx)
@@ -458,14 +446,6 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 			chunks = append(chunks, cbOutput.Message)
 		}
 
-		if cbOutput.TokenUsage != nil {
-			usage = &model.TokenUsage{
-				PromptTokens:     cbOutput.TokenUsage.PromptTokens,
-				CompletionTokens: cbOutput.TokenUsage.CompletionTokens,
-				TotalTokens:      cbOutput.TokenUsage.TotalTokens,
-			}
-		}
-
 		if cbOutput.Config != nil && !onceSet {
 			onceSet = true
 
@@ -486,16 +466,10 @@ func (d defaultDataParser) ParseChatModelStreamOutput(ctx context.Context, outpu
 		}
 	} else {
 		tags.set(tracespec.Output, convertModelOutput(&model.CallbackOutput{Message: msg}))
+		setTokenUsageTags(tags, getMessageMetaTokenUsage(msg))
 		if level == 2 {
 			collectOutput.addMessages(convertModelMessage(msg))
 		}
-	}
-
-	if usage != nil {
-		tags.set(tracespec.Tokens, usage.TotalTokens).
-			set(tracespec.InputTokens, usage.PromptTokens).
-			set(tracespec.OutputTokens, usage.CompletionTokens).
-			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens)
 	}
 
 	return tags
@@ -506,7 +480,6 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 		chunks    []*schema.AgenticMessage
 		onceSet   bool
 		tags      = make(spanTags)
-		usage     *model.TokenUsage
 		modelName string
 	)
 
@@ -530,16 +503,6 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 
 		if cbOutput.Message != nil {
 			chunks = append(chunks, cbOutput.Message)
-		}
-
-		if cbOutput.TokenUsage != nil {
-			usage = &model.TokenUsage{
-				PromptTokens:            cbOutput.TokenUsage.PromptTokens,
-				CompletionTokens:        cbOutput.TokenUsage.CompletionTokens,
-				TotalTokens:             cbOutput.TokenUsage.TotalTokens,
-				PromptTokenDetails:      cbOutput.TokenUsage.PromptTokenDetails,
-				CompletionTokensDetails: cbOutput.TokenUsage.CompletionTokensDetails,
-			}
 		}
 
 		if cbOutput.Config != nil && !onceSet {
@@ -570,20 +533,55 @@ func (d defaultDataParser) ParseAgenticModelStreamOutput(ctx context.Context, ou
 		}
 	} else {
 		tags.set(tracespec.Output, convertAgenticModelOutput(&model.AgenticCallbackOutput{Message: msg}))
+		setTokenUsageTags(tags, getAgenticMessageMetaTokenUsage(msg))
 		if level == 2 {
 			collectOutput.addMessages(expandAgenticModelMessage(msg)...)
 		}
 	}
 
-	if usage != nil {
-		tags.set(tracespec.Tokens, usage.TotalTokens).
-			set(tracespec.InputTokens, usage.PromptTokens).
-			set(tracespec.OutputTokens, usage.CompletionTokens).
-			set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens).
-			set(tracespec.ReasoningTokens, usage.CompletionTokensDetails.ReasoningTokens)
-	}
-
 	return tags
+}
+
+func getMessageMetaTokenUsage(msg *schema.Message) *model.TokenUsage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return nil
+	}
+	return schemaTokenUsageToModel(msg.ResponseMeta.Usage)
+}
+
+func getAgenticMessageMetaTokenUsage(msg *schema.AgenticMessage) *model.TokenUsage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return nil
+	}
+	return schemaTokenUsageToModel(msg.ResponseMeta.TokenUsage)
+}
+
+func schemaTokenUsageToModel(usage *schema.TokenUsage) *model.TokenUsage {
+	if usage == nil {
+		return nil
+	}
+	return &model.TokenUsage{
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+		},
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+	}
+}
+
+func setTokenUsageTags(tags spanTags, usage *model.TokenUsage) {
+	if usage == nil {
+		return
+	}
+	tags.set(tracespec.Tokens, usage.TotalTokens).
+		set(tracespec.InputTokens, usage.PromptTokens).
+		set(tracespec.OutputTokens, usage.CompletionTokens).
+		set(tracespec.InputCachedTokens, usage.PromptTokenDetails.CachedTokens).
+		set(tracespec.ReasoningTokens, usage.CompletionTokensDetails.ReasoningTokens)
 }
 
 func (d defaultDataParser) ParseDefaultStreamInput(ctx context.Context, input *schema.StreamReader[callbacks.CallbackInput]) (chunks []any, err error) {

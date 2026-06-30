@@ -349,14 +349,20 @@ func TestConvStreamEvent(t *testing.T) {
 				StopReason: "end_turn",
 			},
 			Usage: anthropic.MessageDeltaUsage{
-				OutputTokens: 10,
+				InputTokens:              8,
+				CacheReadInputTokens:     3,
+				CacheCreationInputTokens: 2,
+				OutputTokens:             10,
 			},
 		}).Build().UnPatch()
 
 		message, err := convStreamEvent(event, streamCtx)
 		assert.NoError(t, err)
 		assert.Equal(t, "end_turn", message.ResponseMeta.FinishReason)
+		assert.Equal(t, 13, message.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 3, message.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
 		assert.Equal(t, 10, message.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 23, message.ResponseMeta.Usage.TotalTokens)
 	})
 
 	mockey.PatchConvey("content block start event", t, func() {
