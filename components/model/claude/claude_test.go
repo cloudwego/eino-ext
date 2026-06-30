@@ -23,8 +23,10 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
@@ -32,6 +34,7 @@ import (
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/schema"
+	"golang.org/x/oauth2/google"
 )
 
 func TestDirectAnthropicAuthSelection(t *testing.T) {
@@ -1166,5 +1169,68 @@ func TestPopulateInputMergeConsecutiveTools(t *testing.T) {
 		// Merged tool message has 2 tool_result blocks
 		assert.Equal(t, anthropic.MessageParamRoleUser, params.Messages[2].Role)
 		assert.Len(t, params.Messages[2].Content, 2)
+	})
+}
+
+func TestVertexServiceAccountJSON(t *testing.T) {
+	ctx := context.Background()
+	base := &Config{
+		ByVertex:        true,
+		VertexProjectID: "test-project",
+		VertexRegion:    "us-east5",
+		Model:           "claude-3-opus-20240229",
+		MaxTokens:       1,
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		cfg := *base
+		cfg.VertexServiceAccountJSON = []byte(`not-json`)
+		_, err := NewChatModel(ctx, &cfg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "create vertex credentials from service account JSON")
+	})
+
+	t.Run("ADC path when service account JSON empty", func(t *testing.T) {
+		mockey.PatchConvey("", t, func() {
+			var calledWithGoogleAuth bool
+			mockey.Mock(vertex.WithGoogleAuth).To(func(ctx context.Context, region, projectID string, scopes ...string) option.RequestOption {
+				calledWithGoogleAuth = true
+				assert.Equal(t, "us-east5", region)
+				assert.Equal(t, "test-project", projectID)
+				return option.WithAPIKey("adc-test")
+			}).Build()
+
+			model, err := NewChatModel(ctx, base)
+			assert.NoError(t, err)
+			assert.NotNil(t, model)
+			assert.True(t, calledWithGoogleAuth, "expected vertex.WithGoogleAuth to be called for ADC path")
+		})
+	})
+
+	t.Run("service account JSON uses WithCredentials path", func(t *testing.T) {
+		mockey.PatchConvey("", t, func() {
+			var calledCredentialsFromJSON bool
+			var calledWithCredentials bool
+			mockey.Mock(google.CredentialsFromJSON).To(func(ctx context.Context, jsonData []byte, scopes ...string) (*google.Credentials, error) {
+				calledCredentialsFromJSON = true
+				assert.Equal(t, []string{"https://www.googleapis.com/auth/cloud-platform"}, scopes)
+				return &google.Credentials{ProjectID: "from-sa"}, nil
+			}).Build()
+			mockey.Mock(vertex.WithCredentials).To(func(ctx context.Context, region, projectID string, creds *google.Credentials) option.RequestOption {
+				calledWithCredentials = true
+				assert.Equal(t, "us-east5", region)
+				assert.Equal(t, "test-project", projectID)
+				assert.Equal(t, "from-sa", creds.ProjectID)
+				return option.WithAPIKey("sa-test")
+			}).Build()
+
+			cfg := *base
+			cfg.VertexServiceAccountJSON = []byte(`{"type":"service_account","project_id":"from-sa"}`)
+			model, err := NewChatModel(ctx, &cfg)
+			assert.NoError(t, err)
+			assert.NotNil(t, model)
+			assert.True(t, calledCredentialsFromJSON, "expected google.CredentialsFromJSON to be called for service account path")
+			assert.True(t, calledWithCredentials, "expected vertex.WithCredentials to be called for service account path")
+		})
 	})
 }

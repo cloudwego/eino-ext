@@ -34,6 +34,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"golang.org/x/oauth2/google"
 	"github.com/eino-contrib/jsonschema"
 
 	"github.com/cloudwego/eino/components"
@@ -81,7 +82,19 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		if region == "" {
 			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
 		}
-		cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+		if len(config.VertexServiceAccountJSON) > 0 {
+			// CredentialsFromJSON requires an explicit scope; cloud-platform covers Vertex AI.
+			// The ADC path (WithGoogleAuth) omits scopes and lets FindDefaultCredentials
+			// resolve them from the runtime environment instead.
+			googleCreds, err := google.CredentialsFromJSON(ctx, config.VertexServiceAccountJSON,
+				"https://www.googleapis.com/auth/cloud-platform")
+			if err != nil {
+				return nil, fmt.Errorf("create vertex credentials from service account JSON: %w", err)
+			}
+			cli = anthropic.NewClient(vertex.WithCredentials(ctx, region, projectID, googleCreds))
+		} else {
+			cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+		}
 	} else if config.ByBedrock {
 		// Use AWS Bedrock
 		var opts []func(*awsConfig.LoadOptions) error
@@ -203,6 +216,12 @@ type Config struct {
 	// If not set, auto-detected from CLOUD_ML_REGION environment variable.
 	// See: https://claude.ai/docs/en/google-vertex-ai
 	VertexRegion string
+
+	// VertexServiceAccountJSON is raw GCP service account JSON for Vertex.
+	// When non-empty, credentials are built in-memory and passed to vertex.WithCredentials.
+	// When empty and ByVertex is true, vertex.WithGoogleAuth (ADC) is used instead.
+	// Optional for Vertex.
+	VertexServiceAccountJSON []byte
 
 	// BaseURL is the custom API endpoint URL
 	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups

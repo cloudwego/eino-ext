@@ -57,6 +57,13 @@ func main() {
 		// AccessKey:       "",
 		// SecretAccessKey: "",
 		// Region:          "us-west-2",
+
+		// if you want to use Google Vertex AI, set ByVertex: true.
+		// Pass raw service account JSON via VertexServiceAccountJSON for explicit credentials.
+		// ByVertex:                 true,
+		// VertexProjectID:          "my-gcp-project",
+		// VertexRegion:             "us-east5",
+		// VertexServiceAccountJSON: serviceAccountJSON,
 		APIKey: apiKey,
 		// Model:     "claude-3-5-sonnet-20240620",
 		BaseURL:   baseURLPtr,
@@ -135,6 +142,22 @@ type Config struct {
     // Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
     // Optional for Bedrock
     Region string
+
+    // ByVertex indicates whether to use Google Vertex AI
+    ByVertex bool
+
+    // VertexProjectID is your Google Cloud project ID.
+    // If not set, auto-detected from ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT
+    VertexProjectID string
+
+    // VertexRegion is the Vertex AI region (e.g., "us-east5").
+    // If not set, auto-detected from CLOUD_ML_REGION environment variable.
+    VertexRegion string
+
+    // VertexServiceAccountJSON is raw GCP service account JSON for Vertex.
+    // When non-empty, credentials are built in-memory and passed to vertex.WithCredentials.
+    // When empty and ByVertex is true, vertex.WithGoogleAuth (ADC) is used instead.
+    VertexServiceAccountJSON []byte
     
     // BaseURL is the custom API endpoint URL
     // Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
@@ -193,6 +216,12 @@ For direct Anthropic API access, authentication resolution works as follows:
 - Otherwise, it falls back to environment variables.
 - Within the chosen source, `APIKey` and `AuthToken` can both be set and will both be passed through as-is.
 - If neither source provides auth, client creation still succeeds and auth errors surface later when requests are sent.
+
+For Google Vertex AI, authentication resolution works as follows:
+
+- Set `ByVertex: true` and provide `VertexProjectID` / `VertexRegion`, or rely on the environment variables documented on `Config`.
+- When `VertexServiceAccountJSON` is set, credentials are built in-memory via `google.CredentialsFromJSON` and passed to `vertex.WithCredentials` (no ADC or env vars required for auth).
+- When `VertexServiceAccountJSON` is empty, `vertex.WithGoogleAuth` (Application Default Credentials) is used.
 
 
 

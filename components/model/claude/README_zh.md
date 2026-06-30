@@ -52,11 +52,18 @@ func main() {
 
 	// Create a Claude model
 	cm, err := claude.NewChatModel(ctx, &claude.Config{
-		// if you want to use Aws Bedrock Service, set these four field.
+		// 如需使用 AWS Bedrock，设置以下字段。
 		// ByBedrock:       true,
 		// AccessKey:       "",
 		// SecretAccessKey: "",
 		// Region:          "us-west-2",
+
+		// 如需使用 Google Vertex AI，设置 ByVertex: true。
+		// 可通过 VertexServiceAccountJSON 传入原始 service account JSON 以显式配置凭证。
+		// ByVertex:                 true,
+		// VertexProjectID:          "my-gcp-project",
+		// VertexRegion:             "us-east5",
+		// VertexServiceAccountJSON: serviceAccountJSON,
 		APIKey: apiKey,
 		// Model:     "claude-3-5-sonnet-20240620",
 		BaseURL:   baseURLPtr,
@@ -134,6 +141,22 @@ type Config struct {
     // Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
     // Optional for Bedrock
     Region string
+
+    // ByVertex indicates whether to use Google Vertex AI
+    ByVertex bool
+
+    // VertexProjectID is your Google Cloud project ID.
+    // If not set, auto-detected from ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT
+    VertexProjectID string
+
+    // VertexRegion is the Vertex AI region (e.g., "us-east5").
+    // If not set, auto-detected from CLOUD_ML_REGION environment variable.
+    VertexRegion string
+
+    // VertexServiceAccountJSON is raw GCP service account JSON for Vertex.
+    // When non-empty, credentials are built in-memory and passed to vertex.WithCredentials.
+    // When empty and ByVertex is true, vertex.WithGoogleAuth (ADC) is used instead.
+    VertexServiceAccountJSON []byte
     
     // BaseURL is the custom API endpoint URL
     // Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
@@ -192,6 +215,12 @@ type Config struct {
 - 如果 `Config` 中未配置鉴权，则回退使用环境变量中的配置
 - 在被选中的来源内，`APIKey` 和 `AuthToken` 可以同时存在，并会原样一起透传
 - 如果两边都没有配置鉴权，client 仍可创建成功，鉴权错误会在后续实际发请求时暴露
+
+对于 Google Vertex AI，鉴权解析规则如下：
+
+- 设置 `ByVertex: true` 并提供 `VertexProjectID` / `VertexRegion`，或依赖 `Config` 中说明的环境变量自动检测。
+- 当设置了 `VertexServiceAccountJSON` 时，通过 `google.CredentialsFromJSON` 在内存中构建凭证，并传给 `vertex.WithCredentials`（无需 ADC 或环境变量鉴权）。
+- 当 `VertexServiceAccountJSON` 为空时，使用 `vertex.WithGoogleAuth`（Application Default Credentials）。
 
 ## 示例
 
