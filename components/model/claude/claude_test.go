@@ -1186,26 +1186,45 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 
 	t.Run("ADC path when service account JSON empty", func(t *testing.T) {
 		mockey.PatchConvey("", t, func() {
-			mockey.Mock(vertex.WithGoogleAuth).Return(option.WithAPIKey("adc-test")).Build()
+			var calledWithGoogleAuth bool
+			mockey.Mock(vertex.WithGoogleAuth).To(func(ctx context.Context, region, projectID string, scopes ...string) option.RequestOption {
+				calledWithGoogleAuth = true
+				assert.Equal(t, "us-east5", region)
+				assert.Equal(t, "test-project", projectID)
+				return option.WithAPIKey("adc-test")
+			}).Build()
 
 			model, err := NewChatModel(ctx, base)
 			assert.NoError(t, err)
 			assert.NotNil(t, model)
+			assert.True(t, calledWithGoogleAuth, "expected vertex.WithGoogleAuth to be called for ADC path")
 		})
 	})
 
 	t.Run("service account JSON uses WithCredentials path", func(t *testing.T) {
 		mockey.PatchConvey("", t, func() {
-			mockey.Mock(google.CredentialsFromJSON).Return(&google.Credentials{
-				ProjectID: "from-sa",
-			}, nil).Build()
-			mockey.Mock(vertex.WithCredentials).Return(option.WithAPIKey("sa-test")).Build()
+			var calledCredentialsFromJSON bool
+			var calledWithCredentials bool
+			mockey.Mock(google.CredentialsFromJSON).To(func(ctx context.Context, jsonData []byte, scopes ...string) (*google.Credentials, error) {
+				calledCredentialsFromJSON = true
+				assert.Equal(t, []string{"https://www.googleapis.com/auth/cloud-platform"}, scopes)
+				return &google.Credentials{ProjectID: "from-sa"}, nil
+			}).Build()
+			mockey.Mock(vertex.WithCredentials).To(func(ctx context.Context, region, projectID string, creds *google.Credentials) option.RequestOption {
+				calledWithCredentials = true
+				assert.Equal(t, "us-east5", region)
+				assert.Equal(t, "test-project", projectID)
+				assert.Equal(t, "from-sa", creds.ProjectID)
+				return option.WithAPIKey("sa-test")
+			}).Build()
 
 			cfg := *base
 			cfg.VertexServiceAccountJSON = []byte(`{"type":"service_account","project_id":"from-sa"}`)
 			model, err := NewChatModel(ctx, &cfg)
 			assert.NoError(t, err)
 			assert.NotNil(t, model)
+			assert.True(t, calledCredentialsFromJSON, "expected google.CredentialsFromJSON to be called for service account path")
+			assert.True(t, calledWithCredentials, "expected vertex.WithCredentials to be called for service account path")
 		})
 	})
 }

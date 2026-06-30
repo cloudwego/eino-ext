@@ -82,6 +82,9 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
 		}
 		if len(config.VertexServiceAccountJSON) > 0 {
+			// CredentialsFromJSON requires an explicit scope; cloud-platform covers Vertex AI.
+			// The ADC path (WithGoogleAuth) omits scopes and lets FindDefaultCredentials
+			// resolve them from the runtime environment instead.
 			googleCreds, err := google.CredentialsFromJSON(ctx, config.VertexServiceAccountJSON,
 				"https://www.googleapis.com/auth/cloud-platform")
 			if err != nil {
