@@ -93,7 +93,7 @@ func textToolCall(ctx context.Context, chatModel model.ToolCallingChatModel) {
 		},
 		{
 			Role:    schema.User,
-			Content: "My name is zhangsan, and my email is zhangsan@bytedance.com. Please recommend some suitable houses for me.",
+			Content: "My name is zhangsan, and my email is zhangsan@bytedance.com. Please search my salary.",
 		},
 	})
 
