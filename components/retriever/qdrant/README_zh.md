@@ -44,11 +44,13 @@ func main() {
 
 ```go
 type Config struct {
-    Client         *qdrant.Client      // Qdrant 客户端
-    Collection     string              // 集合名称
-    Embedding      embedding.Embedder  // 查询嵌入组件
-    ScoreThreshold *float64            // 可选的分数阈值
-    TopK           int                 // 结果数量
+    Client            *qdrant.Client      // Qdrant 客户端
+    Collection        string              // 集合名称
+    Embedding         embedding.Embedder  // 查询嵌入组件
+    ScoreThreshold    *float64            // 可选的分数阈值
+    TopK              int                 // 结果数量
+    ReturnFields      []string            // 限制返回的 payload 字段（默认：["metadata", "content"]）
+    DocumentConverter  func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) // 自定义文档转换器
 }
 ```
 
@@ -75,6 +77,39 @@ scoreThreshold := 0.7
 retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
     // ... 其他配置
     ScoreThreshold: &scoreThreshold,
+})
+```
+
+### 返回字段
+
+默认情况下，retriever 从 payload 中获取 `"metadata"` 和 `"content"`。你可以自定义返回哪些字段：
+
+```go
+retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+    // ... 其他配置
+    ReturnFields: []string{"content", "category", "author"},
+})
+```
+
+这会在协议层限制返回的 payload 字段 — Qdrant 只会传输请求的字段。
+
+### 自定义文档转换器
+
+如需完全控制 Qdrant points 到 Eino documents 的转换，可以提供自定义 `DocumentConverter`：
+
+```go
+retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+    // ... 其他配置
+    ReturnFields: []string{"text"},
+    DocumentConverter: func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
+        return &schema.Document{
+            ID:      point.Id.GetUuid(),
+            Content: point.Payload["text"].GetStringValue(),
+            MetaData: map[string]any{
+                "score": point.Score,
+            },
+        }, nil
+    },
 })
 ```
 
