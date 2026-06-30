@@ -3,7 +3,7 @@ module github.com/cloudwego/eino-ext/components/model/claude
 go 1.23.0
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.26.0
+	github.com/anthropics/anthropic-sdk-go v1.46.0
 	github.com/aws/aws-sdk-go-v2/config v1.29.1
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.54
 	github.com/bytedance/mockey v1.2.13
@@ -30,7 +30,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.9 // indirect
 	github.com/aws/smithy-go v1.22.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
-	github.com/buger/jsonparser v1.1.1 // indirect
+	github.com/buger/jsonparser v1.1.2 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
@@ -47,6 +47,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/goph/emperror v0.17.2 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
+	github.com/invopop/jsonschema v0.13.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/jtolds/gls v4.20.0+incompatible // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
@@ -61,6 +62,7 @@ require (
 	github.com/slongfield/pyfmt v0.0.0-20220222012616-ea85ff4c361f // indirect
 	github.com/smarty/assertions v1.15.0 // indirect
 	github.com/smartystreets/goconvey v1.8.1 // indirect
+	github.com/standard-webhooks/standard-webhooks/libraries v0.0.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
@@ -79,7 +81,7 @@ require (
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
-	golang.org/x/sys v0.34.0 // indirect
+	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	google.golang.org/api v0.189.0 // indirect
