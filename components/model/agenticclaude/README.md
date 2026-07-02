@@ -271,9 +271,42 @@ result := block.ServerToolResult.Content.(*agenticclaude.ServerToolResult)
 
 ### Cache
 
-Use `CacheControl` to enable auto-caching for multi-turn conversations. When set (non-nil), the API automatically applies a cache_control marker to the last cacheable block in the request.
+Claude's prompt caching works by placing `cache_control` markers on content blocks. When the API sees a
+marker, it caches everything up to that point. Subsequent requests that share the same prefix get a cache hit,
+reducing latency and cost.
 
-For fine-grained control, use `SetContentBlockCacheControl` or `SetToolInfoCacheControl` to manually place cache breakpoints on specific blocks or tools.
+This package provides two caching strategies:
+
+| Strategy | Config / API | Use Case |
+|----------|-------------|----------|
+| Auto Cache | `CacheControl` in Config | Automatically marks the last cacheable block per request |
+| Manual Cache | `SetContentBlockCacheControl` / `SetToolInfoCacheControl` | Fine-grained control on specific blocks or tools |
+
+The following diagram illustrates how both strategies work:
+
+```mermaid
+flowchart TD
+    Input["am.Generate(ctx, input, opts...)"] --> Detail
+    Detail["input = [System, User₁, Asst₁, User₂, ...]<br/>tools = [tool_A, tool_B, ...]"]
+    Detail --> B{"CacheControl<br/>set in Config?"}
+    B -- Yes --> C["Top-level cache_control set on request<br/>— SDK applies it to last cacheable block"]
+    B -- No --> D{"Manual markers via<br/>SetContentBlockCacheControl /<br/>SetToolInfoCacheControl?"}
+    D -- Yes --> E["Use manual cache_control markers<br/>on specified blocks/tools"]
+    D -- No --> F["No caching — full computation each call"]
+    C --> G["API caches prefix up to marker<br/>— subsequent calls get cache hit"]
+    E --> G
+
+    style Input fill:#e8f4fd,stroke:#4a90d9
+    style Detail fill:#e8f4fd,stroke:#4a90d9
+    style C fill:#d4edda,stroke:#28a745
+    style E fill:#d4edda,stroke:#28a745
+    style F fill:#fff3cd,stroke:#ffc107
+    style G fill:#d4edda,stroke:#28a745
+```
+
+#### Auto Cache
+
+Use `CacheControl` in the config to set a top-level cache control on the request. The SDK automatically applies it to the last cacheable block:
 
 ```go
 cacheCtrl := anthropic.NewCacheControlEphemeralParam()
@@ -286,6 +319,23 @@ am, err := agenticclaude.New(ctx, &agenticclaude.Config{
     MaxTokens:    4096,
     CacheControl: &cacheCtrl,
 })
+```
+
+#### Manual Cache
+
+For fine-grained control, use `SetContentBlockCacheControl` or `SetToolInfoCacheControl` to manually
+place cache breakpoints on specific blocks or tools. When a manual marker is set, the top-level
+auto-cache will not override it.
+
+```go
+cacheCtrl := anthropic.NewCacheControlEphemeralParam()
+cacheCtrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+
+// Cache a specific content block (e.g., a large system prompt).
+block = agenticclaude.SetContentBlockCacheControl(block, &cacheCtrl)
+
+// Cache a specific tool definition.
+toolInfo = agenticclaude.SetToolInfoCacheControl(toolInfo, &cacheCtrl)
 ```
 
 ### Tool Calling
