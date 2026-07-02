@@ -270,9 +270,41 @@ result := block.ServerToolResult.Content.(*agenticclaude.ServerToolResult)
 
 ### 缓存
 
-使用 `CacheControl` 为多轮对话启用自动缓存。设置后（非 nil），API 会自动在请求中最后一个可缓存的 block 上应用 cache_control 标记。
+Claude 的 prompt caching 通过在 content block 上放置 `cache_control` 标记来工作。当 API 看到标记时，
+会缓存该标记之前的所有内容。后续共享相同前缀的请求将命中缓存，降低延迟和成本。
 
-如需细粒度控制，可使用 `SetContentBlockCacheControl` 或 `SetToolInfoCacheControl` 手动在特定的 block 或 tool 上放置缓存断点。
+本包提供两种缓存策略：
+
+| 策略 | 配置 / API | 使用场景 |
+|------|-----------|---------|
+| 自动缓存 | Config 中的 `CacheControl` | 自动标记每个请求中最后一个可缓存的 block |
+| 手动缓存 | `SetContentBlockCacheControl` / `SetToolInfoCacheControl` | 在特定 block 或 tool 上精细控制 |
+
+下图展示了两种策略的工作方式：
+
+```mermaid
+flowchart TD
+    Input["am.Generate(ctx, input, opts...)"] --> Detail
+    Detail["input = [System, User₁, Asst₁, User₂, ...]<br/>tools = [tool_A, tool_B, ...]"]
+    Detail --> B{"Config 中设置了<br/>CacheControl?"}
+    B -- Yes --> C["在请求上设置顶层 cache_control<br/>— SDK 自动将其应用到最后一个可缓存 block"]
+    B -- No --> D{"通过 SetContentBlockCacheControl /<br/>SetToolInfoCacheControl<br/>手动设置了标记?"}
+    D -- Yes --> E["使用手动设置的<br/>cache_control 标记"]
+    D -- No --> F["无缓存 — 每次调用完整计算"]
+    C --> G["API 缓存标记之前的前缀<br/>— 后续调用命中缓存"]
+    E --> G
+
+    style Input fill:#e8f4fd,stroke:#4a90d9
+    style Detail fill:#e8f4fd,stroke:#4a90d9
+    style C fill:#d4edda,stroke:#28a745
+    style E fill:#d4edda,stroke:#28a745
+    style F fill:#fff3cd,stroke:#ffc107
+    style G fill:#d4edda,stroke:#28a745
+```
+
+#### 自动缓存
+
+在 Config 中设置 `CacheControl`，在请求上设置顶层缓存控制。SDK 会自动将其应用到最后一个可缓存的 block：
 
 ```go
 cacheCtrl := anthropic.NewCacheControlEphemeralParam()
@@ -285,6 +317,22 @@ am, err := agenticclaude.New(ctx, &agenticclaude.Config{
     MaxTokens:    4096,
     CacheControl: &cacheCtrl,
 })
+```
+
+#### 手动缓存
+
+如需细粒度控制，可使用 `SetContentBlockCacheControl` 或 `SetToolInfoCacheControl` 手动在特定的 block
+或 tool 上放置缓存断点。设置了手动标记后，顶层的自动缓存不会覆盖它。
+
+```go
+cacheCtrl := anthropic.NewCacheControlEphemeralParam()
+cacheCtrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+
+// 缓存特定的 content block（例如大型 system prompt）。
+block = agenticclaude.SetContentBlockCacheControl(block, &cacheCtrl)
+
+// 缓存特定的 tool 定义。
+toolInfo = agenticclaude.SetToolInfoCacheControl(toolInfo, &cacheCtrl)
 ```
 
 ### 工具调用 (Tool Calling)
