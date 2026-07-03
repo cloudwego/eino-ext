@@ -276,9 +276,39 @@ const (
 	ToolSearchAlgorithmRegex ToolSearchAlgorithm = "regex"
 )
 
+// ThinkingMode selects which thinking variant is sent to the API.
+//
+// Claude Opus 4.7 and newer models reject the legacy {"type":"enabled"}
+// shape and instead require {"type":"adaptive"} with an optional
+// output_config.effort. Older models (Opus 4.5 / Sonnet 4.5 / 3.7) still
+// use the enabled+budget_tokens shape. Keeping both paths lets callers
+// opt into the right one per deployment without forking.
+type ThinkingMode string
+
+const (
+	// ThinkingModeEnabled emits the legacy extended-thinking request:
+	// {"type":"enabled","budget_tokens":N}. Default for backward compat.
+	ThinkingModeEnabled ThinkingMode = "enabled"
+	// ThinkingModeAdaptive emits {"type":"adaptive"}; combine with Effort
+	// to control reasoning depth.
+	ThinkingModeAdaptive ThinkingMode = "adaptive"
+)
+
 type Thinking struct {
-	Enable       bool `json:"enable"`
-	BudgetTokens int  `json:"budget_tokens"`
+	Enable bool `json:"enable"`
+
+	// Mode selects the thinking variant. Defaults to ThinkingModeEnabled
+	// when empty, preserving the pre-existing behavior.
+	Mode ThinkingMode `json:"mode,omitempty"`
+
+	// BudgetTokens only applies when Mode is empty or ThinkingModeEnabled.
+	// Ignored for adaptive thinking — the server picks the budget.
+	BudgetTokens int `json:"budget_tokens,omitempty"`
+
+	// Effort sets output_config.effort on the request. Accepted values:
+	// "low", "medium", "high", "max", "xhigh". Optional; mostly relevant
+	// for adaptive thinking on Opus 4.7+.
+	Effort string `json:"effort,omitempty"`
 }
 
 // ResponseFormat configures structured JSON output using a JSON schema.
@@ -623,11 +653,23 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	}
 
 	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
-		params.Thinking = anthropic.ThinkingConfigParamUnion{
-			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
-				Type:         "enabled",
-				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
-			},
+		switch specOptions.Thinking.Mode {
+		case "", ThinkingModeEnabled:
+			params.Thinking = anthropic.ThinkingConfigParamUnion{
+				OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+					Type:         "enabled",
+					BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
+				},
+			}
+		case ThinkingModeAdaptive:
+			params.Thinking = anthropic.ThinkingConfigParamUnion{
+				OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{Type: "adaptive"},
+			}
+		default:
+			return anthropic.MessageNewParams{}, fmt.Errorf("unsupported thinking mode: %s", specOptions.Thinking.Mode)
+		}
+		if effort := normalizeOutputEffort(specOptions.Thinking.Effort); effort != "" {
+			params.OutputConfig = anthropic.OutputConfigParam{Effort: effort}
 		}
 	}
 
@@ -1579,4 +1621,24 @@ func getEnvWithFallbacks(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// normalizeOutputEffort maps a user-provided effort string to the
+// anthropic SDK's typed enum. Returns an empty value if the string
+// is empty or unrecognized, so callers can skip setting the field.
+func normalizeOutputEffort(v string) anthropic.OutputConfigEffort {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "low":
+		return anthropic.OutputConfigEffortLow
+	case "medium":
+		return anthropic.OutputConfigEffortMedium
+	case "high":
+		return anthropic.OutputConfigEffortHigh
+	case "max":
+		return anthropic.OutputConfigEffortMax
+	case "xhigh":
+		return anthropic.OutputConfigEffortXhigh
+	default:
+		return ""
+	}
 }
