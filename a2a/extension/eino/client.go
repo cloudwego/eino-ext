@@ -208,7 +208,7 @@ func (a *a2aAgent) run(ctx context.Context, msg models.Message, streaming bool, 
 			gen.Close()
 			return iter
 		}
-		receiver = &ResponseUnionReceiver{stream}
+		receiver = &ResponseUnionReceiver{stream, true}
 	} else {
 		result, err := a.cli.SendMessage(ctx, &models.MessageSendParams{
 			Message:  msg,
@@ -234,7 +234,7 @@ func (a *a2aAgent) run(ctx context.Context, msg models.Message, streaming bool, 
 			mu:    sync.Mutex{},
 			union: union,
 			final: false,
-		}}
+		}, false}
 	}
 	go func() {
 		defer func() {
@@ -285,6 +285,11 @@ func (l *localResponseUnionReceiver) Close() error {
 
 type ResponseUnionReceiver struct {
 	responseUnionReceiver
+	streaming bool
+}
+
+func (r *ResponseUnionReceiver) IsStreaming() bool {
+	return r.streaming
 }
 
 func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, sender *AgentEventSender) {
@@ -309,81 +314,13 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 			break
 		}
 		if event.Message != nil {
-			isChunk, final := getStreamChunkFinal(event.Message.Metadata)
-			if isChunk {
-				// keep our internal marker out of the ADK message
-				delete(event.Message.Metadata, metadataKeyOfStreamChunkFinal)
-				if len(event.Message.Metadata) == 0 {
-					event.Message.Metadata = nil
-				}
-				m := toADKMessage(event.Message)
-				handleNewMessage(event.Message.MessageID, messageMap, m, final, schema.Assistant, sender)
-			} else {
-				m := toADKMessage(event.Message)
-				sender.Send(&adk.AgentEvent{
-					Output: &adk.AgentOutput{
-						MessageOutput: &adk.MessageVariant{
-							Message: m,
-							Role:    schema.Assistant,
-						},
-					},
-				})
-			}
+			handleMessageEvent(event.Message, messageMap, sender)
 		} else if event.Task != nil {
-			var m adk.Message
-			if event.Task.Status.Message != nil {
-				m = toADKMessage(event.Task.Status.Message)
-			}
-			// check interrupt
-			if event.Task.Status.State == models.TaskStateInputRequired {
-				sender.Send(&adk.AgentEvent{
-					Action: &adk.AgentAction{
-						Interrupted: &adk.InterruptInfo{Data: &InterruptInfo{
-							TaskID:           event.Task.ID,
-							InterruptMessage: m,
-						}},
-					},
-				})
+			if handleTaskEvent(event.Task, stream.IsStreaming(), messageMap, sender) {
 				return
-			} else if m != nil {
-				sender.Send(&adk.AgentEvent{
-					Output: &adk.AgentOutput{
-						MessageOutput: &adk.MessageVariant{
-							Message: m,
-							Role:    schema.Assistant,
-						},
-					},
-				})
 			}
 		} else if event.TaskStatusUpdateEvent != nil {
-			statusUpdateEvent := event.TaskStatusUpdateEvent
-			var m adk.Message
-			if statusUpdateEvent.Status.Message != nil {
-				m = toADKMessage(statusUpdateEvent.Status.Message)
-			}
-
-			if statusUpdateEvent.Status.State == models.TaskStateInputRequired {
-				// handle interrupted
-				sender.Send(&adk.AgentEvent{
-					Action: &adk.AgentAction{
-						Interrupted: &adk.InterruptInfo{Data: &InterruptInfo{
-							TaskID:           statusUpdateEvent.TaskID,
-							InterruptMessage: m,
-						}},
-					},
-				})
-			} else if m != nil {
-				// handler common status update
-				sender.Send(&adk.AgentEvent{
-					Output: &adk.AgentOutput{
-						MessageOutput: &adk.MessageVariant{
-							Message: m,
-						},
-					},
-				})
-			}
-
-			if statusUpdateEvent.Final {
+			if handleTaskStatusUpdateEvent(event.TaskStatusUpdateEvent, stream.IsStreaming(), messageMap, sender) {
 				return
 			}
 		} else if event.TaskArtifactUpdateEvent != nil {
@@ -391,6 +328,108 @@ func defaultOutputConvertor(ctx context.Context, stream *ResponseUnionReceiver, 
 			handleNewMessage(event.TaskArtifactUpdateEvent.Artifact.ArtifactID, artifactMap, m, event.TaskArtifactUpdateEvent.LastChunk, "", sender)
 		}
 	}
+}
+
+func handleMessageEvent(msg *models.Message, messageMap map[string]*schema.StreamWriter[*schema.Message], sender *AgentEventSender) {
+	isChunk, final := getStreamChunkFinal(msg.Metadata)
+	if isChunk {
+		delete(msg.Metadata, metadataKeyOfStreamChunkFinal)
+		if len(msg.Metadata) == 0 {
+			msg.Metadata = nil
+		}
+		m := toADKMessage(msg)
+		handleNewMessage(msg.MessageID, messageMap, m, final, schema.Assistant, sender)
+	} else {
+		m := toADKMessage(msg)
+		sender.Send(&adk.AgentEvent{
+			Output: &adk.AgentOutput{
+				MessageOutput: &adk.MessageVariant{
+					Message: m,
+					Role:    schema.Assistant,
+				},
+			},
+		})
+	}
+}
+
+// handleTaskEvent returns true if the convertor should stop (interrupt).
+func handleTaskEvent(task *models.Task, streaming bool, messageMap map[string]*schema.StreamWriter[*schema.Message], sender *AgentEventSender) bool {
+	var m adk.Message
+	if task.Status.Message != nil {
+		m = toADKMessage(task.Status.Message)
+	}
+
+	if task.Status.State == models.TaskStateInputRequired {
+		sender.Send(&adk.AgentEvent{
+			Action: &adk.AgentAction{
+				Interrupted: &adk.InterruptInfo{Data: &InterruptInfo{
+					TaskID:           task.ID,
+					InterruptMessage: m,
+				}},
+			},
+		})
+		return true
+	}
+
+	if m != nil {
+		if streaming {
+			id := task.Status.Message.MessageID
+			if id == "" {
+				id = task.ID
+			}
+			handleNewMessage(id, messageMap, m, isTerminalTaskState(task.Status.State), schema.Assistant, sender)
+		} else {
+			sender.Send(&adk.AgentEvent{
+				Output: &adk.AgentOutput{
+					MessageOutput: &adk.MessageVariant{
+						Message: m,
+						Role:    schema.Assistant,
+					},
+				},
+			})
+		}
+	}
+	return false
+}
+
+// handleTaskStatusUpdateEvent returns true if the convertor should stop (interrupt or final).
+func handleTaskStatusUpdateEvent(event *models.TaskStatusUpdateEvent, streaming bool, messageMap map[string]*schema.StreamWriter[*schema.Message], sender *AgentEventSender) bool {
+	var m adk.Message
+	if event.Status.Message != nil {
+		m = toADKMessage(event.Status.Message)
+	}
+
+	if event.Status.State == models.TaskStateInputRequired {
+		sender.Send(&adk.AgentEvent{
+			Action: &adk.AgentAction{
+				Interrupted: &adk.InterruptInfo{Data: &InterruptInfo{
+					TaskID:           event.TaskID,
+					InterruptMessage: m,
+				}},
+			},
+		})
+		return true
+	}
+
+	if m != nil {
+		if streaming {
+			id := event.Status.Message.MessageID
+			if id == "" {
+				id = event.TaskID
+			}
+			handleNewMessage(id, messageMap, m, event.Final, schema.Assistant, sender)
+		} else {
+			sender.Send(&adk.AgentEvent{
+				Output: &adk.AgentOutput{
+					MessageOutput: &adk.MessageVariant{
+						Message: m,
+					},
+				},
+			})
+		}
+	}
+
+	return event.Final
 }
 
 func handleNewMessage(id string, idMap map[string]*schema.StreamWriter[*schema.Message], msg *schema.Message, final bool, role schema.RoleType, sender *AgentEventSender) {
@@ -425,6 +464,15 @@ func handleNewMessage(id string, idMap map[string]*schema.StreamWriter[*schema.M
 	if closed || final {
 		sw.Close()
 		delete(idMap, id)
+	}
+}
+
+func isTerminalTaskState(state models.TaskState) bool {
+	switch state {
+	case models.TaskStateCompleted, models.TaskStateFailed, models.TaskStateCanceled, models.TaskStateRejected:
+		return true
+	default:
+		return false
 	}
 }
 

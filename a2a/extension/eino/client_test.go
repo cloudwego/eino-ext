@@ -180,7 +180,7 @@ func TestDefaultOutputConvertor_messageStream(t *testing.T) {
 	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 	go func() {
 		defer gen.Close()
-		defaultOutputConvertor(context.Background(), &ResponseUnionReceiver{rec}, &AgentEventSender{gen: gen})
+		defaultOutputConvertor(context.Background(), &ResponseUnionReceiver{rec, true}, &AgentEventSender{gen: gen})
 	}()
 
 	ev, ok := iter.Next()
@@ -219,7 +219,7 @@ func TestDefaultOutputConvertor_completeMessage(t *testing.T) {
 	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 	go func() {
 		defer gen.Close()
-		defaultOutputConvertor(context.Background(), &ResponseUnionReceiver{rec}, &AgentEventSender{gen: gen})
+		defaultOutputConvertor(context.Background(), &ResponseUnionReceiver{rec, true}, &AgentEventSender{gen: gen})
 	}()
 
 	ev, ok := iter.Next()
@@ -252,7 +252,7 @@ func TestDefaultOutputConvertor_taskInterrupt(t *testing.T) {
 	iter, gen := adk.NewAsyncIteratorPair[*adk.AgentEvent]()
 	go func() {
 		defer gen.Close()
-		defaultOutputConvertor(context.Background(), &ResponseUnionReceiver{rec}, &AgentEventSender{gen: gen})
+		defaultOutputConvertor(context.Background(), &ResponseUnionReceiver{rec, true}, &AgentEventSender{gen: gen})
 	}()
 
 	ev, ok := iter.Next()
