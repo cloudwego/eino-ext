@@ -44,6 +44,18 @@ func WithThinking(t *Thinking) model.Option {
 	})
 }
 
+// WithAdaptiveThinking enables adaptive thinking mode where the model decides
+// when and how much to think based on each request's complexity.
+func WithAdaptiveThinking(display ...ThinkingDisplay) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		t := &Thinking{Type: ThinkingTypeAdaptive}
+		if len(display) > 0 {
+			t.Display = display[0]
+		}
+		o.Thinking = t
+	})
+}
+
 func WithDisableParallelToolUse() model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		b := true

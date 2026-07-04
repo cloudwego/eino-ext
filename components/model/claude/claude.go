@@ -276,9 +276,38 @@ const (
 	ToolSearchAlgorithmRegex ToolSearchAlgorithm = "regex"
 )
 
+// ThinkingType specifies the thinking mode.
+type ThinkingType string
+
+const (
+	// ThinkingTypeEnabled uses manual budget-based thinking with a fixed token budget.
+	ThinkingTypeEnabled ThinkingType = "enabled"
+	// ThinkingTypeAdaptive lets the model decide when and how much to think.
+	ThinkingTypeAdaptive ThinkingType = "adaptive"
+)
+
+// ThinkingDisplay controls how thinking content appears in the response.
+type ThinkingDisplay string
+
+const (
+	// ThinkingDisplaySummarized returns thinking content normally.
+	ThinkingDisplaySummarized ThinkingDisplay = "summarized"
+	// ThinkingDisplayOmitted redacts thinking content but returns a signature for multi-turn continuity.
+	ThinkingDisplayOmitted ThinkingDisplay = "omitted"
+)
+
 type Thinking struct {
+	// Type specifies the thinking mode: "enabled" (manual budget) or "adaptive" (model decides).
+	// For backward compatibility, if Type is empty and Enable is true, "enabled" mode is used.
+	Type ThinkingType `json:"type,omitempty"`
+
+	// Enable enables manual budget-based thinking (legacy field, use Type instead).
 	Enable       bool `json:"enable"`
 	BudgetTokens int  `json:"budget_tokens"`
+
+	// Display controls how thinking content appears in the response.
+	// Applies to both "enabled" and "adaptive" modes.
+	Display ThinkingDisplay `json:"display,omitempty"`
 }
 
 // ResponseFormat configures structured JSON output using a JSON schema.
@@ -622,12 +651,28 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		params.TopK = param.NewOpt(int64(*specOptions.TopK))
 	}
 
-	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
-		params.Thinking = anthropic.ThinkingConfigParamUnion{
-			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
-				Type:         "enabled",
-				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
-			},
+	if specOptions.Thinking != nil {
+		switch specOptions.Thinking.Type {
+		case ThinkingTypeAdaptive:
+			adaptive := &anthropic.ThinkingConfigAdaptiveParam{}
+			if specOptions.Thinking.Display != "" {
+				adaptive.Display = anthropic.ThinkingConfigAdaptiveDisplay(specOptions.Thinking.Display)
+			}
+			params.Thinking = anthropic.ThinkingConfigParamUnion{
+				OfAdaptive: adaptive,
+			}
+		default:
+			if specOptions.Thinking.Enable {
+				enabled := &anthropic.ThinkingConfigEnabledParam{
+					BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
+				}
+				if specOptions.Thinking.Display != "" {
+					enabled.Display = anthropic.ThinkingConfigEnabledDisplay(specOptions.Thinking.Display)
+				}
+				params.Thinking = anthropic.ThinkingConfigParamUnion{
+					OfEnabled: enabled,
+				}
+			}
 		}
 	}
 
