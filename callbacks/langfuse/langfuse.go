@@ -660,7 +660,7 @@ func getName(info *callbacks.RunInfo) string {
 }
 
 // Get the associated trace id
-func GetTraceId(ctx context.Context) (ret string, ok bool) {
+func GetTraceID(ctx context.Context) (ret string, ok bool) {
 	var value *langfuseState
 	if value, ok = ctx.Value(langfuseStateKey{}).(*langfuseState); ok {
 		ret = value.traceID
