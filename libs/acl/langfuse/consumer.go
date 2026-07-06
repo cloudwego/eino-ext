@@ -38,8 +38,8 @@ const (
 	defaultFlushInterval     = time.Millisecond * 500
 	defaultMaxRetry          = 3
 
-	maxEventSizeBytes = 1_000_000
-	maxBatchSizeBytes = 2_500_000
+	defaultMaxEventSizeBytes = 1_000_000
+	maxBatchSizeBytes        = 2_500_000
 
 	ingestionPath    = "/api/public/ingestion"
 	getUploadURLPath = "/api/public/media"
@@ -51,6 +51,7 @@ const (
 func newIngestionConsumer(
 	cli *client,
 	q *queue,
+	maxEventSizeBytes int,
 	flushAt int,
 	flushInterval time.Duration,
 	sampleRate float64,
@@ -72,16 +73,20 @@ func newIngestionConsumer(
 	if maxRetry <= 0 {
 		maxRetry = defaultMaxRetry
 	}
+	if maxEventSizeBytes <= 0 {
+		maxEventSizeBytes = defaultMaxEventSizeBytes
+	}
 
 	return &ingestionConsumer{
-		cli:           cli,
-		eventQueue:    q,
-		flushAt:       flushAt,
-		flushInterval: flushInterval,
-		sampleRate:    sampleRate,
-		logMessage:    logMessage,
-		maskFunc:      maskFunc,
-		mediaWG:       mediaWG,
+		cli:               cli,
+		eventQueue:        q,
+		maxEventSizeBytes: maxEventSizeBytes,
+		flushAt:           flushAt,
+		flushInterval:     flushInterval,
+		sampleRate:        sampleRate,
+		logMessage:        logMessage,
+		maskFunc:          maskFunc,
+		mediaWG:           mediaWG,
 
 		sdkName:        sdkName,
 		sdkVersion:     sdkVersion,
@@ -94,14 +99,15 @@ func newIngestionConsumer(
 }
 
 type ingestionConsumer struct {
-	cli           *client
-	eventQueue    *queue
-	flushAt       int
-	flushInterval time.Duration
-	sampleRate    float64
-	logMessage    string
-	maskFunc      func(string) string
-	mediaWG       *sync.WaitGroup
+	cli               *client
+	eventQueue        *queue
+	maxEventSizeBytes int
+	flushAt           int
+	flushInterval     time.Duration
+	sampleRate        float64
+	logMessage        string
+	maskFunc          func(string) string
+	mediaWG           *sync.WaitGroup
 	// batch metadata
 	sdkName        string
 	sdkVersion     string
@@ -241,7 +247,7 @@ func (i *ingestionConsumer) truncate(ev *event) int {
 	}
 
 	sumSize := metadataLen + len(ev.Body.getInput()) + len(ev.Body.getOutput())
-	if sumSize <= maxEventSizeBytes {
+	if sumSize <= i.maxEventSizeBytes {
 		return sumSize
 	}
 
@@ -266,7 +272,7 @@ func (i *ingestionConsumer) truncate(ev *event) int {
 		}
 		c.clear()
 		sumSize -= c.len
-		if sumSize <= maxEventSizeBytes {
+		if sumSize <= i.maxEventSizeBytes {
 			break
 		}
 	}
