@@ -17,6 +17,7 @@
 package claude
 
 import (
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/components/model"
 )
 
@@ -24,6 +25,8 @@ type options struct {
 	TopK *int32
 
 	Thinking *Thinking
+
+	ThinkingConfig *anthropic.ThinkingConfigParamUnion
 
 	DisableParallelToolUse *bool
 
@@ -38,9 +41,17 @@ func WithTopK(k int32) model.Option {
 	})
 }
 
+// Deprecated: Use WithThinkingConfig instead.
 func WithThinking(t *Thinking) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.Thinking = t
+	})
+}
+
+// WithThinkingConfig sets Claude thinking using Anthropic SDK's native union.
+func WithThinkingConfig(t *anthropic.ThinkingConfigParamUnion) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ThinkingConfig = t
 	})
 }
 

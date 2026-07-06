@@ -31,6 +31,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/claude"
@@ -78,9 +79,10 @@ func main() {
 		},
 	}
 
-	resp, err := cm.Generate(ctx, messages, claude.WithThinking(&claude.Thinking{
-		Enable:       true,
-		BudgetTokens: 1024,
+	resp, err := cm.Generate(ctx, messages, claude.WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+		OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+			Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+		},
 	}))
 	if err != nil {
 		log.Printf("Generate error: %v", err)
@@ -178,8 +180,12 @@ type Config struct {
     // Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
     StopSequences []string
     
+    // Deprecated: Use ThinkingConfig instead.
     Thinking *Thinking
-    
+
+    // ThinkingConfig configures Claude thinking using Anthropic SDK's native union.
+    ThinkingConfig *anthropic.ThinkingConfigParamUnion
+
     // HTTPClient specifies the client to send HTTP requests.
     HTTPClient *http.Client `json:"http_client"`
     

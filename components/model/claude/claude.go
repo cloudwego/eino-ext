@@ -151,6 +151,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		stopSequences:          config.StopSequences,
 		temperature:            config.Temperature,
 		thinking:               config.Thinking,
+		thinkingConfig:         config.ThinkingConfig,
 		topK:                   config.TopK,
 		topP:                   config.TopP,
 		responseFormat:         config.ResponseFormat,
@@ -246,7 +247,11 @@ type Config struct {
 	// Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
 	StopSequences []string
 
+	// Deprecated: Use ThinkingConfig instead.
 	Thinking *Thinking
+
+	// ThinkingConfig configures Claude thinking using Anthropic SDK's native union.
+	ThinkingConfig *anthropic.ThinkingConfigParamUnion
 
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
@@ -276,6 +281,7 @@ const (
 	ToolSearchAlgorithmRegex ToolSearchAlgorithm = "regex"
 )
 
+// Deprecated: Use anthropic.ThinkingConfigParamUnion with Config.ThinkingConfig or WithThinkingConfig instead.
 type Thinking struct {
 	Enable       bool `json:"enable"`
 	BudgetTokens int  `json:"budget_tokens"`
@@ -297,6 +303,7 @@ type ChatModel struct {
 	topK                   *int32
 	topP                   *float32
 	thinking               *Thinking
+	thinkingConfig         *anthropic.ThinkingConfigParamUnion
 	responseFormat         *ResponseFormat
 	tools                  []anthropic.ToolUnionParam
 	origTools              []*schema.ToolInfo
@@ -598,6 +605,7 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	specOptions := model.GetImplSpecificOptions(&options{
 		TopK:                   cm.topK,
 		Thinking:               cm.thinking,
+		ThinkingConfig:         cm.thinkingConfig,
 		DisableParallelToolUse: cm.disableParallelToolUse,
 		ResponseFormat:         cm.responseFormat,
 	}, opts...)
@@ -629,6 +637,9 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
 			},
 		}
+	}
+	if specOptions.ThinkingConfig != nil {
+		params.Thinking = *specOptions.ThinkingConfig
 	}
 
 	if specOptions.ResponseFormat != nil && specOptions.ResponseFormat.Schema != nil {
