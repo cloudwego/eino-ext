@@ -55,20 +55,6 @@ func WithThinkingConfig(t *anthropic.ThinkingConfigParamUnion) model.Option {
 	})
 }
 
-// WithAdaptiveThinking enables adaptive thinking mode where the model decides
-// when and how much to think based on each request's complexity.
-func WithAdaptiveThinking(display ...anthropic.ThinkingConfigAdaptiveDisplay) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *options) {
-		t := &anthropic.ThinkingConfigAdaptiveParam{}
-		if len(display) > 0 {
-			t.Display = display[0]
-		}
-		o.ThinkingConfig = &anthropic.ThinkingConfigParamUnion{
-			OfAdaptive: t,
-		}
-	})
-}
-
 func WithDisableParallelToolUse() model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		b := true
