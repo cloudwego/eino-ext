@@ -630,10 +630,16 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		params.TopK = param.NewOpt(int64(*specOptions.TopK))
 	}
 
+	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
+		params.Thinking = anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
+				Type:         "enabled",
+				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
+			},
+		}
+	}
 	if specOptions.ThinkingConfig != nil {
 		params.Thinking = *specOptions.ThinkingConfig
-	} else if specOptions.Thinking != nil && specOptions.Thinking.Enable {
-		params.Thinking = anthropic.ThinkingConfigParamOfEnabled(int64(specOptions.Thinking.BudgetTokens))
 	}
 
 	if specOptions.ResponseFormat != nil && specOptions.ResponseFormat.Schema != nil {
