@@ -17,6 +17,7 @@
 package claude
 
 import (
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/components/model"
 )
 
@@ -24,6 +25,8 @@ type options struct {
 	TopK *int32
 
 	Thinking *Thinking
+
+	ThinkingConfig *anthropic.ThinkingConfigParamUnion
 
 	DisableParallelToolUse *bool
 
@@ -38,21 +41,31 @@ func WithTopK(k int32) model.Option {
 	})
 }
 
+// Deprecated: Use WithThinkingConfig instead.
 func WithThinking(t *Thinking) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.Thinking = t
 	})
 }
 
+// WithThinkingConfig sets Claude thinking using Anthropic SDK's native union.
+func WithThinkingConfig(t *anthropic.ThinkingConfigParamUnion) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ThinkingConfig = t
+	})
+}
+
 // WithAdaptiveThinking enables adaptive thinking mode where the model decides
 // when and how much to think based on each request's complexity.
-func WithAdaptiveThinking(display ...ThinkingDisplay) model.Option {
+func WithAdaptiveThinking(display ...anthropic.ThinkingConfigAdaptiveDisplay) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
-		t := &Thinking{Type: ThinkingTypeAdaptive}
+		t := &anthropic.ThinkingConfigAdaptiveParam{}
 		if len(display) > 0 {
 			t.Display = display[0]
 		}
-		o.Thinking = t
+		o.ThinkingConfig = &anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: t,
+		}
 	})
 }
 
