@@ -74,6 +74,7 @@ func NewLangfuse(
 		&http.Client{Timeout: o.timeout},
 		host,
 		o.maxTaskQueueSize,
+		o.maxEventSizeBytes,
 		o.flushAt,
 		o.flushInterval,
 		o.sampleRate,

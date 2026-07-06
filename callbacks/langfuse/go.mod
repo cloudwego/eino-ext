@@ -47,3 +47,5 @@ require (
 	golang.org/x/term v0.32.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace github.com/cloudwego/eino-ext/libs/acl/langfuse => ../../libs/acl/langfuse
