@@ -59,6 +59,11 @@ type Config struct {
 	// Example: 1000
 	MaxTaskQueueSize int
 
+	// MaxEventSizeBytes is the maximum size of an event before large fields are truncated (Optional)
+	// Default: 1_000_000
+	// Example: 2_000_000
+	MaxEventSizeBytes int
+
 	// FlushAt is the number of events to batch before sending (Optional)
 	// Default: 15
 	// Example: 50
@@ -130,6 +135,9 @@ func NewLangfuseHandler(cfg *Config) (handler *CallbackHandler, flusher func()) 
 	}
 	if cfg.MaxTaskQueueSize > 0 {
 		langfuseOpts = append(langfuseOpts, langfuse.WithMaxTaskQueueSize(cfg.MaxTaskQueueSize))
+	}
+	if cfg.MaxEventSizeBytes > 0 {
+		langfuseOpts = append(langfuseOpts, langfuse.WithMaxEventSizeBytes(cfg.MaxEventSizeBytes))
 	}
 	if cfg.FlushAt > 0 {
 		langfuseOpts = append(langfuseOpts, langfuse.WithFlushAt(cfg.FlushAt))
