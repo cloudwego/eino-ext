@@ -17,6 +17,7 @@
 package claude
 
 import (
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/components/model"
 )
 
@@ -25,9 +26,13 @@ type options struct {
 
 	Thinking *Thinking
 
+	ThinkingConfig *anthropic.ThinkingConfigParamUnion
+
 	DisableParallelToolUse *bool
 
 	AutoCacheControl *CacheControl
+
+	ResponseFormat *ResponseFormat
 }
 
 func WithTopK(k int32) model.Option {
@@ -36,9 +41,17 @@ func WithTopK(k int32) model.Option {
 	})
 }
 
+// Deprecated: Use WithThinkingConfig instead.
 func WithThinking(t *Thinking) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.Thinking = t
+	})
+}
+
+// WithThinkingConfig sets Claude thinking using Anthropic SDK's native union.
+func WithThinkingConfig(t *anthropic.ThinkingConfigParamUnion) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ThinkingConfig = t
 	})
 }
 
@@ -70,5 +83,12 @@ func WithEnableAutoCache(enabled bool) model.Option {
 func WithAutoCacheControl(ctrl *CacheControl) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.AutoCacheControl = ctrl
+	})
+}
+
+// WithResponseFormat sets the response format for structured JSON output.
+func WithResponseFormat(rf *ResponseFormat) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ResponseFormat = rf
 	})
 }

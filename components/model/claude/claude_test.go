@@ -121,6 +121,45 @@ func TestClaude(t *testing.T) {
 		}, resp)
 	})
 
+	mockey.PatchConvey("legacy thinking config", t, func() {
+		resp, err := model.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+		}, WithThinking(&Thinking{
+			Enable:       true,
+			BudgetTokens: 1024,
+		}))
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.Thinking.OfEnabled)
+		assert.Equal(t, int64(1024), resp.Thinking.OfEnabled.BudgetTokens)
+	})
+
+	mockey.PatchConvey("native adaptive thinking config", t, func() {
+		resp, err := model.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+		}, WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+				Display: anthropic.ThinkingConfigAdaptiveDisplayOmitted,
+			},
+		}))
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.Thinking.OfAdaptive)
+		assert.Equal(t, anthropic.ThinkingConfigAdaptiveDisplayOmitted, resp.Thinking.OfAdaptive.Display)
+	})
+
+	mockey.PatchConvey("native thinking config overrides legacy thinking", t, func() {
+		resp, err := model.genMessageNewParams([]*schema.Message{
+			schema.UserMessage("hello"),
+		}, WithThinking(&Thinking{
+			Enable:       true,
+			BudgetTokens: 1024,
+		}), WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}))
+		assert.NoError(t, err)
+		assert.Nil(t, resp.Thinking.OfEnabled)
+		assert.NotNil(t, resp.Thinking.OfAdaptive)
+	})
+
 	mockey.PatchConvey("basic chat", t, func() {
 		// Mock API response
 		content := anthropic.ContentBlockUnion{
@@ -346,14 +385,20 @@ func TestConvStreamEvent(t *testing.T) {
 				StopReason: "end_turn",
 			},
 			Usage: anthropic.MessageDeltaUsage{
-				OutputTokens: 10,
+				InputTokens:              8,
+				CacheReadInputTokens:     3,
+				CacheCreationInputTokens: 2,
+				OutputTokens:             10,
 			},
 		}).Build().UnPatch()
 
 		message, err := convStreamEvent(event, streamCtx)
 		assert.NoError(t, err)
 		assert.Equal(t, "end_turn", message.ResponseMeta.FinishReason)
+		assert.Equal(t, 13, message.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 3, message.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
 		assert.Equal(t, 10, message.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 23, message.ResponseMeta.Usage.TotalTokens)
 	})
 
 	mockey.PatchConvey("content block start event", t, func() {

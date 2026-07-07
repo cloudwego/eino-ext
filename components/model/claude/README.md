@@ -31,6 +31,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/claude"
@@ -78,9 +79,10 @@ func main() {
 		},
 	}
 
-	resp, err := cm.Generate(ctx, messages, claude.WithThinking(&claude.Thinking{
-		Enable:       true,
-		BudgetTokens: 1024,
+	resp, err := cm.Generate(ctx, messages, claude.WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+		OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+			Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+		},
 	}))
 	if err != nil {
 		log.Printf("Generate error: %v", err)
@@ -178,8 +180,12 @@ type Config struct {
     // Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
     StopSequences []string
     
+    // Deprecated: Use ThinkingConfig instead.
     Thinking *Thinking
-    
+
+    // ThinkingConfig configures Claude thinking using Anthropic SDK's native union.
+    ThinkingConfig *anthropic.ThinkingConfigParamUnion
+
     // HTTPClient specifies the client to send HTTP requests.
     HTTPClient *http.Client `json:"http_client"`
     
@@ -197,6 +203,70 @@ For direct Anthropic API access, authentication resolution works as follows:
 
 
 
+
+## Structured Output
+
+Use `ResponseFormat` to get JSON responses conforming to a schema:
+
+```go
+import (
+	"github.com/cloudwego/eino-ext/components/model/claude"
+	"github.com/eino-contrib/jsonschema"
+)
+
+type ContactInfo struct {
+	Name         string `json:"name" jsonschema:"description=Full name"`
+	Email        string `json:"email" jsonschema:"description=Email address"`
+	PlanInterest string `json:"plan_interest" jsonschema:"description=Plan type"`
+}
+
+r := jsonschema.Reflector{AllowAdditionalProperties: false, DoNotReference: true}
+s := r.Reflect(&ContactInfo{})
+
+cm, err := claude.NewChatModel(ctx, &claude.Config{
+	APIKey:    "your-api-key",
+	Model:     "claude-sonnet-4-6-20250514",
+	MaxTokens: 1024,
+	ResponseFormat: &claude.ResponseFormat{
+		Schema: s,
+	},
+})
+```
+
+You can also use Eino's `utils.GoStruct2ParamsOneOf` to derive the schema from a Go struct:
+
+```go
+import (
+	"github.com/cloudwego/eino-ext/components/model/claude"
+	"github.com/cloudwego/eino/components/tool/utils"
+)
+
+type ContactInfo struct {
+	Name         string `json:"name" jsonschema:"description=Full name"`
+	Email        string `json:"email" jsonschema:"description=Email address"`
+	PlanInterest string `json:"plan_interest" jsonschema:"description=Plan type"`
+}
+
+params, _ := utils.GoStruct2ParamsOneOf[ContactInfo]()
+s, _ := params.ToJSONSchema()
+
+cm, err := claude.NewChatModel(ctx, &claude.Config{
+	APIKey:    "your-api-key",
+	Model:     "claude-sonnet-4-6-20250514",
+	MaxTokens: 1024,
+	ResponseFormat: &claude.ResponseFormat{
+		Schema: s,
+	},
+})
+```
+
+The response format can also be set per-request using `WithResponseFormat`:
+
+```go
+resp, err := cm.Generate(ctx, messages, claude.WithResponseFormat(&claude.ResponseFormat{
+	Schema: s,
+}))
+```
 
 ## Examples
 

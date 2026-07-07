@@ -119,7 +119,7 @@ type Config struct {
 	ExtraFields map[string]any
 
 	// CacheControl configures automatic prompt caching behavior.
-	// When non-nil, automatically applies a cache_control marker to the last
+	// Top-level cache control automatically applies a cache_control marker to the last
 	// cacheable block in the request.
 	// Optional.
 	CacheControl *anthropic.CacheControlEphemeralParam
