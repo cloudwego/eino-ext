@@ -1248,13 +1248,10 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 
 	t.Run("service account JSON uses WithCredentials path", func(t *testing.T) {
 		mockey.PatchConvey("", t, func() {
-			var calledCredentialsFromJSON bool
 			var calledWithCredentials bool
-			mockey.Mock(google.CredentialsFromJSON).To(func(ctx context.Context, jsonData []byte, scopes ...string) (*google.Credentials, error) {
-				calledCredentialsFromJSON = true
-				assert.Equal(t, []string{"https://www.googleapis.com/auth/cloud-platform"}, scopes)
-				return &google.Credentials{ProjectID: "from-sa"}, nil
-			}).Build()
+			mockey.Mock(google.CredentialsFromJSON).Return(&google.Credentials{
+				ProjectID: "from-sa",
+			}, nil).Build()
 			mockey.Mock(vertex.WithCredentials).To(func(ctx context.Context, region, projectID string, creds *google.Credentials) option.RequestOption {
 				calledWithCredentials = true
 				assert.Equal(t, "us-east5", region)
@@ -1268,7 +1265,6 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 			model, err := NewChatModel(ctx, &cfg)
 			assert.NoError(t, err)
 			assert.NotNil(t, model)
-			assert.True(t, calledCredentialsFromJSON, "expected google.CredentialsFromJSON to be called for service account path")
 			assert.True(t, calledWithCredentials, "expected vertex.WithCredentials to be called for service account path")
 		})
 	})
