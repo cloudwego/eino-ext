@@ -17,6 +17,7 @@
 package langfuse
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -93,4 +94,24 @@ func TestEventBodyUnion(t *testing.T) {
 	assert.Equal(t, input, generationUnion.getInput())
 	assert.Equal(t, observationID, generationUnion.getObservationID())
 	assert.Equal(t, map[string]string{"key": "value"}, generationUnion.getMetadata())
+}
+
+func TestIngestionConsumerMaxEventSizeBytes(t *testing.T) {
+	consumer := newIngestionConsumer(nil, nil, 20, 0, 0, 0, "truncated", nil, "", "", "", "", 0, nil)
+	ev := &event{Body: eventBodyUnion{Trace: &TraceEventBody{
+		Input:  strings.Repeat("i", 30),
+		Output: strings.Repeat("o", 10),
+	}}}
+
+	size := consumer.truncate(ev)
+
+	assert.LessOrEqual(t, size, 20)
+	assert.Equal(t, "truncated", ev.Body.getInput())
+	assert.Equal(t, strings.Repeat("o", 10), ev.Body.getOutput())
+}
+
+func TestIngestionConsumerDefaultMaxEventSizeBytes(t *testing.T) {
+	consumer := newIngestionConsumer(nil, nil, 0, 0, 0, 0, "", nil, "", "", "", "", 0, nil)
+
+	assert.Equal(t, defaultMaxEventSizeBytes, consumer.maxEventSizeBytes)
 }
