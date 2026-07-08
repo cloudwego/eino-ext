@@ -19,6 +19,7 @@ package litellm
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -180,6 +181,35 @@ func TestChatModel_Stream(t *testing.T) {
 		stream, err := chatModel.Stream(context.Background(), messages)
 		assert.NoError(t, err)
 		assert.NotNil(t, stream)
+		defer stream.Close()
+
+		msg, err := stream.Recv()
+		assert.NoError(t, err)
+		assert.Equal(t, "hello", msg.Content)
+
+		_, err = stream.Recv()
+		assert.Equal(t, io.EOF, err)
+	})
+
+	mockey.PatchConvey("Stream returns error from client", t, func() {
+		mockey.Mock((*openai.Client).Stream).Return(nil, errors.New("stream error")).Build()
+
+		config := &Config{
+			APIKey:  "test-api-key",
+			BaseURL: "http://localhost:4000",
+			Model:   "openai/gpt-4o",
+		}
+		chatModel, err := NewChatModel(context.Background(), config)
+		assert.NoError(t, err)
+
+		messages := []*schema.Message{
+			{Role: schema.User, Content: "Hello"},
+		}
+
+		stream, err := chatModel.Stream(context.Background(), messages)
+		assert.Error(t, err)
+		assert.Nil(t, stream)
+		assert.Contains(t, err.Error(), "stream error")
 	})
 }
 
@@ -212,6 +242,56 @@ func TestChatModel_WithTools(t *testing.T) {
 		litellmModel, ok := newModel.(*ChatModel)
 		assert.True(t, ok)
 		assert.NotNil(t, litellmModel.cli)
+	})
+}
+
+func TestChatModel_BindTools(t *testing.T) {
+	mockey.PatchConvey("BindTools delegates to openai client", t, func() {
+		mockey.Mock((*openai.Client).BindTools).Return(nil).Build()
+
+		config := &Config{
+			APIKey:  "test-api-key",
+			BaseURL: "http://localhost:4000",
+			Model:   "openai/gpt-4o",
+		}
+		chatModel, err := NewChatModel(context.Background(), config)
+		assert.NoError(t, err)
+
+		tools := []*schema.ToolInfo{
+			{
+				Name: "get_weather",
+				Desc: "Get current weather",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"city": {Type: "string", Desc: "City name"},
+				}),
+			},
+		}
+
+		err = chatModel.BindTools(tools)
+		assert.NoError(t, err)
+	})
+
+	mockey.PatchConvey("BindTools returns error from client", t, func() {
+		mockey.Mock((*openai.Client).BindTools).Return(errors.New("bind error")).Build()
+
+		config := &Config{
+			APIKey:  "test-api-key",
+			BaseURL: "http://localhost:4000",
+			Model:   "openai/gpt-4o",
+		}
+		chatModel, err := NewChatModel(context.Background(), config)
+		assert.NoError(t, err)
+
+		tools := []*schema.ToolInfo{
+			{
+				Name: "get_weather",
+				Desc: "Get current weather",
+			},
+		}
+
+		err = chatModel.BindTools(tools)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "bind error")
 	})
 }
 
