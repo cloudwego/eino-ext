@@ -88,9 +88,13 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 
 	isSelfGenerated := isSelfGeneratedMessage(message)
 
-	var err error
+	role, err := toGeminiRole(message.Role)
+	if err != nil {
+		return nil, err
+	}
+
 	content := &genai.Content{
-		Role: toGeminiRole(message.Role),
+		Role: role,
 	}
 
 	for _, block := range message.ContentBlocks {
@@ -627,11 +631,18 @@ func convAgenticFileData(data *genai.FileData) (*schema.ContentBlock, error) {
 	}
 }
 
-func toGeminiRole(role schema.AgenticRoleType) string {
-	if role == schema.AgenticRoleTypeAssistant {
-		return roleModel
+func toGeminiRole(role schema.AgenticRoleType) (string, error) {
+	switch role {
+	case schema.AgenticRoleTypeAssistant:
+		return roleModel, nil
+	case schema.AgenticRoleTypeSystem:
+		// not documented but works in practice with correct priority
+		return "system", nil
+	case schema.AgenticRoleTypeUser:
+		return roleUser, nil
+	default:
+		return "", fmt.Errorf("unsupported role: %s", role)
 	}
-	return roleUser
 }
 
 func populateStreamingMeta(curBlocks []*schema.ContentBlock, curIndex int, lastType schema.ContentBlockType) (int, schema.ContentBlockType) {

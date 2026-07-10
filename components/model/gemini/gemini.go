@@ -801,8 +801,13 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 		}, nil
 	}
 
+	role, err := toGeminiRole(message.Role)
+	if err != nil {
+		return nil, err
+	}
+
 	content := &genai.Content{
-		Role: toGeminiRole(message.Role),
+		Role: role,
 	}
 
 	// Restore reasoning content as a thought part (required for gemini-3-pro-preview and later)
@@ -1394,11 +1399,18 @@ const (
 	roleUser  = "user"
 )
 
-func toGeminiRole(role schema.RoleType) string {
-	if role == schema.Assistant {
-		return roleModel
+func toGeminiRole(role schema.RoleType) (string, error) {
+	switch role {
+	case schema.Assistant:
+		return roleModel, nil
+	case schema.System:
+		// not documented but works in practice with correct priority
+		return "system", nil
+	case schema.User, schema.Tool:
+		return roleUser, nil
+	default:
+		return "", fmt.Errorf("unsupported role: %s", role)
 	}
-	return roleUser
 }
 
 const typ = "Gemini"

@@ -558,26 +558,22 @@ func toAnthropicDeferredToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUni
 }
 
 func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.Message, error) {
-	userMsgIdx := -1
+	firstNonSystem := 0
 	for i, msg := range input {
 		if msg.Role != schema.System {
-			if msg.Role != schema.User {
-				// claude requires first message to be user msg
-				// as specified in https://docs.anthropic.com/en/api/messages:
-				// 'You can specify a single user-role message,
-				// or you can include multiple user and assistant messages.'
-				return nil, nil, errors.New("first non-system message should be user message")
-			}
-			userMsgIdx = i
+			firstNonSystem = i
 			break
+		}
+		if i == len(input)-1 {
+			return nil, nil, errors.New("only system message in input, require at least 1 user message")
 		}
 	}
 
-	if userMsgIdx == -1 {
-		return nil, nil, errors.New("only system message in input, require at least 1 user message")
+	if input[firstNonSystem].Role != schema.User {
+		return nil, nil, errors.New("first non-system message should be user message")
 	}
 
-	return input[:userMsgIdx], input[userMsgIdx:], nil
+	return input[:firstNonSystem], input[firstNonSystem:], nil
 }
 
 func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (
@@ -587,7 +583,7 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
 	}
 
-	system, msgs, err := preProcessMessages(input)
+	sysInstruction, msgs, err := preProcessMessages(input)
 	if err != nil {
 		return anthropic.MessageNewParams{}, err
 	}
@@ -658,7 +654,7 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		return anthropic.MessageNewParams{}, err
 	}
 
-	if err = cm.populateInput(&params, system, msgs, specOptions); err != nil {
+	if err = cm.populateInput(&params, sysInstruction, msgs, specOptions); err != nil {
 		return anthropic.MessageNewParams{}, err
 	}
 
@@ -670,10 +666,10 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	return params, nil
 }
 
-func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []*schema.Message, msgs []*schema.Message, specOptions *options) error {
+func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, sysInstruction []*schema.Message, msgs []*schema.Message, specOptions *options) error {
 	// populate system messages
 	hasSetSysBreakPoint := false
-	for _, m := range system {
+	for _, m := range sysInstruction {
 		block := anthropic.TextBlockParam{Text: m.Content}
 		if isBreakpointMessage(m) {
 			hasSetSysBreakPoint = true
@@ -706,6 +702,7 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 	}
 
 	msgParams = mergeAdjacentToolResults(msgParams)
+	msgParams = mergeAdjacentSystemMessages(msgParams)
 
 	if !hasSetMsgBreakPoint && specOptions.AutoCacheControl != nil {
 		lastMsgParam := msgParams[len(msgParams)-1]
@@ -729,6 +726,25 @@ func mergeAdjacentToolResults(msgParams []anthropic.MessageParam) []anthropic.Me
 	result := make([]anthropic.MessageParam, 0, len(msgParams))
 	for _, mp := range msgParams {
 		if len(result) > 0 && isToolResultMessage(mp) && isToolResultMessage(result[len(result)-1]) {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
+		} else {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+// mergeAdjacentSystemMessages merges consecutive system messages into a single
+// message with multiple content blocks, because Claude only allows a system
+// message immediately before a user or assistant message.
+func mergeAdjacentSystemMessages(msgParams []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgParams) <= 1 {
+		return msgParams
+	}
+
+	result := make([]anthropic.MessageParam, 0, len(msgParams))
+	for _, mp := range msgParams {
+		if len(result) > 0 && mp.Role == anthropic.MessageParamRoleSystem && result[len(result)-1].Role == anthropic.MessageParamRoleSystem {
 			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
 		} else {
 			result = append(result, mp)
@@ -1185,6 +1201,11 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		mp = anthropic.NewAssistantMessage(messageParams...)
 	case schema.User, schema.Tool:
 		mp = anthropic.NewUserMessage(messageParams...)
+	case schema.System:
+		mp = anthropic.MessageParam{
+			Role:    anthropic.MessageParamRoleSystem,
+			Content: messageParams,
+		}
 	default:
 		mp = anthropic.NewUserMessage(messageParams...)
 	}
