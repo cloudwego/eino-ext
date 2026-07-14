@@ -1269,3 +1269,145 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 		})
 	})
 }
+
+func Test_convSchemaMessage_Document(t *testing.T) {
+	// A tiny but valid base64 blob; the conversion does not parse the PDF, it only
+	// carries the bytes, so any raw base64 exercises the path.
+	rawPDF := "JVBERi0xLjQK"
+	invalidDataURL := "data:application/pdf;base64," + rawPDF
+	httpURL := "https://example.com/doc.pdf"
+
+	t.Run("UserInputMultiContent", func(t *testing.T) {
+		t.Run("success with base64 pdf", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeText, Text: "read this"},
+					{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{
+						MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawPDF, MIMEType: "application/pdf"},
+					}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 2)
+			assert.Equal(t, "read this", result.Content[0].OfText.Text)
+			assert.NotNil(t, result.Content[1].OfDocument)
+			assert.NotNil(t, result.Content[1].OfDocument.Source.OfBase64)
+			assert.Equal(t, rawPDF, result.Content[1].OfDocument.Source.OfBase64.Data)
+		})
+
+		t.Run("success with url pdf", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{
+						MessagePartCommon: schema.MessagePartCommon{URL: &httpURL},
+					}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 1)
+			assert.NotNil(t, result.Content[0].OfDocument.Source.OfURL)
+			assert.Equal(t, httpURL, result.Content[0].OfDocument.Source.OfURL.URL)
+		})
+
+		t.Run("error with data url prefix", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{
+						MessagePartCommon: schema.MessagePartCommon{Base64Data: &invalidDataURL, MIMEType: "application/pdf"},
+					}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.ErrorContains(t, err, "Base64Data should be a raw base64 string")
+		})
+
+		t.Run("error with no mime type for base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{
+						MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawPDF},
+					}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.ErrorContains(t, err, "file part must have MIMEType when use Base64Data")
+		})
+
+		t.Run("error with non-pdf mime type", func(t *testing.T) {
+			docx := "application/msword"
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{
+						MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawPDF, MIMEType: docx},
+					}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.ErrorContains(t, err, "only supports application/pdf")
+		})
+
+		t.Run("error with no url or base64", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{}},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.ErrorContains(t, err, "file part must have either a URL or Base64Data")
+		})
+
+		t.Run("error with nil file", func(t *testing.T) {
+			msg := &schema.Message{
+				Role: schema.User,
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: nil},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.ErrorContains(t, err, "file field must not be nil")
+		})
+	})
+
+	t.Run("ToolResult", func(t *testing.T) {
+		// A tool message whose result carries a PDF document part — the path the
+		// filesystem middleware's multimodal read_file exercises.
+		t.Run("success with base64 pdf in tool result", func(t *testing.T) {
+			msg := &schema.Message{
+				Role:       schema.Tool,
+				ToolCallID: "call_1",
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{
+						MessagePartCommon: schema.MessagePartCommon{Base64Data: &rawPDF, MIMEType: "application/pdf"},
+					}},
+				},
+			}
+			result, err := convSchemaMessage(msg)
+			assert.NoError(t, err)
+			assert.Len(t, result.Content, 1)
+			assert.NotNil(t, result.Content[0].OfToolResult)
+			assert.Len(t, result.Content[0].OfToolResult.Content, 1)
+			assert.NotNil(t, result.Content[0].OfToolResult.Content[0].OfDocument)
+			assert.Equal(t, rawPDF, result.Content[0].OfToolResult.Content[0].OfDocument.Source.OfBase64.Data)
+		})
+
+		t.Run("error with nil file in tool result", func(t *testing.T) {
+			msg := &schema.Message{
+				Role:       schema.Tool,
+				ToolCallID: "call_1",
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeFileURL, File: nil},
+				},
+			}
+			_, err := convSchemaMessage(msg)
+			assert.ErrorContains(t, err, "file field must not be nil")
+		})
+	})
+}
