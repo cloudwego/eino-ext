@@ -16,12 +16,17 @@
 
 package agenticclaude
 
-import "github.com/cloudwego/eino/components/model"
+import (
+	"time"
+
+	"github.com/cloudwego/eino/components/model"
+)
 
 type claudeOptions struct {
-	serverTools   []*ServerToolConfig
-	customHeaders map[string]string
-	extraFields   map[string]any
+	serverTools    []*ServerToolConfig
+	customHeaders  map[string]string
+	extraFields    map[string]any
+	requestTimeout time.Duration
 }
 
 // WithServerTools specifies server-side tools available to the model.
@@ -59,5 +64,13 @@ func WithCustomHeaders(headers map[string]string) model.Option {
 func WithExtraFields(fields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *claudeOptions) {
 		o.extraFields = fields
+	})
+}
+
+// WithRequestTimeout sets the timeout for each API request.
+// This overrides the RequestTimeout set in Config for a single call.
+func WithRequestTimeout(d time.Duration) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *claudeOptions) {
+		o.requestTimeout = d
 	})
 }

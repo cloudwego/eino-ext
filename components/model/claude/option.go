@@ -17,6 +17,8 @@
 package claude
 
 import (
+	"time"
+
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/components/model"
 )
@@ -33,6 +35,10 @@ type options struct {
 	AutoCacheControl *CacheControl
 
 	ResponseFormat *ResponseFormat
+
+	RequestTimeout time.Duration
+
+	CustomHeaders map[string]string
 }
 
 func WithTopK(k int32) model.Option {
@@ -90,5 +96,20 @@ func WithAutoCacheControl(ctrl *CacheControl) model.Option {
 func WithResponseFormat(rf *ResponseFormat) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ResponseFormat = rf
+	})
+}
+
+// WithRequestTimeout sets the timeout for each API request.
+// This overrides the RequestTimeout set in Config for a single call.
+func WithRequestTimeout(d time.Duration) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.RequestTimeout = d
+	})
+}
+
+// WithCustomHeaders specifies custom HTTP headers to include in API requests.
+func WithCustomHeaders(headers map[string]string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.CustomHeaders = headers
 	})
 }

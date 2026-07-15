@@ -211,6 +211,10 @@ type Config struct {
 
     // HTTPClient specifies the client to send HTTP requests.
     HTTPClient *http.Client `json:"http_client"`
+
+    // RequestTimeout specifies the timeout for each API request.
+    // Optional.
+    RequestTimeout time.Duration `json:"request_timeout"`
     
     DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 }

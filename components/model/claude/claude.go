@@ -26,6 +26,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
@@ -170,6 +171,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		responseFormat:         config.ResponseFormat,
 		disableParallelToolUse: config.DisableParallelToolUse,
 		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
+		requestTimeout:         config.RequestTimeout,
 	}, nil
 }
 
@@ -275,6 +277,10 @@ type Config struct {
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
 
+	// RequestTimeout specifies the timeout for each API request.
+	// Optional.
+	RequestTimeout time.Duration `json:"request_timeout"`
+
 	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 
 	// ToolSearchAlgorithm specifies the server-side tool search algorithm.
@@ -330,6 +336,7 @@ type ChatModel struct {
 	disableParallelToolUse *bool
 	origDeferredTools      []*schema.ToolInfo
 	toolSearchAlgorithm    ToolSearchAlgorithm
+	requestTimeout         time.Duration
 }
 
 func hasDirectAnthropicConfigAuth(config *Config) bool {
@@ -361,12 +368,12 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		}
 	}()
 
-	msgParam, err := cm.genMessageNewParams(input, opts...)
+	msgParams, reqOpts, err := cm.genParamsAndOptions(input, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := cm.cli.Messages.New(ctx, msgParam)
+	resp, err := cm.cli.Messages.New(ctx, msgParams, reqOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create new message fail: %w", err)
 	}
@@ -390,11 +397,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		}
 	}()
 
-	msgParam, err := cm.genMessageNewParams(input, opts...)
+	msgParams, reqOpts, err := cm.genParamsAndOptions(input, opts...)
 	if err != nil {
 		return nil, err
 	}
-	stream := cm.cli.Messages.NewStreaming(ctx, msgParam)
+
+	stream := cm.cli.Messages.NewStreaming(ctx, msgParams, reqOpts...)
 	// the stream error that occurred at this time should be terminated and returned.
 	if stream.Err() != nil {
 		return nil, fmt.Errorf("create new streaming message fail: %w", stream.Err())
@@ -595,16 +603,17 @@ func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.M
 	return input[:firstNonSystem], input[firstNonSystem:], nil
 }
 
-func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (
-	anthropic.MessageNewParams, error,
+func (cm *ChatModel) genParamsAndOptions(input []*schema.Message, opts ...model.Option) (
+	msgParams anthropic.MessageNewParams, reqOpts []option.RequestOption, err error,
 ) {
 	if len(input) == 0 {
-		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
+		err = fmt.Errorf("input is empty")
+		return msgParams, reqOpts, err
 	}
 
 	sysInstruction, msgs, err := preProcessMessages(input)
 	if err != nil {
-		return anthropic.MessageNewParams{}, err
+		return msgParams, reqOpts, err
 	}
 
 	commonOptions := model.GetCommonOptions(&model.Options{
@@ -625,28 +634,28 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		ResponseFormat:         cm.responseFormat,
 	}, opts...)
 
-	params := anthropic.MessageNewParams{}
+	msgParams = anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
-		params.Model = anthropic.Model(*commonOptions.Model)
+		msgParams.Model = anthropic.Model(*commonOptions.Model)
 	}
 	if commonOptions.MaxTokens != nil {
-		params.MaxTokens = int64(*commonOptions.MaxTokens)
+		msgParams.MaxTokens = int64(*commonOptions.MaxTokens)
 	}
 	if commonOptions.Temperature != nil {
-		params.Temperature = param.NewOpt(float64(*commonOptions.Temperature))
+		msgParams.Temperature = param.NewOpt(float64(*commonOptions.Temperature))
 	}
 	if commonOptions.TopP != nil {
-		params.TopP = param.NewOpt(float64(*commonOptions.TopP))
+		msgParams.TopP = param.NewOpt(float64(*commonOptions.TopP))
 	}
 	if len(commonOptions.Stop) > 0 {
-		params.StopSequences = commonOptions.Stop
+		msgParams.StopSequences = commonOptions.Stop
 	}
 	if specOptions.TopK != nil {
-		params.TopK = param.NewOpt(int64(*specOptions.TopK))
+		msgParams.TopK = param.NewOpt(int64(*specOptions.TopK))
 	}
 
 	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
-		params.Thinking = anthropic.ThinkingConfigParamUnion{
+		msgParams.Thinking = anthropic.ThinkingConfigParamUnion{
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
 				Type:         "enabled",
 				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
@@ -654,35 +663,47 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 		}
 	}
 	if specOptions.ThinkingConfig != nil {
-		params.Thinking = *specOptions.ThinkingConfig
+		msgParams.Thinking = *specOptions.ThinkingConfig
 	}
 
 	if specOptions.ResponseFormat != nil && specOptions.ResponseFormat.Schema != nil {
 		schemaMap, mErr := jsonSchemaToMap(specOptions.ResponseFormat.Schema)
 		if mErr != nil {
-			return anthropic.MessageNewParams{}, fmt.Errorf("failed to marshal response format schema: %w", mErr)
+			err = fmt.Errorf("failed to marshal response format schema: %w", mErr)
+			return msgParams, reqOpts, err
 		}
-		params.OutputConfig = anthropic.OutputConfigParam{
+		msgParams.OutputConfig = anthropic.OutputConfigParam{
 			Format: anthropic.JSONOutputFormatParam{
 				Schema: schemaMap,
 			},
 		}
 	}
 
-	if err = cm.populateTools(&params, commonOptions, specOptions); err != nil {
-		return anthropic.MessageNewParams{}, err
+	if err = cm.populateTools(&msgParams, commonOptions, specOptions); err != nil {
+		return msgParams, reqOpts, err
 	}
 
-	if err = cm.populateInput(&params, sysInstruction, msgs, specOptions); err != nil {
-		return anthropic.MessageNewParams{}, err
+	if err = cm.populateInput(&msgParams, sysInstruction, msgs, specOptions); err != nil {
+		return msgParams, reqOpts, err
 	}
 
-	// Collect tools from ToolSearchResult in Tool-role messages and add to params.Tools
-	if err = populateToolSearchResultTools(&params, msgs); err != nil {
-		return anthropic.MessageNewParams{}, err
+	// Collect tools from ToolSearchResult in Tool-role messages and add to msgParams.Tools
+	if err = populateToolSearchResultTools(&msgParams, msgs); err != nil {
+		return msgParams, reqOpts, err
 	}
 
-	return params, nil
+	timeout := cm.requestTimeout
+	if specOptions.RequestTimeout > 0 {
+		timeout = specOptions.RequestTimeout
+	}
+	if timeout > 0 {
+		reqOpts = append(reqOpts, option.WithRequestTimeout(timeout))
+	}
+	for k, v := range specOptions.CustomHeaders {
+		reqOpts = append(reqOpts, option.WithHeaderAdd(k, v))
+	}
+
+	return msgParams, reqOpts, nil
 }
 
 func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, sysInstruction []*schema.Message, msgs []*schema.Message, specOptions *options) error {
