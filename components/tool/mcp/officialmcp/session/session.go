@@ -183,12 +183,17 @@ func (s *Session) reconnect(ctx context.Context, stale *mcp.ClientSession) (*mcp
 	if s.session != stale {
 		return s.session, nil
 	}
-	if stale != nil {
-		_ = stale.Close()
-	}
+	// Connect first, then discard the stale session only once we have a working
+	// replacement. If connect fails we leave stale installed (unchanged, not
+	// closed) so a later retry re-enters here against the same sentinel and dials
+	// again — rather than closing stale now and leaving a dead session as current,
+	// which would make every retry re-close the same session.
 	cur, err := connect(ctx, s.cfg)
 	if err != nil {
 		return nil, err
+	}
+	if stale != nil {
+		_ = stale.Close()
 	}
 	s.session = cur
 	return s.session, nil

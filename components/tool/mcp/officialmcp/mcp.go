@@ -515,7 +515,7 @@ func marshalTruncatedToolResult(original string, maxChars, preserveTailChars int
 			"_meta": map[string]any{
 				"truncated":     true,
 				"originalChars": originalChars,
-				"returnedChars": maxChars,
+				"returnedChars": utf8.RuneCountInString(payload),
 			},
 		}
 		marshaled, err := sonic.MarshalString(out)
