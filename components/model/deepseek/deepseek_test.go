@@ -663,6 +663,9 @@ func TestResolveStreamResponse(t *testing.T) {
 				PromptTokens:     10,
 				CompletionTokens: 20,
 				TotalTokens:      30,
+				CompletionTokensDetails: deepseek.CompletionTokensDetails{
+					ReasoningTokens: 12,
+				},
 			},
 		}
 		msg, found, err := resolveStreamResponse(resp)
@@ -670,6 +673,7 @@ func TestResolveStreamResponse(t *testing.T) {
 		assert.True(t, found)
 		assert.NotNil(t, msg.ResponseMeta)
 		assert.Equal(t, 10, msg.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 12, msg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	t.Run("reasoning content in delta", func(t *testing.T) {
@@ -780,10 +784,14 @@ func TestTokenUsageConversions(t *testing.T) {
 				PromptTokens:     1,
 				CompletionTokens: 2,
 				TotalTokens:      3,
+				CompletionTokensDetails: schema.CompletionTokensDetails{
+					ReasoningTokens: 7,
+				},
 			},
 		})
 		assert.NotNil(t, result)
 		assert.Equal(t, 1, result.PromptTokens)
+		assert.Equal(t, 7, result.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	t.Run("streamToEinoTokenUsage nil", func(t *testing.T) {
@@ -799,10 +807,14 @@ func TestTokenUsageConversions(t *testing.T) {
 			PromptTokens:     5,
 			CompletionTokens: 10,
 			TotalTokens:      15,
+			CompletionTokensDetails: deepseek.CompletionTokensDetails{
+				ReasoningTokens: 8,
+			},
 		})
 		assert.NotNil(t, result)
 		assert.Equal(t, 5, result.PromptTokens)
 		assert.Equal(t, 15, result.TotalTokens)
+		assert.Equal(t, 8, result.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	t.Run("toEinoTokenUsage with cache hit", func(t *testing.T) {
@@ -822,9 +834,13 @@ func TestTokenUsageConversions(t *testing.T) {
 			CompletionTokens:   2,
 			TotalTokens:        3,
 			PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: 1},
+			CompletionTokensDetails: schema.CompletionTokensDetails{
+				ReasoningTokens: 4,
+			},
 		})
 		assert.NotNil(t, result)
 		assert.Equal(t, 1, result.PromptTokenDetails.CachedTokens)
+		assert.Equal(t, 4, result.CompletionTokensDetails.ReasoningTokens)
 	})
 }
 
