@@ -20,6 +20,7 @@ import (
 	"context"
 	"testing"
 
+	"encoding/json"
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,19 @@ func TestTool(t *testing.T) {
 	assert.Equal(t, 1, len(tools))
 	helper := tools[0].(*toolHelper)
 	assert.Equal(t, map[string]string{"key": "value"}, helper.customHeaders)
+
+	t.Run("call tools without arguments", func(t *testing.T) {
+		tools, err := GetTools(ctx, &Config{
+			Cli:          cli,
+			ToolNameList: []string{"name2"},
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(tools))
+		result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "")
+		assert.NoError(t, err)
+		assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}", result)
+
+	})
 }
 
 type mockMCPClient struct{}
@@ -137,6 +151,9 @@ func (m *mockMCPClient) ListTools(ctx context.Context, request mcp.ListToolsRequ
 }
 
 func (m *mockMCPClient) CallTool(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if _, err := json.Marshal(request); err != nil {
+		return nil, err
+	}
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			mcp.TextContent{
