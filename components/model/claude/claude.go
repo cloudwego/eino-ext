@@ -1142,6 +1142,15 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 					} else {
 						return mp, fmt.Errorf("image part must have either a URL or Base64Data")
 					}
+				case schema.ChatMessagePartTypeFileURL:
+					if message.UserInputMultiContent[i].File == nil {
+						return mp, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in user message")
+					}
+					block, cErr := newPDFDocumentBlock(message.UserInputMultiContent[i].File)
+					if cErr != nil {
+						return mp, cErr
+					}
+					messageParams = append(messageParams, block)
 				default:
 					return mp, fmt.Errorf("anthropic message type not supported: %s", message.UserInputMultiContent[i].Type)
 				}
@@ -1350,11 +1359,62 @@ func convToolMultiContent(callID string, parts []schema.MessageInputPart) (anthr
 			} else {
 				return result, fmt.Errorf("image part must have either a URL or Base64Data")
 			}
+		case schema.ChatMessagePartTypeFileURL:
+			if part.File == nil {
+				return result, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in tool result")
+			}
+			docSource, cErr := pdfDocumentSource(part.File)
+			if cErr != nil {
+				return result, cErr
+			}
+			result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+				OfDocument: &anthropic.DocumentBlockParam{
+					Source: docSource,
+				},
+			})
 		default:
 			return result, fmt.Errorf("anthropic message type not supported: %s", part.Type)
 		}
 	}
 	return result, nil
+}
+
+// pdfDocumentSource builds an Anthropic PDF document source from a file content
+// part. It mirrors the image handling: a URL is used directly, otherwise raw
+// base64 with an application/pdf MIME type. Only PDF documents are supported by
+// the base64/URL document source, matching the Anthropic Messages `document` block.
+func pdfDocumentSource(file *schema.MessageInputFile) (anthropic.DocumentBlockParamSourceUnion, error) {
+	var source anthropic.DocumentBlockParamSourceUnion
+	if file.URL != nil && *file.URL != "" {
+		source.OfURL = &anthropic.URLPDFSourceParam{URL: *file.URL}
+		return source, nil
+	}
+	if file.Base64Data != nil && *file.Base64Data != "" {
+		if file.MIMEType == "" {
+			return source, fmt.Errorf("file part must have MIMEType when use Base64Data")
+		}
+		if file.MIMEType != "application/pdf" {
+			return source, fmt.Errorf("file part only supports application/pdf as a document, got %s", file.MIMEType)
+		}
+		if strings.HasPrefix(*file.Base64Data, "data:") {
+			return source, fmt.Errorf("Base64Data should be a raw base64 string, but it has a 'data:' prefix")
+		}
+		source.OfBase64 = &anthropic.Base64PDFSourceParam{Data: *file.Base64Data}
+		return source, nil
+	}
+	return source, fmt.Errorf("file part must have either a URL or Base64Data")
+}
+
+// newPDFDocumentBlock builds a message-level PDF document content block from a
+// file content part (used for user-input multi content).
+func newPDFDocumentBlock(file *schema.MessageInputFile) (anthropic.ContentBlockParamUnion, error) {
+	source, err := pdfDocumentSource(file)
+	if err != nil {
+		return anthropic.ContentBlockParamUnion{}, err
+	}
+	return anthropic.ContentBlockParamUnion{
+		OfDocument: &anthropic.DocumentBlockParam{Source: source},
+	}, nil
 }
 
 func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion, cacheCtrl *CacheControl) {
