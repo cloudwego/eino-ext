@@ -1423,6 +1423,10 @@ func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 			FinishReason: string(resp.StopReason),
 			Usage:        toTokenUsage(resp.Usage),
 		},
+		Extra: map[string]any{
+			"cache_read_input_tokens":     int(resp.Usage.CacheReadInputTokens),
+			"cache_creation_input_tokens": int(resp.Usage.CacheCreationInputTokens),
+		},
 	}
 
 	streamCtx := &streamContext{}
