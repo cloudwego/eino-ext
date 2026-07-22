@@ -1014,6 +1014,9 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 			},
 			CompletionTokens: output.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      output.ResponseMeta.Usage.TotalTokens,
+			CompletionTokensDetails: model.CompletionTokensDetails{
+				ReasoningTokens: output.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens,
+			},
 		}
 	}
 	return result
@@ -1385,6 +1388,11 @@ func toTokenUsage(u anthropic.Usage) *schema.TokenUsage {
 		},
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
+		// Map Anthropic output_tokens_details.thinking_tokens so Langfuse
+		// completion_tokens_details.reasoning_tokens / output_reasoning_tokens is populated.
+		CompletionTokensDetails: schema.CompletionTokensDetails{
+			ReasoningTokens: int(u.OutputTokensDetails.ThinkingTokens),
+		},
 	}
 }
 
@@ -1399,6 +1407,9 @@ func toDeltaTokenUsage(u anthropic.MessageDeltaUsage) *schema.TokenUsage {
 		},
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
+		CompletionTokensDetails: schema.CompletionTokensDetails{
+			ReasoningTokens: int(u.OutputTokensDetails.ThinkingTokens),
+		},
 	}
 }
 
