@@ -658,3 +658,21 @@ func getName(info *callbacks.RunInfo) string {
 	}
 	return info.Type + string(info.Component)
 }
+
+// Get the associated trace id
+func GetTraceID(ctx context.Context) (ret string, ok bool) {
+	var value *langfuseState
+	if value, ok = ctx.Value(langfuseStateKey{}).(*langfuseState); ok {
+		ret = value.traceID
+	}
+	return
+}
+
+// Get the associated observation id
+func GetObservationID(ctx context.Context) (ret string, ok bool) {
+	var value *langfuseState
+	if value, ok = ctx.Value(langfuseStateKey{}).(*langfuseState); ok {
+		ret = value.observationID
+	}
+	return
+}
