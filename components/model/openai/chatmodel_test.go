@@ -323,4 +323,36 @@ func TestOpenAIGenerate(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+	t.Run("custom headers from config", func(t *testing.T) {
+		defer mockey.Mock((*openai.Client).CreateChatCompletion).To(func(ctx context.Context,
+			request openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (response openai.ChatCompletionResponse, err error) {
+			if len(opts) != 1 {
+				t.Fatalf("expected one request option for custom headers, got %d", len(opts))
+			}
+			return openai.ChatCompletionResponse{
+				Choices: []openai.ChatCompletionChoice{
+					{
+						Message: openai.ChatCompletionMessage{
+							Role:    openai.ChatMessageRoleAssistant,
+							Content: "ok",
+						},
+					},
+				},
+			}, nil
+		}).Build().UnPatch()
+
+		ctx := context.Background()
+		m, err := NewChatModel(ctx, &ChatModelConfig{
+			APIKey:        "test-key",
+			Model:         "gpt-4",
+			CustomHeaders: map[string]string{"X-Custom": "value"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = m.Generate(ctx, []*schema.Message{schema.UserMessage("hello")})
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 }
