@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -40,28 +41,36 @@ type Config struct {
 	ScoreThreshold *float64
 	// Number of top results to retrieve from Qdrant.
 	TopK int
+	// ReturnFields limits the payload fields returned by Qdrant and used by the default DocumentConverter.
+	// Only these fields are requested from the server via PayloadIncludeSelector.
+	// Default []string{"metadata", "content"}
+	ReturnFields []string
+	// DocumentConverter converts retrieved raw document to eino Document, default defaultResultParser.
+	DocumentConverter func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error)
 }
 
 type Retriever struct {
-	client         *qdrant.Client
-	collection     string
-	embedding      embedding.Embedder
-	scoreThreshold *float64
-	topK           int
+	client            *qdrant.Client
+	collection        string
+	embedding         embedding.Embedder
+	scoreThreshold    *float64
+	topK              int
+	documentConverter func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error)
+	returnFields      []string
 }
 
 func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 	if config == nil {
-		return nil, fmt.Errorf("[NewRetriever] config is nil")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] config is nil")
 	}
 	if config.Embedding == nil {
-		return nil, fmt.Errorf("[NewRetriever] embedding not provided for qdrant retriever")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] embedding not provided for qdrant retriever")
 	}
 	if config.Collection == "" {
-		return nil, fmt.Errorf("[NewRetriever] qdrant collection not provided")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] qdrant collection not provided")
 	}
 	if config.Client == nil {
-		return nil, fmt.Errorf("[NewRetriever] qdrant client not provided")
+		return nil, fmt.Errorf("[qdrant.NewRetriever] qdrant client not provided")
 	}
 
 	topK := config.TopK
@@ -69,12 +78,24 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		topK = 5
 	}
 
+	returnFields := config.ReturnFields
+	if len(returnFields) == 0 {
+		returnFields = []string{defaultMetadataKey, defaultContentKey}
+	}
+
+	documentConverter := config.DocumentConverter
+	if documentConverter == nil {
+		documentConverter = defaultResultParser(returnFields)
+	}
+
 	return &Retriever{
-		client:         config.Client,
-		collection:     config.Collection,
-		embedding:      config.Embedding,
-		scoreThreshold: config.ScoreThreshold,
-		topK:           topK,
+		client:            config.Client,
+		collection:        config.Collection,
+		embedding:         config.Embedding,
+		scoreThreshold:    config.ScoreThreshold,
+		topK:              topK,
+		returnFields:      returnFields,
+		documentConverter: documentConverter,
 	}, nil
 }
 
@@ -101,14 +122,14 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 
 	emb := co.Embedding
 	if emb == nil {
-		return nil, fmt.Errorf("[qdrant retriever] embedding not provided")
+		return nil, fmt.Errorf("[qdrant.Retrieve] embedding not provided")
 	}
 	vectors, err := emb.EmbedStrings(r.makeEmbeddingCtx(ctx, emb), []string{query})
 	if err != nil {
 		return nil, err
 	}
 	if len(vectors) != 1 {
-		return nil, fmt.Errorf("[qdrant retriever] invalid return length of vector, got=%d, expected=1", len(vectors))
+		return nil, fmt.Errorf("[qdrant.Retrieve] invalid return length of vector, got=%d, expected=1", len(vectors))
 	}
 	vec32 := make([]float32, len(vectors[0]))
 	for i, v := range vectors[0] {
@@ -119,7 +140,7 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		CollectionName: r.collection,
 		Query:          qdrant.NewQueryDense(vec32),
 		Limit:          qdrant.PtrOf(uint64(*co.TopK)),
-		WithPayload:    qdrant.NewWithPayload(true),
+		WithPayload:    qdrant.NewWithPayloadInclude(r.returnFields...),
 	}
 	if r.scoreThreshold != nil {
 		searchReq.ScoreThreshold = qdrant.PtrOf(float32(*r.scoreThreshold))
@@ -130,23 +151,17 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 
 	resp, err := r.client.Query(ctx, &searchReq)
 	if err != nil {
-		return nil, fmt.Errorf("[Retriever] qdrant search failed: %w", err)
+		return nil, fmt.Errorf("[qdrant.Retrieve] qdrant search failed: %w", err)
 	}
 	docs = make([]*schema.Document, 0, len(resp))
 	for _, pt := range resp {
-		doc := &schema.Document{
-			ID:       pt.Id.GetUuid(),
-			MetaData: map[string]any{},
+		doc, err := r.documentConverter(ctx, pt)
+		if err != nil {
+			return nil, err
 		}
-
-		if val, ok := pt.Payload[defaultContentKey]; ok {
-			doc.Content = val.GetStringValue()
+		if doc == nil {
+			return nil, fmt.Errorf("[qdrant.Retrieve] document converter returned nil document")
 		}
-
-		if val, ok := pt.Payload[defaultMetadataKey]; ok {
-			doc.MetaData[defaultMetadataKey] = val.GetStructValue().Fields
-		}
-
 		doc.WithScore(float64(pt.Score))
 
 		docs = append(docs, doc)
@@ -169,6 +184,60 @@ func (r *Retriever) makeEmbeddingCtx(ctx context.Context, emb embedding.Embedder
 	runInfo.Name = runInfo.Type + string(runInfo.Component)
 
 	return callbacks.ReuseHandlers(ctx, runInfo)
+}
+
+func defaultResultParser(returnFields []string) func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
+	return func(ctx context.Context, point *qdrant.ScoredPoint) (*schema.Document, error) {
+		if point == nil {
+			return nil, fmt.Errorf("[qdrant.retriever.defaultResultParser] point is nil")
+		}
+
+		resp := &schema.Document{
+			Content:  "",
+			MetaData: map[string]any{},
+		}
+
+		if point.Id != nil {
+			if uuid := point.Id.GetUuid(); uuid != "" {
+				resp.ID = uuid
+			} else {
+				resp.ID = fmt.Sprintf("%d", point.Id.GetNum())
+			}
+		}
+
+		for _, field := range returnFields {
+			val, found := point.Payload[field]
+			if !found {
+				log.Printf("[qdrant.retriever.defaultResultParser] field=%s not found in payload, point=%v", field, point)
+				continue
+			}
+
+			if field == defaultContentKey {
+				resp.Content = val.GetStringValue()
+			} else if field == defaultMetadataKey {
+				resp.MetaData[defaultMetadataKey] = val.GetStructValue().Fields
+			} else {
+				switch val.GetKind().(type) {
+				case *qdrant.Value_NullValue:
+					resp.MetaData[field] = val.GetNullValue()
+				case *qdrant.Value_DoubleValue:
+					resp.MetaData[field] = val.GetDoubleValue()
+				case *qdrant.Value_IntegerValue:
+					resp.MetaData[field] = val.GetIntegerValue()
+				case *qdrant.Value_StringValue:
+					resp.MetaData[field] = val.GetStringValue()
+				case *qdrant.Value_BoolValue:
+					resp.MetaData[field] = val.GetBoolValue()
+				case *qdrant.Value_StructValue:
+					resp.MetaData[field] = val.GetStructValue().Fields
+				case *qdrant.Value_ListValue:
+					resp.MetaData[field] = val.GetListValue()
+				}
+			}
+		}
+
+		return resp, nil
+	}
 }
 
 func tryMarshalJsonString(input any) string {
