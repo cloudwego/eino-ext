@@ -172,6 +172,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		disableParallelToolUse: config.DisableParallelToolUse,
 		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
 		requestTimeout:         config.RequestTimeout,
+		autoCacheControl:       config.AutoCacheControl,
 	}, nil
 }
 
@@ -297,6 +298,11 @@ type Config struct {
 	// Additional fields to set in the API request.
 	// The values of the map must be JSON serializable.
 	AdditionalRequestFields map[string]any `json:"additional_request_fields"`
+
+	// AutoCacheControl enables automatic cache breakpoints on system, tool,
+	// and the last user message of each turn when non-nil.
+	// This is equivalent to calling WithAutoCacheControl on every request.
+	AutoCacheControl *CacheControl `json:"auto_cache_control,omitempty"`
 }
 
 type ToolSearchAlgorithm string
@@ -337,6 +343,7 @@ type ChatModel struct {
 	origDeferredTools      []*schema.ToolInfo
 	toolSearchAlgorithm    ToolSearchAlgorithm
 	requestTimeout         time.Duration
+	autoCacheControl       *CacheControl
 }
 
 func hasDirectAnthropicConfigAuth(config *Config) bool {
@@ -632,6 +639,7 @@ func (cm *ChatModel) genParamsAndOptions(input []*schema.Message, opts ...model.
 		ThinkingConfig:         cm.thinkingConfig,
 		DisableParallelToolUse: cm.disableParallelToolUse,
 		ResponseFormat:         cm.responseFormat,
+		AutoCacheControl:       cm.autoCacheControl,
 	}, opts...)
 
 	msgParams = anthropic.MessageNewParams{}
@@ -1018,6 +1026,9 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 				ReasoningTokens: output.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens,
 			},
 		}
+	}
+	if len(output.Extra) > 0 {
+		result.Extra = output.Extra
 	}
 	return result
 }
@@ -1419,6 +1430,10 @@ func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.StopReason),
 			Usage:        toTokenUsage(resp.Usage),
+		},
+		Extra: map[string]any{
+			"cache_read_input_tokens":     int(resp.Usage.CacheReadInputTokens),
+			"cache_creation_input_tokens": int(resp.Usage.CacheCreationInputTokens),
 		},
 	}
 
