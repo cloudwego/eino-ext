@@ -373,6 +373,85 @@ func TestToTools(t *testing.T) {
 	})
 }
 
+func TestToToolsStrict(t *testing.T) {
+	mockey.PatchConvey("strict via Extra", t, func() {
+		mockTools := []*schema.ToolInfo{
+			{
+				Name: "strict_tool",
+				Desc: "a tool with strict mode",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"query": {
+						Type:     schema.String,
+						Required: true,
+					},
+				}),
+				Extra: map[string]any{"strict": true},
+			},
+			{
+				Name: "non_strict_tool",
+				Desc: "a tool without strict mode",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"query": {
+						Type:     schema.String,
+						Required: true,
+					},
+				}),
+			},
+			{
+				Name: "invalid_strict_tool",
+				Desc: "a tool with invalid strict value",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"query": {
+						Type:     schema.String,
+						Required: true,
+					},
+				}),
+				Extra: map[string]any{"strict": "yes"},
+			},
+		}
+
+		tools, err := toTools(mockTools)
+		assert.Nil(t, err)
+		assert.Len(t, tools, 3)
+
+		assert.True(t, tools[0].Function.Strict, "strict_tool should have Strict=true")
+		assert.False(t, tools[1].Function.Strict, "non_strict_tool should have Strict=false")
+		assert.False(t, tools[2].Function.Strict, "invalid strict value should default to false")
+	})
+
+	mockey.PatchConvey("strict propagated to genRequest", t, func() {
+		ctx := context.Background()
+		strictTools := []*schema.ToolInfo{
+			{
+				Name: "strict_tool",
+				Desc: "a tool with strict mode",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"queries": {
+						Type:     schema.Array,
+						Required: true,
+					},
+				}),
+				Extra: map[string]any{"strict": true},
+			},
+		}
+
+		c := &Client{
+			config: &Config{Model: "test-model"},
+		}
+
+		nc, err := c.WithToolsForClient(strictTools)
+		assert.Nil(t, err)
+
+		req, _, _, _, err := nc.genRequest(ctx, []*schema.Message{
+			{Role: schema.User, Content: "hello"},
+		})
+		assert.Nil(t, err)
+		assert.Len(t, req.Tools, 1)
+		assert.True(t, req.Tools[0].Function.Strict, "FunctionDefinition.Strict should be true")
+		assert.Equal(t, "strict_tool", req.Tools[0].Function.Name)
+	})
+}
+
 func TestBuildMessages(t *testing.T) {
 	t.Run("buildMessageFromAssistantGenMultiContent", func(t *testing.T) {
 		t.Run("success with audio", func(t *testing.T) {
