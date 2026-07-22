@@ -1019,6 +1019,9 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 			},
 		}
 	}
+	if len(output.Extra) > 0 {
+		result.Extra = output.Extra
+	}
 	return result
 }
 
