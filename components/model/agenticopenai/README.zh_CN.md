@@ -327,6 +327,146 @@ type ChatConfig struct {
 }
 ```
 
+## 扩展字段说明 (Extension Fields)
+
+Eino agentic schema 中的若干字段被定义为 `any` 类型，以便各模型实现可以挂载各自特有的数据。当你消费本包产生的
+响应时，必须先将这些 `any` 字段类型断言为本包定义的具体类型，才能读取其中的内容。本节逐一说明每一个此类字段
+及其承载的确切类型。
+
+### ResponseMeta
+
+返回的每个 `*schema.AgenticMessage` 都带有 `ResponseMeta *schema.AgenticResponseMeta`。其结构在两种模型实现
+之间有所不同。
+
+```go
+type AgenticResponseMeta struct {
+    // TokenUsage 始终被填充，包含 prompt / completion / total 的 token 统计。
+    TokenUsage *TokenUsage
+
+    // OpenAIExtension 由 Responses API 实现 (NewResponsesModel) 填充。
+    OpenAIExtension *openai.ResponseMetaExtension
+
+    // Extension 是一个 `any` 字段，由 Chat Completions 实现 (NewChatModel) 填充。
+    Extension any
+
+    // GeminiExtension / ClaudeExtension 在本包中不使用。
+}
+```
+
+#### Responses API —— `ResponseMeta.OpenAIExtension`
+
+`NewResponsesModel` 会填充强类型的 `OpenAIExtension` 字段（无需断言）。它暴露了服务端的响应状态，包括用于
+前缀缓存的响应 ID：
+
+```go
+type ResponseMetaExtension struct {
+    ID                 string             // 服务端分配的响应 ID
+    Status             ResponseStatus     // 例如 "completed"、"incomplete"
+    Error              *ResponseError     // 响应失败时非 nil
+    IncompleteDetails  *IncompleteDetails // 响应不完整时非 nil
+    PreviousResponseID string
+    Reasoning          *Reasoning // 推理模型的 reasoning effort / summary
+    ServiceTier        ServiceTier
+    // ... 以及其他服务端字段
+}
+```
+
+```go
+ext := msg.ResponseMeta.OpenAIExtension // 强类型，无需断言
+```
+
+> **说明：** `OpenAIExtension.ID` 正是 `EnableAutoCache` 和 `WithHeadPreviousResponseID` 用来延续缓存多轮
+> 对话的值。参见 [缓存](#缓存)。
+
+#### Chat Completions API —— `ResponseMeta.Extension` (`any`)
+
+`NewChatModel` 无法使用 `OpenAIExtension`（它是 Responses 专用的），因此改为填充通用的 `Extension any`
+字段。**使用前必须将其断言为 `*agenticopenai.ChatResponseMetaExtension`**：
+
+```go
+type ChatResponseMetaExtension struct {
+    ID           string           // 上游请求 ID
+    FinishReason string           // 例如 "stop"、"length"、"tool_calls"
+    LogProbs     *schema.LogProbs // 仅当 ChatConfig 中开启 LogProbs 时才会被填充
+}
+```
+
+```go
+// 具体类型始终是 *agenticopenai.ChatResponseMetaExtension。
+ext, ok := msg.ResponseMeta.Extension.(*agenticopenai.ChatResponseMetaExtension)
+```
+
+### AssistantGenText 扩展
+
+模型生成的文本承载在 `AssistantGenText` 内容块中。普通的 `UserInputText` 块（用户提供的文本）没有扩展，
+只有模型生成的 `AssistantGenText` 块才有。本包会填充其强类型的
+`OpenAIExtension *openai.AssistantGenTextExtension` 字段（无需断言），它承载拒答信息与引用标注：
+
+```go
+type AssistantGenTextExtension struct {
+    // Refusal 在模型拒绝回答时被设置；Refusal.Reason 保存拒答文本。
+    Refusal *OutputRefusal
+
+    // Annotations 承载附加在生成文本上的引用标注
+    //（URL 引用、文件引用、容器文件引用、文件路径）。
+    Annotations []*TextAnnotation
+}
+```
+
+> **说明：** `AssistantGenText` 同样暴露了供其他厂商使用的通用 `Extension any` 字段，但本包只会填充
+> `OpenAIExtension`。
+
+### ServerToolCall 与 ServerToolResult
+
+当模型调用内置服务器工具（web search、file search、code interpreter、image generation、shell 或 tool
+search）时，产生的内容块会携带 `*schema.ServerToolCall` 与 `*schema.ServerToolResult`。两者都将其负载封装
+在一个 `any` 字段中，本包始终用自己的具体类型来填充它。
+
+```go
+type ServerToolCall struct {
+    Name      string // 工具名，例如 "web_search"（参见 agenticopenai.ServerToolName* 常量）
+    CallID    string
+    Arguments any    // 具体类型：*agenticopenai.ServerToolCallArguments
+}
+
+type ServerToolResult struct {
+    Name    string
+    CallID  string
+    Content any    // 具体类型：*agenticopenai.ServerToolResult
+}
+```
+
+#### `ServerToolCall.Arguments` (`any`)
+
+断言为 `*agenticopenai.ServerToolCallArguments`。其子字段中恰好有一个非 nil，对应被调用的工具。可通过
+`ServerToolCall.Name`（或非 nil 的子字段）来判断应读取哪一个：
+
+```go
+type ServerToolCallArguments struct {
+    WebSearch       *WebSearchArguments       // ServerToolNameWebSearch
+    FileSearch      *FileSearchArguments      // ServerToolNameFileSearch
+    CodeInterpreter *CodeInterpreterArguments // ServerToolNameCodeInterpreter
+    ImageGeneration *ImageGenerationArguments // ServerToolNameImageGeneration
+    Shell           *ShellArguments           // ServerToolNameShell
+    ToolSearch      *ToolSearchArguments      // tool search 调用
+}
+```
+
+#### `ServerToolResult.Content` (`any`)
+
+断言为 `*agenticopenai.ServerToolResult`。与参数一样，恰好有一个子字段被填充，对应产生该结果的工具：
+
+```go
+type ServerToolResult struct {
+    WebSearch       *WebSearchResult
+    FileSearch      *FileSearchResult
+    CodeInterpreter *CodeInterpreterResult
+    ImageGeneration *ImageGenerationResult
+    Shell           *ShellResult
+    ToolSearch      *ToolSearchResult // ToolSearchResult.Tools 为 []*schema.ToolInfo
+}
+```
+
 ## 高级用法
 
 ### 缓存
@@ -341,6 +481,46 @@ am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
     Model:           os.Getenv("OPENAI_MODEL_ID"),
     EnableAutoCache: true,
 })
+```
+
+下图展示了 SDK 如何在每次调用时解析 `PreviousResponseID`，以及 `InvalidateMessageCaches` 如何重置缓存状态：
+
+```mermaid
+flowchart TD
+    Input["am.Generate(ctx, input, opts...)"] --> Detail
+    Detail["input = [User₁, Asst₁(resp_001), User₂, Asst₂(resp_002), User₃]<br/>opts = WithHeadPreviousResponseID(resp_abc) (optional)"]
+    Detail --> B{"Find cached<br/>Response ID<br/>in messages?"}
+    B -- "Yes (found resp_002 at Asst₂)" --> C["Send [User₃] only<br/>PreviousResponseID = resp_002"]
+    B -- No --> H{"WithHeadPreviousResponseID<br/>provided?"}
+    H -- "Yes (resp_abc)" --> I["Send full input<br/>PreviousResponseID = resp_abc"]
+    H -- No --> D["Send full input<br/>No cache reuse"]
+    C --> E["Response (resp_003) marked as cached<br/>— used as cache anchor in next turn"]
+    I --> E
+    D --> E
+
+    E -. "Model switched /<br/>history edited" .-> F["InvalidateMessageCaches(input)"]
+    F -. "Next call" .-> B
+
+    style Input fill:#e8f4fd,stroke:#4a90d9
+    style Detail fill:#e8f4fd,stroke:#4a90d9
+    style C fill:#d4edda,stroke:#28a745
+    style I fill:#d4edda,stroke:#28a745
+    style D fill:#fff3cd,stroke:#ffc107
+    style E fill:#d4edda,stroke:#28a745
+    style F fill:#f8d7da,stroke:#dc3545
+```
+
+**示例 — 对话中途切换模型：**
+
+```go
+// 使用模型 A 构建的对话：[User₁, Assistant₁(model_A), User₂]
+// 现在切换到模型 B — 模型 A 的缓存前缀已失效。
+
+input := []*schema.AgenticMessage{user1, assistant1, user2}
+agenticopenai.InvalidateMessageCaches(input)
+
+// 下次 Generate 将跳过失效的缓存锚点，发送完整输入。
+resp, err := modelB.Generate(ctx, input)
 ```
 
 ### 工具调用 (Tool Calling)

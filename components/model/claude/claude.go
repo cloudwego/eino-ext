@@ -26,6 +26,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
@@ -34,6 +35,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"golang.org/x/oauth2/google"
+	"github.com/eino-contrib/jsonschema"
 
 	"github.com/cloudwego/eino/components"
 
@@ -80,7 +83,19 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		if region == "" {
 			return nil, errors.New("ByVertex is true but no region provided; set VertexRegion or CLOUD_ML_REGION")
 		}
-		cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+		if len(config.VertexServiceAccountJSON) > 0 {
+			// CredentialsFromJSON requires an explicit scope; cloud-platform covers Vertex AI.
+			// The ADC path (WithGoogleAuth) omits scopes and lets FindDefaultCredentials
+			// resolve them from the runtime environment instead.
+			googleCreds, err := google.CredentialsFromJSON(ctx, config.VertexServiceAccountJSON,
+				"https://www.googleapis.com/auth/cloud-platform")
+			if err != nil {
+				return nil, fmt.Errorf("create vertex credentials from service account JSON: %w", err)
+			}
+			cli = anthropic.NewClient(vertex.WithCredentials(ctx, region, projectID, googleCreds))
+		} else {
+			cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+		}
 	} else if config.ByBedrock {
 		// Use AWS Bedrock
 		var opts []func(*awsConfig.LoadOptions) error
@@ -150,10 +165,13 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		stopSequences:          config.StopSequences,
 		temperature:            config.Temperature,
 		thinking:               config.Thinking,
+		thinkingConfig:         config.ThinkingConfig,
 		topK:                   config.TopK,
 		topP:                   config.TopP,
+		responseFormat:         config.ResponseFormat,
 		disableParallelToolUse: config.DisableParallelToolUse,
 		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
+		requestTimeout:         config.RequestTimeout,
 	}, nil
 }
 
@@ -202,6 +220,12 @@ type Config struct {
 	// See: https://claude.ai/docs/en/google-vertex-ai
 	VertexRegion string
 
+	// VertexServiceAccountJSON is raw GCP service account JSON for Vertex.
+	// When non-empty, credentials are built in-memory and passed to vertex.WithCredentials.
+	// When empty and ByVertex is true, vertex.WithGoogleAuth (ADC) is used instead.
+	// Optional for Vertex.
+	VertexServiceAccountJSON []byte
+
 	// BaseURL is the custom API endpoint URL
 	// Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
 	// Optional. Example: "https://custom-claude-api.example.com"
@@ -244,16 +268,28 @@ type Config struct {
 	// Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
 	StopSequences []string
 
+	// Deprecated: Use ThinkingConfig instead.
 	Thinking *Thinking
+
+	// ThinkingConfig configures Claude thinking using Anthropic SDK's native union.
+	ThinkingConfig *anthropic.ThinkingConfigParamUnion
 
 	// HTTPClient specifies the client to send HTTP requests.
 	HTTPClient *http.Client `json:"http_client"`
+
+	// RequestTimeout specifies the timeout for each API request.
+	// Optional.
+	RequestTimeout time.Duration `json:"request_timeout"`
 
 	DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 
 	// ToolSearchAlgorithm specifies the server-side tool search algorithm.
 	// "bm25" or "regex". Default "bm25" when WithDeferredTools is used.
 	ToolSearchAlgorithm ToolSearchAlgorithm `json:"tool_search_algorithm"`
+
+	// ResponseFormat specifies the format of the model's response
+	// Optional. Use for structured outputs
+	ResponseFormat *ResponseFormat `json:"response_format,omitempty"`
 
 	// Additional fields to set in the HTTP request header.
 	AdditionalHeaderFields map[string]string `json:"additional_header_fields"`
@@ -270,9 +306,16 @@ const (
 	ToolSearchAlgorithmRegex ToolSearchAlgorithm = "regex"
 )
 
+// Deprecated: Use anthropic.ThinkingConfigParamUnion with Config.ThinkingConfig or WithThinkingConfig instead.
 type Thinking struct {
 	Enable       bool `json:"enable"`
 	BudgetTokens int  `json:"budget_tokens"`
+}
+
+// ResponseFormat configures structured JSON output using a JSON schema.
+type ResponseFormat struct {
+	// Schema is the JSON schema that the model's response must conform to.
+	Schema *jsonschema.Schema `json:"schema"`
 }
 
 type ChatModel struct {
@@ -285,12 +328,15 @@ type ChatModel struct {
 	topK                   *int32
 	topP                   *float32
 	thinking               *Thinking
+	thinkingConfig         *anthropic.ThinkingConfigParamUnion
+	responseFormat         *ResponseFormat
 	tools                  []anthropic.ToolUnionParam
 	origTools              []*schema.ToolInfo
 	toolChoice             *schema.ToolChoice
 	disableParallelToolUse *bool
 	origDeferredTools      []*schema.ToolInfo
 	toolSearchAlgorithm    ToolSearchAlgorithm
+	requestTimeout         time.Duration
 }
 
 func hasDirectAnthropicConfigAuth(config *Config) bool {
@@ -322,12 +368,12 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		}
 	}()
 
-	msgParam, err := cm.genMessageNewParams(input, opts...)
+	msgParams, reqOpts, err := cm.genParamsAndOptions(input, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := cm.cli.Messages.New(ctx, msgParam)
+	resp, err := cm.cli.Messages.New(ctx, msgParams, reqOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create new message fail: %w", err)
 	}
@@ -351,11 +397,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		}
 	}()
 
-	msgParam, err := cm.genMessageNewParams(input, opts...)
+	msgParams, reqOpts, err := cm.genParamsAndOptions(input, opts...)
 	if err != nil {
 		return nil, err
 	}
-	stream := cm.cli.Messages.NewStreaming(ctx, msgParam)
+
+	stream := cm.cli.Messages.NewStreaming(ctx, msgParams, reqOpts...)
 	// the stream error that occurred at this time should be terminated and returned.
 	if stream.Err() != nil {
 		return nil, fmt.Errorf("create new streaming message fail: %w", stream.Err())
@@ -421,7 +468,6 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			_ = sw.Send(nil, stream.Err())
 			return
 		}
-
 	}()
 	_, sr = callbacks.OnEndWithStreamOutput(ctx, sr)
 	return schema.StreamReaderWithConvert(sr, func(t *model.CallbackOutput) (*schema.Message, error) {
@@ -539,37 +585,35 @@ func toAnthropicDeferredToolParam(tools []*schema.ToolInfo) ([]anthropic.ToolUni
 }
 
 func preProcessMessages(input []*schema.Message) ([]*schema.Message, []*schema.Message, error) {
-	userMsgIdx := -1
+	firstNonSystem := 0
 	for i, msg := range input {
 		if msg.Role != schema.System {
-			if msg.Role != schema.User {
-				// claude requires first message to be user msg
-				// as specified in https://docs.anthropic.com/en/api/messages:
-				// 'You can specify a single user-role message,
-				// or you can include multiple user and assistant messages.'
-				return nil, nil, errors.New("first non-system message should be user message")
-			}
-			userMsgIdx = i
+			firstNonSystem = i
 			break
+		}
+		if i == len(input)-1 {
+			return nil, nil, errors.New("only system message in input, require at least 1 user message")
 		}
 	}
 
-	if userMsgIdx == -1 {
-		return nil, nil, errors.New("only system message in input, require at least 1 user message")
+	if input[firstNonSystem].Role != schema.User {
+		return nil, nil, errors.New("first non-system message should be user message")
 	}
 
-	return input[:userMsgIdx], input[userMsgIdx:], nil
+	return input[:firstNonSystem], input[firstNonSystem:], nil
 }
 
-func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.Option) (
-	anthropic.MessageNewParams, error) {
+func (cm *ChatModel) genParamsAndOptions(input []*schema.Message, opts ...model.Option) (
+	msgParams anthropic.MessageNewParams, reqOpts []option.RequestOption, err error,
+) {
 	if len(input) == 0 {
-		return anthropic.MessageNewParams{}, fmt.Errorf("input is empty")
+		err = fmt.Errorf("input is empty")
+		return msgParams, reqOpts, err
 	}
 
-	system, msgs, err := preProcessMessages(input)
+	sysInstruction, msgs, err := preProcessMessages(input)
 	if err != nil {
-		return anthropic.MessageNewParams{}, err
+		return msgParams, reqOpts, err
 	}
 
 	commonOptions := model.GetCommonOptions(&model.Options{
@@ -585,57 +629,87 @@ func (cm *ChatModel) genMessageNewParams(input []*schema.Message, opts ...model.
 	specOptions := model.GetImplSpecificOptions(&options{
 		TopK:                   cm.topK,
 		Thinking:               cm.thinking,
-		DisableParallelToolUse: cm.disableParallelToolUse}, opts...)
+		ThinkingConfig:         cm.thinkingConfig,
+		DisableParallelToolUse: cm.disableParallelToolUse,
+		ResponseFormat:         cm.responseFormat,
+	}, opts...)
 
-	params := anthropic.MessageNewParams{}
+	msgParams = anthropic.MessageNewParams{}
 	if commonOptions.Model != nil {
-		params.Model = anthropic.Model(*commonOptions.Model)
+		msgParams.Model = anthropic.Model(*commonOptions.Model)
 	}
 	if commonOptions.MaxTokens != nil {
-		params.MaxTokens = int64(*commonOptions.MaxTokens)
+		msgParams.MaxTokens = int64(*commonOptions.MaxTokens)
 	}
 	if commonOptions.Temperature != nil {
-		params.Temperature = param.NewOpt(float64(*commonOptions.Temperature))
+		msgParams.Temperature = param.NewOpt(float64(*commonOptions.Temperature))
 	}
 	if commonOptions.TopP != nil {
-		params.TopP = param.NewOpt(float64(*commonOptions.TopP))
+		msgParams.TopP = param.NewOpt(float64(*commonOptions.TopP))
 	}
 	if len(commonOptions.Stop) > 0 {
-		params.StopSequences = commonOptions.Stop
+		msgParams.StopSequences = commonOptions.Stop
 	}
 	if specOptions.TopK != nil {
-		params.TopK = param.NewOpt(int64(*specOptions.TopK))
+		msgParams.TopK = param.NewOpt(int64(*specOptions.TopK))
 	}
 
 	if specOptions.Thinking != nil && specOptions.Thinking.Enable {
-		params.Thinking = anthropic.ThinkingConfigParamUnion{
+		msgParams.Thinking = anthropic.ThinkingConfigParamUnion{
 			OfEnabled: &anthropic.ThinkingConfigEnabledParam{
 				Type:         "enabled",
 				BudgetTokens: int64(specOptions.Thinking.BudgetTokens),
 			},
 		}
 	}
-
-	if err = cm.populateTools(&params, commonOptions, specOptions); err != nil {
-		return anthropic.MessageNewParams{}, err
+	if specOptions.ThinkingConfig != nil {
+		msgParams.Thinking = *specOptions.ThinkingConfig
 	}
 
-	if err = cm.populateInput(&params, system, msgs, specOptions); err != nil {
-		return anthropic.MessageNewParams{}, err
+	if specOptions.ResponseFormat != nil && specOptions.ResponseFormat.Schema != nil {
+		schemaMap, mErr := jsonSchemaToMap(specOptions.ResponseFormat.Schema)
+		if mErr != nil {
+			err = fmt.Errorf("failed to marshal response format schema: %w", mErr)
+			return msgParams, reqOpts, err
+		}
+		msgParams.OutputConfig = anthropic.OutputConfigParam{
+			Format: anthropic.JSONOutputFormatParam{
+				Schema: schemaMap,
+			},
+		}
 	}
 
-	// Collect tools from ToolSearchResult in Tool-role messages and add to params.Tools
-	if err = populateToolSearchResultTools(&params, msgs); err != nil {
-		return anthropic.MessageNewParams{}, err
+	if err = cm.populateTools(&msgParams, commonOptions, specOptions); err != nil {
+		return msgParams, reqOpts, err
 	}
 
-	return params, nil
+	if err = cm.populateInput(&msgParams, sysInstruction, msgs, specOptions); err != nil {
+		return msgParams, reqOpts, err
+	}
+
+	// Collect tools from ToolSearchResult in Tool-role messages and add to msgParams.Tools
+	if err = populateToolSearchResultTools(&msgParams, msgs); err != nil {
+		return msgParams, reqOpts, err
+	}
+
+	timeout := cm.requestTimeout
+	if specOptions.RequestTimeout > 0 {
+		timeout = specOptions.RequestTimeout
+	}
+	if timeout > 0 {
+		reqOpts = append(reqOpts, option.WithRequestTimeout(timeout))
+	}
+	for k, v := range specOptions.CustomHeaders {
+		reqOpts = append(reqOpts, option.WithHeaderAdd(k, v))
+	}
+
+	return msgParams, reqOpts, nil
 }
 
-func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []*schema.Message, msgs []*schema.Message, specOptions *options) error {
+func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, sysInstruction []*schema.Message, msgs []*schema.Message, specOptions *options) error {
 	// populate system messages
 	hasSetSysBreakPoint := false
-	for _, m := range system {
+	for _, m := range sysInstruction {
 		block := anthropic.TextBlockParam{Text: m.Content}
 		if isBreakpointMessage(m) {
 			hasSetSysBreakPoint = true
@@ -667,6 +741,9 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 		msgParams = append(msgParams, msgParam)
 	}
 
+	msgParams = mergeAdjacentToolResults(msgParams)
+	msgParams = mergeAdjacentSystemMessages(msgParams)
+
 	if !hasSetMsgBreakPoint && specOptions.AutoCacheControl != nil {
 		lastMsgParam := msgParams[len(msgParams)-1]
 		lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
@@ -676,6 +753,58 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, system []
 	params.Messages = msgParams
 
 	return nil
+}
+
+// mergeAdjacentToolResults merges adjacent tool-result user messages into one.
+// Anthropic requires all tool_result blocks for an assistant turn in a single
+// user message.
+func mergeAdjacentToolResults(msgParams []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgParams) <= 1 {
+		return msgParams
+	}
+
+	result := make([]anthropic.MessageParam, 0, len(msgParams))
+	for _, mp := range msgParams {
+		if len(result) > 0 && isToolResultMessage(mp) && isToolResultMessage(result[len(result)-1]) {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
+		} else {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+// mergeAdjacentSystemMessages merges consecutive system messages into a single
+// message with multiple content blocks, because Claude only allows a system
+// message immediately before a user or assistant message.
+func mergeAdjacentSystemMessages(msgParams []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgParams) <= 1 {
+		return msgParams
+	}
+
+	result := make([]anthropic.MessageParam, 0, len(msgParams))
+	for _, mp := range msgParams {
+		if len(result) > 0 && mp.Role == anthropic.MessageParamRoleSystem && result[len(result)-1].Role == anthropic.MessageParamRoleSystem {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
+		} else {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+// isToolResultMessage reports whether a message consists solely of tool_result
+// content blocks.
+func isToolResultMessage(mp anthropic.MessageParam) bool {
+	if mp.Role != anthropic.MessageParamRoleUser || len(mp.Content) == 0 {
+		return false
+	}
+	for _, block := range mp.Content {
+		if block.OfToolResult == nil {
+			return false
+		}
+	}
+	return true
 }
 
 func populateToolSearchResultTools(params *anthropic.MessageNewParams, msgs []*schema.Message) error {
@@ -816,7 +945,7 @@ func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoic
 			return fmt.Errorf("tool choice is forced but tool is not provided")
 		}
 
-		var onlyOneToolName = ""
+		onlyOneToolName := ""
 		if len(allowedToolNames) > 0 {
 			if len(allowedToolNames) > 1 {
 				return fmt.Errorf("only one allowed tool name can be configured")
@@ -855,7 +984,6 @@ func populateToolChoice(params *anthropic.MessageNewParams, tc *schema.ToolChoic
 	}
 
 	return nil
-
 }
 
 func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Option) *model.CallbackInput {
@@ -886,6 +1014,9 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 			},
 			CompletionTokens: output.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      output.ResponseMeta.Usage.TotalTokens,
+			CompletionTokensDetails: model.CompletionTokensDetails{
+				ReasoningTokens: output.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens,
+			},
 		}
 	}
 	return result
@@ -1113,6 +1244,11 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 		mp = anthropic.NewAssistantMessage(messageParams...)
 	case schema.User, schema.Tool:
 		mp = anthropic.NewUserMessage(messageParams...)
+	case schema.System:
+		mp = anthropic.MessageParam{
+			Role:    anthropic.MessageParamRoleSystem,
+			Content: messageParams,
+		}
 	default:
 		mp = anthropic.NewUserMessage(messageParams...)
 	}
@@ -1241,21 +1377,48 @@ func populateContentBlockBreakPoint(block anthropic.ContentBlockParamUnion, cach
 	}
 }
 
-func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
-	promptTokens := int(resp.Usage.InputTokens + resp.Usage.CacheReadInputTokens + resp.Usage.CacheCreationInputTokens)
+func toTokenUsage(u anthropic.Usage) *schema.TokenUsage {
+	promptTokens := int(u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens)
+	completionTokens := int(u.OutputTokens)
 
+	return &schema.TokenUsage{
+		PromptTokens: promptTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: int(u.CacheReadInputTokens),
+		},
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+		// Map Anthropic output_tokens_details.thinking_tokens so Langfuse
+		// completion_tokens_details.reasoning_tokens / output_reasoning_tokens is populated.
+		CompletionTokensDetails: schema.CompletionTokensDetails{
+			ReasoningTokens: int(u.OutputTokensDetails.ThinkingTokens),
+		},
+	}
+}
+
+func toDeltaTokenUsage(u anthropic.MessageDeltaUsage) *schema.TokenUsage {
+	promptTokens := int(u.InputTokens + u.CacheReadInputTokens + u.CacheCreationInputTokens)
+	completionTokens := int(u.OutputTokens)
+
+	return &schema.TokenUsage{
+		PromptTokens: promptTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: int(u.CacheReadInputTokens),
+		},
+		CompletionTokens: completionTokens,
+		TotalTokens:      promptTokens + completionTokens,
+		CompletionTokensDetails: schema.CompletionTokensDetails{
+			ReasoningTokens: int(u.OutputTokensDetails.ThinkingTokens),
+		},
+	}
+}
+
+func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 	message := &schema.Message{
 		Role: schema.Assistant,
 		ResponseMeta: &schema.ResponseMeta{
 			FinishReason: string(resp.StopReason),
-			Usage: &schema.TokenUsage{
-				PromptTokens: promptTokens,
-				PromptTokenDetails: schema.PromptTokenDetails{
-					CachedTokens: int(resp.Usage.CacheReadInputTokens),
-				},
-				CompletionTokens: int(resp.Usage.OutputTokens),
-				TotalTokens:      promptTokens + int(resp.Usage.OutputTokens),
-			},
+			Usage:        toTokenUsage(resp.Usage),
 		},
 	}
 
@@ -1275,7 +1438,8 @@ type streamContext struct {
 }
 
 func convContentBlockToEinoMsg(
-	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext) error {
+	contentBlock any, dstMsg *schema.Message, streamCtx *streamContext,
+) error {
 	//	case anthropic.TextBlock:
 	//	case anthropic.ToolUseBlock:
 	//	case anthropic.ServerToolUseBlock:
@@ -1358,9 +1522,7 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 	case anthropic.MessageDeltaEvent:
 		result.ResponseMeta = &schema.ResponseMeta{
 			FinishReason: string(e.Delta.StopReason),
-			Usage: &schema.TokenUsage{
-				CompletionTokens: int(e.Usage.OutputTokens),
-			},
+			Usage:        toDeltaTokenUsage(e.Usage),
 		}
 		return result, nil
 

@@ -181,6 +181,73 @@ type Config struct {
 }
 ```
 
+## 扩展字段说明
+
+Eino agentic schema 中有若干字段的类型为 `any`，以便各模型实现挂载各自特有的数据。当你消费本包产生的响应时，需要将这些字段类型断言为此处定义的具体类型（均位于 `agenticark` 包内）。
+
+### ResponseMeta
+
+schema 的 `AgenticResponseMeta` 未定义 Ark 专属字段，因此本包将 `*schema.AgenticMessage.ResponseMeta` 的通用 `Extension any` 字段填充为 `*agenticark.ResponseMetaExtension`，使用前请断言为该类型。
+
+```go
+// agenticark.ResponseMetaExtension
+type ResponseMetaExtension struct {
+	ID                 string             // Ark 响应 ID
+	Status             ResponseStatus     // in_progress / completed / incomplete / failed
+	IncompleteDetails  *IncompleteDetails // Status 为 incomplete 时填充
+	Error              *ResponseError     // 响应携带错误时填充
+	PreviousResponseID string             // 多轮链路中上一条响应的 ID
+	Thinking           *ResponseThinking  // 服务端上报的思考模式
+	ExpireAt           *int64             // 缓存响应过期的 Unix 时间戳
+	ServiceTier        ServiceTier        // auto / default
+	StreamingError     *StreamingResponseError // 流式过程中暴露的错误
+}
+```
+
+```go
+meta := msg.ResponseMeta.Extension.(*agenticark.ResponseMetaExtension)
+```
+
+### AssistantGenText 扩展
+
+`UserInputText`（用户输入文本）不携带扩展，只有模型生成的 `AssistantGenText` 块才有。schema 未为其定义 Ark 专属字段，因此本包将通用的 `AssistantGenText.Extension any` 字段填充为 `*agenticark.AssistantGenTextExtension`，其中携带挂载在生成文本上的引用/标注数据。
+
+```go
+// agenticark.AssistantGenTextExtension
+type AssistantGenTextExtension struct {
+	Annotations []*TextAnnotation // 文本上的 url_citation / doc_citation 标注
+}
+```
+
+```go
+ext := block.AssistantGenText.Extension.(*agenticark.AssistantGenTextExtension)
+```
+
+### ServerToolCall 与 ServerToolResult
+
+当启用 `web_search`、`image_process`、`doubao_app` 或 `knowledge_search` 等服务端（内置）工具时，本包将通用的 `ServerToolCall.Arguments any` 字段填充为 `*agenticark.ServerToolCallArguments`，将 `ServerToolResult.Content any` 字段填充为 `*agenticark.ServerToolResult`，请断言为这些具体类型。
+
+```go
+// agenticark.ServerToolCallArguments —— 每次调用仅设置其中一个字段
+type ServerToolCallArguments struct {
+	WebSearch       *WebSearchArguments       // web_search 工具输入
+	ImageProcess    *ImageProcessArguments    // image_process 工具输入
+	DoubaoApp       *DoubaoAppArguments       // doubao_app 工具输入
+	KnowledgeSearch *KnowledgeSearchArguments // knowledge_search 工具输入
+}
+
+// agenticark.ServerToolResult —— 每个结果仅设置其中一个字段
+type ServerToolResult struct {
+	ImageProcess *ImageProcessResult // image_process 工具输出
+	DoubaoApp    *DoubaoAppResult    // doubao_app 工具输出
+}
+```
+
+```go
+args := block.ServerToolCall.Arguments.(*agenticark.ServerToolCallArguments)
+result := block.ServerToolResult.Content.(*agenticark.ServerToolResult)
+```
+
 ## 高级用法
 
 ### 缓存
@@ -198,6 +265,46 @@ am, err := agenticark.New(ctx, &agenticark.Config{
 	EnableAutoCache: true,
 	ExpireAtSec:     &expireAtSec,
 })
+```
+
+下图展示了 SDK 如何在每次调用时解析 `PreviousResponseID`，以及 `InvalidateMessageCaches` 如何重置缓存状态：
+
+```mermaid
+flowchart TD
+    Input["am.Generate(ctx, input, opts...)"] --> Detail
+    Detail["input = [User₁, Asst₁(resp_001), User₂, Asst₂(resp_002), User₃]<br/>opts = WithHeadPreviousResponseID(resp_abc) (optional)"]
+    Detail --> B{"Find cached<br/>Response ID<br/>in messages?"}
+    B -- "Yes (found resp_002 at Asst₂)" --> C["Send [User₃] only<br/>PreviousResponseID = resp_002"]
+    B -- No --> H{"WithHeadPreviousResponseID<br/>provided?"}
+    H -- "Yes (resp_abc)" --> I["Send full input<br/>PreviousResponseID = resp_abc"]
+    H -- No --> D["Send full input<br/>No cache reuse"]
+    C --> E["Response (resp_003) marked as cached<br/>— used as cache anchor in next turn"]
+    I --> E
+    D --> E
+
+    E -. "Model switched /<br/>history edited" .-> F["InvalidateMessageCaches(input)"]
+    F -. "Next call" .-> B
+
+    style Input fill:#e8f4fd,stroke:#4a90d9
+    style Detail fill:#e8f4fd,stroke:#4a90d9
+    style C fill:#d4edda,stroke:#28a745
+    style I fill:#d4edda,stroke:#28a745
+    style D fill:#fff3cd,stroke:#ffc107
+    style E fill:#d4edda,stroke:#28a745
+    style F fill:#f8d7da,stroke:#dc3545
+```
+
+**示例 — 对话中途切换模型：**
+
+```go
+// 使用模型 A 构建的对话：[User₁, Assistant₁(model_A), User₂]
+// 现在切换到模型 B — 模型 A 的缓存前缀已失效。
+
+input := []*schema.AgenticMessage{user1, assistant1, user2}
+agenticark.InvalidateMessageCaches(input)
+
+// 下次 Generate 将跳过失效的缓存锚点，发送完整输入。
+resp, err := modelB.Generate(ctx, input)
 ```
 
 ### 工具调用 (Tool Calling)

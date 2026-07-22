@@ -182,6 +182,73 @@ type Config struct {
 }
 ```
 
+## Extension Fields
+
+Several fields of the Eino agentic schema are typed `any` so that each model implementation can attach its own provider-specific data. When you consume responses produced by this package, you must type-assert these fields to the concrete types defined here (all under the `agenticark` package).
+
+### ResponseMeta
+
+The schema's `AgenticResponseMeta` does not define an Ark-specific field, so this package populates the generic `Extension any` field of `*schema.AgenticMessage.ResponseMeta` with a `*agenticark.ResponseMetaExtension`. Assert it to that type before use.
+
+```go
+// agenticark.ResponseMetaExtension
+type ResponseMetaExtension struct {
+	ID                 string             // Ark response ID
+	Status             ResponseStatus     // in_progress / completed / incomplete / failed
+	IncompleteDetails  *IncompleteDetails // populated when Status is incomplete
+	Error              *ResponseError     // populated when the response carries an error
+	PreviousResponseID string             // ID of the previous response in a multi-turn chain
+	Thinking           *ResponseThinking  // thinking mode reported by the server
+	ExpireAt           *int64             // Unix timestamp when the cached response expires
+	ServiceTier        ServiceTier        // auto / default
+	StreamingError     *StreamingResponseError // error surfaced during streaming
+}
+```
+
+```go
+meta := msg.ResponseMeta.Extension.(*agenticark.ResponseMetaExtension)
+```
+
+### AssistantGenText Extension
+
+`UserInputText` (user-supplied text) carries no extension. Only model-generated `AssistantGenText` blocks do. The schema defines no Ark-specific field for it, so this package populates the generic `AssistantGenText.Extension any` field with a `*agenticark.AssistantGenTextExtension`, which carries the citation/annotation data attached to the generated text.
+
+```go
+// agenticark.AssistantGenTextExtension
+type AssistantGenTextExtension struct {
+	Annotations []*TextAnnotation // url_citation / doc_citation annotations on the text
+}
+```
+
+```go
+ext := block.AssistantGenText.Extension.(*agenticark.AssistantGenTextExtension)
+```
+
+### ServerToolCall & ServerToolResult
+
+When server-side (built-in) tools such as `web_search`, `image_process`, `doubao_app` or `knowledge_search` are enabled, this package populates the generic `ServerToolCall.Arguments any` field with a `*agenticark.ServerToolCallArguments` and the `ServerToolResult.Content any` field with a `*agenticark.ServerToolResult`. Assert them to those concrete types.
+
+```go
+// agenticark.ServerToolCallArguments — exactly one field is set per call
+type ServerToolCallArguments struct {
+	WebSearch       *WebSearchArguments       // web_search tool input
+	ImageProcess    *ImageProcessArguments    // image_process tool input
+	DoubaoApp       *DoubaoAppArguments       // doubao_app tool input
+	KnowledgeSearch *KnowledgeSearchArguments // knowledge_search tool input
+}
+
+// agenticark.ServerToolResult — exactly one field is set per result
+type ServerToolResult struct {
+	ImageProcess *ImageProcessResult // image_process tool output
+	DoubaoApp    *DoubaoAppResult    // doubao_app tool output
+}
+```
+
+```go
+args := block.ServerToolCall.Arguments.(*agenticark.ServerToolCallArguments)
+result := block.ServerToolResult.Content.(*agenticark.ServerToolResult)
+```
+
 ## Advanced Usage
 
 ### Cache
@@ -199,6 +266,46 @@ am, err := agenticark.New(ctx, &agenticark.Config{
 	EnableAutoCache: true,
 	ExpireAtSec:     &expireAtSec,
 })
+```
+
+The following diagram illustrates how the SDK resolves `PreviousResponseID` on each call, and how `InvalidateMessageCaches` resets the cache state:
+
+```mermaid
+flowchart TD
+    Input["am.Generate(ctx, input, opts...)"] --> Detail
+    Detail["input = [User₁, Asst₁(resp_001), User₂, Asst₂(resp_002), User₃]<br/>opts = WithHeadPreviousResponseID(resp_abc) (optional)"]
+    Detail --> B{"Find cached<br/>Response ID<br/>in messages?"}
+    B -- "Yes (found resp_002 at Asst₂)" --> C["Send [User₃] only<br/>PreviousResponseID = resp_002"]
+    B -- No --> H{"WithHeadPreviousResponseID<br/>provided?"}
+    H -- "Yes (resp_abc)" --> I["Send full input<br/>PreviousResponseID = resp_abc"]
+    H -- No --> D["Send full input<br/>No cache reuse"]
+    C --> E["Response (resp_003) marked as cached<br/>— used as cache anchor in next turn"]
+    I --> E
+    D --> E
+
+    E -. "Model switched /<br/>history edited" .-> F["InvalidateMessageCaches(input)"]
+    F -. "Next call" .-> B
+
+    style Input fill:#e8f4fd,stroke:#4a90d9
+    style Detail fill:#e8f4fd,stroke:#4a90d9
+    style C fill:#d4edda,stroke:#28a745
+    style I fill:#d4edda,stroke:#28a745
+    style D fill:#fff3cd,stroke:#ffc107
+    style E fill:#d4edda,stroke:#28a745
+    style F fill:#f8d7da,stroke:#dc3545
+```
+
+**Example — switch model mid-conversation:**
+
+```go
+// Conversation built with model A: [User₁, Assistant₁(model_A), User₂]
+// Now switching to model B — the cached prefix from model A is invalid.
+
+input := []*schema.AgenticMessage{user1, assistant1, user2}
+agenticark.InvalidateMessageCaches(input)
+
+// Next Generate will skip the stale cache anchor and send full input.
+resp, err := modelB.Generate(ctx, input)
 ```
 
 ### Tool Calling

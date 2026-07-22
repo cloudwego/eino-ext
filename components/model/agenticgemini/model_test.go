@@ -372,7 +372,7 @@ func TestPrefixCache(t *testing.T) {
 
 	ctx := context.Background()
 
-	ret, err := g.CreatePrefixCache(ctx, []*schema.AgenticMessage{{}})
+	ret, err := g.CreatePrefixCache(ctx, []*schema.AgenticMessage{{Role: schema.AgenticRoleTypeUser}})
 	assert.NoError(t, err)
 	assert.Equal(t, "name", ret.Name)
 }

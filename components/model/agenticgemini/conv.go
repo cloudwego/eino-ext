@@ -44,7 +44,40 @@ func convAgenticMessages(messages []*schema.AgenticMessage) ([]*genai.Content, e
 		}
 		result[i] = content
 	}
-	return result, nil
+	return mergeAdjacentToolContents(result), nil
+}
+
+// mergeAdjacentToolContents merges adjacent tool response contents into one.
+// Gemini requires all tool responses to be in a single message when responding
+// to parallel tool calls.
+func mergeAdjacentToolContents(contents []*genai.Content) []*genai.Content {
+	if len(contents) <= 1 {
+		return contents
+	}
+
+	result := make([]*genai.Content, 0, len(contents))
+	for _, content := range contents {
+		if len(result) > 0 && isToolResponseContent(content) && isToolResponseContent(result[len(result)-1]) {
+			result[len(result)-1].Parts = append(result[len(result)-1].Parts, content.Parts...)
+		} else {
+			result = append(result, content)
+		}
+	}
+	return result
+}
+
+// isToolResponseContent reports whether a content consists solely of tool
+// response parts.
+func isToolResponseContent(content *genai.Content) bool {
+	if content == nil || len(content.Parts) == 0 {
+		return false
+	}
+	for _, part := range content.Parts {
+		if part.FunctionResponse == nil {
+			return false
+		}
+	}
+	return true
 }
 
 // convAgenticMessage converts a single AgenticMessage to genai.Content
@@ -55,9 +88,13 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 
 	isSelfGenerated := isSelfGeneratedMessage(message)
 
-	var err error
+	role, err := toGeminiRole(message.Role)
+	if err != nil {
+		return nil, err
+	}
+
 	content := &genai.Content{
-		Role: toGeminiRole(message.Role),
+		Role: role,
 	}
 
 	for _, block := range message.ContentBlocks {
@@ -594,11 +631,18 @@ func convAgenticFileData(data *genai.FileData) (*schema.ContentBlock, error) {
 	}
 }
 
-func toGeminiRole(role schema.AgenticRoleType) string {
-	if role == schema.AgenticRoleTypeAssistant {
-		return roleModel
+func toGeminiRole(role schema.AgenticRoleType) (string, error) {
+	switch role {
+	case schema.AgenticRoleTypeAssistant:
+		return roleModel, nil
+	case schema.AgenticRoleTypeSystem:
+		// not documented but works in practice with correct priority
+		return "system", nil
+	case schema.AgenticRoleTypeUser:
+		return roleUser, nil
+	default:
+		return "", fmt.Errorf("unsupported role: %s", role)
 	}
-	return roleUser
 }
 
 func populateStreamingMeta(curBlocks []*schema.ContentBlock, curIndex int, lastType schema.ContentBlockType) (int, schema.ContentBlockType) {

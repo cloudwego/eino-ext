@@ -663,6 +663,9 @@ func TestResolveStreamResponse(t *testing.T) {
 				PromptTokens:     10,
 				CompletionTokens: 20,
 				TotalTokens:      30,
+				CompletionTokensDetails: deepseek.CompletionTokensDetails{
+					ReasoningTokens: 12,
+				},
 			},
 		}
 		msg, found, err := resolveStreamResponse(resp)
@@ -670,6 +673,7 @@ func TestResolveStreamResponse(t *testing.T) {
 		assert.True(t, found)
 		assert.NotNil(t, msg.ResponseMeta)
 		assert.Equal(t, 10, msg.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 12, msg.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	t.Run("reasoning content in delta", func(t *testing.T) {
@@ -698,31 +702,6 @@ func TestResolveStreamResponse(t *testing.T) {
 		assert.True(t, found)
 		assert.Equal(t, schema.Assistant, msg.Role)
 		assert.Equal(t, "hello", msg.Content)
-	})
-}
-
-func TestConcatTextParts(t *testing.T) {
-	t.Run("text parts joined", func(t *testing.T) {
-		parts := []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeText, Text: "a"},
-			{Type: schema.ChatMessagePartTypeText, Text: "b"},
-		}
-		result, err := concatTextParts(parts, func(p schema.MessageInputPart) (schema.ChatMessagePartType, string) {
-			return p.Type, p.Text
-		})
-		assert.Nil(t, err)
-		assert.Equal(t, "a\n\nb", result)
-	})
-
-	t.Run("unsupported type returns error", func(t *testing.T) {
-		parts := []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeImageURL, Text: "img"},
-		}
-		_, err := concatTextParts(parts, func(p schema.MessageInputPart) (schema.ChatMessagePartType, string) {
-			return p.Type, p.Text
-		})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "does not support")
 	})
 }
 
@@ -805,10 +784,14 @@ func TestTokenUsageConversions(t *testing.T) {
 				PromptTokens:     1,
 				CompletionTokens: 2,
 				TotalTokens:      3,
+				CompletionTokensDetails: schema.CompletionTokensDetails{
+					ReasoningTokens: 7,
+				},
 			},
 		})
 		assert.NotNil(t, result)
 		assert.Equal(t, 1, result.PromptTokens)
+		assert.Equal(t, 7, result.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	t.Run("streamToEinoTokenUsage nil", func(t *testing.T) {
@@ -824,10 +807,14 @@ func TestTokenUsageConversions(t *testing.T) {
 			PromptTokens:     5,
 			CompletionTokens: 10,
 			TotalTokens:      15,
+			CompletionTokensDetails: deepseek.CompletionTokensDetails{
+				ReasoningTokens: 8,
+			},
 		})
 		assert.NotNil(t, result)
 		assert.Equal(t, 5, result.PromptTokens)
 		assert.Equal(t, 15, result.TotalTokens)
+		assert.Equal(t, 8, result.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	t.Run("toEinoTokenUsage with cache hit", func(t *testing.T) {
@@ -847,9 +834,13 @@ func TestTokenUsageConversions(t *testing.T) {
 			CompletionTokens:   2,
 			TotalTokens:        3,
 			PromptTokenDetails: schema.PromptTokenDetails{CachedTokens: 1},
+			CompletionTokensDetails: schema.CompletionTokensDetails{
+				ReasoningTokens: 4,
+			},
 		})
 		assert.NotNil(t, result)
 		assert.Equal(t, 1, result.PromptTokenDetails.CachedTokens)
+		assert.Equal(t, 4, result.CompletionTokensDetails.ReasoningTokens)
 	})
 }
 

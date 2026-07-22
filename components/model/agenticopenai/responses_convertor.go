@@ -911,15 +911,30 @@ func reasoningToInputItem(block *schema.ContentBlock) (item responses.ResponseIn
 	id, _ := getItemID(block)
 	status, _ := GetItemStatus(block)
 
-	item = responses.ResponseInputItemUnionParam{
-		OfReasoning: &responses.ResponseReasoningItemParam{
-			ID:     id,
-			Status: responses.ResponseReasoningItemStatus(status),
-			Summary: []responses.ResponseReasoningItemSummaryParam{
-				{Text: content.Text},
-			},
-			EncryptedContent: newOpenaiStrOpt(content.Signature),
+	reasoningItem := &responses.ResponseReasoningItemParam{
+		ID:     id,
+		Status: responses.ResponseReasoningItemStatus(status),
+		Summary: []responses.ResponseReasoningItemSummaryParam{
+			{Text: content.Text},
 		},
+		EncryptedContent: newOpenaiStrOpt(content.Signature),
+	}
+
+	if content.OpenAIExtension != nil && len(content.OpenAIExtension.Content) > 0 {
+		reasoningContent := make([]responses.ResponseReasoningItemContentParam, 0, len(content.OpenAIExtension.Content))
+		for _, c := range content.OpenAIExtension.Content {
+			if c == nil {
+				continue
+			}
+			reasoningContent = append(reasoningContent, responses.ResponseReasoningItemContentParam{
+				Text: c.Text,
+			})
+		}
+		reasoningItem.Content = reasoningContent
+	}
+
+	item = responses.ResponseInputItemUnionParam{
+		OfReasoning: reasoningItem,
 	}
 
 	return item, nil
@@ -2119,10 +2134,23 @@ func reasoningToContentBlocks(item responses.ResponseReasoningItem) (block *sche
 		text.WriteString(s.Text)
 	}
 
-	block = schema.NewContentBlock(&schema.Reasoning{
+	reasoning := &schema.Reasoning{
 		Text:      text.String(),
 		Signature: item.EncryptedContent,
-	})
+	}
+	if len(item.Content) > 0 {
+		ext := &openai.ReasoningExtension{
+			Content: make([]*openai.ReasoningContent, 0, len(item.Content)),
+		}
+		for _, c := range item.Content {
+			ext.Content = append(ext.Content, &openai.ReasoningContent{
+				Text: c.Text,
+			})
+		}
+		reasoning.OpenAIExtension = ext
+	}
+
+	block = schema.NewContentBlock(reasoning)
 
 	setItemID(block, item.ID)
 	if s := string(item.Status); s != "" {

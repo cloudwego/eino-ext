@@ -345,13 +345,22 @@ func TestToAnthropicMessagesErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("system after user", func(t *testing.T) {
-		_, _, err := toAnthropicMessages([]*schema.AgenticMessage{
+	t.Run("system after user is allowed inline", func(t *testing.T) {
+		sysInstruction, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
 			schema.UserAgenticMessage("hello"),
 			schema.SystemAgenticMessage("late system"),
 		})
-		if err == nil || err.Error() != "system message must appear before all non-system messages" {
+		if err != nil {
 			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(sysInstruction) != 0 {
+			t.Fatalf("expected no sysInstruction, got %d", len(sysInstruction))
+		}
+		if len(msgParams) != 2 {
+			t.Fatalf("expected 2 msgParams, got %d", len(msgParams))
+		}
+		if msgParams[1].Role != anthropic.MessageParamRoleSystem {
+			t.Fatalf("expected system role for msgParams[1], got %s", msgParams[1].Role)
 		}
 	})
 }
@@ -1308,4 +1317,90 @@ func TestAssistantGenTextToBlockParamWithCitations(t *testing.T) {
 	if !strings.Contains(mustJSON(t, blockParam), `"cited_text":"cite"`) {
 		t.Fatalf("json = %s", mustJSON(t, blockParam))
 	}
+}
+
+func TestToAnthropicMessagesMergeToolOnly(t *testing.T) {
+	toolMsg := func(callID string) *schema.AgenticMessage {
+		return &schema.AgenticMessage{
+			Role: schema.AgenticRoleTypeUser,
+			ContentBlocks: []*schema.ContentBlock{
+				schema.NewContentBlock(&schema.FunctionToolResult{
+					CallID: callID,
+					Name:   "get_weather",
+					Content: []*schema.FunctionToolResultContentBlock{
+						{
+							Type: schema.FunctionToolResultContentBlockTypeText,
+							Text: &schema.UserInputText{Text: "ok"},
+						},
+					},
+				}),
+			},
+		}
+	}
+
+	t.Run("two consecutive tool-only messages merged", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			schema.UserAgenticMessage("hello"),
+			toolMsg("call_1"),
+			toolMsg("call_2"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 2 {
+			t.Fatalf("len(msgParams) = %d, want 2", len(msgParams))
+		}
+		if len(msgParams[1].Content) != 2 {
+			t.Fatalf("len(merged content) = %d, want 2", len(msgParams[1].Content))
+		}
+	})
+
+	t.Run("three consecutive tool-only messages merged", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			toolMsg("call_1"),
+			toolMsg("call_2"),
+			toolMsg("call_3"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 1 {
+			t.Fatalf("len(msgParams) = %d, want 1", len(msgParams))
+		}
+		if len(msgParams[0].Content) != 3 {
+			t.Fatalf("len(merged content) = %d, want 3", len(msgParams[0].Content))
+		}
+	})
+
+	t.Run("tool messages separated by assistant not merged", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			toolMsg("call_1"),
+			{
+				Role: schema.AgenticRoleTypeAssistant,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.AssistantGenText{Text: "ok"}),
+				},
+			},
+			toolMsg("call_2"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 3 {
+			t.Fatalf("len(msgParams) = %d, want 3", len(msgParams))
+		}
+	})
+
+	t.Run("user message with text not merged with tool message", func(t *testing.T) {
+		_, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
+			toolMsg("call_1"),
+			schema.UserAgenticMessage("more"),
+		})
+		if err != nil {
+			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(msgParams) != 2 {
+			t.Fatalf("len(msgParams) = %d, want 2", len(msgParams))
+		}
+	})
 }

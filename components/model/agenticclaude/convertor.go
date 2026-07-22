@@ -26,27 +26,40 @@ import (
 	"github.com/cloudwego/eino/schema/claude"
 )
 
-func toAnthropicMessages(input []*schema.AgenticMessage) (systemBlocks []anthropic.TextBlockParam, msgParams []anthropic.MessageParam, err error) {
+func toAnthropicMessages(input []*schema.AgenticMessage) (sysInstruction []anthropic.TextBlockParam, msgParams []anthropic.MessageParam, err error) {
 	if len(input) == 0 {
 		return nil, nil, fmt.Errorf("input is empty")
 	}
 
-	systemDone := false
+	firstNonSystem := 0
+	for i, msg := range input {
+		if msg.Role != schema.AgenticRoleTypeSystem {
+			firstNonSystem = i
+			break
+		}
+		if i == len(input)-1 {
+			return nil, nil, fmt.Errorf("input contains only system messages")
+		}
+	}
 
-	for _, msg := range input {
+	for _, msg := range input[:firstNonSystem] {
+		blocks, err := toSystemBlocks(msg)
+		if err != nil {
+			return nil, nil, err
+		}
+		sysInstruction = append(sysInstruction, blocks...)
+	}
+
+	for _, msg := range input[firstNonSystem:] {
 		switch msg.Role {
 		case schema.AgenticRoleTypeSystem:
-			if systemDone {
-				return nil, nil, fmt.Errorf("system message must appear before all non-system messages")
-			}
-			blocks, err := toSystemBlocks(msg)
+			msgParam, err := toSystemMessageParam(msg)
 			if err != nil {
 				return nil, nil, err
 			}
-			systemBlocks = append(systemBlocks, blocks...)
+			msgParams = append(msgParams, msgParam)
 
 		case schema.AgenticRoleTypeUser:
-			systemDone = true
 			msgParam, err := toUserMessageParam(msg)
 			if err != nil {
 				return nil, nil, err
@@ -54,7 +67,6 @@ func toAnthropicMessages(input []*schema.AgenticMessage) (systemBlocks []anthrop
 			msgParams = append(msgParams, msgParam)
 
 		case schema.AgenticRoleTypeAssistant:
-			systemDone = true
 			msgParam, err := toAssistantMessageParam(msg)
 			if err != nil {
 				return nil, nil, err
@@ -66,7 +78,77 @@ func toAnthropicMessages(input []*schema.AgenticMessage) (systemBlocks []anthrop
 		}
 	}
 
-	return systemBlocks, msgParams, nil
+	msgParams = mergeAdjacentToolResults(msgParams)
+	msgParams = mergeAdjacentSystemMessages(msgParams)
+
+	return sysInstruction, msgParams, nil
+}
+
+// mergeAdjacentToolResults merges adjacent tool-result user messages into one.
+// Anthropic requires all tool_result blocks for an assistant turn in a single
+// user message.
+func mergeAdjacentToolResults(msgParams []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgParams) <= 1 {
+		return msgParams
+	}
+
+	result := make([]anthropic.MessageParam, 0, len(msgParams))
+	for _, mp := range msgParams {
+		if len(result) > 0 && isToolResultMessage(mp) && isToolResultMessage(result[len(result)-1]) {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
+		} else {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+// mergeAdjacentSystemMessages merges consecutive system messages into a single
+// message with multiple content blocks, because Claude only allows a system
+// message immediately before a user or assistant message.
+func mergeAdjacentSystemMessages(msgParams []anthropic.MessageParam) []anthropic.MessageParam {
+	if len(msgParams) <= 1 {
+		return msgParams
+	}
+
+	result := make([]anthropic.MessageParam, 0, len(msgParams))
+	for _, mp := range msgParams {
+		if len(result) > 0 && mp.Role == anthropic.MessageParamRoleSystem && result[len(result)-1].Role == anthropic.MessageParamRoleSystem {
+			result[len(result)-1].Content = append(result[len(result)-1].Content, mp.Content...)
+		} else {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+// isToolResultMessage reports whether a message consists solely of tool_result
+// content blocks.
+func isToolResultMessage(mp anthropic.MessageParam) bool {
+	if mp.Role != anthropic.MessageParamRoleUser || len(mp.Content) == 0 {
+		return false
+	}
+	for _, block := range mp.Content {
+		if block.OfToolResult == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func toSystemMessageParam(msg *schema.AgenticMessage) (anthropic.MessageParam, error) {
+	blocks, err := toSystemBlocks(msg)
+	if err != nil {
+		return anthropic.MessageParam{}, err
+	}
+	contentBlocks := make([]anthropic.ContentBlockParamUnion, 0, len(blocks))
+	for _, b := range blocks {
+		contentBlocks = append(contentBlocks, anthropic.ContentBlockParamUnion{OfText: &b})
+	}
+	return anthropic.MessageParam{
+		Role:    anthropic.MessageParamRoleSystem,
+		Content: contentBlocks,
+	}, nil
 }
 
 func toSystemBlocks(msg *schema.AgenticMessage) ([]anthropic.TextBlockParam, error) {

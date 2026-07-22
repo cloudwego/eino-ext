@@ -18,6 +18,9 @@ package agenticclaude
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -385,12 +388,12 @@ func TestGenRequestAndOptions(t *testing.T) {
 		},
 	}
 
-	req, reqOpts, err := m.genRequestAndOptions([]*schema.AgenticMessage{
+	req, reqOpts, err := m.genParamsAndOptions([]*schema.AgenticMessage{
 		schema.SystemAgenticMessage("system prompt"),
 		schema.UserAgenticMessage("hello"),
 	}, options, specOptions)
 	if err != nil {
-		t.Fatalf("genRequestAndOptions() error = %v", err)
+		t.Fatalf("genParamsAndOptions() error = %v", err)
 	}
 	if req.Model != anthropic.Model(modelName) || req.MaxTokens != int64(maxTokens) {
 		t.Fatalf("request model/max_tokens = (%q, %d)", req.Model, req.MaxTokens)
@@ -499,7 +502,7 @@ func TestConfigAndModelBasics(t *testing.T) {
 		}
 
 		err = (&Config{Model: "claude-sonnet-4"}).check()
-		if err == nil || err.Error() != "api key is required for direct Anthropic API requests" {
+		if err == nil || err.Error() != "max_tokens must be positive" {
 			t.Fatalf("check() error = %v", err)
 		}
 
@@ -553,6 +556,106 @@ func TestConfigAndModelBasics(t *testing.T) {
 			t.Fatalf("newClient() error = %v", err)
 		}
 	})
+}
+
+func TestDirectAnthropicAuthSelection(t *testing.T) {
+	t.Run("config auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		if !hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key"}) {
+			t.Fatalf("hasDirectAnthropicConfigAuth(APIKey) should be true")
+		}
+		if !hasDirectAnthropicConfigAuth(&Config{AuthToken: "auth-token"}) {
+			t.Fatalf("hasDirectAnthropicConfigAuth(AuthToken) should be true")
+		}
+		if !hasDirectAnthropicConfigAuth(&Config{APIKey: "api-key", AuthToken: "auth-token"}) {
+			t.Fatalf("hasDirectAnthropicConfigAuth(both) should be true")
+		}
+		if hasDirectAnthropicConfigAuth(&Config{}) {
+			t.Fatalf("hasDirectAnthropicConfigAuth(empty) should be false")
+		}
+	})
+
+	t.Run("env auth exists", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		t.Setenv("ANTHROPIC_API_KEY", "env-api-key")
+		m, err := New(context.Background(), &Config{
+			Model:     "claude-sonnet-4",
+			MaxTokens: 1024,
+		})
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		if m == nil {
+			t.Fatalf("New() returned nil model")
+		}
+	})
+
+	t.Run("missing auth still allows creation", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		m, err := New(context.Background(), &Config{
+			Model:     "claude-sonnet-4",
+			MaxTokens: 1024,
+		})
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+		if m == nil {
+			t.Fatalf("New() returned nil model")
+		}
+	})
+
+	t.Run("config auth shields env auth", func(t *testing.T) {
+		clearAnthropicAuthEnv(t)
+		t.Setenv("ANTHROPIC_AUTH_TOKEN", "env-auth-token")
+
+		var gotAuthorization, gotAPIKey string
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			gotAuthorization = r.Header.Get("Authorization")
+			gotAPIKey = r.Header.Get("X-Api-Key")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+		}))
+		defer srv.Close()
+
+		m, err := New(context.Background(), &Config{
+			BaseURL:   srv.URL,
+			APIKey:    "config-api-key",
+			Model:     "claude-sonnet-4",
+			MaxTokens: 1024,
+		})
+		if err != nil {
+			t.Fatalf("New() error = %v", err)
+		}
+
+		_, err = m.Generate(context.Background(), []*schema.AgenticMessage{
+			schema.UserAgenticMessage("hello"),
+		})
+		if err != nil {
+			t.Fatalf("Generate() error = %v", err)
+		}
+
+		if gotAPIKey != "config-api-key" {
+			t.Fatalf("X-Api-Key = %q, want %q", gotAPIKey, "config-api-key")
+		}
+		if gotAuthorization != "" {
+			t.Fatalf("Authorization = %q, env credential should not leak into the request", gotAuthorization)
+		}
+	})
+}
+
+func clearAnthropicAuthEnv(t *testing.T) {
+	t.Helper()
+	// Use os.Unsetenv to truly remove the env vars, since the SDK uses
+	// os.LookupEnv — an empty string is still "present".
+	for _, key := range []string{"ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_PROFILE", "ANTHROPIC_BASE_URL"} {
+		prev, existed := os.LookupEnv(key)
+		os.Unsetenv(key)
+		if existed {
+			t.Cleanup(func() { os.Setenv(key, prev) })
+		} else {
+			t.Cleanup(func() { os.Unsetenv(key) })
+		}
+	}
 }
 
 func TestOptionAndUtilsHelpers(t *testing.T) {

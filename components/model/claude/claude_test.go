@@ -23,8 +23,10 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
+	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
@@ -32,6 +34,7 @@ import (
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/schema"
+	"golang.org/x/oauth2/google"
 )
 
 func TestDirectAnthropicAuthSelection(t *testing.T) {
@@ -73,7 +76,7 @@ func TestClaude(t *testing.T) {
 	assert.NoError(t, err)
 
 	mockey.PatchConvey("requires at least 1 user msg", t, func() {
-		_, err := model.genMessageNewParams([]*schema.Message{
+		_, _, err := model.genParamsAndOptions([]*schema.Message{
 			schema.SystemMessage("hello"),
 		})
 		assert.Error(t, err)
@@ -81,7 +84,7 @@ func TestClaude(t *testing.T) {
 	})
 
 	mockey.PatchConvey("first non system msg should be user", t, func() {
-		_, err := model.genMessageNewParams([]*schema.Message{
+		_, _, err := model.genParamsAndOptions([]*schema.Message{
 			schema.SystemMessage("hello"),
 			schema.AssistantMessage("world", nil),
 		})
@@ -90,7 +93,7 @@ func TestClaude(t *testing.T) {
 	})
 
 	mockey.PatchConvey("multiple system msg", t, func() {
-		resp, err := model.genMessageNewParams([]*schema.Message{
+		resp, _, err := model.genParamsAndOptions([]*schema.Message{
 			schema.SystemMessage("hello"),
 			schema.SystemMessage("world"),
 			schema.UserMessage("again"),
@@ -121,6 +124,45 @@ func TestClaude(t *testing.T) {
 		}, resp)
 	})
 
+	mockey.PatchConvey("legacy thinking config", t, func() {
+		resp, _, err := model.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+		}, WithThinking(&Thinking{
+			Enable:       true,
+			BudgetTokens: 1024,
+		}))
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.Thinking.OfEnabled)
+		assert.Equal(t, int64(1024), resp.Thinking.OfEnabled.BudgetTokens)
+	})
+
+	mockey.PatchConvey("native adaptive thinking config", t, func() {
+		resp, _, err := model.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+		}, WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+				Display: anthropic.ThinkingConfigAdaptiveDisplayOmitted,
+			},
+		}))
+		assert.NoError(t, err)
+		assert.NotNil(t, resp.Thinking.OfAdaptive)
+		assert.Equal(t, anthropic.ThinkingConfigAdaptiveDisplayOmitted, resp.Thinking.OfAdaptive.Display)
+	})
+
+	mockey.PatchConvey("native thinking config overrides legacy thinking", t, func() {
+		resp, _, err := model.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+		}, WithThinking(&Thinking{
+			Enable:       true,
+			BudgetTokens: 1024,
+		}), WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+			OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{},
+		}))
+		assert.NoError(t, err)
+		assert.Nil(t, resp.Thinking.OfEnabled)
+		assert.NotNil(t, resp.Thinking.OfAdaptive)
+	})
+
 	mockey.PatchConvey("basic chat", t, func() {
 		// Mock API response
 		content := anthropic.ContentBlockUnion{
@@ -138,6 +180,9 @@ func TestClaude(t *testing.T) {
 			Usage: anthropic.Usage{
 				InputTokens:  10,
 				OutputTokens: 5,
+				OutputTokensDetails: anthropic.OutputTokensDetails{
+					ThinkingTokens: 3,
+				},
 			},
 		}, nil).Build().UnPatch()
 
@@ -153,6 +198,7 @@ func TestClaude(t *testing.T) {
 		assert.Equal(t, schema.Assistant, resp.Role)
 		assert.Equal(t, 10, resp.ResponseMeta.Usage.PromptTokens)
 		assert.Equal(t, 5, resp.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 3, resp.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	mockey.PatchConvey("function calling", t, func() {
@@ -285,6 +331,9 @@ func TestConvStreamEvent(t *testing.T) {
 				Usage: anthropic.Usage{
 					InputTokens:  5,
 					OutputTokens: 2,
+					OutputTokensDetails: anthropic.OutputTokensDetails{
+						ThinkingTokens: 1,
+					},
 				},
 			},
 		}).Build().UnPatch()
@@ -295,6 +344,7 @@ func TestConvStreamEvent(t *testing.T) {
 		assert.Equal(t, schema.Assistant, message.Role)
 		assert.Equal(t, 5, message.ResponseMeta.Usage.PromptTokens)
 		assert.Equal(t, 2, message.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 1, message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	mockey.PatchConvey("content block delta event - text", t, func() {
@@ -346,14 +396,24 @@ func TestConvStreamEvent(t *testing.T) {
 				StopReason: "end_turn",
 			},
 			Usage: anthropic.MessageDeltaUsage{
-				OutputTokens: 10,
+				InputTokens:              8,
+				CacheReadInputTokens:     3,
+				CacheCreationInputTokens: 2,
+				OutputTokens:             10,
+				OutputTokensDetails: anthropic.OutputTokensDetails{
+					ThinkingTokens: 4,
+				},
 			},
 		}).Build().UnPatch()
 
 		message, err := convStreamEvent(event, streamCtx)
 		assert.NoError(t, err)
 		assert.Equal(t, "end_turn", message.ResponseMeta.FinishReason)
+		assert.Equal(t, 13, message.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 3, message.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
 		assert.Equal(t, 10, message.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 23, message.ResponseMeta.Usage.TotalTokens)
+		assert.Equal(t, 4, message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
 
 	mockey.PatchConvey("content block start event", t, func() {
@@ -873,7 +933,7 @@ func TestCacheTTL(t *testing.T) {
 		sysMsg := schema.SystemMessage("system")
 		bpSys := SetMessageCacheControl(sysMsg, &CacheControl{TTL: CacheTTL1h})
 
-		params, err := cm.genMessageNewParams([]*schema.Message{bpSys, msg})
+		params, _, err := cm.genParamsAndOptions([]*schema.Message{bpSys, msg})
 		assert.NoError(t, err)
 		assert.Equal(t, CacheTTL1h, params.System[0].CacheControl.TTL)
 	})
@@ -883,7 +943,7 @@ func TestCacheTTL(t *testing.T) {
 		msg := schema.UserMessage("hello")
 		sysMsg := schema.SystemMessage("system")
 
-		params, err := cm.genMessageNewParams(
+		params, _, err := cm.genParamsAndOptions(
 			[]*schema.Message{sysMsg, msg},
 			WithAutoCacheControl(&CacheControl{TTL: CacheTTL1h}),
 		)
@@ -1052,5 +1112,172 @@ func TestToolSearchEventsRoundTrip(t *testing.T) {
 			}
 		}
 		assert.True(t, hasErrorResult, "should have error result block")
+	})
+}
+
+// TestPopulateInputMergeConsecutiveTools verifies that consecutive
+// Tool messages are merged into a single Anthropic UserMessage.
+// Anthropic API requires all tool_result blocks for the same assistant
+// turn to be in the same user message.
+func TestPopulateInputMergeConsecutiveTools(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+	ctx := context.Background()
+
+	cm, err := NewChatModel(ctx, &Config{
+		APIKey: "test-key",
+		Model:  "claude-3-opus-20240229",
+	})
+	assert.NoError(t, err)
+
+	toolMsg := func(id, name, content string) *schema.Message {
+		return &schema.Message{
+			Role:       schema.Tool,
+			Content:    content,
+			ToolCallID: id,
+			ToolName:   name,
+		}
+	}
+
+	t.Run("single tool message unchanged", func(t *testing.T) {
+		params, _, err := cm.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "tool1", "result1"),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, params.Messages, 2)
+		// The tool message becomes a UserMessage with one tool_result block
+		assert.Len(t, params.Messages[1].Content, 1)
+		assert.NotNil(t, params.Messages[1].Content[0].OfToolResult)
+	})
+
+	t.Run("two consecutive tool messages merged", func(t *testing.T) {
+		params, _, err := cm.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "tool1", "result1"),
+			toolMsg("call_2", "tool2", "result2"),
+		})
+		assert.NoError(t, err)
+		// User + merged tool = 2 messages
+		assert.Len(t, params.Messages, 2)
+		// Merged message has 2 content blocks
+		assert.Len(t, params.Messages[1].Content, 2)
+	})
+
+	t.Run("three consecutive tools merged", func(t *testing.T) {
+		params, _, err := cm.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "t1", "r1"),
+			toolMsg("call_2", "t2", "r2"),
+			toolMsg("call_3", "t3", "r3"),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, params.Messages, 2)
+		assert.Len(t, params.Messages[1].Content, 3)
+	})
+
+	t.Run("tool messages separated by non-tool are not merged", func(t *testing.T) {
+		params, _, err := cm.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+			toolMsg("call_1", "t1", "r1"),
+			schema.AssistantMessage("ok", nil),
+			toolMsg("call_2", "t2", "r2"),
+		})
+		assert.NoError(t, err)
+		// User + Tool(r1) + Assistant + Tool(r2) = 4 messages
+		assert.Len(t, params.Messages, 4)
+		assert.Len(t, params.Messages[1].Content, 1)
+		assert.Len(t, params.Messages[3].Content, 1)
+	})
+
+	t.Run("no tool messages unchanged", func(t *testing.T) {
+		params, _, err := cm.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("hello"),
+			schema.AssistantMessage("hi", nil),
+		})
+		assert.NoError(t, err)
+		assert.Len(t, params.Messages, 2)
+	})
+
+	t.Run("real world pattern: user assistant(tool_calls) tool tool", func(t *testing.T) {
+		params, _, err := cm.genParamsAndOptions([]*schema.Message{
+			schema.UserMessage("what's the weather in Paris and London?"),
+			{
+				Role:    schema.Assistant,
+				Content: "",
+				ToolCalls: []schema.ToolCall{
+					{ID: "call_1", Function: schema.FunctionCall{Name: "get_weather", Arguments: `{"city":"Paris"}`}},
+					{ID: "call_2", Function: schema.FunctionCall{Name: "get_weather", Arguments: `{"city":"London"}`}},
+				},
+			},
+			toolMsg("call_1", "get_weather", "Paris: sunny, 22°C"),
+			toolMsg("call_2", "get_weather", "London: cloudy, 15°C"),
+		})
+		assert.NoError(t, err)
+		// User + Assistant + merged_tool = 3 messages
+		assert.Len(t, params.Messages, 3)
+		// Assistant has tool_use blocks
+		assert.Equal(t, anthropic.MessageParamRoleAssistant, params.Messages[1].Role)
+		// Merged tool message has 2 tool_result blocks
+		assert.Equal(t, anthropic.MessageParamRoleUser, params.Messages[2].Role)
+		assert.Len(t, params.Messages[2].Content, 2)
+	})
+}
+
+func TestVertexServiceAccountJSON(t *testing.T) {
+	ctx := context.Background()
+	base := &Config{
+		ByVertex:        true,
+		VertexProjectID: "test-project",
+		VertexRegion:    "us-east5",
+		Model:           "claude-3-opus-20240229",
+		MaxTokens:       1,
+	}
+
+	t.Run("invalid JSON", func(t *testing.T) {
+		cfg := *base
+		cfg.VertexServiceAccountJSON = []byte(`not-json`)
+		_, err := NewChatModel(ctx, &cfg)
+		assert.Error(t, err)
+		assert.ErrorContains(t, err, "create vertex credentials from service account JSON")
+	})
+
+	t.Run("ADC path when service account JSON empty", func(t *testing.T) {
+		mockey.PatchConvey("", t, func() {
+			var calledWithGoogleAuth bool
+			mockey.Mock(vertex.WithGoogleAuth).To(func(ctx context.Context, region, projectID string, scopes ...string) option.RequestOption {
+				calledWithGoogleAuth = true
+				assert.Equal(t, "us-east5", region)
+				assert.Equal(t, "test-project", projectID)
+				return option.WithAPIKey("adc-test")
+			}).Build()
+
+			model, err := NewChatModel(ctx, base)
+			assert.NoError(t, err)
+			assert.NotNil(t, model)
+			assert.True(t, calledWithGoogleAuth, "expected vertex.WithGoogleAuth to be called for ADC path")
+		})
+	})
+
+	t.Run("service account JSON uses WithCredentials path", func(t *testing.T) {
+		mockey.PatchConvey("", t, func() {
+			var calledWithCredentials bool
+			mockey.Mock(google.CredentialsFromJSON).Return(&google.Credentials{
+				ProjectID: "from-sa",
+			}, nil).Build()
+			mockey.Mock(vertex.WithCredentials).To(func(ctx context.Context, region, projectID string, creds *google.Credentials) option.RequestOption {
+				calledWithCredentials = true
+				assert.Equal(t, "us-east5", region)
+				assert.Equal(t, "test-project", projectID)
+				assert.Equal(t, "from-sa", creds.ProjectID)
+				return option.WithAPIKey("sa-test")
+			}).Build()
+
+			cfg := *base
+			cfg.VertexServiceAccountJSON = []byte(`{"type":"service_account","project_id":"from-sa"}`)
+			model, err := NewChatModel(ctx, &cfg)
+			assert.NoError(t, err)
+			assert.NotNil(t, model)
+			assert.True(t, calledWithCredentials, "expected vertex.WithCredentials to be called for service account path")
+		})
 	})
 }

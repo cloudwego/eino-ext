@@ -89,6 +89,10 @@ type Config struct {
     // MaxTaskQueueSize is the max number of events to buffer (Optional)
     // Default: 100
     MaxTaskQueueSize int
+
+    // MaxEventSizeBytes is the maximum size of an event before large fields are truncated (Optional)
+    // Default: 1_000_000
+    MaxEventSizeBytes int
     
     // FlushAt is the number of events to batch before sending (Optional)
     // Default: 15

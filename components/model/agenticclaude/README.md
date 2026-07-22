@@ -101,6 +101,10 @@ type Config struct {
     // Optional.
     HTTPClient *http.Client
 
+    // RequestTimeout specifies the timeout for each API request.
+    // Optional.
+    RequestTimeout time.Duration
+
     // ByBedrock specifies the configuration for using AWS Bedrock.
     // Optional.
     ByBedrock *BedrockConfig
@@ -114,10 +118,14 @@ type Config struct {
     // Optional.
     BaseURL string
 
-    // APIKey is your Anthropic API key
+    // APIKey is your Anthropic API key for direct Anthropic API access.
     // Obtain from: https://console.anthropic.com/account/keys
-    // Required for direct Anthropic API requests.
+    // Optional when AuthToken is set.
     APIKey string
+
+    // AuthToken is your Anthropic auth token for direct Anthropic API access.
+    // Optional when APIKey is set.
+    AuthToken string
 
     // Model specifies which Claude model to use.
     // Required.
@@ -176,13 +184,133 @@ type Config struct {
 }
 ```
 
+For direct Anthropic API access, authentication resolution works as follows:
+
+- If `Config.APIKey` or `Config.AuthToken` is set, `Config` takes precedence and environment auth settings (e.g. `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`) are ignored.
+- Otherwise, it falls back to environment variables.
+- Within the chosen source, `APIKey` and `AuthToken` can both be set and will both be passed through as-is.
+- If neither source provides auth, client creation still succeeds and auth errors surface later when requests are sent.
+- `ANTHROPIC_BASE_URL` is still honored in both cases; `Config.BaseURL` takes precedence when set.
+
+## Extension Fields
+
+Several fields of the Eino agentic schema are typed `any` so that each model implementation can attach provider-specific data. To consume the data this package produces, type-assert those fields to the concrete types defined here. For the strongly-typed extension fields (`ClaudeExtension`), no assertion is required.
+
+### ResponseMeta
+
+`AgenticResponseMeta.ClaudeExtension` is populated with the strongly-typed `*claude.ResponseMetaExtension`, so no type assertion is needed. The generic `Extension any` field is not used by this package.
+
+```go
+// github.com/cloudwego/eino/schema/claude
+type ResponseMetaExtension struct {
+    ID           string       // the upstream message ID
+    StopReason   string       // why generation stopped, e.g. "end_turn", "tool_use"
+    StopSequence string       // the custom stop sequence that was hit, if any
+    StopDetails  *StopDetails // additional stop information
+}
+```
+
+```go
+ext := msg.ResponseMeta.ClaudeExtension // *claude.ResponseMetaExtension
+```
+
+### AssistantGenText Extension
+
+`UserInputText` has no extension. Only `AssistantGenText` carries one: its `ClaudeExtension` field is populated with the strongly-typed `*claude.AssistantGenTextExtension`, so no assertion is needed. The generic `Extension any` field is not used by this package.
+
+```go
+// github.com/cloudwego/eino/schema/claude
+type AssistantGenTextExtension struct {
+    Citations []*TextCitation // citations attached to the generated text, if any
+}
+```
+
+```go
+ext := block.AssistantGenText.ClaudeExtension // *claude.AssistantGenTextExtension
+```
+
+### ServerToolCall & ServerToolResult
+
+This package supports Claude server-side (built-in) tools such as web search, web fetch, code execution, and tool search. For these blocks, the generic `any` fields are populated with concrete types defined in this package.
+
+`ServerToolCall.Arguments` is populated with `*agenticclaude.ServerToolCallArguments`. Exactly one field is set, matching the invoked tool.
+
+```go
+// package agenticclaude
+type ServerToolCallArguments struct {
+    WebSearch               *WebSearchArguments               // web_search
+    WebFetch                *WebFetchArguments                // web_fetch
+    CodeExecution           *CodeExecutionArguments           // code_execution
+    BashCodeExecution       *BashCodeExecutionArguments       // bash_code_execution
+    TextEditorCodeExecution *TextEditorCodeExecutionArguments // text_editor_code_execution
+    ToolSearchToolBm25      *ToolSearchToolBm25Arguments      // tool_search_tool_bm25
+    ToolSearchToolRegex     *ToolSearchToolRegexArguments     // tool_search_tool_regex
+}
+```
+
+```go
+args := block.ServerToolCall.Arguments.(*agenticclaude.ServerToolCallArguments)
+```
+
+`ServerToolResult.Content` is populated with `*agenticclaude.ServerToolResult`. Exactly one field is set, matching the invoked tool.
+
+```go
+// package agenticclaude
+type ServerToolResult struct {
+    WebSearch               *WebSearchResult               // web_search
+    WebFetch                *WebFetchResult                // web_fetch
+    CodeExecution           *CodeExecutionResult           // code_execution
+    BashCodeExecution       *BashCodeExecutionResult       // bash_code_execution
+    TextEditorCodeExecution *TextEditorCodeExecutionResult // text_editor_code_execution
+    ToolSearchToolBm25      *ToolSearchToolResult          // tool_search_tool_bm25
+    ToolSearchToolRegex     *ToolSearchToolResult          // tool_search_tool_regex
+}
+```
+
+```go
+result := block.ServerToolResult.Content.(*agenticclaude.ServerToolResult)
+```
+
 ## Advanced Usage
 
 ### Cache
 
-Use `CacheControl` to enable auto-caching for multi-turn conversations. When set (non-nil), the API automatically applies a cache_control marker to the last cacheable block in the request.
+Claude's prompt caching works by placing `cache_control` markers on content blocks. When the API sees a
+marker, it caches everything up to that point. Subsequent requests that share the same prefix get a cache hit,
+reducing latency and cost.
 
-For fine-grained control, use `SetContentBlockCacheControl` or `SetToolInfoCacheControl` to manually place cache breakpoints on specific blocks or tools.
+This package provides two caching strategies:
+
+| Strategy | Config / API | Use Case |
+|----------|-------------|----------|
+| Auto Cache | `CacheControl` in Config | Automatically marks the last cacheable block per request |
+| Manual Cache | `SetContentBlockCacheControl` / `SetToolInfoCacheControl` | Fine-grained control on specific blocks or tools |
+
+The following diagram illustrates how both strategies work:
+
+```mermaid
+flowchart TD
+    Input["am.Generate(ctx, input, opts...)"] --> Detail
+    Detail["input = [System, User₁, Asst₁, User₂, ...]<br/>tools = [tool_A, tool_B, ...]"]
+    Detail --> B{"CacheControl<br/>set in Config?"}
+    B -- Yes --> C["Top-level cache_control set on request<br/>— SDK applies it to last cacheable block"]
+    B -- No --> D{"Manual markers via<br/>SetContentBlockCacheControl /<br/>SetToolInfoCacheControl?"}
+    D -- Yes --> E["Use manual cache_control markers<br/>on specified blocks/tools"]
+    D -- No --> F["No caching — full computation each call"]
+    C --> G["API caches prefix up to marker<br/>— subsequent calls get cache hit"]
+    E --> G
+
+    style Input fill:#e8f4fd,stroke:#4a90d9
+    style Detail fill:#e8f4fd,stroke:#4a90d9
+    style C fill:#d4edda,stroke:#28a745
+    style E fill:#d4edda,stroke:#28a745
+    style F fill:#fff3cd,stroke:#ffc107
+    style G fill:#d4edda,stroke:#28a745
+```
+
+#### Auto Cache
+
+Use `CacheControl` in the config to set a top-level cache control on the request. The SDK automatically applies it to the last cacheable block:
 
 ```go
 cacheCtrl := anthropic.NewCacheControlEphemeralParam()
@@ -195,6 +323,23 @@ am, err := agenticclaude.New(ctx, &agenticclaude.Config{
     MaxTokens:    4096,
     CacheControl: &cacheCtrl,
 })
+```
+
+#### Manual Cache
+
+For fine-grained control, use `SetContentBlockCacheControl` or `SetToolInfoCacheControl` to manually
+place cache breakpoints on specific blocks or tools. When a manual marker is set, the top-level
+auto-cache will not override it.
+
+```go
+cacheCtrl := anthropic.NewCacheControlEphemeralParam()
+cacheCtrl.TTL = anthropic.CacheControlEphemeralTTLTTL5m
+
+// Cache a specific content block (e.g., a large system prompt).
+block = agenticclaude.SetContentBlockCacheControl(block, &cacheCtrl)
+
+// Cache a specific tool definition.
+toolInfo = agenticclaude.SetToolInfoCacheControl(toolInfo, &cacheCtrl)
 ```
 
 ### Tool Calling

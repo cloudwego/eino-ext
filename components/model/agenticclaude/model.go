@@ -24,6 +24,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/bedrock"
@@ -47,6 +48,10 @@ type Config struct {
 	// Optional.
 	HTTPClient *http.Client
 
+	// RequestTimeout specifies the timeout for each API request.
+	// Optional.
+	RequestTimeout time.Duration
+
 	// ByBedrock specifies the configuration for using AWS Bedrock.
 	// Optional.
 	ByBedrock *BedrockConfig
@@ -60,10 +65,14 @@ type Config struct {
 	// Optional.
 	BaseURL string
 
-	// APIKey is your Anthropic API key
+	// APIKey is your Anthropic API key for direct Anthropic API access.
 	// Obtain from: https://console.anthropic.com/account/keys
-	// Required for direct Anthropic API requests.
+	// Optional when AuthToken is set.
 	APIKey string
+
+	// AuthToken is your Anthropic auth token for direct Anthropic API access.
+	// Optional when APIKey is set.
+	AuthToken string
 
 	// Model specifies which Claude model to use.
 	// Required.
@@ -115,7 +124,7 @@ type Config struct {
 	ExtraFields map[string]any
 
 	// CacheControl configures automatic prompt caching behavior.
-	// When non-nil, automatically applies a cache_control marker to the last
+	// Top-level cache control automatically applies a cache_control marker to the last
 	// cacheable block in the request.
 	// Optional.
 	CacheControl *anthropic.CacheControlEphemeralParam
@@ -174,6 +183,7 @@ type Model struct {
 	extraFields            map[string]any
 	thinking               *anthropic.ThinkingConfigParamUnion
 	cacheControl           *anthropic.CacheControlEphemeralParam
+	requestTimeout         time.Duration
 }
 
 type ServerToolConfig struct {
@@ -196,9 +206,6 @@ type ServerToolConfig struct {
 func (cfg *Config) check() error {
 	if cfg.Model == "" {
 		return errors.New("model is required")
-	}
-	if cfg.ByBedrock == nil && cfg.ByGoogleVertexAI == nil && cfg.APIKey == "" {
-		return errors.New("api key is required for direct Anthropic API requests")
 	}
 	if cfg.MaxTokens <= 0 {
 		return errors.New("max_tokens must be positive")
@@ -226,6 +233,7 @@ func New(ctx context.Context, cfg *Config) (*Model, error) {
 		extraFields:            cfg.ExtraFields,
 		thinking:               cfg.Thinking,
 		cacheControl:           cfg.CacheControl,
+		requestTimeout:         cfg.RequestTimeout,
 	}, nil
 }
 
@@ -272,8 +280,22 @@ func newClient(ctx context.Context, cfg *Config) (anthropic.Client, error) {
 
 	default:
 		var opts []option.RequestOption
+		if hasDirectAnthropicConfigAuth(cfg) {
+			// Explicit credential in Config takes precedence: disable the
+			// SDK's environment credential autoload (ANTHROPIC_API_KEY,
+			// ANTHROPIC_AUTH_TOKEN, profiles, etc.) so the environment cannot
+			// contribute a second, conflicting credential.
+			// ANTHROPIC_BASE_URL is still honored; cfg.BaseURL overrides it below.
+			opts = append(opts, option.WithoutEnvironmentDefaults())
+			if baseURL, ok := os.LookupEnv("ANTHROPIC_BASE_URL"); ok {
+				opts = append(opts, option.WithBaseURL(baseURL))
+			}
+		}
 		if cfg.APIKey != "" {
 			opts = append(opts, option.WithAPIKey(cfg.APIKey))
+		}
+		if cfg.AuthToken != "" {
+			opts = append(opts, option.WithAuthToken(cfg.AuthToken))
 		}
 		if cfg.BaseURL != "" {
 			opts = append(opts, option.WithBaseURL(cfg.BaseURL))
@@ -285,6 +307,10 @@ func newClient(ctx context.Context, cfg *Config) (anthropic.Client, error) {
 	}
 }
 
+func hasDirectAnthropicConfigAuth(cfg *Config) bool {
+	return cfg.APIKey != "" || cfg.AuthToken != ""
+}
+
 func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (outMsg *schema.AgenticMessage, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, m.GetType(), components.ComponentOfAgenticModel)
 
@@ -293,12 +319,12 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 		return nil, err
 	}
 
-	req, reqOpts, err := m.genRequestAndOptions(input, options, specOptions)
+	msgParams, reqOpts, err := m.genParamsAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("generate request failed: %w", err)
 	}
 
-	callbackConfig := toCallbackConfig(req)
+	callbackConfig := toCallbackConfig(&msgParams)
 
 	ctx = callbacks.OnStart(ctx, &model.AgenticCallbackInput{
 		Messages: input,
@@ -311,7 +337,7 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 		}
 	}()
 
-	resp, err := m.cli.Messages.New(ctx, *req, reqOpts...)
+	resp, err := m.cli.Messages.New(ctx, msgParams, reqOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("create message failed: %w", err)
 	}
@@ -338,12 +364,12 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 		return nil, err
 	}
 
-	req, reqOpts, err := m.genRequestAndOptions(input, options, specOptions)
+	msgParams, reqOpts, err := m.genParamsAndOptions(input, options, specOptions)
 	if err != nil {
 		return nil, fmt.Errorf("generate request failed: %w", err)
 	}
 
-	callbackConfig := toCallbackConfig(req)
+	callbackConfig := toCallbackConfig(&msgParams)
 
 	ctx = callbacks.OnStart(ctx, &model.AgenticCallbackInput{
 		Messages: input,
@@ -356,7 +382,7 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 		}
 	}()
 
-	stream := m.cli.Messages.NewStreaming(ctx, *req, reqOpts...)
+	stream := m.cli.Messages.NewStreaming(ctx, msgParams, reqOpts...)
 	if stream.Err() != nil {
 		return nil, fmt.Errorf("create message stream failed: %w", stream.Err())
 	}
@@ -383,8 +409,9 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 			}
 
 			closed := sw.Send(&model.AgenticCallbackOutput{
-				Message: chunk,
-				Config:  callbackConfig,
+				Message:    chunk,
+				Config:     callbackConfig,
+				TokenUsage: toModelTokenUsage(chunk.ResponseMeta),
 			}, nil)
 			if closed {
 				return
@@ -421,47 +448,46 @@ func (m *Model) IsCallbacksEnabled() bool {
 	return true
 }
 
-func (m *Model) genRequestAndOptions(input []*schema.AgenticMessage, options *model.Options,
-	specOptions *claudeOptions) (req *anthropic.MessageNewParams, reqOpts []option.RequestOption, err error) {
+func (m *Model) genParamsAndOptions(input []*schema.AgenticMessage, options *model.Options,
+	specOptions *claudeOptions) (msgParams anthropic.MessageNewParams, reqOpts []option.RequestOption, err error) {
 
-	req = &anthropic.MessageNewParams{}
 	if options.Model != nil {
-		req.Model = *options.Model
+		msgParams.Model = *options.Model
 	}
 	if options.MaxTokens != nil {
-		req.MaxTokens = int64(*options.MaxTokens)
+		msgParams.MaxTokens = int64(*options.MaxTokens)
 	}
 	if options.Temperature != nil {
-		req.Temperature = param.NewOpt(float64(*options.Temperature))
+		msgParams.Temperature = param.NewOpt(float64(*options.Temperature))
 	}
 	if options.TopP != nil {
-		req.TopP = param.NewOpt(float64(*options.TopP))
+		msgParams.TopP = param.NewOpt(float64(*options.TopP))
 	}
 	if len(options.Stop) > 0 {
-		req.StopSequences = options.Stop
+		msgParams.StopSequences = options.Stop
 	}
 	if m.thinking != nil {
-		req.Thinking = *m.thinking
+		msgParams.Thinking = *m.thinking
 	}
 
-	system, messages, err := toAnthropicMessages(input)
+	sysInstruction, messages, err := toAnthropicMessages(input)
 	if err != nil {
-		return nil, nil, fmt.Errorf("convert input messages failed: %w", err)
+		err = fmt.Errorf("convert input messages failed: %w", err)
+		return msgParams, reqOpts, err
 	}
-	req.System = system
-	req.Messages = messages
+	msgParams.System = sysInstruction
+	msgParams.Messages = messages
 
-	err = m.populateTools(req, options, specOptions)
-	if err != nil {
-		return nil, nil, err
+	if err = m.populateTools(&msgParams, options, specOptions); err != nil {
+		return msgParams, reqOpts, err
 	}
 
-	if err = m.populateToolChoice(req, options); err != nil {
-		return nil, nil, err
+	if err = m.populateToolChoice(&msgParams, options); err != nil {
+		return msgParams, reqOpts, err
 	}
 
 	if m.cacheControl != nil {
-		req.CacheControl = *m.cacheControl
+		msgParams.CacheControl = *m.cacheControl
 	}
 
 	reqOpts = appendCustomHeaders(reqOpts, specOptions.serverTools, specOptions.customHeaders)
@@ -469,7 +495,15 @@ func (m *Model) genRequestAndOptions(input []*schema.AgenticMessage, options *mo
 		reqOpts = append(reqOpts, option.WithJSONSet(k, v))
 	}
 
-	return req, reqOpts, nil
+	timeout := m.requestTimeout
+	if specOptions.requestTimeout > 0 {
+		timeout = specOptions.requestTimeout
+	}
+	if timeout > 0 {
+		reqOpts = append(reqOpts, option.WithRequestTimeout(timeout))
+	}
+
+	return msgParams, reqOpts, nil
 }
 
 func appendCustomHeaders(reqOpts []option.RequestOption, serverTools []*ServerToolConfig, customHeaders map[string]string) []option.RequestOption {

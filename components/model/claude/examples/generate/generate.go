@@ -22,6 +22,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/claude"
@@ -50,9 +51,13 @@ func main() {
 		// Region:          "us-west-2",
 
 		// If you want to use Google Vertex AI, set ByVertex: true.
-		// Project ID and region are auto-detected from environment variables.
+		// Project ID and region are auto-detected from environment variables when omitted.
+		// For explicit credentials, pass raw service account JSON via VertexServiceAccountJSON instead of ADC.
 		// See: https://claude.ai/docs/en/google-vertex-ai
-		// ByVertex: true,
+		// ByVertex:                true,
+		// VertexProjectID:         "my-gcp-project",
+		// VertexRegion:            "us-east5",
+		// VertexServiceAccountJSON: serviceAccountJSON,
 
 		APIKey: apiKey,
 		// Model:     "claude-3-5-sonnet-20240620",
@@ -75,9 +80,10 @@ func main() {
 		},
 	}
 
-	resp, err := cm.Generate(ctx, messages, claude.WithThinking(&claude.Thinking{
-		Enable:       true,
-		BudgetTokens: 1024,
+	resp, err := cm.Generate(ctx, messages, claude.WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+		OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+			Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+		},
 	}))
 	if err != nil {
 		log.Printf("Generate error: %v", err)

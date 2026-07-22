@@ -31,6 +31,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/claude"
@@ -57,6 +58,13 @@ func main() {
 		// AccessKey:       "",
 		// SecretAccessKey: "",
 		// Region:          "us-west-2",
+
+		// if you want to use Google Vertex AI, set ByVertex: true.
+		// Pass raw service account JSON via VertexServiceAccountJSON for explicit credentials.
+		// ByVertex:                 true,
+		// VertexProjectID:          "my-gcp-project",
+		// VertexRegion:             "us-east5",
+		// VertexServiceAccountJSON: serviceAccountJSON,
 		APIKey: apiKey,
 		// Model:     "claude-3-5-sonnet-20240620",
 		BaseURL:   baseURLPtr,
@@ -78,9 +86,10 @@ func main() {
 		},
 	}
 
-	resp, err := cm.Generate(ctx, messages, claude.WithThinking(&claude.Thinking{
-		Enable:       true,
-		BudgetTokens: 1024,
+	resp, err := cm.Generate(ctx, messages, claude.WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+		OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+			Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+		},
 	}))
 	if err != nil {
 		log.Printf("Generate error: %v", err)
@@ -135,6 +144,22 @@ type Config struct {
     // Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
     // Optional for Bedrock
     Region string
+
+    // ByVertex indicates whether to use Google Vertex AI
+    ByVertex bool
+
+    // VertexProjectID is your Google Cloud project ID.
+    // If not set, auto-detected from ANTHROPIC_VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, or GCLOUD_PROJECT
+    VertexProjectID string
+
+    // VertexRegion is the Vertex AI region (e.g., "us-east5").
+    // If not set, auto-detected from CLOUD_ML_REGION environment variable.
+    VertexRegion string
+
+    // VertexServiceAccountJSON is raw GCP service account JSON for Vertex.
+    // When non-empty, credentials are built in-memory and passed to vertex.WithCredentials.
+    // When empty and ByVertex is true, vertex.WithGoogleAuth (ADC) is used instead.
+    VertexServiceAccountJSON []byte
     
     // BaseURL is the custom API endpoint URL
     // Use this to specify a different API endpoint, e.g., for proxies or enterprise setups
@@ -178,10 +203,18 @@ type Config struct {
     // Optional. Example: []string{"\n\nHuman:", "\n\nAssistant:"}
     StopSequences []string
     
+    // Deprecated: Use ThinkingConfig instead.
     Thinking *Thinking
-    
+
+    // ThinkingConfig configures Claude thinking using Anthropic SDK's native union.
+    ThinkingConfig *anthropic.ThinkingConfigParamUnion
+
     // HTTPClient specifies the client to send HTTP requests.
     HTTPClient *http.Client `json:"http_client"`
+
+    // RequestTimeout specifies the timeout for each API request.
+    // Optional.
+    RequestTimeout time.Duration `json:"request_timeout"`
     
     DisableParallelToolUse *bool `json:"disable_parallel_tool_use"`
 }
@@ -194,9 +227,79 @@ For direct Anthropic API access, authentication resolution works as follows:
 - Within the chosen source, `APIKey` and `AuthToken` can both be set and will both be passed through as-is.
 - If neither source provides auth, client creation still succeeds and auth errors surface later when requests are sent.
 
+For Google Vertex AI, authentication resolution works as follows:
+
+- Set `ByVertex: true` and provide `VertexProjectID` / `VertexRegion`, or rely on the environment variables documented on `Config`.
+- When `VertexServiceAccountJSON` is set, credentials are built in-memory via `google.CredentialsFromJSON` and passed to `vertex.WithCredentials` (no ADC or env vars required for auth).
+- When `VertexServiceAccountJSON` is empty, `vertex.WithGoogleAuth` (Application Default Credentials) is used.
 
 
 
+
+
+## Structured Output
+
+Use `ResponseFormat` to get JSON responses conforming to a schema:
+
+```go
+import (
+	"github.com/cloudwego/eino-ext/components/model/claude"
+	"github.com/eino-contrib/jsonschema"
+)
+
+type ContactInfo struct {
+	Name         string `json:"name" jsonschema:"description=Full name"`
+	Email        string `json:"email" jsonschema:"description=Email address"`
+	PlanInterest string `json:"plan_interest" jsonschema:"description=Plan type"`
+}
+
+r := jsonschema.Reflector{AllowAdditionalProperties: false, DoNotReference: true}
+s := r.Reflect(&ContactInfo{})
+
+cm, err := claude.NewChatModel(ctx, &claude.Config{
+	APIKey:    "your-api-key",
+	Model:     "claude-sonnet-4-6-20250514",
+	MaxTokens: 1024,
+	ResponseFormat: &claude.ResponseFormat{
+		Schema: s,
+	},
+})
+```
+
+You can also use Eino's `utils.GoStruct2ParamsOneOf` to derive the schema from a Go struct:
+
+```go
+import (
+	"github.com/cloudwego/eino-ext/components/model/claude"
+	"github.com/cloudwego/eino/components/tool/utils"
+)
+
+type ContactInfo struct {
+	Name         string `json:"name" jsonschema:"description=Full name"`
+	Email        string `json:"email" jsonschema:"description=Email address"`
+	PlanInterest string `json:"plan_interest" jsonschema:"description=Plan type"`
+}
+
+params, _ := utils.GoStruct2ParamsOneOf[ContactInfo]()
+s, _ := params.ToJSONSchema()
+
+cm, err := claude.NewChatModel(ctx, &claude.Config{
+	APIKey:    "your-api-key",
+	Model:     "claude-sonnet-4-6-20250514",
+	MaxTokens: 1024,
+	ResponseFormat: &claude.ResponseFormat{
+		Schema: s,
+	},
+})
+```
+
+The response format can also be set per-request using `WithResponseFormat`:
+
+```go
+resp, err := cm.Generate(ctx, messages, claude.WithResponseFormat(&claude.ResponseFormat{
+	Schema: s,
+}))
+```
 
 ## Examples
 
