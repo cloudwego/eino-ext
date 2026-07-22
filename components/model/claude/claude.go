@@ -746,8 +746,10 @@ func (cm *ChatModel) populateInput(params *anthropic.MessageNewParams, sysInstru
 
 	if !hasSetMsgBreakPoint && specOptions.AutoCacheControl != nil {
 		lastMsgParam := msgParams[len(msgParams)-1]
-		lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
-		populateContentBlockBreakPoint(lastBlock, specOptions.AutoCacheControl)
+		if len(lastMsgParam.Content) > 0 {
+			lastBlock := lastMsgParam.Content[len(lastMsgParam.Content)-1]
+			populateContentBlockBreakPoint(lastBlock, specOptions.AutoCacheControl)
+		}
 	}
 
 	params.Messages = msgParams
