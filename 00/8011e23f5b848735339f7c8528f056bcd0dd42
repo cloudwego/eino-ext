@@ -1,0 +1,25 @@
+components/tool/mcp/officialmcp/session/reconnect_test.go
+  s_db31f2f02f91c7::t_67463d752a65b9 21,97-120
+components/tool/mcp/officialmcp/session/session.go
+  s_db31f2f02f91c7::t_77db5e5c3ea9dd 87-89,177-180,197-201
+components/tool/mcp/officialmcp/mcp_test.go
+  s_db31f2f02f91c7::t_f50da99fa0ec9a 330-335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "008011e23f5b848735339f7c8528f056bcd0dd42",
+  "prompts": {},
+  "sessions": {
+    "s_db31f2f02f91c7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f9c4c4d6-aa83-4bcd-84e0-67864bb5f62a",
+        "model": "unknown"
+      },
+      "human_author": "lipandeng <lipandeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
