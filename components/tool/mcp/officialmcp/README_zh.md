@@ -105,12 +105,36 @@ func startMCPServer() *httptest.Server {
 
 ```go
 type Config struct {
-	// Cli 是 MCP（Model Control Protocol）客户端，参考：https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Cli 是 MCP 客户端会话。*mcp.ClientSession 可直接满足该接口；
+	// 如需在连接级错误上透明重连，可传入 session.Session。
+	// 参考：https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// 注意：使用前应先与服务器进行初始化
-	Cli *mcp.ClientSession
+	Cli ClientSession
+
+	ServerName string
+
 	// ToolNameList 指定从 MCP 服务器获取哪些工具
 	// 如果为空，将获取所有可用工具
 	ToolNameList []string
+
+	Cursor        string
+	ListToolsMode ListToolsMode
+	MaxToolPages  int
+
+	ToolNameMapper ToolNameMapper
+	MetadataMode   MetadataMode
+
+	DescriptionPolicy *DescriptionPolicy
+	ResultPolicy      *ResultPolicy
+
+	// ToolCallResultHandler 是工具调用完成后处理调用结果的函数
+	// 可用于自定义处理工具调用结果
+	// 如果为 nil，将不执行额外处理
+	ToolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
+
+	// ToolCallResultHandlerV2 接收稳定的 MCP 原始/暴露工具标识
+	// 如果两个 handler 都已设置，将先执行旧版 handler，再执行 V2
+	ToolCallResultHandlerV2 func(ctx context.Context, info ToolCallInfo, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
 ```
 
