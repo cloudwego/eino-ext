@@ -18,6 +18,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -91,6 +92,30 @@ func TestSessionReconnectsAfterServerRestart(t *testing.T) {
 	sessionAfter, err := rs.current()
 	require.NoError(t, err)
 	assert.NotSame(t, sessionBefore, sessionAfter, "expected a new underlying session after reconnect")
+}
+
+func TestReconnectFailureIsConnectionError(t *testing.T) {
+	ctx := context.Background()
+
+	// Seed a sentinel current session and point the config at an unreachable
+	// endpoint, so reconnect takes the dial path (stale == current) and the dial
+	// fails — no live server needed. The sentinel is never dereferenced because
+	// connect fails before the stale session is touched.
+	sentinel := &mcp.ClientSession{}
+	s := &Session{
+		Name:    "test",
+		cfg:     ServerConfig{Name: "test", Transport: TransportConfig{Type: TransportStreamableHTTP, URL: "http://127.0.0.1:1"}},
+		session: sentinel,
+	}
+
+	_, rerr := s.reconnect(ctx, sentinel)
+	require.Error(t, rerr)
+	// The reconnect (dial) failure must be recognizable as a connection-level
+	// error, so upstream classification does not mistake an unreachable server
+	// for a call/list protocol error. The StartupError is preserved as the cause.
+	assert.True(t, officialmcp.IsConnectionError(rerr), "reconnect failure should be a connection error")
+	var startup *StartupError
+	assert.True(t, errors.As(rerr, &startup), "StartupError should be preserved as the cause")
 }
 
 func TestReconnectOnlyOncePerStaleSession(t *testing.T) {

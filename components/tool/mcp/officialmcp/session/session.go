@@ -84,7 +84,9 @@ var ErrSessionClosed = errors.New("official mcp session is closed")
 // and application-level tool errors (result.IsError) leave the session healthy
 // and are returned to the caller unchanged — they never trigger a reconnect, so
 // a model repeatedly calling a tool with bad arguments cannot cause reconnect
-// churn.
+// churn. A failed reconnect is itself reported as a connection-level error
+// (officialmcp.ErrorKindConnection) so callers can keep telling an unreachable
+// server apart from a protocol rejection.
 type Session struct {
 	Name string
 
@@ -172,8 +174,10 @@ func (s *Session) current() (*mcp.ClientSession, error) {
 
 // reconnect rebuilds the session, but only if stale is still the current one.
 // If another goroutine already reconnected (current != stale), it returns the
-// fresh session without connecting again, so a burst of concurrent connection
-// errors yields a single reconnect.
+// fresh session without connecting again, so once one goroutine reconnects
+// successfully a burst of concurrent connection errors reuses that single new
+// session. A reconnect that *fails* leaves stale installed, so each waiting
+// caller in the burst re-enters here and dials on its own until one succeeds.
 func (s *Session) reconnect(ctx context.Context, stale *mcp.ClientSession) (*mcp.ClientSession, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -190,7 +194,11 @@ func (s *Session) reconnect(ctx context.Context, stale *mcp.ClientSession) (*mcp
 	// which would make every retry re-close the same session.
 	cur, err := connect(ctx, s.cfg)
 	if err != nil {
-		return nil, err
+		// Tag the reconnect failure as connection-level so callers (and
+		// officialmcp.IsConnectionError) recognize an unreachable server as such,
+		// instead of the default classification treating it as a call/list
+		// protocol error. The StartupError is preserved as the cause.
+		return nil, &officialmcp.Error{Kind: officialmcp.ErrorKindConnection, ServerName: s.cfg.Name, Err: err}
 	}
 	if stale != nil {
 		_ = stale.Close()

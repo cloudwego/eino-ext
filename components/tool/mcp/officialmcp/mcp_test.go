@@ -327,6 +327,12 @@ func TestValidateConfigAndErrorHelpers(t *testing.T) {
 	assert.NoError(t, (*Error)(nil).Unwrap())
 }
 
+func TestGetToolsRejectsNilClient(t *testing.T) {
+	_, err := GetTools(context.Background(), &Config{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "client is nil")
+}
+
 func TestResultPolicyIncludesStructuredContentAndMeta(t *testing.T) {
 	result := &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: "ok"}},
