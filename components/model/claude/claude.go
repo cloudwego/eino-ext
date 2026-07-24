@@ -33,10 +33,12 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"golang.org/x/oauth2/google"
 	"github.com/eino-contrib/jsonschema"
+	"golang.org/x/oauth2/google"
 
 	"github.com/cloudwego/eino/components"
 
@@ -112,10 +114,16 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, awsConfig.WithSharedConfigProfile(config.Profile))
 		}
 
-		if config.HTTPClient != nil {
-			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
+		awsCfg, err := loadBedrockAWSConfig(ctx, opts, config.HTTPClient)
+		if err != nil {
+			return nil, fmt.Errorf("load AWS config for Bedrock: %w", err)
 		}
-		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+
+		clientOpts := []option.RequestOption{bedrock.WithConfig(awsCfg)}
+		if config.HTTPClient != nil {
+			clientOpts = append(clientOpts, option.WithHTTPClient(config.HTTPClient))
+		}
+		cli = anthropic.NewClient(clientOpts...)
 	} else {
 		// Use direct Anthropic API
 		var opts []option.RequestOption
@@ -173,6 +181,59 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
 		requestTimeout:         config.RequestTimeout,
 	}, nil
+}
+
+const unsupportedCABundleHTTPClientError = "unable to add custom RootCAs HTTPClient"
+
+// loadBedrockAWSConfig preserves the caller's HTTP client for credential and
+// config requests whenever the AWS loader can use it directly. The loader can
+// only add a custom CA bundle to its own BuildableClient, so retry with a
+// converted client for that specific incompatibility.
+func loadBedrockAWSConfig(ctx context.Context, opts []func(*awsConfig.LoadOptions) error,
+	client *http.Client) (aws.Config, error) {
+	if client == nil {
+		return awsConfig.LoadDefaultConfig(ctx, opts...)
+	}
+
+	awsCfg, err := awsConfig.LoadDefaultConfig(ctx, withBedrockAWSHTTPClient(opts, client)...)
+	if err == nil || !strings.Contains(err.Error(), unsupportedCABundleHTTPClientError) {
+		return awsCfg, err
+	}
+
+	return awsConfig.LoadDefaultConfig(ctx, withBedrockAWSHTTPClient(opts, newBedrockAWSHTTPClient(client))...)
+}
+
+func withBedrockAWSHTTPClient(opts []func(*awsConfig.LoadOptions) error,
+	client awsConfig.HTTPClient) []func(*awsConfig.LoadOptions) error {
+	result := make([]func(*awsConfig.LoadOptions) error, len(opts), len(opts)+1)
+	copy(result, opts)
+	return append(result, awsConfig.WithHTTPClient(client))
+}
+
+// newBedrockAWSHTTPClient converts the standard HTTP transport into the
+// buildable client required by the AWS config loader when AWS_CA_BUNDLE is set.
+// The original client is still passed to the Anthropic SDK for Bedrock API
+// requests. A custom RoundTripper cannot be converted without changing its
+// behavior, so the AWS config loader gets a buildable default that only
+// preserves the caller's timeout in that case.
+func newBedrockAWSHTTPClient(client *http.Client) *awshttp.BuildableClient {
+	if client == nil {
+		return nil
+	}
+
+	awsHTTPClient := awshttp.NewBuildableClient().WithTimeout(client.Timeout)
+	transport := client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	httpTransport, ok := transport.(*http.Transport)
+	if !ok {
+		return awsHTTPClient
+	}
+
+	return awsHTTPClient.WithTransportOptions(func(transport *http.Transport) {
+		*transport = *httpTransport.Clone()
+	})
 }
 
 // Config contains the configuration options for the Claude model
