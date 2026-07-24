@@ -37,6 +37,23 @@ type AgentCapabilities struct {
 	// If `true`, the agent may include a detailed history of status changes
 	// within the `Task` object (future enhancement; specific mechanism TBD). Default: `false`.
 	StateTransitionHistory bool `json:"stateTransitionHistory,omitempty"`
+	// ExtendedAgentCard indicates the agent can provide an extended agent card
+	// when the caller is authenticated. Introduced by A2A v1.0, where the
+	// v0.3 top-level `supportsAuthenticatedExtendedCard` flag was moved here.
+	ExtendedAgentCard bool `json:"extendedAgentCard,omitempty"`
+}
+
+// AgentInterface declares a single transport endpoint the agent can be reached
+// on. Introduced by A2A v1.0 (AgentCard.supportedInterfaces[]); an agent may
+// advertise several interfaces to serve multiple protocol versions/transports
+// from one card.
+type AgentInterface struct {
+	// The endpoint URL for this interface.
+	URL string `json:"url"`
+	// The transport/protocol binding, e.g. "JSONRPC", "GRPC", "HTTP+JSON".
+	ProtocolBinding string `json:"protocolBinding,omitempty"`
+	// The A2A protocol version served on this interface, e.g. "0.3" or "1.0".
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
 }
 
 // AgentSkill defines a specific skill or capability offered by an agent
@@ -129,4 +146,11 @@ type AgentCard struct {
 	 * Defaults to false if not specified.
 	 */
 	SupportsAuthenticatedExtendedCard bool `json:"supportsAuthenticatedExtendedCard,omitempty"`
+	/**
+	 * Announcement of the transport interfaces (and their protocol versions) the
+	 * agent can be reached on. Introduced by A2A v1.0. eino-ext emits this
+	 * additively alongside the legacy top-level fields so a single card is
+	 * consumable by both v0.3 and v1.0 clients.
+	 */
+	SupportedInterfaces []AgentInterface `json:"supportedInterfaces,omitempty"`
 }

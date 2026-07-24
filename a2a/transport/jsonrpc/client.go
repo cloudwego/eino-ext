@@ -34,7 +34,9 @@ import (
 
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/client"
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/core"
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/metadata"
 	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/pkg/transport/http"
+	"github.com/cloudwego/eino-ext/a2a/transport/jsonrpc/wire"
 )
 
 type ClientConfig struct {
@@ -52,6 +54,9 @@ type ClientConfig struct {
 	SSEBufferSize               *int
 	JSONRPCIDGenerator          core.IDGenerator
 	DisablePrevHeaderForwarding bool
+	// ProtocolVersion selects the A2A wire version this client speaks.
+	// Defaults to models.ProtocolVersion03 for backward compatibility.
+	ProtocolVersion models.ProtocolVersion
 }
 
 func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTransport, error) {
@@ -110,11 +115,18 @@ func NewTransport(ctx context.Context, config *ClientConfig) (transport.ClientTr
 	if err != nil {
 		return nil, fmt.Errorf("failed to join agent card url: %w", err)
 	}
+
+	codec, err := wire.NewCodec(config.ProtocolVersion)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Transport{
 		agentCardURL: agentCardURL,
 		conn:         conn,
 		hCli:         hCli,
 		cli:          config.HTTPClient,
+		codec:        codec,
 	}, nil
 }
 
@@ -123,6 +135,15 @@ type Transport struct {
 	conn         core.Connection
 	hCli         *hertz_client.Client
 	cli          *std_http.Client
+	codec        wire.Codec
+}
+
+// withVersionHeader tags the outgoing request with the A2A-Version header so a
+// version-aware server can pick the matching decoder. v0.3 servers ignore the
+// unknown header, and an absent header is interpreted as v0.3 anyway, so this
+// is safe against legacy peers.
+func (t *Transport) withVersionHeader(ctx context.Context) context.Context {
+	return metadata.WithValue(ctx, models.HeaderA2AVersion, string(t.codec.Version()))
 }
 
 func (t *Transport) AgentCard(ctx context.Context) (*models.AgentCard, error) {
@@ -159,64 +180,107 @@ func (t *Transport) AgentCard(ctx context.Context) (*models.AgentCard, error) {
 }
 
 func (t *Transport) SendMessage(ctx context.Context, params *models.MessageSendParams) (*models.SendMessageResponseUnion, error) {
-	var b json.RawMessage
-	err := t.conn.Call(ctx, "message/send", params, &b)
+	ctx = t.withVersionHeader(ctx)
+	reqBody, err := t.codec.EncodeMessageSendParams(params)
 	if err != nil {
+		return nil, fmt.Errorf("failed to encode send message params: %w", err)
+	}
+	var b json.RawMessage
+	if err = t.conn.Call(ctx, t.codec.Methods().Send, reqBody, &b); err != nil {
 		return nil, fmt.Errorf("failed to send message: %w", err)
 	}
-	return extractSendMessageResponseUnion(b)
+	su, err := t.codec.DecodeStreamingUnion(b)
+	if err != nil {
+		return nil, err
+	}
+	if su == nil {
+		return nil, nil
+	}
+	// A non-streaming send only ever yields a Message or a Task. If the peer
+	// returned a status/artifact update frame, surface it rather than silently
+	// returning an empty union.
+	if su.Message == nil && su.Task == nil {
+		return nil, fmt.Errorf("unexpected send message response: not a message or task")
+	}
+	return &models.SendMessageResponseUnion{Message: su.Message, Task: su.Task}, nil
 }
 
 func (t *Transport) SendMessageStreaming(ctx context.Context, params *models.MessageSendParams) (models.ResponseReader, error) {
-	stream, err := t.conn.AsyncCall(ctx, "message/stream", params)
+	ctx = t.withVersionHeader(ctx)
+	reqBody, err := t.codec.EncodeMessageSendParams(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode send message params: %w", err)
+	}
+	stream, err := t.conn.AsyncCall(ctx, t.codec.Methods().Stream, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send message: %w", err)
 	}
-	return &frameReader{stream}, nil
+	return &frameReader{a: stream, codec: t.codec}, nil
 }
 
 func (t *Transport) GetTask(ctx context.Context, params *models.TaskQueryParams) (*models.Task, error) {
-	ret := &models.Task{}
-	err := t.conn.Call(ctx, "tasks/get", params, ret)
+	ctx = t.withVersionHeader(ctx)
+	reqBody, err := t.codec.EncodeTaskQueryParams(params)
 	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	var b json.RawMessage
+	if err = t.conn.Call(ctx, t.codec.Methods().GetTask, reqBody, &b); err != nil {
+		return nil, err
+	}
+	return t.codec.DecodeTask(b)
 }
 
 func (t *Transport) CancelTask(ctx context.Context, params *models.TaskIDParams) (*models.Task, error) {
-	ret := &models.Task{}
-	err := t.conn.Call(ctx, "tasks/cancel", params, ret)
+	ctx = t.withVersionHeader(ctx)
+	reqBody, err := t.codec.EncodeTaskIDParams(params)
 	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	var b json.RawMessage
+	if err = t.conn.Call(ctx, t.codec.Methods().Cancel, reqBody, &b); err != nil {
+		return nil, err
+	}
+	return t.codec.DecodeTask(b)
 }
 
 func (t *Transport) ResubscribeTask(ctx context.Context, params *models.TaskIDParams) (models.ResponseReader, error) {
-	ret, err := t.conn.AsyncCall(ctx, "tasks/resubscribe", params)
+	ctx = t.withVersionHeader(ctx)
+	reqBody, err := t.codec.EncodeTaskIDParams(params)
 	if err != nil {
 		return nil, err
 	}
-	return &frameReader{ret}, nil
+	ret, err := t.conn.AsyncCall(ctx, t.codec.Methods().Resubscribe, reqBody)
+	if err != nil {
+		return nil, err
+	}
+	return &frameReader{a: ret, codec: t.codec}, nil
 }
 
 func (t *Transport) SetPushNotificationConfig(ctx context.Context, params *models.TaskPushNotificationConfig) (*models.TaskPushNotificationConfig, error) {
-	ret := &models.TaskPushNotificationConfig{}
-	err := t.conn.Call(ctx, "tasks/pushNotificationConfig/set", params, ret)
+	ctx = t.withVersionHeader(ctx)
+	reqBody, err := t.codec.EncodeTaskPushNotificationConfig(params)
 	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	var b json.RawMessage
+	if err = t.conn.Call(ctx, t.codec.Methods().PushSet, reqBody, &b); err != nil {
+		return nil, err
+	}
+	return t.codec.DecodeTaskPushNotificationConfig(b)
 }
 
 func (t *Transport) GetPushNotificationConfig(ctx context.Context, params *models.GetTaskPushNotificationConfigParams) (*models.TaskPushNotificationConfig, error) {
-	ret := &models.TaskPushNotificationConfig{}
-	err := t.conn.Call(ctx, "tasks/getPushNotificationConfig/get", params, ret)
+	ctx = t.withVersionHeader(ctx)
+	reqBody, err := t.codec.EncodeGetPushParams(params)
 	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	var b json.RawMessage
+	if err = t.conn.Call(ctx, t.codec.Methods().PushGet, reqBody, &b); err != nil {
+		return nil, err
+	}
+	return t.codec.DecodeTaskPushNotificationConfig(b)
 }
 
 func (t *Transport) Close() error {
@@ -224,7 +288,8 @@ func (t *Transport) Close() error {
 }
 
 type frameReader struct {
-	a core.ClientAsync
+	a     core.ClientAsync
+	codec wire.Codec
 }
 
 func (f *frameReader) Read() (*models.SendMessageStreamingResponseUnion, error) {
@@ -236,81 +301,9 @@ func (f *frameReader) Read() (*models.SendMessageStreamingResponseUnion, error) 
 		}
 		return nil, fmt.Errorf("failed to read frame: %w", err)
 	}
-	return extractSendMessageStreamingResponseUnion(b)
+	return f.codec.DecodeStreamingUnion(b)
 }
 
 func (f *frameReader) Close() error {
 	return f.a.Close()
-}
-
-func extractKind(b json.RawMessage) (models.ResponseKind, error) {
-	kind := struct {
-		Kind models.ResponseKind `json:"kind"`
-	}{}
-	err := json.Unmarshal(b, &kind)
-	if err != nil {
-		return "", fmt.Errorf("failed to extract send message response's kind: %w", err)
-	}
-	return kind.Kind, nil
-}
-
-func extractSendMessageResponseUnion(b json.RawMessage) (*models.SendMessageResponseUnion, error) {
-	su, err := extractSendMessageStreamingResponseUnion(b)
-	if err != nil {
-		return nil, err
-	}
-	if su == nil {
-		return nil, nil
-	}
-	return &models.SendMessageResponseUnion{
-		Message: su.Message,
-		Task:    su.Task,
-	}, nil
-}
-
-func extractSendMessageStreamingResponseUnion(b json.RawMessage) (*models.SendMessageStreamingResponseUnion, error) {
-	kind, err := extractKind(b)
-	if err != nil {
-		return nil, err
-	}
-	switch kind {
-	case models.ResponseKindMessage:
-		m := &models.Message{}
-		err = json.Unmarshal(b, &m)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract response's message: %w", err)
-		}
-		return &models.SendMessageStreamingResponseUnion{
-			Message: m,
-		}, nil
-	case models.ResponseKindTask:
-		t := &models.Task{}
-		err = json.Unmarshal(b, &t)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract response's task: %w", err)
-		}
-		return &models.SendMessageStreamingResponseUnion{
-			Task: t,
-		}, nil
-	case models.ResponseKindArtifactUpdate:
-		a := &models.TaskArtifactUpdateEvent{}
-		err = json.Unmarshal(b, &a)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract response's artifact update: %w", err)
-		}
-		return &models.SendMessageStreamingResponseUnion{
-			TaskArtifactUpdateEvent: a,
-		}, nil
-	case models.ResponseKindStatusUpdate:
-		s := &models.TaskStatusUpdateEvent{}
-		err = json.Unmarshal(b, &s)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract response's status update: %w", err)
-		}
-		return &models.SendMessageStreamingResponseUnion{
-			TaskStatusUpdateEvent: s,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported response's kind: %s", kind)
-	}
 }

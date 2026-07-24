@@ -31,5 +31,8 @@ type PushNotificationConfig struct {
 }
 
 type GetTaskPushNotificationConfigParams struct {
+	// The ID of the task whose push notification config is being retrieved.
+	TaskID string `json:"taskId,omitempty"`
+	// The ID of the specific push notification config to retrieve.
 	PushNotificationConfigID string `json:"pushNotificationConfigID,omitempty"`
 }

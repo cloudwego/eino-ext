@@ -186,7 +186,9 @@ func initA2AServer(config *Config) *A2AServer {
 }
 
 func initAgentCard(config *Config) *models.AgentCard {
-	return &models.AgentCard{
+	card := &models.AgentCard{
+		// Keep the legacy top-level version so v0.3 clients still recognize the
+		// card; v1.0 clients read supportedInterfaces[] below.
 		ProtocolVersion:    "0.2.5",
 		Name:               config.Name,
 		Description:        config.Description,
@@ -200,6 +202,17 @@ func initAgentCard(config *Config) *models.AgentCard {
 		DefaultOutputModes: config.DefaultOutputModes,
 		Skills:             config.Skills,
 	}
+	// Additively advertise both protocol versions on the same JSONRPC endpoint.
+	// A single card is thus consumable by both v0.3 (flat fields) and v1.0
+	// (supportedInterfaces[]) clients, so existing deployments can migrate
+	// without republishing a separate card.
+	if config.URL != "" {
+		card.SupportedInterfaces = []models.AgentInterface{
+			{URL: config.URL, ProtocolBinding: "JSONRPC", ProtocolVersion: string(models.ProtocolVersion03)},
+			{URL: config.URL, ProtocolBinding: "JSONRPC", ProtocolVersion: string(models.ProtocolVersion10)},
+		}
+	}
+	return card
 }
 
 // A2AServer represents an A2A server instance

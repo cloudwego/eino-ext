@@ -37,7 +37,7 @@ type Message struct {
 	// Useful for timestamps, source identifiers, language codes, etc.
 	Metadata map[string]any `json:"metadata,omitempty"`
 	// List of tasks referenced as contextual hint by this message.
-	ReferenceTaskIDs []string `json:"referenceTaskIDs,omitempty"`
+	ReferenceTaskIDs []string `json:"referenceTaskIds,omitempty"`
 	// message identifier created by the message creator
 	MessageID string `json:"messageId"`
 	// task identifier the current message is related to
