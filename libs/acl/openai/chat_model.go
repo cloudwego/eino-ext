@@ -1334,6 +1334,14 @@ func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
 	promptTokenDetails := schema.PromptTokenDetails{}
 	if usage.PromptTokensDetails != nil {
 		promptTokenDetails.CachedTokens = usage.PromptTokensDetails.CachedTokens
+	} else if raw, ok := usage.ExtraFields["prompt_cache_hit_tokens"]; ok {
+		// DeepSeek's OpenAI-compatible API reports cache hits as a top-level
+		// usage extension instead of prompt_tokens_details.cached_tokens.
+		// go-openai preserves unknown usage fields in ExtraFields.
+		var cachedTokens int
+		if err := json.Unmarshal(raw, &cachedTokens); err == nil {
+			promptTokenDetails.CachedTokens = cachedTokens
+		}
 	}
 	completionTokensDetails := schema.CompletionTokensDetails{}
 	if usage.CompletionTokensDetails != nil {
