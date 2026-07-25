@@ -51,6 +51,16 @@ func TestToEinoTokenUsageCachedTokens(t *testing.T) {
 			want: 48,
 		},
 		{
+			name: "zero standard detail falls back to DeepSeek extension",
+			usage: &openai.Usage{
+				PromptTokensDetails: &openai.PromptTokensDetails{},
+				ExtraFields: map[string]json.RawMessage{
+					"prompt_cache_hit_tokens": json.RawMessage(`32`),
+				},
+			},
+			want: 32,
+		},
+		{
 			name: "malformed extension",
 			usage: &openai.Usage{
 				ExtraFields: map[string]json.RawMessage{
