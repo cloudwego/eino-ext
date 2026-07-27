@@ -42,32 +42,41 @@ type ModelMessagePart struct {
 	Type     ModelMessagePartType `json:"type"` // Required. The type of the content.
 	Text     string               `json:"text,omitempty"`
 	ImageURL *ModelImageURL       `json:"image_url,omitempty"`
+	AudioURL *ModelMediaURL       `json:"audio_url,omitempty"`
+	VideoURL *ModelMediaURL       `json:"video_url,omitempty"`
 	FileURL  *ModelFileURL        `json:"file_url,omitempty"`
 }
 
 type ModelMessagePartType string
 
 var (
-	ModelMessagePartTypeText  ModelMessagePartType = "text"
-	ModelMessagePartTypeImage ModelMessagePartType = "image_url"
-	ModelMessagePartTypeFile  ModelMessagePartType = "file_url"
+	ModelMessagePartTypeText      ModelMessagePartType = "text"
+	ModelMessagePartTypeImage     ModelMessagePartType = "image_url"
+	ModelMessagePartTypeAudio     ModelMessagePartType = "audio_url"
+	ModelMessagePartTypeVideo     ModelMessagePartType = "video_url"
+	ModelMessagePartTypeFile      ModelMessagePartType = "file_url"
+	ModelMessagePartTypeReasoning ModelMessagePartType = "reasoning"
 )
 
 type ModelImageURL struct {
-	Name string `json:"name,omitempty"`
-	// Required. You can enter a valid image URL or MDN Base64 data of image.
-	// MDN: https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/data#syntax
-	URL    string `json:"url,omitempty"`
-	Detail string `json:"detail,omitempty"`
+	Name     string `json:"name,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Detail   string `json:"detail,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
+}
+
+// ModelMediaURL is the common representation used for audio and video parts.
+type ModelMediaURL struct {
+	URL      string `json:"url,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 type ModelFileURL struct {
-	Name string `json:"name,omitempty"`
-	// Required. You can enter a valid file URL or MDN Base64 data of file.
-	// MDN: https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/data#syntax
-	URL    string `json:"url,omitempty"`
-	Detail string `json:"detail,omitempty"`
-	Suffix string `json:"suffix,omitempty"`
+	Name     string `json:"name,omitempty"`
+	URL      string `json:"url,omitempty"`
+	Detail   string `json:"detail,omitempty"`
+	Suffix   string `json:"suffix,omitempty"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
 type ModelToolCall struct {

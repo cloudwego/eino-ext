@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"time"
 
 	sem_ai "github.com/cloudwego/eino-ext/callbacks/tls/semconv"
@@ -137,24 +138,24 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 			// 设置消息内容
 			if cbInput.Messages != nil {
 				for i, msg := range cbInput.Messages {
-					if len(msg.Content) != 0 {
-						tags.set(fmt.Sprintf("%s.%d.role", sem_ai.GEN_AI_PROMPT, i), string(msg.Role))
-						tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_PROMPT, i), msg.Content)
+					if msg == nil {
+						continue
 					}
-					// 处理多内容消息
-					if len(msg.MultiContent) > 0 {
-						multiContentJSON, err := convertMultiContentToJSON(msg)
-						if err == nil && multiContentJSON != nil {
-							for j, part := range multiContentJSON {
-								if contentJSON, err := json.Marshal(part); err == nil {
-									tags.set(fmt.Sprintf("%s.%d.content_part.%d", sem_ai.GEN_AI_PROMPT, i, j), string(contentJSON))
-								}
+					if content := messageDisplayText(msg); content != "" {
+						tags.set(fmt.Sprintf("%s.%d.role", sem_ai.GEN_AI_PROMPT, i), string(msg.Role))
+						tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_PROMPT, i), content)
+					}
+					if multiContentJSON := modelMessagePartsJSON(msg); len(multiContentJSON) > 0 {
+						for j, part := range multiContentJSON {
+							if contentJSON, err := json.Marshal(part); err == nil {
+								tags.set(fmt.Sprintf("%s.%d.content_part.%d", sem_ai.GEN_AI_PROMPT, i, j), string(contentJSON))
 							}
 						}
 					}
 				}
 			}
 			tags.set(sem_ai.GEN_AI_INPUT, convertModelInput(cbInput))
+			tags.set(sem_ai.GEN_AI_INPUT_MESSAGES, iterSlice(cbInput.Messages, convertModelMessage))
 
 			// 设置工具调用信息
 			if len(cbInput.Tools) > 0 {
@@ -215,7 +216,9 @@ func (d defaultDataParser) ParseInput(ctx context.Context, info *callbacks.RunIn
 		if cbInput != nil {
 			tags.set(sem_ai.GEN_AI_TOOL_NAME, getName(info))
 			tags.set(sem_ai.GEN_AI_TOOL_TYPE, info.Type)
-			tags.set(sem_ai.GEN_AI_INPUT, parseAny(ctx, input, false))
+			toolInput := cbInput.ArgumentsInJSON
+			tags.set(sem_ai.GEN_AI_INPUT, toolInput)
+			tags.set(sem_ai.GEN_AI_TOOL_CALL_ARGUMENTS, toolInput)
 		}
 
 	case compose.ComponentOfLambda:
@@ -244,12 +247,20 @@ func setModelConfigAndTokenUsage(tags spanTags, cbOutput *model.CallbackOutput, 
 	if cbOutput.TokenUsage != nil {
 		tags.set(sem_ai.GEN_AI_USAGE_TOTAL_TOKENS, cbOutput.TokenUsage.TotalTokens).
 			set(sem_ai.GEN_AI_USAGE_PROMPT_TOKENS, cbOutput.TokenUsage.PromptTokens).
-			set(sem_ai.GEN_AI_USAGE_COMPLETION_TOKENS, cbOutput.TokenUsage.CompletionTokens)
+			set(sem_ai.GEN_AI_USAGE_COMPLETION_TOKENS, cbOutput.TokenUsage.CompletionTokens).
+			set(sem_ai.GEN_AI_USAGE_INPUT_TOKENS, cbOutput.TokenUsage.PromptTokens).
+			set(sem_ai.GEN_AI_USAGE_OUTPUT_TOKENS, cbOutput.TokenUsage.CompletionTokens)
 
-		// 检查是否有缓存使用情况
-		if cbOutput.TokenUsage.PromptTokenDetails.CachedTokens > 0 {
-			tags.set(sem_ai.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, cbOutput.TokenUsage.PromptTokenDetails.CachedTokens)
-		}
+		// Keep all cost dimensions present (including zero) so dashboard SUM
+		// queries return 0 instead of an empty result when a provider does not
+		// report cache or reasoning usage.
+		cachedTokens := cbOutput.TokenUsage.PromptTokenDetails.CachedTokens
+		tags.set(sem_ai.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS, cachedTokens).
+			set(sem_ai.GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_V2, cachedTokens).
+			set(sem_ai.GEN_AI_USAGE_CACHED_TOKENS, cachedTokens).
+			set(sem_ai.GEN_AI_USAGE_CACHE_CREATE_INPUT_TOKENS, 0).
+			set(sem_ai.GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS, 0).
+			set(sem_ai.GEN_AI_USAGE_REASONING_OUTPUT_TOKENS, cbOutput.TokenUsage.CompletionTokensDetails.ReasoningTokens)
 	}
 }
 
@@ -264,9 +275,12 @@ func setMessageCompletionDetails(tags spanTags, msg *schema.Message) {
 		tags.set(sem_ai.GEN_AI_REASONING_CONTENT, msg.ReasoningContent)
 	}
 	// 设置完成内容
-	if msg != nil && len(msg.Content) > 0 {
+	if msg != nil && messageDisplayText(msg) != "" {
 		tags.set(fmt.Sprintf("%s.%d.role", sem_ai.GEN_AI_COMPLETION, 0), string(msg.Role))
-		tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_COMPLETION, 0), msg.Content)
+		tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_COMPLETION, 0), messageDisplayText(msg))
+	}
+	if msg != nil {
+		tags.set(sem_ai.GEN_AI_OUTPUT_MESSAGES, []*sem_ai.ModelMessage{convertModelMessage(msg)})
 	}
 }
 
@@ -364,9 +378,12 @@ func (d defaultDataParser) ParseOutput(ctx context.Context, info *callbacks.RunI
 	case components.ComponentOfTool:
 		cbOutput := tool.ConvCallbackOutput(output)
 		if cbOutput != nil {
-			// tags.set(sem_ai.GEN_AI_TOOL_CALL_ID, cbOutput.Response)
-			// tags.set(sem_ai.GEN_AI_TOOL_TYPE, info.Type)
-			tags.set(sem_ai.GEN_AI_OUTPUT, parseAny(ctx, cbOutput, false))
+			toolOutput := cbOutput.Response
+			if toolOutput == "" && cbOutput.ToolOutput != nil {
+				toolOutput = parseAny(ctx, cbOutput.ToolOutput, false)
+			}
+			tags.set(sem_ai.GEN_AI_OUTPUT, toolOutput)
+			tags.set(sem_ai.GEN_AI_TOOL_CALL_RESULT, toolOutput)
 		}
 
 	case compose.ComponentOfLambda:
@@ -413,12 +430,13 @@ func (d defaultDataParser) ParseStreamInput(ctx context.Context, info *callbacks
 		}
 
 		tags.set(sem_ai.GEN_AI_INPUT, parseAny(ctx, messages, true))
+		tags.set(sem_ai.GEN_AI_INPUT_MESSAGES, iterSlice(messages, convertModelMessage))
 		// 设置聚合后的消息
 		if len(messages) > 0 {
 			for i, msg := range messages {
-				if len(msg.Content) > 0 {
+				if msg != nil && messageDisplayText(msg) != "" {
 					tags.set(fmt.Sprintf("%s.%d.role", sem_ai.GEN_AI_PROMPT, i), string(msg.Role))
-					tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_PROMPT, i), msg.Content)
+					tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_PROMPT, i), messageDisplayText(msg))
 				}
 			}
 		}
@@ -428,6 +446,22 @@ func (d defaultDataParser) ParseStreamInput(ctx context.Context, info *callbacks
 			tags.set(sem_ai.GEN_AI_REQUEST_TEMPERATURE, config.Temperature)
 			tags.set(sem_ai.GEN_AI_REQUEST_TOP_P, config.TopP)
 		}
+	case components.ComponentOfTool:
+		chunks, recvErr := d.ParseDefaultStreamInput(ctx, input)
+		if recvErr != nil {
+			return nil, recvErr
+		}
+		arguments := make([]string, 0, len(chunks))
+		for _, chunk := range chunks {
+			if cbInput := tool.ConvCallbackInput(chunk); cbInput != nil {
+				arguments = append(arguments, cbInput.ArgumentsInJSON)
+			}
+		}
+		toolInput := strings.Join(arguments, "")
+		tags.set(sem_ai.GEN_AI_TOOL_NAME, getName(info))
+		tags.set(sem_ai.GEN_AI_TOOL_TYPE, info.Type)
+		tags.set(sem_ai.GEN_AI_INPUT, toolInput)
+		tags.set(sem_ai.GEN_AI_TOOL_CALL_ARGUMENTS, toolInput)
 	default:
 		chunks, recvErr := d.ParseDefaultStreamInput(ctx, input)
 		if recvErr != nil {
@@ -519,6 +553,24 @@ func (d defaultDataParser) ParseStreamOutput(ctx context.Context, info *callback
 				TokenUsage: usage,
 			}))
 		}
+	case components.ComponentOfTool:
+		chunks, recvErr := d.ParseDefaultStreamOutput(ctx, output)
+		if recvErr != nil {
+			return nil, recvErr
+		}
+		responses := make([]string, 0, len(chunks))
+		for _, chunk := range chunks {
+			if cbOutput := tool.ConvCallbackOutput(chunk); cbOutput != nil {
+				if cbOutput.Response != "" {
+					responses = append(responses, cbOutput.Response)
+				} else if cbOutput.ToolOutput != nil {
+					responses = append(responses, parseAny(ctx, cbOutput.ToolOutput, true))
+				}
+			}
+		}
+		toolOutput := strings.Join(responses, "")
+		tags.set(sem_ai.GEN_AI_OUTPUT, toolOutput)
+		tags.set(sem_ai.GEN_AI_TOOL_CALL_RESULT, toolOutput)
 	default:
 		chunks, recvErr := d.ParseDefaultStreamOutput(ctx, output)
 		if recvErr != nil {
@@ -672,6 +724,41 @@ func (d defaultDataParser) getConcatFunc(typ reflect.Type) func(reflect.Value) (
 	}
 
 	return nil
+}
+
+// messageDisplayText supplies the compact input/output used by the session
+// table.  Detailed multimodal structure stays in gen_ai.*.messages.
+func messageDisplayText(message *schema.Message) string {
+	if message == nil {
+		return ""
+	}
+	lensMessages := toTLSLensMessages([]*sem_ai.ModelMessage{convertModelMessage(message)})
+	if len(lensMessages) == 0 {
+		return ""
+	}
+	return lensMessageSummary(lensMessages[0])
+}
+
+func modelMessagePartsJSON(message *schema.Message) []map[string]any {
+	converted := convertModelMessage(message)
+	if converted == nil || len(converted.Parts) == 0 {
+		return nil
+	}
+	parts := make([]map[string]any, 0, len(converted.Parts))
+	for _, part := range converted.Parts {
+		if part == nil {
+			continue
+		}
+		encoded, err := json.Marshal(part)
+		if err != nil {
+			continue
+		}
+		var value map[string]any
+		if err := json.Unmarshal(encoded, &value); err == nil {
+			parts = append(parts, value)
+		}
+	}
+	return parts
 }
 
 func parseAny(ctx context.Context, v any, bStream bool) string {

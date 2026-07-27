@@ -71,31 +71,25 @@ func convertModelMessage(message *schema.Message) *sem_ai.ModelMessage {
 		Role:             string(message.Role),
 		Content:          message.Content,
 		ReasoningContent: message.ReasoningContent,
-		Parts:            make([]*sem_ai.ModelMessagePart, len(message.MultiContent)),
 		Name:             message.Name,
 		ToolCalls:        make([]*sem_ai.ModelToolCall, len(message.ToolCalls)),
 		ToolCallID:       message.ToolCallID,
 	}
 
-	for i := range message.MultiContent {
-		part := message.MultiContent[i]
-
-		msg.Parts[i] = &sem_ai.ModelMessagePart{
-			Type: sem_ai.ModelMessagePartType(part.Type),
-			Text: part.Text,
+	// MultiContent is retained for older Eino clients.  Newer Eino versions
+	// split input and output multimodal parts into dedicated fields; prefer
+	// those fields when present so a message is represented exactly once.
+	if len(message.UserInputMultiContent) > 0 {
+		for _, part := range message.UserInputMultiContent {
+			msg.Parts = append(msg.Parts, convertInputMessagePart(part))
 		}
-
-		if part.ImageURL != nil {
-			msg.Parts[i].ImageURL = &sem_ai.ModelImageURL{
-				URL:    part.ImageURL.URL,
-				Detail: string(part.ImageURL.Detail),
-			}
+	} else if len(message.AssistantGenMultiContent) > 0 {
+		for _, part := range message.AssistantGenMultiContent {
+			msg.Parts = append(msg.Parts, convertOutputMessagePart(part))
 		}
-		if part.FileURL != nil {
-			msg.Parts[i].FileURL = &sem_ai.ModelFileURL{
-				Name: part.FileURL.Name,
-				URL:  part.FileURL.URL,
-			}
+	} else {
+		for _, part := range message.MultiContent {
+			msg.Parts = append(msg.Parts, convertLegacyMessagePart(part))
 		}
 	}
 
@@ -122,6 +116,128 @@ func convertModelMessage(message *schema.Message) *sem_ai.ModelMessage {
 	}
 
 	return msg
+}
+
+func convertInputMessagePart(part schema.MessageInputPart) *sem_ai.ModelMessagePart {
+	result := &sem_ai.ModelMessagePart{Type: sem_ai.ModelMessagePartType(part.Type), Text: part.Text}
+	switch part.Type {
+	case schema.ChatMessagePartTypeImageURL:
+		if part.Image != nil {
+			result.ImageURL = &sem_ai.ModelImageURL{
+				URL:      derefString(part.Image.URL),
+				Detail:   string(part.Image.Detail),
+				MIMEType: part.Image.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeAudioURL:
+		if part.Audio != nil {
+			result.AudioURL = &sem_ai.ModelMediaURL{
+				URL:      derefString(part.Audio.URL),
+				MIMEType: part.Audio.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeVideoURL:
+		if part.Video != nil {
+			result.VideoURL = &sem_ai.ModelMediaURL{
+				URL:      derefString(part.Video.URL),
+				MIMEType: part.Video.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeFileURL:
+		if part.File != nil {
+			result.FileURL = &sem_ai.ModelFileURL{
+				Name:     part.File.Name,
+				URL:      derefString(part.File.URL),
+				MIMEType: part.File.MIMEType,
+			}
+		}
+	}
+	return result
+}
+
+func convertOutputMessagePart(part schema.MessageOutputPart) *sem_ai.ModelMessagePart {
+	result := &sem_ai.ModelMessagePart{Type: sem_ai.ModelMessagePartType(part.Type), Text: part.Text}
+	switch part.Type {
+	case schema.ChatMessagePartTypeImageURL:
+		if part.Image != nil {
+			result.ImageURL = &sem_ai.ModelImageURL{
+				URL:      derefString(part.Image.URL),
+				MIMEType: part.Image.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeAudioURL:
+		if part.Audio != nil {
+			result.AudioURL = &sem_ai.ModelMediaURL{
+				URL:      derefString(part.Audio.URL),
+				MIMEType: part.Audio.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeVideoURL:
+		if part.Video != nil {
+			result.VideoURL = &sem_ai.ModelMediaURL{
+				URL:      derefString(part.Video.URL),
+				MIMEType: part.Video.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeReasoning:
+		if part.Reasoning != nil {
+			result.Text = part.Reasoning.Text
+		}
+	}
+	return result
+}
+
+func convertLegacyMessagePart(part schema.ChatMessagePart) *sem_ai.ModelMessagePart {
+	result := &sem_ai.ModelMessagePart{Type: sem_ai.ModelMessagePartType(part.Type), Text: part.Text}
+	switch part.Type {
+	case schema.ChatMessagePartTypeImageURL:
+		if part.ImageURL != nil {
+			result.ImageURL = &sem_ai.ModelImageURL{
+				URL:      firstNonEmpty(part.ImageURL.URL, part.ImageURL.URI),
+				Detail:   string(part.ImageURL.Detail),
+				MIMEType: part.ImageURL.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeAudioURL:
+		if part.AudioURL != nil {
+			result.AudioURL = &sem_ai.ModelMediaURL{
+				URL:      firstNonEmpty(part.AudioURL.URL, part.AudioURL.URI),
+				MIMEType: part.AudioURL.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeVideoURL:
+		if part.VideoURL != nil {
+			result.VideoURL = &sem_ai.ModelMediaURL{
+				URL:      firstNonEmpty(part.VideoURL.URL, part.VideoURL.URI),
+				MIMEType: part.VideoURL.MIMEType,
+			}
+		}
+	case schema.ChatMessagePartTypeFileURL:
+		if part.FileURL != nil {
+			result.FileURL = &sem_ai.ModelFileURL{
+				Name:     part.FileURL.Name,
+				URL:      firstNonEmpty(part.FileURL.URL, part.FileURL.URI),
+				MIMEType: part.FileURL.MIMEType,
+			}
+		}
+	}
+	return result
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func addToolName(ctx context.Context, message *sem_ai.ModelMessage) *sem_ai.ModelMessage {

@@ -18,6 +18,7 @@ package tls
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -28,8 +29,64 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
+
+func TestTLSHandlerManualSpans(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	t.Cleanup(func() {
+		_ = provider.Shutdown(context.Background())
+	})
+
+	handler := &TLSHandler{
+		TLSCallbackHandler: &TLSCallbackHandler{
+			Tracer: provider.Tracer(scopeName),
+		},
+	}
+
+	t.Run("uses the requested span kind", func(t *testing.T) {
+		ctx := handler.StartSpanWithKind(context.Background(), "session/prompt", trace.SpanKindServer, map[string]any{
+			"rpc.method": "session/prompt",
+		})
+		handler.FinishSpan(ctx, nil)
+
+		spans := recorder.Ended()
+		if len(spans) != 1 {
+			t.Fatalf("expected one ended span, got %d", len(spans))
+		}
+		if got := spans[0].SpanKind(); got != trace.SpanKindServer {
+			t.Fatalf("expected server span, got %s", got)
+		}
+		if got := spans[0].Status().Code; got != codes.Ok {
+			t.Fatalf("expected OK status, got %s", got)
+		}
+	})
+
+	t.Run("records and reports errors", func(t *testing.T) {
+		ctx := handler.StartSpan(context.Background(), "session/prompt", nil)
+		handler.FinishSpanWithError(ctx, map[string]any{"error.type": "internal"}, errors.New("prompt failed"))
+
+		spans := recorder.Ended()
+		if len(spans) != 2 {
+			t.Fatalf("expected two ended spans, got %d", len(spans))
+		}
+		span := spans[1]
+		if got := span.Status().Code; got != codes.Error {
+			t.Fatalf("expected error status, got %s", got)
+		}
+		if got := span.Status().Description; got != "prompt failed" {
+			t.Fatalf("expected error description %q, got %q", "prompt failed", got)
+		}
+		if len(span.Events()) != 1 || span.Events()[0].Name != "exception" {
+			t.Fatalf("expected an exception event, got %#v", span.Events())
+		}
+	})
+}
 
 func TestTLSCallback(t *testing.T) {
 	cbh := &TLSCallbackHandler{

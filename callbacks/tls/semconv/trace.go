@@ -8,6 +8,7 @@ const (
 	GEN_AI_USAGE_COMPLETION_TOKENS     = "gen_ai.usage.completion_tokens"
 	GEN_AI_USAGE_PROMPT_TOKENS         = "gen_ai.usage.prompt_tokens"
 	GEN_AI_USAGE_INPUT_TOKENS          = "gen_ai.usage.input_tokens"
+	GEN_AI_USAGE_OUTPUT_TOKENS         = "gen_ai.usage.output_tokens"
 	GEN_AI_REQUEST_MAX_TOKENS          = "gen_ai.request.max_tokens"
 	GEN_AI_REQUEST_TOP_P               = "gen_ai.request.top_p"
 	GEN_AI_REQUEST_TEMPERATURE         = "gen_ai.request.temperature"
@@ -15,6 +16,7 @@ const (
 	GEN_AI_RESPONSE_MODEL              = "gen_ai.response.model"
 	GEN_AI_REQUEST_ID                  = "gen_ai.request.id"
 	GEN_AI_REQUEST_N                   = "gen_ai.request.n"
+	GEN_AI_REQUEST_DURATION_MS         = "gen_ai.request.duration_ms"
 	GEN_AI_USAGE_NUM_SEQUENCES         = "gen_ai.usage.num_sequences"
 	GEN_AI_LATENCY_TIME_IN_QUEUE       = "gen_ai.latency.time_in_queue"
 	GEN_AI_LATENCY_TIME_TO_FIRST_TOKEN = "gen_ai.latency.time_to_first_token"
@@ -25,6 +27,8 @@ const (
 	GEN_AI_TOKEN_TYPE       = "gen_ai.token.type"
 	GEN_AI_INPUT            = "input.value"
 	GEN_AI_OUTPUT           = "output.value"
+	GEN_AI_INPUT_MESSAGES   = "gen_ai.input.messages"
+	GEN_AI_OUTPUT_MESSAGES  = "gen_ai.output.messages"
 	OUTPUT_MIME_TYPE        = "output.mime_type"
 	INPUT_VALUE             = "input.value"
 	INPUT_MIME_TYPE         = "input.mime_type"
@@ -37,6 +41,10 @@ const (
 
 	GEN_AI_SYSTEM = "gen_ai.system"
 	TASK_NAME     = "task.name"
+	TLS_APP_TYPE  = "tls.app.type"
+
+	GEN_AI_OPERATION_NAME = "gen_ai.operation.name"
+	GEN_AI_PROVIDER_NAME  = "gen_ai.provider.name"
 
 	GEN_AI_SPAN_KIND = "gen_ai.span.kind"
 
@@ -54,7 +62,12 @@ const (
 
 	GEN_AI_USAGE_TOTAL_TOKENS = "gen_ai.usage.total_tokens"
 
-	GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS = "gen_ai.usage.cache_read_input_tokens"
+	GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS     = "gen_ai.usage.cache_read_input_tokens"
+	GEN_AI_USAGE_CACHE_READ_INPUT_TOKENS_V2  = "gen_ai.usage.cache_read.input_tokens"
+	GEN_AI_USAGE_CACHED_TOKENS               = "gen_ai.usage.cached_tokens"
+	GEN_AI_USAGE_CACHE_CREATE_INPUT_TOKENS   = "gen_ai.usage.cache_create_input_tokens"
+	GEN_AI_USAGE_CACHE_CREATION_INPUT_TOKENS = "gen_ai.usage.cache_creation.input_tokens"
+	GEN_AI_USAGE_REASONING_OUTPUT_TOKENS     = "gen_ai.usage.reasoning.output_tokens"
 
 	GEN_AI_REQUEST_IS_STREAM = "gen_ai.request.is_stream"
 	GEN_AI_IS_STREAMING      = "gen_ai.is_streaming"
@@ -128,6 +141,10 @@ const (
 	GEN_AI_TOOL_DESCRIPTION        = "gen_ai.tool.description"
 	GEN_AI_TOOL_NAME               = "gen_ai.tool.name"
 	GEN_AI_TOOL_TYPE               = "gen_ai.tool.type"
+	GEN_AI_TOOL_CALL_ARGUMENTS     = "gen_ai.tool.call.arguments"
+	GEN_AI_TOOL_CALL_RESULT        = "gen_ai.tool.call.result"
+	TOOL_SUCCESS                   = "tool.success"
+	TOOL_ERROR                     = "tool.error"
 	TOOL_CALL_FUNCTION_NAME        = "tool_call.function.name"
 	TOOL_CALL_FUNCTION_ARGUMENTS   = "tool_call.function.arguments"
 	TOOL_CALL_FUNCTION_DESCRIPTION = "tool_call.function.description"
