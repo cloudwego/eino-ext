@@ -34,6 +34,12 @@ const keyOfCacheUsage = "_eino_claude_cache_usage"
 // token rate, so the read and creation counts have to stay separate to compute cost.
 // schema.TokenUsage.PromptTokenDetails.CachedTokens only carries the read side, which
 // is why the creation count is surfaced here.
+//
+// The counts are request-level, NOT a per-chunk delta. Anthropic reports them once
+// per request (on message_start when streaming), and the same values are repeated on
+// every subsequent callback output of that request. A handler that reads them per
+// chunk must therefore take the latest value and must not sum across chunks, or the
+// cache tokens of one request end up multiplied by its chunk count.
 type CacheUsage struct {
 	// CacheReadInputTokens is the Anthropic usage.cache_read_input_tokens value:
 	// input tokens served from an existing cache entry.
@@ -45,6 +51,9 @@ type CacheUsage struct {
 
 // GetCacheUsage reports the cache token counts carried by a chat model callback output.
 // The second return value is false when the request reported no cache activity.
+//
+// When streaming, every callback output of a request carries the same request-level
+// counts, so callers must overwrite rather than accumulate — see CacheUsage.
 func GetCacheUsage(out *model.CallbackOutput) (*CacheUsage, bool) {
 	if out == nil {
 		return nil, false
