@@ -390,7 +390,7 @@ func (cm *ChatModel) Generate(ctx context.Context, input []*schema.Message, opts
 		return nil, fmt.Errorf("convert response to schema message fail: %w", err)
 	}
 
-	callbacks.OnEnd(ctx, cm.getCallbackOutput(message))
+	callbacks.OnEnd(ctx, cm.getCallbackOutput(message, toCacheUsage(resp.Usage)))
 
 	return message, nil
 }
@@ -451,7 +451,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				waitList = []*schema.Message{}
 			}
 
-			closed := sw.Send(cm.getCallbackOutput(message), nil)
+			closed := sw.Send(cm.getCallbackOutput(message, streamCtx.cacheUsage), nil)
 			if closed {
 				return
 			}
@@ -464,7 +464,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 				return
 			}
 
-			closed := sw.Send(cm.getCallbackOutput(message), nil)
+			closed := sw.Send(cm.getCallbackOutput(message, streamCtx.cacheUsage), nil)
 			if closed {
 				return
 			}
@@ -1009,7 +1009,7 @@ func (cm *ChatModel) getCallbackInput(input []*schema.Message, opts ...model.Opt
 	return result
 }
 
-func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOutput {
+func (cm *ChatModel) getCallbackOutput(output *schema.Message, cacheUsage *CacheUsage) *model.CallbackOutput {
 	result := &model.CallbackOutput{
 		Message: output,
 		Config:  cm.getConfig(),
@@ -1027,8 +1027,8 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 			},
 		}
 	}
-	if len(output.Extra) > 0 {
-		result.Extra = output.Extra
+	if cacheUsage != nil {
+		result.Extra = map[string]any{keyOfCacheUsage: cacheUsage}
 	}
 	return result
 }
@@ -1431,10 +1431,6 @@ func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 			FinishReason: string(resp.StopReason),
 			Usage:        toTokenUsage(resp.Usage),
 		},
-		Extra: map[string]any{
-			"cache_read_input_tokens":     int(resp.Usage.CacheReadInputTokens),
-			"cache_creation_input_tokens": int(resp.Usage.CacheCreationInputTokens),
-		},
 	}
 
 	streamCtx := &streamContext{}
@@ -1450,6 +1446,10 @@ func convOutputMessage(resp *anthropic.Message) (*schema.Message, error) {
 
 type streamContext struct {
 	toolIndex *int
+	// cacheUsage holds the cache token counts reported by the stream. Anthropic sends
+	// them on message_start, so they are kept here for the callback outputs of the
+	// later chunks instead of being attached to the messages themselves.
+	cacheUsage *CacheUsage
 }
 
 func convContentBlockToEinoMsg(
@@ -1533,8 +1533,14 @@ func convStreamEvent(event anthropic.MessageStreamEventUnion, streamCtx *streamC
 	//	case anthropic.ContentBlockStopEvent:
 	switch e := event.AsAny().(type) {
 	case anthropic.MessageStartEvent:
+		if cacheUsage := toCacheUsage(e.Message.Usage); cacheUsage != nil {
+			streamCtx.cacheUsage = cacheUsage
+		}
 		return convOutputMessage(&e.Message)
 	case anthropic.MessageDeltaEvent:
+		if cacheUsage := toDeltaCacheUsage(e.Usage); cacheUsage != nil {
+			streamCtx.cacheUsage = cacheUsage
+		}
 		result.ResponseMeta = &schema.ResponseMeta{
 			FinishReason: string(e.Delta.StopReason),
 			Usage:        toDeltaTokenUsage(e.Usage),
