@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/grpc/credentials"
 )
 
 type OtelProvider struct {
@@ -83,6 +84,8 @@ func NewOpenTelemetryProvider(opts ...Option) (*OtelProvider, error) {
 		}
 		if cfg.exportInsecure {
 			traceClientOpts = append(traceClientOpts, otlptracegrpc.WithInsecure())
+		} else if cfg.exportTLSInsecure {
+			traceClientOpts = append(traceClientOpts, otlptracegrpc.WithTLSCredentials(credentials.NewClientTLSFromCert(nil, "")))
 		}
 
 		// trace provider
@@ -119,6 +122,8 @@ func NewOpenTelemetryProvider(opts ...Option) (*OtelProvider, error) {
 		}
 		if cfg.exportInsecure {
 			metricsClientOpts = append(metricsClientOpts, otlpmetricgrpc.WithInsecure())
+		} else if cfg.exportTLSInsecure {
+			metricsClientOpts = append(metricsClientOpts, otlpmetricgrpc.WithTLSCredentials(credentials.NewClientTLSFromCert(nil, "")))
 		}
 
 		meterProvider = cfg.meterProvider

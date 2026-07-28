@@ -39,9 +39,10 @@ type config struct {
 	enableTracing bool
 	enableMetrics bool
 
-	exportInsecure bool
-	exportEndpoint string
-	exportHeaders  map[string]string
+	exportInsecure    bool
+	exportTLSInsecure bool
+	exportEndpoint    string
+	exportHeaders     map[string]string
 
 	resource          *resource.Resource
 	sdkTracerProvider *sdktrace.TracerProvider
@@ -153,6 +154,13 @@ func WithHeaders(headers map[string]string) Option {
 func WithInsecure() Option {
 	return option(func(cfg *config) {
 		cfg.exportInsecure = true
+	})
+}
+
+// WithTLSInsecure disables client transport security for the exporter's gRPC with tls
+func WithTLSInsecure() Option {
+	return option(func(cfg *config) {
+		cfg.exportTLSInsecure = true
 	})
 }
 
