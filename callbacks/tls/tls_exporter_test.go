@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package tls
 
 import (
@@ -717,11 +733,10 @@ func TestTLSExporterUsesRawToolPayloadsAndLensToolParts(t *testing.T) {
 func TestTLSLensMessagesCoalescesStreamedContentParts(t *testing.T) {
 	messages := toTLSLensMessages([]*sem_ai.ModelMessage{{
 		Role:    "assistant",
-		Content: "hello world",
+		Content: "streamed text",
 		Parts: []*sem_ai.ModelMessagePart{
-			{Type: sem_ai.ModelMessagePartTypeText, Text: "hel"},
-			{Type: sem_ai.ModelMessagePartTypeText, Text: "lo "},
-			{Type: sem_ai.ModelMessagePartTypeText, Text: "world"},
+			{Type: sem_ai.ModelMessagePartTypeText, Text: "streamed"},
+			{Type: sem_ai.ModelMessagePartTypeText, Text: " text"},
 			{Type: sem_ai.ModelMessagePartTypeReasoning, Text: "reason"},
 			{Type: sem_ai.ModelMessagePartTypeReasoning, Text: "ing"},
 		},
@@ -729,7 +744,7 @@ func TestTLSLensMessagesCoalescesStreamedContentParts(t *testing.T) {
 	if len(messages) != 1 || len(messages[0].Parts) != 2 {
 		t.Fatalf("stream chunks should be coalesced, got %#v", messages)
 	}
-	if got := messages[0].Parts[0]; got.Type != "text" || got.Content != "hello world" {
+	if got := messages[0].Parts[0]; got.Type != "text" || got.Content != "streamed text" {
 		t.Fatalf("stream text = %#v, want one content part", got)
 	}
 	if got := messages[0].Parts[1]; got.Type != "reasoning" || got.Content != "reasoning" {

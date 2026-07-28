@@ -2,11 +2,6 @@ module github.com/cloudwego/eino-ext/callbacks/tls
 
 go 1.23.0
 
-// The TLS Producer pulls an older root genproto module. Pin it after the
-// googleapis/api and googleapis/rpc split to avoid duplicate package paths
-// with the OpenTelemetry dependency graph.
-replace google.golang.org/genproto => google.golang.org/genproto v0.0.0-20240528184218-531527333157
-
 require (
 	github.com/bytedance/mockey v1.2.14
 	github.com/bytedance/sonic v1.15.0

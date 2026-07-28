@@ -893,7 +893,7 @@ func _llmModelInput(input *model.CallbackInput) []attribute.KeyValue {
 	return kvs
 }
 
-func _llmModelOuput(input *model.CallbackOutput) []attribute.KeyValue {
+func _llmModelOutput(input *model.CallbackOutput) []attribute.KeyValue {
 	if input == nil || input.TokenUsage == nil {
 		return nil
 	}

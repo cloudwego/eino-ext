@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package tls
 
 import (
@@ -68,13 +84,13 @@ func TestDefaultDataParserParseStreamOutputIncludesCompletionDetails(t *testing.
 	writer.Send(&model.CallbackOutput{
 		Message: &schema.Message{
 			Role:    schema.Assistant,
-			Content: "hel",
+			Content: "partial",
 		},
 	}, nil)
 	writer.Send(&model.CallbackOutput{
 		Message: &schema.Message{
 			Role:    schema.Assistant,
-			Content: "lo",
+			Content: " response",
 			ResponseMeta: &schema.ResponseMeta{
 				FinishReason: "stop",
 			},
@@ -95,8 +111,8 @@ func TestDefaultDataParserParseStreamOutputIncludesCompletionDetails(t *testing.
 	if got := tags[sem_ai.GEN_AI_RESPONSE_FINISH_REASON]; got != "stop" {
 		t.Fatalf("expected finish reason stop, got %#v", got)
 	}
-	if got := tags[sem_ai.GEN_AI_COMPLETION+".0.content"]; got != "hello" {
-		t.Fatalf("expected aggregated completion content hello, got %#v", got)
+	if got := tags[sem_ai.GEN_AI_COMPLETION+".0.content"]; got != "partial response" {
+		t.Fatalf("expected aggregated completion content partial response, got %#v", got)
 	}
 
 	output, ok := tags[sem_ai.GEN_AI_OUTPUT].(string)
@@ -106,7 +122,7 @@ func TestDefaultDataParserParseStreamOutputIncludesCompletionDetails(t *testing.
 	if !strings.Contains(output, `"finish_reason":"stop"`) {
 		t.Fatalf("expected serialized output to include finish_reason, got %s", output)
 	}
-	if !strings.Contains(output, `"content":"hello"`) {
+	if !strings.Contains(output, `"content":"partial response"`) {
 		t.Fatalf("expected serialized output to include aggregated content, got %s", output)
 	}
 }
