@@ -128,6 +128,24 @@ type Config struct {
 	// cacheable block in the request.
 	// Optional.
 	CacheControl *anthropic.CacheControlEphemeralParam
+
+	// DisableSystemRoleReminder disables sending system-role reminders — system
+	// messages that appear after the leading system prompt, injected
+	// mid-conversation. The leading run of system messages (the system prompt) is
+	// never affected.
+	//
+	// System-role reminders are supported by default (nil). Only the newest models
+	// accept them: Claude Fable 5, Claude Mythos 5, Claude Opus 4.8,
+	// and Claude Opus 5. They are NOT supported on Claude Sonnet 5 or any earlier
+	// model — set this to true for those, and the model rewrites every non-leading
+	// system-role message to user role (via
+	// schema.ConvertNonLeadingSystemAgenticMessagesToUser) before building the
+	// request. See
+	// https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages
+	//
+	// Optional. nil (or false) means reminders are enabled and input is passed
+	// through unchanged.
+	DisableSystemRoleReminder *bool
 }
 
 type GoogleVertexAIConfig struct {
@@ -184,6 +202,10 @@ type Model struct {
 	thinking               *anthropic.ThinkingConfigParamUnion
 	cacheControl           *anthropic.CacheControlEphemeralParam
 	requestTimeout         time.Duration
+
+	// disableSystemRoleReminder is true when the configured model does not accept
+	// mid-conversation system messages, so they are rewritten to user role.
+	disableSystemRoleReminder bool
 }
 
 type ServerToolConfig struct {
@@ -224,16 +246,17 @@ func New(ctx context.Context, cfg *Config) (*Model, error) {
 	}
 
 	return &Model{
-		cli:                    cli,
-		model:                  cfg.Model,
-		maxTokens:              cfg.MaxTokens,
-		stopSequences:          cfg.StopSequences,
-		disableParallelToolUse: cfg.DisableParallelToolUse,
-		customHeaders:          cfg.CustomHeaders,
-		extraFields:            cfg.ExtraFields,
-		thinking:               cfg.Thinking,
-		cacheControl:           cfg.CacheControl,
-		requestTimeout:         cfg.RequestTimeout,
+		cli:                       cli,
+		model:                     cfg.Model,
+		maxTokens:                 cfg.MaxTokens,
+		stopSequences:             cfg.StopSequences,
+		disableParallelToolUse:    cfg.DisableParallelToolUse,
+		customHeaders:             cfg.CustomHeaders,
+		extraFields:               cfg.ExtraFields,
+		thinking:                  cfg.Thinking,
+		cacheControl:              cfg.CacheControl,
+		requestTimeout:            cfg.RequestTimeout,
+		disableSystemRoleReminder: cfg.DisableSystemRoleReminder != nil && *cfg.DisableSystemRoleReminder,
 	}, nil
 }
 
@@ -314,6 +337,10 @@ func hasDirectAnthropicConfigAuth(cfg *Config) bool {
 func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (outMsg *schema.AgenticMessage, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, m.GetType(), components.ComponentOfAgenticModel)
 
+	if m.disableSystemRoleReminder {
+		input = schema.ConvertNonLeadingSystemAgenticMessagesToUser(input)
+	}
+
 	options, specOptions, err := m.getOptions(opts)
 	if err != nil {
 		return nil, err
@@ -358,6 +385,10 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 
 func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts ...model.Option) (outStream *schema.StreamReader[*schema.AgenticMessage], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, m.GetType(), components.ComponentOfAgenticModel)
+
+	if m.disableSystemRoleReminder {
+		input = schema.ConvertNonLeadingSystemAgenticMessagesToUser(input)
+	}
 
 	options, specOptions, err := m.getOptions(opts)
 	if err != nil {

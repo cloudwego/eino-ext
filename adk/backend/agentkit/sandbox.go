@@ -1167,15 +1167,6 @@ func (s *SandboxTool) Execute(ctx context.Context, input *filesystem.ExecuteRequ
 		return nil, fmt.Errorf("failed to render execute template: %w", err)
 	}
 
-	if input.RunInBackendGround {
-		go func() {
-			_, _, _ = s.execute(ctx, script)
-		}()
-		return &filesystem.ExecuteResponse{
-			Output: "command started in background\n",
-		}, nil
-	}
-
 	output, exitCode, err := s.execute(ctx, script)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute command script: %w", err)

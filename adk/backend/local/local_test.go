@@ -741,56 +741,6 @@ func TestExecuteStreaming(t *testing.T) {
 		assert.NotNil(t, exitCode, "should receive exit code in response")
 		assert.Equal(t, 0, *exitCode, "exit code should be 0 for successful command")
 	})
-
-	t.Run("ExecuteStreaming with RunInBackendGround", func(t *testing.T) {
-		req := &filesystem.ExecuteRequest{
-			Command:            "sleep 10",
-			RunInBackendGround: true,
-		}
-		sr, err := s.ExecuteStreaming(ctx, req)
-		assert.NoError(t, err)
-
-		var receivedResponse bool
-		var output string
-		var exitCode *int
-		for {
-			resp, err := sr.Recv()
-			if err != nil {
-				break
-			}
-			if resp != nil {
-				receivedResponse = true
-				output = resp.Output
-				exitCode = resp.ExitCode
-			}
-		}
-
-		assert.True(t, receivedResponse, "should receive response for background command")
-		assert.Contains(t, output, "background", "should indicate command started in background")
-		assert.NotNil(t, exitCode, "should receive exit code")
-		assert.Equal(t, 0, *exitCode, "exit code should be 0")
-	})
-
-	t.Run("ExecuteStreaming with RunInBackendGround returns immediately", func(t *testing.T) {
-		req := &filesystem.ExecuteRequest{
-			Command:            "sleep 5",
-			RunInBackendGround: true,
-		}
-
-		start := time.Now()
-		sr, err := s.ExecuteStreaming(ctx, req)
-		assert.NoError(t, err)
-
-		for {
-			_, err := sr.Recv()
-			if err != nil {
-				break
-			}
-		}
-		elapsed := time.Since(start)
-
-		assert.Less(t, elapsed, 2*time.Second, "background command should return immediately without waiting")
-	})
 }
 
 func TestExecute(t *testing.T) {

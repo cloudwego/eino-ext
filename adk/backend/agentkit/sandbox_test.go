@@ -405,19 +405,6 @@ func TestArkSandbox_FileSystemMethods(t *testing.T) {
 			require.NoError(t, err, "path=%q", p)
 		}
 	})
-
-	t.Run("Execute: RunInBackendGround returns immediately", func(t *testing.T) {
-		mockAPIHandler = func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			w.Write(createMockResponse(t, true, "command output", "", ""))
-		}
-		res, err := s.Execute(context.Background(), &filesystem.ExecuteRequest{
-			Command:            "sleep 10",
-			RunInBackendGround: true,
-		})
-		require.NoError(t, err)
-		assert.Contains(t, res.Output, "background")
-	})
 }
 
 func TestParsePagesParam(t *testing.T) {

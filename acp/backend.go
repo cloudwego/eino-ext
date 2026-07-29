@@ -191,12 +191,6 @@ type shell struct {
 }
 
 func (s *shell) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (*filesystem.ExecuteResponse, error) {
-	if input.RunInBackendGround {
-		// Background execution would require a session-scoped handle for later release,
-		// which is not modeled at this layer yet. Reject explicitly rather than leak terminals.
-		return nil, errors.New("acp.shell: background execution is not supported over ACP")
-	}
-
 	createResp, err := s.conn.CreateTerminal(ctx, acpproto.CreateTerminalRequest{
 		Command:   input.Command,
 		SessionID: s.sessionID,

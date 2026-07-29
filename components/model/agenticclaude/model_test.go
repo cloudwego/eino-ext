@@ -18,9 +18,12 @@ package agenticclaude
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -641,6 +644,81 @@ func TestDirectAnthropicAuthSelection(t *testing.T) {
 			t.Fatalf("Authorization = %q, env credential should not leak into the request", gotAuthorization)
 		}
 	})
+}
+
+func TestDisableSystemRoleReminderConvertsMidConversation(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	disable := true
+	m, err := New(context.Background(), &Config{
+		BaseURL:                   srv.URL,
+		APIKey:                    "config-api-key",
+		Model:                     "claude-sonnet-4",
+		MaxTokens:                 1024,
+		DisableSystemRoleReminder: &disable,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if !m.disableSystemRoleReminder {
+		t.Fatalf("disableSystemRoleReminder = false, want true")
+	}
+
+	input := []*schema.AgenticMessage{
+		schema.SystemAgenticMessage("lead"),
+		schema.UserAgenticMessage("hi"),
+		schema.SystemAgenticMessage("mid reminder"),
+	}
+
+	assertConverted := func(t *testing.T, body []byte) {
+		t.Helper()
+		// Leading system prompt goes into the top-level "system" field, not
+		// "messages"; the mid-conversation reminder must be rewritten to a user
+		// message rather than emitted with role "system".
+		var req struct {
+			Messages []struct {
+				Role string `json:"role"`
+			} `json:"messages"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("unmarshal request body: %v", err)
+		}
+		for _, msg := range req.Messages {
+			if msg.Role == "system" {
+				t.Fatalf("messages still contain role=system: %s", body)
+			}
+		}
+		if !strings.Contains(string(body), "mid reminder") {
+			t.Fatalf("converted reminder missing from request: %s", body)
+		}
+	}
+
+	if _, err = m.Generate(context.Background(), input); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	assertConverted(t, gotBody)
+
+	s, err := m.Stream(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	// Drain; a non-SSE mock body may error on parse — the conversion branch has
+	// already run before the HTTP call, so that does not affect coverage.
+	for {
+		if _, rerr := s.Recv(); rerr != nil {
+			break
+		}
+	}
+	s.Close()
+	assertConverted(t, gotBody)
 }
 
 func clearAnthropicAuthEnv(t *testing.T) {
