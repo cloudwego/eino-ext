@@ -1,0 +1,23 @@
+components/tool/mcp/officialmcp/mcp.go
+  s_5d970c11402940::t_312ecd746046e6 518
+components/tool/mcp/officialmcp/session/session.go
+  s_5d970c11402940::t_210448992d3bc7 186-190,195-197
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "77d326499748f25c751df84695ddf1ec5895bd32",
+  "prompts": {},
+  "sessions": {
+    "s_5d970c11402940": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "222ca72b-c35f-4927-8b29-f021ae92afcf",
+        "model": "unknown"
+      },
+      "human_author": "lipandeng <lipandeng@bytedance.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
