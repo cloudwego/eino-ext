@@ -75,6 +75,61 @@ func TestResponsesAPIChatModelGenerate(t *testing.T) {
 	})
 }
 
+func TestResponsesAPIChatModelPreservesModelName(t *testing.T) {
+	const modelName = "doubao-seed-2-0-lite"
+
+	cm := &ResponsesAPIChatModel{}
+
+	t.Run("non-streaming response", func(t *testing.T) {
+		msg, err := cm.toOutputMessage(&responses.ResponseObject{
+			Model:  modelName,
+			Status: responses.ResponseStatus_completed,
+			Usage:  &responses.Usage{},
+			Output: []*responses.OutputItem{
+				{
+					Union: &responses.OutputItem_OutputMessage{
+						OutputMessage: &responses.ItemOutputMessage{
+							Content: []*responses.OutputContentItem{
+								{
+									Union: &responses.OutputContentItem_Text{
+										Text: &responses.OutputContentItemText{Text: "hello"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}, nil)
+		assert.NoError(t, err)
+
+		name, ok := GetModelName(msg)
+		assert.True(t, ok)
+		assert.Equal(t, modelName, name)
+	})
+
+	t.Run("concatenated streaming response", func(t *testing.T) {
+		metadataMsg := &schema.Message{Role: schema.Assistant}
+		cm.setStreamChunkDefaultExtra(metadataMsg, &responses.ResponseObject{
+			Model: modelName,
+		}, &cacheConfig{})
+
+		textMsg := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "hello",
+		}
+		msg, err := schema.ConcatMessages([]*schema.Message{
+			metadataMsg,
+			textMsg,
+		})
+		assert.NoError(t, err)
+
+		name, ok := GetModelName(msg)
+		assert.True(t, ok)
+		assert.Equal(t, modelName, name)
+	})
+}
+
 func TestResponsesAPIChatModelStream(t *testing.T) {
 	PatchConvey("test Stream", t, func() {
 		ctx := context.Background()
