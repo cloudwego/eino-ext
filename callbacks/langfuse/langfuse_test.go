@@ -243,6 +243,53 @@ func TestLangfuseCallback(t *testing.T) {
 		})
 	})
 
+	mockey.PatchConvey("test generation with tool definitions", t, func() {
+		toolChoice := schema.ToolChoiceAllowed
+		toolCbh, _ := NewLangfuseHandler(&Config{ReportTools: true})
+		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id-tools", nil).Times(1)
+		mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) (string, error) {
+			assert.Equal(t, "model", body.Model)
+			// sampling stays on modelParameters; tools live on OpenAI-shaped Input
+			assert.Equal(t, body.ModelParameters.(*model.Config), &model.Config{
+				Model: "model", MaxTokens: 1, Temperature: 2, TopP: 3, Stop: []string{"stop"},
+			})
+			assert.Empty(t, body.InMessages)
+			assert.NotEmpty(t, body.Input)
+			assert.Contains(t, body.Input, `"tools"`)
+			assert.Contains(t, body.Input, "get_weather")
+			assert.Contains(t, body.Input, `"type":"function"`)
+			assert.Contains(t, body.Input, `"tool_choice":"auto"`)
+			return "generation id with tools", nil
+		}).Times(1)
+		mockLangfuse.EXPECT().EndGeneration(gomock.Any()).Return(nil).Times(1)
+
+		toolCtx := SetTrace(context.Background(), WithName("tool-trace"), WithUserID("u1"))
+		ctx1 := toolCbh.OnStart(toolCtx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackInput{
+			Messages: []*schema.Message{{Role: schema.User, Content: "weather in SF?"}},
+			Tools: []*schema.ToolInfo{{
+				Name: "get_weather",
+				Desc: "Get weather by city",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"city": {Type: schema.String, Desc: "city name", Required: true},
+				}),
+			}},
+			ToolChoice: &toolChoice,
+			Config: &model.Config{
+				Model: "model", MaxTokens: 1, Temperature: 2, TopP: 3, Stop: []string{"stop"},
+			},
+		})
+		toolCbh.OnEnd(ctx1, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackOutput{
+			Message: &schema.Message{
+				Role:    schema.Assistant,
+				Content: "",
+				ToolCalls: []schema.ToolCall{{
+					ID: "call_1",
+					Function: schema.FunctionCall{Name: "get_weather", Arguments: `{"city":"SF"}`},
+				}},
+			},
+		})
+	})
+
 	mockey.PatchConvey("test generation stream", t, func() {
 		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace id", nil).Times(1)
 		mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) (string, error) {

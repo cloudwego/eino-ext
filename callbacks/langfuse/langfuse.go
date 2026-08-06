@@ -123,6 +123,10 @@ type Config struct {
 	// Default: false
 	// Example: true
 	Public bool
+
+	// ReportTools reports bound tools on generation Input in OpenAI chat.request shape
+	// ({messages, tools, tool_choice}) for Langfuse Playground. Default: false.
+	ReportTools bool
 }
 
 func NewLangfuseHandler(cfg *Config) (handler *CallbackHandler, flusher func()) {
@@ -168,24 +172,26 @@ func NewLangfuseHandler(cfg *Config) (handler *CallbackHandler, flusher func()) 
 	return &CallbackHandler{
 		cli: cli,
 
-		name:      cfg.Name,
-		userID:    cfg.UserID,
-		sessionID: cfg.SessionID,
-		release:   cfg.Release,
-		tags:      cfg.Tags,
-		public:    cfg.Public,
+		name:        cfg.Name,
+		userID:      cfg.UserID,
+		sessionID:   cfg.SessionID,
+		release:     cfg.Release,
+		tags:        cfg.Tags,
+		public:      cfg.Public,
+		reportTools: cfg.ReportTools,
 	}, cli.Flush
 }
 
 type CallbackHandler struct {
 	cli langfuse.Langfuse
 
-	name      string
-	userID    string
-	sessionID string
-	release   string
-	tags      []string
-	public    bool
+	name        string
+	userID      string
+	sessionID   string
+	release     string
+	tags        []string
+	public      bool
+	reportTools bool
 }
 
 type langfuseStateKey struct{}
@@ -216,7 +222,18 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 				ParentObservationID: state.observationID,
 				StartTime:           time.Now(),
 			},
-			InMessages: mcbi.Messages,
+		}
+		// With tools: OpenAI request-shaped Input for Playground extractTools.
+		// Skip InMessages so acl consumer won't overwrite Input with messages-only JSON.
+		if c.reportTools && len(mcbi.Tools) > 0 {
+			if inStr, errIn := buildOpenAIChatInput(mcbi.Messages, mcbi.Tools, mcbi.ToolChoice); errIn != nil {
+				log.Printf("build openai chat input error: %v, runinfo: %+v", errIn, info)
+				body.InMessages = mcbi.Messages
+			} else {
+				body.Input = inStr
+			}
+		} else {
+			body.InMessages = mcbi.Messages
 		}
 		if mcbi.Config != nil {
 			body.Model = mcbi.Config.Model
@@ -408,7 +425,7 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 				ins = append(ins, chunk)
 			}
 
-			modelConf, inMessage, extra, err_ := extractModelInput(convModelCallbackInput(ins))
+			extracted, err_ := extractModelInput(convModelCallbackInput(ins))
 			if err_ != nil {
 				log.Printf("extract stream model input error: %v, runinfo: %+v", err_, info)
 				return
@@ -417,13 +434,24 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 				BaseObservationEventBody: langfuse.BaseObservationEventBody{
 					BaseEventBody: langfuse.BaseEventBody{
 						ID:       generationID,
-						MetaData: extra,
+						MetaData: extracted.extra,
 					},
 				},
-				InMessages: inMessage,
 			}
-			body.Model = modelConf.Model
-			body.ModelParameters = modelConf
+			if c.reportTools && len(extracted.tools) > 0 {
+				if inStr, errIn := buildOpenAIChatInput(extracted.messages, extracted.tools, extracted.toolChoice); errIn != nil {
+					log.Printf("build stream openai chat input error: %v, runinfo: %+v", errIn, info)
+					body.InMessages = extracted.messages
+				} else {
+					body.Input = inStr
+				}
+			} else {
+				body.InMessages = extracted.messages
+			}
+			if extracted.config != nil {
+				body.Model = extracted.config.Model
+				body.ModelParameters = extracted.config
+			}
 			err = c.cli.EndGeneration(body)
 			if err != nil {
 				log.Printf("update stream generation fail: %v, runinfo: %+v", err, info)
