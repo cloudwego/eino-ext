@@ -223,14 +223,15 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 				StartTime:           time.Now(),
 			},
 		}
-		// With tools: OpenAI request-shaped Input for Playground extractTools.
-		// Skip InMessages so acl consumer won't overwrite Input with messages-only JSON.
-		if c.reportTools && len(mcbi.Tools) > 0 {
-			if inStr, errIn := buildOpenAIChatInput(mcbi.Messages, mcbi.Tools, mcbi.ToolChoice); errIn != nil {
+		// OpenAI-shaped Input when tools are present; otherwise InMessages for ACL media path.
+		if c.reportTools {
+			if inStr, hasTools, errIn := buildOpenAIChatInput(mcbi.Messages, mcbi.Tools, mcbi.ToolChoice); errIn != nil {
 				log.Printf("build openai chat input error: %v, runinfo: %+v", errIn, info)
 				body.InMessages = mcbi.Messages
-			} else {
+			} else if hasTools {
 				body.Input = inStr
+			} else {
+				body.InMessages = mcbi.Messages
 			}
 		} else {
 			body.InMessages = mcbi.Messages
@@ -438,12 +439,14 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 					},
 				},
 			}
-			if c.reportTools && len(extracted.tools) > 0 {
-				if inStr, errIn := buildOpenAIChatInput(extracted.messages, extracted.tools, extracted.toolChoice); errIn != nil {
+			if c.reportTools {
+				if inStr, hasTools, errIn := buildOpenAIChatInput(extracted.messages, extracted.tools, extracted.toolChoice); errIn != nil {
 					log.Printf("build stream openai chat input error: %v, runinfo: %+v", errIn, info)
 					body.InMessages = extracted.messages
-				} else {
+				} else if hasTools {
 					body.Input = inStr
+				} else {
+					body.InMessages = extracted.messages
 				}
 			} else {
 				body.InMessages = extracted.messages

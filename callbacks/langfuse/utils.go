@@ -226,11 +226,12 @@ func mapToolChoiceOpenAI(tc *schema.ToolChoice) string {
 //
 //	{"messages":[...],"tools":[...],"tool_choice":"auto"}
 //
-// Caller must leave InMessages empty so acl consumer does not overwrite Input.
-func buildOpenAIChatInput(messages []*schema.Message, tools []*schema.ToolInfo, toolChoice *schema.ToolChoice) (string, error) {
+// hasTools is true only after at least one non-nil tool is converted.
+// Callers should set body.Input (leave InMessages empty) only when hasTools.
+func buildOpenAIChatInput(messages []*schema.Message, tools []*schema.ToolInfo, toolChoice *schema.ToolChoice) (input string, hasTools bool, err error) {
 	oaiTools, err := toolInfosToOpenAITools(tools)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	payload := map[string]any{
 		"messages": messages,
@@ -238,6 +239,11 @@ func buildOpenAIChatInput(messages []*schema.Message, tools []*schema.ToolInfo, 
 	if len(oaiTools) > 0 {
 		payload["tools"] = oaiTools
 		payload["tool_choice"] = mapToolChoiceOpenAI(toolChoice)
+		hasTools = true
 	}
-	return sonic.MarshalString(payload)
+	input, err = sonic.MarshalString(payload)
+	if err != nil {
+		return "", false, err
+	}
+	return input, hasTools, nil
 }
