@@ -138,6 +138,35 @@ type Config struct {
 }
 ```
 
+### Custom reconnecting transports
+
+The `session` subpackage accepts a transport factory when a transport must be
+created from application-specific routing rather than a built-in URL or
+command. The factory is called once for the initial connection and again for
+each reconnect, and every returned transport is connected at most once.
+
+```go
+managed, err := session.Connect(ctx, session.ServerConfig{
+	Name: "remote-server",
+	Transport: session.TransportConfig{
+		Factory: func(ctx context.Context) (mcp.Transport, error) {
+			return newApplicationTransport(ctx)
+		},
+	},
+	Replay: session.ReplayPolicies{
+		ListTools: session.ReplaySafe,
+		CallTool:  session.ReplayNever,
+		Ping:      session.ReplaySafe,
+	},
+})
+```
+
+`ReplaySafe` retries `Ping` and an empty-cursor `ListTools` request, but never
+retries `CallTool` or a non-empty-cursor page. When a dispatched operation is
+not replayed after a connection failure, the returned error has
+`officialmcp.ErrorKindUncertainOutcome` and does not match
+`officialmcp.IsConnectionError`.
+
 ## Examples
 
 See the [examples](./examples/) directory for complete usage examples.

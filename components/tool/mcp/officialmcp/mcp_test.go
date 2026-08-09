@@ -470,6 +470,19 @@ func TestInvokableRunClassifiesProtocolErrorAsCallTool(t *testing.T) {
 	assert.False(t, IsConnectionError(err))
 }
 
+func TestInvokableRunPreservesUncertainOutcome(t *testing.T) {
+	ctx := context.Background()
+	uncertain := &Error{
+		Kind: ErrorKindUncertainOutcome,
+		Err:  fmt.Errorf("response lost: %w", mcp.ErrConnectionClosed),
+	}
+	_, err := newStubTool(t, &stubSession{callErr: uncertain}).InvokableRun(ctx, "{}")
+	require.Error(t, err)
+	assert.True(t, IsErrorKind(err, ErrorKindUncertainOutcome))
+	assert.False(t, IsConnectionError(err), "uncertain calls must never be replayed as connection errors")
+	assert.ErrorIs(t, err, mcp.ErrConnectionClosed)
+}
+
 func TestIsConnectionError(t *testing.T) {
 	assert.False(t, IsConnectionError(nil))
 	assert.False(t, IsConnectionError(errors.New("plain")))
@@ -477,4 +490,8 @@ func TestIsConnectionError(t *testing.T) {
 	assert.True(t, IsConnectionError(fmt.Errorf("x: %w", mcp.ErrSessionMissing)))
 	assert.True(t, IsConnectionError(&Error{Kind: ErrorKindConnection}))
 	assert.False(t, IsConnectionError(&Error{Kind: ErrorKindCallTool}))
+	assert.False(t, IsConnectionError(&Error{
+		Kind: ErrorKindUncertainOutcome,
+		Err:  fmt.Errorf("response lost: %w", mcp.ErrConnectionClosed),
+	}))
 }

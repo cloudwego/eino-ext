@@ -90,12 +90,13 @@ type DescriptionPolicy struct {
 type ErrorKind string
 
 const (
-	ErrorKindListTools       ErrorKind = "list_tools"
-	ErrorKindSchemaConvert   ErrorKind = "schema_convert"
-	ErrorKindCallTool        ErrorKind = "call_tool"
-	ErrorKindConnection      ErrorKind = "connection"
-	ErrorKindServerToolError ErrorKind = "server_tool_error"
-	ErrorKindResultPolicy    ErrorKind = "result_policy"
+	ErrorKindListTools        ErrorKind = "list_tools"
+	ErrorKindSchemaConvert    ErrorKind = "schema_convert"
+	ErrorKindCallTool         ErrorKind = "call_tool"
+	ErrorKindConnection       ErrorKind = "connection"
+	ErrorKindUncertainOutcome ErrorKind = "uncertain_outcome"
+	ErrorKindServerToolError  ErrorKind = "server_tool_error"
+	ErrorKindResultPolicy     ErrorKind = "result_policy"
 )
 
 type Error struct {
@@ -140,8 +141,16 @@ func IsConnectionError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if IsErrorKind(err, ErrorKindConnection) {
-		return true
+	var typed *Error
+	if errors.As(err, &typed) {
+		switch typed.Kind {
+		case ErrorKindConnection:
+			return true
+		case ErrorKindUncertainOutcome:
+			// An uncertain operation may wrap a terminal connection sentinel,
+			// but callers must not treat it as permission to replay the request.
+			return false
+		}
 	}
 	return errors.Is(err, mcp.ErrConnectionClosed) || errors.Is(err, mcp.ErrSessionMissing)
 }
@@ -300,7 +309,9 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 	})
 	if err != nil {
 		kind := ErrorKindCallTool
-		if IsConnectionError(err) {
+		if IsErrorKind(err, ErrorKindUncertainOutcome) {
+			kind = ErrorKindUncertainOutcome
+		} else if IsConnectionError(err) {
 			kind = ErrorKindConnection
 		}
 		return "", &Error{Kind: kind, ServerName: m.serverName, RawToolName: m.rawToolName, ExposedToolName: m.exposedToolName, Err: fmt.Errorf("failed to call official mcp tool: %w", err)}

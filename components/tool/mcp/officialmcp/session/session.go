@@ -36,6 +36,29 @@ const (
 	TransportStreamableHTTP = "streamable-http"
 )
 
+// ReplayPolicy controls whether an operation is issued again after Session
+// replaces a failed connection. Reconnection still happens for ReplayNever;
+// only replay of the operation that observed the failure is suppressed.
+type ReplayPolicy uint8
+
+const (
+	// ReplayDefault preserves the historical behavior and replays once.
+	ReplayDefault ReplayPolicy = iota
+	ReplayAlways
+	ReplayNever
+	// ReplaySafe uses method-specific conservative semantics: Ping is safe,
+	// ListTools is safe only for an empty cursor, and CallTool is never safe.
+	ReplaySafe
+)
+
+// ReplayPolicies configures replay independently for each operation exposed by
+// Session. Zero values preserve the historical replay-once behavior.
+type ReplayPolicies struct {
+	ListTools ReplayPolicy
+	CallTool  ReplayPolicy
+	Ping      ReplayPolicy
+}
+
 // ErrorKindUnsupportedTransport tags an unsupported TransportConfig.Type. It
 // lives here rather than in the officialmcp package because only the session
 // layer constructs transports.
@@ -44,6 +67,7 @@ const ErrorKindUnsupportedTransport officialmcp.ErrorKind = "unsupported_transpo
 type ServerConfig struct {
 	Name              string
 	Transport         TransportConfig
+	Replay            ReplayPolicies
 	Client            *mcp.Implementation
 	ClientOptions     *mcp.ClientOptions
 	InitializeOptions *mcp.ClientSessionOptions
@@ -66,6 +90,11 @@ type TransportConfig struct {
 	// RoundTripper runs, so that RoundTripper sees them and may override them.
 	// Ignored for stdio.
 	HTTPClient *http.Client
+
+	// Factory builds a custom transport. When set, it takes precedence over the
+	// built-in transports selected by Type, and it is invoked again on every
+	// reconnect, so callers control redial semantics.
+	Factory func(ctx context.Context) (mcp.Transport, error)
 }
 
 var ErrSessionClosed = errors.New("official mcp session is closed")
@@ -95,6 +124,15 @@ type Session struct {
 	mu      sync.Mutex
 	session *mcp.ClientSession
 	closed  bool
+	closedC chan struct{}
+	attempt *reconnectAttempt
+}
+
+type reconnectAttempt struct {
+	done   chan struct{}
+	cancel context.CancelFunc
+	result *mcp.ClientSession
+	err    error
 }
 
 var _ officialmcp.ClientSession = (*Session)(nil)
@@ -120,12 +158,17 @@ func Connect(ctx context.Context, cfg ServerConfig) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Session{Name: cfg.Name, cfg: cfg, session: session}, nil
+	return &Session{Name: cfg.Name, cfg: cfg, session: session, closedC: make(chan struct{})}, nil
 }
 
-// connect builds the transport and dials a single go-sdk session.
+// connect builds the transport and dials a single go-sdk session. Reconnect
+// re-enters here with the same cfg, so a TransportConfig.Factory is invoked
+// again on every reconnect.
 func connect(ctx context.Context, cfg ServerConfig) (*mcp.ClientSession, error) {
-	transport, err := newTransport(cfg.Transport)
+	if err := validateReplayPolicies(cfg.Replay); err != nil {
+		return nil, startupError(cfg, err)
+	}
+	transport, err := newTransport(ctx, cfg.Transport)
 	if err != nil {
 		return nil, startupError(cfg, err)
 	}
@@ -156,7 +199,14 @@ func (s *Session) Close() error {
 	s.closed = true
 	cur := s.session
 	s.session = nil
+	attempt := s.attempt
+	if s.closedC != nil {
+		close(s.closedC)
+	}
 	s.mu.Unlock()
+	if attempt != nil {
+		attempt.cancel()
+	}
 	if cur == nil {
 		return nil
 	}
@@ -173,42 +223,83 @@ func (s *Session) current() (*mcp.ClientSession, error) {
 }
 
 // reconnect rebuilds the session, but only if stale is still the current one.
-// If another goroutine already reconnected (current != stale), it returns the
-// fresh session without connecting again, so once one goroutine reconnects
-// successfully a burst of concurrent connection errors reuses that single new
-// session. A reconnect that *fails* leaves stale installed, so each waiting
-// caller in the burst re-enters here and dials on its own until one succeeds.
+// Concurrent callers share one in-flight attempt. The potentially blocking
+// connect runs without holding s.mu, which lets Close cancel the attempt and
+// return without waiting for a transport that ignores cancellation. A late
+// successful connection is closed instead of being adopted after Close.
 func (s *Session) reconnect(ctx context.Context, stale *mcp.ClientSession) (*mcp.ClientSession, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.closed {
+		s.mu.Unlock()
 		return nil, ErrSessionClosed
 	}
 	if s.session != stale {
-		return s.session, nil
+		current := s.session
+		s.mu.Unlock()
+		return current, nil
 	}
-	// Connect first, then discard the stale session only once we have a working
-	// replacement. If connect fails we leave stale installed (unchanged, not
-	// closed) so a later retry re-enters here against the same sentinel and dials
-	// again — rather than closing stale now and leaving a dead session as current,
-	// which would make every retry re-close the same session.
-	cur, err := connect(ctx, s.cfg)
-	if err != nil {
-		// Tag the reconnect failure as connection-level so callers (and
-		// officialmcp.IsConnectionError) recognize an unreachable server as such,
-		// instead of the default classification treating it as a call/list
-		// protocol error. The StartupError is preserved as the cause.
-		return nil, &officialmcp.Error{Kind: officialmcp.ErrorKindConnection, ServerName: s.cfg.Name, Err: err}
+	if attempt := s.attempt; attempt != nil {
+		closedC := s.closedC
+		s.mu.Unlock()
+		select {
+		case <-attempt.done:
+			return attempt.result, attempt.err
+		case <-closedC:
+			return nil, ErrSessionClosed
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
-	if stale != nil {
-		_ = stale.Close()
+	attemptCtx, cancel := context.WithCancel(ctx)
+	attempt := &reconnectAttempt{
+		done:   make(chan struct{}),
+		cancel: cancel,
 	}
-	s.session = cur
-	return s.session, nil
+	s.attempt = attempt
+	cfg := s.cfg
+	s.mu.Unlock()
+
+	fresh, connectErr := connect(attemptCtx, cfg)
+
+	var closeFresh, closeStale *mcp.ClientSession
+	s.mu.Lock()
+	switch {
+	case s.closed:
+		attempt.err = ErrSessionClosed
+		closeFresh = fresh
+	case s.session != stale:
+		attempt.result = s.session
+		closeFresh = fresh
+	case connectErr != nil:
+		// Leave stale installed so a later operation can start a new attempt.
+		attempt.err = &officialmcp.Error{
+			Kind:       officialmcp.ErrorKindConnection,
+			ServerName: cfg.Name,
+			Err:        connectErr,
+		}
+	default:
+		s.session = fresh
+		attempt.result = fresh
+		closeStale = stale
+	}
+	if s.attempt == attempt {
+		s.attempt = nil
+	}
+	close(attempt.done)
+	s.mu.Unlock()
+	cancel()
+
+	if closeFresh != nil {
+		_ = closeFresh.Close()
+	}
+	if closeStale != nil {
+		_ = closeStale.Close()
+	}
+	return attempt.result, attempt.err
 }
 
-// ListTools calls the underlying session, reconnecting and retrying once on a
-// connection-level failure.
+// ListTools calls the underlying session and follows the configured replay
+// policy after a connection-level failure.
 func (s *Session) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error) {
 	cur, err := s.current()
 	if err != nil {
@@ -218,15 +309,24 @@ func (s *Session) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*
 	if err == nil || !officialmcp.IsConnectionError(err) {
 		return res, err
 	}
-	cur, rerr := s.reconnect(ctx, cur)
-	if rerr != nil {
-		return nil, rerr
+	fresh, reconnectErr := s.reconnect(ctx, cur)
+	replay := shouldReplay(s.cfg.Replay.ListTools, params == nil || params.Cursor == "")
+	if !replay {
+		return nil, uncertainOutcomeError(s.cfg.Name, "list tools", err, reconnectErr)
 	}
-	return cur.ListTools(ctx, params)
+	if reconnectErr != nil {
+		return nil, reconnectErr
+	}
+	if fresh == nil {
+		return nil, ErrSessionClosed
+	}
+	return fresh.ListTools(ctx, params)
 }
 
-// CallTool calls the underlying session, reconnecting and retrying once on a
-// connection-level failure.
+// CallTool calls the underlying session and follows the configured replay
+// policy after a connection-level failure. ReplayNever conservatively returns
+// ErrorKindUncertainOutcome because the transport cannot prove whether the
+// server applied the request before the connection failed.
 func (s *Session) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
 	cur, err := s.current()
 	if err != nil {
@@ -236,15 +336,20 @@ func (s *Session) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mc
 	if err == nil || !officialmcp.IsConnectionError(err) {
 		return res, err
 	}
-	cur, rerr := s.reconnect(ctx, cur)
-	if rerr != nil {
-		return nil, rerr
+	fresh, reconnectErr := s.reconnect(ctx, cur)
+	if !shouldReplay(s.cfg.Replay.CallTool, false) {
+		return nil, uncertainOutcomeError(s.cfg.Name, "call tool", err, reconnectErr)
 	}
-	return cur.CallTool(ctx, params)
+	if reconnectErr != nil {
+		return nil, reconnectErr
+	}
+	if fresh == nil {
+		return nil, ErrSessionClosed
+	}
+	return fresh.CallTool(ctx, params)
 }
 
-// Ping pings the underlying session, reconnecting and retrying once on a
-// connection-level failure.
+// Ping follows the configured replay policy after a connection-level failure.
 func (s *Session) Ping(ctx context.Context, params *mcp.PingParams) error {
 	cur, err := s.current()
 	if err != nil {
@@ -254,14 +359,30 @@ func (s *Session) Ping(ctx context.Context, params *mcp.PingParams) error {
 	if err == nil || !officialmcp.IsConnectionError(err) {
 		return err
 	}
-	cur, rerr := s.reconnect(ctx, cur)
-	if rerr != nil {
-		return rerr
+	fresh, reconnectErr := s.reconnect(ctx, cur)
+	if !shouldReplay(s.cfg.Replay.Ping, true) {
+		return uncertainOutcomeError(s.cfg.Name, "ping", err, reconnectErr)
 	}
-	return cur.Ping(ctx, params)
+	if reconnectErr != nil {
+		return reconnectErr
+	}
+	if fresh == nil {
+		return ErrSessionClosed
+	}
+	return fresh.Ping(ctx, params)
 }
 
-func newTransport(cfg TransportConfig) (mcp.Transport, error) {
+func newTransport(ctx context.Context, cfg TransportConfig) (mcp.Transport, error) {
+	if cfg.Factory != nil {
+		transport, err := cfg.Factory(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if transport == nil {
+			return nil, errors.New("official mcp transport factory returned nil")
+		}
+		return transport, nil
+	}
 	switch cfg.Type {
 	case TransportSSE:
 		if err := validateAbsoluteURL(cfg.URL); err != nil {
@@ -288,6 +409,50 @@ func newTransport(cfg TransportConfig) (mcp.Transport, error) {
 			Kind: ErrorKindUnsupportedTransport,
 			Err:  fmt.Errorf("unsupported official mcp transport: %s", cfg.Type),
 		}
+	}
+}
+
+func validateReplayPolicies(policies ReplayPolicies) error {
+	for _, candidate := range []struct {
+		name   string
+		policy ReplayPolicy
+	}{
+		{name: "list tools", policy: policies.ListTools},
+		{name: "call tool", policy: policies.CallTool},
+		{name: "ping", policy: policies.Ping},
+	} {
+		name, policy := candidate.name, candidate.policy
+		switch policy {
+		case ReplayDefault, ReplayAlways, ReplayNever, ReplaySafe:
+		default:
+			return fmt.Errorf("invalid official mcp %s replay policy: %d", name, policy)
+		}
+	}
+	return nil
+}
+
+func shouldReplay(policy ReplayPolicy, operationSafe bool) bool {
+	switch policy {
+	case ReplayDefault, ReplayAlways:
+		return true
+	case ReplayNever:
+		return false
+	case ReplaySafe:
+		return operationSafe
+	default:
+		return false
+	}
+}
+
+func uncertainOutcomeError(serverName, operation string, operationErr, reconnectErr error) error {
+	cause := operationErr
+	if reconnectErr != nil {
+		cause = errors.Join(operationErr, reconnectErr)
+	}
+	return &officialmcp.Error{
+		Kind:       officialmcp.ErrorKindUncertainOutcome,
+		ServerName: serverName,
+		Err:        fmt.Errorf("official mcp %s outcome is uncertain: %w", operation, cause),
 	}
 }
 

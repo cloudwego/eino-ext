@@ -138,7 +138,7 @@ func TestHTTPClientAndHeadersCompose(t *testing.T) {
 }
 
 func TestNewTransportStdioConfig(t *testing.T) {
-	transport, err := newTransport(TransportConfig{
+	transport, err := newTransport(context.Background(), TransportConfig{
 		Type:    TransportStdio,
 		Command: "echo",
 		Args:    []string{"hello"},
@@ -155,7 +155,7 @@ func TestNewTransportStdioConfig(t *testing.T) {
 }
 
 func TestNewTransportRejectsEmptyStdioCommand(t *testing.T) {
-	_, err := newTransport(TransportConfig{Type: TransportStdio})
+	_, err := newTransport(context.Background(), TransportConfig{Type: TransportStdio})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "stdio command is empty")
 }

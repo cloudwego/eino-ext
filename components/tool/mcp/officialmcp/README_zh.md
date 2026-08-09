@@ -138,6 +138,33 @@ type Config struct {
 }
 ```
 
+### 自定义可重连 transport
+
+当 transport 需要通过业务路由创建、不能使用内置 URL 或 command 时，可向
+`session` 子包传入 transport factory。首次连接和每次重连都会重新调用 factory，
+每个返回的 transport 最多只会被连接一次。
+
+```go
+managed, err := session.Connect(ctx, session.ServerConfig{
+	Name: "remote-server",
+	Transport: session.TransportConfig{
+		Factory: func(ctx context.Context) (mcp.Transport, error) {
+			return newApplicationTransport(ctx)
+		},
+	},
+	Replay: session.ReplayPolicies{
+		ListTools: session.ReplaySafe,
+		CallTool:  session.ReplayNever,
+		Ping:      session.ReplaySafe,
+	},
+})
+```
+
+`ReplaySafe` 会重试 `Ping` 和空 cursor 的 `ListTools`，但不会重试 `CallTool`
+或非空 cursor 的分页请求。连接失败后若已下发操作没有重放，返回错误会带有
+`officialmcp.ErrorKindUncertainOutcome`，且不会匹配
+`officialmcp.IsConnectionError`。
+
 ## 示例
 
 查看 [examples](./examples/) 目录获取完整的使用示例。
