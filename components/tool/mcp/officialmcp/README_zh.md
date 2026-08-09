@@ -161,9 +161,11 @@ managed, err := session.Connect(ctx, session.ServerConfig{
 ```
 
 `ReplaySafe` 会重试 `Ping` 和空 cursor 的 `ListTools`，但不会重试 `CallTool`
-或非空 cursor 的分页请求。连接失败后若已下发操作没有重放，返回错误会带有
+或非空 cursor 的分页请求。未重放的 `CallTool` 返回
 `officialmcp.ErrorKindUncertainOutcome`，且不会匹配
-`officialmcp.IsConnectionError`。
+`officialmcp.IsConnectionError`。非空 cursor 的 `ListTools` 在重建后返回
+`officialmcp.ErrorKindConnection`，调用方可以从空 cursor 重新开始发现，而不会
+重放绑定旧 generation 的分页请求。
 
 ## 示例
 

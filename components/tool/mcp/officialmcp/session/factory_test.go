@@ -295,8 +295,8 @@ func TestReplaySafeListToolsUsesCursorBoundary(t *testing.T) {
 
 		_, err = managed.ListTools(ctx, &mcp.ListToolsParams{Cursor: "generation-bound-cursor"})
 		require.Error(t, err)
-		assert.True(t, officialmcp.IsErrorKind(err, officialmcp.ErrorKindUncertainOutcome))
-		assert.False(t, officialmcp.IsConnectionError(err))
+		assert.True(t, officialmcp.IsErrorKind(err, officialmcp.ErrorKindConnection))
+		assert.True(t, officialmcp.IsConnectionError(err))
 		assert.Equal(t, int32(2), pf.callCount())
 
 		result, err := managed.ListTools(ctx, &mcp.ListToolsParams{})

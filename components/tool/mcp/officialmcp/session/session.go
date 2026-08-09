@@ -312,7 +312,7 @@ func (s *Session) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*
 	fresh, reconnectErr := s.reconnect(ctx, cur)
 	replay := shouldReplay(s.cfg.Replay.ListTools, params == nil || params.Cursor == "")
 	if !replay {
-		return nil, uncertainOutcomeError(s.cfg.Name, "list tools", err, reconnectErr)
+		return nil, connectionError(s.cfg.Name, "list tools", err, reconnectErr)
 	}
 	if reconnectErr != nil {
 		return nil, reconnectErr
@@ -453,6 +453,22 @@ func uncertainOutcomeError(serverName, operation string, operationErr, reconnect
 		Kind:       officialmcp.ErrorKindUncertainOutcome,
 		ServerName: serverName,
 		Err:        fmt.Errorf("official mcp %s outcome is uncertain: %w", operation, cause),
+	}
+}
+
+func connectionError(serverName, operation string, operationErr, reconnectErr error) error {
+	cause := operationErr
+	if reconnectErr != nil {
+		cause = errors.Join(operationErr, reconnectErr)
+	}
+	return &officialmcp.Error{
+		Kind:       officialmcp.ErrorKindConnection,
+		ServerName: serverName,
+		Err: fmt.Errorf(
+			"official mcp %s was not replayed after reconnect: %w",
+			operation,
+			cause,
+		),
 	}
 }
 

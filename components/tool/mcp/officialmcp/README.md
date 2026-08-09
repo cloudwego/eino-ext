@@ -162,10 +162,11 @@ managed, err := session.Connect(ctx, session.ServerConfig{
 ```
 
 `ReplaySafe` retries `Ping` and an empty-cursor `ListTools` request, but never
-retries `CallTool` or a non-empty-cursor page. When a dispatched operation is
-not replayed after a connection failure, the returned error has
-`officialmcp.ErrorKindUncertainOutcome` and does not match
-`officialmcp.IsConnectionError`.
+retries `CallTool` or a non-empty-cursor page. A non-replayed `CallTool`
+returns `officialmcp.ErrorKindUncertainOutcome` and does not match
+`officialmcp.IsConnectionError`. A non-empty-cursor `ListTools` page returns
+`officialmcp.ErrorKindConnection` after reconnecting, so the caller can restart
+discovery from an empty cursor without replaying the generation-bound page.
 
 ## Examples
 
