@@ -517,3 +517,14 @@ func TestSessionTerminalMarkerPreservesErrorClassification(t *testing.T) {
 	assert.Same(t, MarkSessionTerminal(marked), marked)
 	assert.NoError(t, MarkSessionTerminal(nil))
 }
+
+func TestRequestRejectedMarkerPreservesErrorClassification(t *testing.T) {
+	overload := &Error{Kind: ErrorKindCallTool, Err: assert.AnError}
+	marked := MarkRequestRejected(overload)
+	assert.True(t, IsRequestRejected(marked))
+	assert.True(t, IsErrorKind(marked, ErrorKindCallTool))
+	assert.False(t, IsConnectionError(marked))
+	assert.ErrorIs(t, marked, assert.AnError)
+	assert.Same(t, MarkRequestRejected(marked), marked)
+	assert.NoError(t, MarkRequestRejected(nil))
+}

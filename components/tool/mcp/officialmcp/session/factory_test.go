@@ -117,6 +117,43 @@ type terminalConnection struct {
 	inner mcp.Connection
 }
 
+type rejectOnceTransport struct {
+	inner mcp.Transport
+}
+
+func (t rejectOnceTransport) Connect(ctx context.Context) (mcp.Connection, error) {
+	connection, err := t.inner.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &rejectOnceConnection{inner: connection}, nil
+}
+
+type rejectOnceConnection struct {
+	inner    mcp.Connection
+	rejected atomic.Bool
+}
+
+func (c *rejectOnceConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
+	return c.inner.Read(ctx)
+}
+
+func (c *rejectOnceConnection) Write(ctx context.Context, message jsonrpc.Message) error {
+	if request, ok := message.(*jsonrpc.Request); ok &&
+		request.Method == "tools/call" &&
+		c.rejected.CompareAndSwap(false, true) {
+		return officialmcp.MarkRequestRejected(&officialmcp.Error{
+			Kind: officialmcp.ErrorKindCallTool,
+			Err:  errors.New("overloaded"),
+		})
+	}
+	return c.inner.Write(ctx, message)
+}
+
+func (c *rejectOnceConnection) Close() error { return c.inner.Close() }
+
+func (c *rejectOnceConnection) SessionID() string { return c.inner.SessionID() }
+
 func (c *terminalConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
 	return c.inner.Read(ctx)
 }
@@ -458,6 +495,42 @@ func TestSessionTerminalErrorClosesManagedSession(t *testing.T) {
 	require.ErrorIs(t, err, ErrSessionClosed)
 	assert.Equal(t, int32(1), atomic.LoadInt32(&factoryCalls), "terminal session must not reconnect")
 	require.NoError(t, managed.Close())
+}
+
+func TestRequestRejectedKeepsManagedConnectionUsable(t *testing.T) {
+	ctx := context.Background()
+	pf := &pipeFactory{server: newAddServer()}
+	var factoryCalls int32
+	managed, err := Connect(ctx, ServerConfig{
+		Name: "test",
+		Transport: TransportConfig{Factory: func(ctx context.Context) (mcp.Transport, error) {
+			transport, err := pf.factory(ctx)
+			if err != nil {
+				return nil, err
+			}
+			atomic.AddInt32(&factoryCalls, 1)
+			return rejectOnceTransport{inner: transport}, nil
+		}},
+	})
+	require.NoError(t, err)
+	defer managed.Close()
+
+	_, err = managed.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "add",
+		Arguments: map[string]any{"x": 1, "y": 2},
+	})
+	require.Error(t, err)
+	assert.True(t, officialmcp.IsRequestRejected(err))
+	assert.True(t, officialmcp.IsErrorKind(err, officialmcp.ErrorKindCallTool))
+
+	result, err := managed.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "add",
+		Arguments: map[string]any{"x": 4, "y": 5},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "9", result.Content[0].(*mcp.TextContent).Text)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&factoryCalls))
+	assert.Equal(t, []int32{1}, pf.transportConnectCounts())
 }
 
 func TestCloseDoesNotWaitForBlockedReconnectFactory(t *testing.T) {

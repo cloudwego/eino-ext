@@ -26,6 +26,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -129,6 +130,27 @@ type sessionTerminalError struct {
 	err error
 }
 
+type requestRejectedError struct {
+	err error
+}
+
+func (e *requestRejectedError) Error() string {
+	if e == nil || e.err == nil {
+		return "official mcp request was rejected"
+	}
+	return e.err.Error()
+}
+
+func (e *requestRejectedError) Unwrap() []error {
+	if e == nil {
+		return nil
+	}
+	return []error{
+		e.err,
+		&jsonrpc.Error{Code: -32005, Message: "rejected by transport"},
+	}
+}
+
 func (e *sessionTerminalError) Error() string {
 	if e == nil || e.err == nil {
 		return "official mcp session failed terminally"
@@ -224,6 +246,23 @@ func MarkSessionTerminal(err error) error {
 func IsSessionTerminal(err error) bool {
 	var terminal *sessionTerminalError
 	return errors.As(err, &terminal)
+}
+
+// MarkRequestRejected reports a request-scoped transport rejection that leaves
+// the connection usable. The original typed error remains available through
+// errors.As while the Go SDK observes its transport rejection sentinel.
+func MarkRequestRejected(err error) error {
+	if err == nil || IsRequestRejected(err) {
+		return err
+	}
+	return &requestRejectedError{err: err}
+}
+
+// IsRequestRejected reports whether err is a request-scoped transport
+// rejection rather than a connection failure.
+func IsRequestRejected(err error) bool {
+	var rejected *requestRejectedError
+	return errors.As(err, &rejected)
 }
 
 // ClientSession is the anti-corruption boundary between officialmcp and the

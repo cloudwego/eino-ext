@@ -170,6 +170,8 @@ managed, err := session.Connect(ctx, session.ServerConfig{
 分类，自定义 transport 可以用 `officialmcp.MarkConnectionInvalid` 包装该错误。
 协议或配置错误需要关闭逻辑 session 并拒绝所有后续操作时，使用
 `officialmcp.MarkSessionTerminal`。
+请求级 overload 或 admission failure 需要保留当前 connection 时，使用
+`officialmcp.MarkRequestRejected`。
 
 ## 示例
 

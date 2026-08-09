@@ -172,6 +172,8 @@ Custom transports can wrap a typed remote or uncertain error with
 failed operation must retain its original, non-replayable classification.
 Use `officialmcp.MarkSessionTerminal` for protocol or configuration failures
 that must close the logical session and reject all later operations.
+Use `officialmcp.MarkRequestRejected` for request-scoped overload or admission
+failures that must preserve the current connection.
 
 ## Examples
 
