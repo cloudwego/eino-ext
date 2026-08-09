@@ -306,6 +306,10 @@ func (s *Session) ListTools(ctx context.Context, params *mcp.ListToolsParams) (*
 		return nil, err
 	}
 	res, err := cur.ListTools(ctx, params)
+	if officialmcp.IsSessionTerminal(err) {
+		_ = s.Close()
+		return nil, err
+	}
 	if officialmcp.IsConnectionInvalid(err) {
 		_, _ = s.reconnect(ctx, cur)
 		return nil, err
@@ -337,6 +341,10 @@ func (s *Session) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mc
 		return nil, err
 	}
 	res, err := cur.CallTool(ctx, params)
+	if officialmcp.IsSessionTerminal(err) {
+		_ = s.Close()
+		return nil, err
+	}
 	if officialmcp.IsConnectionInvalid(err) {
 		_, _ = s.reconnect(ctx, cur)
 		return nil, err
@@ -364,6 +372,10 @@ func (s *Session) Ping(ctx context.Context, params *mcp.PingParams) error {
 		return err
 	}
 	err = cur.Ping(ctx, params)
+	if officialmcp.IsSessionTerminal(err) {
+		_ = s.Close()
+		return err
+	}
 	if officialmcp.IsConnectionInvalid(err) {
 		_, _ = s.reconnect(ctx, cur)
 		return err

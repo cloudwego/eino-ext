@@ -170,6 +170,8 @@ discovery from an empty cursor without replaying the generation-bound page.
 Custom transports can wrap a typed remote or uncertain error with
 `officialmcp.MarkConnectionInvalid` when the connection must be rebuilt but the
 failed operation must retain its original, non-replayable classification.
+Use `officialmcp.MarkSessionTerminal` for protocol or configuration failures
+that must close the logical session and reject all later operations.
 
 ## Examples
 

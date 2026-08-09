@@ -168,6 +168,8 @@ managed, err := session.Connect(ctx, session.ServerConfig{
 重放绑定旧 generation 的分页请求。
 如果 connection 必须重建，但失败操作需要保留原有的 typed remote 或 uncertain
 分类，自定义 transport 可以用 `officialmcp.MarkConnectionInvalid` 包装该错误。
+协议或配置错误需要关闭逻辑 session 并拒绝所有后续操作时，使用
+`officialmcp.MarkSessionTerminal`。
 
 ## 示例
 

@@ -506,3 +506,14 @@ func TestConnectionInvalidMarkerPreservesErrorClassification(t *testing.T) {
 	assert.Same(t, MarkConnectionInvalid(marked), marked)
 	assert.NoError(t, MarkConnectionInvalid(nil))
 }
+
+func TestSessionTerminalMarkerPreservesErrorClassification(t *testing.T) {
+	protocolErr := &Error{Kind: ErrorKindCallTool, Err: assert.AnError}
+	marked := MarkSessionTerminal(protocolErr)
+	assert.True(t, IsSessionTerminal(marked))
+	assert.True(t, IsErrorKind(marked, ErrorKindCallTool))
+	assert.False(t, IsConnectionError(marked))
+	assert.ErrorIs(t, marked, assert.AnError)
+	assert.Same(t, MarkSessionTerminal(marked), marked)
+	assert.NoError(t, MarkSessionTerminal(nil))
+}

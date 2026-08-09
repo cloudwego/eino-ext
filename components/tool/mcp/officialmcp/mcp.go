@@ -125,6 +125,24 @@ func (e *connectionInvalidError) Unwrap() error {
 	return e.err
 }
 
+type sessionTerminalError struct {
+	err error
+}
+
+func (e *sessionTerminalError) Error() string {
+	if e == nil || e.err == nil {
+		return "official mcp session failed terminally"
+	}
+	return e.err.Error()
+}
+
+func (e *sessionTerminalError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 func (e *Error) Error() string {
 	if e == nil {
 		return ""
@@ -189,6 +207,23 @@ func MarkConnectionInvalid(err error) error {
 func IsConnectionInvalid(err error) bool {
 	var invalid *connectionInvalidError
 	return errors.As(err, &invalid)
+}
+
+// MarkSessionTerminal reports that a protocol or configuration failure makes
+// the logical session permanently unusable. Managed sessions close themselves
+// before returning the original error and reject every subsequent operation.
+func MarkSessionTerminal(err error) error {
+	if err == nil || IsSessionTerminal(err) {
+		return err
+	}
+	return &sessionTerminalError{err: err}
+}
+
+// IsSessionTerminal reports whether err permanently invalidates the logical
+// session rather than only its current connection.
+func IsSessionTerminal(err error) bool {
+	var terminal *sessionTerminalError
+	return errors.As(err, &terminal)
 }
 
 // ClientSession is the anti-corruption boundary between officialmcp and the
