@@ -26,6 +26,7 @@ import (
 	"time"
 
 	officialmcp "github.com/cloudwego/eino-ext/components/tool/mcp/officialmcp"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,6 +66,40 @@ func (t *countingTransport) Connect(ctx context.Context) (mcp.Connection, error)
 	atomic.AddInt32(&t.calls, 1)
 	return t.inner.Connect(ctx)
 }
+
+type invalidatingTransport struct {
+	inner mcp.Transport
+}
+
+func (t invalidatingTransport) Connect(ctx context.Context) (mcp.Connection, error) {
+	connection, err := t.inner.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &invalidatingConnection{inner: connection}, nil
+}
+
+type invalidatingConnection struct {
+	inner mcp.Connection
+}
+
+func (c *invalidatingConnection) Read(ctx context.Context) (jsonrpc.Message, error) {
+	return c.inner.Read(ctx)
+}
+
+func (c *invalidatingConnection) Write(ctx context.Context, message jsonrpc.Message) error {
+	if request, ok := message.(*jsonrpc.Request); ok && request.Method == "tools/call" {
+		return officialmcp.MarkConnectionInvalid(&officialmcp.Error{
+			Kind: officialmcp.ErrorKindUncertainOutcome,
+			Err:  errors.New("response lost"),
+		})
+	}
+	return c.inner.Write(ctx, message)
+}
+
+func (c *invalidatingConnection) Close() error { return c.inner.Close() }
+
+func (c *invalidatingConnection) SessionID() string { return c.inner.SessionID() }
 
 func (f *pipeFactory) factory(ctx context.Context) (mcp.Transport, error) {
 	atomic.AddInt32(&f.calls, 1)
@@ -312,6 +347,55 @@ func TestReplaySafeMethodSemantics(t *testing.T) {
 	assert.False(t, shouldReplay(ReplayNever, true))
 	assert.True(t, shouldReplay(ReplaySafe, true))
 	assert.False(t, shouldReplay(ReplaySafe, false))
+}
+
+func TestConnectionInvalidRebuildsWithoutReplaying(t *testing.T) {
+	ctx := context.Background()
+	var toolCalls int32
+	server := mcp.NewServer(&mcp.Implementation{Name: "server", Version: "v1.0.0"}, nil)
+	mcp.AddTool(server, &mcp.Tool{Name: "add", Description: "add two numbers"}, func(ctx context.Context, req *mcp.CallToolRequest, args addParams) (*mcp.CallToolResult, any, error) {
+		atomic.AddInt32(&toolCalls, 1)
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{&mcp.TextContent{Text: fmt.Sprintf("%d", args.X+args.Y)}},
+		}, nil, nil
+	})
+	pf := &pipeFactory{server: server}
+	var factoryCalls int32
+	managed, err := Connect(ctx, ServerConfig{
+		Name: "test",
+		Transport: TransportConfig{Factory: func(ctx context.Context) (mcp.Transport, error) {
+			transport, err := pf.factory(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if atomic.AddInt32(&factoryCalls, 1) == 1 {
+				return invalidatingTransport{inner: transport}, nil
+			}
+			return transport, nil
+		}},
+		Replay: ReplayPolicies{CallTool: ReplaySafe},
+	})
+	require.NoError(t, err)
+	defer managed.Close()
+
+	_, err = managed.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "add",
+		Arguments: map[string]any{"x": 1, "y": 2},
+	})
+	require.Error(t, err)
+	assert.True(t, officialmcp.IsErrorKind(err, officialmcp.ErrorKindUncertainOutcome))
+	assert.True(t, officialmcp.IsConnectionInvalid(err))
+	assert.False(t, officialmcp.IsConnectionError(err))
+	assert.Equal(t, int32(0), atomic.LoadInt32(&toolCalls), "failed call must not reach the server")
+	assert.Equal(t, int32(2), pf.callCount(), "connection should rebuild without replaying CallTool")
+
+	result, err := managed.CallTool(ctx, &mcp.CallToolParams{
+		Name:      "add",
+		Arguments: map[string]any{"x": 4, "y": 5},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "9", result.Content[0].(*mcp.TextContent).Text)
+	assert.Equal(t, int32(1), atomic.LoadInt32(&toolCalls))
 }
 
 func TestCloseDoesNotWaitForBlockedReconnectFactory(t *testing.T) {

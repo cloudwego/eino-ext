@@ -107,6 +107,24 @@ type Error struct {
 	Err             error
 }
 
+type connectionInvalidError struct {
+	err error
+}
+
+func (e *connectionInvalidError) Error() string {
+	if e == nil || e.err == nil {
+		return "official mcp connection is invalid"
+	}
+	return e.err.Error()
+}
+
+func (e *connectionInvalidError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 func (e *Error) Error() string {
 	if e == nil {
 		return ""
@@ -153,6 +171,24 @@ func IsConnectionError(err error) bool {
 		}
 	}
 	return errors.Is(err, mcp.ErrConnectionClosed) || errors.Is(err, mcp.ErrSessionMissing)
+}
+
+// MarkConnectionInvalid reports that the current connection must be rebuilt
+// without changing whether err is replay-safe. Managed sessions reconnect
+// before returning the original error, so an uncertain or typed remote error
+// remains distinguishable from a replayable connection failure.
+func MarkConnectionInvalid(err error) error {
+	if err == nil || IsConnectionInvalid(err) {
+		return err
+	}
+	return &connectionInvalidError{err: err}
+}
+
+// IsConnectionInvalid reports whether err explicitly invalidates the current
+// connection without classifying the failed operation as replayable.
+func IsConnectionInvalid(err error) bool {
+	var invalid *connectionInvalidError
+	return errors.As(err, &invalid)
 }
 
 // ClientSession is the anti-corruption boundary between officialmcp and the

@@ -167,6 +167,9 @@ returns `officialmcp.ErrorKindUncertainOutcome` and does not match
 `officialmcp.IsConnectionError`. A non-empty-cursor `ListTools` page returns
 `officialmcp.ErrorKindConnection` after reconnecting, so the caller can restart
 discovery from an empty cursor without replaying the generation-bound page.
+Custom transports can wrap a typed remote or uncertain error with
+`officialmcp.MarkConnectionInvalid` when the connection must be rebuilt but the
+failed operation must retain its original, non-replayable classification.
 
 ## Examples
 

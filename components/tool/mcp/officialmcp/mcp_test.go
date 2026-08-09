@@ -495,3 +495,14 @@ func TestIsConnectionError(t *testing.T) {
 		Err:  fmt.Errorf("response lost: %w", mcp.ErrConnectionClosed),
 	}))
 }
+
+func TestConnectionInvalidMarkerPreservesErrorClassification(t *testing.T) {
+	uncertain := &Error{Kind: ErrorKindUncertainOutcome, Err: assert.AnError}
+	marked := MarkConnectionInvalid(uncertain)
+	assert.True(t, IsConnectionInvalid(marked))
+	assert.True(t, IsErrorKind(marked, ErrorKindUncertainOutcome))
+	assert.False(t, IsConnectionError(marked))
+	assert.ErrorIs(t, marked, assert.AnError)
+	assert.Same(t, MarkConnectionInvalid(marked), marked)
+	assert.NoError(t, MarkConnectionInvalid(nil))
+}
