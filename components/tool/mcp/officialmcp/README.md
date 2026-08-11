@@ -138,6 +138,24 @@ type Config struct {
 }
 ```
 
+### Custom reconnect transport
+
+When a transport must be created through application routing instead of a
+built-in URL or command, provide a transport factory to the `session` package.
+The factory is called for the initial connection and again on every reconnect,
+and each invocation must return a fresh one-shot `mcp.Transport`.
+
+```go
+managed, err := session.Connect(ctx, session.ServerConfig{
+	Name: "remote-server",
+	Transport: session.TransportConfig{
+		Factory: func(ctx context.Context) (mcp.Transport, error) {
+			return newApplicationTransport(ctx)
+		},
+	},
+})
+```
+
 ## Examples
 
 See the [examples](./examples/) directory for complete usage examples.

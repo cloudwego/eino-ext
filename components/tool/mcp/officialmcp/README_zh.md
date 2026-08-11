@@ -138,6 +138,23 @@ type Config struct {
 }
 ```
 
+### 自定义可重连 transport
+
+当 transport 需要通过业务路由创建、不能使用内置 URL 或 command 时，可向
+`session` 子包传入 transport factory。首次连接和每次重连都会重新调用 factory，
+每次必须返回一个全新的 one-shot `mcp.Transport`。
+
+```go
+managed, err := session.Connect(ctx, session.ServerConfig{
+	Name: "remote-server",
+	Transport: session.TransportConfig{
+		Factory: func(ctx context.Context) (mcp.Transport, error) {
+			return newApplicationTransport(ctx)
+		},
+	},
+})
+```
+
 ## 示例
 
 查看 [examples](./examples/) 目录获取完整的使用示例。

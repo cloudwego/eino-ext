@@ -18,11 +18,13 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	officialmcp "github.com/cloudwego/eino-ext/components/tool/mcp/officialmcp"
@@ -138,7 +140,7 @@ func TestHTTPClientAndHeadersCompose(t *testing.T) {
 }
 
 func TestNewTransportStdioConfig(t *testing.T) {
-	transport, err := newTransport(TransportConfig{
+	transport, err := newTransport(context.Background(), TransportConfig{
 		Type:    TransportStdio,
 		Command: "echo",
 		Args:    []string{"hello"},
@@ -155,9 +157,66 @@ func TestNewTransportStdioConfig(t *testing.T) {
 }
 
 func TestNewTransportRejectsEmptyStdioCommand(t *testing.T) {
-	_, err := newTransport(TransportConfig{Type: TransportStdio})
+	_, err := newTransport(context.Background(), TransportConfig{Type: TransportStdio})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "stdio command is empty")
+}
+
+func TestConnectAndReconnectViaFactory(t *testing.T) {
+	type contextKey struct{}
+	ctx := context.WithValue(context.Background(), contextKey{}, "factory-context")
+	httpServer := httptest.NewServer(newStreamableServerHandler())
+	defer httpServer.Close()
+
+	var calls int32
+	managed, err := Connect(ctx, ServerConfig{
+		Name: "test",
+		Transport: TransportConfig{
+			Type: "ignored-when-factory-is-set",
+			Factory: func(factoryCtx context.Context) (mcp.Transport, error) {
+				assert.Equal(t, "factory-context", factoryCtx.Value(contextKey{}))
+				atomic.AddInt32(&calls, 1)
+				return &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, nil
+			},
+		},
+	})
+	require.NoError(t, err)
+	defer managed.Close()
+	assert.Equal(t, int32(1), atomic.LoadInt32(&calls))
+
+	stale, err := managed.current()
+	require.NoError(t, err)
+	fresh, err := managed.reconnect(ctx, stale)
+	require.NoError(t, err)
+	assert.NotSame(t, stale, fresh)
+	assert.Equal(t, int32(2), atomic.LoadInt32(&calls))
+}
+
+func TestConnectFactoryError(t *testing.T) {
+	factoryErr := errors.New("factory failed")
+	_, err := Connect(context.Background(), ServerConfig{
+		Name: "bad",
+		Transport: TransportConfig{Factory: func(context.Context) (mcp.Transport, error) {
+			return nil, factoryErr
+		}},
+	})
+	require.Error(t, err)
+	var startupErr *StartupError
+	require.ErrorAs(t, err, &startupErr)
+	assert.ErrorIs(t, err, factoryErr)
+}
+
+func TestConnectFactoryRejectsNilTransport(t *testing.T) {
+	_, err := Connect(context.Background(), ServerConfig{
+		Name: "bad",
+		Transport: TransportConfig{Factory: func(context.Context) (mcp.Transport, error) {
+			return nil, nil
+		}},
+	})
+	require.Error(t, err)
+	var startupErr *StartupError
+	require.ErrorAs(t, err, &startupErr)
+	assert.Contains(t, err.Error(), "transport factory returned nil")
 }
 
 func TestSessionCloseNil(t *testing.T) {
