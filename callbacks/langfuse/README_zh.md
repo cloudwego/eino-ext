@@ -89,6 +89,10 @@ type Config struct {
     // 事件缓冲区最大大小 (选填)
     // 默认值: 100
     MaxTaskQueueSize int
+
+    // 事件大字段被截断前允许的最大事件大小，单位字节 (选填)
+    // 默认值: 1_000_000
+    MaxEventSizeBytes int
     
     // 批量发送前的事件数量 (选填)
     // 默认值: 15

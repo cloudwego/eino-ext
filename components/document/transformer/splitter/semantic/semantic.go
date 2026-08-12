@@ -158,10 +158,10 @@ func (s *splitter) splitText(ctx context.Context, text string, separators []stri
 		distances[i] = 1 - cosine(vectors[i-1], vectors[i])
 	}
 
-	threshold := calThreshold(distances, s.percentile)
+	threshold := calThreshold(distances[1:], s.percentile)
 	var splitIndexes []int
 	for i := 1; i < len(distances); i++ {
-		if distances[i] <= threshold {
+		if distances[i] >= threshold {
 			splitIndexes = append(splitIndexes, i)
 		}
 	}
@@ -169,7 +169,7 @@ func (s *splitter) splitText(ctx context.Context, text string, separators []stri
 	var startIndex int
 	for i := range splitIndexes {
 		chunk := strings.Join(texts[startIndex:splitIndexes[i]], "")
-		if len(chunk) < s.minChunkSize {
+		if s.lenFunc(chunk) < s.minChunkSize {
 			continue
 		}
 		ret = append(ret, chunk)
@@ -210,9 +210,9 @@ func calThreshold(distances []float64, percentile float64) float64 {
 	sorted := make([]float64, len(distances))
 	copy(sorted, distances)
 	sort.Float64s(sorted)
-	idx := int((1 - percentile) * float64(len(sorted)))
-	if idx == 0 {
-		idx = 1
+	idx := int(percentile * float64(len(sorted)))
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
 	}
 	return sorted[idx]
 }

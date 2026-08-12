@@ -345,13 +345,22 @@ func TestToAnthropicMessagesErrors(t *testing.T) {
 		}
 	})
 
-	t.Run("system after user", func(t *testing.T) {
-		_, _, err := toAnthropicMessages([]*schema.AgenticMessage{
+	t.Run("system after user is allowed inline", func(t *testing.T) {
+		sysInstruction, msgParams, err := toAnthropicMessages([]*schema.AgenticMessage{
 			schema.UserAgenticMessage("hello"),
 			schema.SystemAgenticMessage("late system"),
 		})
-		if err == nil || err.Error() != "system message must appear before all non-system messages" {
+		if err != nil {
 			t.Fatalf("toAnthropicMessages() error = %v", err)
+		}
+		if len(sysInstruction) != 0 {
+			t.Fatalf("expected no sysInstruction, got %d", len(sysInstruction))
+		}
+		if len(msgParams) != 2 {
+			t.Fatalf("expected 2 msgParams, got %d", len(msgParams))
+		}
+		if msgParams[1].Role != anthropic.MessageParamRoleSystem {
+			t.Fatalf("expected system role for msgParams[1], got %s", msgParams[1].Role)
 		}
 	})
 }

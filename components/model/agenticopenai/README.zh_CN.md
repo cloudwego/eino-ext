@@ -483,6 +483,46 @@ am, err := agenticopenai.NewResponsesModel(ctx, &agenticopenai.ResponsesConfig{
 })
 ```
 
+下图展示了 SDK 如何在每次调用时解析 `PreviousResponseID`，以及 `InvalidateMessageCaches` 如何重置缓存状态：
+
+```mermaid
+flowchart TD
+    Input["am.Generate(ctx, input, opts...)"] --> Detail
+    Detail["input = [User₁, Asst₁(resp_001), User₂, Asst₂(resp_002), User₃]<br/>opts = WithHeadPreviousResponseID(resp_abc) (optional)"]
+    Detail --> B{"Find cached<br/>Response ID<br/>in messages?"}
+    B -- "Yes (found resp_002 at Asst₂)" --> C["Send [User₃] only<br/>PreviousResponseID = resp_002"]
+    B -- No --> H{"WithHeadPreviousResponseID<br/>provided?"}
+    H -- "Yes (resp_abc)" --> I["Send full input<br/>PreviousResponseID = resp_abc"]
+    H -- No --> D["Send full input<br/>No cache reuse"]
+    C --> E["Response (resp_003) marked as cached<br/>— used as cache anchor in next turn"]
+    I --> E
+    D --> E
+
+    E -. "Model switched /<br/>history edited" .-> F["InvalidateMessageCaches(input)"]
+    F -. "Next call" .-> B
+
+    style Input fill:#e8f4fd,stroke:#4a90d9
+    style Detail fill:#e8f4fd,stroke:#4a90d9
+    style C fill:#d4edda,stroke:#28a745
+    style I fill:#d4edda,stroke:#28a745
+    style D fill:#fff3cd,stroke:#ffc107
+    style E fill:#d4edda,stroke:#28a745
+    style F fill:#f8d7da,stroke:#dc3545
+```
+
+**示例 — 对话中途切换模型：**
+
+```go
+// 使用模型 A 构建的对话：[User₁, Assistant₁(model_A), User₂]
+// 现在切换到模型 B — 模型 A 的缓存前缀已失效。
+
+input := []*schema.AgenticMessage{user1, assistant1, user2}
+agenticopenai.InvalidateMessageCaches(input)
+
+// 下次 Generate 将跳过失效的缓存锚点，发送完整输入。
+resp, err := modelB.Generate(ctx, input)
+```
+
 ### 工具调用 (Tool Calling)
 
 `ResponsesModel` 支持工具调用，包括函数工具、MCP 工具和服务器工具。

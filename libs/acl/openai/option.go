@@ -28,9 +28,11 @@ import (
 type ReasoningEffortLevel string
 
 const (
+	ReasoningEffortLevelNone   ReasoningEffortLevel = "none"
 	ReasoningEffortLevelLow    ReasoningEffortLevel = "low"
 	ReasoningEffortLevelMedium ReasoningEffortLevel = "medium"
 	ReasoningEffortLevelHigh   ReasoningEffortLevel = "high"
+	ReasoningEffortLevelXHigh  ReasoningEffortLevel = "xhigh"
 )
 
 // RequestPayloadModifier transforms the serialized request payload

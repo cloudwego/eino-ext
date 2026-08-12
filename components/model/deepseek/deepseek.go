@@ -831,6 +831,9 @@ func toModelCallbackUsage(respMeta *schema.ResponseMeta) *model.TokenUsage {
 		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
 	}
 }
 
@@ -885,18 +888,27 @@ func streamToEinoTokenUsage(usage *deepseek.StreamUsage) *schema.TokenUsage {
 		usage.TotalTokens == 0 {
 		return nil
 	}
-	return toEinoTokenUsage(&deepseek.Usage{
-		PromptTokens:         usage.PromptTokens,
-		PromptCacheHitTokens: usage.PromptCacheHitTokens,
-		CompletionTokens:     usage.CompletionTokens,
-		TotalTokens:          usage.TotalTokens,
-	})
+	// Map StreamUsage directly so completion_tokens_details.reasoning_tokens is preserved.
+	// deepseek-go v1.3.4's non-stream Usage omits that field; converting through it would drop it.
+	return &schema.TokenUsage{
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: usage.PromptCacheHitTokens,
+		},
+		CompletionTokens: usage.CompletionTokens,
+		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: schema.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+	}
 }
 
 func toEinoTokenUsage(usage *deepseek.Usage) *schema.TokenUsage {
 	if usage == nil {
 		return nil
 	}
+	// Note: deepseek-go v1.3.4 Usage has no CompletionTokensDetails; non-stream
+	// Generate path cannot surface reasoning_tokens until the SDK dependency is upgraded.
 	return &schema.TokenUsage{
 		PromptTokens: usage.PromptTokens,
 		PromptTokenDetails: schema.PromptTokenDetails{
@@ -918,6 +930,9 @@ func toCallbackUsage(usage *schema.TokenUsage) *model.TokenUsage {
 		},
 		CompletionTokens: usage.CompletionTokens,
 		TotalTokens:      usage.TotalTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
 	}
 }
 

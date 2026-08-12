@@ -23,6 +23,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/cloudwego/eino-ext/components/model/claude"
@@ -67,9 +68,10 @@ func main() {
 		},
 	}
 
-	stream, err := cm.Stream(ctx, messages, claude.WithThinking(&claude.Thinking{
-		Enable:       true,
-		BudgetTokens: 1024,
+	stream, err := cm.Stream(ctx, messages, claude.WithThinkingConfig(&anthropic.ThinkingConfigParamUnion{
+		OfAdaptive: &anthropic.ThinkingConfigAdaptiveParam{
+			Display: anthropic.ThinkingConfigAdaptiveDisplaySummarized,
+		},
 	}))
 	if err != nil {
 		log.Printf("Stream error: %v", err)

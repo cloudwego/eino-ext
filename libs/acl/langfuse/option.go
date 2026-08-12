@@ -19,15 +19,16 @@ package langfuse
 import "time"
 
 type options struct {
-	threads          int
-	timeout          time.Duration
-	maxTaskQueueSize int
-	flushAt          int
-	flushInterval    time.Duration
-	sampleRate       float64
-	logMessage       string
-	maskFunc         func(string) string
-	maxRetry         uint64
+	threads           int
+	timeout           time.Duration
+	maxTaskQueueSize  int
+	maxEventSizeBytes int
+	flushAt           int
+	flushInterval     time.Duration
+	sampleRate        float64
+	logMessage        string
+	maskFunc          func(string) string
+	maxRetry          uint64
 }
 
 type Option func(*options)
@@ -47,6 +48,12 @@ func WithTimeout(timeout time.Duration) Option {
 func WithMaxTaskQueueSize(maxTaskQueueSize int) Option {
 	return func(o *options) {
 		o.maxTaskQueueSize = maxTaskQueueSize
+	}
+}
+
+func WithMaxEventSizeBytes(maxEventSizeBytes int) Option {
+	return func(o *options) {
+		o.maxEventSizeBytes = maxEventSizeBytes
 	}
 }
 

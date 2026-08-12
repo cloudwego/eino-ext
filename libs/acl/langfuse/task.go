@@ -28,6 +28,7 @@ func newTaskManager(
 	cli *http.Client,
 	host string,
 	maxTaskQueueSize int,
+	maxEventSizeBytes int,
 	flushAt int,
 	flushInterval time.Duration,
 	sampleRate float64,
@@ -47,7 +48,7 @@ func newTaskManager(
 	}
 	wg := &sync.WaitGroup{}
 	for i := 0; i < threads; i++ {
-		newIngestionConsumer(langfuseCli, q, flushAt, flushInterval, sampleRate, logMessage, maskFunc, sdkName, sdkVersion, sdkIntegration, publicKey, maxRetry, wg).run()
+		newIngestionConsumer(langfuseCli, q, maxEventSizeBytes, flushAt, flushInterval, sampleRate, logMessage, maskFunc, sdkName, sdkVersion, sdkIntegration, publicKey, maxRetry, wg).run()
 	}
 
 	return &taskManager{q: q, mediaWG: wg}
