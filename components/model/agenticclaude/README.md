@@ -101,6 +101,10 @@ type Config struct {
     // Optional.
     HTTPClient *http.Client
 
+    // RequestTimeout specifies the timeout for each API request.
+    // Optional.
+    RequestTimeout time.Duration
+
     // ByBedrock specifies the configuration for using AWS Bedrock.
     // Optional.
     ByBedrock *BedrockConfig

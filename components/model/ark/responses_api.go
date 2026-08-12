@@ -447,6 +447,8 @@ func (cm *ResponsesAPIChatModel) prePopulateConfig(responseReq *responses.Respon
 			responseReq.ServiceTier = responses.ResponsesServiceTier_auto.Enum()
 		case "default":
 			responseReq.ServiceTier = responses.ResponsesServiceTier_default.Enum()
+		case "fast":
+			responseReq.ServiceTier = responses.ResponsesServiceTier_fast.Enum()
 		}
 	}
 

@@ -388,12 +388,12 @@ func TestGenRequestAndOptions(t *testing.T) {
 		},
 	}
 
-	req, reqOpts, err := m.genRequestAndOptions([]*schema.AgenticMessage{
+	req, reqOpts, err := m.genParamsAndOptions([]*schema.AgenticMessage{
 		schema.SystemAgenticMessage("system prompt"),
 		schema.UserAgenticMessage("hello"),
 	}, options, specOptions)
 	if err != nil {
-		t.Fatalf("genRequestAndOptions() error = %v", err)
+		t.Fatalf("genParamsAndOptions() error = %v", err)
 	}
 	if req.Model != anthropic.Model(modelName) || req.MaxTokens != int64(maxTokens) {
 		t.Fatalf("request model/max_tokens = (%q, %d)", req.Model, req.MaxTokens)

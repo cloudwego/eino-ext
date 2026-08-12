@@ -101,6 +101,10 @@ type Config struct {
     // 可选。
     HTTPClient *http.Client
 
+    // RequestTimeout 指定每次 API 请求的超时时间。
+    // 可选。
+    RequestTimeout time.Duration
+
     // ByBedrock 指定使用 AWS Bedrock 的配置。
     // 可选。
     ByBedrock *BedrockConfig

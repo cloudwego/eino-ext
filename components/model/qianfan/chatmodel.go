@@ -710,8 +710,10 @@ func resolveQianfanResponse(resp *qianfan.ChatCompletionV2Response) (*schema.Mes
 
 func toQianfanRole(role string) (string, error) {
 	switch role {
-	case "user", "system":
+	case "user":
 		return "user", nil
+	case "system":
+		return "system", nil
 	case "assistant":
 		return "assistant", nil
 	case "tool":

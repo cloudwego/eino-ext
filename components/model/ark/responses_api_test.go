@@ -731,6 +731,7 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 		maxTokens:   ptrOf(1),
 		model:       "model",
 		topP:        ptrOf(float32(1.0)),
+		serviceTier: ptrOf("fast"),
 		thinking: &arkModel.Thinking{
 			Type: arkModel.ThinkingTypeDisabled,
 		},
@@ -807,6 +808,7 @@ func TestResponsesAPIChatModelHandleGenRequestAndOptions(t *testing.T) {
 		assert.Equal(t, "user", reqParams.Input.GetListValue().ListValue[0].GetInputMessage().GetContent()[0].GetText().GetText())
 		assert.Len(t, reqParams.Tools, 1)
 		assert.Equal(t, "test tool", reqParams.Tools[0].GetToolFunction().Name)
+		assert.Equal(t, responses.ResponsesServiceTier_fast, *reqParams.ServiceTier)
 
 		assert.Equal(t, "json_schema", reqParams.Text.Format.GetName())
 	})
