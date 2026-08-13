@@ -129,6 +129,10 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		}
 	}
 
+	if argumentsInJSON == "" {
+		argumentsInJSON = "{}"
+	}
+
 	result, err := m.cli.CallTool(ctx, mcp.CallToolRequest{
 		Request: mcp.Request{
 			Method: "tools/call",
