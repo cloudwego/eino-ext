@@ -129,6 +129,11 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		}
 	}
 
+	args := argumentsInJSON
+	if args == "" {
+		args = "{}"
+	}
+
 	result, err := m.cli.CallTool(ctx, mcp.CallToolRequest{
 		Request: mcp.Request{
 			Method: "tools/call",
@@ -136,7 +141,7 @@ func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, o
 		Header: headers,
 		Params: mcp.CallToolParams{
 			Name:      m.info.Name,
-			Arguments: json.RawMessage(argumentsInJSON),
+			Arguments: json.RawMessage(args),
 			Meta:      specOptions.meta,
 		},
 	})

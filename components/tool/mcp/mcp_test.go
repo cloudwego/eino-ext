@@ -18,6 +18,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/cloudwego/eino/components/tool"
@@ -41,9 +42,15 @@ func TestTool(t *testing.T) {
 		WithCustomHeaders(map[string]string{"key": "value"}),
 	}
 
-	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "{\"input\": \"123\"}", options...)
+	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "", options...)
 	assert.NoError(t, err)
 	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}", result)
+	assert.Equal(t, json.RawMessage("{}"), cli.callToolRequest.Params.Arguments)
+
+	result, err = tools[0].(tool.InvokableTool).InvokableRun(ctx, "{\"input\": \"123\"}", options...)
+	assert.NoError(t, err)
+	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"hello\"}]}", result)
+	assert.Equal(t, json.RawMessage("{\"input\": \"123\"}"), cli.callToolRequest.Params.Arguments)
 
 	tools, err = GetTools(ctx, &Config{
 		Cli:           cli,
@@ -56,7 +63,9 @@ func TestTool(t *testing.T) {
 	assert.Equal(t, map[string]string{"key": "value"}, helper.customHeaders)
 }
 
-type mockMCPClient struct{}
+type mockMCPClient struct {
+	callToolRequest mcp.CallToolRequest
+}
 
 func (m *mockMCPClient) ListResourcesByPage(ctx context.Context, request mcp.ListResourcesRequest) (*mcp.ListResourcesResult, error) {
 	//TODO implement me
@@ -137,6 +146,12 @@ func (m *mockMCPClient) ListTools(ctx context.Context, request mcp.ListToolsRequ
 }
 
 func (m *mockMCPClient) CallTool(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	m.callToolRequest = request
+	_, err := json.Marshal(request)
+	if err != nil {
+		return nil, err
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			mcp.TextContent{
