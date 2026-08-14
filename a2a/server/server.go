@@ -324,7 +324,7 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 		defer func() {
 			unLockErr := s.taskLocker.Unlock(detachedCtx, t.ID)
 			if unLockErr != nil {
-				s.logger(ctx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
+				s.logger(ctx, "failed to release lock for task[%s]: %s", t.ID, unLockErr.Error())
 			}
 		}()
 		frame, err := s.executeHandler(ctx, detachedCtx, t, input)
@@ -345,7 +345,7 @@ func (s *A2AServer) sendMessage(ctx context.Context, input *models.MessageSendPa
 			}
 			unLockErr := s.taskLocker.Unlock(detachedCtx, t.ID)
 			if unLockErr != nil {
-				s.logger(detachedCtx, "failed to release lock for task[%s]: %s", *input.Message.TaskID, unLockErr.Error())
+				s.logger(detachedCtx, "failed to release lock for task[%s]: %s", t.ID, unLockErr.Error())
 			}
 		}()
 		_, err = s.executeHandler(ctx, detachedCtx, t, input)
