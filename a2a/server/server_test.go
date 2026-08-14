@@ -18,12 +18,80 @@ package server
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/cloudwego/eino-ext/a2a/models"
 )
+
+type failingUnlockTaskLocker struct{}
+
+func (failingUnlockTaskLocker) Lock(context.Context, string) error {
+	return nil
+}
+
+func (failingUnlockTaskLocker) Unlock(context.Context, string) error {
+	return errors.New("unlock failed")
+}
+
+type capturedLog struct {
+	format string
+	args   []any
+}
+
+func TestSendMessageUnlockErrorUsesGeneratedTaskID(t *testing.T) {
+	const generatedTaskID = "generated-task-id"
+
+	for _, tc := range []struct {
+		name     string
+		blocking bool
+	}{
+		{name: "blocking", blocking: true},
+		{name: "non-blocking", blocking: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r := &mockHandlerRegistrar{}
+			logs := make(chan capturedLog, 1)
+			require.NoError(t, RegisterHandlers(ctx, r, &Config{
+				MessageHandler: func(context.Context, *InputParams) (*models.TaskContent, error) {
+					return &models.TaskContent{Status: models.TaskStatus{State: models.TaskStateCompleted}}, nil
+				},
+				TaskIDGenerator: func(context.Context) (string, error) {
+					return generatedTaskID, nil
+				},
+				TaskLocker: failingUnlockTaskLocker{},
+				Logger: func(_ context.Context, format string, args ...any) {
+					logs <- capturedLog{format: format, args: args}
+				},
+			}))
+
+			result, err := r.h.SendMessage(ctx, &models.MessageSendParams{
+				Message: models.Message{Role: models.RoleUser},
+				Configuration: &models.MessageSendConfiguration{
+					Blocking: &tc.blocking,
+				},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, result.Task)
+			assert.Equal(t, generatedTaskID, result.Task.ID)
+
+			select {
+			case entry := <-logs:
+				assert.Equal(t, "failed to release lock for task[%s]: %s", entry.format)
+				require.Len(t, entry.args, 2)
+				assert.Equal(t, generatedTaskID, entry.args[0])
+				assert.Equal(t, "unlock failed", entry.args[1])
+			case <-time.After(time.Second):
+				t.Fatal("timed out waiting for unlock error log")
+			}
+		})
+	}
+}
 
 func TestMessageHandler(t *testing.T) {
 	ctx := context.Background()
