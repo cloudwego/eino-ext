@@ -164,9 +164,8 @@ func TestTLSExporterE2EMultimodalMatrix(t *testing.T) {
 	toolOutWriter.Send(&tool.CallbackOutput{Response: `25}`}, nil)
 	toolOutWriter.Close()
 
-	// Stream callbacks parse asynchronously; wait until readers are drained
-	// before ending the root span and flushing the Producer.
-	time.Sleep(100 * time.Millisecond)
+	// The callback tracks child stream parsers, so ending the root waits for
+	// their final model and tool attributes without a timing-dependent sleep.
 	h.OnEnd(rootCtx, rootInfo, "Eino E2E matrix done")
 	if err := shutdown(context.Background()); err != nil {
 		t.Fatalf("flush TLS exporter: %v", err)

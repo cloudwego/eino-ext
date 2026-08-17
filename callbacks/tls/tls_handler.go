@@ -193,6 +193,14 @@ type tlsRootState struct {
 	span trace.Span
 	mu   sync.Mutex
 
+	// streamMu protects streamOutputPending and streamOutputDone.  Stream
+	// callbacks parse their output in goroutines, while an enclosing graph can
+	// finish before a child model's final chunk has been aggregated.  Keep the
+	// root span open until all registered child stream callbacks have completed.
+	streamMu            sync.Mutex
+	streamOutputPending int
+	streamOutputDone    chan struct{}
+
 	modelRequests       int
 	inputTokens         int
 	outputTokens        int
@@ -202,6 +210,62 @@ type tlsRootState struct {
 	lastModelSpan       trace.SpanContext
 	modelSpanByToolCall map[string]trace.SpanContext
 	hasModelInput       bool
+}
+
+// beginStreamOutput registers an asynchronous stream-output parser and
+// returns its idempotent completion callback.
+func (r *tlsRootState) beginStreamOutput() func() {
+	if r == nil {
+		return func() {}
+	}
+
+	r.streamMu.Lock()
+	if r.streamOutputPending == 0 {
+		r.streamOutputDone = make(chan struct{})
+	}
+	r.streamOutputPending++
+	r.streamMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			r.streamMu.Lock()
+			defer r.streamMu.Unlock()
+			if r.streamOutputPending == 0 {
+				return
+			}
+			r.streamOutputPending--
+			if r.streamOutputPending == 0 && r.streamOutputDone != nil {
+				close(r.streamOutputDone)
+			}
+		})
+	}
+}
+
+func (r *tlsRootState) waitForStreamOutputs(ctx context.Context, timeout time.Duration) {
+	if r == nil {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	r.streamMu.Lock()
+	pending, done := r.streamOutputPending, r.streamOutputDone
+	r.streamMu.Unlock()
+	if pending == 0 || done == nil {
+		return
+	}
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		log.Printf("stream output did not finish before callback context was canceled")
+	case <-timer.C:
+		log.Printf("stream output did not finish within %s; ending root span without its remaining attributes", timeout)
+	}
 }
 
 // tlsLensMessage is the Codex/Aiden-compatible message envelope consumed by
@@ -879,7 +943,10 @@ func (h *TLSCallbackHandler) setTLSApplicationAttributes(span trace.Span, info *
 	}
 }
 
-const streamInputWaitTimeout = 5 * time.Second
+const (
+	streamInputWaitTimeout  = 5 * time.Second
+	streamOutputWaitTimeout = 5 * time.Second
+)
 
 func waitStreamInput(ctx context.Context, timeout time.Duration) {
 	if ctx == nil {
@@ -902,6 +969,17 @@ func endSpan(ctx context.Context, span trace.Span, status codes.Code, descriptio
 	waitStreamInput(ctx, streamInputWaitTimeout)
 	span.SetStatus(status, description)
 	span.End(trace.WithTimestamp(time.Now()))
+}
+
+func endTLSState(ctx context.Context, state *TLSState, status codes.Code, description string) {
+	if state == nil || state.Span == nil {
+		return
+	}
+	if state.IsRootNode {
+		state.root.waitForStreamOutputs(ctx, streamOutputWaitTimeout)
+	}
+	endSpan(ctx, state.Span, status, description)
+	endSyntheticRoot(state.syntheticRoot, status, description)
 }
 
 func (h *TLSCallbackHandler) startSyntheticRootIfNeeded(ctx context.Context, info *callbacks.RunInfo, startTime time.Time) (context.Context, *tlsRootState, trace.Span) {
@@ -1043,8 +1121,7 @@ func (h *TLSCallbackHandler) OnEnd(ctx context.Context, info *callbacks.RunInfo,
 	}
 
 	defer func() {
-		endSpan(ctx, state.Span, codes.Ok, "")
-		endSyntheticRoot(state.syntheticRoot, codes.Ok, "")
+		endTLSState(ctx, state, codes.Ok, "")
 	}()
 
 	if h.dataParser != nil {
@@ -1099,13 +1176,11 @@ func (h *TLSCallbackHandler) OnError(ctx context.Context, info *callbacks.RunInf
 			)
 		}
 		defer func() {
-			endSpan(ctx, state.Span, codes.Error, err.Error())
-			endSyntheticRoot(state.syntheticRoot, codes.Error, err.Error())
+			endTLSState(ctx, state, codes.Error, err.Error())
 		}()
 	} else {
 		defer func() {
-			endSpan(ctx, state.Span, codes.Error, "")
-			endSyntheticRoot(state.syntheticRoot, codes.Error, "")
+			endTLSState(ctx, state, codes.Error, "")
 		}()
 	}
 
@@ -1212,12 +1287,24 @@ func (h *TLSCallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *ca
 
 	info = completeRunInfo(info)
 	if h.dataParser != nil {
+		completeStreamOutput := state.root.beginStreamOutput()
 		go func() {
 			defer func() {
 				if e := recover(); e != nil {
 					log.Printf("recover update span panic: %v, runinfo: %+v, stack: %s", e, info, string(debug.Stack()))
 				}
+				if state.IsRootNode {
+					// This parser belongs to the root itself. Mark it complete
+					// before waiting so the root waits only for child streams.
+					completeStreamOutput()
+					endTLSState(ctx, state, codes.Ok, "")
+					return
+				}
+				// A child parser may still be waiting for its stream input.
+				// Complete the child only after endSpan has waited for that
+				// input, so its root attributes are ready before the root ends.
 				endSpan(ctx, state.Span, codes.Ok, "")
+				completeStreamOutput()
 				endSyntheticRoot(state.syntheticRoot, codes.Ok, "")
 			}()
 
@@ -1245,8 +1332,7 @@ func (h *TLSCallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *ca
 		}()
 	} else {
 		output.Close()
-		endSpan(ctx, state.Span, codes.Ok, "")
-		endSyntheticRoot(state.syntheticRoot, codes.Ok, "")
+		endTLSState(ctx, state, codes.Ok, "")
 	}
 
 	return ctx
