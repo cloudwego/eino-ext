@@ -1,18 +1,21 @@
-# Langfuse 回调
+# Eino Langfuse 回调
 
 [English](README.md) | 简体中文
 
-这是一个为 [Eino](https://github.com/cloudwego/eino) 实现的 Langfuse 回调。该工具实现了 `Handler` 接口，可以与 Eino 的应用无缝集成以提供增强的可观测和追踪能力。
+这是一个 [CloudWeGo Eino](https://github.com/cloudwego/eino) 回调，通过原生 OpenTelemetry OTLP/HTTP 将 trace 导出到 [Langfuse](https://langfuse.com)。
 
-## 特性
+该包面向 Langfuse v4 的 observation-first 数据模型。每个 Eino 操作会上报一个完整且不可变的 OTel span 到 `/api/public/otel/v1/traces`，使用 Basic Auth，并携带 `x-langfuse-ingestion-version: 4` 以支持实时摄取。它不再使用已弃用的 `/api/public/ingestion` 事件接口。
 
-- 实现了 `github.com/cloudwego/eino/callbacks.Handler` 接口
-- 全面支持 Langfuse 的 trace、span 和 generation 追踪
-- 自动处理流式输入和输出
-- 灵活的追踪配置，支持会话、用户和元数据
-- 内置错误处理和恢复机制
-- 可配置的批处理、采样和重试机制
-- 易于与 Eino 应用集成
+## 功能
+
+- 将 Eino ChatModel 映射为 Langfuse `generation` observation。
+- 为 Eino ADK Agent、Tool、Retriever、Embedding 和 Prompt 设置对应的 observation 类型。
+- 采集模型名称、参数、token usage、流式输出以及首 token 时间。
+- 在 ADK 异步事件迭代器真正结束后再结束 Agent observation。
+- 使用标准 OpenTelemetry context 传播父子关系。
+- 可选择折叠 Eino Agent 产生的框架内部 Chain、ReAct Graph 和 Lambda 包装层。
+- 将 trace 名称、用户、会话、标签、release、environment、version 和 metadata 传播到子 observation。
+- 支持 input/output 脱敏、大小限制、OTLP 批处理、采样、自定义 exporter、自定义 HTTP client、flush 和优雅关闭。
 
 ## 安装
 
@@ -20,14 +23,16 @@
 go get github.com/cloudwego/eino-ext/callbacks/langfuse
 ```
 
-## 快速开始
+当前实现使用 Go 1.23+、Eino 0.9.14 和 OpenTelemetry Go 1.38。
+
+## 使用方法
 
 ```go
 package main
 
 import (
 	"context"
-	"log"
+	"os"
 
 	"github.com/cloudwego/eino-ext/callbacks/langfuse"
 	"github.com/cloudwego/eino/callbacks"
@@ -35,127 +40,82 @@ import (
 
 func main() {
 	ctx := context.Background()
-	
-	cbh, flusher := langfuse.NewLangfuseHandler(&langfuse.Config{
-		Host:        "https://cloud.langfuse.com",
-		PublicKey:   "pk-lf-...",
-		SecretKey:   "sk-lf-...",
-		ServiceName: "eino-app",
-		Release:     "v1.0.0",
+	handler, err := langfuse.NewHandler(ctx, &langfuse.Config{
+		Host:        os.Getenv("LANGFUSE_HOST"),
+		PublicKey:   os.Getenv("LANGFUSE_PUBLIC_KEY"),
+		SecretKey:   os.Getenv("LANGFUSE_SECRET_KEY"),
+		ServiceName: "my-eino-service",
+		Environment: "production",
 	})
-	
-	callbacks.AppendGlobalHandlers(cbh)
-	
-	g := NewGraph[string, string]()
-	runner, _ := g.Compile(ctx)
-	
-	ctx = langfuse.SetTrace(ctx, 
-		langfuse.WithSessionID("session-123"), 
-		langfuse.WithUserID("user-456"),
+	if err != nil {
+		panic(err)
+	}
+	defer handler.Shutdown(ctx)
+
+	callbacks.AppendGlobalHandlers(handler)
+
+	traceCtx := handler.StartTrace(ctx,
+		langfuse.WithName("chat-response"),
+		langfuse.WithUserID("user-123"),
+		langfuse.WithSessionID("conversation-456"),
+		langfuse.WithInput("你好"),
+		langfuse.WithObservationType(langfuse.ObservationTypeAgent),
 	)
-	
-	result, _ := runner.Invoke(ctx, "input")
-	
-	flusher()
+
+	// 使用 traceCtx 运行 Eino 组件，其 callback 会成为 root 的子 span。
+
+	handler.EndTrace(traceCtx, "你好！有什么可以帮你？")
 }
 ```
 
-## 配置
+`Config.Host` 可以是 Langfuse 基础地址、以 `/api/public/otel` 结尾的 OTLP 地址，或完整的 `/api/public/otel/v1/traces` 地址。
 
-回调可以通过 `Config` 结构体进行配置：
+`WithName` 会同时设置 Langfuse trace 名称和应用 root observation 的 span 名称。
 
-```go
-type Config struct {
-    // Langfuse 服务器地址 (必填)
-    // 例子: "https://cloud.langfuse.com"
-    Host string
-    
-    // 公钥，用于认证 (必填)
-    // 例子: "pk-lf-..."
-    PublicKey string
-    
-    // 私钥，用于认证 (必填)
-    // 例子: "sk-lf-..."
-    SecretKey string
-    
-    // 并发工作线程数 (选填)
-    // 默认值: 1
-    Threads int
-    
-    // HTTP 请求超时时间 (选填)
-    // 默认值: 无超时
-    Timeout time.Duration
-    
-    // 事件缓冲区最大大小 (选填)
-    // 默认值: 100
-    MaxTaskQueueSize int
+## 生命周期
 
-    // 事件大字段被截断前允许的最大事件大小，单位字节 (选填)
-    // 默认值: 1_000_000
-    MaxEventSizeBytes int
-    
-    // 批量发送前的事件数量 (选填)
-    // 默认值: 15
-    FlushAt int
-    
-    // 自动刷新事件的时间间隔 (选填)
-    // 默认值: 500ms
-    FlushInterval time.Duration
-    
-    // 事件采样率 (选填)
-    // 默认值: 1.0 (100%)
-    SampleRate float64
-    
-    // 日志消息前缀 (选填)
-    LogMessage string
-    
-    // 敏感数据脱敏函数 (选填)
-    MaskFunc func(string) string
-    
-    // 最大重试次数 (选填)
-    // 默认值: 3
-    MaxRetry uint64
-    
-    // 默认追踪名称 (选填)
-    Name string
-    
-    // 默认用户标识 (选填)
-    UserID string
-    
-    // 默认会话标识 (选填)
-    SessionID string
-    
-    // 版本标识 (选填)
-    Release string
-    
-    // 追踪标签 (选填)
-    Tags []string
-    
-    // 是否公开可访问 (选填)
-    Public bool
-}
+应用根操作结束时调用 `EndTrace`。它会记录最终 output，并等待所有仍活跃的 Eino child callback 完成后再结束 root。`StartTrace` 也会监听传入 context：context 被取消或超时时，root 同样会等待活跃 child，然后自动结束。对于 `context.Background()` 等不可取消 context，必须调用 `EndTrace`；进程退出时，`Shutdown` 会关闭仍然活跃的 root。
+
+用户主动触发的 `context.Canceled` 会记录为 `cancelled`，可恢复的 Eino Tool、Graph、SubGraph 和 ADK interrupt 会记录为 `interrupted`，两者都不会统一标记成 `ERROR`。真正的超时和 callback 失败仍会标记为错误。
+
+## Trace 精简
+
+设置 `Config.CollapseAgentInternalSpans` 可折叠 Eino Agent 下同名的内部 Chain、内部 `ReAct` Graph、`Init` Lambda，以及匿名或默认命名的 Lambda 包装层。默认关闭，以保留完整的框架 trace。Generation、Tool 和 Sub-Agent 会通过标准 OTel context 继续挂在最近的保留父节点下。
+
+默认不携带 `process.*` resource attribute，以减少 metadata 噪声并避免暴露本地用户名、可执行文件路径和命令参数。只有确实需要这些诊断信息时才启用 `Config.IncludeProcessResourceAttributes`。
+
+## 丢弃和错误日志
+
+采样、队列已满、processor 已关闭、callback/OTel 属性限制以及序列化失败不会静默发生。默认每分钟汇总一次：
+
+```text
+langfuse callback discarded telemetry since previous report (interval 1m0s): queue_full_spans=37 value_limit_truncations=2
 ```
 
-## 追踪选项
+使用 `Config.DropLogInterval` 调整汇总间隔；设置为负数会立即记录每次丢弃。exporter 最终返回错误时，会立即打印失败 batch 的 span 数量，因为该 batch 不会再次重试。
 
-您可以使用 `SetTrace` 函数自定义单个追踪：
+当 callback 使用调用方传入的 `TracerProvider` 时，队列和导出由该 provider 管理，应通过其 span processor/exporter 诊断；callback 自身的截断和序列化诊断仍然有效。
 
-```go
-ctx = langfuse.SetTrace(ctx,
-    langfuse.WithID("trace-id"),
-    langfuse.WithName("custom-trace"),
-    langfuse.WithUserID("user-123"),
-    langfuse.WithSessionID("session-456"),
-    langfuse.WithTags("production", "feature-x"),
-    langfuse.WithMetadata(map[string]string{"key": "value"}),
-    langfuse.WithInput("用户输入文本"),
-    langfuse.WithEnvironment("production"),
-    langfuse.WithVersion("v1.0.0"),
-    langfuse.WithPublic(true),
-)
-```
+## 大小限制和脱敏
 
-## 更多详情
+`MaxAttributeValueLength` 限制单个 JSON 属性值；`MaxSpanAttributeBytes` 限制 callback 写入一个 span 的属性键值总大小。任一限制生效后，JSON input/output 仍会保持合法。设置为负数可禁用对应限制。
 
-- [Langfuse 文档](https://langfuse.com/docs)
-- [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
+生产环境建议配置 `MaskFunc`，在导出前处理可能包含密钥或个人数据的 input/output。
+
+## 从旧版 ingestion callback 迁移
+
+为了保持源码兼容，`NewLangfuseHandler` 和 `SetTrace` 仍然可用。它们现在会自动创建 OTLP root observation，构造函数返回的 flusher 会调用 `Flush`。新应用建议使用 `NewHandler`、`StartTrace`、`EndTrace` 和 `Shutdown`，以便显式处理初始化错误和 trace 生命周期。
+
+旧批处理字段作为弃用别名保留：`MaxTaskQueueSize` 映射到 `MaxQueueSize`，`FlushAt` 映射到 `MaxExportBatchSize`，`FlushInterval` 映射到 `BatchTimeout`，`MaxEventSizeBytes` 映射到 `MaxSpanAttributeBytes`。`Threads`、`LogMessage` 和 `MaxRetry` 在 OTLP 中没有直接对应配置。
+
+OTLP span 导出后不可修改。`UpdateTraceOutput` 只能结束传入 context 中仍活跃的 root，不能再按 ID 更新已经导出的 trace。请保留 `StartTrace` 返回的 context，并通过 `EndTrace` 提交最终 output。
+
+## 兼容性
+
+Langfuse 支持 OTLP over HTTP/protobuf 和 HTTP/JSON，但不支持 OTLP/gRPC。本包使用带 gzip 的 HTTP/protobuf。传输协议是标准 OTLP，`langfuse.*` span attribute 是 Langfuse 提供的厂商语义映射。
+
+该包只负责运行时 Eino instrumentation。Prompt、Dataset、Score、Project 和 API Key 等 Langfuse 管理接口不在其范围内。
+
+## License
+
+Apache-2.0
