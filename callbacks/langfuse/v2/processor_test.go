@@ -51,6 +51,46 @@ func (e *blockingSpanExporter) ExportSpans(_ context.Context, spans []sdktrace.R
 
 func (e *blockingSpanExporter) Shutdown(context.Context) error { return nil }
 
+type deadlineInspectingExporter struct {
+	hasDeadline chan bool
+}
+
+func (e deadlineInspectingExporter) ExportSpans(ctx context.Context, _ []sdktrace.ReadOnlySpan) error {
+	_, hasDeadline := ctx.Deadline()
+	e.hasDeadline <- hasDeadline
+	return nil
+}
+
+func (deadlineInspectingExporter) Shutdown(context.Context) error { return nil }
+
+func TestReportingBatchSpanProcessorDoesNotLimitExporterRetryWindow(t *testing.T) {
+	exporter := deadlineInspectingExporter{hasDeadline: make(chan bool, 1)}
+	processor, err := newReportingBatchSpanProcessor(exporter, batchProcessorConfig{
+		maxExportBatchSize: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(processor))
+	_, span := provider.Tracer("export-context-test").Start(context.Background(), "test")
+	span.End()
+
+	select {
+	case hasDeadline := <-exporter.hasDeadline:
+		if hasDeadline {
+			t.Fatal("processor added an export deadline")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("export did not start")
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := provider.Shutdown(shutdownCtx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReportingBatchSpanProcessorAggregatesQueueFullDrops(t *testing.T) {
 	exporter := newBlockingSpanExporter()
 	reports := make(chan map[string]uint64, 1)

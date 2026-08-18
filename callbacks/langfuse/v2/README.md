@@ -88,6 +88,10 @@ logs each discard immediately. Export failures are always logged immediately
 with the affected batch size because the processor will not retry the batch
 after the exporter returns its final error.
 
+The batch processor does not add a shorter export deadline. For the built-in
+OTLP exporter, `Config.Timeout` limits each HTTP request and the OpenTelemetry
+exporter's retry policy controls the total retry window.
+
 These processor-level diagnostics apply when the callback creates its own OTel
 tracer provider. With a caller-owned `TracerProvider`, queueing and exporting are
 owned by that provider and must be diagnosed by its span processors/exporters;

@@ -32,14 +32,13 @@ const (
 	defaultMaxQueueSize       = 2048
 	defaultMaxExportBatchSize = 512
 	defaultBatchTimeout       = 5 * time.Second
-	defaultExportTimeout      = 30 * time.Second
+	defaultShutdownTimeout    = 30 * time.Second
 )
 
 type batchProcessorConfig struct {
 	maxQueueSize       int
 	maxExportBatchSize int
 	batchTimeout       time.Duration
-	exportTimeout      time.Duration
 	losses             *lossReporter
 	handleExportError  func(error)
 }
@@ -54,7 +53,6 @@ type reportingBatchSpanProcessor struct {
 	queue              chan batchQueueItem
 	maxExportBatchSize int
 	batchTimeout       time.Duration
-	exportTimeout      time.Duration
 	losses             *lossReporter
 	handleExportError  func(error)
 	stopped            atomic.Bool
@@ -85,9 +83,6 @@ func newReportingBatchSpanProcessor(exporter sdktrace.SpanExporter, cfg batchPro
 	if cfg.batchTimeout <= 0 {
 		cfg.batchTimeout = defaultBatchTimeout
 	}
-	if cfg.exportTimeout <= 0 {
-		cfg.exportTimeout = defaultExportTimeout
-	}
 	if cfg.losses == nil {
 		cfg.losses = newLossReporter(defaultDropLogInterval, nil)
 	}
@@ -100,7 +95,6 @@ func newReportingBatchSpanProcessor(exporter sdktrace.SpanExporter, cfg batchPro
 		queue:              make(chan batchQueueItem, cfg.maxQueueSize),
 		maxExportBatchSize: cfg.maxExportBatchSize,
 		batchTimeout:       cfg.batchTimeout,
-		exportTimeout:      cfg.exportTimeout,
 		losses:             cfg.losses,
 		handleExportError:  cfg.handleExportError,
 		stopCh:             make(chan struct{}),
@@ -217,10 +211,8 @@ func (p *reportingBatchSpanProcessor) run() {
 			resetTimer(timer, p.batchTimeout)
 			return nil
 		}
-		exportCtx, cancel := context.WithTimeout(context.Background(), p.exportTimeout)
 		batchSize := len(batch)
-		err := p.exporter.ExportSpans(exportCtx, batch)
-		cancel()
+		err := p.exporter.ExportSpans(context.Background(), batch)
 		clear(batch)
 		batch = batch[:0]
 		resetTimer(timer, p.batchTimeout)
@@ -274,7 +266,7 @@ func (p *reportingBatchSpanProcessor) run() {
 
 func (p *reportingBatchSpanProcessor) shutdownExporterWhenDone() {
 	<-p.doneCh
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultExportTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultShutdownTimeout)
 	defer cancel()
 	if err := p.exporter.Shutdown(shutdownCtx); err != nil {
 		p.handleExportError(fmt.Errorf("langfuse callback exporter shutdown failed: %w", err))
