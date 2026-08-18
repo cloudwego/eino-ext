@@ -38,8 +38,8 @@ const (
 	defaultTimeout                 = 10 * time.Second
 	defaultMaxAttributeValueLength = 1_000_000
 	defaultMaxSpanAttributeBytes   = 4_000_000
-	instrumentationName            = "github.com/cloudwego/eino-ext/callbacks/langfuse"
-	instrumentationVersion         = "v0.2.0"
+	instrumentationName            = "github.com/cloudwego/eino-ext/callbacks/langfuse/v2"
+	instrumentationVersion         = "v2.0.0"
 )
 
 // Config configures the Langfuse OTLP/HTTP callback.
@@ -66,16 +66,6 @@ type Config struct {
 	SessionID string
 	Public    bool
 
-	// Deprecated batching fields are retained for source compatibility with the
-	// legacy ingestion client. New code should use MaxQueueSize,
-	// MaxExportBatchSize, BatchTimeout, and the OTLP exporter's built-in retry.
-	Threads           int
-	MaxTaskQueueSize  int
-	MaxEventSizeBytes int
-	FlushAt           int
-	FlushInterval     time.Duration
-	LogMessage        string
-	MaxRetry          uint64
 	// IncludeProcessResourceAttributes adds OTel process.* attributes such as
 	// PID, owner, executable path, command arguments, and runtime details. It is
 	// disabled by default to reduce metadata noise and accidental disclosure.
@@ -95,11 +85,6 @@ type Config struct {
 	// one warning. Zero uses one minute. A negative value logs each discard
 	// immediately; export failures are always logged immediately.
 	DropLogInterval time.Duration
-	// QueueDropLogInterval is retained for compatibility. DropLogInterval takes
-	// precedence when both are set.
-	// Deprecated: use DropLogInterval.
-	QueueDropLogInterval time.Duration
-
 	// MaxAttributeValueLength limits each serialized input, output, or metadata
 	// value. Set a negative value to disable this callback-level limit.
 	MaxAttributeValueLength int
@@ -127,7 +112,6 @@ type CallbackHandler struct {
 	prepare                    func(string) string
 	maxSpanAttributeBytes      int
 	collapseAgentInternalSpans bool
-	legacyAutoTrace            bool
 	traceDefaults              traceOptions
 	async                      asyncGroup
 	activeTraceRun             traceRunRegistry
@@ -140,16 +124,11 @@ func NewHandler(ctx context.Context, cfg *Config) (*CallbackHandler, error) {
 	if cfg == nil {
 		return nil, errors.New("langfuse config is nil")
 	}
-	cfg = normalizedConfig(cfg)
 	if cfg.SampleRate < 0 || cfg.SampleRate > 1 {
 		return nil, fmt.Errorf("langfuse sample rate must be between 0 and 1, got %v", cfg.SampleRate)
 	}
 
-	dropLogInterval := cfg.DropLogInterval
-	if dropLogInterval == 0 {
-		dropLogInterval = cfg.QueueDropLogInterval
-	}
-	losses := newLossReporter(dropLogInterval, nil)
+	losses := newLossReporter(cfg.DropLogInterval, nil)
 	succeeded := false
 	defer func() {
 		if !succeeded {
@@ -234,23 +213,6 @@ func NewHandler(ctx context.Context, cfg *Config) (*CallbackHandler, error) {
 	}
 	succeeded = true
 	return handler, nil
-}
-
-func normalizedConfig(cfg *Config) *Config {
-	normalized := *cfg
-	if normalized.MaxQueueSize == 0 {
-		normalized.MaxQueueSize = cfg.MaxTaskQueueSize
-	}
-	if normalized.MaxExportBatchSize == 0 {
-		normalized.MaxExportBatchSize = cfg.FlushAt
-	}
-	if normalized.BatchTimeout == 0 {
-		normalized.BatchTimeout = cfg.FlushInterval
-	}
-	if normalized.MaxSpanAttributeBytes == 0 {
-		normalized.MaxSpanAttributeBytes = cfg.MaxEventSizeBytes
-	}
-	return &normalized
 }
 
 func newHTTPExporter(ctx context.Context, cfg *Config) (sdktrace.SpanExporter, error) {

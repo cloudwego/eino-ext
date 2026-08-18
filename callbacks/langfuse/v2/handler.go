@@ -78,7 +78,6 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	if info == nil {
 		return ctx
 	}
-	ctx = c.ensureLegacyTrace(ctx, info)
 	ctx, state := c.startSpan(ctx, info)
 	c.setInput(state, info, []callbacks.CallbackInput{input})
 	close(state.inputDone)
@@ -157,7 +156,6 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 		closeStream(input)
 		return ctx
 	}
-	ctx = c.ensureLegacyTrace(ctx, info)
 	ctx, state := c.startSpan(ctx, info)
 	c.async.run(func() {
 		defer close(state.inputDone)

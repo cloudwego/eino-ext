@@ -1,151 +1,161 @@
-# Eino callback for Langfuse
+# Langfuse Callbacks
 
 English | [简体中文](README_zh.md)
 
-A [CloudWeGo Eino](https://github.com/cloudwego/eino) callback that exports traces to [Langfuse](https://langfuse.com) through native OpenTelemetry OTLP/HTTP ingestion.
-
-This package targets Langfuse v4's observations-first data model. It sends one complete immutable OTEL span per Eino operation to `/api/public/otel/v1/traces`, uses Basic Auth, and includes `x-langfuse-ingestion-version: 4` for real-time ingestion. It does not use the deprecated `/api/public/ingestion` event API.
+A Langfuse callback implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Handler` interface. This enables seamless integration with Eino's application for enhanced observability and tracing.
 
 ## Features
 
-- Eino chat models become Langfuse `generation` observations.
-- Eino ADK agents, tools, retrievers, embeddings, and prompts receive specific Langfuse observation types.
-- Model name, parameters, token usage, streaming output, and completion start time are captured.
-- ADK async event iterators remain open until the agent has actually completed.
-- Parent/child relationships use standard OpenTelemetry context propagation.
-- Same-name Eino ChatModelAgent implementation Chains can be collapsed with an opt-in setting.
-- Trace name, user, session, tags, release, environment, version, and metadata are propagated to child observations for Langfuse v4.
-- Input/output masking and size limits are configurable.
-- OTLP batching, sampling, custom exporters, custom HTTP clients, flush, and graceful shutdown are supported.
+- Implements `github.com/cloudwego/eino/callbacks.Handler` interface
+- Full support for Langfuse trace, span, and generation tracking
+- Automatic handling of streaming inputs and outputs
+- Flexible trace configuration with session, user, and metadata support
+- Built-in error handling and recovery
+- Configurable batching, sampling, and retry mechanisms
+- Easy integration with Eino's application
 
-## Install
+## Installation
 
 ```bash
 go get github.com/cloudwego/eino-ext/callbacks/langfuse
 ```
 
-The callback uses Go 1.23+, Eino 0.9.14, and OpenTelemetry Go 1.38.
-
-## Usage
+## Quick Start
 
 ```go
 package main
 
 import (
 	"context"
-	"os"
+	"log"
 
+	"github.com/cloudwego/eino-ext/callbacks/langfuse"
 	"github.com/cloudwego/eino/callbacks"
-	langfuse "github.com/cloudwego/eino-ext/callbacks/langfuse"
 )
 
 func main() {
 	ctx := context.Background()
-	handler, err := langfuse.NewHandler(ctx, &langfuse.Config{
-		Host:        os.Getenv("LANGFUSE_HOST"),
-		PublicKey:   os.Getenv("LANGFUSE_PUBLIC_KEY"),
-		SecretKey:   os.Getenv("LANGFUSE_SECRET_KEY"),
-		ServiceName: "my-eino-service",
-		Environment: "production",
+	
+	cbh, flusher := langfuse.NewLangfuseHandler(&langfuse.Config{
+		Host:        "https://cloud.langfuse.com",
+		PublicKey:   "pk-lf-...",
+		SecretKey:   "sk-lf-...",
+		ServiceName: "eino-app",
+		Release:     "v1.0.0",
 	})
-	if err != nil {
-		panic(err)
-	}
-	defer handler.Shutdown(ctx)
-
-	callbacks.AppendGlobalHandlers(handler)
-
-	traceCtx := handler.StartTrace(ctx,
-		langfuse.WithName("chat-response"),
-		langfuse.WithUserID("user-123"),
-		langfuse.WithSessionID("conversation-456"),
-		langfuse.WithInput("Hello"),
-		langfuse.WithObservationType(langfuse.ObservationTypeAgent),
+	
+	callbacks.AppendGlobalHandlers(cbh)
+	
+	g := NewGraph[string, string]()
+	runner, _ := g.Compile(ctx)
+	
+	ctx = langfuse.SetTrace(ctx, 
+		langfuse.WithSessionID("session-123"), 
+		langfuse.WithUserID("user-456"),
 	)
-
-	// Run Eino components with traceCtx. Their callbacks become child spans.
-
-	handler.EndTrace(traceCtx, "Hello! How can I help?")
+	
+	result, _ := runner.Invoke(ctx, "input")
+	
+	flusher()
 }
 ```
 
-`Config.Host` accepts a Langfuse base URL, a URL ending in `/api/public/otel`, or the full `/api/public/otel/v1/traces` endpoint.
+## Configuration
 
-`WithName` sets both the Langfuse trace name and the application root
-observation's span name.
+The callback can be configured using the `Config` struct:
 
-Discarded telemetry is never silent. Sampling, a full asynchronous queue,
-callbacks received after processor shutdown, callback and OTel attribute limits,
-metadata/payload serialization failures, and OTel event/link limits are
-aggregated into one warning per minute:
+```go
+type Config struct {
+    // Host is the Langfuse server URL (Required)
+    // Example: "https://cloud.langfuse.com"
+    Host string
+    
+    // PublicKey is the public key for authentication (Required)
+    // Example: "pk-lf-..."
+    PublicKey string
+    
+    // SecretKey is the secret key for authentication (Required)
+    // Example: "sk-lf-..."
+    SecretKey string
+    
+    // Threads is the number of concurrent workers (Optional)
+    // Default: 1
+    Threads int
+    
+    // Timeout is the HTTP request timeout (Optional)
+    // Default: no timeout
+    Timeout time.Duration
+    
+    // MaxTaskQueueSize is the max number of events to buffer (Optional)
+    // Default: 100
+    MaxTaskQueueSize int
 
-```text
-langfuse callback discarded telemetry since previous report (interval 1m0s): queue_full_spans=37 value_limit_truncations=2
+    // MaxEventSizeBytes is the maximum size of an event before large fields are truncated (Optional)
+    // Default: 1_000_000
+    MaxEventSizeBytes int
+    
+    // FlushAt is the number of events to batch before sending (Optional)
+    // Default: 15
+    FlushAt int
+    
+    // FlushInterval is how often to flush events automatically (Optional)
+    // Default: 500ms
+    FlushInterval time.Duration
+    
+    // SampleRate is the percentage of events to send (Optional)
+    // Default: 1.0 (100%)
+    SampleRate float64
+    
+    // LogMessage is the message prefix for logs (Optional)
+    LogMessage string
+    
+    // MaskFunc is a function to mask sensitive data (Optional)
+    MaskFunc func(string) string
+    
+    // MaxRetry is the maximum number of retry attempts (Optional)
+    // Default: 3
+    MaxRetry uint64
+    
+    // Name is the default trace name (Optional)
+    Name string
+    
+    // UserID is the default user identifier (Optional)
+    UserID string
+    
+    // SessionID is the default session identifier (Optional)
+    SessionID string
+    
+    // Release is the version identifier (Optional)
+    Release string
+    
+    // Tags are labels attached to traces (Optional)
+    Tags []string
+    
+    // Public determines if traces are publicly accessible (Optional)
+    Public bool
+}
 ```
 
-Set `Config.DropLogInterval` to change the reporting interval. A negative value
-logs each discard immediately. Export failures are always logged immediately
-with the affected batch size because the processor will not retry the batch
-after the exporter returns its final error. `QueueDropLogInterval` remains as a
-deprecated compatibility alias.
+## Trace Options
 
-These processor-level diagnostics apply when the callback creates its own OTel
-tracer provider. With a caller-owned `TracerProvider`, queueing and exporting are
-owned by that provider and must be diagnosed by its span processors/exporters;
-callback-level truncation and serialization diagnostics still apply.
+You can customize individual traces using the `SetTrace` function:
 
-Call `EndTrace` when the root operation completes. It records the final output and waits for active Eino child callbacks to finish before ending the root. `StartTrace` also watches the supplied context: when it is cancelled or reaches its deadline, the root waits for active child callbacks and then ends automatically. A non-cancellable context such as `context.Background()` requires `EndTrace`; `Shutdown` closes any roots that remain active during process shutdown.
+```go
+ctx = langfuse.SetTrace(ctx,
+    langfuse.WithID("trace-id"),
+    langfuse.WithName("custom-trace"),
+    langfuse.WithUserID("user-123"),
+    langfuse.WithSessionID("session-456"),
+    langfuse.WithTags("production", "feature-x"),
+    langfuse.WithMetadata(map[string]string{"key": "value"}),
+    langfuse.WithInput("user query text"),
+    langfuse.WithEnvironment("production"),
+    langfuse.WithVersion("v1.0.0"),
+    langfuse.WithPublic(true),
+)
+```
 
-User-initiated `context.Canceled` callbacks are exported with the default Langfuse level, a `cancelled` status message, and cancellation metadata instead of being counted as errors. `context.DeadlineExceeded` and other callback failures remain errors.
+## For More Details
 
-Resumable Eino tool, graph, subgraph, and ADK business interrupts are exported
-with the default Langfuse level and an `interrupted` status instead of `ERROR`.
-The interrupt cause remains available in structured observation output and
-metadata. OTel instrumentation scope includes the callback release version so
-traces can distinguish callback upgrades from the application `release`.
-
-Process resource attributes are excluded by default to keep observation metadata
-small and avoid exposing local owners, executable paths, or command arguments.
-Set `Config.IncludeProcessResourceAttributes` only when those diagnostics are
-needed. Service name, OTel SDK identity, and instrumentation scope remain present.
-
-Set `Config.CollapseAgentInternalSpans` to remove the same-name internal Chain
-created beneath an Eino ChatModelAgent's Agent observation, its internal `ReAct`
-Graph and `Init` Lambda, and anonymous or default-named Lambda wrappers. It is
-disabled by default to preserve complete framework traces. These names are only
-collapsed beneath an active Agent; matching components elsewhere and named
-business Lambdas are retained. Descendant generations, tools, and sub-agents
-remain attached to the nearest retained parent through standard OTel context
-propagation.
-
-`MaxAttributeValueLength` applies a JSON-safe per-value limit. `MaxSpanAttributeBytes` limits the combined callback-owned attribute keys and values on each span. JSON inputs and outputs remain valid after either limit is applied.
-
-Use `MaskFunc` before exporting production inputs and outputs that may contain secrets or personal data.
-
-## Migrating from the legacy ingestion callback
-
-`NewLangfuseHandler` and `SetTrace` remain available for source compatibility.
-They now create OTLP root observations automatically and the returned flusher
-uses `Flush`. New applications should use `NewHandler`, `StartTrace`,
-`EndTrace`, and `Shutdown` to handle initialization errors and trace lifecycle
-explicitly.
-
-The legacy batching fields are deprecated aliases: `MaxTaskQueueSize` maps to
-`MaxQueueSize`, `FlushAt` maps to `MaxExportBatchSize`, `FlushInterval` maps to
-`BatchTimeout`, and `MaxEventSizeBytes` maps to `MaxSpanAttributeBytes`.
-`Threads`, `LogMessage`, and `MaxRetry` have no direct OTLP equivalent.
-
-OTLP spans are immutable after export. `UpdateTraceOutput` can only end an
-active root found in the supplied context; it cannot update an already exported
-trace by ID. Retain the context returned by `StartTrace` and pass the final
-output to `EndTrace` instead.
-
-## Compatibility notes
-
-Langfuse supports OTLP over HTTP/protobuf and HTTP/JSON, but not OTLP/gRPC. This package uses HTTP/protobuf with gzip. The tracing transport is standard OTLP; the `langfuse.*` span attributes are Langfuse's vendor-specific semantic mapping.
-
-This repository focuses on runtime Eino instrumentation. Langfuse management APIs such as prompts, datasets, scores, projects, and API keys are outside its scope.
-
-## License
-
-Apache-2.0
+- [Langfuse Documentation](https://langfuse.com/docs)
+- [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)

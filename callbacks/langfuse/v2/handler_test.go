@@ -57,32 +57,6 @@ func TestTraceEndpoint(t *testing.T) {
 	}
 }
 
-func TestLegacyHandlerAutomaticallyManagesRootTrace(t *testing.T) {
-	exporter := tracetest.NewInMemoryExporter()
-	provider := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exporter))
-	defer provider.Shutdown(context.Background())
-	handler, _ := NewLangfuseHandler(&Config{TracerProvider: provider})
-	defer handler.Shutdown(context.Background())
-
-	ctx := SetTrace(context.Background(),
-		WithName("legacy-root"),
-		WithUserID("legacy-user"),
-	)
-	info := &callbacks.RunInfo{Name: "legacy-tool", Component: components.ComponentOfTool}
-	childCtx := handler.OnStart(ctx, info, "input")
-	handler.OnEnd(childCtx, info, "output")
-
-	if spans := exporter.GetSpans(); len(spans) != 2 {
-		t.Fatalf("legacy handler exported %d spans, want 2", len(spans))
-	}
-	root := spanByName(t, exporter.GetSpans(), "legacy-root")
-	attrs := attributesByKey(root.Attributes)
-	assertStringAttribute(t, attrs, "langfuse.user.id", "legacy-user")
-	if output := attrs["langfuse.observation.output"].Value.AsString(); !strings.Contains(output, "output") {
-		t.Fatalf("root output = %q, want child output", output)
-	}
-}
-
 func TestHandlerUsesLangfuseOTLPHTTPContract(t *testing.T) {
 	type requestSnapshot struct {
 		Path             string
