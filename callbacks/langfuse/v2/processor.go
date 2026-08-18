@@ -45,6 +45,7 @@ type batchProcessorConfig struct {
 
 type batchQueueItem struct {
 	span    sdktrace.ReadOnlySpan
+	ctx     context.Context
 	flushed chan error
 }
 
@@ -151,7 +152,7 @@ func (p *reportingBatchSpanProcessor) ForceFlush(ctx context.Context) error {
 	}
 	flushed := make(chan error, 1)
 	select {
-	case p.queue <- batchQueueItem{flushed: flushed}:
+	case p.queue <- batchQueueItem{ctx: ctx, flushed: flushed}:
 		p.enqueueMu.RUnlock()
 	case <-ctx.Done():
 		p.enqueueMu.RUnlock()
@@ -161,6 +162,8 @@ func (p *reportingBatchSpanProcessor) ForceFlush(ctx context.Context) error {
 	select {
 	case err := <-flushed:
 		return err
+	case <-p.stopCh:
+		return nil
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -206,13 +209,13 @@ func (p *reportingBatchSpanProcessor) run() {
 	defer timer.Stop()
 
 	batch := make([]sdktrace.ReadOnlySpan, 0, p.maxExportBatchSize)
-	export := func() error {
+	export := func(ctx context.Context) error {
 		if len(batch) == 0 {
 			resetTimer(timer, p.batchTimeout)
 			return nil
 		}
 		batchSize := len(batch)
-		err := p.exporter.ExportSpans(context.Background(), batch)
+		err := p.exporter.ExportSpans(ctx, batch)
 		clear(batch)
 		batch = batch[:0]
 		resetTimer(timer, p.batchTimeout)
@@ -230,12 +233,16 @@ func (p *reportingBatchSpanProcessor) run() {
 		if item.span != nil {
 			batch = append(batch, item.span)
 			if len(batch) >= p.maxExportBatchSize {
-				return export()
+				return export(context.Background())
 			}
 			return nil
 		}
 		if item.flushed != nil {
-			err := export()
+			if err := item.ctx.Err(); err != nil {
+				item.flushed <- err
+				return nil
+			}
+			err := export(item.ctx)
 			item.flushed <- err
 			return err
 		}
@@ -248,14 +255,18 @@ func (p *reportingBatchSpanProcessor) run() {
 		case item := <-p.queue:
 			_ = process(item)
 		case <-timer.C:
-			_ = export()
+			_ = export(context.Background())
 		case <-p.stopCh:
 			for {
 				select {
 				case item := <-p.queue:
+					if item.flushed != nil {
+						item.flushed <- nil
+						continue
+					}
 					finalErr = errors.Join(finalErr, process(item))
 				default:
-					finalErr = errors.Join(finalErr, export())
+					finalErr = errors.Join(finalErr, export(context.Background()))
 					p.doneCh <- finalErr
 					return
 				}

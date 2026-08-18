@@ -91,6 +91,57 @@ func TestReportingBatchSpanProcessorDoesNotLimitExporterRetryWindow(t *testing.T
 	}
 }
 
+type cancelAwareExporter struct {
+	started  chan struct{}
+	canceled chan error
+	start    sync.Once
+}
+
+func (e *cancelAwareExporter) ExportSpans(ctx context.Context, _ []sdktrace.ReadOnlySpan) error {
+	e.start.Do(func() { close(e.started) })
+	<-ctx.Done()
+	e.canceled <- ctx.Err()
+	return ctx.Err()
+}
+
+func (*cancelAwareExporter) Shutdown(context.Context) error { return nil }
+
+func TestReportingBatchSpanProcessorForceFlushCancelsExport(t *testing.T) {
+	exporter := &cancelAwareExporter{
+		started:  make(chan struct{}),
+		canceled: make(chan error, 1),
+	}
+	processor, err := newReportingBatchSpanProcessor(exporter, batchProcessorConfig{
+		batchTimeout: time.Hour,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(processor))
+	_, span := provider.Tracer("flush-context-test").Start(context.Background(), "test")
+	span.End()
+
+	flushCtx, cancelFlush := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancelFlush()
+	if err := provider.ForceFlush(flushCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ForceFlush error = %v, want deadline exceeded", err)
+	}
+	select {
+	case err := <-exporter.canceled:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("export context error = %v, want deadline exceeded", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("export context was not canceled")
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), time.Second)
+	defer cancelShutdown()
+	if err := provider.Shutdown(shutdownCtx); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReportingBatchSpanProcessorAggregatesQueueFullDrops(t *testing.T) {
 	exporter := newBlockingSpanExporter()
 	reports := make(chan map[string]uint64, 1)

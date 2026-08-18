@@ -90,7 +90,8 @@ after the exporter returns its final error.
 
 The batch processor does not add a shorter export deadline. For the built-in
 OTLP exporter, `Config.Timeout` limits each HTTP request and the OpenTelemetry
-exporter's retry policy controls the total retry window.
+exporter's retry policy controls the total retry window. Explicit `ForceFlush`
+operations pass the caller's context to the exporter and remain cancellable.
 
 These processor-level diagnostics apply when the callback creates its own OTel
 tracer provider. With a caller-owned `TracerProvider`, queueing and exporting are
