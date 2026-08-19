@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"strings"
@@ -78,10 +79,25 @@ func newDiagnosticHTTPClient(configured *http.Client, timeout time.Duration) *ht
 	}
 	base := client.Transport
 	if base == nil {
-		base = http.DefaultTransport
+		base = newDefaultDiagnosticTransport()
 	}
 	client.Transport = &diagnosticRoundTripper{base: base}
 	return client
+}
+
+func newDefaultDiagnosticTransport() *http.Transport {
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: time.Second,
+	}
 }
 
 func (t *diagnosticRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {

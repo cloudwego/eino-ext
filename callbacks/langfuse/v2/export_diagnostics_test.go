@@ -86,6 +86,43 @@ func TestDiagnosticRoundTripperMeasuresCompressedBodyAndAttempt(t *testing.T) {
 	}
 }
 
+func TestNewDiagnosticHTTPClientUsesPrivateDefaultTransport(t *testing.T) {
+	client := newDiagnosticHTTPClient(nil, time.Second)
+	diagnosticsTransport, ok := client.Transport.(*diagnosticRoundTripper)
+	if !ok {
+		t.Fatalf("transport type = %T, want *diagnosticRoundTripper", client.Transport)
+	}
+	if diagnosticsTransport.base == http.DefaultTransport {
+		t.Fatal("diagnostic client unexpectedly reuses http.DefaultTransport")
+	}
+	transport, ok := diagnosticsTransport.base.(*http.Transport)
+	if !ok {
+		t.Fatalf("base transport type = %T, want *http.Transport", diagnosticsTransport.base)
+	}
+	if !transport.ForceAttemptHTTP2 || transport.MaxIdleConns != 100 || transport.IdleConnTimeout != 90*time.Second {
+		t.Fatalf("unexpected default transport settings: %#v", transport)
+	}
+}
+
+func TestNewDiagnosticHTTPClientPreservesConfiguredTransport(t *testing.T) {
+	configuredTransport := diagnosticTestRoundTripper{}
+	configured := &http.Client{Transport: configuredTransport, Timeout: 2 * time.Second}
+	client := newDiagnosticHTTPClient(configured, time.Second)
+	diagnosticsTransport, ok := client.Transport.(*diagnosticRoundTripper)
+	if !ok {
+		t.Fatalf("transport type = %T, want *diagnosticRoundTripper", client.Transport)
+	}
+	if diagnosticsTransport.base != configuredTransport {
+		t.Fatalf("base transport = %T, want configured transport", diagnosticsTransport.base)
+	}
+	if client.Timeout != configured.Timeout {
+		t.Fatalf("timeout = %s, want %s", client.Timeout, configured.Timeout)
+	}
+	if configured.Transport != configuredTransport {
+		t.Fatal("configured HTTP client was mutated")
+	}
+}
+
 func TestExportDiagnosticsStringOmitsTraceIDs(t *testing.T) {
 	diagnostics := &exportDiagnostics{
 		protobufBytes: 1024,
