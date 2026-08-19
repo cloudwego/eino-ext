@@ -94,6 +94,8 @@ langfuse callback discarded telemetry since previous report (interval 1m0s): que
 
 使用 `Config.DropLogInterval` 调整汇总间隔；设置为负数会立即记录每次丢弃。exporter 最终返回错误时，会立即打印失败 batch 的 span 数量，因为该 batch 不会再次重试。
 
+启用 `Config.ExportDiagnostics` 后，最终导出失败日志还会包含 protobuf 序列化大小、gzip 请求体大小、HTTP 尝试次数，以及 DNS、连接、TLS、写请求和等待响应头的耗时。成功导出仍不会打印日志；诊断不会记录 span 内容或 trace ID，只检查第一次请求体，因此会增加少量 CPU 和内存开销。
+
 batch processor 不会额外设置更短的导出 deadline。使用内置 OTLP exporter 时，`Config.Timeout` 限制单次 HTTP 请求，OpenTelemetry exporter 的重试策略控制整个重试窗口。显式 `ForceFlush` 会将调用方 context 传给 exporter，因此仍可取消。
 
 当 callback 使用调用方传入的 `TracerProvider` 时，队列和导出由该 provider 管理，应通过其 span processor/exporter 诊断；callback 自身的截断和序列化诊断仍然有效。

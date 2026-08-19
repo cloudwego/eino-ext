@@ -93,6 +93,11 @@ type Config struct {
 	MaxSpanAttributeBytes int
 	MaskFunc              func(string) string
 	HTTPClient            *http.Client
+	// ExportDiagnostics adds protobuf and gzip payload sizes, HTTP attempt
+	// counts, and network-stage timings to the final export failure log. It
+	// never logs span contents or trace IDs. Collection has a small CPU and
+	// allocation cost because the first compressed request body is inspected.
+	ExportDiagnostics bool
 
 	// SpanExporter is intended for custom transports and tests. When set, Host
 	// and API keys are not used to construct an exporter.
@@ -140,12 +145,14 @@ func NewHandler(ctx context.Context, cfg *Config) (*CallbackHandler, error) {
 	ownProvider := false
 	if provider == nil {
 		exporter := cfg.SpanExporter
+		exportDiagnostics := false
 		if exporter == nil {
 			var err error
 			exporter, err = newHTTPExporter(ctx, cfg)
 			if err != nil {
 				return nil, err
 			}
+			exportDiagnostics = cfg.ExportDiagnostics
 		}
 
 		resourceOptions := []resource.Option{
@@ -166,6 +173,7 @@ func NewHandler(ctx context.Context, cfg *Config) (*CallbackHandler, error) {
 			maxExportBatchSize: cfg.MaxExportBatchSize,
 			batchTimeout:       cfg.BatchTimeout,
 			losses:             losses,
+			exportDiagnostics:  exportDiagnostics,
 		})
 		if err != nil {
 			return nil, err
@@ -237,7 +245,9 @@ func newHTTPExporter(ctx context.Context, cfg *Config) (sdktrace.SpanExporter, e
 		otlptracehttp.WithTimeout(timeout),
 		otlptracehttp.WithCompression(otlptracehttp.GzipCompression),
 	}
-	if cfg.HTTPClient != nil {
+	if cfg.ExportDiagnostics {
+		exporterOptions = append(exporterOptions, otlptracehttp.WithHTTPClient(newDiagnosticHTTPClient(cfg.HTTPClient, timeout)))
+	} else if cfg.HTTPClient != nil {
 		exporterOptions = append(exporterOptions, otlptracehttp.WithHTTPClient(cfg.HTTPClient))
 	}
 	exporter, err := otlptracehttp.New(ctx, exporterOptions...)

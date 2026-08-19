@@ -88,6 +88,12 @@ logs each discard immediately. Export failures are always logged immediately
 with the affected batch size because the processor will not retry the batch
 after the exporter returns its final error.
 
+Set `Config.ExportDiagnostics` to append the serialized protobuf size, gzip
+request-body size, HTTP attempt count, and DNS/connect/TLS/write/header-wait
+timings to final export failure logs. Successful exports remain silent. The
+diagnostics never log span content or trace IDs, and inspect the first request
+body only, so enabling them has a small CPU and allocation cost.
+
 The batch processor does not add a shorter export deadline. For the built-in
 OTLP exporter, `Config.Timeout` limits each HTTP request and the OpenTelemetry
 exporter's retry policy controls the total retry window. Explicit `ForceFlush`

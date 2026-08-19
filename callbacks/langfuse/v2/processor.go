@@ -41,6 +41,7 @@ type batchProcessorConfig struct {
 	batchTimeout       time.Duration
 	losses             *lossReporter
 	handleExportError  func(error)
+	exportDiagnostics  bool
 }
 
 type batchQueueItem struct {
@@ -56,6 +57,7 @@ type reportingBatchSpanProcessor struct {
 	batchTimeout       time.Duration
 	losses             *lossReporter
 	handleExportError  func(error)
+	exportDiagnostics  bool
 	stopped            atomic.Bool
 
 	enqueueMu    sync.RWMutex
@@ -98,6 +100,7 @@ func newReportingBatchSpanProcessor(exporter sdktrace.SpanExporter, cfg batchPro
 		batchTimeout:       cfg.batchTimeout,
 		losses:             cfg.losses,
 		handleExportError:  cfg.handleExportError,
+		exportDiagnostics:  cfg.exportDiagnostics,
 		stopCh:             make(chan struct{}),
 		doneCh:             make(chan error, 1),
 	}
@@ -215,11 +218,19 @@ func (p *reportingBatchSpanProcessor) run() {
 			return nil
 		}
 		batchSize := len(batch)
+		diagnostics := (*exportDiagnostics)(nil)
+		if p.exportDiagnostics {
+			diagnostics = &exportDiagnostics{}
+			ctx = context.WithValue(ctx, exportDiagnosticsContextKey{}, diagnostics)
+		}
 		err := p.exporter.ExportSpans(ctx, batch)
 		clear(batch)
 		batch = batch[:0]
 		resetTimer(timer, p.batchTimeout)
 		if err != nil {
+			if diagnostics != nil {
+				err = fmt.Errorf("%w; %s", err, diagnostics)
+			}
 			p.handleExportError(fmt.Errorf(
 				"langfuse callback export failed for batch of %d spans; failed or rejected spans will not be retried by the processor: %w",
 				batchSize,
