@@ -525,14 +525,18 @@ func toFunctionTools(functionTools []*schema.ToolInfo) ([]anthropic.ToolUnionPar
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool %q parameters to JSON schema: %w", tool.Name, err)
 		}
+		var inputSchema anthropic.ToolInputSchemaParam
+		if s != nil {
+			inputSchema = anthropic.ToolInputSchemaParam{
+				Properties: s.Properties,
+				Required:   s.Required,
+			}
+		}
 		toolParam := &anthropic.ToolParam{
 			Type:        anthropic.ToolTypeCustom,
 			Name:        tool.Name,
 			Description: newClaudeStrOpt(tool.Desc),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: s.Properties,
-				Required:   s.Required,
-			},
+			InputSchema: inputSchema,
 		}
 		if hasCacheControlOnToolInfo(tool) {
 			toolParam.CacheControl = *getToolInfoCacheControl(tool)
