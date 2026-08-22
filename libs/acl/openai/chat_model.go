@@ -90,7 +90,9 @@ type Config struct {
 
 	// AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
 	// This is useful when the model name is different from the deployment name.
-	// Optional for Azure, remove [,:] from the model name by default.
+	// Optional for Azure. Defaults to an identity function (no transformation).
+	// The upstream SDK historically stripped [.:] from names; set this field to
+	// restore that behaviour if your deployment names rely on it.
 	AzureModelMapperFunc func(model string) string
 
 	// BaseURL is the Azure OpenAI endpoint URL
@@ -238,6 +240,12 @@ func NewClient(ctx context.Context, config *Config) (*Client, error) {
 		}
 		if config.AzureModelMapperFunc != nil {
 			clientConf.AzureModelMapperFunc = config.AzureModelMapperFunc
+		} else {
+			// Use identity mapper by default: deployment names are user-provided
+			// identifiers that should be passed through unchanged. The upstream
+			// SDK strips dots from model names by default (legacy Azure convention),
+			// which breaks modern Foundry deployments whose names contain dots.
+			clientConf.AzureModelMapperFunc = func(model string) string { return model }
 		}
 	} else {
 		clientConf = openai.DefaultConfig(config.APIKey)
