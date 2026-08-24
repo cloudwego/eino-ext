@@ -6,7 +6,7 @@
 
 这是一个用于 Go 的低级 Langfuse API 客户端库。它提供对 Langfuse API 的直接访问，用于创建跟踪、跨度、生成和事件。此库由更高级别的 `callbacks/langfuse` 包内部使用。
 
-**注意**：对于大多数 Eino 用例，您应该使用 [callbacks/langfuse](../../callbacks/langfuse) 包，它提供了与 Eino 回调系统集成的更简单接口。
+**注意**：对于大多数 Eino 用例，您应该使用 [callbacks/langfuse](../../../callbacks/langfuse) 包，它提供了与 Eino 回调系统集成的更简单接口。
 
 ## 特性
 
@@ -245,7 +245,7 @@ client.Flush()
 2. **直接集成**：当您需要对 Langfuse API 调用进行细粒度控制时
 3. **自定义解决方案**：构建自定义可观测性解决方案时
 
-对于大多数 Eino 集成，请改用 [callbacks/langfuse](../../callbacks/langfuse)。
+对于大多数 Eino 集成，请改用 [callbacks/langfuse](../../../callbacks/langfuse)。
 
 ## 许可证
 
