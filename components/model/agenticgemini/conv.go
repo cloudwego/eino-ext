@@ -355,7 +355,11 @@ func convFunctionToolResult(result *schema.FunctionToolResult) (*genai.Part, err
 	if err != nil {
 		response["output"] = text
 	}
-	return genai.NewPartFromFunctionResponse(result.Name, response), nil
+	name := result.Name
+	if name == "" {
+		name = result.CallID
+	}
+	return genai.NewPartFromFunctionResponse(name, response), nil
 }
 
 func functionToolResultContentToText(content []*schema.FunctionToolResultContentBlock) (string, error) {

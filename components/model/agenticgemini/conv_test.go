@@ -1260,6 +1260,36 @@ func TestConvAgenticMessages_MergeToolResults(t *testing.T) {
 	})
 }
 
+func TestConvFunctionToolResult_EmptyName(t *testing.T) {
+	t.Run("empty name falls back to CallID", func(t *testing.T) {
+		part, err := convFunctionToolResult(&schema.FunctionToolResult{
+			CallID: "call-fallback-1",
+			Content: []*schema.FunctionToolResultContentBlock{
+				{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: `{"status":"ok"}`}},
+			},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, part)
+		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "call-fallback-1", part.FunctionResponse.Name)
+		assert.Equal(t, "ok", part.FunctionResponse.Response["status"])
+	})
+
+	t.Run("explicit name is preserved", func(t *testing.T) {
+		part, err := convFunctionToolResult(&schema.FunctionToolResult{
+			CallID: "call-1",
+			Name:   "read_file",
+			Content: []*schema.FunctionToolResultContentBlock{
+				{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "file contents"}},
+			},
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, part)
+		assert.Equal(t, "read_file", part.FunctionResponse.Name)
+		assert.Equal(t, "file contents", part.FunctionResponse.Response["output"])
+	})
+}
+
 func TestConvFunctionToolCall_EmptyArguments(t *testing.T) {
 	t.Run("empty string arguments treated as empty object", func(t *testing.T) {
 		part, err := convFunctionToolCall(&schema.FunctionToolCall{
