@@ -33,6 +33,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+	"golang.org/x/oauth2/google"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
@@ -142,6 +143,19 @@ type GoogleVertexAIConfig struct {
 	// from CLOUD_ML_REGION environment variable.
 	// See: https://claude.ai/docs/en/google-vertex-ai
 	Region string
+
+	// Credentials provides explicit Google credentials for Vertex AI authentication.
+	// When set, vertex.WithCredentials is used instead of the ambient ADC
+	// (vertex.WithGoogleAuth). This avoids relying on GOOGLE_APPLICATION_CREDENTIALS
+	// environment variable, which is process-global and unsafe under concurrent
+	// or hot-reload scenarios.
+	//
+	// Example:
+	//   creds, _ := google.CredentialsFromJSON(ctx, jsonKey, "https://www.googleapis.com/auth/cloud-platform")
+	//   cfg.ByGoogleVertexAI = &GoogleVertexAIConfig{Credentials: creds, ...}
+	//
+	// Optional. When nil, falls back to ambient ADC via WithGoogleAuth.
+	Credentials *google.Credentials
 }
 
 type BedrockConfig struct {
@@ -256,6 +270,9 @@ func newClient(ctx context.Context, cfg *Config) (anthropic.Client, error) {
 			return anthropic.Client{}, errors.New("ByGoogleVertexAI is set but no region provided; set Region or CLOUD_ML_REGION")
 		}
 
+		if cfg.ByGoogleVertexAI.Credentials != nil {
+			return anthropic.NewClient(vertex.WithCredentials(ctx, region, projectID, cfg.ByGoogleVertexAI.Credentials)), nil
+		}
 		return anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID)), nil
 
 	case cfg.ByBedrock != nil:
