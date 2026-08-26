@@ -650,7 +650,6 @@ func populateStreamingMeta(curBlocks []*schema.ContentBlock, curIndex int, lastT
 		return curIndex, lastType
 	}
 	if len(lastType) > 0 && curBlocks[0].Type != lastType {
-		// a new part, index++
 		curIndex++
 	}
 
@@ -664,7 +663,28 @@ func populateStreamingMeta(curBlocks []*schema.ContentBlock, curIndex int, lastT
 	}
 	curBlocks[i].StreamingMeta = &schema.StreamingMeta{Index: curIndex}
 
+	// Discrete block types (tool calls/results) are self-contained — each one is a
+	// complete unit, not a partial chunk to be concatenated. Advance curIndex so the
+	// next chunk starts at a new index, preventing ConcatAgenticMessages from trying
+	// to merge different tool calls that happen to share the same streaming index.
+	if isDiscreteBlockType(curBlocks[i].Type) {
+		curIndex++
+	}
+
 	return curIndex, curBlocks[len(curBlocks)-1].Type
+}
+
+func isDiscreteBlockType(t schema.ContentBlockType) bool {
+	switch t {
+	case schema.ContentBlockTypeFunctionToolCall,
+		schema.ContentBlockTypeFunctionToolResult,
+		schema.ContentBlockTypeServerToolCall,
+		schema.ContentBlockTypeServerToolResult,
+		schema.ContentBlockTypeMCPToolCall,
+		schema.ContentBlockTypeMCPToolResult:
+		return true
+	}
+	return false
 }
 
 func toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionDeclaration, error) {
