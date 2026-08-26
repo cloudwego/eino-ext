@@ -22,6 +22,7 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 	"github.com/cloudwego/eino/schema/claude"
 	"github.com/eino-contrib/jsonschema"
@@ -549,12 +550,12 @@ func toToolInputSchema(s *jsonschema.Schema) (anthropic.ToolInputSchemaParam, er
 		return anthropic.ToolInputSchemaParam{}, nil
 	}
 
-	raw, err := json.Marshal(s)
+	raw, err := sonic.Marshal(s)
 	if err != nil {
 		return anthropic.ToolInputSchemaParam{}, fmt.Errorf("marshal full JSON schema: %w", err)
 	}
 	extraFields := make(map[string]any)
-	if err := json.Unmarshal(raw, &extraFields); err != nil {
+	if err := sonic.Unmarshal(raw, &extraFields); err != nil {
 		return anthropic.ToolInputSchemaParam{}, fmt.Errorf("decode full JSON schema: %w", err)
 	}
 	delete(extraFields, "type")
