@@ -1249,6 +1249,92 @@ func TestPopulateToolChoice(t *testing.T) {
 	}
 }
 
+func TestIncludeServerSideToolInvocations(t *testing.T) {
+	ctx := context.Background()
+	funcTools := []*genai.FunctionDeclaration{{Name: "tool1"}}
+	user := []*schema.Message{{Role: schema.User, Content: "hi"}}
+
+	geminiClient := &genai.Client{Models: &genai.Models{}}
+	vertexClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend: genai.BackendVertexAI,
+		APIKey:  "fake-key",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, genai.BackendVertexAI, vertexClient.ClientConfig().Backend)
+
+	t.Run("built-in tool with function calling defaults to VALIDATED", func(t *testing.T) {
+		cm := &ChatModel{
+			cli:                geminiClient,
+			model:              "gemini-x",
+			tools:              funcTools,
+			enableGoogleSearch: &genai.GoogleSearch{},
+		}
+		_, _, m, _, err := cm.genInputAndConf(user)
+		assert.NoError(t, err)
+		assert.NotNil(t, m.ToolConfig)
+		assert.NotNil(t, m.ToolConfig.IncludeServerSideToolInvocations)
+		assert.True(t, *m.ToolConfig.IncludeServerSideToolInvocations)
+		assert.NotNil(t, m.ToolConfig.FunctionCallingConfig)
+		assert.Equal(t, genai.FunctionCallingConfigModeValidated, m.ToolConfig.FunctionCallingConfig.Mode)
+	})
+
+	t.Run("AUTO mode is switched to VALIDATED", func(t *testing.T) {
+		toolChoiceAllowed := schema.ToolChoiceAllowed
+		cm := &ChatModel{
+			cli:                geminiClient,
+			model:              "gemini-x",
+			tools:              funcTools,
+			toolChoice:         &toolChoiceAllowed,
+			enableGoogleSearch: &genai.GoogleSearch{},
+		}
+		_, _, m, _, err := cm.genInputAndConf(user)
+		assert.NoError(t, err)
+		assert.NotNil(t, m.ToolConfig.IncludeServerSideToolInvocations)
+		assert.True(t, *m.ToolConfig.IncludeServerSideToolInvocations)
+		assert.Equal(t, genai.FunctionCallingConfigModeValidated, m.ToolConfig.FunctionCallingConfig.Mode)
+	})
+
+	t.Run("forced (ANY) mode is preserved", func(t *testing.T) {
+		toolChoiceForced := schema.ToolChoiceForced
+		cm := &ChatModel{
+			cli:                geminiClient,
+			model:              "gemini-x",
+			tools:              funcTools,
+			toolChoice:         &toolChoiceForced,
+			enableGoogleSearch: &genai.GoogleSearch{},
+		}
+		_, _, m, _, err := cm.genInputAndConf(user)
+		assert.NoError(t, err)
+		assert.True(t, *m.ToolConfig.IncludeServerSideToolInvocations)
+		assert.Equal(t, genai.FunctionCallingConfigModeAny, m.ToolConfig.FunctionCallingConfig.Mode)
+	})
+
+	t.Run("no built-in tools leaves flag unset", func(t *testing.T) {
+		cm := &ChatModel{
+			cli:   geminiClient,
+			model: "gemini-x",
+			tools: funcTools,
+		}
+		_, _, m, _, err := cm.genInputAndConf(user)
+		assert.NoError(t, err)
+		if m.ToolConfig != nil {
+			assert.Nil(t, m.ToolConfig.IncludeServerSideToolInvocations)
+		}
+	})
+
+	t.Run("vertex backend returns unsupported error", func(t *testing.T) {
+		cm := &ChatModel{
+			cli:                vertexClient,
+			model:              "gemini-x",
+			tools:              funcTools,
+			enableGoogleSearch: &genai.GoogleSearch{},
+		}
+		_, _, _, _, err := cm.genInputAndConf(user)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Vertex AI")
+	})
+}
+
 // isValidUUID checks if a string is a valid UUID format
 func isValidUUID(u string) bool {
 	_, err := uuid.Parse(u)
