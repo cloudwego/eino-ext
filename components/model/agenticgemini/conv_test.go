@@ -1259,3 +1259,64 @@ func TestConvAgenticMessages_MergeToolResults(t *testing.T) {
 		assert.Len(t, contents, 2)
 	})
 }
+
+func TestConvFunctionToolCall_EmptyArguments(t *testing.T) {
+	t.Run("empty string arguments treated as empty object", func(t *testing.T) {
+		part, err := convFunctionToolCall(&schema.FunctionToolCall{
+			Name:      "task_complete",
+			Arguments: "",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, part)
+		assert.Equal(t, "task_complete", part.FunctionCall.Name)
+		assert.Empty(t, part.FunctionCall.Args)
+	})
+
+	t.Run("valid JSON arguments", func(t *testing.T) {
+		part, err := convFunctionToolCall(&schema.FunctionToolCall{
+			Name:      "read_file",
+			Arguments: `{"path":"src/App.tsx"}`,
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, part)
+		assert.Equal(t, "read_file", part.FunctionCall.Name)
+		assert.Equal(t, "src/App.tsx", part.FunctionCall.Args["path"])
+	})
+
+	t.Run("empty object arguments", func(t *testing.T) {
+		part, err := convFunctionToolCall(&schema.FunctionToolCall{
+			Name:      "task_complete",
+			Arguments: "{}",
+		})
+		assert.NoError(t, err)
+		assert.NotNil(t, part)
+		assert.Empty(t, part.FunctionCall.Args)
+	})
+
+	t.Run("invalid JSON arguments returns error", func(t *testing.T) {
+		_, err := convFunctionToolCall(&schema.FunctionToolCall{
+			Name:      "write_file",
+			Arguments: `{"path":"broken`,
+		})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unmarshal function tool call arguments")
+	})
+
+	t.Run("empty args in message conversion roundtrip", func(t *testing.T) {
+		msg := &schema.AgenticMessage{
+			Role: schema.AgenticRoleTypeAssistant,
+			ContentBlocks: []*schema.ContentBlock{
+				schema.NewContentBlock(&schema.FunctionToolCall{
+					CallID:    "call-1",
+					Name:      "task_complete",
+					Arguments: "",
+				}),
+			},
+		}
+		content, err := convAgenticMessage(msg)
+		assert.NoError(t, err)
+		assert.NotNil(t, content)
+		assert.Len(t, content.Parts, 1)
+		assert.Equal(t, "task_complete", content.Parts[0].FunctionCall.Name)
+	})
+}

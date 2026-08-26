@@ -335,9 +335,11 @@ func convUserInputFile(file *schema.UserInputFile) (*genai.Part, error) {
 
 func convFunctionToolCall(call *schema.FunctionToolCall) (*genai.Part, error) {
 	args := make(map[string]any)
-	err := sonic.UnmarshalString(call.Arguments, &args)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal function tool call arguments to map[string]any fail: %w", err)
+	if call.Arguments != "" {
+		err := sonic.UnmarshalString(call.Arguments, &args)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal function tool call arguments to map[string]any fail: %w", err)
+		}
 	}
 
 	return genai.NewPartFromFunctionCall(call.Name, args), nil
