@@ -42,10 +42,16 @@ func (c *streamConverter) toMessageStreamingChunk(event anthropic.MessageStreamE
 	case anthropic.MessageStartEvent:
 		return toAgenticMessage(&e.Message)
 	case anthropic.MessageDeltaEvent:
-		return &schema.AgenticMessage{
+		msg := &schema.AgenticMessage{
 			Role:         schema.AgenticRoleTypeAssistant,
 			ResponseMeta: toDeltaResponseMeta(e),
-		}, nil
+		}
+		if e.Usage.CacheCreationInputTokens > 0 {
+			msg.Extra = map[string]any{
+				KeyOfCacheCreationInputTokens: int(e.Usage.CacheCreationInputTokens),
+			}
+		}
+		return msg, nil
 	case anthropic.ContentBlockStartEvent:
 		contentBlock, err := c.toStreamingStartBlock(e.Index, e.ContentBlock.AsAny())
 		if err != nil {
