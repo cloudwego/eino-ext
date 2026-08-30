@@ -21,10 +21,14 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -147,4 +151,209 @@ func TestNilRunInfoIsIgnored(t *testing.T) {
 	h.OnEnd(ctx, nil, nil)
 	h.OnError(ctx, nil, errors.New("boom"))
 	// Reaching here without panicking is the assertion.
+}
+
+func waitForSpan(t *testing.T, exporter *recordingExporter) sdktrace.ReadOnlySpan {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if s := exporter.lastSpan(); s != nil {
+			return s
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for an exported span")
+	return nil
+}
+
+func TestWithTracerName(t *testing.T) {
+	exporter := &recordingExporter{}
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(sdktrace.NewSimpleSpanProcessor(exporter)),
+	)
+	h := NewHandler(tp, WithTracerName("custom/instrumentation"))
+
+	info := &callbacks.RunInfo{Name: "llm", Component: components.ComponentOfChatModel}
+	ctx := h.OnStart(context.Background(), info, nil)
+	h.OnEnd(ctx, info, nil)
+
+	span := exporter.lastSpan()
+	if span == nil {
+		t.Fatal("expected an exported span")
+	}
+	if got := span.InstrumentationScope().Name; got != "custom/instrumentation" {
+		t.Fatalf("instrumentation scope name = %q, want custom/instrumentation", got)
+	}
+}
+
+func TestOnEndWithoutStart(t *testing.T) {
+	h, exporter := newTestHandler()
+	info := &callbacks.RunInfo{Name: "llm", Component: components.ComponentOfChatModel}
+	ctx := h.OnEnd(context.Background(), info, nil)
+	_ = ctx
+	if exporter.lastSpan() != nil {
+		t.Fatal("expected no span to be exported")
+	}
+}
+
+func TestOnErrorWithoutStart(t *testing.T) {
+	h, exporter := newTestHandler()
+	info := &callbacks.RunInfo{Name: "llm", Component: components.ComponentOfChatModel}
+	ctx := h.OnError(context.Background(), info, errors.New("boom"))
+	_ = ctx
+	if exporter.lastSpan() != nil {
+		t.Fatal("expected no span to be exported")
+	}
+}
+
+func TestStreamInputDrainsSpan(t *testing.T) {
+	h, exporter := newTestHandler()
+	info := &callbacks.RunInfo{Name: "llm", Type: "OpenAI", Component: components.ComponentOfChatModel}
+	stream := schema.StreamReaderFromArray([]callbacks.CallbackInput{
+		&model.CallbackInput{Config: &model.Config{Model: "gpt-4o"}},
+		nil,
+	})
+
+	ctx := h.OnStartWithStreamInput(context.Background(), info, stream)
+
+	span := waitForSpan(t, exporter)
+	attrs := spanAttrs(span)
+	if v, ok := attrs[attrOperationName]; !ok || v.AsString() != "chat" {
+		t.Fatalf("gen_ai.operation.name = %v, want chat", v)
+	}
+	if ctx == nil {
+		t.Fatal("expected non-nil context")
+	}
+}
+
+func TestStreamInputNilInfoClosesInput(t *testing.T) {
+	h, _ := newTestHandler()
+	stream := schema.StreamReaderFromArray([]callbacks.CallbackInput{nil})
+
+	h.OnStartWithStreamInput(context.Background(), nil, stream)
+
+	// The reader copy must have been closed by the nil-info branch.
+	closed := make(chan struct{})
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				close(closed)
+				return
+			}
+		}
+	}()
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected stream input to be closed")
+	}
+}
+
+func TestStreamOutputDrainsSpan(t *testing.T) {
+	h, exporter := newTestHandler()
+	info := &callbacks.RunInfo{Name: "llm", Type: "OpenAI", Component: components.ComponentOfChatModel}
+	stream := schema.StreamReaderFromArray([]callbacks.CallbackOutput{
+		&model.CallbackOutput{TokenUsage: &model.TokenUsage{PromptTokens: 3, CompletionTokens: 4}},
+	})
+
+	h.OnEndWithStreamOutput(context.Background(), info, stream)
+
+	span := waitForSpan(t, exporter)
+	if span == nil {
+		t.Fatal("expected an exported span")
+	}
+}
+
+func TestStreamOutputNilInfoClosesOutput(t *testing.T) {
+	h, _ := newTestHandler()
+	stream := schema.StreamReaderFromArray([]callbacks.CallbackOutput{nil})
+
+	h.OnEndWithStreamOutput(context.Background(), nil, stream)
+
+	closed := make(chan struct{})
+	go func() {
+		for {
+			if _, err := stream.Recv(); err != nil {
+				close(closed)
+				return
+			}
+		}
+	}()
+	select {
+	case <-closed:
+	case <-time.After(3 * time.Second):
+		t.Fatal("expected stream output to be closed")
+	}
+}
+
+func TestStreamInputNilReaderEndsSpan(t *testing.T) {
+	h, exporter := newTestHandler()
+	info := &callbacks.RunInfo{Name: "llm", Component: components.ComponentOfChatModel}
+
+	// A nil stream reader ends the span synchronously via drain's nil branch.
+	h.OnStartWithStreamInput(context.Background(), info, nil)
+
+	if exporter.lastSpan() == nil {
+		t.Fatal("expected a span to be exported")
+	}
+}
+
+func TestSpanNameFallback(t *testing.T) {
+	if got := spanName(&callbacks.RunInfo{Component: components.ComponentOfTool}); got != string(components.ComponentOfTool) {
+		t.Fatalf("spanName fallback = %q, want component name", got)
+	}
+}
+
+func TestEmbeddingSpan(t *testing.T) {
+	h, exporter := newTestHandler()
+	ctx := context.Background()
+
+	input := &embedding.CallbackInput{Config: &embedding.Config{Model: "text-embedding-3-small"}}
+	info := &callbacks.RunInfo{Name: "embed", Type: "OpenAI", Component: components.ComponentOfEmbedding}
+
+	ctx = h.OnStart(ctx, info, input)
+	h.OnEnd(ctx, info, &embedding.CallbackOutput{
+		Config:     &embedding.Config{Model: "text-embedding-3-small"},
+		TokenUsage: &embedding.TokenUsage{PromptTokens: 5},
+	})
+
+	attrs := spanAttrs(exporter.lastSpan())
+	if v, ok := attrs[attrOperationName]; !ok || v.AsString() != "embeddings" {
+		t.Fatalf("gen_ai.operation.name = %v, want embeddings", v)
+	}
+	if v, ok := attrs[attrRequestModel]; !ok || v.AsString() != "text-embedding-3-small" {
+		t.Fatalf("gen_ai.request.model = %v, want text-embedding-3-small", v)
+	}
+	if v, ok := attrs[attrUsageInput]; !ok || v.AsInt64() != 5 {
+		t.Fatalf("gen_ai.usage.input_tokens = %v, want 5", v)
+	}
+}
+
+func TestOperationNames(t *testing.T) {
+	tests := []struct {
+		component components.Component
+		want      string
+		ok        bool
+	}{
+		{components.ComponentOfChatModel, "chat", true},
+		{components.ComponentOfAgenticModel, "chat", true},
+		{components.ComponentOfEmbedding, "embeddings", true},
+		{components.ComponentOfIndexer, "embeddings", true},
+		{components.ComponentOfRetriever, "retrieve", true},
+		{components.ComponentOfTool, "execute_tool", true},
+		{compose.ComponentOfToolsNode, "execute_tool", true},
+		{compose.ComponentOfAgenticToolsNode, "execute_tool", true},
+		{adk.ComponentOfAgent, "invoke_agent", true},
+		{adk.ComponentOfAgenticAgent, "invoke_agent", true},
+		{compose.ComponentOfGraph, "invoke_agent", true},
+		{compose.ComponentOfWorkflow, "invoke_agent", true},
+		{compose.ComponentOfChain, "invoke_agent", true},
+		{components.ComponentOfPrompt, "", false},
+	}
+	for _, tt := range tests {
+		got, ok := operationName(tt.component)
+		if ok != tt.ok || got != tt.want {
+			t.Errorf("operationName(%q) = (%q, %v), want (%q, %v)", tt.component, got, ok, tt.want, tt.ok)
+		}
+	}
 }
