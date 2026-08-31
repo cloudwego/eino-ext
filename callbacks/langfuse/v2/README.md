@@ -98,6 +98,20 @@ The batch processor does not add a shorter export deadline. For the built-in
 OTLP exporter, `Config.Timeout` limits each HTTP request and the OpenTelemetry
 exporter's retry policy controls the total retry window. Explicit `ForceFlush`
 operations pass the caller's context to the exporter and remain cancellable.
+Set `Config.RetryConfig` to override that policy. A nil value preserves the
+OpenTelemetry defaults: retries enabled with a 5-second initial interval,
+30-second maximum interval, and 1-minute total retry window. For example:
+
+```go
+RetryConfig: &langfuse.RetryConfig{
+    Enabled:         true,
+    InitialInterval: 5 * time.Second,
+    MaxInterval:     30 * time.Second,
+    MaxElapsedTime:  5 * time.Minute,
+},
+```
+
+A zero `MaxElapsedTime` retries indefinitely and should be used carefully.
 
 These processor-level diagnostics apply when the callback creates its own OTel
 tracer provider. With a caller-owned `TracerProvider`, queueing and exporting are
