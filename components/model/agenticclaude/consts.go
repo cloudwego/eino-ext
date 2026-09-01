@@ -88,8 +88,4 @@ const (
 
 const implType = "AgenticClaude"
 
-// KeyOfCacheCreationInputTokens is the Extra map key for Anthropic
-// cache_creation_input_tokens. It uses the same key as the legacy claude
-// adapter so downstream consumers (e.g. Langfuse cost tracking) do not need
-// to distinguish between the two adapters.
-const KeyOfCacheCreationInputTokens = "_eino_claude_cache_creation_input_tokens"
+const keyOfCacheCreationInputTokens = "_eino_claude_cache_creation_input_tokens"
