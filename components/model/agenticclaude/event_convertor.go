@@ -48,7 +48,7 @@ func (c *streamConverter) toMessageStreamingChunk(event anthropic.MessageStreamE
 		}
 		if e.Usage.CacheCreationInputTokens > 0 {
 			msg.Extra = map[string]any{
-				KeyOfCacheCreationInputTokens: int(e.Usage.CacheCreationInputTokens),
+				keyOfCacheCreationInputTokens: int(e.Usage.CacheCreationInputTokens),
 			}
 		}
 		return msg, nil

@@ -34,6 +34,6 @@ func GetCacheCreationInputTokens(msg *schema.AgenticMessage) (int, bool) {
 	if msg == nil || msg.Extra == nil {
 		return 0, false
 	}
-	v, ok := msg.Extra[KeyOfCacheCreationInputTokens].(int)
+	v, ok := msg.Extra[keyOfCacheCreationInputTokens].(int)
 	return v, ok
 }

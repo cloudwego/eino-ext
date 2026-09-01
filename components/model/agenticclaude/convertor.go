@@ -607,7 +607,7 @@ func toAgenticMessage(resp *anthropic.Message) (*schema.AgenticMessage, error) {
 	}
 	if resp.Usage.CacheCreationInputTokens > 0 {
 		msg.Extra = map[string]any{
-			KeyOfCacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
+			keyOfCacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
 		}
 	}
 	return msg, nil

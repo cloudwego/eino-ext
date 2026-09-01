@@ -50,7 +50,7 @@ func TestGetCacheCreationInputTokens(t *testing.T) {
 
 	t.Run("key present with value", func(t *testing.T) {
 		msg := &schema.AgenticMessage{Extra: map[string]any{
-			KeyOfCacheCreationInputTokens: 1234,
+			keyOfCacheCreationInputTokens: 1234,
 		}}
 		tokens, ok := GetCacheCreationInputTokens(msg)
 		if !ok || tokens != 1234 {
@@ -135,6 +135,29 @@ func TestCacheCreationInputTokens_SetInStreamDelta(t *testing.T) {
 			t.Fatalf("expected (300, true), got (%d, %v)", tokens, ok)
 		}
 	})
+}
+
+func TestCacheCreationInputTokens_PreservedAfterConcat(t *testing.T) {
+	sc := newStreamConverter()
+	event := mustUnmarshalStreamEvent(t, `{
+		"type": "message_delta",
+		"delta": {"stop_reason": "end_turn"},
+		"usage": {"output_tokens": 42, "cache_creation_input_tokens": 300}
+	}`)
+	usageChunk, err := sc.toMessageStreamingChunk(event)
+	if err != nil {
+		t.Fatal(err)
+	}
+	textChunk := newAssistantStreamingChunk(schema.NewContentBlock(&schema.AssistantGenText{Text: "hello"}))
+
+	msg, err := schema.ConcatAgenticMessages([]*schema.AgenticMessage{usageChunk, textChunk})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, ok := GetCacheCreationInputTokens(msg)
+	if !ok || tokens != 300 {
+		t.Fatalf("expected (300, true), got (%d, %v)", tokens, ok)
+	}
 }
 
 func mustUnmarshalStreamEvent(t *testing.T, raw string) anthropic.MessageStreamEventUnion {
