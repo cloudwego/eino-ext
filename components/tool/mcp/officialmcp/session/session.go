@@ -66,6 +66,11 @@ type TransportConfig struct {
 	// RoundTripper runs, so that RoundTripper sees them and may override them.
 	// Ignored for stdio.
 	HTTPClient *http.Client
+
+	// Factory builds a custom transport. When set, it takes precedence over the
+	// built-in transports selected by Type, and it is invoked again on every
+	// reconnect, so callers control redial semantics.
+	Factory func(ctx context.Context) (mcp.Transport, error)
 }
 
 var ErrSessionClosed = errors.New("official mcp session is closed")
@@ -125,7 +130,7 @@ func Connect(ctx context.Context, cfg ServerConfig) (*Session, error) {
 
 // connect builds the transport and dials a single go-sdk session.
 func connect(ctx context.Context, cfg ServerConfig) (*mcp.ClientSession, error) {
-	transport, err := newTransport(cfg.Transport)
+	transport, err := newTransport(ctx, cfg.Transport)
 	if err != nil {
 		return nil, startupError(cfg, err)
 	}
@@ -261,7 +266,17 @@ func (s *Session) Ping(ctx context.Context, params *mcp.PingParams) error {
 	return cur.Ping(ctx, params)
 }
 
-func newTransport(cfg TransportConfig) (mcp.Transport, error) {
+func newTransport(ctx context.Context, cfg TransportConfig) (mcp.Transport, error) {
+	if cfg.Factory != nil {
+		transport, err := cfg.Factory(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if transport == nil {
+			return nil, errors.New("official mcp transport factory returned nil")
+		}
+		return transport, nil
+	}
 	switch cfg.Type {
 	case TransportSSE:
 		if err := validateAbsoluteURL(cfg.URL); err != nil {

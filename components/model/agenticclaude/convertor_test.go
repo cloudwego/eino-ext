@@ -24,7 +24,58 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/cloudwego/eino/schema"
 	claudeschema "github.com/cloudwego/eino/schema/claude"
+	"github.com/eino-contrib/jsonschema"
 )
+
+func TestToFunctionToolsPreservesFullJSONSchema(t *testing.T) {
+	properties := jsonschema.NewProperties()
+	properties.Set("action", &jsonschema.Schema{Type: "string"})
+
+	tools, err := toFunctionTools([]*schema.ToolInfo{{
+		Name: "manage_resource",
+		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
+			Type:                 "object",
+			Properties:           properties,
+			Required:             []string{"action"},
+			AdditionalProperties: jsonschema.FalseSchema,
+			OneOf: []*jsonschema.Schema{{
+				Type:     "object",
+				Required: []string{"action", "name"},
+			}},
+		}),
+	}})
+	if err != nil {
+		t.Fatalf("toFunctionTools() error = %v", err)
+	}
+
+	raw, err := json.Marshal(tools[0].OfTool.InputSchema)
+	if err != nil {
+		t.Fatalf("marshal input schema: %v", err)
+	}
+	var inputSchema map[string]any
+	if err := json.Unmarshal(raw, &inputSchema); err != nil {
+		t.Fatalf("unmarshal input schema: %v", err)
+	}
+	if _, ok := inputSchema["oneOf"]; !ok {
+		t.Fatalf("input schema = %s, want oneOf", raw)
+	}
+	if additionalProperties, ok := inputSchema["additionalProperties"].(bool); !ok || additionalProperties {
+		t.Fatalf("input schema = %s, want additionalProperties=false", raw)
+	}
+}
+
+func TestToFunctionToolsRejectsUnserializableFullJSONSchema(t *testing.T) {
+	_, err := toFunctionTools([]*schema.ToolInfo{{
+		Name: "invalid_schema",
+		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&jsonschema.Schema{
+			Type:   "object",
+			Extras: map[string]any{"x-invalid": make(chan struct{})},
+		}),
+	}})
+	if err == nil || !strings.Contains(err.Error(), "marshal full JSON schema") {
+		t.Fatalf("toFunctionTools() error = %v, want full schema marshal error", err)
+	}
+}
 
 func TestToolSearchResultToBlockParam(t *testing.T) {
 	blockParam, err := toolSearchResultToBlockParam(&schema.ToolSearchFunctionToolResult{
