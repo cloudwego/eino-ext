@@ -600,11 +600,17 @@ func toAgenticMessage(resp *anthropic.Message) (*schema.AgenticMessage, error) {
 		blocks = append(blocks, contentBlock)
 	}
 
-	return &schema.AgenticMessage{
+	msg := &schema.AgenticMessage{
 		Role:          schema.AgenticRoleTypeAssistant,
 		ContentBlocks: blocks,
 		ResponseMeta:  toAgenticResponseMeta(resp),
-	}, nil
+	}
+	if resp.Usage.CacheCreationInputTokens > 0 {
+		msg.Extra = map[string]any{
+			keyOfCacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
+		}
+	}
+	return msg, nil
 }
 
 func toAgenticContentBlock(block any) (*schema.ContentBlock, error) {

@@ -87,3 +87,5 @@ const (
 )
 
 const implType = "AgenticClaude"
+
+const keyOfCacheCreationInputTokens = "_eino_claude_cache_creation_input_tokens"
