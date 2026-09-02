@@ -219,10 +219,6 @@ func newCallbackSender(sw *schema.StreamWriter[*model.AgenticCallbackOutput], co
 	}
 }
 
-func (s *callbackSender) sendMeta(meta *schema.AgenticResponseMeta, err error) {
-	s.send(meta, nil, nil, err)
-}
-
 func (s *callbackSender) sendResponse(resp *responses.Response, err error) {
 	if resp == nil {
 		s.send(nil, nil, nil, err)

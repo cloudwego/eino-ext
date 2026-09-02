@@ -124,13 +124,22 @@ func TestModelStream(t *testing.T) {
 
 			mockey.Mock((*responses.ResponseService).NewStreaming).Return(mockStream).Build()
 
-			// Mock AsAny to return a completed event
+			completedResponse := mustUnmarshalResponse(t, `{
+				"id": "resp_1",
+				"status": "completed",
+				"output": [],
+				"usage": {
+					"input_tokens": 400,
+					"input_tokens_details": {"cached_tokens": 100, "cache_write_tokens": 300},
+					"output_tokens": 20,
+					"output_tokens_details": {"reasoning_tokens": 0},
+					"total_tokens": 420
+				}
+			}`)
+
+			// Mock AsAny to return a completed event with cache-write usage.
 			mockey.Mock(responses.ResponseStreamEventUnion.AsAny).Return(responses.ResponseCompletedEvent{
-				Response: responses.Response{
-					Output: []responses.ResponseOutputItemUnion{
-						{Type: "message", ID: "m1", Status: "completed"},
-					},
-				},
+				Response: *completedResponse,
 			}).Build()
 
 			s, err := m.Stream(ctx, input)
@@ -138,8 +147,13 @@ func TestModelStream(t *testing.T) {
 			assert.NotNil(t, s)
 			defer s.Close()
 
-			// The stream should eventually close without errors
-			// We just verify it was created successfully
+			chunk, err := s.Recv()
+			assert.NoError(t, err)
+			if assert.NotNil(t, chunk) {
+				tokens, ok := GetCacheWriteTokens(chunk)
+				assert.True(t, ok)
+				assert.Equal(t, 300, tokens)
+			}
 		})
 
 		mockey.PatchConvey("genRequest error", func() {

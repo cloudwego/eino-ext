@@ -18,6 +18,7 @@ package agenticopenai
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
@@ -104,31 +105,42 @@ func TestCacheWriteTokensSetOnGeneratedMessage(t *testing.T) {
 	})
 }
 
-func TestCacheWriteTokensSetOnStreamingResponse(t *testing.T) {
-	resp := mustUnmarshalResponse(t, `{
-		"id": "resp_1",
-		"status": "completed",
-		"output": [],
-		"usage": {
-			"input_tokens": 400,
-			"input_tokens_details": {"cached_tokens": 100, "cache_write_tokens": 300},
-			"output_tokens": 20,
-			"output_tokens_details": {"reasoning_tokens": 0},
-			"total_tokens": 420
-		}
-	}`)
-
-	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](1)
-	reader := sr.Copy(1)[0]
-	sender := newCallbackSender(sw, &model.AgenticConfig{})
-	sender.sendResponse(resp, nil)
-
-	out, err := reader.Recv()
-	if err != nil {
-		t.Fatal(err)
+func TestCacheWriteTokensInvalidValuesAreOmitted(t *testing.T) {
+	tests := []struct {
+		name              string
+		cacheWriteDetails string
+	}{
+		{name: "absent", cacheWriteDetails: `"cached_tokens": 0`},
+		{name: "null", cacheWriteDetails: `"cached_tokens": 0, "cache_write_tokens": null`},
+		{name: "string", cacheWriteDetails: `"cached_tokens": 0, "cache_write_tokens": "300"`},
+		{name: "fractional", cacheWriteDetails: `"cached_tokens": 0, "cache_write_tokens": 1.5`},
+		{name: "negative", cacheWriteDetails: `"cached_tokens": 0, "cache_write_tokens": -1`},
+		{name: "overflow", cacheWriteDetails: `"cached_tokens": 0, "cache_write_tokens": 9223372036854775808`},
 	}
-	if tokens, ok := GetCacheWriteTokens(out.Message); !ok || tokens != 300 {
-		t.Fatalf("expected (300, true), got (%d, %v)", tokens, ok)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := mustUnmarshalResponse(t, fmt.Sprintf(`{
+				"id": "resp_1",
+				"status": "completed",
+				"output": [],
+				"usage": {
+					"input_tokens": 100,
+					"input_tokens_details": {%s},
+					"output_tokens": 20,
+					"output_tokens_details": {"reasoning_tokens": 0},
+					"total_tokens": 120
+				}
+			}`, tt.cacheWriteDetails))
+
+			msg, err := toOutputMessage(resp, &model.Options{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tokens, ok := GetCacheWriteTokens(msg); ok || tokens != 0 {
+				t.Fatalf("expected (0, false), got (%d, %v)", tokens, ok)
+			}
+		})
 	}
 }
 
