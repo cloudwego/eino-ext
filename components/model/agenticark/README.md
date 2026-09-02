@@ -432,6 +432,24 @@ func main() {
 }
 ```
 
+#### Multimodal Function Tool Results
+
+Function tool results may contain text and images when the selected Ark endpoint supports vision input:
+
+```go
+toolResultMsg := &schema.AgenticMessage{
+	Role: schema.AgenticRoleTypeUser,
+	ContentBlocks: []*schema.ContentBlock{schema.NewContentBlock(&schema.FunctionToolResult{
+		CallID: toolCall.CallID,
+		Name:   toolCall.Name,
+		Content: []*schema.FunctionToolResultContentBlock{
+			{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "reference image"}},
+			{Type: schema.FunctionToolResultContentBlockTypeImage, Image: &schema.UserInputImage{URL: "https://example.com/image.png", Detail: schema.ImageURLDetailHigh}},
+		},
+	})},
+}
+```
+
 
 #### Server Tool Example
 

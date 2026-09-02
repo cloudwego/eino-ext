@@ -431,6 +431,24 @@ func main() {
 }
 ```
 
+#### 多模态函数工具结果
+
+当所选 Ark endpoint 支持视觉输入时，函数工具结果可以同时包含文本和图片：
+
+```go
+toolResultMsg := &schema.AgenticMessage{
+	Role: schema.AgenticRoleTypeUser,
+	ContentBlocks: []*schema.ContentBlock{schema.NewContentBlock(&schema.FunctionToolResult{
+		CallID: toolCall.CallID,
+		Name:   toolCall.Name,
+		Content: []*schema.FunctionToolResultContentBlock{
+			{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: "参考图片"}},
+			{Type: schema.FunctionToolResultContentBlockTypeImage, Image: &schema.UserInputImage{URL: "https://example.com/image.png", Detail: schema.ImageURLDetailHigh}},
+		},
+	})},
+}
+```
+
 
 #### 服务器工具示例
 

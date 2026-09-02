@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
+	runtimev2 "github.com/volcengine/ark-runtime-go/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/contextmanagement"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 
@@ -171,35 +171,35 @@ func New(_ context.Context, config *Config) (*Model, error) {
 }
 
 func buildClient(config *Config) (*Model, error) {
-	var opts []arkruntime.ConfigOption
+	var opts []runtimev2.ConfigOption
 
 	if config.Region != "" {
-		opts = append(opts, arkruntime.WithRegion(config.Region))
+		opts = append(opts, runtimev2.WithRegion(config.Region))
 	}
 	if config.Timeout != nil {
-		opts = append(opts, arkruntime.WithTimeout(*config.Timeout))
+		opts = append(opts, runtimev2.WithTimeout(*config.Timeout))
 	}
 	if config.HTTPClient != nil {
-		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
+		opts = append(opts, runtimev2.WithHTTPClient(config.HTTPClient))
 	}
 	if config.RetryTimes != nil {
-		opts = append(opts, arkruntime.WithRetryTimes(*config.RetryTimes))
+		opts = append(opts, runtimev2.WithRetryTimes(*config.RetryTimes))
 	}
 	if config.BaseURL != "" {
-		opts = append(opts, arkruntime.WithBaseUrl(config.BaseURL))
+		opts = append(opts, runtimev2.WithBaseUrl(config.BaseURL))
 	}
 
-	var client *arkruntime.Client
+	var client *runtimev2.Client
 	if len(config.APIKey) > 0 {
-		client = arkruntime.NewClientWithApiKey(config.APIKey, opts...)
+		client = runtimev2.NewClientWithApiKey(config.APIKey, opts...)
 	} else if config.AccessKey != "" && config.SecretKey != "" {
-		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
+		client = runtimev2.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
 	} else {
 		return nil, fmt.Errorf("failed to create client: missing credentials (set 'APIKey' or both 'AccessKey' and 'SecretKey')")
 	}
 
 	cm := &Model{
-		cli:                     client,
+		cli:                     &runtimeBridge{client: client},
 		model:                   config.Model,
 		maxTokens:               config.MaxTokens,
 		temperature:             config.Temperature,
@@ -221,7 +221,7 @@ func buildClient(config *Config) (*Model, error) {
 }
 
 type Model struct {
-	cli *arkruntime.Client
+	cli *runtimeBridge
 
 	rawFunctionTools []*schema.ToolInfo
 	functionTools    []*responses.ResponsesTool
@@ -278,7 +278,7 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 		}
 	}()
 
-	responseObject, err := m.cli.CreateResponses(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	responseObject, err := m.cli.CreateResponses(ctx, responseReq, specOptions.customHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
@@ -334,7 +334,7 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 		}
 	}()
 
-	responseStreamReader, err := m.cli.CreateResponsesStream(ctx, responseReq, arkruntime.WithCustomHeaders(specOptions.customHeaders))
+	responseStreamReader, err := m.cli.CreateResponsesStream(ctx, responseReq, specOptions.customHeaders)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create responses: %w", err)
 	}
@@ -475,7 +475,7 @@ func (m *Model) CreatePrefixCache(ctx context.Context, prefix []*schema.AgenticM
 		return nil, fmt.Errorf("failed to populate tool choice: %w", err)
 	}
 
-	responseObj, err := m.cli.CreateResponses(ctx, responseReq)
+	responseObj, err := m.cli.CreateResponses(ctx, responseReq, nil)
 	if err != nil {
 		return nil, err
 	}

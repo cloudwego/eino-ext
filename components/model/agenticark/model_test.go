@@ -25,11 +25,12 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
+
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestNew(t *testing.T) {
@@ -146,7 +147,7 @@ func TestModelGenerate(t *testing.T) {
 	mockey.PatchConvey("TestModelGenerate", t, func() {
 		ctx := context.Background()
 		m := &Model{
-			cli:   &arkruntime.Client{},
+			cli:   &runtimeBridge{},
 			model: "m",
 		}
 		input := []*schema.AgenticMessage{
@@ -158,7 +159,7 @@ func TestModelGenerate(t *testing.T) {
 			},
 		}
 
-		mockey.Mock((*arkruntime.Client).CreateResponses).Return(&responses.ResponseObject{
+		mockey.Mock((*runtimeBridge).CreateResponses).Return(&responses.ResponseObject{
 			Id: "rid",
 			Output: []*responses.OutputItem{
 				{
@@ -190,7 +191,7 @@ func TestModelGenerate(t *testing.T) {
 		})
 
 		mockey.PatchConvey("error", func() {
-			mockey.Mock((*arkruntime.Client).CreateResponses).Return(nil, errors.New("err")).Build()
+			mockey.Mock((*runtimeBridge).CreateResponses).Return(nil, errors.New("err")).Build()
 			_, err := m.Generate(ctx, input)
 			assert.Error(t, err)
 		})
@@ -201,7 +202,7 @@ func TestModelStream(t *testing.T) {
 	mockey.PatchConvey("TestModelStream", t, func() {
 		ctx := context.Background()
 		m := &Model{
-			cli:   &arkruntime.Client{},
+			cli:   &runtimeBridge{},
 			model: "m",
 		}
 		input := []*schema.AgenticMessage{
@@ -209,7 +210,7 @@ func TestModelStream(t *testing.T) {
 		}
 
 		mockey.PatchConvey("error creating stream", func() {
-			mockey.Mock((*arkruntime.Client).CreateResponsesStream).Return(nil, errors.New("err")).Build()
+			mockey.Mock((*runtimeBridge).CreateResponsesStream).Return(nil, errors.New("err")).Build()
 			_, err := m.Stream(ctx, input)
 			assert.Error(t, err)
 		})
@@ -220,14 +221,14 @@ func TestModelCreatePrefixCache(t *testing.T) {
 	mockey.PatchConvey("TestModelCreatePrefixCache", t, func() {
 		ctx := context.Background()
 		m := &Model{
-			cli:   &arkruntime.Client{},
+			cli:   &runtimeBridge{},
 			model: "m",
 		}
 		prefix := []*schema.AgenticMessage{
 			{Role: schema.AgenticRoleTypeUser},
 		}
 
-		mockey.Mock((*arkruntime.Client).CreateResponses).Return(&responses.ResponseObject{
+		mockey.Mock((*runtimeBridge).CreateResponses).Return(&responses.ResponseObject{
 			Id: "rid",
 			Usage: &responses.Usage{
 				InputTokens: 10,

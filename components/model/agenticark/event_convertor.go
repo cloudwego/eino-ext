@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
+
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
-func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
+func receivedStreamResponse(streamReader responseStreamReader,
 	config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput]) {
 
 	receiver := newStreamReceiver()

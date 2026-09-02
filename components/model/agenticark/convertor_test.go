@@ -21,11 +21,12 @@ import (
 	"testing"
 
 	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"google.golang.org/protobuf/types/known/structpb"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestToSystemRoleInputItems(t *testing.T) {
@@ -69,10 +70,10 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 	setItemID(msg.ContentBlocks[1], "id-1")
 	setItemStatus(msg.ContentBlocks[1], responses.ItemStatus_completed.String())
 	msg.ResponseMeta = &schema.AgenticResponseMeta{
-			Extension: &ResponseMetaExtension{},
-		}
+		Extension: &ResponseMetaExtension{},
+	}
 
-		items, err := toAssistantRoleInputItems(msg)
+	items, err := toAssistantRoleInputItems(msg)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(items))
 	assert.Equal(t, responses.MessageRole_assistant, items[0].GetInputMessage().Role)
@@ -272,6 +273,25 @@ func TestFunctionToolResultToInputItem(t *testing.T) {
 	assert.NotNil(t, out)
 	assert.Equal(t, "c1", out.CallId)
 	assert.Equal(t, "r1", out.Output)
+}
+
+func TestUserInputRejectsFileURL(t *testing.T) {
+	_, err := userInputImageToInputItem(responses.MessageRole_user, &schema.UserInputImage{
+		URL:    "file:///tmp/image.png",
+		Detail: schema.ImageURLDetailAuto,
+	})
+	assert.ErrorContains(t, err, "file:// URLs are not supported")
+
+	_, err = userInputVideoToInputItem(responses.MessageRole_user, &schema.UserInputVideo{
+		URL: "file:///tmp/video.mp4",
+	})
+	assert.ErrorContains(t, err, "file:// URLs are not supported")
+
+	_, err = userInputFileToInputItem(responses.MessageRole_user, &schema.UserInputFile{
+		URL:  "file:///tmp/file.txt",
+		Name: "file.txt",
+	})
+	assert.ErrorContains(t, err, "file:// URLs are not supported")
 }
 
 func TestAssistantGenTextToInputItem(t *testing.T) {
