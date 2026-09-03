@@ -22,9 +22,10 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino/components/model"
+	"github.com/google/uuid"
 	"google.golang.org/genai"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	gemini_schema "github.com/cloudwego/eino/schema/gemini"
 )
@@ -340,7 +341,9 @@ func convFunctionToolCall(call *schema.FunctionToolCall) (*genai.Part, error) {
 		return nil, fmt.Errorf("unmarshal function tool call arguments to map[string]any fail: %w", err)
 	}
 
-	return genai.NewPartFromFunctionCall(call.Name, args), nil
+	part := genai.NewPartFromFunctionCall(call.Name, args)
+	part.FunctionCall.ID = call.CallID
+	return part, nil
 }
 
 func convFunctionToolResult(result *schema.FunctionToolResult) (*genai.Part, error) {
@@ -353,7 +356,9 @@ func convFunctionToolResult(result *schema.FunctionToolResult) (*genai.Part, err
 	if err != nil {
 		response["output"] = text
 	}
-	return genai.NewPartFromFunctionResponse(result.Name, response), nil
+	part := genai.NewPartFromFunctionResponse(result.Name, response)
+	part.FunctionResponse.ID = result.CallID
+	return part, nil
 }
 
 func functionToolResultContentToText(content []*schema.FunctionToolResultContentBlock) (string, error) {
@@ -548,9 +553,14 @@ func convAgenticFC(fc *genai.FunctionCall) (*schema.ContentBlock, error) {
 		return nil, fmt.Errorf("marshal gemini tool call arguments fail: %w", err)
 	}
 
+	callID := fc.ID
+	if callID == "" {
+		callID = uuid.NewString()
+	}
 	return &schema.ContentBlock{
 		Type: schema.ContentBlockTypeFunctionToolCall,
 		FunctionToolCall: &schema.FunctionToolCall{
+			CallID:    callID,
 			Name:      fc.Name,
 			Arguments: args,
 		},

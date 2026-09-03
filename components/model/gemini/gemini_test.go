@@ -25,13 +25,13 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"google.golang.org/genai"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -128,6 +128,35 @@ func TestGemini(t *testing.T) {
 			respContent += resp.Content
 		}
 		assert.Equal(t, "Hello, how can I help you?", respContent)
+	})
+	mockey.PatchConvey("stream function call ID", t, func() {
+		defer mockey.Mock(genai.Models.GenerateContentStream).Return(func(yield func(*genai.GenerateContentResponse, error) bool) {
+			yield(&genai.GenerateContentResponse{
+				Candidates: []*genai.Candidate{{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{{
+							FunctionCall: &genai.FunctionCall{
+								ID:   "provider-stream-call-id",
+								Name: "get_weather",
+								Args: map[string]any{"city": "Paris"},
+							},
+						}},
+					},
+				}},
+			}, nil)
+		}).Build().UnPatch()
+
+		streamResp, err := model.Stream(ctx, []*schema.Message{
+			{Role: schema.User, Content: "weather"},
+		})
+		assert.NoError(t, err)
+
+		message, err := schema.ConcatMessageStream(streamResp)
+		assert.NoError(t, err)
+		if assert.Len(t, message.ToolCalls, 1) {
+			assert.Equal(t, "provider-stream-call-id", message.ToolCalls[0].ID)
+		}
 	})
 
 	mockey.PatchConvey("structure", t, func() {
@@ -520,9 +549,12 @@ func TestChatModel_convMedia(t *testing.T) {
 
 func TestThoughtSignatureRoundTrip(t *testing.T) {
 	t.Run("convToolMessageToPart", func(t *testing.T) {
-		part, err := convToolMessageToPart("tool_1", schema.ToolMessage(`{"result":"ok"}`, ""))
+		message := schema.ToolMessage(`{"result":"ok"}`, "call_1")
+		message.ToolName = "tool_1"
+		part, err := convToolMessageToPart("tool_1", message)
 		assert.NoError(t, err)
 		assert.NotNil(t, part.FunctionResponse)
+		assert.Equal(t, "call_1", part.FunctionResponse.ID)
 		assert.Equal(t, "tool_1", part.FunctionResponse.Name)
 		assert.Equal(t, "ok", part.FunctionResponse.Response["result"])
 	})
@@ -543,21 +575,21 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 					{
 						ID: "call_a",
 						Function: schema.FunctionCall{
-							Name:      "fn_a",
+							Name:      "same_fn",
 							Arguments: `{"x":1}`,
 						},
 					},
 					{
 						ID: "call_b",
 						Function: schema.FunctionCall{
-							Name:      "fn_b",
+							Name:      "same_fn",
 							Arguments: `{"y":2}`,
 						},
 					},
 				},
 			},
-			{Role: schema.Tool, ToolCallID: "call_a", Content: `{"res":"A"}`},
-			{Role: schema.Tool, ToolCallID: "call_b", Content: `{"res":"B"}`},
+			{Role: schema.Tool, ToolCallID: "call_b", ToolName: "same_fn", Content: `{"res":"B"}`},
+			{Role: schema.Tool, ToolCallID: "call_a", ToolName: "same_fn", Content: `{"res":"A"}`},
 		}
 
 		contents, err := convSchemaMessages(messages)
@@ -566,10 +598,12 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		assert.Equal(t, roleModel, contents[0].Role)
 		assert.Equal(t, roleUser, contents[1].Role)
 		if assert.Len(t, contents[1].Parts, 2) {
-			assert.Equal(t, "call_a", contents[1].Parts[0].FunctionResponse.Name)
-			assert.Equal(t, "A", contents[1].Parts[0].FunctionResponse.Response["res"])
-			assert.Equal(t, "call_b", contents[1].Parts[1].FunctionResponse.Name)
-			assert.Equal(t, "B", contents[1].Parts[1].FunctionResponse.Response["res"])
+			assert.Equal(t, "call_b", contents[1].Parts[0].FunctionResponse.ID)
+			assert.Equal(t, "same_fn", contents[1].Parts[0].FunctionResponse.Name)
+			assert.Equal(t, "B", contents[1].Parts[0].FunctionResponse.Response["res"])
+			assert.Equal(t, "call_a", contents[1].Parts[1].FunctionResponse.ID)
+			assert.Equal(t, "same_fn", contents[1].Parts[1].FunctionResponse.Name)
+			assert.Equal(t, "A", contents[1].Parts[1].FunctionResponse.Response["res"])
 		}
 	})
 
@@ -595,6 +629,7 @@ func TestThoughtSignatureRoundTrip(t *testing.T) {
 		// Verify no thought signature in the Part when none was stored
 		assert.Nil(t, content.Parts[0].ThoughtSignature)
 		assert.NotNil(t, content.Parts[0].FunctionCall)
+		assert.Equal(t, "test_call", content.Parts[0].FunctionCall.ID)
 	})
 
 	// Test that reasoning content thought signature is preserved through the round-trip
@@ -1256,6 +1291,29 @@ func isValidUUID(u string) bool {
 }
 
 func TestUniqueToolCallIDs(t *testing.T) {
+	t.Run("provider tool call ID is preserved", func(t *testing.T) {
+		candidate := &genai.Candidate{
+			Content: &genai.Content{
+				Role: roleModel,
+				Parts: []*genai.Part{
+					{
+						FunctionCall: &genai.FunctionCall{
+							ID:   "provider-call-id",
+							Name: "get_weather",
+							Args: map[string]any{"city": "Paris"},
+						},
+					},
+				},
+			},
+		}
+
+		message, err := convCandidate(candidate)
+		assert.NoError(t, err)
+		if assert.Len(t, message.ToolCalls, 1) {
+			assert.Equal(t, "provider-call-id", message.ToolCalls[0].ID)
+		}
+	})
+
 	t.Run("single tool call gets UUID as ID", func(t *testing.T) {
 		candidate := &genai.Candidate{
 			Content: &genai.Content{

@@ -18,27 +18,17 @@ A Google Gemini implementation for [Eino](https://github.com/cloudwego/eino) tha
 
 ### Tool Call ID Handling
 
-Gemini's API does not provide tool call IDs in its responses. To ensure compatibility with the Eino framework and enable proper tool execution tracking, this implementation automatically generates a unique UUID (v4) for each tool call.
+When Gemini returns a native function call ID, this implementation preserves it in Eino messages and sends it back in the matching function response. This allows parallel calls to the same function to be matched correctly even when their results arrive out of order.
 
-**ID Generation:**
-- Each tool call receives a freshly generated UUID
-- UUIDs are globally unique across all responses and sessions
-- Format: Standard UUID v4 (e.g., `550e8400-e29b-41d4-a716-446655440000`)
+For compatibility with models or gateways that do not return an ID, the implementation generates a unique UUID (v4). The generated ID is reused when the function call and its result are sent back to Gemini.
 
 **Example:**
 ```go
 // If Gemini returns multiple calls to "get_weather" for different cities:
-// Tool Call 1: ID = "550e8400-e29b-41d4-a716-446655440000", Args = {"city": "Paris"}
-// Tool Call 2: ID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8", Args = {"city": "London"}
-// Tool Call 3: ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7", Args = {"city": "Tokyo"}
+// Tool Call 1: ID = "provider-call-1", Args = {"city": "Paris"}
+// Tool Call 2: ID = "provider-call-2", Args = {"city": "London"}
+// Results can be returned in either order because they carry the matching IDs.
 ```
-
-**Benefits:**
-- **Session-wide uniqueness**: UUIDs prevent ID collisions across multiple model calls
-- **Standard format**: Compatible with industry-standard tool tracking systems
-- **Simplified implementation**: No need to maintain state between calls
-
-This ensures that each tool call has a globally unique identifier, which is essential for proper tool execution tracking and response handling in complex agent workflows with multiple model interactions.
 
 ## Installation
 
