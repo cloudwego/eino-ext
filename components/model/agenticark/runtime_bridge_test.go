@@ -179,6 +179,10 @@ func TestRuntimeBridgeSendsMultimodalToolOutput(t *testing.T) {
 
 func TestRuntimeBridgeConvertsResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("ark-thinking-summary") != "skip-thinking-summary" {
+			http.Error(w, "missing thinking summary header", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"id":"resp-1",
@@ -186,6 +190,12 @@ func TestRuntimeBridgeConvertsResponse(t *testing.T) {
 			"created_at":0,
 			"model":"model",
 			"output":[{
+				"id":"reasoning-1",
+				"type":"reasoning",
+				"status":"completed",
+				"summary":[],
+				"content":[{"type":"reasoning_text","text":"hidden reasoning","annotations":[]}]
+			},{
 				"id":"msg-1",
 				"type":"message",
 				"role":"assistant",
@@ -210,12 +220,18 @@ func TestRuntimeBridgeConvertsResponse(t *testing.T) {
 		Input: &legacyresponses.ResponsesInput{
 			Union: &legacyresponses.ResponsesInput_StringValue{StringValue: "hello"},
 		},
-	}, nil)
+	}, map[string]string{"ark-thinking-summary": "skip-thinking-summary"})
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, "resp-1", res.Id)
-	require.Len(t, res.Output, 1)
-	assert.Equal(t, "hello", res.Output[0].GetOutputMessage().GetContent()[0].GetText().GetText())
+	require.Len(t, res.Output, 2)
+	assert.Equal(t, "hidden reasoning", res.Output[0].GetReasoning().GetSummary()[0].GetText())
+	assert.Equal(t, "hello", res.Output[1].GetOutputMessage().GetContent()[0].GetText().GetText())
+
+	message, err := toOutputMessage(res)
+	require.NoError(t, err)
+	require.Len(t, message.ContentBlocks, 2)
+	assert.Equal(t, "hidden reasoning", message.ContentBlocks[0].Reasoning.Text)
 }
 
 func TestRuntimeBridgeCreateResponsesStreamReturnsTransportError(t *testing.T) {
@@ -254,6 +270,9 @@ func TestRuntimeBridgeCreateResponsesStreamReturnsTransportError(t *testing.T) {
 func TestRuntimeBridgeCreateResponsesStreamConvertsEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"response.reasoning_text.delta\",\"content_index\":0,\"delta\":\"reasoning text\",\"item_id\":\"reasoning-1\",\"output_index\":0,\"sequence_number\":1}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.reasoning_raw_text.delta\",\"content_index\":1,\"delta\":\"raw reasoning\",\"item_id\":\"reasoning-1\",\"output_index\":0,\"sequence_number\":2}\n\n"))
+		_, _ = w.Write([]byte("data: {\"type\":\"response.reasoning_raw_text.done\",\"content_index\":1,\"text\":\"raw reasoning\",\"item_id\":\"reasoning-1\",\"output_index\":0,\"sequence_number\":3}\n\n"))
 		_, _ = w.Write([]byte("data: {\"type\":\"error\",\"sequence_number\":1,\"code\":\"invalid_request\",\"message\":\"invalid request\"}\n\n"))
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 	}))
@@ -270,6 +289,23 @@ func TestRuntimeBridgeCreateResponsesStreamConvertsEvents(t *testing.T) {
 	defer func() { assert.NoError(t, stream.Close()) }()
 
 	event, err := stream.Recv()
+	require.NoError(t, err)
+	rawReasoning, ok := event.Event.(*legacyresponses.Event_ReasoningRawTextDelta)
+	require.True(t, ok)
+	assert.Equal(t, "reasoning text", rawReasoning.ReasoningRawTextDelta.GetDelta())
+
+	event, err = stream.Recv()
+	require.NoError(t, err)
+	rawReasoning, ok = event.Event.(*legacyresponses.Event_ReasoningRawTextDelta)
+	require.True(t, ok)
+	assert.Equal(t, "raw reasoning", rawReasoning.ReasoningRawTextDelta.GetDelta())
+
+	event, err = stream.Recv()
+	require.NoError(t, err)
+	_, ok = event.Event.(*legacyresponses.Event_ReasoningRawTextDone)
+	assert.True(t, ok)
+
+	event, err = stream.Recv()
 	require.NoError(t, err)
 	assert.Equal(t, "error", event.GetEventType())
 	_, err = stream.Recv()

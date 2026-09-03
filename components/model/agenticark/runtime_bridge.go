@@ -57,7 +57,7 @@ func (c *runtimeBridge) CreateResponses(ctx context.Context, req *legacyresponse
 	}
 
 	var legacy legacyresponses.ResponseObject
-	if err := convertJSON(&res.Response, &legacy); err != nil {
+	if err := responseToLegacy(&res.Response, &legacy); err != nil {
 		return nil, fmt.Errorf("convert responses response to legacy model: %w", err)
 	}
 	return &legacy, nil
@@ -89,12 +89,77 @@ func (s *streamBridge) Recv() (*legacyresponses.Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	if legacy, ok := reasoningStreamEventToLegacy(event); ok {
+		return legacy, nil
+	}
+
+	raw, err := json.Marshal(event)
+	if err != nil {
+		return nil, fmt.Errorf("marshal responses stream event: %w", err)
+	}
 
 	var legacy legacyresponses.Event
-	if err := convertJSON(event, &legacy); err != nil {
+	if err := json.Unmarshal(raw, &legacy); err != nil {
 		return nil, fmt.Errorf("convert responses stream event to legacy model: %w", err)
 	}
 	return &legacy, nil
+}
+
+func reasoningStreamEventToLegacy(event *responsesv2.ResponseStreamEvent) (*legacyresponses.Event, bool) {
+	switch event.OneOf.Type {
+	case responsesv2.ResponseReasoningTextDeltaEventResponseStreamEventSum:
+		ev := event.OneOf.ResponseReasoningTextDeltaEvent
+		return newLegacyReasoningTextDeltaEvent(ev.ItemID, ev.OutputIndex, ev.ContentIndex, ev.SequenceNumber, ev.Delta), true
+	case responsesv2.ResponseReasoningRawTextDeltaEventResponseStreamEventSum:
+		ev := event.OneOf.ResponseReasoningRawTextDeltaEvent
+		return newLegacyReasoningTextDeltaEvent(ev.ItemID, ev.OutputIndex, ev.ContentIndex, ev.SequenceNumber, ev.Delta), true
+	case responsesv2.ResponseReasoningTextDoneEventResponseStreamEventSum:
+		ev := event.OneOf.ResponseReasoningTextDoneEvent
+		return newLegacyReasoningTextDoneEvent(ev.ItemID, ev.OutputIndex, ev.ContentIndex, ev.SequenceNumber, ev.Text), true
+	case responsesv2.ResponseReasoningRawTextDoneEventResponseStreamEventSum:
+		ev := event.OneOf.ResponseReasoningRawTextDoneEvent
+		return newLegacyReasoningTextDoneEvent(ev.ItemID, ev.OutputIndex, ev.ContentIndex, ev.SequenceNumber, ev.Text), true
+	default:
+		return nil, false
+	}
+}
+
+func newLegacyReasoningTextDeltaEvent(itemID string, outputIndex, contentIndex, sequenceNumber int64,
+	delta responsesv2.OptString) *legacyresponses.Event {
+	event := &legacyresponses.ReasoningTextDeltaEvent{
+		Type:           legacyresponses.EventType_response_reasoning_text_delta,
+		ItemId:         itemID,
+		OutputIndex:    outputIndex,
+		ContentIndex:   contentIndex,
+		SequenceNumber: sequenceNumber,
+	}
+	if value, ok := delta.Get(); ok {
+		event.Delta = &value
+	}
+	return &legacyresponses.Event{
+		Event: &legacyresponses.Event_ReasoningRawTextDelta{
+			ReasoningRawTextDelta: event,
+		},
+	}
+}
+
+func newLegacyReasoningTextDoneEvent(itemID string, outputIndex, contentIndex, sequenceNumber int64,
+	text responsesv2.OptString) *legacyresponses.Event {
+	event := &legacyresponses.ReasoningTextDoneEvent{
+		Type:           legacyresponses.EventType_response_reasoning_text_done,
+		ItemId:         itemID,
+		OutputIndex:    outputIndex,
+		ContentIndex:   contentIndex,
+		SequenceNumber: sequenceNumber,
+	}
+	if value, ok := text.Get(); ok {
+		event.Text = &value
+	}
+	return &legacyresponses.Event{
+		Event: &legacyresponses.Event_ReasoningRawTextDone{
+			ReasoningRawTextDone: event,
+		},
+	}
 }
 
 func (s *streamBridge) Close() error {
@@ -169,6 +234,107 @@ func rewriteMultimodalToolOutput(raw json.RawMessage) (json.RawMessage, error) {
 		return json.Marshal(list)
 	}
 	return raw, nil
+}
+
+func responseToLegacy(src *responsesv2.Response, dst *legacyresponses.ResponseObject) error {
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return err
+	}
+	raw, err = rewriteReasoningContent(raw)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(raw, dst)
+}
+
+func rewriteReasoningContent(raw json.RawMessage) (json.RawMessage, error) {
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &object); err == nil {
+		var itemType string
+		if typeValue, ok := object["type"]; ok {
+			_ = json.Unmarshal(typeValue, &itemType)
+		}
+		if itemType == "reasoning" {
+			if err := appendReasoningContentToSummary(object); err != nil {
+				return nil, err
+			}
+		}
+
+		for key, child := range object {
+			rewritten, err := rewriteReasoningContent(child)
+			if err != nil {
+				return nil, err
+			}
+			object[key] = rewritten
+		}
+		return json.Marshal(object)
+	}
+
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err == nil {
+		for i, child := range list {
+			rewritten, err := rewriteReasoningContent(child)
+			if err != nil {
+				return nil, err
+			}
+			list[i] = rewritten
+		}
+		return json.Marshal(list)
+	}
+	return raw, nil
+}
+
+func appendReasoningContentToSummary(item map[string]json.RawMessage) error {
+	content, ok := item["content"]
+	if !ok {
+		return nil
+	}
+
+	var contentItems []json.RawMessage
+	if err := json.Unmarshal(content, &contentItems); err != nil {
+		return fmt.Errorf("unmarshal reasoning content: %w", err)
+	}
+
+	var reasoningTextParts []json.RawMessage
+	for _, contentItem := range contentItems {
+		var block map[string]json.RawMessage
+		if err := json.Unmarshal(contentItem, &block); err != nil {
+			return fmt.Errorf("unmarshal reasoning content block: %w", err)
+		}
+
+		var blockType string
+		if err := json.Unmarshal(block["type"], &blockType); err != nil {
+			return fmt.Errorf("unmarshal reasoning content block type: %w", err)
+		}
+		if blockType != "reasoning_text" {
+			continue
+		}
+
+		text, ok := block["text"]
+		if !ok {
+			continue
+		}
+		reasoningTextParts = append(reasoningTextParts, json.RawMessage(fmt.Sprintf(`{"type":"summary_text","text":%s}`, text)))
+	}
+	if len(reasoningTextParts) == 0 {
+		return nil
+	}
+
+	var summary []json.RawMessage
+	if summaryJSON, ok := item["summary"]; ok {
+		if err := json.Unmarshal(summaryJSON, &summary); err != nil {
+			return fmt.Errorf("unmarshal reasoning summary: %w", err)
+		}
+	}
+	summary = append(summary, reasoningTextParts...)
+
+	summaryJSON, err := json.Marshal(summary)
+	if err != nil {
+		return err
+	}
+	item["summary"] = summaryJSON
+	return nil
 }
 
 func convertJSON(src, dst any) error {
