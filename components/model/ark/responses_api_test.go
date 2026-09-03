@@ -25,6 +25,8 @@ import (
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
+	toolcomponent "github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +35,23 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
+
+type textEnhancedTool struct{}
+
+func (t *textEnhancedTool) Info(context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{
+		Name: "text_enhanced_tool",
+		Desc: "returns a text-only enhanced tool result",
+	}, nil
+}
+
+func (t *textEnhancedTool) InvokableRun(context.Context, *schema.ToolArgument, ...toolcomponent.Option) (*schema.ToolResult, error) {
+	return &schema.ToolResult{
+		Parts: []schema.ToolOutputPart{
+			{Type: schema.ToolPartTypeText, Text: "enhanced tool output"},
+		},
+	}, nil
+}
 
 func TestResponsesAPIChatModelGenerate(t *testing.T) {
 	PatchConvey("test Generate", t, func() {
@@ -214,6 +233,54 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 		assert.Equal(t, "tool output", item.Output)
 	})
 
+	PatchConvey("tool call with text-only multi content", t, func() {
+		req := &responses.ResponsesRequest{
+			Model: "test-model",
+		}
+		in := []*schema.Message{
+			{
+				Role:       schema.Tool,
+				ToolCallID: "call_123",
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeText, Text: "tool "},
+					{Type: schema.ChatMessagePartTypeText, Text: "output"},
+				},
+			},
+		}
+
+		err := cm.populateInput(in, req, false)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
+
+		item := req.GetInput().GetListValue().GetListValue()[0].GetFunctionToolCallOutput()
+		assert.Equal(t, "call_123", item.CallId)
+		assert.Equal(t, "tool output", item.Output)
+	})
+
+	PatchConvey("tool call with non-text multi content", t, func() {
+		req := &responses.ResponsesRequest{
+			Model: "test-model",
+		}
+		imageURL := "https://example.com/tool-output.png"
+		in := []*schema.Message{
+			{
+				Role:       schema.Tool,
+				ToolCallID: "call_123",
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{
+							MessagePartCommon: schema.MessagePartCommon{URL: &imageURL},
+						},
+					},
+				},
+			},
+		}
+
+		err := cm.populateInput(in, req, false)
+		assert.ErrorContains(t, err, "only supports text tool result")
+	})
+
 	PatchConvey("unknown role", t, func() {
 		req := &responses.ResponsesRequest{
 			Model: "test-model",
@@ -227,6 +294,45 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 		err := cm.populateInput(in, req, false)
 		assert.NotNil(t, err)
 	})
+}
+
+func TestResponsesAPIChatModelPopulateInputFromEnhancedTool(t *testing.T) {
+	ctx := context.Background()
+	toolNode, err := compose.NewToolNode(ctx, &compose.ToolsNodeConfig{
+		Tools: []toolcomponent.BaseTool{&textEnhancedTool{}},
+	})
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
+
+	toolMessages, err := toolNode.Invoke(ctx, schema.AssistantMessage("", []schema.ToolCall{
+		{
+			ID: "call_enhanced",
+			Function: schema.FunctionCall{
+				Name:      "text_enhanced_tool",
+				Arguments: `{}`,
+			},
+		},
+	}))
+	assert.NoError(t, err)
+	assert.Len(t, toolMessages, 1)
+	if err != nil || len(toolMessages) != 1 {
+		return
+	}
+	assert.Empty(t, toolMessages[0].Content)
+	assert.Len(t, toolMessages[0].UserInputMultiContent, 1)
+
+	req := &responses.ResponsesRequest{Model: "test-model"}
+	err = (&ResponsesAPIChatModel{}).populateInput(toolMessages, req, false)
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
+
+	item := req.GetInput().GetListValue().GetListValue()[0].GetFunctionToolCallOutput()
+	assert.Equal(t, "call_enhanced", item.CallId)
+	assert.Equal(t, "enhanced tool output", item.Output)
 }
 
 func TestResponsesAPIChatModelPopulateInputReasoningPassback(t *testing.T) {

@@ -682,14 +682,15 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Tool:
-			if len(msg.UserInputMultiContent) > 0 {
-				return fmt.Errorf("ark response api doesn't support multi modal tool result")
+			output, err := convToolResultToString(msg)
+			if err != nil {
+				return err
 			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCallOutput{
 				FunctionToolCallOutput: &responses.ItemFunctionToolCallOutput{
 					Type:   responses.ItemType_function_call_output,
 					CallId: msg.ToolCallID,
-					Output: msg.Content,
+					Output: output,
 				},
 			}})
 
@@ -705,6 +706,21 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 		},
 	}
 	return nil
+}
+
+func convToolResultToString(msg *schema.Message) (string, error) {
+	if len(msg.UserInputMultiContent) == 0 {
+		return msg.Content, nil
+	}
+
+	var output strings.Builder
+	for i, part := range msg.UserInputMultiContent {
+		if part.Type != schema.ChatMessagePartTypeText {
+			return "", fmt.Errorf("volcengine go sdk currently only supports text tool result, got type %s at index %d", part.Type, i)
+		}
+		output.WriteString(part.Text)
+	}
+	return output.String(), nil
 }
 
 func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options, enableToolWebSearch *ToolWebSearch, maxToolCalls *int64) error {
