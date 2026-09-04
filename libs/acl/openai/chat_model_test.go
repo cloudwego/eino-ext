@@ -828,6 +828,118 @@ func Test_genRequest(t *testing.T) {
 		assert.Equal(t, ChatCompletionResponseFormatTypeText, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
 	})
 
+	t.Run("WithResponseFormat sets format when config has none", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		opts := []model.Option{
+			WithResponseFormat(&ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeJSONObject}),
+		}
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}}, opts...)
+		assert.NoError(t, err)
+		if assert.NotNil(t, req.ResponseFormat) {
+			assert.Equal(t, ChatCompletionResponseFormatTypeJSONObject, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
+		}
+	})
+
+	t.Run("WithResponseFormat overrides Config.ResponseFormat", func(t *testing.T) {
+		c := &Client{config: &Config{
+			Model:          "test-model",
+			ResponseFormat: &ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText},
+		}}
+		opts := []model.Option{
+			WithResponseFormat(&ChatCompletionResponseFormat{
+				Type: ChatCompletionResponseFormatTypeJSONSchema,
+				JSONSchema: &ChatCompletionResponseFormatJSONSchema{
+					Name:   "answer",
+					Strict: true,
+				},
+			}),
+		}
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}}, opts...)
+		assert.NoError(t, err)
+		if assert.NotNil(t, req.ResponseFormat) {
+			assert.Equal(t, ChatCompletionResponseFormatTypeJSONSchema, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
+			if assert.NotNil(t, req.ResponseFormat.JSONSchema) {
+				assert.Equal(t, "answer", req.ResponseFormat.JSONSchema.Name)
+				assert.True(t, req.ResponseFormat.JSONSchema.Strict)
+			}
+		}
+	})
+
+	t.Run("no WithResponseFormat falls back to Config.ResponseFormat", func(t *testing.T) {
+		c := &Client{config: &Config{
+			Model:          "test-model",
+			ResponseFormat: &ChatCompletionResponseFormat{Type: ChatCompletionResponseFormatTypeText},
+		}}
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hello"}})
+		assert.NoError(t, err)
+		if assert.NotNil(t, req.ResponseFormat) {
+			assert.Equal(t, ChatCompletionResponseFormatTypeText, ChatCompletionResponseFormatType(req.ResponseFormat.Type))
+		}
+	})
+
+	t.Run("ToolInfo.Extra openai_strict=true propagates to FunctionDefinition.Strict", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		tools := []*schema.ToolInfo{
+			{
+				Name: "extract_facts",
+				Desc: "Extract structured facts.",
+				Extra: map[string]any{
+					ToolInfoExtraKeyStrict: true,
+				},
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"subject": {Type: schema.String, Required: true},
+				}),
+			},
+		}
+		assert.NoError(t, c.BindTools(tools))
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hi"}})
+		assert.NoError(t, err)
+		if assert.Len(t, req.Tools, 1) && assert.NotNil(t, req.Tools[0].Function) {
+			assert.True(t, req.Tools[0].Function.Strict, "Strict should be true when Extra opts in")
+		}
+	})
+
+	t.Run("tool without Extra leaves Strict=false", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		tools := []*schema.ToolInfo{
+			{
+				Name: "loose_tool",
+				Desc: "no opt-in",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"x": {Type: schema.String, Required: true},
+				}),
+			},
+		}
+		assert.NoError(t, c.BindTools(tools))
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hi"}})
+		assert.NoError(t, err)
+		if assert.Len(t, req.Tools, 1) && assert.NotNil(t, req.Tools[0].Function) {
+			assert.False(t, req.Tools[0].Function.Strict, "Strict should default to false")
+		}
+	})
+
+	t.Run("non-bool openai_strict in Extra is silently ignored", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		tools := []*schema.ToolInfo{
+			{
+				Name: "typo_tool",
+				Desc: "caller put a string by mistake",
+				Extra: map[string]any{
+					ToolInfoExtraKeyStrict: "true", // wrong type, must not panic
+				},
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"x": {Type: schema.String, Required: true},
+				}),
+			},
+		}
+		assert.NoError(t, c.BindTools(tools))
+		req, _, _, _, err := c.genRequest(t.Context(), []*schema.Message{{Role: schema.User, Content: "hi"}})
+		assert.NoError(t, err)
+		if assert.Len(t, req.Tools, 1) && assert.NotNil(t, req.Tools[0].Function) {
+			assert.False(t, req.Tools[0].Function.Strict, "non-bool Extra value must be ignored, not panic")
+		}
+	})
+
 	t.Run("request payload modifier wiring", func(t *testing.T) {
 		c := &Client{config: &Config{Model: "test-model"}}
 		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
