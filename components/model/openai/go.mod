@@ -4,9 +4,9 @@ go 1.18
 
 require (
 	github.com/bytedance/mockey v1.3.0
-	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.7.13
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.17
+	github.com/bytedance/sonic v1.15.0
+	github.com/cloudwego/eino v0.9.0
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.18-0.20260527084435-846f52bd97c6
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/meguminnnnnnnnn/go-openai v0.1.2
 	github.com/wk8/go-ordered-map/v2 v2.1.8
@@ -16,7 +16,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
-	github.com/bytedance/sonic/loader v0.3.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
@@ -40,6 +40,6 @@ require (
 	github.com/yargevad/filepathx v1.0.0 // indirect
 	golang.org/x/arch v0.11.0 // indirect
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1 // indirect
-	golang.org/x/sys v0.28.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
