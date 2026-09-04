@@ -375,13 +375,17 @@ func toOpenAIToolCalls(toolCalls []schema.ToolCall) []openai.ToolCall {
 	ret := make([]openai.ToolCall, len(toolCalls))
 	for i := range toolCalls {
 		toolCall := toolCalls[i]
+		arguments := toolCall.Function.Arguments
+		if arguments == "" {
+			arguments = "{}"
+		}
 		ret[i] = openai.ToolCall{
 			Index: toolCall.Index,
 			ID:    toolCall.ID,
 			Type:  openai.ToolTypeFunction,
 			Function: openai.FunctionCall{
 				Name:      toolCall.Function.Name,
-				Arguments: toolCall.Function.Arguments,
+				Arguments: arguments,
 			},
 		}
 	}

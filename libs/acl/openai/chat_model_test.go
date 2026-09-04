@@ -266,6 +266,18 @@ func TestToOpenAIToolCalls(t *testing.T) {
 		assert.Equal(t, fakeToolCall1.ID, toolCalls[0].ID)
 		assert.Equal(t, fakeToolCall1.Function.Name, toolCalls[0].Function.Name)
 	})
+
+	t.Run("empty arguments", func(t *testing.T) {
+		fakeToolCall := schema.ToolCall{
+			ID:       randStr(),
+			Function: schema.FunctionCall{Name: randStr()},
+		}
+
+		toolCalls := toOpenAIToolCalls([]schema.ToolCall{fakeToolCall})
+
+		assert.Len(t, toolCalls, 1)
+		assert.Equal(t, "{}", toolCalls[0].Function.Arguments)
+	})
 }
 
 func randStr() string {
