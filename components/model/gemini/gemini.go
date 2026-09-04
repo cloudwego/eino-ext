@@ -643,7 +643,12 @@ func (cm *ChatModel) toGeminiTools(tools []*schema.ToolInfo) ([]*genai.FunctionD
 // convToolMessageToPart converts a tool response message into a Gemini part.
 func convToolMessageToPart(toolName string, msg *schema.Message) (*genai.Part, error) {
 	if len(msg.UserInputMultiContent) > 0 {
-		return convMultiModalToolMessageToPart(toolName, msg.UserInputMultiContent)
+		part, err := convMultiModalToolMessageToPart(toolName, msg.UserInputMultiContent)
+		if err != nil {
+			return nil, err
+		}
+		part.FunctionResponse.ID = msg.ToolCallID
+		return part, nil
 	}
 	response := make(map[string]any)
 	err := sonic.UnmarshalString(msg.Content, &response)
@@ -651,7 +656,9 @@ func convToolMessageToPart(toolName string, msg *schema.Message) (*genai.Part, e
 		response = map[string]any{"output": msg.Content}
 	}
 
-	return genai.NewPartFromFunctionResponse(toolName, response), nil
+	part := genai.NewPartFromFunctionResponse(toolName, response)
+	part.FunctionResponse.ID = msg.ToolCallID
+	return part, nil
 }
 
 func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInputPart) (*genai.Part, error) {
@@ -787,8 +794,7 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 	if message.Role == schema.Tool {
 		toolName := message.ToolName
 		if len(toolName) == 0 {
-			// For compatibility with Gemini, which does not provide a tool call id, this wrapper assigns the tool name to the tool call id field,
-			// falling back to the original toolCallId if tool name is empty.
+			// Preserve the legacy behavior for tool messages that predate ToolName.
 			toolName = message.ToolCallID
 		}
 		part, err := convToolMessageToPart(toolName, message)
@@ -829,6 +835,7 @@ func convSchemaMessage(message *schema.Message) (*genai.Content, error) {
 			}
 
 			part := genai.NewPartFromFunctionCall(call.Function.Name, args)
+			part.FunctionCall.ID = call.ID
 			// Restore thought signature on the functionCall part if present.
 			// Per Gemini docs (https://cloud.google.com/vertex-ai/generative-ai/docs/thought-signatures):
 			// - Signatures must be returned exactly as received on functionCall parts
@@ -1338,7 +1345,6 @@ func toMultiOutPart(part *genai.Part) (schema.MessageOutputPart, error) {
 }
 
 // convFC converts a Gemini function call part to a schema.ToolCall.
-// Note: Gemini does not provide tool call IDs, so we generate a UUID for compatibility.
 func convFC(part *genai.Part) (*schema.ToolCall, error) {
 	if part == nil || part.FunctionCall == nil {
 		return nil, fmt.Errorf("part or function call is nil")
@@ -1350,8 +1356,12 @@ func convFC(part *genai.Part) (*schema.ToolCall, error) {
 		return nil, fmt.Errorf("marshal gemini tool call arguments fail: %w", err)
 	}
 
+	callID := tp.ID
+	if callID == "" {
+		callID = uuid.NewString()
+	}
 	toolCall := &schema.ToolCall{
-		ID: uuid.NewString(),
+		ID: callID,
 		Function: schema.FunctionCall{
 			Name:      tp.Name,
 			Arguments: args,
