@@ -293,6 +293,21 @@ if lp := msg.ResponseMeta.LogProbs; lp != nil {
 
 > 注意：`Logprobs` 仅在 `ResponseLogprobs=true` 时生效。若想在单次调用中关闭 logprobs，请使用 `gemini.WithResponseLogprobs(false)`。
 
+## 标签（Labels）
+
+通过 `gemini.WithLabels(...)` 为请求附加用户自定义的元数据标签。标签是键值对，可用于计费归因、请求追踪以及在 Cloud Logging 和 Monitoring 中进行过滤。
+
+```go
+msg, _ := cm.Generate(ctx, input,
+    gemini.WithLabels(map[string]string{
+        "team":        "search",
+        "environment": "production",
+    }),
+)
+```
+
+> 注意：标签仅在 **Vertex AI** 后端受支持。Gemini API 后端会拒绝设置了标签的请求（`labels parameter is not supported in Gemini API`），因此该选项只能与 Vertex AI 客户端一起使用。
+
 
 ## 示例
 
