@@ -666,6 +666,7 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 				Function: &openai.FunctionDefinition{
 					Name:        t.Function.Name,
 					Description: t.Function.Description,
+					Strict:      dereferenceOrZero(t.Function.Strict),
 					Parameters:  t.Function.Parameters,
 				},
 			}
@@ -1066,20 +1067,20 @@ func populateToolChoice(req *openai.ChatCompletionRequest, tc *schema.ToolChoice
 		}
 
 		var onlyOneToolName string
-		if len(allowedToolNames) == 1 {
-			onlyOneToolName = allowedToolNames[0]
-		} else if len(req.Tools) == 1 {
+		if len(allowedToolNames) == 0 && len(req.Tools) == 1 {
 			onlyOneToolName = req.Tools[0].Function.Name
 		}
 
 		if onlyOneToolName != "" {
-			req.ToolChoice = openai.ToolChoice{
-				Type: openai.ToolTypeFunction,
-				Function: openai.ToolFunction{
-					Name: onlyOneToolName,
-				},
-			}
-		} else if len(allowedToolNames) > 1 {
+			// Some OpenAI-compatible gateways reject the object form
+			// {"type":"function","function":{"name":"..."}}
+			// with "unknown parameter: tool_choice.function", while still
+			// supporting tool calling with the string form "required".
+			//
+			// In the single-tool case, "required" is semantically equivalent
+			// to forcing that one tool, so prefer the more compatible wire form.
+			req.ToolChoice = toolChoiceRequired
+		} else if len(allowedToolNames) > 0 {
 			req.ToolChoice = map[string]any{
 				"type": "allowed_tools",
 				"allowed_tools": allowedTools{
@@ -1314,13 +1315,18 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 
 		sortArrayFields(paramsJSONSchema)
 
-		tools[i] = tool{
-			Function: &functionDefinition{
-				Name:        ti.Name,
-				Description: ti.Desc,
-				Parameters:  paramsJSONSchema,
-			},
+		fd := &functionDefinition{
+			Name:        ti.Name,
+			Description: ti.Desc,
+			Parameters:  paramsJSONSchema,
 		}
+		// Support strict tool use via ToolInfo.Extra["strict"] = true.
+		// When enabled, the API guarantees that tool call inputs conform
+		// to the declared JSON Schema exactly (OpenAI strict mode).
+		if strict, ok := ti.Extra["strict"].(bool); ok && strict {
+			fd.Strict = &strict
+		}
+		tools[i] = tool{Function: fd}
 	}
 
 	return tools, nil
