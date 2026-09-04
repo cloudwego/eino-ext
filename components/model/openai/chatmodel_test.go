@@ -271,6 +271,27 @@ func TestOpenAIGenerate(t *testing.T) {
 			t.Fatalf("result is unexpected, given=%v, expected=%v", string(resultData), string(expectMsgData))
 		}
 	})
+	t.Run("custom headers preserved in config", func(t *testing.T) {
+		headers := map[string]string{"X-Custom-Key": "val", "X-Another": "header"}
+		cfgWithHeaders := &ChatModelConfig{
+			APIKey:        "test-key",
+			Model:         "gpt-4",
+			CustomHeaders: headers,
+		}
+		if !reflect.DeepEqual(cfgWithHeaders.CustomHeaders, headers) {
+			t.Fatalf("CustomHeaders not preserved: got %v, want %v", cfgWithHeaders.CustomHeaders, headers)
+		}
+		// Verify NewChatModel accepts the config without error (no live call needed).
+		ctx := context.Background()
+		m, err := NewChatModel(ctx, cfgWithHeaders)
+		if err != nil {
+			t.Fatalf("NewChatModel with CustomHeaders failed: %v", err)
+		}
+		if m == nil {
+			t.Fatal("expected non-nil ChatModel")
+		}
+	})
+
 	t.Run("stream all param", func(t *testing.T) {
 		defer mockey.Mock((*openai.Client).CreateChatCompletionStream).To(func(ctx context.Context,
 			request openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (response *openai.ChatCompletionStream, err error) {
