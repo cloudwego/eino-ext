@@ -18,6 +18,7 @@ package agenticark
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
@@ -33,6 +34,8 @@ func TestNewStreamReceiverInit(t *testing.T) {
 	assert.NotNil(t, r.IndexMapper)
 	assert.NotNil(t, r.MaxReasoningSummaryIndex)
 	assert.NotNil(t, r.ReasoningSummaryIndexMapper)
+	assert.NotNil(t, r.MaxReasoningContentIndex)
+	assert.NotNil(t, r.ReasoningContentIndexMapper)
 	assert.NotNil(t, r.TextAnnotationIndexMapper)
 	assert.NotNil(t, r.MaxTextAnnotationIndex)
 }
@@ -391,6 +394,50 @@ func TestReasoningSummaryTextDeltaEventToContentBlock(t *testing.T) {
 	assert.Equal(t, "x", block.Reasoning.Text)
 }
 
+func TestReasoningTextDeltaEventToContentBlock(t *testing.T) {
+	r := newStreamReceiver()
+	first := r.reasoningTextDeltaEventToContentBlock(&responses.ReasoningTextDeltaEvent{
+		ItemId:       "iid",
+		OutputIndex:  2,
+		ContentIndex: 0,
+		Delta:        ptrOf("first"),
+	})
+	assert.Equal(t, "first", first.Reasoning.Text)
+
+	second := r.reasoningTextDeltaEventToContentBlock(&responses.ReasoningTextDeltaEvent{
+		ItemId:       "iid",
+		OutputIndex:  2,
+		ContentIndex: 1,
+		Delta:        ptrOf("second"),
+	})
+	assert.Equal(t, "\nsecond", second.Reasoning.Text)
+	assert.Equal(t, first.StreamingMeta.Index, second.StreamingMeta.Index)
+}
+
+func TestReceivedStreamResponse_ReasoningTextDelta(t *testing.T) {
+	stream := &fakeLegacyResponseStream{
+		events: []*responses.Event{{
+			Event: &responses.Event_ReasoningRawTextDelta{
+				ReasoningRawTextDelta: &responses.ReasoningTextDeltaEvent{
+					ItemId:       "iid",
+					OutputIndex:  2,
+					ContentIndex: 0,
+					Delta:        ptrOf("reasoning text"),
+				},
+			},
+		}},
+	}
+	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](1)
+	go func() {
+		receivedStreamResponse(stream, &model.AgenticConfig{}, sw)
+		sw.Close()
+	}()
+
+	output, err := sr.Recv()
+	assert.NoError(t, err)
+	assert.Equal(t, "reasoning text", output.Message.ContentBlocks[0].Reasoning.Text)
+}
+
 func TestFunctionCallArgumentsDeltaEventToContentBlock(t *testing.T) {
 	r := newStreamReceiver()
 	block := r.functionCallArgumentsDeltaEventToContentBlock(&responses.FunctionCallArgumentsEvent{
@@ -481,4 +528,21 @@ func TestNewCallbackSenderAndSend(t *testing.T) {
 	s.sendMeta(nil, errors.New("e"))
 	_, err = r0.Recv()
 	assert.Error(t, err)
+}
+
+type fakeLegacyResponseStream struct {
+	events []*responses.Event
+}
+
+func (s *fakeLegacyResponseStream) Recv() (*responses.Event, error) {
+	if len(s.events) == 0 {
+		return nil, io.EOF
+	}
+	event := s.events[0]
+	s.events = s.events[1:]
+	return event, nil
+}
+
+func (s *fakeLegacyResponseStream) Close() error {
+	return nil
 }

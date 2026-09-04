@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
+
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
-	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
-func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
+func receivedStreamResponse(streamReader responseStreamReader,
 	config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput]) {
 
 	receiver := newStreamReceiver()
@@ -108,6 +108,10 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 
 		case *responses.Event_ReasoningText:
 			block := receiver.reasoningSummaryTextDeltaEventToContentBlock(ev.ReasoningText)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ReasoningRawTextDelta:
+			block := receiver.reasoningTextDeltaEventToContentBlock(ev.ReasoningRawTextDelta)
 			sender.sendBlock(block, nil)
 
 		case *responses.Event_FunctionCallArguments:
@@ -300,6 +304,9 @@ type streamReceiver struct {
 	MaxReasoningSummaryIndex    map[string]int
 	ReasoningSummaryIndexMapper map[string]int
 
+	MaxReasoningContentIndex    map[string]int
+	ReasoningContentIndexMapper map[string]int
+
 	MaxTextAnnotationIndex    map[string]int
 	TextAnnotationIndexMapper map[string]int
 
@@ -313,6 +320,8 @@ func newStreamReceiver() *streamReceiver {
 		IndexMapper:                          map[string]int{},
 		MaxReasoningSummaryIndex:             map[string]int{},
 		ReasoningSummaryIndexMapper:          map[string]int{},
+		MaxReasoningContentIndex:             map[string]int{},
+		ReasoningContentIndexMapper:          map[string]int{},
 		TextAnnotationIndexMapper:            map[string]int{},
 		MaxTextAnnotationIndex:               map[string]int{},
 		ItemAddedEventCache:                  map[string]any{},
@@ -344,6 +353,24 @@ func (r *streamReceiver) isNewReasoningSummaryIndex(outputIdx, summaryIdx int64)
 	maxSummaryIndex++
 	r.ReasoningSummaryIndexMapper[idxKey] = maxSummaryIndex
 	r.MaxReasoningSummaryIndex[int64ToStr(outputIdx)] = maxSummaryIndex
+
+	return true
+}
+
+func (r *streamReceiver) isNewReasoningContentIndex(outputIdx, contentIdx int64) bool {
+	maxContentIndex := -1
+	if idx, ok := r.MaxReasoningContentIndex[int64ToStr(outputIdx)]; ok {
+		maxContentIndex = idx
+	}
+
+	idxKey := fmt.Sprintf("%d:%d", outputIdx, contentIdx)
+	if _, ok := r.ReasoningContentIndexMapper[idxKey]; ok {
+		return false
+	}
+
+	maxContentIndex++
+	r.ReasoningContentIndexMapper[idxKey] = maxContentIndex
+	r.MaxReasoningContentIndex[int64ToStr(outputIdx)] = maxContentIndex
 
 	return true
 }
@@ -791,6 +818,22 @@ func (r *streamReceiver) reasoningSummaryTextDeltaEventToContentBlock(ev *respon
 		Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex)),
 	}
 	block := schema.NewContentBlockChunk(reasoning, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
+func (r *streamReceiver) reasoningTextDeltaEventToContentBlock(ev *responses.ReasoningTextDeltaEvent) *schema.ContentBlock {
+	text := ev.GetDelta()
+	if r.isNewReasoningContentIndex(ev.OutputIndex, ev.ContentIndex) && ev.ContentIndex != 0 {
+		text = "\n" + text
+	}
+
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex)),
+	}
+	block := schema.NewContentBlockChunk(&schema.Reasoning{Text: text}, meta)
 
 	setItemID(block, ev.ItemId)
 

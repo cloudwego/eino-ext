@@ -22,11 +22,12 @@ import (
 	"sync"
 
 	"github.com/bytedance/sonic"
-	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/types/known/structpb"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func toSystemRoleInputItems(msg *schema.AgenticMessage) (items []*responses.InputItem, err error) {
@@ -447,6 +448,9 @@ func userInputTextToInputItem(role responses.MessageRole_Enum, block *schema.Use
 }
 
 func userInputImageToInputItem(role responses.MessageRole_Enum, block *schema.UserInputImage) (inputItem *responses.InputItem, err error) {
+	if isFileURL(block.URL) {
+		return nil, fmt.Errorf("file:// URLs are not supported for image input")
+	}
 	imageURL, err := resolveURL(block.URL, block.Base64Data, block.MIMEType)
 	if err != nil {
 		return nil, err
@@ -494,6 +498,9 @@ func toContentItemImageDetail(detail schema.ImageURLDetail) (*responses.ContentI
 }
 
 func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.UserInputVideo) (inputItem *responses.InputItem, err error) {
+	if isFileURL(block.URL) {
+		return nil, fmt.Errorf("file:// URLs are not supported for video input")
+	}
 	videoURL, err := resolveURL(block.URL, block.Base64Data, block.MIMEType)
 	if err != nil {
 		return nil, err
@@ -556,6 +563,9 @@ func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.Us
 }
 
 func userInputFileToInputItem(role responses.MessageRole_Enum, block *schema.UserInputFile) (inputItem *responses.InputItem, err error) {
+	if isFileURL(block.URL) {
+		return nil, fmt.Errorf("file:// URLs are not supported for file input")
+	}
 	fileItem := &responses.ContentItemFile{
 		Type:     responses.ContentItemType_input_file,
 		Filename: &block.Name,
@@ -608,18 +618,56 @@ func functionToolResultToInputItem(block *schema.FunctionToolResult) (item *resp
 }
 
 func functionToolResultContentToText(content []*schema.FunctionToolResultContentBlock) (string, error) {
-	if len(content) > 1 {
-		return "", fmt.Errorf("multiple function tool result content blocks are not supported, got %d", len(content))
+	if len(content) == 0 {
+		return "", nil
 	}
+	if len(content) == 1 && content[0] != nil && content[0].Type == schema.FunctionToolResultContentBlockTypeText {
+		if content[0].Text == nil {
+			return "", fmt.Errorf("function tool result text block is nil")
+		}
+		return escapeToolResultText(content[0].Text.Text), nil
+	}
+
+	items := make([]map[string]any, 0, len(content))
 	for _, block := range content {
+		if block == nil {
+			return "", fmt.Errorf("function tool result content block is nil")
+		}
 		switch block.Type {
 		case schema.FunctionToolResultContentBlockTypeText:
-			return block.Text.Text, nil
+			if block.Text == nil {
+				return "", fmt.Errorf("function tool result text block is nil")
+			}
+			items = append(items, map[string]any{
+				"type": "input_text",
+				"text": block.Text.Text,
+			})
+		case schema.FunctionToolResultContentBlockTypeImage:
+			if block.Image == nil {
+				return "", fmt.Errorf("function tool result image block is nil")
+			}
+			imageURL, err := resolveURL(block.Image.URL, block.Image.Base64Data, block.Image.MIMEType)
+			if err != nil {
+				return "", fmt.Errorf("resolve function tool result image: %w", err)
+			}
+			item := map[string]any{
+				"type":      "input_image",
+				"image_url": imageURL,
+			}
+			if block.Image.Detail != "" {
+				item["detail"] = string(block.Image.Detail)
+			}
+			items = append(items, item)
 		default:
 			return "", fmt.Errorf("unsupported function tool result content block type: %s", block.Type)
 		}
 	}
-	return "", nil
+
+	b, err := sonic.Marshal(items)
+	if err != nil {
+		return "", fmt.Errorf("marshal multimodal function tool result: %w", err)
+	}
+	return multimodalToolOutputPrefix + string(b), nil
 }
 
 func assistantGenTextToInputItem(block *schema.ContentBlock) (item *responses.InputItem, err error) {
@@ -1876,6 +1924,17 @@ func resolveURL(url string, base64Data string, mimeType string) (real string, er
 	}
 
 	return real, nil
+}
+
+func isFileURL(raw string) bool {
+	return strings.HasPrefix(strings.ToLower(raw), "file://")
+}
+
+func escapeToolResultText(text string) string {
+	if strings.HasPrefix(text, multimodalToolOutputPrefix) || strings.HasPrefix(text, escapedToolOutputPrefix) {
+		return escapedToolOutputPrefix + text
+	}
+	return text
 }
 
 func ensureDataURL(base64Data, mimeType string) (string, error) {
