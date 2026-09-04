@@ -204,7 +204,6 @@ See the following examples for more usage:
 - [Intent & Tool Calling](./examples/intent_tool/)
 - [Streaming Response](./examples/stream/)
 - [Structured Output](./examples/structured/)
-- [Timeout Handling](./examples/timeout/)
 
 
 
