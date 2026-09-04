@@ -21,6 +21,21 @@ type ChatModelAgentMiddleware = TypedChatModelAgentMiddleware[*schema.Message]
 
 Embed `*adk.BaseChatModelAgentMiddleware` to get default no-op implementations and only override what you need.
 
+**Never mutate received messages in place.** Messages reaching middleware (in state, model responses, or streams) may be shared with other consumers — stream fan-out (`StreamReader.Copy`) copies readers, not elements, so multiple branches hold the same `*schema.Message` / `*schema.AgenticMessage` pointer. Writing to one (especially map fields: `msg.Extra[k] = v`) can cause `concurrent map read/write` panics. To modify a message, use copy-on-write: shallow-copy it, clone the map/slice field you change, modify the clone, and use the copy:
+
+```go
+cp := *msg // shallow copy
+extra := make(map[string]any, len(msg.Extra)+1)
+for k, v := range msg.Extra {
+    extra[k] = v
+}
+extra["myKey"] = myValue
+cp.Extra = extra
+// use &cp downstream; do NOT touch msg
+```
+
+This applies especially to `WrapModel` wrappers that transform the response stream (e.g. via `schema.StreamReaderWithConvert`) and to `BeforeModelRewriteState`/`AfterModelRewriteState` handlers that edit messages in state.
+
 ## Execution Flow
 
 ```
