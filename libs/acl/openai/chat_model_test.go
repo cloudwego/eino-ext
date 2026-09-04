@@ -508,13 +508,15 @@ func TestBuildMessages(t *testing.T) {
 func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 	mockey.PatchConvey("TestBuildMessageFromUserInputMultiContent", t, func() {
 		base64Data := "base64data"
+		fileURL := "https://example.com/file.pdf"
 		text := "hello"
 
 		tests := []struct {
-			name    string
-			inMsg   *schema.Message
-			want    openai.ChatCompletionMessage
-			wantErr bool
+			name            string
+			inMsg           *schema.Message
+			want            openai.ChatCompletionMessage
+			wantErr         bool
+			wantErrContains string
 		}{
 			{
 				name: "success",
@@ -553,6 +555,16 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 								},
 							},
 						},
+						{
+							Type: schema.ChatMessagePartTypeFileURL,
+							File: &schema.MessageInputFile{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: &base64Data,
+									MIMEType:   "application/pdf",
+								},
+								Name: "file.pdf",
+							},
+						},
 					},
 				},
 				want: openai.ChatCompletionMessage{
@@ -580,6 +592,13 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 							Type: openai.ChatMessagePartTypeVideoURL,
 							VideoURL: &openai.ChatMessageVideoURL{
 								URL: "data:video/mp4;base64,base64data",
+							},
+						},
+						{
+							Type: openai.ChatMessagePartTypeFile,
+							File: &openai.ChatMessageFile{
+								FileData: "data:application/pdf;base64,base64data",
+								FileName: "file.pdf",
 							},
 						},
 					},
@@ -620,6 +639,90 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 				wantErr: true,
 			},
 			{
+				name: "file url unsupported",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeFileURL,
+							File: &schema.MessageInputFile{
+								MessagePartCommon: schema.MessagePartCommon{
+									URL: &fileURL,
+								},
+								Name: "file.pdf",
+							},
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleUser,
+				},
+				wantErr:         true,
+				wantErrContains: "file message part does not accept URL",
+			},
+			{
+				name: "file url with base64 unsupported",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeFileURL,
+							File: &schema.MessageInputFile{
+								MessagePartCommon: schema.MessagePartCommon{
+									URL:        &fileURL,
+									Base64Data: &base64Data,
+									MIMEType:   "application/pdf",
+								},
+								Name: "file.pdf",
+							},
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleUser,
+				},
+				wantErr:         true,
+				wantErrContains: "file message part does not accept URL",
+			},
+			{
+				name: "file field missing",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeFileURL,
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleUser,
+				},
+				wantErr:         true,
+				wantErrContains: "the 'file' field is required",
+			},
+			{
+				name: "file base64 missing mimetype",
+				inMsg: &schema.Message{
+					Role: schema.User,
+					UserInputMultiContent: []schema.MessageInputPart{
+						{
+							Type: schema.ChatMessagePartTypeFileURL,
+							File: &schema.MessageInputFile{
+								MessagePartCommon: schema.MessagePartCommon{
+									Base64Data: &base64Data,
+								},
+								Name: "file.pdf",
+							},
+						},
+					},
+				},
+				want: openai.ChatCompletionMessage{
+					Role: openai.ChatMessageRoleUser,
+				},
+				wantErr:         true,
+				wantErrContains: "mimetype is required when using base64data",
+			},
+			{
 				name: "unsupported type",
 				inMsg: &schema.Message{
 					Role: schema.User,
@@ -637,6 +740,9 @@ func TestBuildMessageFromUserInputMultiContent(t *testing.T) {
 				got, err := buildMessageFromUserInputMultiContent(tt.inMsg)
 				if tt.wantErr {
 					assert.Error(t, err)
+					if tt.wantErrContains != "" {
+						assert.Contains(t, err.Error(), tt.wantErrContains)
+					}
 				} else {
 					assert.NoError(t, err)
 				}
@@ -720,6 +826,35 @@ func Test_genRequest(t *testing.T) {
 		assert.Equal(t, "test-model", cbInput.Config.Model)
 		assert.Equal(t, in, cbInput.Messages)
 		assert.Len(t, reqOpts, 0)
+	})
+
+	t.Run("agentic file input builds chat completion file data URL", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		in, err := agenticMessagesToMessages([]*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputText{Text: "read the file"}),
+					schema.NewContentBlock(&schema.UserInputFile{
+						Base64Data: "base64data",
+						MIMEType:   "application/pdf",
+						Name:       "file.pdf",
+					}),
+				},
+			},
+		})
+		assert.NoError(t, err)
+
+		req, _, _, _, err := c.genRequest(t.Context(), in)
+		assert.NoError(t, err)
+		assert.Len(t, req.Messages, 1)
+		assert.Len(t, req.Messages[0].MultiContent, 2)
+
+		filePart := req.Messages[0].MultiContent[1]
+		assert.Equal(t, openai.ChatMessagePartTypeFile, filePart.Type)
+		assert.NotNil(t, filePart.File)
+		assert.Equal(t, "data:application/pdf;base64,base64data", filePart.File.FileData)
+		assert.Equal(t, "file.pdf", filePart.File.FileName)
 	})
 
 	t.Run("multi-content conflict error", func(t *testing.T) {

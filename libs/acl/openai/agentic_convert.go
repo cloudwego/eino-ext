@@ -88,12 +88,12 @@ func messageToAgenticMessage(msg *schema.Message) (*schema.AgenticMessage, error
 }
 
 type chunkConverter struct {
-	curIndex              int
-	lastContentType       schema.ContentBlockType
-	lastContentPartIndex  int
-	lastToolCallIndex     int
-	started               bool
-	inToolCalls           bool
+	curIndex             int
+	lastContentType      schema.ContentBlockType
+	lastContentPartIndex int
+	lastToolCallIndex    int
+	started              bool
+	inToolCalls          bool
 }
 
 func newChunkConverter() *chunkConverter {
@@ -292,6 +292,16 @@ func agenticUserToMessages(msg *schema.AgenticMessage) ([]*schema.Message, error
 		case schema.ContentBlockTypeUserInputVideo:
 			inputParts = append(inputParts, videoBlockToInputPart(block.UserInputVideo, block.Extra))
 
+		case schema.ContentBlockTypeUserInputFile:
+			if block.UserInputFile == nil {
+				return nil, fmt.Errorf("file content is nil in user message")
+			}
+			part, err := fileBlockToInputPart(block.UserInputFile, block.Extra)
+			if err != nil {
+				return nil, err
+			}
+			inputParts = append(inputParts, part)
+
 		default:
 			return nil, fmt.Errorf("unsupported content block type %q in user message", block.Type)
 		}
@@ -422,6 +432,28 @@ func videoBlockToInputPart(video *schema.UserInputVideo, extra map[string]any) s
 	}
 
 	return part
+}
+
+func fileBlockToInputPart(file *schema.UserInputFile, extra map[string]any) (schema.MessageInputPart, error) {
+	part := schema.MessageInputPart{
+		Type: schema.ChatMessagePartTypeFileURL,
+		File: &schema.MessageInputFile{
+			MessagePartCommon: schema.MessagePartCommon{
+				MIMEType: file.MIMEType,
+			},
+			Name: file.Name,
+		},
+		Extra: extra,
+	}
+
+	if file.URL != "" {
+		return part, fmt.Errorf("for OpenAI Chat Completions, file message part does not accept URL; use Responses API or provide base64 data")
+	}
+	if file.Base64Data != "" {
+		part.File.Base64Data = &file.Base64Data
+	}
+
+	return part, nil
 }
 
 func assistantGenImageToOutputPart(img *schema.AssistantGenImage, extra map[string]any) schema.MessageOutputPart {
