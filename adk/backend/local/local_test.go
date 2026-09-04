@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -791,6 +792,21 @@ func TestExecuteStreaming(t *testing.T) {
 
 		assert.Less(t, elapsed, 2*time.Second, "background command should return immediately without waiting")
 	})
+}
+
+func TestNewShellCmd(t *testing.T) {
+	command := "echo hello"
+	cmd := newShellCmd(context.Background(), command)
+
+	if runtime.GOOS == "windows" {
+		assert.Equal(t, []string{"cmd.exe", "/C", command}, cmd.Args)
+	} else {
+		assert.Equal(t, []string{"/bin/sh", "-c", command}, cmd.Args)
+	}
+
+	output, err := cmd.Output()
+	require.NoError(t, err)
+	assert.Equal(t, "hello", strings.TrimSpace(string(output)))
 }
 
 func TestExecute(t *testing.T) {
