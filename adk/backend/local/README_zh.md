@@ -132,7 +132,7 @@ backend, _ := local.NewBackend(ctx, &local.Config{
 - **`Write(ctx, req)`** - 写入文件内容；文件不存在时创建，否则**覆盖**现有内容（父目录会自动创建）。
 - **`Edit(ctx, req)`** - 在文件中搜索和替换
 - **`GrepRaw(ctx, req)`** - 在文件中搜索模式
-- **`GlobInfo(ctx, req)`** - 按 glob 模式查找文件
+- **`GlobInfo(ctx, req)`** - 按 glob 模式查找文件，跟随目录软链接并防止循环遍历
 
 ### 其他方法
 
