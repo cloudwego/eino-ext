@@ -60,6 +60,13 @@ func WithExtraHeader(header map[string]string) model.Option {
 	return openai.WithExtraHeader(header)
 }
 
+// WithCustomHeaders sets custom HTTP headers for the request.
+// Unlike WithExtraHeader which replaces all headers, WithCustomHeaders merges
+// with per-request options for consistency with agenticopenai.ChatConfig.
+func WithCustomHeaders(headers map[string]string) model.Option {
+	return openai.WithExtraHeader(headers)
+}
+
 func WithReasoningEffort(effort ReasoningEffortLevel) model.Option {
 	return openai.WithReasoningEffort(openai.ReasoningEffortLevel(effort))
 }
