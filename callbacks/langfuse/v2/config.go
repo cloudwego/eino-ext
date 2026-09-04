@@ -42,6 +42,10 @@ const (
 	instrumentationVersion         = "v2.0.0"
 )
 
+// RetryConfig configures exponential backoff for transient OTLP export
+// failures. It is an alias of the OpenTelemetry OTLP/HTTP retry config.
+type RetryConfig = otlptracehttp.RetryConfig
+
 // Config configures the Langfuse OTLP/HTTP callback.
 type Config struct {
 	// Host accepts a Langfuse base URL, an OTLP base URL ending in
@@ -58,6 +62,10 @@ type Config struct {
 	Tags        []string
 	Timeout     time.Duration
 	SampleRate  float64
+	// RetryConfig overrides the OpenTelemetry OTLP/HTTP retry policy. Nil uses
+	// the OpenTelemetry default policy. MaxElapsedTime limits the total retry
+	// window for one batch; zero retries indefinitely.
+	RetryConfig *RetryConfig
 
 	// Name, UserID, and SessionID configure default root trace attributes.
 	// Prefer the corresponding StartTrace options for each trace.
@@ -244,6 +252,9 @@ func newHTTPExporter(ctx context.Context, cfg *Config) (sdktrace.SpanExporter, e
 		}),
 		otlptracehttp.WithTimeout(timeout),
 		otlptracehttp.WithCompression(otlptracehttp.GzipCompression),
+	}
+	if cfg.RetryConfig != nil {
+		exporterOptions = append(exporterOptions, otlptracehttp.WithRetry(*cfg.RetryConfig))
 	}
 	if cfg.ExportDiagnostics {
 		exporterOptions = append(exporterOptions, otlptracehttp.WithHTTPClient(newDiagnosticHTTPClient(cfg.HTTPClient, timeout)))

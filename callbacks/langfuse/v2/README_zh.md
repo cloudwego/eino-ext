@@ -98,6 +98,19 @@ langfuse callback discarded telemetry since previous report (interval 1m0s): que
 
 batch processor 不会额外设置更短的导出 deadline。使用内置 OTLP exporter 时，`Config.Timeout` 限制单次 HTTP 请求，OpenTelemetry exporter 的重试策略控制整个重试窗口。显式 `ForceFlush` 会将调用方 context 传给 exporter，因此仍可取消。
 
+使用 `Config.RetryConfig` 可以覆盖该策略。值为 nil 时保留 OpenTelemetry 默认值：启用重试，首次间隔 5 秒、最大间隔 30 秒、总重试窗口 1 分钟。例如：
+
+```go
+RetryConfig: &langfuse.RetryConfig{
+    Enabled:         true,
+    InitialInterval: 5 * time.Second,
+    MaxInterval:     30 * time.Second,
+    MaxElapsedTime:  5 * time.Minute,
+},
+```
+
+`MaxElapsedTime` 为零时会无限重试，应谨慎使用。
+
 当 callback 使用调用方传入的 `TracerProvider` 时，队列和导出由该 provider 管理，应通过其 span processor/exporter 诊断；callback 自身的截断和序列化诊断仍然有效。
 
 ## 大小限制和脱敏
