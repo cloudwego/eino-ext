@@ -764,20 +764,6 @@ func TestNewCallbackSender(t *testing.T) {
 	assert.Equal(t, config, s.config)
 }
 
-func TestCallbackSenderSendMeta(t *testing.T) {
-	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
-	r := sr.Copy(1)[0]
-	s := newCallbackSender(sw, &model.AgenticConfig{})
-
-	meta := &schema.AgenticResponseMeta{}
-	s.sendMeta(meta, nil)
-
-	out, err := r.Recv()
-	assert.NoError(t, err)
-	assert.NotNil(t, out)
-	assert.NotNil(t, out.Message.ResponseMeta)
-}
-
 func TestCallbackSenderSendBlock(t *testing.T) {
 	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
 	r := sr.Copy(1)[0]
@@ -798,7 +784,7 @@ func TestCallbackSenderSendError(t *testing.T) {
 	s := newCallbackSender(sw, &model.AgenticConfig{})
 	s.errHeader = "test error"
 
-	s.sendMeta(nil, errors.New("error"))
+	s.sendResponse(nil, errors.New("error"))
 
 	_, err := r.Recv()
 	assert.Error(t, err)
