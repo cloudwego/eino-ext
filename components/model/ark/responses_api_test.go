@@ -18,13 +18,17 @@ package ark
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
+	toolcomponent "github.com/cloudwego/eino/components/tool"
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/smartystreets/goconvey/convey"
 	"github.com/stretchr/testify/assert"
@@ -33,6 +37,23 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
+
+type textEnhancedTool struct{}
+
+func (t *textEnhancedTool) Info(context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{
+		Name: "text_enhanced_tool",
+		Desc: "returns a text-only enhanced tool result",
+	}, nil
+}
+
+func (t *textEnhancedTool) InvokableRun(context.Context, *schema.ToolArgument, ...toolcomponent.Option) (*schema.ToolResult, error) {
+	return &schema.ToolResult{
+		Parts: []schema.ToolOutputPart{
+			{Type: schema.ToolPartTypeText, Text: "enhanced tool output"},
+		},
+	}, nil
+}
 
 func TestResponsesAPIChatModelGenerate(t *testing.T) {
 	PatchConvey("test Generate", t, func() {
@@ -214,6 +235,54 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 		assert.Equal(t, "tool output", item.Output)
 	})
 
+	PatchConvey("tool call with text-only multi content", t, func() {
+		req := &responses.ResponsesRequest{
+			Model: "test-model",
+		}
+		in := []*schema.Message{
+			{
+				Role:       schema.Tool,
+				ToolCallID: "call_123",
+				UserInputMultiContent: []schema.MessageInputPart{
+					{Type: schema.ChatMessagePartTypeText, Text: "tool "},
+					{Type: schema.ChatMessagePartTypeText, Text: "output"},
+				},
+			},
+		}
+
+		err := cm.populateInput(in, req, false)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, len(req.GetInput().GetListValue().GetListValue()))
+
+		item := req.GetInput().GetListValue().GetListValue()[0].GetFunctionToolCallOutput()
+		assert.Equal(t, "call_123", item.CallId)
+		assert.Equal(t, "tool output", item.Output)
+	})
+
+	PatchConvey("tool call with non-text multi content", t, func() {
+		req := &responses.ResponsesRequest{
+			Model: "test-model",
+		}
+		imageURL := "https://example.com/tool-output.png"
+		in := []*schema.Message{
+			{
+				Role:       schema.Tool,
+				ToolCallID: "call_123",
+				UserInputMultiContent: []schema.MessageInputPart{
+					{
+						Type: schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{
+							MessagePartCommon: schema.MessagePartCommon{URL: &imageURL},
+						},
+					},
+				},
+			},
+		}
+
+		err := cm.populateInput(in, req, false)
+		assert.ErrorContains(t, err, "only supports text tool result")
+	})
+
 	PatchConvey("unknown role", t, func() {
 		req := &responses.ResponsesRequest{
 			Model: "test-model",
@@ -227,6 +296,45 @@ func TestResponsesAPIChatModelInjectInput(t *testing.T) {
 		err := cm.populateInput(in, req, false)
 		assert.NotNil(t, err)
 	})
+}
+
+func TestResponsesAPIChatModelPopulateInputFromEnhancedTool(t *testing.T) {
+	ctx := context.Background()
+	toolNode, err := compose.NewToolNode(ctx, &compose.ToolsNodeConfig{
+		Tools: []toolcomponent.BaseTool{&textEnhancedTool{}},
+	})
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
+
+	toolMessages, err := toolNode.Invoke(ctx, schema.AssistantMessage("", []schema.ToolCall{
+		{
+			ID: "call_enhanced",
+			Function: schema.FunctionCall{
+				Name:      "text_enhanced_tool",
+				Arguments: `{}`,
+			},
+		},
+	}))
+	assert.NoError(t, err)
+	assert.Len(t, toolMessages, 1)
+	if err != nil || len(toolMessages) != 1 {
+		return
+	}
+	assert.Empty(t, toolMessages[0].Content)
+	assert.Len(t, toolMessages[0].UserInputMultiContent, 1)
+
+	req := &responses.ResponsesRequest{Model: "test-model"}
+	err = (&ResponsesAPIChatModel{}).populateInput(toolMessages, req, false)
+	assert.NoError(t, err)
+	if err != nil {
+		return
+	}
+
+	item := req.GetInput().GetListValue().GetListValue()[0].GetFunctionToolCallOutput()
+	assert.Equal(t, "call_enhanced", item.CallId)
+	assert.Equal(t, "enhanced tool output", item.Output)
 }
 
 func TestResponsesAPIChatModelPopulateInputReasoningPassback(t *testing.T) {
@@ -286,6 +394,111 @@ func TestResponsesAPIChatModelPopulateInputReasoningPassback(t *testing.T) {
 		assert.Equal(t, 1, len(items))
 		assert.Nil(t, items[0].GetReasoning())
 	})
+}
+
+func TestResponsesAPIChatModelRawReasoningResponse(t *testing.T) {
+	const rawReasoning = "\n用户现在问1+1等于几，首先正常的数学答案是2。"
+	const outputText = "在最基础的十进制数学算术里，1+1=2。"
+	responseJSON := `{
+		"created_at": 1788353431,
+		"id": "mock-response-id",
+		"model": "mock-model",
+		"object": "response",
+		"output": [
+			{
+				"id": "mock-reasoning-id",
+				"type": "reasoning",
+				"status": "completed",
+				"content": [
+					{
+						"type": "reasoning_text",
+						"text": "\n用户现在问1+1等于几，首先正常的数学答案是2。"
+					}
+				]
+			},
+			{
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{
+						"type": "output_text",
+						"text": "在最基础的十进制数学算术里，1+1=2。"
+					}
+				],
+				"status": "completed",
+				"id": "mock-message-id"
+			}
+		],
+		"thinking": {"type": "enabled"},
+		"status": "completed",
+		"usage": {
+			"input_tokens": 54,
+			"output_tokens": 305,
+			"total_tokens": 359,
+			"input_tokens_details": {"cached_tokens": 0},
+			"output_tokens_details": {"reasoning_tokens": 203}
+		}
+	}`
+
+	var resp responses.ResponseObject
+	err := json.Unmarshal([]byte(responseJSON), &resp)
+	assert.NoError(t, err)
+	if assert.Len(t, resp.Output, 2) {
+		assert.Len(t, resp.Output[0].GetReasoning().GetContent(), 1,
+			"SDK must preserve reasoning.content from the API response")
+	}
+
+	cm := &ResponsesAPIChatModel{}
+	msg, err := cm.toOutputMessage(&resp, nil)
+	assert.NoError(t, err)
+	assert.Equal(t, rawReasoning, msg.ReasoningContent)
+	assert.Equal(t, outputText, msg.Content)
+	raw, ok := getRawReasoningContent(msg)
+	assert.True(t, ok)
+	assert.Equal(t, rawReasoning, raw)
+
+	req := &responses.ResponsesRequest{Model: "mock-model"}
+	err = cm.populateInput([]*schema.Message{msg}, req, true)
+	assert.NoError(t, err)
+	items := req.GetInput().GetListValue().GetListValue()
+	if assert.Len(t, items, 2) {
+		reasoning := items[0].GetReasoning()
+		if assert.NotNil(t, reasoning) {
+			assert.Empty(t, reasoning.GetSummary())
+			if assert.Len(t, reasoning.GetContent(), 1) {
+				assert.Equal(t, responses.ContentItemType_reasoning_text, reasoning.GetContent()[0].GetText().GetType())
+				assert.Equal(t, rawReasoning, reasoning.GetContent()[0].GetText().GetText())
+			}
+		}
+	}
+}
+
+func TestResponsesAPIChatModelReasoningSummaryResponse(t *testing.T) {
+	cm := &ResponsesAPIChatModel{}
+	msg, err := cm.toOutputMessage(&responses.ResponseObject{
+		Status: responses.ResponseStatus_completed,
+		Output: []*responses.OutputItem{
+			{
+				Union: &responses.OutputItem_Reasoning{
+					Reasoning: &responses.ItemReasoning{
+						Summary: []*responses.ReasoningSummaryPart{
+							{Text: "first summary"},
+							{Text: "second summary"},
+						},
+					},
+				},
+			},
+		},
+		Usage: &responses.Usage{
+			InputTokensDetails:  &responses.InputTokensDetails{},
+			OutputTokensDetails: &responses.OutputTokensDetails{},
+		},
+	}, nil)
+
+	assert.NoError(t, err)
+	assert.Equal(t, "first summary\n\nsecond summary", msg.ReasoningContent)
+	_, ok := getRawReasoningContent(msg)
+	assert.False(t, ok)
 }
 
 func TestResponsesAPIChatModelToOpenaiMultiModalContent(t *testing.T) {
@@ -677,6 +890,46 @@ func TestResponsesAPIChatModelReceivedStreamResponse_Default(t *testing.T) {
 		assert.Equal(t, 1, mocker.Times())
 
 	})
+}
+
+func TestResponsesAPIChatModelReceivedStreamResponse_RawReasoning(t *testing.T) {
+	const eventStream = "event: response.reasoning_text.delta\n" +
+		"data: {\"type\":\"response.reasoning_text.delta\",\"content_index\":0," +
+		"\"delta\":\"raw \",\"item_id\":\"mock-reasoning-id\",\"output_index\":0,\"sequence_number\":1}\n\n" +
+		"event: response.reasoning_text.delta\n" +
+		"data: {\"type\":\"response.reasoning_text.delta\",\"content_index\":0," +
+		"\"delta\":\"reasoning\",\"item_id\":\"mock-reasoning-id\",\"output_index\":0,\"sequence_number\":2}\n\n" +
+		"data: [DONE]\n\n"
+
+	body := io.NopCloser(strings.NewReader(eventStream))
+	streamReader := &utils.ResponsesStreamReader{
+		ChatCompletionStreamReader: utils.ChatCompletionStreamReader{
+			Unmarshaler: &utils.JSONUnmarshaler{},
+		},
+		Decoder: utils.NewEventStreamDecoder(body),
+	}
+	sr, sw := schema.Pipe[*model.CallbackOutput](2)
+	defer sr.Close()
+
+	cm := &ResponsesAPIChatModel{}
+	cm.receivedStreamResponse(streamReader, &model.Config{}, nil, sw)
+	sw.Close()
+
+	chunks := make([]*schema.Message, 0, 2)
+	for i := 0; i < 2; i++ {
+		output, err := sr.Recv()
+		assert.NoError(t, err)
+		if assert.NotNil(t, output) && assert.NotNil(t, output.Message) {
+			chunks = append(chunks, output.Message)
+		}
+	}
+
+	msg, err := schema.ConcatMessages(chunks)
+	assert.NoError(t, err)
+	assert.Equal(t, "raw reasoning", msg.ReasoningContent)
+	raw, ok := getRawReasoningContent(msg)
+	assert.True(t, ok)
+	assert.Equal(t, "raw reasoning", raw)
 }
 
 func TestResponsesAPIChatModelReceivedStreamResponse_ToolCallMetaMsg(t *testing.T) {

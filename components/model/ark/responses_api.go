@@ -139,7 +139,7 @@ type ResponsesAPIConfig struct {
 
 	// EnableReasoningContentPassback controls whether reasoning content
 	// from assistant messages is passed back to the model in multi-turn conversations.
-	// When enabled, reasoning content is included as reasoning summary items in the input,
+	// When enabled, reasoning summaries and raw reasoning content are passed back in their original form,
 	// allowing the model to be aware of its prior chain-of-thought.
 	// However, if a valid previous_response_id is set (via session cache), the passback is
 	// automatically skipped because previous_response_id already preserves the full conversation
@@ -648,12 +648,26 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
 			if enableReasoningPassback && responseReq.PreviousResponseId == nil && msg.ReasoningContent != "" {
-				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_Reasoning{Reasoning: &responses.ItemReasoning{
-					Type: responses.ItemType_reasoning,
-					Summary: []*responses.ReasoningSummaryPart{
+				reasoning := &responses.ItemReasoning{Type: responses.ItemType_reasoning}
+				if rawReasoning, ok := getRawReasoningContent(msg); ok && rawReasoning == msg.ReasoningContent {
+					reasoning.Content = []*responses.OutputContentItem{
+						{
+							Union: &responses.OutputContentItem_Text{
+								Text: &responses.OutputContentItemText{
+									Type: responses.ContentItemType_reasoning_text,
+									Text: rawReasoning,
+								},
+							},
+						},
+					}
+				} else {
+					reasoning.Summary = []*responses.ReasoningSummaryPart{
 						{Text: msg.ReasoningContent},
-					},
-				}}})
+					}
+				}
+				itemList = append(itemList, &responses.InputItem{
+					Union: &responses.InputItem_Reasoning{Reasoning: reasoning},
+				})
 			}
 
 			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
@@ -682,14 +696,15 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Tool:
-			if len(msg.UserInputMultiContent) > 0 {
-				return fmt.Errorf("ark response api doesn't support multi modal tool result")
+			output, err := convToolResultToString(msg)
+			if err != nil {
+				return err
 			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCallOutput{
 				FunctionToolCallOutput: &responses.ItemFunctionToolCallOutput{
 					Type:   responses.ItemType_function_call_output,
 					CallId: msg.ToolCallID,
-					Output: msg.Content,
+					Output: output,
 				},
 			}})
 
@@ -705,6 +720,21 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 		},
 	}
 	return nil
+}
+
+func convToolResultToString(msg *schema.Message) (string, error) {
+	if len(msg.UserInputMultiContent) == 0 {
+		return msg.Content, nil
+	}
+
+	var output strings.Builder
+	for i, part := range msg.UserInputMultiContent {
+		if part.Type != schema.ChatMessagePartTypeText {
+			return "", fmt.Errorf("volcengine go sdk currently only supports text tool result, got type %s at index %d", part.Type, i)
+		}
+		output.WriteString(part.Text)
+	}
+	return output.String(), nil
 }
 
 func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options, enableToolWebSearch *ToolWebSearch, maxToolCalls *int64) error {
@@ -1017,6 +1047,9 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 		return nil, fmt.Errorf("received empty output from ARK")
 	}
 
+	var reasoningSummary strings.Builder
+	var rawReasoning strings.Builder
+
 	for _, item := range resp.Output {
 		switch asItem := item.GetUnion().(type) {
 		case *responses.OutputItem_OutputMessage:
@@ -1042,15 +1075,21 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 			if asItem.Reasoning == nil {
 				continue
 			}
+			for _, content := range asItem.Reasoning.GetContent() {
+				text := content.GetText()
+				if text == nil || text.GetType() != responses.ContentItemType_reasoning_text {
+					continue
+				}
+				rawReasoning.WriteString(text.GetText())
+			}
 			for _, s := range asItem.Reasoning.GetSummary() {
 				if s.Text == "" {
 					continue
 				}
-				if msg.ReasoningContent == "" {
-					msg.ReasoningContent = s.Text
-					continue
+				if reasoningSummary.Len() > 0 {
+					reasoningSummary.WriteString("\n\n")
 				}
-				msg.ReasoningContent = fmt.Sprintf("%s\n\n%s", msg.ReasoningContent, s.Text)
+				reasoningSummary.WriteString(s.Text)
 			}
 
 		case *responses.OutputItem_FunctionToolCall:
@@ -1066,6 +1105,14 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 				},
 			})
 		}
+	}
+
+	if rawReasoning.Len() > 0 {
+		msg.ReasoningContent = rawReasoning.String()
+		setReasoningContent(msg, msg.ReasoningContent)
+		setRawReasoningContent(msg, msg.ReasoningContent)
+	} else {
+		msg.ReasoningContent = reasoningSummary.String()
 	}
 
 	return msg, nil
@@ -1231,6 +1278,19 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				ReasoningContent: delta,
 			}
 			setReasoningContent(msg, delta)
+			cm.sendCallbackOutput(sw, config, "", msg)
+
+		case *responses.Event_ReasoningRawTextDelta:
+			if ev.ReasoningRawTextDelta == nil || ev.ReasoningRawTextDelta.Delta == nil {
+				continue
+			}
+			delta := *ev.ReasoningRawTextDelta.Delta
+			msg := &schema.Message{
+				Role:             schema.Assistant,
+				ReasoningContent: delta,
+			}
+			setReasoningContent(msg, delta)
+			setRawReasoningContent(msg, delta)
 			cm.sendCallbackOutput(sw, config, "", msg)
 
 		case *responses.Event_Text:

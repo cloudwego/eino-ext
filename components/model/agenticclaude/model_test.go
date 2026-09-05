@@ -834,6 +834,25 @@ func TestSetToolInfoCacheControl(t *testing.T) {
 			t.Fatalf("tool param should not have cache_control, got type=%q", tools[0].OfTool.CacheControl.Type)
 		}
 	})
+
+	t.Run("tool without params one of keeps empty input schema", func(t *testing.T) {
+		tools, err := toFunctionTools([]*schema.ToolInfo{{
+			Name: "fn",
+			Desc: "desc",
+		}})
+		if err != nil {
+			t.Fatalf("toFunctionTools() error = %v", err)
+		}
+		if len(tools) != 1 || tools[0].OfTool == nil {
+			t.Fatalf("toFunctionTools() = %#v", tools)
+		}
+		if tools[0].OfTool.InputSchema.Properties != nil {
+			t.Fatalf("input schema properties = %#v, want nil", tools[0].OfTool.InputSchema.Properties)
+		}
+		if len(tools[0].OfTool.InputSchema.Required) != 0 {
+			t.Fatalf("input schema required = %#v, want empty", tools[0].OfTool.InputSchema.Required)
+		}
+	})
 }
 
 func TestManualCacheControlInConvertors(t *testing.T) {

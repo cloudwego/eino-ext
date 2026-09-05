@@ -17,11 +17,13 @@
 package agenticark
 
 import (
+	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/schema"
+	openaischema "github.com/cloudwego/eino/schema/openai"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
@@ -69,10 +71,10 @@ func TestToAssistantRoleInputItems(t *testing.T) {
 	setItemID(msg.ContentBlocks[1], "id-1")
 	setItemStatus(msg.ContentBlocks[1], responses.ItemStatus_completed.String())
 	msg.ResponseMeta = &schema.AgenticResponseMeta{
-			Extension: &ResponseMetaExtension{},
-		}
+		Extension: &ResponseMetaExtension{},
+	}
 
-		items, err := toAssistantRoleInputItems(msg)
+	items, err := toAssistantRoleInputItems(msg)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, len(items))
 	assert.Equal(t, responses.MessageRole_assistant, items[0].GetInputMessage().Role)
@@ -303,7 +305,13 @@ func TestFunctionToolCallToInputItem(t *testing.T) {
 
 func TestReasoningToInputItem(t *testing.T) {
 	block := schema.NewContentBlock(&schema.Reasoning{
-		Text: "r",
+		Text:      "summary",
+		Signature: "encrypted",
+		OpenAIExtension: &openaischema.ReasoningExtension{
+			Content: []*openaischema.ReasoningContent{
+				{Text: "raw reasoning"},
+			},
+		},
 	})
 
 	item, err := reasoningToInputItem(block)
@@ -311,7 +319,12 @@ func TestReasoningToInputItem(t *testing.T) {
 	reason := item.GetReasoning()
 	assert.NotNil(t, reason)
 	assert.Equal(t, 1, len(reason.Summary))
-	assert.Equal(t, "r", reason.Summary[0].Text)
+	assert.Equal(t, "summary", reason.Summary[0].Text)
+	assert.Equal(t, "encrypted", reason.GetEncryptedContent())
+	if assert.Len(t, reason.Content, 1) {
+		assert.Equal(t, responses.ContentItemType_reasoning_text, reason.Content[0].GetText().Type)
+		assert.Equal(t, "raw reasoning", reason.Content[0].GetText().Text)
+	}
 }
 
 func TestServerToolCallToInputItem(t *testing.T) {
@@ -840,15 +853,97 @@ func TestReasoningToContentBlocks(t *testing.T) {
 			Summary: []*responses.ReasoningSummaryPart{
 				{Text: "r"},
 			},
+			Content: []*responses.OutputContentItem{
+				{
+					Union: &responses.OutputContentItem_Text{
+						Text: &responses.OutputContentItemText{
+							Type: responses.ContentItemType_reasoning_text,
+							Text: "raw reasoning",
+						},
+					},
+				},
+			},
+			EncryptedContent: ptrOf("encrypted"),
 		},
 	}
 	block, err := reasoningToContentBlocks(item)
 	assert.NoError(t, err)
 	assert.NotNil(t, block.Reasoning)
 	assert.Equal(t, "r", block.Reasoning.Text)
+	assert.Equal(t, "encrypted", block.Reasoning.Signature)
+	if assert.NotNil(t, block.Reasoning.OpenAIExtension) &&
+		assert.Len(t, block.Reasoning.OpenAIExtension.Content, 1) {
+		assert.Equal(t, "raw reasoning", block.Reasoning.OpenAIExtension.Content[0].Text)
+	}
 
 	_, err = reasoningToContentBlocks(&responses.OutputItem_Reasoning{})
 	assert.Error(t, err)
+}
+
+func TestToOutputMessageWithRawReasoningResponse(t *testing.T) {
+	const rawReasoning = "\n用户现在问1+1等于几，首先正常的数学答案是2。"
+	const outputText = "在最基础的十进制数学算术里，1+1=2。"
+	responseJSON := `{
+		"created_at": 1788353431,
+		"id": "mock-response-id",
+		"model": "mock-model",
+		"object": "response",
+		"output": [
+			{
+				"id": "mock-reasoning-id",
+				"type": "reasoning",
+				"status": "completed",
+				"content": [
+					{
+						"type": "reasoning_text",
+						"text": "\n用户现在问1+1等于几，首先正常的数学答案是2。"
+					}
+				]
+			},
+			{
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{
+						"type": "output_text",
+						"text": "在最基础的十进制数学算术里，1+1=2。"
+					}
+				],
+				"status": "completed",
+				"id": "mock-message-id"
+			}
+		],
+		"thinking": {"type": "enabled"},
+		"status": "completed"
+	}`
+
+	var resp responses.ResponseObject
+	err := json.Unmarshal([]byte(responseJSON), &resp)
+	assert.NoError(t, err)
+	if assert.Len(t, resp.Output, 2) {
+		assert.Len(t, resp.Output[0].GetReasoning().Content, 1,
+			"SDK must preserve reasoning.content from the API response")
+	}
+
+	msg, err := toOutputMessage(&resp)
+	assert.NoError(t, err)
+	if assert.Len(t, msg.ContentBlocks, 2) {
+		reasoning := msg.ContentBlocks[0].Reasoning
+		if assert.NotNil(t, reasoning) && assert.NotNil(t, reasoning.OpenAIExtension) &&
+			assert.Len(t, reasoning.OpenAIExtension.Content, 1) {
+			assert.Equal(t, rawReasoning, reasoning.OpenAIExtension.Content[0].Text)
+		}
+		assert.Equal(t, outputText, msg.ContentBlocks[1].AssistantGenText.Text)
+
+		inputItem, err := reasoningToInputItem(msg.ContentBlocks[0])
+		assert.NoError(t, err)
+		if assert.NotNil(t, inputItem.GetReasoning()) {
+			assert.Empty(t, inputItem.GetReasoning().Summary)
+			if assert.Len(t, inputItem.GetReasoning().Content, 1) {
+				assert.Equal(t, rawReasoning, inputItem.GetReasoning().Content[0].GetText().Text)
+			}
+		}
+	}
 }
 
 func TestMcpCallToContentBlocks(t *testing.T) {
