@@ -883,6 +883,9 @@ func (cm *completionAPIChatModel) toModelCallbackUsage(respMeta *schema.Response
 			CachedTokens: usage.PromptTokenDetails.CachedTokens,
 		},
 		TotalTokens: usage.TotalTokens,
+		CompletionTokensDetails: fmodel.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
 	}
 }
 

@@ -24,6 +24,23 @@ import (
 	"time"
 )
 
+func useTestEndpoints(t *testing.T, serverURL string) {
+	t.Helper()
+
+	originalBaseURL := baseURL
+	originalSearchURL := searchURL
+	originalNewsURL := newsURL
+	baseURL = serverURL
+	searchURL = serverURL + "/d.js"
+	newsURL = serverURL + "/news.js"
+
+	t.Cleanup(func() {
+		baseURL = originalBaseURL
+		searchURL = originalSearchURL
+		newsURL = originalNewsURL
+	})
+}
+
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -87,6 +104,7 @@ func TestDDGS_Search(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	useTestEndpoints(t, server.URL)
 
 	// Create client with test server URL
 	client, err := New(&Config{
@@ -96,9 +114,6 @@ func TestDDGS_Search(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Set test endpoints
-	searchURL = server.URL + "/d.js"
 
 	tests := []struct {
 		name       string
@@ -183,6 +198,7 @@ func TestDDGS_SearchCache(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	useTestEndpoints(t, server.URL)
 
 	// Create client with cache enabled
 	client, err := New(&Config{
@@ -193,9 +209,6 @@ func TestDDGS_SearchCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	// Set test endpoints
-	searchURL = server.URL + "/d.js"
 
 	// First search request
 	params := &SearchParams{
