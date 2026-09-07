@@ -33,6 +33,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
+	awsSDK "github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"golang.org/x/oauth2/google"
@@ -115,7 +116,11 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		if config.HTTPClient != nil {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
-		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+		if config.AWSConfig != nil {
+			cli = anthropic.NewClient(bedrock.WithConfig(*config.AWSConfig))
+		} else {
+			cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+		}
 	} else {
 		// Use direct Anthropic API
 		var opts []option.RequestOption
@@ -208,6 +213,12 @@ type Config struct {
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 	// Optional for Bedrock
 	Region string
+
+	// AWSConfig is an already-resolved AWS config used verbatim for Bedrock.
+	// When set, AccessKey, SecretAccessKey, SessionToken, Profile, Region and
+	// HTTPClient are ignored and no default config is loaded.
+	// Optional for Bedrock.
+	AWSConfig *awsSDK.Config
 
 	// ByVertex indicates whether to use Google Vertex AI
 	ByVertex bool
