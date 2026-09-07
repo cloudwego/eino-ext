@@ -173,6 +173,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
 		requestTimeout:         config.RequestTimeout,
 		autoCacheControl:       config.AutoCacheControl,
+		effort:                 config.Effort,
 	}, nil
 }
 
@@ -303,6 +304,11 @@ type Config struct {
 	// and the last user message of each turn when non-nil.
 	// This is equivalent to calling WithAutoCacheControl on every request.
 	AutoCacheControl *CacheControl `json:"auto_cache_control,omitempty"`
+
+	// Effort sets output_config.effort on every request.
+	// Adaptive-thinking models use effort in place of a thinking budget.
+	// Overridden per request by WithEffort.
+	Effort anthropic.OutputConfigEffort `json:"effort,omitempty"`
 }
 
 type ToolSearchAlgorithm string
@@ -344,6 +350,7 @@ type ChatModel struct {
 	toolSearchAlgorithm    ToolSearchAlgorithm
 	requestTimeout         time.Duration
 	autoCacheControl       *CacheControl
+	effort                 anthropic.OutputConfigEffort
 }
 
 func hasDirectAnthropicConfigAuth(config *Config) bool {
@@ -640,6 +647,7 @@ func (cm *ChatModel) genParamsAndOptions(input []*schema.Message, opts ...model.
 		DisableParallelToolUse: cm.disableParallelToolUse,
 		ResponseFormat:         cm.responseFormat,
 		AutoCacheControl:       cm.autoCacheControl,
+		Effort:                 cm.effort,
 	}, opts...)
 
 	msgParams = anthropic.MessageNewParams{}
@@ -685,6 +693,10 @@ func (cm *ChatModel) genParamsAndOptions(input []*schema.Message, opts ...model.
 				Schema: schemaMap,
 			},
 		}
+	}
+
+	if specOptions.Effort != "" {
+		msgParams.OutputConfig.Effort = specOptions.Effort
 	}
 
 	if err = cm.populateTools(&msgParams, commonOptions, specOptions); err != nil {

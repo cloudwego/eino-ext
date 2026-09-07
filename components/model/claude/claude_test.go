@@ -1285,3 +1285,90 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 		})
 	})
 }
+
+func TestEffortOutputConfig(t *testing.T) {
+	testCases := []struct {
+		name               string
+		configEffort       anthropic.OutputConfigEffort
+		callOptions        []model.Option
+		expectOutputConfig bool
+		expectedEffort     string
+		expectFormat       bool
+	}{
+		{
+			name:               "no effort and no format omits output_config",
+			expectOutputConfig: false,
+		},
+		{
+			name:               "config effort is the default",
+			configEffort:       anthropic.OutputConfigEffortHigh,
+			expectOutputConfig: true,
+			expectedEffort:     "high",
+		},
+		{
+			name:               "call option sets effort",
+			callOptions:        []model.Option{WithEffort(anthropic.OutputConfigEffortLow)},
+			expectOutputConfig: true,
+			expectedEffort:     "low",
+		},
+		{
+			name:               "call option overrides config effort",
+			configEffort:       anthropic.OutputConfigEffortHigh,
+			callOptions:        []model.Option{WithEffort(anthropic.OutputConfigEffortMax)},
+			expectOutputConfig: true,
+			expectedEffort:     "max",
+		},
+		{
+			name: "effort and response format coexist",
+			callOptions: []model.Option{
+				WithEffort(anthropic.OutputConfigEffortMedium),
+				WithResponseFormat(&ResponseFormat{Schema: &jsonschema.Schema{Type: "object"}}),
+			},
+			expectOutputConfig: true,
+			expectedEffort:     "medium",
+			expectFormat:       true,
+		},
+		{
+			name:               "response format without effort leaves effort unset",
+			callOptions:        []model.Option{WithResponseFormat(&ResponseFormat{Schema: &jsonschema.Schema{Type: "object"}})},
+			expectOutputConfig: true,
+			expectedEffort:     "",
+			expectFormat:       true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cm := &ChatModel{model: "test", maxTokens: 100, effort: testCase.configEffort}
+
+			params, _, err := cm.genParamsAndOptions(
+				[]*schema.Message{schema.UserMessage("hello")},
+				testCase.callOptions...,
+			)
+			assert.NoError(t, err)
+
+			body, err := json.Marshal(params)
+			assert.NoError(t, err)
+
+			var wire struct {
+				OutputConfig *struct {
+					Effort string          `json:"effort"`
+					Format json.RawMessage `json:"format"`
+				} `json:"output_config"`
+			}
+			assert.NoError(t, json.Unmarshal(body, &wire))
+
+			if !testCase.expectOutputConfig {
+				assert.Nil(t, wire.OutputConfig)
+				return
+			}
+			assert.NotNil(t, wire.OutputConfig)
+			assert.Equal(t, testCase.expectedEffort, wire.OutputConfig.Effort)
+			if testCase.expectFormat {
+				assert.NotNil(t, wire.OutputConfig.Format)
+			} else {
+				assert.Nil(t, wire.OutputConfig.Format)
+			}
+		})
+	}
+}
