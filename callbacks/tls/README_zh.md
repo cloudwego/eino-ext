@@ -56,6 +56,16 @@ func main() {
 }
 ```
 
+## 可运行示例
+
+该示例使用 mock ChatModel，不需要模型厂商凭证即可演示非流式和流式的
+Eino callback。按 [示例 README](examples/README.md) 配置 TLS 环境变量后，
+在当前模块目录执行：
+
+```bash
+go run ./examples
+```
+
 ## 配置
 
 ```go
