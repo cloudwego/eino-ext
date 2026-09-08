@@ -67,6 +67,7 @@ func (i *inMemoryEventQueue) Pop(ctx context.Context, taskID string) (event *mod
 	if success {
 		return resp.union, resp.taskErr, false, nil
 	}
+	i.chanMap.CompareAndDelete(taskID, ch)
 	return nil, nil, true, nil
 }
 
