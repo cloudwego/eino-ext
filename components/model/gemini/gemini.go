@@ -601,6 +601,13 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		m.ImageConfig = geminiOptions.ImageConfig
 	}
 
+	if len(geminiOptions.Labels) > 0 {
+		if cm.cli.ClientConfig().Backend != genai.BackendVertexAI {
+			return "", nil, nil, nil, fmt.Errorf("labels are only supported on the Vertex AI backend")
+		}
+		m.Labels = geminiOptions.Labels
+	}
+
 	if len(geminiOptions.CachedContentName) > 0 {
 		m.CachedContent = geminiOptions.CachedContentName
 		// remove system instruction and tools when using cached content
