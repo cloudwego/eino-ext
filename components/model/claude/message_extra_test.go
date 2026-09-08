@@ -19,6 +19,7 @@ package claude
 import (
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino/schema"
@@ -50,6 +51,102 @@ func TestConcatMessages(t *testing.T) {
 	reasoningContent, ok := GetThinking(msg)
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "how are you", reasoningContent)
+}
+
+func TestCacheCreationInputTokens(t *testing.T) {
+	t.Run("set and get", func(t *testing.T) {
+		msg := &schema.Message{Role: schema.Assistant}
+		setCacheCreationInputTokens(msg, 2048)
+
+		tokens, ok := GetCacheCreationInputTokens(msg)
+		assert.True(t, ok)
+		assert.Equal(t, 2048, tokens)
+	})
+
+	t.Run("zero value is not set", func(t *testing.T) {
+		msg := &schema.Message{Role: schema.Assistant}
+		setCacheCreationInputTokens(msg, 0)
+
+		_, ok := GetCacheCreationInputTokens(msg)
+		assert.False(t, ok)
+		assert.Nil(t, msg.Extra)
+	})
+
+	t.Run("nil message returns false", func(t *testing.T) {
+		_, ok := GetCacheCreationInputTokens(nil)
+		assert.False(t, ok)
+	})
+
+	t.Run("concat uses last value (streaming)", func(t *testing.T) {
+		chunks := []*schema.Message{
+			{Extra: map[string]any{keyOfCacheCreationInputTokens: 2048}},
+			{Content: "hello"},
+			{Content: " world"},
+		}
+		msg, err := schema.ConcatMessages(chunks)
+		assert.NoError(t, err)
+
+		tokens, ok := GetCacheCreationInputTokens(msg)
+		assert.True(t, ok)
+		assert.Equal(t, 2048, tokens)
+	})
+}
+
+func TestConvOutputMessageCacheCreation(t *testing.T) {
+	t.Run("sets cache_creation when present", func(t *testing.T) {
+		msg, err := convOutputMessage(&anthropic.Message{
+			StopReason: anthropic.StopReasonEndTurn,
+			Usage: anthropic.Usage{
+				InputTokens:              100,
+				CacheReadInputTokens:     1024,
+				CacheCreationInputTokens: 2048,
+				OutputTokens:             50,
+			},
+		})
+		assert.NoError(t, err)
+
+		tokens, ok := GetCacheCreationInputTokens(msg)
+		assert.True(t, ok)
+		assert.Equal(t, 2048, tokens)
+
+		assert.Equal(t, 1024, msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
+	})
+
+	t.Run("no Extra when no cache activity", func(t *testing.T) {
+		msg, err := convOutputMessage(&anthropic.Message{
+			StopReason: anthropic.StopReasonEndTurn,
+			Usage: anthropic.Usage{
+				InputTokens:  100,
+				OutputTokens: 50,
+			},
+		})
+		assert.NoError(t, err)
+
+		_, ok := GetCacheCreationInputTokens(msg)
+		assert.False(t, ok)
+	})
+}
+
+func TestGetCallbackOutputNoExtra(t *testing.T) {
+	cm := &ChatModel{model: "test"}
+	msg := &schema.Message{
+		Role:    schema.Assistant,
+		Content: "hello",
+		ResponseMeta: &schema.ResponseMeta{
+			Usage: &schema.TokenUsage{
+				PromptTokens:     100,
+				CompletionTokens: 50,
+			},
+		},
+	}
+	setCacheCreationInputTokens(msg, 2048)
+
+	out := cm.getCallbackOutput(msg)
+	assert.Nil(t, out.Extra)
+
+	tokens, ok := GetCacheCreationInputTokens(out.Message)
+	assert.True(t, ok)
+	assert.Equal(t, 2048, tokens)
 }
 
 func TestSetMessageBreakpointOfClaude(t *testing.T) {

@@ -9,7 +9,7 @@ require (
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/stretchr/testify v1.10.0
-	google.golang.org/genai v1.36.0
+	google.golang.org/genai v1.70.0
 )
 
 require (

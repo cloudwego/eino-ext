@@ -22,8 +22,10 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 	"github.com/cloudwego/eino/schema/claude"
+	"github.com/eino-contrib/jsonschema"
 )
 
 func toAnthropicMessages(input []*schema.AgenticMessage) (sysInstruction []anthropic.TextBlockParam, msgParams []anthropic.MessageParam, err error) {
@@ -525,14 +527,15 @@ func toFunctionTools(functionTools []*schema.ToolInfo) ([]anthropic.ToolUnionPar
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert tool %q parameters to JSON schema: %w", tool.Name, err)
 		}
+		inputSchema, err := toToolInputSchema(s)
+		if err != nil {
+			return nil, fmt.Errorf("failed to preserve tool %q full JSON schema: %w", tool.Name, err)
+		}
 		toolParam := &anthropic.ToolParam{
 			Type:        anthropic.ToolTypeCustom,
 			Name:        tool.Name,
 			Description: newClaudeStrOpt(tool.Desc),
-			InputSchema: anthropic.ToolInputSchemaParam{
-				Properties: s.Properties,
-				Required:   s.Required,
-			},
+			InputSchema: inputSchema,
 		}
 		if hasCacheControlOnToolInfo(tool) {
 			toolParam.CacheControl = *getToolInfoCacheControl(tool)
@@ -540,6 +543,33 @@ func toFunctionTools(functionTools []*schema.ToolInfo) ([]anthropic.ToolUnionPar
 		tools = append(tools, anthropic.ToolUnionParam{OfTool: toolParam})
 	}
 	return tools, nil
+}
+
+func toToolInputSchema(s *jsonschema.Schema) (anthropic.ToolInputSchemaParam, error) {
+	if s == nil {
+		return anthropic.ToolInputSchemaParam{}, nil
+	}
+
+	raw, err := sonic.Marshal(s)
+	if err != nil {
+		return anthropic.ToolInputSchemaParam{}, fmt.Errorf("marshal full JSON schema: %w", err)
+	}
+	extraFields := make(map[string]any)
+	if err := sonic.Unmarshal(raw, &extraFields); err != nil {
+		return anthropic.ToolInputSchemaParam{}, fmt.Errorf("decode full JSON schema: %w", err)
+	}
+	delete(extraFields, "type")
+	delete(extraFields, "properties")
+	delete(extraFields, "required")
+	if len(extraFields) == 0 {
+		extraFields = nil
+	}
+
+	return anthropic.ToolInputSchemaParam{
+		Properties:  s.Properties,
+		Required:    s.Required,
+		ExtraFields: extraFields,
+	}, nil
 }
 
 func toDeferredFunctionTools(functionTools []*schema.ToolInfo) ([]anthropic.ToolUnionParam, error) {
@@ -570,11 +600,17 @@ func toAgenticMessage(resp *anthropic.Message) (*schema.AgenticMessage, error) {
 		blocks = append(blocks, contentBlock)
 	}
 
-	return &schema.AgenticMessage{
+	msg := &schema.AgenticMessage{
 		Role:          schema.AgenticRoleTypeAssistant,
 		ContentBlocks: blocks,
 		ResponseMeta:  toAgenticResponseMeta(resp),
-	}, nil
+	}
+	if resp.Usage.CacheCreationInputTokens > 0 {
+		msg.Extra = map[string]any{
+			keyOfCacheCreationInputTokens: int(resp.Usage.CacheCreationInputTokens),
+		}
+	}
+	return msg, nil
 }
 
 func toAgenticContentBlock(block any) (*schema.ContentBlock, error) {

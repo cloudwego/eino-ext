@@ -105,13 +105,55 @@ The tool can be configured using the `mcp.Config` struct:
 
 ```go
 type Config struct {
-	// Cli is the MCP (Model Control Protocol) client, ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
+	// Cli is the MCP client session. *mcp.ClientSession satisfies this directly;
+	// for transparent reconnection on connection-level failures, pass a
+	// session.Session. ref: https://github.com/modelcontextprotocol/go-sdk?tab=readme-ov-file#tools
 	// Notice: should Initialize with server before use
-	Cli *mcp.ClientSession
+	Cli ClientSession
+
+	ServerName string
+
 	// ToolNameList specifies which tools to fetch from MCP server
 	// If empty, all available tools will be fetched
 	ToolNameList []string
+
+	Cursor        string
+	ListToolsMode ListToolsMode
+	MaxToolPages  int
+
+	ToolNameMapper ToolNameMapper
+	MetadataMode   MetadataMode
+
+	DescriptionPolicy *DescriptionPolicy
+	ResultPolicy      *ResultPolicy
+
+	// ToolCallResultHandler is a function that processes the result after a tool call completes
+	// It can be used for custom processing of tool call results
+	// If nil, no additional processing will be performed
+	ToolCallResultHandler func(ctx context.Context, name string, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
+
+	// ToolCallResultHandlerV2 receives stable raw/exposed MCP tool identity.
+	// If both handlers are set, the legacy handler runs first, then V2.
+	ToolCallResultHandlerV2 func(ctx context.Context, info ToolCallInfo, result *mcp.CallToolResult) (*mcp.CallToolResult, error)
 }
+```
+
+### Custom reconnect transport
+
+When a transport must be created through application routing instead of a
+built-in URL or command, provide a transport factory to the `session` package.
+The factory is called for the initial connection and again on every reconnect,
+and each invocation must return a fresh one-shot `mcp.Transport`.
+
+```go
+managed, err := session.Connect(ctx, session.ServerConfig{
+	Name: "remote-server",
+	Transport: session.TransportConfig{
+		Factory: func(ctx context.Context) (mcp.Transport, error) {
+			return newApplicationTransport(ctx)
+		},
+	},
+})
 ```
 
 ## Examples

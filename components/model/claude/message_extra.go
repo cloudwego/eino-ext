@@ -42,11 +42,12 @@ type CacheControl struct {
 }
 
 const (
-	keyOfThinking          = "_eino_claude_thinking"
-	keyOfBreakPoint        = "_eino_claude_breakpoint"
-	keyOfBreakPointTTL     = "_eino_claude_breakpoint_ttl"
-	keyOfThinkingSignature = "_eino_claude_thinking_signature"
-	keyOfToolSearchEvents  = "_eino_claude_tool_search_events"
+	keyOfThinking                  = "_eino_claude_thinking"
+	keyOfBreakPoint                = "_eino_claude_breakpoint"
+	keyOfBreakPointTTL             = "_eino_claude_breakpoint_ttl"
+	keyOfThinkingSignature         = "_eino_claude_thinking_signature"
+	keyOfToolSearchEvents          = "_eino_claude_tool_search_events"
+	keyOfCacheCreationInputTokens  = "_eino_claude_cache_creation_input_tokens"
 )
 
 func GetThinking(msg *schema.Message) (string, bool) {
@@ -215,6 +216,27 @@ type ToolSearchEventContent struct {
 // ToolSearchEventToolReference represents a single tool reference in a search result.
 type ToolSearchEventToolReference struct {
 	ToolName string
+}
+
+// GetCacheCreationInputTokens returns the Anthropic cache_creation_input_tokens
+// count from the message. This is the number of input tokens written into a new
+// prompt cache entry, billed at ~125% of the base input token rate.
+//
+// The cache-read side is available through the standard token usage path:
+//
+//	msg.ResponseMeta.Usage.PromptTokenDetails.CachedTokens
+//
+// When streaming, Anthropic reports this once per request (on message_start).
+// schema.ConcatMessages merges Extra maps with a last-value-wins policy for int,
+// so the final concatenated message carries the correct count without accumulation.
+func GetCacheCreationInputTokens(msg *schema.Message) (int, bool) {
+	return getMsgExtraValue[int](msg, keyOfCacheCreationInputTokens)
+}
+
+func setCacheCreationInputTokens(msg *schema.Message, tokens int) {
+	if tokens > 0 {
+		setMsgExtra(msg, keyOfCacheCreationInputTokens, tokens)
+	}
 }
 
 func appendToolSearchEvent(msg *schema.Message, event ToolSearchEvent) {

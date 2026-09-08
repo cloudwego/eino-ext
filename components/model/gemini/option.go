@@ -30,6 +30,7 @@ type options struct {
 	ResponseModalities []GeminiResponseModality
 	ImageConfig        *genai.ImageConfig
 	CachedContentName  string
+	Labels             map[string]string
 	ResponseLogprobs   *bool
 	Logprobs           *int32
 }
@@ -72,6 +73,20 @@ func WithCachedContentName(name string) model.Option {
 func WithImageConfig(cfg *genai.ImageConfig) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.ImageConfig = cfg
+	})
+}
+
+// WithLabels sets user-defined metadata labels on the request.
+// Labels are key-value pairs used for billing attribution, request tracking,
+// and filtering in Cloud Logging and Monitoring.
+//
+// Labels are only supported on the Vertex AI backend. The Gemini API backend
+// rejects requests that set labels, so this option must only be used with a
+// Vertex AI client.
+// Optional.
+func WithLabels(labels map[string]string) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.Labels = labels
 	})
 }
 

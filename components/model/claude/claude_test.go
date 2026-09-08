@@ -414,6 +414,10 @@ func TestConvStreamEvent(t *testing.T) {
 		assert.Equal(t, 10, message.ResponseMeta.Usage.CompletionTokens)
 		assert.Equal(t, 23, message.ResponseMeta.Usage.TotalTokens)
 		assert.Equal(t, 4, message.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
+
+		tokens, ok := GetCacheCreationInputTokens(message)
+		assert.True(t, ok)
+		assert.Equal(t, 2, tokens)
 	})
 
 	mockey.PatchConvey("content block start event", t, func() {
