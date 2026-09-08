@@ -1,6 +1,6 @@
 module github.com/cloudwego/eino-ext/a2a
 
-go 1.25.0
+go 1.21
 
 require (
 	github.com/bytedance/sonic v1.15.1
