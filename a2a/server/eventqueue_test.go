@@ -27,7 +27,7 @@ import (
 )
 
 func TestInMemoryEventQueue(t *testing.T) {
-	eq := newInMemoryEventQueue()
+	eq := newInMemoryEventQueue().(*inMemoryEventQueue)
 	ctx := context.Background()
 	assert.NoError(t, eq.Reset(ctx, "1"))
 	assert.NoError(t, eq.Push(ctx, "1", &models.SendMessageStreamingResponseUnion{Message: &models.Message{Role: "1"}}, nil))
@@ -56,4 +56,11 @@ func TestInMemoryEventQueue(t *testing.T) {
 	assert.False(t, closed)
 	assert.Nil(t, taskErr)
 	assert.Equal(t, models.Role("3"), e.Message.Role)
+	e, taskErr, closed, err = eq.Pop(ctx, "1")
+	assert.NoError(t, err)
+	assert.True(t, closed)
+	assert.Nil(t, taskErr)
+	assert.Nil(t, e)
+	_, ok := eq.chanMap.Load("1")
+	assert.False(t, ok, "closed and drained queue should be removed")
 }
