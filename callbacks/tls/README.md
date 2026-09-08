@@ -56,6 +56,17 @@ func main() {
 }
 ```
 
+## Runnable Demo
+
+The runnable example uses a mock chat model, so it demonstrates both
+non-streaming and streaming Eino callbacks without LLM provider credentials.
+Configure the TLS environment variables described in the
+[example README](examples/README.md), then run it from this module:
+
+```bash
+go run ./examples
+```
+
 ## Configuration
 
 ```go

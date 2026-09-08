@@ -1,7 +1,7 @@
 # tls-eino-demo
 
 A minimal, runnable Eino demo that ships traces to **Volcengine TLS** through the
-[`callbacks/tls`](../../callbacks/tls) handler.
+[`callbacks/tls`](..) handler.
 
 It builds a real `compose.Chain` (chat prompt template → chat model) and invokes
 it both non-streaming and streaming. The TLS handler is registered as a **global
