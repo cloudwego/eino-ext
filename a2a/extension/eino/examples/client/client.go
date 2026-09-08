@@ -260,7 +260,7 @@ func printEvent(event *adk.AgentEvent) {
 						fmt.Printf("\n")
 						charNumOfOneRow = 0
 					}
-					fmt.Printf(chunk.Content)
+					fmt.Print(chunk.Content)
 				}
 
 				if len(chunk.ToolCalls) > 0 {
