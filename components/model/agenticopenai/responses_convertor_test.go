@@ -440,7 +440,8 @@ func TestFunctionToolResultToInputItem(t *testing.T) {
 		}})
 		assert.NoError(t, err)
 		assert.NotNil(t, item.OfFunctionCallOutput)
-		assert.Equal(t, "c", item.OfFunctionCallOutput.CallID)
+		assert.True(t, item.OfFunctionCallOutput.CallID.Valid())
+		assert.Equal(t, "c", item.OfFunctionCallOutput.CallID.Value)
 		if assert.Len(t, item.OfFunctionCallOutput.Output.OfResponseFunctionCallOutputItemArray, 1) {
 			assert.Equal(t, "r", item.OfFunctionCallOutput.Output.OfResponseFunctionCallOutputItemArray[0].OfInputText.Text)
 		}
@@ -677,7 +678,7 @@ func TestMcpToolResultToInputItem(t *testing.T) {
 		assert.NotNil(t, item.OfMcpCall)
 		assert.True(t, item.OfMcpCall.Output.Valid())
 		assert.Equal(t, "out", item.OfMcpCall.Output.Value)
-		assert.False(t, item.OfMcpCall.Error.Valid())
+		assert.True(t, param.IsOmitted(item.OfMcpCall.Error))
 	})
 }
 
