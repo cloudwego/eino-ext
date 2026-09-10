@@ -7,7 +7,7 @@ require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/cloudwego/eino v0.9.1
 	github.com/eino-contrib/jsonschema v1.0.3
-	github.com/meguminnnnnnnnn/go-openai v0.1.2 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
+	github.com/meguminnnnnnnnn/go-openai v0.1.5 // fork from github.com/sashabaranov/go-openai, temporary solution, switch to github.com/openai/openai-go in the future.
 	github.com/stretchr/testify v1.11.1
 )
 
