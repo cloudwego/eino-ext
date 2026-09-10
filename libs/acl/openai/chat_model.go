@@ -666,6 +666,7 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 				Function: &openai.FunctionDefinition{
 					Name:        t.Function.Name,
 					Description: t.Function.Description,
+					Strict:      t.Function.Strict,
 					Parameters:  t.Function.Parameters,
 				},
 			}
@@ -713,11 +714,19 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 
 	req.Messages = msgs
 
-	if c.config.ResponseFormat != nil {
+	// Per-call WithResponseFormat overrides Config.ResponseFormat so a
+	// single shared ChatModel can mix structured-output calls with
+	// free-form ones. Falls back to the config-level setting when the
+	// option is not supplied.
+	respFormat := c.config.ResponseFormat
+	if specOptions.ResponseFormat != nil {
+		respFormat = specOptions.ResponseFormat
+	}
+	if respFormat != nil {
 		req.ResponseFormat = &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatType(c.config.ResponseFormat.Type),
+			Type: openai.ChatCompletionResponseFormatType(respFormat.Type),
 		}
-		if js := c.config.ResponseFormat.JSONSchema; js != nil {
+		if js := respFormat.JSONSchema; js != nil {
 			req.ResponseFormat.JSONSchema = &openai.ChatCompletionResponseFormatJSONSchema{
 				Name:        js.Name,
 				Schema:      js.JSONSchema,
@@ -1314,10 +1323,16 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 
 		sortArrayFields(paramsJSONSchema)
 
+		// Pick up the strict-mode flag from Extra. Non-bool values are
+		// silently ignored — keeping the Extra map free-form per its
+		// design intent.
+		strict, _ := ti.Extra[ToolInfoExtraKeyStrict].(bool)
+
 		tools[i] = tool{
 			Function: &functionDefinition{
 				Name:        ti.Name,
 				Description: ti.Desc,
+				Strict:      strict,
 				Parameters:  paramsJSONSchema,
 			},
 		}
