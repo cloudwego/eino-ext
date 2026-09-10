@@ -372,6 +372,7 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 					{
 						Type: schema.ContentBlockTypeFunctionToolCall,
 						FunctionToolCall: &schema.FunctionToolCall{
+							CallID:    "call-weather",
 							Name:      "get_weather",
 							Arguments: `{"location":"San Francisco"}`,
 						},
@@ -382,6 +383,7 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Len(t, content.Parts, 1)
 				assert.NotNil(t, content.Parts[0].FunctionCall)
+				assert.Equal(t, "call-weather", content.Parts[0].FunctionCall.ID)
 				assert.Equal(t, "get_weather", content.Parts[0].FunctionCall.Name)
 				assert.Equal(t, "San Francisco", content.Parts[0].FunctionCall.Args["location"])
 			},
@@ -394,7 +396,8 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 					{
 						Type: schema.ContentBlockTypeFunctionToolResult,
 						FunctionToolResult: &schema.FunctionToolResult{
-							Name: "get_weather",
+							CallID: "call-weather",
+							Name:   "get_weather",
 							Content: []*schema.FunctionToolResultContentBlock{
 								{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: `{"temperature":72,"condition":"sunny"}`}},
 							},
@@ -406,6 +409,7 @@ func TestConvAgenticMessage_Tools(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Len(t, content.Parts, 1)
 				assert.NotNil(t, content.Parts[0].FunctionResponse)
+				assert.Equal(t, "call-weather", content.Parts[0].FunctionResponse.ID)
 				assert.Equal(t, "get_weather", content.Parts[0].FunctionResponse.Name)
 				assert.Equal(t, float64(72), content.Parts[0].FunctionResponse.Response["temperature"])
 			},
@@ -705,6 +709,7 @@ func TestConvAgenticCandidate_Tools(t *testing.T) {
 					Parts: []*genai.Part{
 						{
 							FunctionCall: &genai.FunctionCall{
+								ID:   "provider-call-id",
 								Name: "search",
 								Args: map[string]any{
 									"query": "golang",
@@ -718,12 +723,34 @@ func TestConvAgenticCandidate_Tools(t *testing.T) {
 				assert.NoError(t, err)
 				assert.Len(t, message.ContentBlocks, 1)
 				assert.Equal(t, schema.ContentBlockTypeFunctionToolCall, message.ContentBlocks[0].Type)
+				assert.Equal(t, "provider-call-id", message.ContentBlocks[0].FunctionToolCall.CallID)
 				assert.Equal(t, "search", message.ContentBlocks[0].FunctionToolCall.Name)
 
 				var args map[string]any
 				err = sonic.UnmarshalString(message.ContentBlocks[0].FunctionToolCall.Arguments, &args)
 				assert.NoError(t, err)
 				assert.Equal(t, "golang", args["query"])
+			},
+		},
+		{
+			name: "function call without provider ID",
+			candidate: &genai.Candidate{
+				Content: &genai.Content{
+					Role: roleModel,
+					Parts: []*genai.Part{
+						{
+							FunctionCall: &genai.FunctionCall{
+								Name: "search",
+								Args: map[string]any{"query": "golang"},
+							},
+						},
+					},
+				},
+			},
+			validate: func(t *testing.T, message *schema.AgenticMessage, err error) {
+				assert.NoError(t, err)
+				assert.Len(t, message.ContentBlocks, 1)
+				assert.NotEmpty(t, message.ContentBlocks[0].FunctionToolCall.CallID)
 			},
 		},
 		{
@@ -1194,14 +1221,15 @@ func TestConvGroundingMetadata(t *testing.T) {
 }
 
 func TestConvAgenticMessages_MergeToolResults(t *testing.T) {
-	toolMsg := func(name, text string) *schema.AgenticMessage {
+	toolMsg := func(callID, name, text string) *schema.AgenticMessage {
 		return &schema.AgenticMessage{
 			Role: schema.AgenticRoleTypeUser,
 			ContentBlocks: []*schema.ContentBlock{
 				{
 					Type: schema.ContentBlockTypeFunctionToolResult,
 					FunctionToolResult: &schema.FunctionToolResult{
-						Name: name,
+						CallID: callID,
+						Name:   name,
 						Content: []*schema.FunctionToolResultContentBlock{
 							{Type: schema.FunctionToolResultContentBlockTypeText, Text: &schema.UserInputText{Text: text}},
 						},
@@ -1214,21 +1242,27 @@ func TestConvAgenticMessages_MergeToolResults(t *testing.T) {
 	t.Run("two consecutive tool results merged", func(t *testing.T) {
 		contents, err := convAgenticMessages([]*schema.AgenticMessage{
 			schema.UserAgenticMessage("hello"),
-			toolMsg("a", `{"x":1}`),
-			toolMsg("b", `{"y":2}`),
+			toolMsg("call-b", "same_tool", `{"value":"B"}`),
+			toolMsg("call-a", "same_tool", `{"value":"A"}`),
 		})
 		assert.NoError(t, err)
 		assert.Len(t, contents, 2)
 		assert.Len(t, contents[1].Parts, 2)
 		assert.NotNil(t, contents[1].Parts[0].FunctionResponse)
 		assert.NotNil(t, contents[1].Parts[1].FunctionResponse)
+		assert.Equal(t, "call-b", contents[1].Parts[0].FunctionResponse.ID)
+		assert.Equal(t, "same_tool", contents[1].Parts[0].FunctionResponse.Name)
+		assert.Equal(t, "B", contents[1].Parts[0].FunctionResponse.Response["value"])
+		assert.Equal(t, "call-a", contents[1].Parts[1].FunctionResponse.ID)
+		assert.Equal(t, "same_tool", contents[1].Parts[1].FunctionResponse.Name)
+		assert.Equal(t, "A", contents[1].Parts[1].FunctionResponse.Response["value"])
 	})
 
 	t.Run("three consecutive tool results merged", func(t *testing.T) {
 		contents, err := convAgenticMessages([]*schema.AgenticMessage{
-			toolMsg("a", `{"x":1}`),
-			toolMsg("b", `{"y":2}`),
-			toolMsg("c", `{"z":3}`),
+			toolMsg("call-a", "a", `{"x":1}`),
+			toolMsg("call-b", "b", `{"y":2}`),
+			toolMsg("call-c", "c", `{"z":3}`),
 		})
 		assert.NoError(t, err)
 		assert.Len(t, contents, 1)
@@ -1237,14 +1271,14 @@ func TestConvAgenticMessages_MergeToolResults(t *testing.T) {
 
 	t.Run("tool results separated by assistant not merged", func(t *testing.T) {
 		contents, err := convAgenticMessages([]*schema.AgenticMessage{
-			toolMsg("a", `{"x":1}`),
+			toolMsg("call-a", "a", `{"x":1}`),
 			{
 				Role: schema.AgenticRoleTypeAssistant,
 				ContentBlocks: []*schema.ContentBlock{
 					{Type: schema.ContentBlockTypeAssistantGenText, AssistantGenText: &schema.AssistantGenText{Text: "ok"}},
 				},
 			},
-			toolMsg("b", `{"y":2}`),
+			toolMsg("call-b", "b", `{"y":2}`),
 		})
 		assert.NoError(t, err)
 		assert.Len(t, contents, 3)
@@ -1252,7 +1286,7 @@ func TestConvAgenticMessages_MergeToolResults(t *testing.T) {
 
 	t.Run("user text not merged with tool result", func(t *testing.T) {
 		contents, err := convAgenticMessages([]*schema.AgenticMessage{
-			toolMsg("a", `{"x":1}`),
+			toolMsg("call-a", "a", `{"x":1}`),
 			schema.UserAgenticMessage("more"),
 		})
 		assert.NoError(t, err)
