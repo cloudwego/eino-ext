@@ -373,6 +373,31 @@ func TestToTools(t *testing.T) {
 	})
 }
 
+func TestGenRequest_PreservesStrictTools(t *testing.T) {
+	c := &Client{config: &Config{Model: "test-model"}}
+
+	req, _, _, _, err := c.genRequest(t.Context(),
+		[]*schema.Message{{Role: schema.User, Content: "hello"}},
+		model.WithTools([]*schema.ToolInfo{
+			{
+				Name:  "submit_memory",
+				Desc:  "Save extracted people memory",
+				Extra: map[string]any{"strict": true},
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"people_memory": {
+						Type:     schema.Object,
+						Required: true,
+					},
+				}),
+			},
+		}),
+	)
+
+	assert.NoError(t, err)
+	assert.Len(t, req.Tools, 1)
+	assert.True(t, req.Tools[0].Function.Strict)
+}
+
 func TestBuildMessages(t *testing.T) {
 	t.Run("buildMessageFromAssistantGenMultiContent", func(t *testing.T) {
 		t.Run("success with audio", func(t *testing.T) {
@@ -995,13 +1020,7 @@ func TestPopulateToolChoice(t *testing.T) {
 		}
 		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
 		assert.NoError(t, err)
-		expected := openai.ToolChoice{
-			Type: openai.ToolTypeFunction,
-			Function: openai.ToolFunction{
-				Name: "test-tool",
-			},
-		}
-		assert.Equal(t, expected, req.ToolChoice)
+		assert.Equal(t, "required", req.ToolChoice)
 	})
 
 	t.Run("tool choice forced with multiple tools", func(t *testing.T) {
@@ -1052,14 +1071,19 @@ func TestPopulateToolChoice(t *testing.T) {
 		}
 		err := populateToolChoice(req, options.ToolChoice, options.AllowedToolNames)
 		assert.NoError(t, err)
-
-		expected := openai.ToolChoice{
-			Type: openai.ToolTypeFunction,
-			Function: openai.ToolFunction{
-				Name: "test-tool-1",
+		expected := allowedTools{
+			Mode: "required",
+			Tools: []openai.ToolChoice{
+				{
+					Type: openai.ToolTypeFunction,
+					Function: openai.ToolFunction{
+						Name: "test-tool-1",
+					},
+				},
 			},
 		}
-		assert.Equal(t, expected, req.ToolChoice)
+		assert.Equal(t, "allowed_tools", req.ToolChoice.(map[string]any)["type"])
+		assert.Equal(t, expected, req.ToolChoice.(map[string]any)["allowed_tools"])
 	})
 
 	t.Run("tool choice forced with invalid allowed tool", func(t *testing.T) {
