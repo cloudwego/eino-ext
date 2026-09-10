@@ -48,24 +48,19 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 			_ = sw.Send(nil, fmt.Errorf("received error event: code=%s message=%s", variant.Code, variant.Message))
 
 		case responses.ResponseCreatedEvent:
-			meta := responseObjectToResponseMeta(&variant.Response)
-			sender.sendMeta(meta, nil)
+			sender.sendResponse(&variant.Response, nil)
 
 		case responses.ResponseInProgressEvent:
-			meta := responseObjectToResponseMeta(&variant.Response)
-			sender.sendMeta(meta, nil)
+			sender.sendResponse(&variant.Response, nil)
 
 		case responses.ResponseCompletedEvent:
-			meta := responseObjectToResponseMeta(&variant.Response)
-			sender.sendMeta(meta, nil)
+			sender.sendResponse(&variant.Response, nil)
 
 		case responses.ResponseIncompleteEvent:
-			meta := responseObjectToResponseMeta(&variant.Response)
-			sender.sendMeta(meta, nil)
+			sender.sendResponse(&variant.Response, nil)
 
 		case responses.ResponseFailedEvent:
-			meta := responseObjectToResponseMeta(&variant.Response)
-			sender.sendMeta(meta, nil)
+			sender.sendResponse(&variant.Response, nil)
 
 		case responses.ResponseOutputItemAddedEvent:
 			blocks, err := receiver.itemAddedEventToContentBlock(variant)
@@ -224,17 +219,21 @@ func newCallbackSender(sw *schema.StreamWriter[*model.AgenticCallbackOutput], co
 	}
 }
 
-func (s *callbackSender) sendMeta(meta *schema.AgenticResponseMeta, err error) {
-	s.send(meta, nil, err)
+func (s *callbackSender) sendResponse(resp *responses.Response, err error) {
+	if resp == nil {
+		s.send(nil, nil, nil, err)
+		return
+	}
+	s.send(responseObjectToResponseMeta(resp), nil, cacheWriteTokensExtra(resp), err)
 }
 
 func (s *callbackSender) sendBlock(block *schema.ContentBlock, err error) {
 	if block != nil || err != nil {
-		s.send(nil, block, err)
+		s.send(nil, block, nil, err)
 	}
 }
 
-func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.ContentBlock, err error) {
+func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.ContentBlock, extra map[string]any, err error) {
 	if err != nil {
 		_ = s.sw.Send(nil, fmt.Errorf("%s: %w", s.errHeader, err))
 		return
@@ -243,6 +242,7 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 	msg := &schema.AgenticMessage{
 		Role:         schema.AgenticRoleTypeAssistant,
 		ResponseMeta: meta,
+		Extra:        extra,
 	}
 
 	if block != nil {

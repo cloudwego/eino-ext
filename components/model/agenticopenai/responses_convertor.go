@@ -1598,6 +1598,7 @@ func toOutputMessage(resp *responses.Response, options *model.Options) (msg *sch
 		Role:          schema.AgenticRoleTypeAssistant,
 		ContentBlocks: blocks,
 		ResponseMeta:  responseObjectToResponseMeta(resp),
+		Extra:         cacheWriteTokensExtra(resp),
 	}
 
 	return msg, nil

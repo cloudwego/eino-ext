@@ -22,6 +22,8 @@ const responsesImplType = "AgenticOpenAI/Responses"
 
 const defaultBaseURL = "https://api.openai.com/v1"
 
+const keyOfCacheWriteTokens = "_eino_openai_cache_write_tokens"
+
 type ServerToolName string
 
 const (
