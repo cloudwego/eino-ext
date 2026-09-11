@@ -752,6 +752,27 @@ func TestTLSLensMessagesCoalescesStreamedContentParts(t *testing.T) {
 	}
 }
 
+func TestTLSLensMessagesPreservesLargeToolArgumentIntegers(t *testing.T) {
+	messages := toTLSLensMessages([]*sem_ai.ModelMessage{{
+		Role: "assistant",
+		ToolCalls: []*sem_ai.ModelToolCall{{
+			ID: "call-record",
+			Function: &sem_ai.ModelToolCallFunction{
+				Name:      "load_record",
+				Arguments: `{"record_id":9007199254740993}`,
+			},
+		}},
+	}})
+
+	encoded, err := json.Marshal(messages)
+	if err != nil {
+		t.Fatalf("marshal Lens messages: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"record_id":9007199254740993`) {
+		t.Fatalf("large integer was not preserved: %s", encoded)
+	}
+}
+
 func mediaURL(raw any) string {
 	encoded, err := json.Marshal(raw)
 	if err != nil {

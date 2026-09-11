@@ -54,6 +54,22 @@ func convertModelOutput(output *model.CallbackOutput) *sem_ai.ModelOutput {
 	}
 }
 
+func convertModelStreamOutput(outputs []*model.CallbackOutput) *sem_ai.ModelOutput {
+	choices := make([]*sem_ai.ModelChoice, 0, len(outputs))
+	for _, output := range outputs {
+		if output == nil || output.Message == nil {
+			continue
+		}
+		choices = append(choices, &sem_ai.ModelChoice{
+			Index:        int64(len(choices)),
+			FinishReason: getFinishReason(output.Message),
+			Message:      convertModelMessage(output.Message),
+		})
+	}
+
+	return &sem_ai.ModelOutput{Choices: choices}
+}
+
 func getFinishReason(msg *schema.Message) string {
 	if msg == nil || msg.ResponseMeta == nil {
 		return ""

@@ -266,21 +266,34 @@ func setModelConfigAndTokenUsage(tags spanTags, cbOutput *model.CallbackOutput, 
 
 // 设置完成原因和完成内容的公共函数
 func setMessageCompletionDetails(tags spanTags, msg *schema.Message) {
-	// 设置完成原因
-	if msg != nil && msg.ResponseMeta != nil && len(msg.ResponseMeta.FinishReason) > 0 {
-		tags.set(sem_ai.GEN_AI_RESPONSE_FINISH_REASON, msg.ResponseMeta.FinishReason)
+	setMessagesCompletionDetails(tags, []*schema.Message{msg})
+}
+
+func setMessagesCompletionDetails(tags spanTags, messages []*schema.Message) {
+	convertedMessages := make([]*sem_ai.ModelMessage, 0, len(messages))
+	completionIndex := 0
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		// 设置完成原因
+		if msg.ResponseMeta != nil && len(msg.ResponseMeta.FinishReason) > 0 {
+			tags.set(sem_ai.GEN_AI_RESPONSE_FINISH_REASON, msg.ResponseMeta.FinishReason)
+		}
+		// 设置推理内容
+		if len(msg.ReasoningContent) > 0 {
+			tags.set(sem_ai.GEN_AI_REASONING_CONTENT, msg.ReasoningContent)
+		}
+		// 设置完成内容
+		if messageDisplayText(msg) != "" {
+			tags.set(fmt.Sprintf("%s.%d.role", sem_ai.GEN_AI_COMPLETION, completionIndex), string(msg.Role))
+			tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_COMPLETION, completionIndex), messageDisplayText(msg))
+		}
+		convertedMessages = append(convertedMessages, convertModelMessage(msg))
+		completionIndex++
 	}
-	// 设置推理内容
-	if msg != nil && len(msg.ReasoningContent) > 0 {
-		tags.set(sem_ai.GEN_AI_REASONING_CONTENT, msg.ReasoningContent)
-	}
-	// 设置完成内容
-	if msg != nil && messageDisplayText(msg) != "" {
-		tags.set(fmt.Sprintf("%s.%d.role", sem_ai.GEN_AI_COMPLETION, 0), string(msg.Role))
-		tags.set(fmt.Sprintf("%s.%d.content", sem_ai.GEN_AI_COMPLETION, 0), messageDisplayText(msg))
-	}
-	if msg != nil {
-		tags.set(sem_ai.GEN_AI_OUTPUT_MESSAGES, []*sem_ai.ModelMessage{convertModelMessage(msg)})
+	if len(convertedMessages) > 0 {
+		tags.set(sem_ai.GEN_AI_OUTPUT_MESSAGES, convertedMessages)
 	}
 }
 
@@ -523,36 +536,63 @@ func (d defaultDataParser) ParseStreamOutput(ctx context.Context, info *callback
 		// 转换为模型输出格式
 		modelChunks := convModelCallbackOutput(chunks)
 
-		// 合并输出
-		usage, message, _, err := d.tryConcatOutputChunks(modelChunks)
-		if err != nil {
-			return nil, err
+		if d.enableAggrMessageOutput {
+			usage, message, _, err := d.tryConcatOutputChunks(modelChunks)
+			if err != nil {
+				return nil, err
+			}
+
+			var mergedOutput *model.CallbackOutput
+			for _, chunk := range modelChunks {
+				if chunk == nil {
+					continue
+				}
+
+				mergedOutput = &model.CallbackOutput{
+					Config:     chunk.Config,
+					TokenUsage: usage,
+				}
+				if chunk.Config != nil {
+					break
+				}
+			}
+			if mergedOutput != nil {
+				setModelConfigAndTokenUsage(tags, mergedOutput, true)
+			}
+			if message != nil {
+				setMessageCompletionDetails(tags, message)
+				tags.set(sem_ai.GEN_AI_OUTPUT, convertModelOutput(&model.CallbackOutput{
+					Message:    message,
+					TokenUsage: usage,
+				}))
+			}
+			break
 		}
 
-		var mergedOutput *model.CallbackOutput
+		var streamOutput *model.CallbackOutput
+		messages := make([]*schema.Message, 0, len(modelChunks))
 		for _, chunk := range modelChunks {
 			if chunk == nil {
 				continue
 			}
-
-			mergedOutput = &model.CallbackOutput{
-				Config:     chunk.Config,
-				TokenUsage: usage,
+			if streamOutput == nil {
+				streamOutput = &model.CallbackOutput{}
 			}
-			if chunk.Config != nil {
-				break
+			if streamOutput.Config == nil && chunk.Config != nil {
+				streamOutput.Config = chunk.Config
+			}
+			if chunk.TokenUsage != nil {
+				streamOutput.TokenUsage = chunk.TokenUsage
+			}
+			if chunk.Message != nil {
+				messages = append(messages, chunk.Message)
 			}
 		}
-		if mergedOutput != nil {
-			setModelConfigAndTokenUsage(tags, mergedOutput, true)
+		if streamOutput != nil {
+			setModelConfigAndTokenUsage(tags, streamOutput, true)
 		}
-		if message != nil {
-			setMessageCompletionDetails(tags, message)
-			tags.set(sem_ai.GEN_AI_OUTPUT, convertModelOutput(&model.CallbackOutput{
-				Message:    message,
-				TokenUsage: usage,
-			}))
-		}
+		setMessagesCompletionDetails(tags, messages)
+		tags.set(sem_ai.GEN_AI_OUTPUT, convertModelStreamOutput(modelChunks))
 	case components.ComponentOfTool:
 		chunks, recvErr := d.ParseDefaultStreamOutput(ctx, output)
 		if recvErr != nil {

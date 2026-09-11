@@ -18,7 +18,9 @@ package tls
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -79,7 +81,7 @@ func TestDefaultDataParserParseOutputEmbeddingUsesDimensionCount(t *testing.T) {
 }
 
 func TestDefaultDataParserParseStreamOutputIncludesCompletionDetails(t *testing.T) {
-	parser := defaultDataParser{}
+	parser := defaultDataParser{enableAggrMessageOutput: true}
 	reader, writer := schema.Pipe[callbacks.CallbackOutput](2)
 	writer.Send(&model.CallbackOutput{
 		Message: &schema.Message{
@@ -124,6 +126,66 @@ func TestDefaultDataParserParseStreamOutputIncludesCompletionDetails(t *testing.
 	}
 	if !strings.Contains(output, `"content":"partial response"`) {
 		t.Fatalf("expected serialized output to include aggregated content, got %s", output)
+	}
+}
+
+func TestDefaultDataParserParseStreamOutputRespectsAggregationOption(t *testing.T) {
+	tests := []struct {
+		name         string
+		aggregate    bool
+		wantContents []string
+	}{
+		{
+			name:         "aggregated",
+			aggregate:    true,
+			wantContents: []string{"partial response"},
+		},
+		{
+			name:         "not aggregated",
+			aggregate:    false,
+			wantContents: []string{"partial", " response"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			parser := defaultDataParser{enableAggrMessageOutput: tt.aggregate}
+			reader, writer := schema.Pipe[callbacks.CallbackOutput](2)
+			writer.Send(&model.CallbackOutput{Message: &schema.Message{Role: schema.Assistant, Content: "partial"}}, nil)
+			writer.Send(&model.CallbackOutput{Message: &schema.Message{Role: schema.Assistant, Content: " response"}}, nil)
+			writer.Close()
+
+			tags, err := parser.ParseStreamOutput(context.Background(), &callbacks.RunInfo{Component: components.ComponentOfChatModel}, reader)
+			if err != nil {
+				t.Fatalf("ParseStreamOutput returned error: %v", err)
+			}
+
+			for i, want := range tt.wantContents {
+				if got := tags[sem_ai.GEN_AI_COMPLETION+"."+strconv.Itoa(i)+".content"]; got != want {
+					t.Errorf("completion %d = %#v, want %q", i, got, want)
+				}
+			}
+			if _, found := tags[sem_ai.GEN_AI_COMPLETION+"."+strconv.Itoa(len(tt.wantContents))+".content"]; found {
+				t.Fatalf("unexpected completion after %#v: %#v", tt.wantContents, tags)
+			}
+
+			output, ok := tags[sem_ai.GEN_AI_OUTPUT].(string)
+			if !ok {
+				t.Fatalf("expected stream output to be serialized JSON, got %#v", tags[sem_ai.GEN_AI_OUTPUT])
+			}
+			var parsed sem_ai.ModelOutput
+			if err := json.Unmarshal([]byte(output), &parsed); err != nil {
+				t.Fatalf("decode stream output: %v", err)
+			}
+			if len(parsed.Choices) != len(tt.wantContents) {
+				t.Fatalf("choice count = %d, want %d: %s", len(parsed.Choices), len(tt.wantContents), output)
+			}
+			for i, want := range tt.wantContents {
+				if got := parsed.Choices[i].Message.Content; got != want {
+					t.Errorf("choice %d content = %q, want %q", i, got, want)
+				}
+			}
+		})
 	}
 }
 
