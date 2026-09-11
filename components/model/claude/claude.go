@@ -93,9 +93,11 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			if err != nil {
 				return nil, fmt.Errorf("create vertex credentials from service account JSON: %w", err)
 			}
-			cli = anthropic.NewClient(vertex.WithCredentials(ctx, region, projectID, googleCreds))
+			vertexOpts := append([]option.RequestOption{vertex.WithCredentials(ctx, region, projectID, googleCreds)}, config.RequestOptions...)
+			cli = anthropic.NewClient(vertexOpts...)
 		} else {
-			cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+			vertexOpts := append([]option.RequestOption{vertex.WithGoogleAuth(ctx, region, projectID)}, config.RequestOptions...)
+			cli = anthropic.NewClient(vertexOpts...)
 		}
 	} else if config.ByBedrock {
 		// Use AWS Bedrock
@@ -117,9 +119,11 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
 		if config.AWSConfig != nil {
-			cli = anthropic.NewClient(bedrock.WithConfig(*config.AWSConfig))
+			bedrockOpts := append([]option.RequestOption{bedrock.WithConfig(*config.AWSConfig)}, config.RequestOptions...)
+			cli = anthropic.NewClient(bedrockOpts...)
 		} else {
-			cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+			bedrockOpts := append([]option.RequestOption{bedrock.WithLoadDefaultConfig(ctx, opts...)}, config.RequestOptions...)
+			cli = anthropic.NewClient(bedrockOpts...)
 		}
 	} else {
 		// Use direct Anthropic API
@@ -146,6 +150,8 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		for key, value := range config.AdditionalRequestFields {
 			opts = append(opts, option.WithJSONSet(key, value))
 		}
+
+		opts = append(opts, config.RequestOptions...)
 
 		if hasDirectAnthropicConfigAuth(config) {
 			cli = newDirectAnthropicClient(opts...)
@@ -320,6 +326,12 @@ type Config struct {
 	// Adaptive-thinking models use effort in place of a thinking budget.
 	// Overridden per request by WithEffort.
 	Effort anthropic.OutputConfigEffort `json:"effort,omitempty"`
+
+	// RequestOptions are extra SDK request options appended on every transport.
+	// This is the only way to inject e.g. option.WithHTTPClient on Bedrock, where
+	// HTTPClient only reaches AWS credential loading (awsConfig.WithHTTPClient),
+	// not the anthropic.NewClient call itself.
+	RequestOptions []option.RequestOption
 }
 
 type ToolSearchAlgorithm string
