@@ -60,6 +60,8 @@ func WithExtraHeader(header map[string]string) model.Option {
 	return openai.WithExtraHeader(header)
 }
 
+// WithReasoningEffort overrides the configured reasoning effort for a single call.
+// An empty value omits reasoning_effort, leaving the default to the model.
 func WithReasoningEffort(effort ReasoningEffortLevel) model.Option {
 	return openai.WithReasoningEffort(openai.ReasoningEffortLevel(effort))
 }
