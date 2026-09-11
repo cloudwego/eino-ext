@@ -157,7 +157,9 @@ func WithInsecure() Option {
 	})
 }
 
-// WithTLSInsecure disables client transport security for the exporter's gRPC with tls
+// WithTLSInsecure enables TLS while skipping server certificate verification.
+// Use only for trusted private endpoints with certificates that cannot be
+// verified by the local system. Use WithInsecure for plaintext gRPC instead.
 func WithTLSInsecure() Option {
 	return option(func(cfg *config) {
 		cfg.exportTLSInsecure = true

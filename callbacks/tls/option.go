@@ -54,6 +54,9 @@ func WithConcatFunction[T any](fn func([]T) (T, error)) Option {
 	}
 }
 
+// WithAggrMessageOutput controls whether streamed chat model output is merged
+// into one completion message. When disabled, each received chunk is exported
+// as an independent completion message.
 func WithAggrMessageOutput(enable bool) Option {
 	return func(o *options) {
 		o.enableAggrOutput = enable

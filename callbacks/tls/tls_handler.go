@@ -647,9 +647,8 @@ func decodeJSONValue(raw string) any {
 	if raw == "" {
 		return ""
 	}
-	var value any
-	if json.Unmarshal([]byte(raw), &value) == nil {
-		return value
+	if json.Valid([]byte(raw)) {
+		return json.RawMessage(raw)
 	}
 	return raw
 }
