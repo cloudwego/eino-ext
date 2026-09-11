@@ -294,6 +294,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		}()
 		for resp, err_ := range resultIter {
 			if err_ != nil {
+				// The SDK can report a JSON error when cancellation interrupts an
+				// SSE event. Preserve the request's context error for both callbacks
+				// and stream consumers instead of reporting the partial event.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err_ = ctxErr
+				}
 				sw.Send(nil, err_)
 				return
 			}
