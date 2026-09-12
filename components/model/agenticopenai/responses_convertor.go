@@ -767,6 +767,24 @@ func assistantGenTextToInputItem(block *schema.ContentBlock) (item responses.Res
 		return item, fmt.Errorf("assistant generated text is nil")
 	}
 
+	id, hasID := getItemID(block)
+	status, hasStatus := GetItemStatus(block)
+
+	// Synthetic assistant text (e.g. few-shot examples) carries no item id or
+	// status. Encoding it as an output message sends empty id/status fields,
+	// which some OpenAI-compatible providers reject. Fall back to the EasyInput
+	// form in that case.
+	if !hasID && !hasStatus {
+		return responses.ResponseInputItemUnionParam{
+			OfMessage: &responses.EasyInputMessageParam{
+				Role: responses.EasyInputMessageRoleAssistant,
+				Content: responses.EasyInputMessageContentUnionParam{
+					OfString: param.NewOpt(content.Text),
+				},
+			},
+		}, nil
+	}
+
 	var annotations []responses.ResponseOutputTextAnnotationUnionParam
 	if content.OpenAIExtension != nil {
 		annotations = make([]responses.ResponseOutputTextAnnotationUnionParam, 0, len(content.OpenAIExtension.Annotations))
@@ -781,9 +799,6 @@ func assistantGenTextToInputItem(block *schema.ContentBlock) (item responses.Res
 			annotations = append(annotations, anno_)
 		}
 	}
-
-	id, _ := getItemID(block)
-	status, _ := GetItemStatus(block)
 
 	contentItem := responses.ResponseOutputMessageContentUnionParam{
 		OfOutputText: &responses.ResponseOutputTextParam{
