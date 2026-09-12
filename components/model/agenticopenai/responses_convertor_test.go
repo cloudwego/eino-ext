@@ -454,6 +454,29 @@ func TestAssistantGenTextToInputItem(t *testing.T) {
 			assert.Error(t, err)
 		})
 
+		mockey.PatchConvey("synthetic_text_without_item_id_or_status", func() {
+			block := schema.NewContentBlock(&schema.AssistantGenText{Text: "OK."})
+
+			item, err := assistantGenTextToInputItem(block)
+			assert.NoError(t, err)
+			assert.Nil(t, item.OfOutputMessage)
+			if assert.NotNil(t, item.OfMessage) {
+				assert.Equal(t, responses.EasyInputMessageRoleAssistant, item.OfMessage.Role)
+				assert.True(t, item.OfMessage.Content.OfString.Valid())
+				assert.Equal(t, "OK.", item.OfMessage.Content.OfString.Value)
+			}
+		})
+
+		mockey.PatchConvey("item_id_only", func() {
+			block := schema.NewContentBlock(&schema.AssistantGenText{Text: "t"})
+			setItemID(block, "msg1")
+
+			item, err := assistantGenTextToInputItem(block)
+			assert.NoError(t, err)
+			assert.NotNil(t, item.OfOutputMessage)
+			assert.Equal(t, "msg1", item.OfOutputMessage.ID)
+		})
+
 		mockey.PatchConvey("with_annotations", func() {
 			block := schema.NewContentBlock(&schema.AssistantGenText{
 				Text: "t",
