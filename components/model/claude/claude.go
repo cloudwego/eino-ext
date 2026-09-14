@@ -33,6 +33,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
+	awsSDK "github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"golang.org/x/oauth2/google"
@@ -92,9 +93,11 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 			if err != nil {
 				return nil, fmt.Errorf("create vertex credentials from service account JSON: %w", err)
 			}
-			cli = anthropic.NewClient(vertex.WithCredentials(ctx, region, projectID, googleCreds))
+			vertexOpts := append([]option.RequestOption{vertex.WithCredentials(ctx, region, projectID, googleCreds)}, config.RequestOptions...)
+			cli = anthropic.NewClient(vertexOpts...)
 		} else {
-			cli = anthropic.NewClient(vertex.WithGoogleAuth(ctx, region, projectID))
+			vertexOpts := append([]option.RequestOption{vertex.WithGoogleAuth(ctx, region, projectID)}, config.RequestOptions...)
+			cli = anthropic.NewClient(vertexOpts...)
 		}
 	} else if config.ByBedrock {
 		// Use AWS Bedrock
@@ -115,7 +118,13 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		if config.HTTPClient != nil {
 			opts = append(opts, awsConfig.WithHTTPClient(config.HTTPClient))
 		}
-		cli = anthropic.NewClient(bedrock.WithLoadDefaultConfig(ctx, opts...))
+		if config.AWSConfig != nil {
+			bedrockOpts := append([]option.RequestOption{bedrock.WithConfig(*config.AWSConfig)}, config.RequestOptions...)
+			cli = anthropic.NewClient(bedrockOpts...)
+		} else {
+			bedrockOpts := append([]option.RequestOption{bedrock.WithLoadDefaultConfig(ctx, opts...)}, config.RequestOptions...)
+			cli = anthropic.NewClient(bedrockOpts...)
+		}
 	} else {
 		// Use direct Anthropic API
 		var opts []option.RequestOption
@@ -141,6 +150,8 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		for key, value := range config.AdditionalRequestFields {
 			opts = append(opts, option.WithJSONSet(key, value))
 		}
+
+		opts = append(opts, config.RequestOptions...)
 
 		if hasDirectAnthropicConfigAuth(config) {
 			cli = newDirectAnthropicClient(opts...)
@@ -173,6 +184,7 @@ func NewChatModel(ctx context.Context, config *Config) (*ChatModel, error) {
 		toolSearchAlgorithm:    config.ToolSearchAlgorithm,
 		requestTimeout:         config.RequestTimeout,
 		autoCacheControl:       config.AutoCacheControl,
+		effort:                 config.Effort,
 	}, nil
 }
 
@@ -207,6 +219,12 @@ type Config struct {
 	// Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
 	// Optional for Bedrock
 	Region string
+
+	// AWSConfig is an already-resolved AWS config used verbatim for Bedrock.
+	// When set, AccessKey, SecretAccessKey, SessionToken, Profile, Region and
+	// HTTPClient are ignored and no default config is loaded.
+	// Optional for Bedrock.
+	AWSConfig *awsSDK.Config
 
 	// ByVertex indicates whether to use Google Vertex AI
 	ByVertex bool
@@ -303,6 +321,17 @@ type Config struct {
 	// and the last user message of each turn when non-nil.
 	// This is equivalent to calling WithAutoCacheControl on every request.
 	AutoCacheControl *CacheControl `json:"auto_cache_control,omitempty"`
+
+	// Effort sets output_config.effort on every request.
+	// Adaptive-thinking models use effort in place of a thinking budget.
+	// Overridden per request by WithEffort.
+	Effort anthropic.OutputConfigEffort `json:"effort,omitempty"`
+
+	// RequestOptions are extra SDK request options appended on every transport.
+	// This is the only way to inject e.g. option.WithHTTPClient on Bedrock, where
+	// HTTPClient only reaches AWS credential loading (awsConfig.WithHTTPClient),
+	// not the anthropic.NewClient call itself.
+	RequestOptions []option.RequestOption
 }
 
 type ToolSearchAlgorithm string
@@ -344,6 +373,7 @@ type ChatModel struct {
 	toolSearchAlgorithm    ToolSearchAlgorithm
 	requestTimeout         time.Duration
 	autoCacheControl       *CacheControl
+	effort                 anthropic.OutputConfigEffort
 }
 
 func hasDirectAnthropicConfigAuth(config *Config) bool {
@@ -640,6 +670,7 @@ func (cm *ChatModel) genParamsAndOptions(input []*schema.Message, opts ...model.
 		DisableParallelToolUse: cm.disableParallelToolUse,
 		ResponseFormat:         cm.responseFormat,
 		AutoCacheControl:       cm.autoCacheControl,
+		Effort:                 cm.effort,
 	}, opts...)
 
 	msgParams = anthropic.MessageNewParams{}
@@ -685,6 +716,10 @@ func (cm *ChatModel) genParamsAndOptions(input []*schema.Message, opts ...model.
 				Schema: schemaMap,
 			},
 		}
+	}
+
+	if specOptions.Effort != "" {
+		msgParams.OutputConfig.Effort = specOptions.Effort
 	}
 
 	if err = cm.populateTools(&msgParams, commonOptions, specOptions); err != nil {

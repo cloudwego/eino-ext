@@ -19,7 +19,10 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -27,10 +30,13 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 	"github.com/anthropics/anthropic-sdk-go/shared/constant"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
+	awsSDK "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/schema"
@@ -1284,4 +1290,280 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 			assert.True(t, calledWithCredentials, "expected vertex.WithCredentials to be called for service account path")
 		})
 	})
+}
+
+func TestEffortOutputConfig(t *testing.T) {
+	testCases := []struct {
+		name               string
+		configEffort       anthropic.OutputConfigEffort
+		callOptions        []model.Option
+		expectOutputConfig bool
+		expectedEffort     string
+		expectFormat       bool
+	}{
+		{
+			name:               "no effort and no format omits output_config",
+			expectOutputConfig: false,
+		},
+		{
+			name:               "config effort is the default",
+			configEffort:       anthropic.OutputConfigEffortHigh,
+			expectOutputConfig: true,
+			expectedEffort:     "high",
+		},
+		{
+			name:               "call option sets effort",
+			callOptions:        []model.Option{WithEffort(anthropic.OutputConfigEffortLow)},
+			expectOutputConfig: true,
+			expectedEffort:     "low",
+		},
+		{
+			name:               "call option overrides config effort",
+			configEffort:       anthropic.OutputConfigEffortHigh,
+			callOptions:        []model.Option{WithEffort(anthropic.OutputConfigEffortMax)},
+			expectOutputConfig: true,
+			expectedEffort:     "max",
+		},
+		{
+			name:               "call option with empty effort clears the config default",
+			configEffort:       anthropic.OutputConfigEffortHigh,
+			callOptions:        []model.Option{WithEffort("")},
+			expectOutputConfig: false,
+		},
+		{
+			name: "effort and response format coexist",
+			callOptions: []model.Option{
+				WithEffort(anthropic.OutputConfigEffortMedium),
+				WithResponseFormat(&ResponseFormat{Schema: &jsonschema.Schema{Type: "object"}}),
+			},
+			expectOutputConfig: true,
+			expectedEffort:     "medium",
+			expectFormat:       true,
+		},
+		{
+			name:               "response format without effort leaves effort unset",
+			callOptions:        []model.Option{WithResponseFormat(&ResponseFormat{Schema: &jsonschema.Schema{Type: "object"}})},
+			expectOutputConfig: true,
+			expectedEffort:     "",
+			expectFormat:       true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			cm := &ChatModel{model: "test", maxTokens: 100, effort: testCase.configEffort}
+
+			params, _, err := cm.genParamsAndOptions(
+				[]*schema.Message{schema.UserMessage("hello")},
+				testCase.callOptions...,
+			)
+			assert.NoError(t, err)
+
+			body, err := json.Marshal(params)
+			assert.NoError(t, err)
+
+			var wire struct {
+				OutputConfig *struct {
+					Effort string          `json:"effort"`
+					Format json.RawMessage `json:"format"`
+				} `json:"output_config"`
+			}
+			assert.NoError(t, json.Unmarshal(body, &wire))
+
+			if !testCase.expectOutputConfig {
+				assert.Nil(t, wire.OutputConfig)
+				return
+			}
+			assert.NotNil(t, wire.OutputConfig)
+			assert.Equal(t, testCase.expectedEffort, wire.OutputConfig.Effort)
+			if testCase.expectFormat {
+				assert.NotNil(t, wire.OutputConfig.Format)
+			} else {
+				assert.Nil(t, wire.OutputConfig.Format)
+			}
+		})
+	}
+}
+
+// recordingRoundTripper captures the outbound request bytes actually placed
+// on the wire, so a wire test can inspect the request after any transport
+// middleware (e.g. Bedrock SigV4 signing) has run.
+type recordingRoundTripper struct {
+	req  *http.Request
+	body []byte
+}
+
+func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Body.Close()
+	r.req = req
+	r.body = body
+
+	const canned = `{"id":"msg_1","type":"message","role":"assistant","model":"m","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(canned)),
+		Request:    req,
+	}, nil
+}
+
+// TestNewChatModelRequestOptionsReachBedrockWire proves Config.RequestOptions
+// is appended on every NewChatModel transport branch: a caller-supplied
+// option.WithHTTPClient must see the final request body (with output_config
+// set) on Bedrock (after SigV4 signing), on the direct branch and on Vertex.
+func TestNewChatModelRequestOptionsReachBedrockWire(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("bedrock wire carries effort and AWS signature", func(t *testing.T) {
+		rec := &recordingRoundTripper{}
+		cm, err := NewChatModel(ctx, &Config{
+			ByBedrock: true,
+			Model:     "us.anthropic.claude-opus-5",
+			MaxTokens: 64,
+			Effort:    anthropic.OutputConfigEffortMedium,
+			AWSConfig: &awsSDK.Config{
+				Region:      "us-east-1",
+				Credentials: credentials.NewStaticCredentialsProvider("AKIATEST", "secret", ""),
+			},
+			RequestOptions: []option.RequestOption{option.WithHTTPClient(&http.Client{Transport: rec})},
+		})
+		require.NoError(t, err)
+
+		_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
+		require.NoError(t, err)
+		require.NotNil(t, rec.req)
+
+		var wire struct {
+			OutputConfig *struct {
+				Effort string `json:"effort"`
+			} `json:"output_config"`
+		}
+		require.NoError(t, json.Unmarshal(rec.body, &wire))
+		require.NotNil(t, wire.OutputConfig)
+		assert.Equal(t, "medium", wire.OutputConfig.Effort)
+
+		assert.Contains(t, rec.req.URL.Host, "bedrock-runtime")
+		assert.Contains(t, rec.req.URL.Path, "us.anthropic.claude-opus-5")
+		assert.True(t, strings.HasPrefix(rec.req.Header.Get("Authorization"), "AWS4-HMAC-SHA256"),
+			"expected SigV4 Authorization header, got %q", rec.req.Header.Get("Authorization"))
+	})
+
+	t.Run("bedrock wire omits output_config when effort is empty", func(t *testing.T) {
+		rec := &recordingRoundTripper{}
+		cm, err := NewChatModel(ctx, &Config{
+			ByBedrock: true,
+			Model:     "us.anthropic.claude-opus-5",
+			MaxTokens: 64,
+			AWSConfig: &awsSDK.Config{
+				Region:      "us-east-1",
+				Credentials: credentials.NewStaticCredentialsProvider("AKIATEST", "secret", ""),
+			},
+			RequestOptions: []option.RequestOption{option.WithHTTPClient(&http.Client{Transport: rec})},
+		})
+		require.NoError(t, err)
+
+		_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
+		require.NoError(t, err)
+
+		var wire map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(rec.body, &wire))
+		_, hasOutputConfig := wire["output_config"]
+		assert.False(t, hasOutputConfig)
+	})
+
+	t.Run("direct wire carries effort through RequestOptions", func(t *testing.T) {
+		rec := &recordingRoundTripper{}
+		baseURL := "http://example.invalid"
+		cm, err := NewChatModel(ctx, &Config{
+			APIKey:         "k",
+			BaseURL:        &baseURL,
+			Model:          "m",
+			MaxTokens:      8,
+			Effort:         anthropic.OutputConfigEffortLow,
+			RequestOptions: []option.RequestOption{option.WithHTTPClient(&http.Client{Transport: rec})},
+		})
+		require.NoError(t, err)
+
+		_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
+		require.NoError(t, err)
+
+		var wire struct {
+			OutputConfig *struct {
+				Effort string `json:"effort"`
+			} `json:"output_config"`
+		}
+		require.NoError(t, json.Unmarshal(rec.body, &wire))
+		require.NotNil(t, wire.OutputConfig)
+		assert.Equal(t, "low", wire.OutputConfig.Effort)
+	})
+
+	t.Run("vertex wire carries RequestOptions", func(t *testing.T) {
+		mockey.PatchConvey("", t, func() {
+			mockey.Mock(vertex.WithGoogleAuth).To(func(ctx context.Context, region, projectID string, scopes ...string) option.RequestOption {
+				return option.WithAPIKey("adc-test")
+			}).Build()
+
+			rec := &recordingRoundTripper{}
+			cm, err := NewChatModel(ctx, &Config{
+				ByVertex:        true,
+				VertexProjectID: "test-project",
+				VertexRegion:    "us-east5",
+				Model:           "m",
+				MaxTokens:       8,
+				Effort:          anthropic.OutputConfigEffortHigh,
+				RequestOptions:  []option.RequestOption{option.WithHTTPClient(&http.Client{Transport: rec})},
+			})
+			require.NoError(t, err)
+
+			_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
+			require.NoError(t, err)
+			require.NotNil(t, rec.req, "RequestOptions did not reach the Vertex anthropic.NewClient call")
+
+			var wire struct {
+				OutputConfig *struct {
+					Effort string `json:"effort"`
+				} `json:"output_config"`
+			}
+			require.NoError(t, json.Unmarshal(rec.body, &wire))
+			require.NotNil(t, wire.OutputConfig)
+			assert.Equal(t, "high", wire.OutputConfig.Effort)
+		})
+	})
+}
+
+// TestNewChatModelBedrockAWSConfigPrecedence proves that a pre-resolved
+// Config.AWSConfig is used verbatim: the static AccessKey/SecretAccessKey
+// fields must not leak into the SigV4 signature when AWSConfig is set.
+func TestNewChatModelBedrockAWSConfigPrecedence(t *testing.T) {
+	ctx := context.Background()
+	rec := &recordingRoundTripper{}
+	cm, err := NewChatModel(ctx, &Config{
+		ByBedrock:       true,
+		Model:           "us.anthropic.claude-opus-5",
+		MaxTokens:       64,
+		Region:          "eu-west-1",
+		AccessKey:       "AKIAFROMFIELDS",
+		SecretAccessKey: "secret-from-fields",
+		AWSConfig: &awsSDK.Config{
+			Region:      "us-east-1",
+			Credentials: credentials.NewStaticCredentialsProvider("AKIAFROMCONFIG", "secret-from-config", ""),
+		},
+		RequestOptions: []option.RequestOption{option.WithHTTPClient(&http.Client{Transport: rec})},
+	})
+	require.NoError(t, err)
+
+	_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
+	require.NoError(t, err)
+	require.NotNil(t, rec.req)
+
+	authorization := rec.req.Header.Get("Authorization")
+	assert.Contains(t, authorization, "Credential=AKIAFROMCONFIG/", "SigV4 must be signed with the AWSConfig credentials")
+	assert.Contains(t, authorization, "/us-east-1/", "SigV4 scope must use the AWSConfig region, not Config.Region")
+	assert.NotContains(t, authorization, "AKIAFROMFIELDS")
+	assert.Contains(t, rec.req.URL.Host, "us-east-1")
 }
