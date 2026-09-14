@@ -1325,6 +1325,12 @@ func TestEffortOutputConfig(t *testing.T) {
 			expectedEffort:     "max",
 		},
 		{
+			name:               "call option with empty effort clears the config default",
+			configEffort:       anthropic.OutputConfigEffortHigh,
+			callOptions:        []model.Option{WithEffort("")},
+			expectOutputConfig: false,
+		},
+		{
 			name: "effort and response format coexist",
 			callOptions: []model.Option{
 				WithEffort(anthropic.OutputConfigEffortMedium),
@@ -1409,7 +1415,7 @@ func (r *recordingRoundTripper) RoundTrip(req *http.Request) (*http.Response, er
 // TestNewChatModelRequestOptionsReachBedrockWire proves Config.RequestOptions
 // is appended on every NewChatModel transport branch: a caller-supplied
 // option.WithHTTPClient must see the final request body (with output_config
-// set) on both Bedrock (after SigV4 signing) and the direct branch.
+// set) on Bedrock (after SigV4 signing), on the direct branch and on Vertex.
 func TestNewChatModelRequestOptionsReachBedrockWire(t *testing.T) {
 	ctx := context.Background()
 
@@ -1495,4 +1501,69 @@ func TestNewChatModelRequestOptionsReachBedrockWire(t *testing.T) {
 		require.NotNil(t, wire.OutputConfig)
 		assert.Equal(t, "low", wire.OutputConfig.Effort)
 	})
+
+	t.Run("vertex wire carries RequestOptions", func(t *testing.T) {
+		mockey.PatchConvey("", t, func() {
+			mockey.Mock(vertex.WithGoogleAuth).To(func(ctx context.Context, region, projectID string, scopes ...string) option.RequestOption {
+				return option.WithAPIKey("adc-test")
+			}).Build()
+
+			rec := &recordingRoundTripper{}
+			cm, err := NewChatModel(ctx, &Config{
+				ByVertex:        true,
+				VertexProjectID: "test-project",
+				VertexRegion:    "us-east5",
+				Model:           "m",
+				MaxTokens:       8,
+				Effort:          anthropic.OutputConfigEffortHigh,
+				RequestOptions:  []option.RequestOption{option.WithHTTPClient(&http.Client{Transport: rec})},
+			})
+			require.NoError(t, err)
+
+			_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
+			require.NoError(t, err)
+			require.NotNil(t, rec.req, "RequestOptions did not reach the Vertex anthropic.NewClient call")
+
+			var wire struct {
+				OutputConfig *struct {
+					Effort string `json:"effort"`
+				} `json:"output_config"`
+			}
+			require.NoError(t, json.Unmarshal(rec.body, &wire))
+			require.NotNil(t, wire.OutputConfig)
+			assert.Equal(t, "high", wire.OutputConfig.Effort)
+		})
+	})
+}
+
+// TestNewChatModelBedrockAWSConfigPrecedence proves that a pre-resolved
+// Config.AWSConfig is used verbatim: the static AccessKey/SecretAccessKey
+// fields must not leak into the SigV4 signature when AWSConfig is set.
+func TestNewChatModelBedrockAWSConfigPrecedence(t *testing.T) {
+	ctx := context.Background()
+	rec := &recordingRoundTripper{}
+	cm, err := NewChatModel(ctx, &Config{
+		ByBedrock:       true,
+		Model:           "us.anthropic.claude-opus-5",
+		MaxTokens:       64,
+		Region:          "eu-west-1",
+		AccessKey:       "AKIAFROMFIELDS",
+		SecretAccessKey: "secret-from-fields",
+		AWSConfig: &awsSDK.Config{
+			Region:      "us-east-1",
+			Credentials: credentials.NewStaticCredentialsProvider("AKIAFROMCONFIG", "secret-from-config", ""),
+		},
+		RequestOptions: []option.RequestOption{option.WithHTTPClient(&http.Client{Transport: rec})},
+	})
+	require.NoError(t, err)
+
+	_, err = cm.Generate(ctx, []*schema.Message{schema.UserMessage("hi")})
+	require.NoError(t, err)
+	require.NotNil(t, rec.req)
+
+	authorization := rec.req.Header.Get("Authorization")
+	assert.Contains(t, authorization, "Credential=AKIAFROMCONFIG/", "SigV4 must be signed with the AWSConfig credentials")
+	assert.Contains(t, authorization, "/us-east-1/", "SigV4 scope must use the AWSConfig region, not Config.Region")
+	assert.NotContains(t, authorization, "AKIAFROMFIELDS")
+	assert.Contains(t, rec.req.URL.Host, "us-east-1")
 }
