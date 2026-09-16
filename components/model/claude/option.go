@@ -39,6 +39,8 @@ type options struct {
 	RequestTimeout time.Duration
 
 	CustomHeaders map[string]string
+
+	Effort anthropic.OutputConfigEffort
 }
 
 func WithTopK(k int32) model.Option {
@@ -111,5 +113,14 @@ func WithRequestTimeout(d time.Duration) model.Option {
 func WithCustomHeaders(headers map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.CustomHeaders = headers
+	})
+}
+
+// WithEffort sets output_config.effort for a single request, overriding
+// Config.Effort. Adaptive-thinking models use effort instead of a thinking
+// budget; an empty value leaves output_config.effort unset.
+func WithEffort(effort anthropic.OutputConfigEffort) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.Effort = effort
 	})
 }
