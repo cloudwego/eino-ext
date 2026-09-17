@@ -6,7 +6,7 @@ English | [简体中文](README_zh.md)
 
 This is a low-level Langfuse API client library for Go. It provides direct access to the Langfuse API for creating traces, spans, generations, and events. This library is used internally by the higher-level `callbacks/langfuse` package.
 
-**Note**: For most use cases with Eino, you should use the [callbacks/langfuse](../../callbacks/langfuse) package instead, which provides a simpler interface integrated with Eino's callback system.
+**Note**: For most use cases with Eino, you should use the [callbacks/langfuse](../../../callbacks/langfuse) package instead, which provides a simpler interface integrated with Eino's callback system.
 
 ## Features
 
@@ -245,7 +245,7 @@ This library is typically used:
 2. **Direct Integration**: When you need fine-grained control over Langfuse API calls
 3. **Custom Solutions**: When building custom observability solutions
 
-For most Eino integrations, use [callbacks/langfuse](../../callbacks/langfuse) instead.
+For most Eino integrations, use [callbacks/langfuse](../../../callbacks/langfuse) instead.
 
 ## License
 
