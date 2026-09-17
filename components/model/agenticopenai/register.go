@@ -27,11 +27,13 @@ func init() {
 
 	schema.RegisterName[blockExtraItemID]("_eino_ext_openai_block_extra_item_id")
 	schema.RegisterName[blockExtraItemStatus]("_eino_ext_openai_block_extra_item_status")
+	schema.RegisterName[blockExtraMCPErrorJSON]("_eino_ext_openai_block_extra_mcp_error_json")
 	schema.RegisterName[*ServerToolCallArguments]("_eino_ext_openai_server_tool_call_arguments")
 	schema.RegisterName[*ServerToolResult]("_eino_ext_openai_server_tool_result")
 
 	compose.RegisterStreamChunkConcatFunc(concatFirstNonZero[blockExtraItemID])
 	compose.RegisterStreamChunkConcatFunc(concatLast[blockExtraItemStatus])
+	compose.RegisterStreamChunkConcatFunc(concatLast[blockExtraMCPErrorJSON])
 	compose.RegisterStreamChunkConcatFunc(concatServerToolCallArguments)
 	compose.RegisterStreamChunkConcatFunc(concatServerToolResult)
 }

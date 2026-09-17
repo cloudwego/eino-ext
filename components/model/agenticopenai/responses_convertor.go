@@ -699,7 +699,7 @@ func functionToolResultToInputItem(block *schema.FunctionToolResult) (item respo
 
 	item = responses.ResponseInputItemUnionParam{
 		OfFunctionCallOutput: &responses.ResponseInputItemFunctionCallOutputParam{
-			CallID: block.CallID,
+			CallID: param.NewOpt(block.CallID),
 			Output: output,
 		},
 	}
@@ -1469,9 +1469,9 @@ func mcpToolResultToInputItem(block *schema.ContentBlock) (item responses.Respon
 	id, _ := getItemID(block)
 	status, _ := GetItemStatus(block)
 
-	var errorMsg string
-	if content.Error != nil {
-		errorMsg = content.Error.Message
+	errorParam, err := mcpErrorToInputParam(block)
+	if err != nil {
+		return item, err
 	}
 
 	item = responses.ResponseInputItemUnionParam{
@@ -1479,7 +1479,7 @@ func mcpToolResultToInputItem(block *schema.ContentBlock) (item responses.Respon
 			ID:          id,
 			ServerLabel: content.ServerLabel,
 			Name:        content.Name,
-			Error:       newOpenaiStrOpt(errorMsg),
+			Error:       errorParam,
 			Output:      newOpenaiStrOpt(content.Content),
 			Status:      status,
 		},
@@ -2169,19 +2169,19 @@ func mcpCallToContentBlocks(item responses.ResponseOutputItemMcpCall) (blocks []
 	})
 	setItemID(callBlock, item.ID)
 
+	callError, rawError, err := mcpErrorFromResponse(item)
+	if err != nil {
+		return nil, err
+	}
 	resultBlock := schema.NewContentBlock(&schema.MCPToolResult{
 		ServerLabel: item.ServerLabel,
 		Name:        item.Name,
 		Content:     item.Output,
-		Error: func() *schema.MCPToolCallError {
-			if item.Error == "" {
-				return nil
-			}
-			return &schema.MCPToolCallError{
-				Message: item.Error,
-			}
-		}(),
+		Error:       callError,
 	})
+	if rawError != "" {
+		setBlockExtraValue(resultBlock, mcpErrorJSONKey, blockExtraMCPErrorJSON(rawError))
+	}
 	setItemID(resultBlock, item.ID)
 
 	blocks = []*schema.ContentBlock{callBlock, resultBlock}
