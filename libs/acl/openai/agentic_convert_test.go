@@ -152,6 +152,69 @@ func Test_agenticMessagesToMessages(t *testing.T) {
 		assert.Equal(t, "https://example.com/vid.mp4", *result[0].UserInputMultiContent[0].Video.URL)
 	})
 
+	t.Run("user message with file base64", func(t *testing.T) {
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputFile{
+						Base64Data: "filedata",
+						MIMEType:   "application/pdf",
+						Name:       "report.pdf",
+					}),
+				},
+			},
+		}
+
+		result, err := agenticMessagesToMessages(msgs)
+		assert.NoError(t, err)
+		assert.Len(t, result, 1)
+		assert.Len(t, result[0].UserInputMultiContent, 1)
+		assert.Equal(t, schema.ChatMessagePartTypeFileURL, result[0].UserInputMultiContent[0].Type)
+		assert.Equal(t, "filedata", *result[0].UserInputMultiContent[0].File.Base64Data)
+		assert.Equal(t, "application/pdf", result[0].UserInputMultiContent[0].File.MIMEType)
+		assert.Equal(t, "report.pdf", result[0].UserInputMultiContent[0].File.Name)
+	})
+
+	t.Run("user message with file URL unsupported", func(t *testing.T) {
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputFile{
+						URL:      "https://example.com/report.pdf",
+						MIMEType: "application/pdf",
+						Name:     "report.pdf",
+					}),
+				},
+			},
+		}
+
+		_, err := agenticMessagesToMessages(msgs)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "file message part does not accept URL")
+	})
+
+	t.Run("user message with file URL and base64 unsupported", func(t *testing.T) {
+		msgs := []*schema.AgenticMessage{
+			{
+				Role: schema.AgenticRoleTypeUser,
+				ContentBlocks: []*schema.ContentBlock{
+					schema.NewContentBlock(&schema.UserInputFile{
+						URL:        "https://example.com/report.pdf",
+						Base64Data: "filedata",
+						MIMEType:   "application/pdf",
+						Name:       "report.pdf",
+					}),
+				},
+			},
+		}
+
+		_, err := agenticMessagesToMessages(msgs)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "file message part does not accept URL")
+	})
+
 	t.Run("user message with tool results", func(t *testing.T) {
 		msgs := []*schema.AgenticMessage{
 			{
