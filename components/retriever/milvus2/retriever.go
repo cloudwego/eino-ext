@@ -67,8 +67,14 @@ type RetrieverConfig struct {
 	ConsistencyLevel ConsistencyLevel
 
 	// SearchMode defines the search strategy.
-	// Required.
+	// Optional. If nil, defaults to Auto Search (infers from VectorField/SparseVectorField).
 	SearchMode SearchMode
+
+	// SearchParams allows passing extra parameters (e.g. "nprobe", "ef") to the search.
+	// Key is the vector field name, Value is the parameter map.
+	// Used primarily by Auto Search mode.
+	// Tip: Use NewSearchParams() builder to construct the value map easily.
+	SearchParams map[string]map[string]interface{}
 
 	// DocumentConverter converts Milvus search results to EINO documents.
 	// If nil, uses default conversion.
@@ -188,18 +194,24 @@ func (c *RetrieverConfig) validate() error {
 		return fmt.Errorf("[NewRetriever] milvus client or client config not provided")
 	}
 	if c.SearchMode == nil {
-		return fmt.Errorf("[NewRetriever] search mode not provided")
+		c.SearchMode = &autoSearchMode{}
 	}
 	// Embedding validation is delegated to the specific SearchMode implementation.
 	if c.Collection == "" {
 		c.Collection = defaultCollection
 	}
-	if c.VectorField == "" {
-		c.VectorField = defaultVectorField
+
+	// Apply defaults for VectorField and SparseVectorField ONLY if not using AutoSearch.
+	// AutoSearch relies on empty fields to infer user intent (Dense vs Sparse vs Hybrid).
+	if _, isAuto := c.SearchMode.(*autoSearchMode); !isAuto {
+		if c.VectorField == "" {
+			c.VectorField = defaultVectorField
+		}
+		if c.SparseVectorField == "" {
+			c.SparseVectorField = defaultSparseVectorField
+		}
 	}
-	if c.SparseVectorField == "" {
-		c.SparseVectorField = defaultSparseVectorField
-	}
+
 	if len(c.OutputFields) == 0 {
 		c.OutputFields = []string{"*"}
 	}

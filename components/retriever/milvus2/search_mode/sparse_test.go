@@ -38,7 +38,7 @@ func TestNewSparse(t *testing.T) {
 
 		sparseDefault := NewSparse("")
 		convey.So(sparseDefault, convey.ShouldNotBeNil)
-		convey.So(sparseDefault.MetricType, convey.ShouldEqual, milvus2.BM25)
+		convey.So(sparseDefault.MetricType, convey.ShouldBeEmpty)
 	})
 }
 
