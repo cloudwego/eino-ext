@@ -220,7 +220,9 @@ func (s *containerServiceImpl) CreateCanvas(graphID string) (canvasInfo devmodel
 		Version:     devmodel.Version,
 		GraphSchema: graphSchema,
 	}
+	s.mu.Lock()
 	c.CanvasInfo = &canvasInfo
+	s.mu.Unlock()
 
 	return canvasInfo, nil
 }
