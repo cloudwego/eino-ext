@@ -107,6 +107,18 @@ func (c *chunkConverter) advanceContent(blockType schema.ContentBlockType, sourc
 		c.lastContentPartIndex = sourceIndex
 		return
 	}
+	if c.inToolCalls {
+		// A content part arriving after tool calls started (e.g. providers that
+		// interleave text chunks between parallel tool-call chunks) begins a new
+		// block. Reusing the previous content index would group it with the
+		// tool-call block and break ConcatAgenticMessages with a block type
+		// mismatch.
+		c.curIndex++
+		c.inToolCalls = false
+		c.lastContentType = blockType
+		c.lastContentPartIndex = sourceIndex
+		return
+	}
 	if blockType != c.lastContentType || sourceIndex != c.lastContentPartIndex {
 		c.curIndex++
 		c.lastContentType = blockType
