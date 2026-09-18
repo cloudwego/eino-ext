@@ -18,12 +18,15 @@ package agenticark
 
 import (
 	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
+	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
 func TestNewStreamReceiverInit(t *testing.T) {
@@ -295,6 +298,35 @@ func TestContentPartAddedEventToContentBlock(t *testing.T) {
 	assert.Equal(t, "mid", id)
 }
 
+func TestContentPartAddedEventToContentBlockWithRawReasoning(t *testing.T) {
+	r := newStreamReceiver()
+	ev := &responses.ContentPartEvent{
+		ItemId:       "rid",
+		OutputIndex:  1,
+		ContentIndex: 2,
+		Part: &responses.OutputContentItem{
+			Union: &responses.OutputContentItem_Text{
+				Text: &responses.OutputContentItemText{
+					Type: responses.ContentItemType_reasoning_text,
+					Text: "raw reasoning",
+				},
+			},
+		},
+	}
+
+	block, err := r.contentPartAddedEventToContentBlock(ev)
+	assert.NoError(t, err)
+	if assert.NotNil(t, block) && assert.NotNil(t, block.Reasoning) &&
+		assert.NotNil(t, block.Reasoning.OpenAIExtension) &&
+		assert.Len(t, block.Reasoning.OpenAIExtension.Content, 1) {
+		content := block.Reasoning.OpenAIExtension.Content[0]
+		assert.Equal(t, "raw reasoning", content.Text)
+		if assert.NotNil(t, content.Index) {
+			assert.Equal(t, 2, *content.Index)
+		}
+	}
+}
+
 func TestContentPartDoneEventToContentBlockNoIndex(t *testing.T) {
 	r := newStreamReceiver()
 	ev := &responses.ContentPartDoneEvent{
@@ -336,10 +368,70 @@ func TestContentPartDoneEventToContentBlockOK(t *testing.T) {
 	assert.Equal(t, responses.ItemStatus_completed.String(), status)
 }
 
+func TestRawReasoningContentPartLifecycle(t *testing.T) {
+	r := newStreamReceiver()
+	added, err := r.contentPartAddedEventToContentBlock(&responses.ContentPartEvent{
+		ItemId:       "rid",
+		OutputIndex:  1,
+		ContentIndex: 0,
+		Part: &responses.OutputContentItem{
+			Union: &responses.OutputContentItem_Text{
+				Text: &responses.OutputContentItemText{
+					Type: responses.ContentItemType_reasoning_text,
+				},
+			},
+		},
+	})
+	assert.NoError(t, err)
+
+	delta := r.reasoningTextDeltaEventToContentBlock(&responses.ReasoningTextDeltaEvent{
+		ItemId:       "rid",
+		OutputIndex:  1,
+		ContentIndex: 0,
+		Delta:        ptrOf("raw reasoning"),
+	})
+
+	done, err := r.contentPartDoneEventToContentBlock(&responses.ContentPartDoneEvent{
+		ItemId:       "rid",
+		OutputIndex:  1,
+		ContentIndex: 0,
+		Part: &responses.OutputContentItem{
+			Union: &responses.OutputContentItem_Text{
+				Text: &responses.OutputContentItemText{
+					Type: responses.ContentItemType_reasoning_text,
+					Text: "raw reasoning",
+				},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.NotNil(t, done.Reasoning)
+	assert.Nil(t, done.Reasoning.OpenAIExtension)
+
+	msg, err := schema.ConcatAgenticMessages([]*schema.AgenticMessage{
+		{Role: schema.AgenticRoleTypeAssistant, ContentBlocks: []*schema.ContentBlock{added}},
+		{Role: schema.AgenticRoleTypeAssistant, ContentBlocks: []*schema.ContentBlock{delta}},
+		{Role: schema.AgenticRoleTypeAssistant, ContentBlocks: []*schema.ContentBlock{done}},
+	})
+	assert.NoError(t, err)
+	if assert.Len(t, msg.ContentBlocks, 1) {
+		block := msg.ContentBlocks[0]
+		if assert.NotNil(t, block.Reasoning) &&
+			assert.NotNil(t, block.Reasoning.OpenAIExtension) &&
+			assert.Len(t, block.Reasoning.OpenAIExtension.Content, 1) {
+			assert.Equal(t, "raw reasoning", block.Reasoning.OpenAIExtension.Content[0].Text)
+		}
+		status, ok := GetItemStatus(block)
+		assert.True(t, ok)
+		assert.Equal(t, responses.ItemStatus_completed.String(), status)
+	}
+}
+
 func TestEventContentPartToContentBlockUnknown(t *testing.T) {
 	r := newStreamReceiver()
 	// Unknown content part types are ignored rather than failing the stream.
-	block, err := r.eventContentPartToContentBlock("id", &responses.OutputContentItem{}, 1, responses.ItemStatus_in_progress)
+	block, err := r.eventContentPartToContentBlock(
+		"id", &responses.OutputContentItem{}, 0, 1, responses.ItemStatus_in_progress)
 	assert.NoError(t, err)
 	assert.Nil(t, block)
 }
@@ -389,6 +481,41 @@ func TestReasoningSummaryTextDeltaEventToContentBlock(t *testing.T) {
 	})
 	assert.NotNil(t, block.Reasoning)
 	assert.Equal(t, "x", block.Reasoning.Text)
+}
+
+func TestReceivedStreamResponseWithRawReasoningDelta(t *testing.T) {
+	const eventStream = "event: response.reasoning_text.delta\n" +
+		"data: {\"type\":\"response.reasoning_text.delta\",\"content_index\":0," +
+		"\"delta\":\"raw reasoning\",\"item_id\":\"rid\",\"output_index\":0,\"sequence_number\":1}\n\n" +
+		"data: [DONE]\n\n"
+
+	body := io.NopCloser(strings.NewReader(eventStream))
+	streamReader := &utils.ResponsesStreamReader{
+		ChatCompletionStreamReader: utils.ChatCompletionStreamReader{
+			Unmarshaler: &utils.JSONUnmarshaler{},
+		},
+		Decoder: utils.NewEventStreamDecoder(body),
+	}
+	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](1)
+	defer sr.Close()
+
+	receivedStreamResponse(streamReader, &model.AgenticConfig{}, sw)
+	sw.Close()
+
+	output, err := sr.Recv()
+	assert.NoError(t, err)
+	if assert.NotNil(t, output) && assert.NotNil(t, output.Message) &&
+		assert.Len(t, output.Message.ContentBlocks, 1) {
+		reasoning := output.Message.ContentBlocks[0].Reasoning
+		if assert.NotNil(t, reasoning) && assert.NotNil(t, reasoning.OpenAIExtension) &&
+			assert.Len(t, reasoning.OpenAIExtension.Content, 1) {
+			content := reasoning.OpenAIExtension.Content[0]
+			assert.Equal(t, "raw reasoning", content.Text)
+			if assert.NotNil(t, content.Index) {
+				assert.Equal(t, 0, *content.Index)
+			}
+		}
+	}
 }
 
 func TestFunctionCallArgumentsDeltaEventToContentBlock(t *testing.T) {

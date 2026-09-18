@@ -23,6 +23,7 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	openaischema "github.com/cloudwego/eino/schema/openai"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
@@ -108,6 +109,10 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 
 		case *responses.Event_ReasoningText:
 			block := receiver.reasoningSummaryTextDeltaEventToContentBlock(ev.ReasoningText)
+			sender.sendBlock(block, nil)
+
+		case *responses.Event_ReasoningRawTextDelta:
+			block := receiver.reasoningTextDeltaEventToContentBlock(ev.ReasoningRawTextDelta)
 			sender.sendBlock(block, nil)
 
 		case *responses.Event_FunctionCallArguments:
@@ -692,42 +697,61 @@ func (r *streamReceiver) itemDoneEventFunctionMCPApprovalRequestToContentBlock(o
 }
 
 func (r *streamReceiver) contentPartAddedEventToContentBlock(ev *responses.ContentPartEvent) (block *schema.ContentBlock, err error) {
-	key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
+	key := makeContentPartIndexKey(ev.OutputIndex, ev.ContentIndex, ev.Part)
 	blockIdx := r.getBlockIndex(key)
 
-	indices, ok := r.ProcessingAssistantGenTextBlockIndex[ev.ItemId]
-	if !ok {
-		indices = map[int]bool{}
-		r.ProcessingAssistantGenTextBlockIndex[ev.ItemId] = indices
+	if !isReasoningContentPart(ev.Part) {
+		indices, ok := r.ProcessingAssistantGenTextBlockIndex[ev.ItemId]
+		if !ok {
+			indices = map[int]bool{}
+			r.ProcessingAssistantGenTextBlockIndex[ev.ItemId] = indices
+		}
+		indices[blockIdx] = true
 	}
 
-	indices[blockIdx] = true
-
-	return r.eventContentPartToContentBlock(ev.ItemId, ev.Part, blockIdx, responses.ItemStatus_in_progress)
+	return r.eventContentPartToContentBlock(
+		ev.ItemId, ev.Part, ev.ContentIndex, blockIdx, responses.ItemStatus_in_progress)
 }
 
 func (r *streamReceiver) contentPartDoneEventToContentBlock(ev *responses.ContentPartDoneEvent) (block *schema.ContentBlock, err error) {
-	key := makeAssistantGenTextIndexKey(ev.OutputIndex, ev.ContentIndex)
+	key := makeContentPartIndexKey(ev.OutputIndex, ev.ContentIndex, ev.Part)
 	blockIdx := r.getBlockIndex(key)
+
+	if isReasoningContentPart(ev.Part) {
+		block = schema.NewContentBlockChunk(&schema.Reasoning{}, &schema.StreamingMeta{Index: blockIdx})
+		setItemStatus(block, responses.ItemStatus_completed.String())
+		setItemID(block, ev.ItemId)
+		return block, nil
+	}
 
 	indices, ok := r.ProcessingAssistantGenTextBlockIndex[ev.ItemId]
 	if !ok {
 		return nil, fmt.Errorf("item %q has no processing assistant gen text block index", ev.ItemId)
 	}
-
 	delete(indices, blockIdx)
 
-	return r.eventContentPartToContentBlock(ev.ItemId, ev.Part, blockIdx, responses.ItemStatus_completed)
+	return r.eventContentPartToContentBlock(
+		ev.ItemId, ev.Part, ev.ContentIndex, blockIdx, responses.ItemStatus_completed)
 }
 
 func (r *streamReceiver) eventContentPartToContentBlock(itemID string, content *responses.OutputContentItem,
-	blockIdx int, status responses.ItemStatus_Enum) (block *schema.ContentBlock, err error) {
+	contentIdx int64, blockIdx int, status responses.ItemStatus_Enum) (block *schema.ContentBlock, err error) {
 
 	meta := &schema.StreamingMeta{Index: blockIdx}
 
-	switch content.Union.(type) {
+	switch c := content.Union.(type) {
 	case *responses.OutputContentItem_Text:
-		block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
+		if c.Text.GetType() == responses.ContentItemType_reasoning_text {
+			block = schema.NewContentBlockChunk(&schema.Reasoning{
+				OpenAIExtension: &openaischema.ReasoningExtension{
+					Content: []*openaischema.ReasoningContent{
+						{Index: ptrOf(int(contentIdx)), Text: c.Text.GetText()},
+					},
+				},
+			}, meta)
+		} else {
+			block = schema.NewContentBlockChunk(&schema.AssistantGenText{}, meta)
+		}
 	default:
 		// Unknown content part types are ignored rather than failing the stream.
 		return nil, nil
@@ -737,6 +761,18 @@ func (r *streamReceiver) eventContentPartToContentBlock(itemID string, content *
 	setItemID(block, itemID)
 
 	return block, nil
+}
+
+func isReasoningContentPart(content *responses.OutputContentItem) bool {
+	return content != nil && content.GetText() != nil &&
+		content.GetText().GetType() == responses.ContentItemType_reasoning_text
+}
+
+func makeContentPartIndexKey(outputIdx, contentIdx int64, content *responses.OutputContentItem) string {
+	if isReasoningContentPart(content) {
+		return makeReasoningIndexKey(outputIdx)
+	}
+	return makeAssistantGenTextIndexKey(outputIdx, contentIdx)
 }
 
 func (r *streamReceiver) outputTextDeltaEventToContentBlock(ev *responses.OutputTextEvent) *schema.ContentBlock {
@@ -785,6 +821,25 @@ func (r *streamReceiver) reasoningSummaryTextDeltaEventToContentBlock(ev *respon
 
 	reasoning := &schema.Reasoning{
 		Text: text,
+	}
+
+	meta := &schema.StreamingMeta{
+		Index: r.getBlockIndex(makeReasoningIndexKey(ev.OutputIndex)),
+	}
+	block := schema.NewContentBlockChunk(reasoning, meta)
+
+	setItemID(block, ev.ItemId)
+
+	return block
+}
+
+func (r *streamReceiver) reasoningTextDeltaEventToContentBlock(ev *responses.ReasoningTextDeltaEvent) *schema.ContentBlock {
+	reasoning := &schema.Reasoning{
+		OpenAIExtension: &openaischema.ReasoningExtension{
+			Content: []*openaischema.ReasoningContent{
+				{Index: ptrOf(int(ev.ContentIndex)), Text: ev.GetDelta()},
+			},
+		},
 	}
 
 	meta := &schema.StreamingMeta{
