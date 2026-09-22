@@ -94,6 +94,10 @@ func (ac *AgenticClient) Generate(ctx context.Context, input []*schema.AgenticMe
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert response to agentic message: %w", err)
 	}
+	outMsg, err = modifyAgenticResponseMessage(ctx, outMsg, specOptions.ResponseAgenticMessageModifier)
+	if err != nil {
+		return nil, err
+	}
 
 	callbacks.OnEnd(ctx, &model.AgenticCallbackOutput{
 		Message:    outMsg,
@@ -179,6 +183,11 @@ func (ac *AgenticClient) Stream(ctx context.Context, input []*schema.AgenticMess
 						sw.Send(nil, fmt.Errorf("failed to convert chunk to agentic message: %w", convErr))
 						return
 					}
+					agMsg, convErr = modifyAgenticResponseMessage(ctx_, agMsg, specOptions.ResponseChunkAgenticMessageModifier)
+					if convErr != nil {
+						sw.Send(nil, convErr)
+						return
+					}
 					sw.Send(&model.AgenticCallbackOutput{
 						Message:    agMsg,
 						Config:     config,
@@ -233,6 +242,11 @@ func (ac *AgenticClient) Stream(ctx context.Context, input []*schema.AgenticMess
 				_ = sw.Send(nil, fmt.Errorf("failed to convert chunk to agentic message: %w", convErr))
 				return
 			}
+			agMsg, convErr = modifyAgenticResponseMessage(ctx_, agMsg, specOptions.ResponseChunkAgenticMessageModifier)
+			if convErr != nil {
+				_ = sw.Send(nil, convErr)
+				return
+			}
 
 			closed := sw.Send(&model.AgenticCallbackOutput{
 				Message:    agMsg,
@@ -278,6 +292,17 @@ func (ac *AgenticClient) GetType() string {
 
 func (ac *AgenticClient) IsCallbacksEnabled() bool {
 	return true
+}
+
+func modifyAgenticResponseMessage(ctx context.Context, msg *schema.AgenticMessage, modifier func(context.Context, *schema.AgenticMessage) (*schema.AgenticMessage, error)) (*schema.AgenticMessage, error) {
+	if modifier == nil {
+		return msg, nil
+	}
+	msg, err := modifier(ctx, msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to modify agentic response message: %w", err)
+	}
+	return msg, nil
 }
 
 func (ac *AgenticClient) convertAgenticToolChoiceOpts(opts []model.Option) []model.Option {
