@@ -423,18 +423,13 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 		}
 	}()
 
-	_, callbackStream := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
-		func(src *model.AgenticCallbackOutput) (callbacks.CallbackOutput, error) {
-			return src, nil
-		},
-	))
+	_, callbackStream := callbacks.OnEndWithStreamOutput(ctx, sr)
 
-	outStream = schema.StreamReaderWithConvert(callbackStream, func(src callbacks.CallbackOutput) (*schema.AgenticMessage, error) {
-		output := src.(*model.AgenticCallbackOutput)
-		if output.Message == nil {
+	outStream = schema.StreamReaderWithConvert(callbackStream, func(src *model.AgenticCallbackOutput) (*schema.AgenticMessage, error) {
+		if src.Message == nil {
 			return nil, schema.ErrNoValue
 		}
-		return output.Message, nil
+		return src.Message, nil
 	})
 
 	return outStream, nil

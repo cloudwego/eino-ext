@@ -20,10 +20,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	. "github.com/bytedance/mockey"
 	"github.com/smartystreets/goconvey/convey"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino/schema"
 )
@@ -59,16 +62,16 @@ func TestModel(t *testing.T) {
 		})
 
 		PatchConvey("test Generate success", func() {
+			extension := &ChatResponseMetaExtension{FinishReason: "stop"}
 			mockResp := &schema.AgenticMessage{
 				Role: schema.AgenticRoleTypeAssistant,
 				ContentBlocks: []*schema.ContentBlock{
 					schema.NewContentBlock(&schema.AssistantGenText{Text: "hi there"}),
 				},
 				Extra: map[string]any{
-					extraKeyChatResponseMetaExtension: &ChatResponseMetaExtension{
-						FinishReason: "stop",
-					},
+					extraKeyChatResponseMetaExtension: extension,
 				},
+				ResponseMeta: &schema.AgenticResponseMeta{Extension: extension},
 			}
 			Mock(GetMethod(cli, "Generate")).Return(mockResp, nil).Build()
 			msg, err := m.Generate(ctx, []*schema.AgenticMessage{
@@ -143,6 +146,7 @@ func TestModel(t *testing.T) {
 		})
 
 		PatchConvey("test Stream success", func() {
+			extension := &ChatResponseMetaExtension{FinishReason: "stop"}
 			chunks := []*schema.AgenticMessage{
 				{
 					Role: schema.AgenticRoleTypeAssistant,
@@ -150,10 +154,9 @@ func TestModel(t *testing.T) {
 						schema.NewContentBlock(&schema.AssistantGenText{Text: "hello"}),
 					},
 					Extra: map[string]any{
-						extraKeyChatResponseMetaExtension: &ChatResponseMetaExtension{
-							FinishReason: "stop",
-						},
+						extraKeyChatResponseMetaExtension: extension,
 					},
+					ResponseMeta: &schema.AgenticResponseMeta{Extension: extension},
 				},
 			}
 			mockStream := schema.StreamReaderFromArray(chunks)
@@ -242,6 +245,18 @@ func TestParseCustomOptions(t *testing.T) {
 			convey.So(len(opts), convey.ShouldBeGreaterThan, 0)
 		})
 
+		PatchConvey("with empty extra fields", func() {
+			m, err := NewChatModel(ctx, &ChatConfig{
+				APIKey:      "key",
+				Model:       "gpt-4",
+				ExtraFields: map[string]any{"default": "value"},
+			})
+			convey.So(err, convey.ShouldBeNil)
+			emptyFields := map[string]any{}
+			opts := m.parseCustomOptions(WithExtraFields(emptyFields))
+			convey.So(len(opts), convey.ShouldEqual, 2)
+		})
+
 		PatchConvey("no custom options", func() {
 			m, err := NewChatModel(ctx, &ChatConfig{
 				APIKey: "key",
@@ -254,11 +269,59 @@ func TestParseCustomOptions(t *testing.T) {
 	})
 }
 
+type chatRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f chatRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestEmptyCustomHeadersReplaceDefaults(t *testing.T) {
+	const responseBody = `{"id":"response-id","object":"chat.completion","created":1,` +
+		`"model":"gpt-4","choices":[{"index":0,"message":{"role":"assistant",` +
+		`"content":"ok"},"finish_reason":"stop"}]}`
+
+	var requestHeaders http.Header
+	transport := chatRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requestHeaders = req.Header.Clone()
+		body := strings.NewReader(responseBody)
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(body),
+			Request:    req,
+		}
+		return response, nil
+	})
+	client := &http.Client{Transport: transport}
+	config := &ChatConfig{
+		BaseURL:       "https://example.com/v1",
+		APIKey:        "key",
+		Model:         "gpt-4",
+		HTTPClient:    client,
+		CustomHeaders: map[string]string{"X-Default": "value"},
+	}
+	m, err := NewChatModel(t.Context(), config)
+	assert.NoError(t, err)
+	input := []*schema.AgenticMessage{
+		{
+			Role: schema.AgenticRoleTypeUser,
+			ContentBlocks: []*schema.ContentBlock{
+				schema.NewContentBlock(&schema.UserInputText{Text: "hello"}),
+			},
+		},
+	}
+	emptyHeaders := map[string]string{}
+
+	_, err = m.Generate(t.Context(), input, WithCustomHeaders(emptyHeaders))
+	assert.NoError(t, err)
+	assert.Empty(t, requestHeaders.Values("X-Default"))
+}
+
 func TestExtractChatResponseMetaExtension(t *testing.T) {
-	PatchConvey("test extractChatResponseMetaExtension", t, func() {
+	PatchConvey("test applyAgenticResponseMetaExtension", t, func() {
 		PatchConvey("nil Extra", func() {
 			msg := &schema.AgenticMessage{}
-			extractChatResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldBeNil)
 		})
 
@@ -266,7 +329,7 @@ func TestExtractChatResponseMetaExtension(t *testing.T) {
 			msg := &schema.AgenticMessage{
 				Extra: map[string]any{"other_key": "value"},
 			}
-			extractChatResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldBeNil)
 		})
 
@@ -274,7 +337,7 @@ func TestExtractChatResponseMetaExtension(t *testing.T) {
 			msg := &schema.AgenticMessage{
 				Extra: map[string]any{extraKeyChatResponseMetaExtension: "wrong_type"},
 			}
-			extractChatResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldBeNil)
 		})
 
@@ -283,7 +346,7 @@ func TestExtractChatResponseMetaExtension(t *testing.T) {
 			msg := &schema.AgenticMessage{
 				Extra: map[string]any{extraKeyChatResponseMetaExtension: ext},
 			}
-			extractChatResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldNotBeNil)
 			convey.So(msg.ResponseMeta.Extension, convey.ShouldEqual, ext)
 		})
@@ -294,7 +357,7 @@ func TestExtractChatResponseMetaExtension(t *testing.T) {
 				Extra:        map[string]any{extraKeyChatResponseMetaExtension: ext},
 				ResponseMeta: &schema.AgenticResponseMeta{},
 			}
-			extractChatResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta.Extension, convey.ShouldEqual, ext)
 		})
 	})

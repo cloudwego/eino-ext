@@ -255,5 +255,16 @@ func TestWithExtraFields(t *testing.T) {
 			opts := model.GetImplSpecificOptions(&options{}, opt)
 			assert.Nil(t, opts.extraFields)
 		})
+
+		mockey.PatchConvey("replace fields set by an earlier option", func() {
+			firstFields := map[string]any{"first": "value"}
+			lastFields := map[string]any{"last": "value"}
+			opts := model.GetImplSpecificOptions(
+				&options{},
+				WithExtraFields(firstFields),
+				WithExtraFields(lastFields),
+			)
+			assert.Equal(t, lastFields, opts.extraFields)
+		})
 	})
 }
