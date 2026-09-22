@@ -366,7 +366,7 @@ func (m *ResponsesModel) Stream(ctx context.Context, input []*schema.AgenticMess
 				return nil, schema.ErrNoValue
 			}
 			if m.enableAutoCache {
-				setAutoCached(s.Message)
+				return markAutoCachedForCaller(s.Message), nil
 			}
 			return s.Message, nil
 		},

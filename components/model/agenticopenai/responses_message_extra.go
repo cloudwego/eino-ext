@@ -17,6 +17,8 @@
 package agenticopenai
 
 import (
+	"maps"
+
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -62,6 +64,19 @@ func setAutoCached(msg *schema.AgenticMessage) *schema.AgenticMessage {
 	}
 	msg.Extra[keyOfResponseAutoCached] = true
 	return msg
+}
+
+// markAutoCachedForCaller copies msg before writing the auto-cache flag.
+// StreamReader.Copy publishes the same *AgenticMessage to callbacks and the
+// caller. Writing Extra on that shared pointer races with callback reads and
+// crashes the process.
+func markAutoCachedForCaller(msg *schema.AgenticMessage) *schema.AgenticMessage {
+	if msg == nil {
+		return nil
+	}
+	cloned := *msg
+	cloned.Extra = maps.Clone(msg.Extra)
+	return setAutoCached(&cloned)
 }
 
 // InvalidateMessageCaches temporarily disables caching for the specified messages.
