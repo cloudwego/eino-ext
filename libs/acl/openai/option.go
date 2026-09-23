@@ -68,8 +68,8 @@ type openaiOptions struct {
 	MaxCompletionTokens                 *int
 }
 
-// WithExtraFields sets extra fields to include in the request body.
-// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
+// WithExtraFields replaces the extra fields configured for the request.
+// The selected fields are written into the top-level JSON request body.
 //
 // Example:
 //
@@ -88,12 +88,7 @@ type openaiOptions struct {
 //	}
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
-		if o.ExtraFields == nil {
-			o.ExtraFields = make(map[string]any, len(extraFields))
-		}
-		for k, v := range extraFields {
-			o.ExtraFields[k] = v
-		}
+		o.ExtraFields = extraFields
 	})
 }
 

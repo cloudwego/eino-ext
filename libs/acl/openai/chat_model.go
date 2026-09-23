@@ -587,6 +587,13 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 		ResponseAgenticMessageModifier:      nil,
 		ResponseChunkAgenticMessageModifier: nil,
 	}, opts...)
+	if specOptions.ExtraFields != nil {
+		extraFields := make(map[string]any, len(specOptions.ExtraFields))
+		for key, value := range specOptions.ExtraFields {
+			extraFields[key] = value
+		}
+		specOptions.ExtraFields = extraFields
+	}
 	// convert RequestBodyModifier to RequestPayloadModifier
 	if specOptions.RequestPayloadModifier == nil && specOptions.RequestBodyModifier != nil {
 		reqBodyModifier := specOptions.RequestBodyModifier
