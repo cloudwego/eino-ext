@@ -189,4 +189,4 @@ export VOLC_TOOL_ID="your_tool_id"
 
 ## 许可证
 
-根据 Apache License 2.0 许可。有关详细信息，请参阅 [LICENSE](../../LICENSE) 文件。
+根据 Apache License 2.0 许可。有关详细信息，请参阅 [LICENSE](../../../LICENSE) 文件。
