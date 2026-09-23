@@ -781,7 +781,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCreatedEvent(t *tes
 		}, nil).Then(nil, io.EOF)).Build()
 		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 		streamReader := &utils.ResponsesStreamReader{}
-		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
+		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 }
@@ -800,7 +800,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseCompletedEvent(t *t
 		}, nil).Then(nil, io.EOF)).Build()
 		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 		streamReader := &utils.ResponsesStreamReader{}
-		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
+		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil, nil)
 		assert.Equal(t, 1, mocker.Times())
 	})
 }
@@ -817,7 +817,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseErrorEvent(t *testi
 		}, nil).Then(nil, io.EOF)).Build()
 		sr, sw := schema.Pipe[*model.CallbackOutput](1)
 		streamReader := &utils.ResponsesStreamReader{}
-		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, sw)
+		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, sw, nil)
 
 		_, err := sr.Recv()
 		assert.NotNil(t, err)
@@ -842,7 +842,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseIncompleteEvent(t *
 		streamReader := &utils.ResponsesStreamReader{}
 		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 
-		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
+		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil, nil)
 
 		assert.Equal(t, 1, mocker.Times())
 	})
@@ -866,7 +866,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ResponseFailedEvent(t *test
 		streamReader := &utils.ResponsesStreamReader{}
 		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 
-		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
+		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil, nil)
 
 		assert.Equal(t, 1, mocker.Times())
 	})
@@ -885,7 +885,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_Default(t *testing.T) {
 		streamReader := &utils.ResponsesStreamReader{}
 		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).Return().Build()
 
-		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil)
+		cm.receivedStreamResponse(streamReader, nil, &cacheConfig{Enabled: true}, nil, nil)
 
 		assert.Equal(t, 1, mocker.Times())
 
@@ -912,7 +912,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_RawReasoning(t *testing.T) 
 	defer sr.Close()
 
 	cm := &ResponsesAPIChatModel{}
-	cm.receivedStreamResponse(streamReader, &model.Config{}, nil, sw)
+	cm.receivedStreamResponse(streamReader, &model.Config{}, nil, sw, nil)
 	sw.Close()
 
 	chunks := make([]*schema.Message, 0, 2)
@@ -961,8 +961,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ToolCallMetaMsg(t *testing.
 		streamReader := &utils.ResponsesStreamReader{}
 
 		mocker := Mock((*ResponsesAPIChatModel).sendCallbackOutput).To(
-			func(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
-				msg *schema.Message) {
+			func(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string, msg *schema.Message, thinking *arkModel.Thinking) {
 				assert.Equal(t, "123", msg.ToolCalls[0].ID)
 				assert.Equal(t, "test", msg.ToolCalls[0].Function.Name)
 				assert.Equal(t, "arguments", msg.ToolCalls[0].Function.Arguments)
@@ -971,7 +970,7 @@ func TestResponsesAPIChatModelReceivedStreamResponse_ToolCallMetaMsg(t *testing.
 
 		cache := &cacheConfig{Enabled: true}
 
-		cm.receivedStreamResponse(streamReader, nil, cache, nil)
+		cm.receivedStreamResponse(streamReader, nil, cache, nil, nil)
 
 		assert.Equal(t, 1, mocker.Times())
 
