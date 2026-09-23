@@ -39,9 +39,10 @@ type config struct {
 	enableTracing bool
 	enableMetrics bool
 
-	exportInsecure bool
-	exportEndpoint string
-	exportHeaders  map[string]string
+	exportInsecure    bool
+	exportTLSInsecure bool
+	exportEndpoint    string
+	exportHeaders     map[string]string
 
 	resource          *resource.Resource
 	sdkTracerProvider *sdktrace.TracerProvider
@@ -153,6 +154,15 @@ func WithHeaders(headers map[string]string) Option {
 func WithInsecure() Option {
 	return option(func(cfg *config) {
 		cfg.exportInsecure = true
+	})
+}
+
+// WithTLSInsecure enables TLS while skipping server certificate verification.
+// Use only for trusted private endpoints with certificates that cannot be
+// verified by the local system. Use WithInsecure for plaintext gRPC instead.
+func WithTLSInsecure() Option {
+	return option(func(cfg *config) {
+		cfg.exportTLSInsecure = true
 	})
 }
 

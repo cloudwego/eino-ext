@@ -758,16 +758,47 @@ func TestNewCallbackSender(t *testing.T) {
 	_, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
 	config := &model.AgenticConfig{}
 
-	s := newCallbackSender(sw, config)
+	s := newCallbackSender(sw, config, false)
 	assert.NotNil(t, s)
 	assert.Equal(t, sw, s.sw)
 	assert.Equal(t, config, s.config)
 }
 
+func TestCallbackSenderSendMeta(t *testing.T) {
+	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
+	r := sr.Copy(1)[0]
+	s := newCallbackSender(sw, &model.AgenticConfig{}, false)
+
+	meta := &schema.AgenticResponseMeta{}
+	s.send(meta, nil, nil, nil)
+
+	out, err := r.Recv()
+	assert.NoError(t, err)
+	assert.NotNil(t, out)
+	assert.NotNil(t, out.Message.ResponseMeta)
+}
+
+func TestCallbackSenderSendKeepsCacheWriteAndAutoCache(t *testing.T) {
+	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
+	r := sr.Copy(1)[0]
+	s := newCallbackSender(sw, &model.AgenticConfig{}, true)
+
+	s.send(nil, nil, map[string]any{keyOfCacheWriteTokens: 300}, nil)
+
+	out, err := r.Recv()
+	assert.NoError(t, err)
+	if assert.NotNil(t, out) && assert.NotNil(t, out.Message) {
+		tokens, ok := GetCacheWriteTokens(out.Message)
+		assert.True(t, ok)
+		assert.Equal(t, 300, tokens)
+		assert.Equal(t, true, out.Message.Extra[keyOfResponseAutoCached])
+	}
+}
+
 func TestCallbackSenderSendBlock(t *testing.T) {
 	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
 	r := sr.Copy(1)[0]
-	s := newCallbackSender(sw, &model.AgenticConfig{})
+	s := newCallbackSender(sw, &model.AgenticConfig{}, false)
 
 	block := schema.NewContentBlock(&schema.AssistantGenText{Text: "test"})
 	s.sendBlock(block, nil)
@@ -781,7 +812,7 @@ func TestCallbackSenderSendBlock(t *testing.T) {
 func TestCallbackSenderSendError(t *testing.T) {
 	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
 	r := sr.Copy(1)[0]
-	s := newCallbackSender(sw, &model.AgenticConfig{})
+	s := newCallbackSender(sw, &model.AgenticConfig{}, false)
 	s.errHeader = "test error"
 
 	s.sendResponse(nil, errors.New("error"))

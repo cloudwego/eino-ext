@@ -271,6 +271,16 @@ func Test_WithInsecure(t *testing.T) {
 	})
 }
 
+func Test_WithTLSInsecure(t *testing.T) {
+	cfg := &config{}
+
+	mockey.PatchConvey("Test WithTLSInsecure", t, func() {
+		option := WithTLSInsecure()
+		option.apply(cfg)
+		convey.So(cfg.exportTLSInsecure, convey.ShouldBeTrue)
+	})
+}
+
 func Test_WithSampler(t *testing.T) {
 	mockey.PatchConvey("Test WithSampler", t, func() {
 		sampler := sdktrace.TraceIDRatioBased(0.5)

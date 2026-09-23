@@ -576,15 +576,24 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 	}, opts...)
 
 	specOptions := model.GetImplSpecificOptions(&openaiOptions{
-		ExtraFields:                  c.config.ExtraFields,
-		ExtraHeader:                  c.config.CustomHeaders,
-		ReasoningEffort:              c.config.ReasoningEffort,
-		MaxCompletionTokens:          c.config.MaxCompletionTokens,
-		RequestBodyModifier:          nil,
-		RequestPayloadModifier:       nil,
-		ResponseMessageModifier:      nil,
-		ResponseChunkMessageModifier: nil,
+		ExtraFields:                         c.config.ExtraFields,
+		ExtraHeader:                         c.config.CustomHeaders,
+		ReasoningEffort:                     c.config.ReasoningEffort,
+		MaxCompletionTokens:                 c.config.MaxCompletionTokens,
+		RequestBodyModifier:                 nil,
+		RequestPayloadModifier:              nil,
+		ResponseMessageModifier:             nil,
+		ResponseChunkMessageModifier:        nil,
+		ResponseAgenticMessageModifier:      nil,
+		ResponseChunkAgenticMessageModifier: nil,
 	}, opts...)
+	if specOptions.ExtraFields != nil {
+		extraFields := make(map[string]any, len(specOptions.ExtraFields))
+		for key, value := range specOptions.ExtraFields {
+			extraFields[key] = value
+		}
+		specOptions.ExtraFields = extraFields
+	}
 	// convert RequestBodyModifier to RequestPayloadModifier
 	if specOptions.RequestPayloadModifier == nil && specOptions.RequestBodyModifier != nil {
 		reqBodyModifier := specOptions.RequestBodyModifier

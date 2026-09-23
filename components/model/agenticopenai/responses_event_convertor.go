@@ -27,11 +27,10 @@ import (
 	"github.com/openai/openai-go/v3/responses"
 )
 
-func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEventUnion],
-	config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput], options *model.Options) {
+func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEventUnion], config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput], options *model.Options, enableAutoCache bool) {
 
 	receiver := newStreamReceiver(options)
-	sender := newCallbackSender(sw, config)
+	sender := newCallbackSender(sw, config, enableAutoCache)
 
 	if sr.Err() != nil {
 		_ = sw.Send(nil, fmt.Errorf("failed to read stream: %w", sr.Err()))
@@ -207,15 +206,17 @@ func receivedStreamingResponse(sr *ssestream.Stream[responses.ResponseStreamEven
 }
 
 type callbackSender struct {
-	sw        *schema.StreamWriter[*model.AgenticCallbackOutput]
-	config    *model.AgenticConfig
-	errHeader string
+	sw              *schema.StreamWriter[*model.AgenticCallbackOutput]
+	config          *model.AgenticConfig
+	enableAutoCache bool
+	errHeader       string
 }
 
-func newCallbackSender(sw *schema.StreamWriter[*model.AgenticCallbackOutput], config *model.AgenticConfig) *callbackSender {
+func newCallbackSender(sw *schema.StreamWriter[*model.AgenticCallbackOutput], config *model.AgenticConfig, enableAutoCache bool) *callbackSender {
 	return &callbackSender{
-		sw:     sw,
-		config: config,
+		sw:              sw,
+		config:          config,
+		enableAutoCache: enableAutoCache,
 	}
 }
 
@@ -244,6 +245,9 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 		ResponseMeta: meta,
 		Extra:        extra,
 	}
+	if s.enableAutoCache {
+		setAutoCached(msg)
+	}
 
 	if block != nil {
 		msg.ContentBlocks = []*schema.ContentBlock{block}
@@ -252,6 +256,7 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 	s.sw.Send(&model.AgenticCallbackOutput{
 		Message: msg,
 		Config:  s.config,
+		Extra:   map[string]any{},
 	}, nil)
 }
 

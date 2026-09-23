@@ -122,6 +122,16 @@ Call `EndTrace` when the root operation completes. It records the final output a
 
 User-initiated `context.Canceled` callbacks are exported with the default Langfuse level, a `cancelled` status message, and cancellation metadata instead of being counted as errors. `context.DeadlineExceeded` and other callback failures remain errors.
 
+Inside an ADK agent, failed model, tool, and nested-agent observations retain their own errors. They do not mark the application root as failed: the outermost agent determines whether the failure is terminal. `adk.WillRetryError` events and message-stream errors are recovery notifications and do not fail the agent observation. Retry exhaustion and other terminal agent errors still fail both the agent and the root, even if partial output was produced. This behavior is independent of `CollapseAgentInternalSpans`. Calls outside an agent retain their existing root-error propagation.
+
+Agent metadata retains retry notifications in `eino_retry_events` (operation, the SDK's attempt value, error, and rejection reason), including responses rejected by `ShouldRetry` after a successful provider call. `eino_retry_event_count` counts observed notifications, not completed retries; exhaustion can also emit a notification, and attempt numbering is preserved from Eino. Error-valued reasons are stored as text; structured reasons remain JSON, with a text fallback for values that cannot be serialized. These diagnostics respect attribute limits and do not change the Agent's error level.
+
+Root output prefers a nonempty explicit `EndTrace` result, then context termination output (cancellation, interruption, or timeout), then the outermost Agent result. Nested calls cannot overwrite that Agent result, including an empty result, regardless of callback completion order. Calls without an Agent retain the last child output as a fallback.
+
+Callback-owned goroutines recover and log panics with stack traces. A terminal collector panic records `eino_callback_panic` diagnostics and ends its observation, releasing the root's child count; already recorded output is preserved. An input collector panic records the diagnostic before unblocking input completion, allowing the normal end/error callback to capture the final result and finish the span. Callback panics mark the affected observation as an internal telemetry error but do not independently fail the application root. Root metadata retains the diagnostic, and existing business failures remain errors.
+
+
+
 Resumable Eino tool, graph, subgraph, and ADK business interrupts are exported
 with the default Langfuse level and an `interrupted` status instead of `ERROR`.
 The interrupt cause remains available in structured observation output and

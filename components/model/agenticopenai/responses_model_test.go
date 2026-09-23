@@ -183,6 +183,35 @@ func TestModelIsCallbacksEnabled(t *testing.T) {
 	})
 }
 
+func TestResponsesGetOptionsReplacesExtraFields(t *testing.T) {
+	defaultExtraFields := map[string]any{"default": "value", "override": "default"}
+	m := &ResponsesModel{extraFields: defaultExtraFields}
+	requestExtraFields := map[string]any{
+		"request":  "value",
+		"override": "request",
+	}
+	requestOptions := []model.Option{WithExtraFields(requestExtraFields)}
+
+	_, firstOptions, err := m.getOptions(requestOptions)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]any{
+		"request":  "value",
+		"override": "request",
+	}, firstOptions.extraFields)
+	assert.Equal(t, map[string]any{"default": "value", "override": "default"}, defaultExtraFields)
+
+	emptyFields := map[string]any{}
+	emptyRequestOptions := []model.Option{WithExtraFields(emptyFields)}
+	_, emptyOptions, err := m.getOptions(emptyRequestOptions)
+	assert.NoError(t, err)
+	assert.NotNil(t, emptyOptions.extraFields)
+	assert.Empty(t, emptyOptions.extraFields)
+
+	_, secondOptions, err := m.getOptions(nil)
+	assert.NoError(t, err)
+	assert.Equal(t, map[string]any{"default": "value", "override": "default"}, secondOptions.extraFields)
+}
+
 type modelTestMockDecoder struct {
 	index int
 }

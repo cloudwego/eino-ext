@@ -1706,6 +1706,39 @@ func TestLogprobsOptionsOverride(t *testing.T) {
 	})
 }
 
+func TestWithLabels(t *testing.T) {
+	ctx := context.Background()
+	user := []*schema.Message{{Role: schema.User, Content: "hi"}}
+	labels := map[string]string{"team": "search", "env": "prod"}
+
+	vertexClient, err := genai.NewClient(ctx, &genai.ClientConfig{
+		Backend: genai.BackendVertexAI,
+		APIKey:  "fake-key",
+	})
+	assert.NoError(t, err)
+
+	t.Run("labels applied on vertex backend", func(t *testing.T) {
+		cm := &ChatModel{cli: vertexClient, model: "gemini-x"}
+		_, _, m, _, err := cm.genInputAndConf(user, WithLabels(labels))
+		assert.NoError(t, err)
+		assert.Equal(t, labels, m.Labels)
+	})
+
+	t.Run("labels rejected on gemini api backend", func(t *testing.T) {
+		cm := &ChatModel{cli: &genai.Client{Models: &genai.Models{}}, model: "gemini-x"}
+		_, _, _, _, err := cm.genInputAndConf(user, WithLabels(labels))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "Vertex AI")
+	})
+
+	t.Run("no labels leaves field unset on gemini api backend", func(t *testing.T) {
+		cm := &ChatModel{cli: &genai.Client{Models: &genai.Models{}}, model: "gemini-x"}
+		_, _, m, _, err := cm.genInputAndConf(user)
+		assert.NoError(t, err)
+		assert.Nil(t, m.Labels)
+	})
+}
+
 func TestConvCandidateLogprobs(t *testing.T) {
 	candidate := &genai.Candidate{
 		Content: &genai.Content{

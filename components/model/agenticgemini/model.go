@@ -332,9 +332,8 @@ func (g *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 			}
 		}
 	}()
-	srList := sr.Copy(2)
-	callbacks.OnEndWithStreamOutput(ctx, srList[0])
-	return schema.StreamReaderWithConvert(srList[1], func(t *model.AgenticCallbackOutput) (*schema.AgenticMessage, error) {
+	_, callbackStream := callbacks.OnEndWithStreamOutput(ctx, sr)
+	return schema.StreamReaderWithConvert(callbackStream, func(t *model.AgenticCallbackOutput) (*schema.AgenticMessage, error) {
 		return t.Message, nil
 	}), nil
 }
