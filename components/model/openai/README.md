@@ -106,7 +106,7 @@ ByAzure bool `json:"by_azure"`
 
 // AzureModelMapperFunc is used to map the model name to the deployment name for Azure OpenAI Service.
 // This is useful when the model name is different from the deployment name.
-// Optional for Azure, remove [,:] from the model name by default.
+// Optional for Azure, remove [.:] from the model name by default.
 AzureModelMapperFunc func(model string) string
 
 // BaseURL is the Azure OpenAI endpoint URL
