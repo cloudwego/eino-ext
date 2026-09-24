@@ -105,8 +105,9 @@ func NewEmbeddingClient(ctx context.Context, config *EmbeddingConfig) (*Embeddin
 		}
 	}
 
-	clientConf.HTTPClient = config.HTTPClient
-	if clientConf.HTTPClient == nil {
+	if config.HTTPClient != nil {
+		clientConf.HTTPClient = config.HTTPClient
+	} else {
 		clientConf.HTTPClient = http.DefaultClient
 	}
 
