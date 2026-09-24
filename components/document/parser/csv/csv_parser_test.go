@@ -1,0 +1,54 @@
+/*
+ * Copyright 2025 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package csv
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	"github.com/cloudwego/eino/components/document/parser"
+)
+
+func TestCSVParser(t *testing.T) {
+	f, err := os.Open("./examples/testdata/test.csv")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	defer f.Close()
+
+	ctx := context.Background()
+	cp, err := NewCSVParser(ctx, &Config{})
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	docs, err := cp.Parse(ctx, f, parser.WithURI("./examples/testdata/test.csv"), parser.WithExtraMeta(map[string]any{
+		"_extension": ".csv",
+		"_file_name": "test.csv",
+		"_source":    "local",
+	}))
+
+	if err != nil {
+		t.Error(err)
+		return
+	}
+	t.Log(docs)
+	return
+}
