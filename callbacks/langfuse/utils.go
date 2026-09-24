@@ -19,6 +19,7 @@ package langfuse
 import (
 	"fmt"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino-ext/libs/acl/langfuse"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -33,7 +34,16 @@ func convModelCallbackInput(in []callbacks.CallbackInput) []*model.CallbackInput
 	return ret
 }
 
-func extractModelInput(ins []*model.CallbackInput) (config *model.Config, messages []*schema.Message, extra map[string]interface{}, err error) {
+type modelInput struct {
+	config     *model.Config
+	messages   []*schema.Message
+	extra      map[string]interface{}
+	tools      []*schema.ToolInfo
+	toolChoice *schema.ToolChoice
+}
+
+func extractModelInput(ins []*model.CallbackInput) (out *modelInput, err error) {
+	out = &modelInput{}
 	var mas [][]*schema.Message
 	for _, in := range ins {
 		if in == nil {
@@ -43,20 +53,27 @@ func extractModelInput(ins []*model.CallbackInput) (config *model.Config, messag
 			mas = append(mas, in.Messages)
 		}
 		if len(in.Extra) > 0 {
-			extra = in.Extra
+			out.extra = in.Extra
 		}
 		if in.Config != nil {
-			config = in.Config
+			out.config = in.Config
+		}
+		if len(in.Tools) > 0 {
+			out.tools = in.Tools
+		}
+		if in.ToolChoice != nil {
+			out.toolChoice = in.ToolChoice
 		}
 	}
 	if len(mas) == 0 {
-		return config, []*schema.Message{}, extra, nil
+		out.messages = []*schema.Message{}
+		return out, nil
 	}
-	messages, err = concatMessageArray(mas)
+	out.messages, err = concatMessageArray(mas)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("concat messages failed: %v", err)
+		return nil, fmt.Errorf("concat messages failed: %v", err)
 	}
-	return config, messages, extra, nil
+	return out, nil
 }
 
 func convModelCallbackOutput(out []callbacks.CallbackOutput) []*model.CallbackOutput {
@@ -144,4 +161,89 @@ func concatMessageArray(mas [][]*schema.Message) ([]*schema.Message, error) {
 	}
 
 	return ret, nil
+}
+
+// openaiTool is Chat Completions tool shape for generation Input.tools
+// (Langfuse Playground extractTools reads input.tools).
+type openaiTool struct {
+	Type     string             `json:"type"`
+	Function openaiToolFunction `json:"function"`
+}
+
+type openaiToolFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Parameters  any    `json:"parameters,omitempty"`
+}
+
+func toolInfosToOpenAITools(tools []*schema.ToolInfo) ([]openaiTool, error) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+	out := make([]openaiTool, 0, len(tools))
+	for _, t := range tools {
+		if t == nil {
+			continue
+		}
+		var params any
+		if t.ParamsOneOf != nil {
+			js, err := t.ToJSONSchema()
+			if err != nil {
+				return nil, fmt.Errorf("convert tool %q parameters: %w", t.Name, err)
+			}
+			params = js
+		}
+		if params == nil {
+			params = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		out = append(out, openaiTool{
+			Type: "function",
+			Function: openaiToolFunction{
+				Name:        t.Name,
+				Description: t.Desc,
+				Parameters:  params,
+			},
+		})
+	}
+	return out, nil
+}
+
+func mapToolChoiceOpenAI(tc *schema.ToolChoice) string {
+	if tc == nil {
+		return "auto"
+	}
+	switch *tc {
+	case schema.ToolChoiceForced:
+		return "required"
+	case schema.ToolChoiceForbidden:
+		return "none"
+	default:
+		return "auto"
+	}
+}
+
+// buildOpenAIChatInput builds generation Input as OpenAI chat request JSON:
+//
+//	{"messages":[...],"tools":[...],"tool_choice":"auto"}
+//
+// hasTools is true only after at least one non-nil tool is converted.
+// Callers should set body.Input (leave InMessages empty) only when hasTools.
+func buildOpenAIChatInput(messages []*schema.Message, tools []*schema.ToolInfo, toolChoice *schema.ToolChoice) (input string, hasTools bool, err error) {
+	oaiTools, err := toolInfosToOpenAITools(tools)
+	if err != nil {
+		return "", false, err
+	}
+	payload := map[string]any{
+		"messages": messages,
+	}
+	if len(oaiTools) > 0 {
+		payload["tools"] = oaiTools
+		payload["tool_choice"] = mapToolChoiceOpenAI(toolChoice)
+		hasTools = true
+	}
+	input, err = sonic.MarshalString(payload)
+	if err != nil {
+		return "", false, err
+	}
+	return input, hasTools, nil
 }
