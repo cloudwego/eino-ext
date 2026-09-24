@@ -350,6 +350,14 @@ func (cm *ChatModel) buildResponseChunkMessageModifier() openai.ResponseChunkMes
 	return func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error) {
 		const reasonError = "error"
 
+		// msg and rawBody may be nil when end is true, per the
+		// ResponseChunkMessageModifier contract: the stream loop passes the last
+		// empty message, which is nil unless a chunk built one. There is nothing
+		// to modify in that case.
+		if msg == nil {
+			return msg, nil
+		}
+
 		if msg.ResponseMeta != nil && msg.ResponseMeta.FinishReason == reasonError {
 			tError := jsoniter.Get(rawBody, reasonError)
 			if len(tError.ToString()) > 0 {
