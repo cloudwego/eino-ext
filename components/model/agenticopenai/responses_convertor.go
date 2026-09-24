@@ -2261,7 +2261,8 @@ func toTokenUsage(resp *responses.Response) (tokenUsage *schema.TokenUsage) {
 	usage := &schema.TokenUsage{
 		PromptTokens: int(resp.Usage.InputTokens),
 		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(resp.Usage.InputTokensDetails.CachedTokens),
+			CachedTokens:     int(resp.Usage.InputTokensDetails.CachedTokens),
+			CacheWriteTokens: int(resp.Usage.InputTokensDetails.CacheWriteTokens),
 		},
 		CompletionTokens: int(resp.Usage.OutputTokens),
 		CompletionTokensDetails: schema.CompletionTokensDetails{

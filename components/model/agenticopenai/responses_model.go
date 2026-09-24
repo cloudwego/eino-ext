@@ -876,7 +876,8 @@ func toModelTokenUsage(meta *schema.AgenticResponseMeta) *model.TokenUsage {
 	return &model.TokenUsage{
 		PromptTokens: usage.PromptTokens,
 		PromptTokenDetails: model.PromptTokenDetails{
-			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+			CachedTokens:     usage.PromptTokenDetails.CachedTokens,
+			CacheWriteTokens: usage.PromptTokenDetails.CacheWriteTokens,
 		},
 		CompletionTokens: usage.CompletionTokens,
 		CompletionTokensDetails: model.CompletionTokensDetails{
