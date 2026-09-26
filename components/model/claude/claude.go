@@ -35,8 +35,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"golang.org/x/oauth2/google"
 	"github.com/eino-contrib/jsonschema"
+	"golang.org/x/oauth2/google"
 
 	"github.com/cloudwego/eino/components"
 
@@ -1018,7 +1018,8 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 		result.TokenUsage = &model.TokenUsage{
 			PromptTokens: output.ResponseMeta.Usage.PromptTokens,
 			PromptTokenDetails: model.PromptTokenDetails{
-				CachedTokens: output.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+				CachedTokens:     output.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+				CacheWriteTokens: output.ResponseMeta.Usage.PromptTokenDetails.CacheWriteTokens,
 			},
 			CompletionTokens: output.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      output.ResponseMeta.Usage.TotalTokens,
@@ -1392,7 +1393,8 @@ func toTokenUsage(u anthropic.Usage) *schema.TokenUsage {
 	return &schema.TokenUsage{
 		PromptTokens: promptTokens,
 		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(u.CacheReadInputTokens),
+			CachedTokens:     int(u.CacheReadInputTokens),
+			CacheWriteTokens: int(u.CacheCreationInputTokens),
 		},
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
@@ -1411,7 +1413,8 @@ func toDeltaTokenUsage(u anthropic.MessageDeltaUsage) *schema.TokenUsage {
 	return &schema.TokenUsage{
 		PromptTokens: promptTokens,
 		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(u.CacheReadInputTokens),
+			CachedTokens:     int(u.CacheReadInputTokens),
+			CacheWriteTokens: int(u.CacheCreationInputTokens),
 		},
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,

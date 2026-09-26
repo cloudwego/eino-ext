@@ -1322,7 +1322,8 @@ func toDeltaResponseMeta(delta anthropic.MessageDeltaEvent) *schema.AgenticRespo
 		TokenUsage: &schema.TokenUsage{
 			PromptTokens: promptTokens,
 			PromptTokenDetails: schema.PromptTokenDetails{
-				CachedTokens: int(delta.Usage.CacheReadInputTokens),
+				CachedTokens:     int(delta.Usage.CacheReadInputTokens),
+				CacheWriteTokens: int(delta.Usage.CacheCreationInputTokens),
 			},
 			CompletionTokens: completionTokens,
 			TotalTokens:      promptTokens + completionTokens,
@@ -1352,7 +1353,8 @@ func toTokenUsage(usage anthropic.Usage) *schema.TokenUsage {
 	return &schema.TokenUsage{
 		PromptTokens: promptTokens,
 		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(usage.CacheReadInputTokens),
+			CachedTokens:     int(usage.CacheReadInputTokens),
+			CacheWriteTokens: int(usage.CacheCreationInputTokens),
 		},
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,

@@ -28,11 +28,10 @@ import (
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/utils"
 )
 
-func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
-	config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput]) {
+func receivedStreamResponse(streamReader *utils.ResponsesStreamReader, config *model.AgenticConfig, sw *schema.StreamWriter[*model.AgenticCallbackOutput], enableAutoCache bool) {
 
 	receiver := newStreamReceiver()
-	sender := newCallbackSender(sw, config)
+	sender := newCallbackSender(sw, config, enableAutoCache)
 
 	for {
 		event, err := streamReader.Recv()
@@ -251,15 +250,17 @@ func receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
 }
 
 type callbackSender struct {
-	sw        *schema.StreamWriter[*model.AgenticCallbackOutput]
-	config    *model.AgenticConfig
-	errHeader string
+	sw              *schema.StreamWriter[*model.AgenticCallbackOutput]
+	config          *model.AgenticConfig
+	enableAutoCache bool
+	errHeader       string
 }
 
-func newCallbackSender(sw *schema.StreamWriter[*model.AgenticCallbackOutput], config *model.AgenticConfig) *callbackSender {
+func newCallbackSender(sw *schema.StreamWriter[*model.AgenticCallbackOutput], config *model.AgenticConfig, enableAutoCache bool) *callbackSender {
 	return &callbackSender{
-		sw:     sw,
-		config: config,
+		sw:              sw,
+		config:          config,
+		enableAutoCache: enableAutoCache,
 	}
 }
 
@@ -285,6 +286,9 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 	}
 
 	markSelfGenerated(msg)
+	if s.enableAutoCache {
+		setAutoCached(msg)
+	}
 
 	if block != nil {
 		msg.ContentBlocks = []*schema.ContentBlock{block}
@@ -293,6 +297,7 @@ func (s *callbackSender) send(meta *schema.AgenticResponseMeta, block *schema.Co
 	s.sw.Send(&model.AgenticCallbackOutput{
 		Message: msg,
 		Config:  s.config,
+		Extra:   map[string]any{},
 	}, nil)
 }
 
