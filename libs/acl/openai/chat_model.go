@@ -31,6 +31,8 @@ import (
 	"github.com/eino-contrib/jsonschema"
 	"github.com/meguminnnnnnnnn/go-openai"
 
+	orderedmap "github.com/wk8/go-ordered-map/v2"
+
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -1281,6 +1283,39 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 	return msg, found, nil
 }
 
+// copyJSONSchemaForSort deep-copies the parts of the schema that
+// sortArrayFields can write to (every reachable node's Required slice), so a
+// schema shared across requests — e.g. the internal pointer returned by
+// schema.ParamsOneOf.ToJSONSchema — is never mutated. Fields the sorter only
+// reads keep sharing their original pointers; the copy traversal is a
+// superset of the sorter's, which is harmless because copying never mutates.
+func copyJSONSchemaForSort(sc *jsonschema.Schema) *jsonschema.Schema {
+	if sc == nil {
+		return nil
+	}
+
+	cp := *sc
+
+	if len(sc.Required) > 0 {
+		cp.Required = make([]string, len(sc.Required))
+		copy(cp.Required, sc.Required)
+	}
+
+	if sc.Properties != nil {
+		newProps := orderedmap.New[string, *jsonschema.Schema]()
+		for pair := sc.Properties.Oldest(); pair != nil; pair = pair.Next() {
+			newProps.Set(pair.Key, copyJSONSchemaForSort(pair.Value))
+		}
+		cp.Properties = newProps
+	}
+
+	if sc.Items != nil {
+		cp.Items = copyJSONSchemaForSort(sc.Items)
+	}
+
+	return &cp
+}
+
 func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 	var sortArrayFields func(*jsonschema.Schema)
 	sortArrayFields = func(sc *jsonschema.Schema) {
@@ -1321,13 +1356,16 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
 
-		sortArrayFields(paramsJSONSchema)
+		// ToJSONSchema returns the shared internal schema: sort a copy so
+		// concurrent requests reusing one ToolInfo never race on it.
+		sortedParams := copyJSONSchemaForSort(paramsJSONSchema)
+		sortArrayFields(sortedParams)
 
 		tools[i] = tool{
 			Function: &functionDefinition{
 				Name:        ti.Name,
 				Description: ti.Desc,
-				Parameters:  paramsJSONSchema,
+				Parameters:  sortedParams,
 			},
 		}
 	}
