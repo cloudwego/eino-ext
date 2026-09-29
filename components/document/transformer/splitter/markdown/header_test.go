@@ -98,3 +98,44 @@ func TestMarkdownHeaderSplitter(t *testing.T) {
 		})
 	}
 }
+
+func TestHeaderSplitterCodeFenceBoundaries(t *testing.T) {
+	tests := []struct{ name, open, inside, close string }{
+		{"shorter backticks", "````markdown", "```", "````"},
+		{"six backticks", "``````markdown", "text", "``````"},
+		{"shorter tildes", "~~~~markdown", "~~~", "~~~~"},
+		{"backticks with suffix", "```markdown", "```not-a-close", "```"},
+		{"tildes with suffix", "~~~markdown", "~~~not-a-close", "~~~"},
+		{"different fence type", "```markdown", "~~~", "```"},
+		{"longer closing fence", "```markdown", "text", "`````"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, trim := range []bool{false, true} {
+				splitter, err := NewHeaderSplitter(context.Background(), &HeaderConfig{Headers: map[string]string{"#": "title"}, TrimHeaders: trim})
+				if err != nil {
+					t.Fatal(err)
+				}
+				code := tt.open + "\n" + tt.inside + "\n# inside code\n" + tt.close
+				docs, err := splitter.Transform(context.Background(), []*schema.Document{{Content: "# First\n" + code + "\n# Second\nafter"}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(docs) != 2 {
+					t.Fatalf("trim=%t: got %d chunks, want 2: %+v", trim, len(docs), docs)
+				}
+				wantFirst, wantSecond := code, "after"
+				if !trim {
+					wantFirst = "# First\n" + code
+					wantSecond = "# Second\nafter"
+				}
+				if docs[0].Content != wantFirst || docs[0].MetaData["title"] != "First" {
+					t.Errorf("trim=%t: first chunk = %+v", trim, docs[0])
+				}
+				if docs[1].Content != wantSecond || docs[1].MetaData["title"] != "Second" {
+					t.Errorf("trim=%t: second chunk = %+v", trim, docs[1])
+				}
+			}
+		})
+	}
+}
