@@ -24,6 +24,7 @@ import (
 
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
+	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
 
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/schema"
@@ -41,18 +42,23 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 1. Create Valkey GLIDE client
+	// 1. Create Valkey GLIDE client.
+	// WithClientInfoTag tags this integration in the Valkey server's CLIENT INFO
+	// (lib-name=GlideGo(eino-valkey)) so operators can attribute usage to eino. Metadata only.
 	cfg := config.NewClientConfiguration().
-		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379})
+		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379}).
+		WithClientInfoTag("eino-valkey")
 	client, err := glide.NewClient(cfg)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create client: %v", err))
 	}
 	defer client.Close()
 
-	// 2. Create JSON indexer
+	// 2. Create JSON indexer.
+	// The indexer's BatchClient interface takes commands as [][]string; glideBatchClient
+	// (below) adapts *glide.Client to that contract via a pipeline batch.
 	indexer, err := vi.NewIndexer(ctx, &vi.IndexerConfig{
-		Client:       client,
+		Client:       glideBatchClient{client},
 		KeyPrefix:    "jdoc:",
 		DocumentType: vi.DocumentTypeJSON,
 		BatchSize:    10,
@@ -74,6 +80,21 @@ func main() {
 	}
 
 	fmt.Printf("Stored %d JSON documents: %v\n", len(ids), ids)
+}
+
+// glideBatchClient adapts *glide.Client to the indexer's BatchClient interface,
+// which executes commands expressed as [][]string. Each command is added to a
+// pipeline batch and run with raiseOnError=true so any failed write surfaces an error.
+type glideBatchClient struct {
+	client *glide.Client
+}
+
+func (g glideBatchClient) Exec(ctx context.Context, commands [][]string) ([]any, error) {
+	batch := pipeline.NewStandaloneBatch(false)
+	for _, cmd := range commands {
+		batch.CustomCommand(cmd)
+	}
+	return g.client.Exec(ctx, *batch, true)
 }
 
 // mockEmbedding is a placeholder - replace with a real embedding implementation.
