@@ -4,7 +4,7 @@ go 1.23.0
 
 require (
 	github.com/cloudwego/eino v0.6.0
-	github.com/valkey-io/valkey-glide/go/v2 v2.4.1
+	github.com/valkey-io/valkey-glide/go/v2 v2.5.2
 )
 
 require (

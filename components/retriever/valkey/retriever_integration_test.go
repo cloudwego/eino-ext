@@ -54,6 +54,84 @@ func getTestClient(t *testing.T) *glide.Client {
 	return client
 }
 
+// waitForIndex polls FT.INFO until the index reports at least wantDocs indexed
+// documents with an empty mutation queue, or fails the test after a timeout.
+// This replaces a fixed sleep, which is racy: too short flakes under load, too
+// long wastes time on every run.
+func waitForIndex(t *testing.T, ctx context.Context, client *glide.Client, indexName string, wantDocs int) {
+	t.Helper()
+	const (
+		timeout  = 5 * time.Second
+		interval = 25 * time.Millisecond
+	)
+	deadline := time.Now().Add(timeout)
+	var lastDocs, lastQueue int64
+	for {
+		raw, err := client.CustomCommand(ctx, []string{"FT.INFO", indexName})
+		if err != nil {
+			t.Fatalf("FT.INFO %s failed: %v", indexName, err)
+		}
+		info := ftInfoToMap(raw)
+		lastDocs = ftInfoInt(info["num_docs"])
+		lastQueue = ftInfoInt(info["mutation_queue_size"])
+		if lastDocs >= int64(wantDocs) && lastQueue == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("index %s not ready after %s: num_docs=%d (want >=%d), mutation_queue_size=%d (want 0)",
+				indexName, timeout, lastDocs, wantDocs, lastQueue)
+		}
+		time.Sleep(interval)
+	}
+}
+
+// ftInfoToMap flattens an FT.INFO reply into a key->value map. Valkey returns a
+// flat [key, value, key, value, ...] sequence under RESP2 and may return a map
+// under RESP3; this handles both.
+func ftInfoToMap(raw any) map[string]any {
+	out := make(map[string]any)
+	switch v := raw.(type) {
+	case map[string]any:
+		return v
+	case []any:
+		for i := 0; i+1 < len(v); i += 2 {
+			if key, ok := asString(v[i]); ok {
+				out[key] = v[i+1]
+			}
+		}
+	}
+	return out
+}
+
+func asString(v any) (string, bool) {
+	switch s := v.(type) {
+	case string:
+		return s, true
+	case []byte:
+		return string(s), true
+	}
+	return "", false
+}
+
+// ftInfoInt coerces an FT.INFO numeric field (which may arrive as an integer or
+// as a string) to int64; unparsable or missing values yield 0.
+func ftInfoInt(v any) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case float64:
+		return int64(n)
+	}
+	if s, ok := asString(v); ok {
+		if parsed, err := strconv.ParseInt(s, 10, 64); err == nil {
+			return parsed
+		}
+	}
+	return 0
+}
+
 // deterministicEmbedder returns vectors based on text for predictable similarity.
 // Texts with similar characters produce similar vectors.
 type deterministicEmbedder struct {
@@ -133,8 +211,8 @@ func TestIntegration_Retriever_KNN(t *testing.T) {
 		}
 	}
 
-	// Wait for index to be updated
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the index to reflect the documents just written.
+	waitForIndex(t, ctx, client, indexName, len(docs))
 
 	// Create retriever
 	r, err := NewRetriever(ctx, &RetrieverConfig{
@@ -235,7 +313,8 @@ func TestIntegration_Retriever_WithFilter(t *testing.T) {
 		"vector_content": string(vector2Bytes(vecs[1])),
 	})
 
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the index to reflect the two documents just written.
+	waitForIndex(t, ctx, client, indexName, 2)
 
 	r, err := NewRetriever(ctx, &RetrieverConfig{
 		Client:    client,

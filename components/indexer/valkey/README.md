@@ -32,6 +32,7 @@ import (
 
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
+	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
 	"github.com/cloudwego/eino/schema"
 
 	valkeyIndexer "github.com/cloudwego/eino-ext/components/indexer/valkey"
@@ -40,17 +41,21 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 1. Create Valkey GLIDE client
+	// 1. Create Valkey GLIDE client.
+	// WithClientInfoTag adds the recommended "eino-valkey" attribution tag (see note below).
 	cfg := config.NewClientConfiguration().
-		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379})
+		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379}).
+		WithClientInfoTag("eino-valkey")
 	client, _ := glide.NewClient(cfg)
 
 	// 2. Create embedding component (use your preferred embedder)
 	emb := yourEmbedder()
 
-	// 3. Create Valkey indexer
+	// 3. Create Valkey indexer.
+	// The indexer's BatchClient interface takes commands as [][]string; glideBatchClient
+	// (defined below) adapts *glide.Client to that contract via a pipeline batch.
 	indexer, _ := valkeyIndexer.NewIndexer(ctx, &valkeyIndexer.IndexerConfig{
-		Client:    client,
+		Client:    glideBatchClient{client},
 		KeyPrefix: "doc:",
 		BatchSize: 10,
 		Embedding: emb,
@@ -68,6 +73,20 @@ func main() {
 		return
 	}
 	fmt.Printf("stored document IDs: %v\n", ids)
+}
+
+// glideBatchClient adapts *glide.Client to the indexer's BatchClient interface,
+// which executes commands expressed as [][]string.
+type glideBatchClient struct {
+	client *glide.Client
+}
+
+func (g glideBatchClient) Exec(ctx context.Context, commands [][]string) ([]any, error) {
+	batch := pipeline.NewStandaloneBatch(false)
+	for _, cmd := range commands {
+		batch.CustomCommand(cmd)
+	}
+	return g.client.Exec(ctx, *batch, true)
 }
 ```
 
@@ -139,6 +158,14 @@ indexer, _ := valkeyIndexer.NewIndexer(ctx, &valkeyIndexer.IndexerConfig{
     Embedding: emb,
 })
 ```
+
+## Client Attribution
+
+This component takes a caller-provided Valkey GLIDE client rather than constructing one, so the
+library-name tag must be set where you build the client. When you create the GLIDE client, set
+`WithClientInfoTag("eino-valkey")` (requires `valkey-glide/go/v2` >= v2.5.2). This makes the client
+report `lib-name=GlideGo(eino-valkey)` in `CLIENT INFO`, letting operators attribute Valkey usage to
+this integration. It is metadata only and does not change behavior.
 
 ## For More Details
 

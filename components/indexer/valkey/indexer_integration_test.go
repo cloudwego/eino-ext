@@ -29,6 +29,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	glide "github.com/valkey-io/valkey-glide/go/v2"
 	"github.com/valkey-io/valkey-glide/go/v2/config"
+	"github.com/valkey-io/valkey-glide/go/v2/pipeline"
 )
 
 func getTestClient(t *testing.T) *glide.Client {
@@ -52,6 +53,21 @@ func getTestClient(t *testing.T) *glide.Client {
 		t.Fatalf("failed to create valkey client: %v", err)
 	}
 	return client
+}
+
+// glideBatchClient adapts *glide.Client to the indexer's BatchClient interface,
+// which executes commands expressed as [][]string. Each command is added to a
+// pipeline batch and run with raiseOnError=true so any failed write surfaces an error.
+type glideBatchClient struct {
+	client *glide.Client
+}
+
+func (g glideBatchClient) Exec(ctx context.Context, commands [][]string) ([]any, error) {
+	batch := pipeline.NewStandaloneBatch(false)
+	for _, cmd := range commands {
+		batch.CustomCommand(cmd)
+	}
+	return g.client.Exec(ctx, *batch, true)
 }
 
 type deterministicEmbedder struct {
@@ -84,7 +100,7 @@ func TestIntegration_Indexer_Hash(t *testing.T) {
 	})
 
 	idx, err := NewIndexer(ctx, &IndexerConfig{
-		Client:       client,
+		Client:       glideBatchClient{client},
 		KeyPrefix:    prefix,
 		DocumentType: DocumentTypeHash,
 		BatchSize:    10,
@@ -136,7 +152,7 @@ func TestIntegration_Indexer_JSON(t *testing.T) {
 	})
 
 	idx, err := NewIndexer(ctx, &IndexerConfig{
-		Client:       client,
+		Client:       glideBatchClient{client},
 		KeyPrefix:    prefix,
 		DocumentType: DocumentTypeJSON,
 		BatchSize:    10,

@@ -39,9 +39,12 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 1. Create Valkey GLIDE client
+	// 1. Create Valkey GLIDE client.
+	// WithClientInfoTag tags this integration in the Valkey server's CLIENT INFO
+	// (lib-name=GlideGo(eino-valkey)) so operators can attribute usage to eino. Metadata only.
 	cfg := config.NewClientConfiguration().
-		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379})
+		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379}).
+		WithClientInfoTag("eino-valkey")
 	client, err := glide.NewClient(cfg)
 	if err != nil {
 		panic(fmt.Sprintf("failed to create client: %v", err))

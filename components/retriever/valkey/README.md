@@ -40,9 +40,11 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// 1. Create Valkey GLIDE client
+	// 1. Create Valkey GLIDE client.
+	// WithClientInfoTag adds the recommended "eino-valkey" attribution tag (see note below).
 	cfg := config.NewClientConfiguration().
-		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379})
+		WithAddress(&config.NodeAddress{Host: "localhost", Port: 6379}).
+		WithClientInfoTag("eino-valkey")
 	client, _ := glide.NewClient(cfg)
 
 	// 2. Create embedding component (use your preferred embedder)
@@ -139,6 +141,14 @@ retriever, _ := valkeyRetriever.NewRetriever(ctx, &valkeyRetriever.RetrieverConf
 docs, _ := retriever.Retrieve(ctx, "search query",
     valkeyRetriever.WithFilterQuery("@category:{technology}"))
 ```
+
+## Client Attribution
+
+This component takes a caller-provided Valkey GLIDE client rather than constructing one, so the
+library-name tag must be set where you build the client. When you create the GLIDE client, set
+`WithClientInfoTag("eino-valkey")` (requires `valkey-glide/go/v2` >= v2.5.2). This makes the client
+report `lib-name=GlideGo(eino-valkey)` in `CLIENT INFO`, letting operators attribute Valkey usage to
+this integration. It is metadata only and does not change behavior.
 
 ## For More Details
 
