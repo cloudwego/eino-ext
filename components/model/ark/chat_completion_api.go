@@ -308,6 +308,9 @@ func populateChatMsgReasoningContent(in *schema.Message, msg *model.ChatCompleti
 	if reasoningContent != "" {
 		msg.ReasoningContent = &reasoningContent
 	}
+	if encryptedContent, ok := GetEncryptedContent(in); ok {
+		msg.EncryptedContent = &encryptedContent
+	}
 	return
 }
 
@@ -522,6 +525,9 @@ func (cm *completionAPIChatModel) resolveChatResponse(resp model.ChatCompletionR
 		setReasoningContent(msg, *choice.Message.ReasoningContent)
 		msg.ReasoningContent = *choice.Message.ReasoningContent
 	}
+	if choice.Message.EncryptedContent != nil {
+		setEncryptedContent(msg, *choice.Message.EncryptedContent)
+	}
 
 	return msg, nil
 }
@@ -550,6 +556,9 @@ func (cm *completionAPIChatModel) resolveStreamResponse(resp model.ChatCompletio
 			if choice.Delta.ReasoningContent != nil {
 				setReasoningContent(msg, *choice.Delta.ReasoningContent)
 				msg.ReasoningContent = *choice.Delta.ReasoningContent
+			}
+			if choice.Delta.EncryptedContent != nil {
+				setEncryptedContent(msg, *choice.Delta.EncryptedContent)
 			}
 
 			break
