@@ -177,4 +177,4 @@ backend, _ := local.NewBackend(ctx, &local.Config{
 
 ## 许可证
 
-根据 Apache License 2.0 许可。有关详细信息，请参阅 [LICENSE](../../LICENSE) 文件。
+根据 Apache License 2.0 许可。有关详细信息，请参阅 [LICENSE](../../../LICENSE) 文件。

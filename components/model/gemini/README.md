@@ -298,6 +298,21 @@ if lp := msg.ResponseMeta.LogProbs; lp != nil {
 
 > Note: `Logprobs` only takes effect when `ResponseLogprobs` is true. To disable logprobs at call time, use `gemini.WithResponseLogprobs(false)`.
 
+## Labels
+
+Attach user-defined metadata labels to a request via `gemini.WithLabels(...)`. Labels are key-value pairs used for billing attribution, request tracking, and filtering in Cloud Logging and Monitoring.
+
+```go
+msg, _ := cm.Generate(ctx, input,
+    gemini.WithLabels(map[string]string{
+        "team":        "search",
+        "environment": "production",
+    }),
+)
+```
+
+> Note: Labels are only supported on the **Vertex AI** backend. The Gemini API backend rejects requests that set labels (`labels parameter is not supported in Gemini API`), so only use this option with a Vertex AI client.
+
 ## Examples
 
 See the following examples for more usage:

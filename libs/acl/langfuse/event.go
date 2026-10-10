@@ -250,8 +250,9 @@ type CompletionTokensDetails struct {
 
 // PromptTokensDetails Breakdown of tokens used in the prompt.
 type PromptTokensDetails struct {
-	AudioTokens  int `json:"audio_tokens"`
-	CachedTokens int `json:"cached_tokens"`
+	AudioTokens      int `json:"audio_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
 }
 
 type GenerationEventBody struct {

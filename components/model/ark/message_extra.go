@@ -24,6 +24,7 @@ import (
 const (
 	keyOfRequestID             = "ark-request-id"
 	keyOfReasoningContent      = "ark-reasoning-content"
+	keyOfRawReasoningContent   = "ark-raw-reasoning-content"
 	keyOfModelName             = "ark-model-name"
 	videoURLFPS                = "ark-model-video-url-fps"
 	keyOfContextID             = "ark-context-id"
@@ -118,6 +119,14 @@ func GetReasoningContent(msg *schema.Message) (string, bool) {
 
 func setReasoningContent(msg *schema.Message, reasoningContent string) {
 	setMsgExtra(msg, keyOfReasoningContent, reasoningContent)
+}
+
+func getRawReasoningContent(msg *schema.Message) (string, bool) {
+	return getMsgExtraValue[string](msg, keyOfRawReasoningContent)
+}
+
+func setRawReasoningContent(msg *schema.Message, reasoningContent string) {
+	setMsgExtra(msg, keyOfRawReasoningContent, reasoningContent)
 }
 
 func GetModelName(msg *schema.Message) (string, bool) {

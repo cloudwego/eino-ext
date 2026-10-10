@@ -47,19 +47,29 @@ type ResponseMessageModifier func(ctx context.Context, msg *schema.Message, rawB
 // When end is true, msg and rawBody may be nil.
 type ResponseChunkMessageModifier func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error)
 
+// ResponseAgenticMessageModifier transforms a generated AgenticMessage after conversion and before callbacks receive it.
+// Returning an error aborts the request.
+type ResponseAgenticMessageModifier func(ctx context.Context, msg *schema.AgenticMessage) (*schema.AgenticMessage, error)
+
+// ResponseChunkAgenticMessageModifier transforms a generated AgenticMessage chunk after conversion and before callbacks receive it.
+// Returning an error aborts the stream.
+type ResponseChunkAgenticMessageModifier func(ctx context.Context, msg *schema.AgenticMessage) (*schema.AgenticMessage, error)
+
 type openaiOptions struct {
-	ExtraFields                  map[string]any
-	ReasoningEffort              ReasoningEffortLevel
-	ExtraHeader                  map[string]string
-	RequestBodyModifier          openai.RequestBodyModifier
-	RequestPayloadModifier       RequestPayloadModifier
-	ResponseMessageModifier      ResponseMessageModifier
-	ResponseChunkMessageModifier ResponseChunkMessageModifier
-	MaxCompletionTokens          *int
+	ExtraFields                         map[string]any
+	ReasoningEffort                     ReasoningEffortLevel
+	ExtraHeader                         map[string]string
+	RequestBodyModifier                 openai.RequestBodyModifier
+	RequestPayloadModifier              RequestPayloadModifier
+	ResponseMessageModifier             ResponseMessageModifier
+	ResponseChunkMessageModifier        ResponseChunkMessageModifier
+	ResponseAgenticMessageModifier      ResponseAgenticMessageModifier
+	ResponseChunkAgenticMessageModifier ResponseChunkAgenticMessageModifier
+	MaxCompletionTokens                 *int
 }
 
-// WithExtraFields sets extra fields to include in the request body.
-// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
+// WithExtraFields replaces the extra fields configured for the request.
+// The selected fields are written into the top-level JSON request body.
 //
 // Example:
 //
@@ -78,12 +88,7 @@ type openaiOptions struct {
 //	}
 func WithExtraFields(extraFields map[string]any) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
-		if o.ExtraFields == nil {
-			o.ExtraFields = make(map[string]any, len(extraFields))
-		}
-		for k, v := range extraFields {
-			o.ExtraFields[k] = v
-		}
+		o.ExtraFields = extraFields
 	})
 }
 
@@ -114,6 +119,20 @@ func WithResponseMessageModifier(m ResponseMessageModifier) model.Option {
 func WithResponseChunkMessageModifier(m ResponseChunkMessageModifier) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
 		o.ResponseChunkMessageModifier = m
+	})
+}
+
+// WithResponseAgenticMessageModifier registers the modifier applied to Generate output before callbacks receive it.
+func WithResponseAgenticMessageModifier(m ResponseAgenticMessageModifier) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ResponseAgenticMessageModifier = m
+	})
+}
+
+// WithResponseChunkAgenticMessageModifier registers the modifier applied to Stream chunks before callbacks receive them.
+func WithResponseChunkAgenticMessageModifier(m ResponseChunkAgenticMessageModifier) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ResponseChunkAgenticMessageModifier = m
 	})
 }
 

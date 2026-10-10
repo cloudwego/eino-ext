@@ -138,7 +138,6 @@ type RetrieverConfig struct {
 
 - [Approximate Search Example](./examples/approximate)
 - [Dense Vector Similarity Example](./examples/dense_vector_similarity)
-- [KNN Search Example](./examples/knn)
 - [Neural Sparse Search Example](./examples/neural_sparse)
 
 ## For More Details

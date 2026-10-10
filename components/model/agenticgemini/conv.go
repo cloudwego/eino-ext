@@ -931,5 +931,22 @@ func convCallbackOutput(message *schema.AgenticMessage, conf *model.AgenticConfi
 		Message: message,
 		Config:  conf,
 	}
+	if message.ResponseMeta == nil || message.ResponseMeta.TokenUsage == nil {
+		return callbackOutput
+	}
+
+	usage := message.ResponseMeta.TokenUsage
+	callbackOutput.TokenUsage = &model.TokenUsage{
+		PromptTokens: usage.PromptTokens,
+		PromptTokenDetails: model.PromptTokenDetails{
+			CachedTokens:     usage.PromptTokenDetails.CachedTokens,
+			CacheWriteTokens: usage.PromptTokenDetails.CacheWriteTokens,
+		},
+		CompletionTokens: usage.CompletionTokens,
+		CompletionTokensDetails: model.CompletionTokensDetails{
+			ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		},
+		TotalTokens: usage.TotalTokens,
+	}
 	return callbackOutput
 }

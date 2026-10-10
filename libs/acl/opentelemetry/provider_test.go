@@ -25,6 +25,12 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
 )
 
+func TestTLSInsecureConfig(t *testing.T) {
+	if !tlsInsecureConfig().InsecureSkipVerify {
+		t.Fatal("TLS insecure config must skip server certificate verification")
+	}
+}
+
 func Test_newResource(t *testing.T) {
 	type args struct {
 		cfg *config

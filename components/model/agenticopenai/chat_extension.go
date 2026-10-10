@@ -91,7 +91,25 @@ func responseMetaChunkModifier() model.Option {
 	)
 }
 
-func extractChatResponseMetaExtension(out *schema.AgenticMessage) {
+func responseAgenticMetaModifier() model.Option {
+	return openai.WithResponseAgenticMessageModifier(
+		func(ctx context.Context, msg *schema.AgenticMessage) (*schema.AgenticMessage, error) {
+			applyAgenticResponseMetaExtension(msg)
+			return msg, nil
+		},
+	)
+}
+
+func responseChunkAgenticMetaModifier() model.Option {
+	return openai.WithResponseChunkAgenticMessageModifier(
+		func(ctx context.Context, msg *schema.AgenticMessage) (*schema.AgenticMessage, error) {
+			applyAgenticResponseMetaExtension(msg)
+			return msg, nil
+		},
+	)
+}
+
+func applyAgenticResponseMetaExtension(out *schema.AgenticMessage) {
 	if out.Extra == nil {
 		return
 	}

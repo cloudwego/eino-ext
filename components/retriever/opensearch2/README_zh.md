@@ -138,7 +138,6 @@ type RetrieverConfig struct {
 
 - [近似搜索示例](./examples/approximate)
 - [稠密向量相似度示例](./examples/dense_vector_similarity)
-- [KNN 搜索示例](./examples/knn)
 - [Neural Sparse 搜索示例](./examples/neural_sparse)
 
 ## 更多详情

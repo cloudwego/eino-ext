@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"reflect"
@@ -45,6 +46,7 @@ const (
 
 type (
 	activeAgentNameKey struct{}
+	agentScopeKey      struct{}
 	spanStateKey       struct{}
 )
 
@@ -52,11 +54,24 @@ type spanState struct {
 	span       trace.Span
 	attributes *spanAttributeWriter
 	run        *traceRun
-	ctx        context.Context
-	inputDone  chan struct{}
-	endOnce    sync.Once
-	outcomeMu  sync.Mutex
-	failed     bool
+	// enclosingAgent owns recovery of failures from this callback. Only an
+	// outermost agent (or a call outside an agent) can fail the root trace.
+	enclosingAgent *spanState
+	outermostAgent bool
+	ctx            context.Context
+	inputDone      chan struct{}
+	endOnce        sync.Once
+	outcomeMu      sync.Mutex
+	failed         bool
+	// retryEvents is owned by the agent event collector.
+	retryEvents []agentRetryEvent
+}
+
+type agentRetryEvent struct {
+	Operation    string `json:"operation"`
+	Attempt      int    `json:"attempt"`
+	Error        string `json:"error"`
+	RejectReason any    `json:"reject_reason,omitempty"`
 }
 
 type asyncGroup struct {
@@ -72,6 +87,7 @@ type spanAttributeWriter struct {
 	prepare   func(string) string
 	remaining int
 	losses    *lossReporter
+	output    string
 }
 
 func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, input callbacks.CallbackInput) context.Context {
@@ -133,6 +149,7 @@ func (c *CallbackHandler) OnError(ctx context.Context, info *callbacks.RunInfo, 
 		callbackErr = errors.New("eino callback failed without an error")
 	}
 	c.async.run(func() {
+		defer state.recoverCallbackPanic("error callback", true)
 		<-state.inputDone
 		status, cause := state.recordError("callback", callbackErr)
 		switch status {
@@ -159,6 +176,8 @@ func (c *CallbackHandler) OnStartWithStreamInput(ctx context.Context, info *call
 	ctx, state := c.startSpan(ctx, info)
 	c.async.run(func() {
 		defer close(state.inputDone)
+		// Publish input completion only after recording any collector panic.
+		defer state.recoverCallbackPanic("stream input callback", false)
 		defer closeStream(input)
 		inputs, err := receiveAll(input)
 		if err != nil {
@@ -178,6 +197,7 @@ func (c *CallbackHandler) OnEndWithStreamOutput(ctx context.Context, info *callb
 		return ctx
 	}
 	c.async.run(func() {
+		defer state.recoverCallbackPanic("stream output callback", true)
 		defer closeStream(output)
 		outputs, completionStart, err := receiveAllWithFirst(output)
 		if err != nil {
@@ -223,15 +243,14 @@ func (c *CallbackHandler) Shutdown(ctx context.Context) error {
 }
 
 func (c *CallbackHandler) markActiveAgent(ctx context.Context, info *callbacks.RunInfo) context.Context {
-	if !c.collapseAgentInternalSpans || info.Name == "" {
-		return ctx
-	}
 	switch info.Component {
 	case adk.ComponentOfAgent, adk.ComponentOfAgenticAgent:
-		return context.WithValue(ctx, activeAgentNameKey{}, info.Name)
-	default:
-		return ctx
+		ctx = context.WithValue(ctx, agentScopeKey{}, spanStateFromContext(ctx))
+		if c.collapseAgentInternalSpans && info.Name != "" {
+			ctx = context.WithValue(ctx, activeAgentNameKey{}, info.Name)
+		}
 	}
+	return ctx
 }
 
 func (c *CallbackHandler) startSpan(ctx context.Context, info *callbacks.RunInfo) (context.Context, *spanState) {
@@ -248,13 +267,21 @@ func (c *CallbackHandler) startSpan(ctx context.Context, info *callbacks.RunInfo
 		attribute.String("langfuse.observation.metadata.eino_type", info.Type),
 	)
 	attrs, remaining := fitAttributes(attrs, c.maxSpanAttributeBytes, c.losses)
+	enclosingAgent, _ := ctx.Value(agentScopeKey{}).(*spanState)
+	if enclosingAgent != nil && enclosingAgent.run != run {
+		// StartTrace may introduce a new root inside an existing agent context.
+		// Recovery in the previous trace must not suppress this trace's errors.
+		enclosingAgent = nil
+	}
 	ctx, span := c.tracer.Start(ctx, callbackName(info), trace.WithAttributes(attrs...))
 	return ctx, &spanState{
-		span:       span,
-		attributes: newSpanAttributeWriter(span, c.prepare, remaining, c.losses),
-		run:        run,
-		ctx:        ctx,
-		inputDone:  make(chan struct{}),
+		span:           span,
+		attributes:     newSpanAttributeWriter(span, c.prepare, remaining, c.losses),
+		run:            run,
+		enclosingAgent: enclosingAgent,
+		outermostAgent: enclosingAgent == nil && (info.Component == adk.ComponentOfAgent || info.Component == adk.ComponentOfAgenticAgent),
+		ctx:            ctx,
+		inputDone:      make(chan struct{}),
 	}
 }
 
@@ -309,6 +336,7 @@ func (c *CallbackHandler) endAgentOutput(state *spanState, info *callbacks.RunIn
 			return false
 		}
 		c.async.run(func() {
+			defer state.recoverCallbackPanic("agent output callback", true)
 			<-state.inputDone
 			state.end(c.collectAgentMessages(state, converted.Events))
 		})
@@ -320,6 +348,7 @@ func (c *CallbackHandler) endAgentOutput(state *spanState, info *callbacks.RunIn
 			return false
 		}
 		c.async.run(func() {
+			defer state.recoverCallbackPanic("agentic output callback", true)
 			<-state.inputDone
 			state.end(c.collectAgenticMessages(state, converted.Events))
 		})
@@ -340,7 +369,7 @@ func (c *CallbackHandler) collectAgentMessages(state *spanState, events *adk.Asy
 			continue
 		}
 		if event.Err != nil {
-			state.recordError("agent output", event.Err)
+			state.recordAgentError("agent output", event.Err)
 		}
 		if event.Output == nil {
 			continue
@@ -348,7 +377,7 @@ func (c *CallbackHandler) collectAgentMessages(state *spanState, events *adk.Asy
 		if event.Output.MessageOutput != nil {
 			message, err := event.Output.MessageOutput.GetMessage()
 			if err != nil {
-				state.recordError("agent message", err)
+				state.recordAgentError("agent message", err)
 			} else if message != nil {
 				messages = append(messages, message)
 			}
@@ -372,7 +401,7 @@ func (c *CallbackHandler) collectAgenticMessages(state *spanState, events *adk.A
 			continue
 		}
 		if event.Err != nil {
-			state.recordError("agent output", event.Err)
+			state.recordAgentError("agent output", event.Err)
 		}
 		if event.Output == nil {
 			continue
@@ -380,7 +409,7 @@ func (c *CallbackHandler) collectAgenticMessages(state *spanState, events *adk.A
 		if event.Output.MessageOutput != nil {
 			message, err := event.Output.MessageOutput.GetMessage()
 			if err != nil {
-				state.recordError("agent message", err)
+				state.recordAgentError("agent message", err)
 			} else if message != nil {
 				messages = append(messages, message)
 			}
@@ -400,10 +429,76 @@ func (c *CallbackHandler) setAgentOutput(state *spanState, messages, customized 
 	if values := nonEmptySlice(customized); values != nil {
 		output["customized"] = values
 	}
-	if len(output) == 0 {
-		return ""
+	var serialized string
+	if len(output) > 0 {
+		serialized = c.setJSONAttribute(state, "langfuse.observation.output", output)
 	}
-	return c.setJSONAttribute(state, "langfuse.observation.output", output)
+	// Preserve the final output before spending any remaining attribute budget
+	// on diagnostics. The event count counts notifications, not executed retries.
+	if len(state.retryEvents) > 0 {
+		state.attributes.setInt("langfuse.observation.metadata.eino_retry_event_count", len(state.retryEvents))
+		c.setJSONAttribute(state, "langfuse.observation.metadata.eino_retry_events", state.retryEvents)
+	}
+	return serialized
+}
+
+// recoverCallbackPanic runs inside the collector goroutine. Input collectors
+// leave finalization to OnEnd/OnError so a telemetry failure cannot end the span
+// before the actual result arrives. Terminal collectors always release the span.
+func (s *spanState) recoverCallbackPanic(operation string, terminal bool) {
+	if recovered := recover(); recovered != nil {
+		if terminal {
+			<-s.inputDone
+			// Cleanup must also run if recording the diagnostic itself panics.
+			defer func() { s.end(s.attributes.outputValue()) }()
+		}
+		err := recoveredPanic(operation, recovered)
+		s.recordCallbackPanic(err)
+	}
+}
+
+func (s *spanState) recordCallbackPanic(err error) {
+	message := err.Error()
+	// Callback failures are telemetry diagnostics, not an Agent terminal error.
+	if s.run != nil {
+		s.run.recordCallbackPanic(message)
+	}
+	s.outcomeMu.Lock()
+	failed := s.failed
+	s.failed = true
+	s.outcomeMu.Unlock()
+	s.span.RecordError(err, trace.WithStackTrace(true))
+	if !failed {
+		s.span.SetStatus(codes.Error, message)
+		s.attributes.setString("langfuse.observation.level", "ERROR")
+		s.attributes.setString("langfuse.observation.status_message", message)
+	}
+	s.attributes.setString("langfuse.observation.metadata.eino_callback_panic", message)
+}
+
+func (s *spanState) recordAgentError(operation string, err error) {
+	var retryErr *adk.WillRetryError
+	if errors.As(err, &retryErr) {
+		// A successful provider response can still be rejected by ShouldRetry.
+		// Keep its diagnostic even when the model observation has no error.
+		reason := retryErr.RejectReason()
+		if cause, ok := reason.(error); ok {
+			reason = cause.Error()
+		}
+		if reason != nil {
+			encoded, marshalErr := json.Marshal(reason)
+			if marshalErr != nil {
+				s.attributes.losses.Add(lossMetadataSerialization, 1)
+				reason = fmt.Sprint(reason)
+			} else {
+				reason = json.RawMessage(encoded)
+			}
+		}
+		stateEvent := agentRetryEvent{Operation: operation, Attempt: retryErr.RetryAttempt, Error: retryErr.Error(), RejectReason: reason}
+		s.retryEvents = append(s.retryEvents, stateEvent)
+		return
+	}
+	s.recordError(operation, err)
 }
 
 func (s *spanState) recordError(operation string, err error) (string, string) {
@@ -453,7 +548,7 @@ func (s *spanState) recordError(operation string, err error) (string, string) {
 	s.attributes.setString("langfuse.observation.level", "ERROR")
 	s.attributes.setString("langfuse.observation.status_message", message)
 	s.attributes.setString("langfuse.observation.metadata.eino_callback_error", message)
-	if s.run != nil {
+	if s.run != nil && s.enclosingAgent == nil {
 		s.run.recordError(message, err)
 	}
 	return "", ""
@@ -461,10 +556,10 @@ func (s *spanState) recordError(operation string, err error) (string, string) {
 
 func (s *spanState) end(output string) {
 	s.endOnce.Do(func() {
-		s.span.End()
 		if s.run != nil {
-			s.run.childEnded(output)
+			defer s.run.childEnded(output, s.outermostAgent)
 		}
+		s.span.End()
 	})
 }
 
@@ -608,8 +703,17 @@ func (w *spanAttributeWriter) setString(key, value string) string {
 	}
 	if prepared != "" {
 		w.span.SetAttributes(attribute.String(key, prepared))
+		if key == "langfuse.observation.output" {
+			w.output = prepared
+		}
 	}
 	return prepared
+}
+
+func (w *spanAttributeWriter) outputValue() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.output
 }
 
 func (w *spanAttributeWriter) setInt(key string, value int) {

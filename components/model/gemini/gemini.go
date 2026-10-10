@@ -294,6 +294,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		}()
 		for resp, err_ := range resultIter {
 			if err_ != nil {
+				// The SDK can report a JSON error when cancellation interrupts an
+				// SSE event. Preserve the request's context error for both callbacks
+				// and stream consumers instead of reporting the partial event.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err_ = ctxErr
+				}
 				sw.Send(nil, err_)
 				return
 			}
@@ -599,6 +605,13 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 
 	if geminiOptions.ImageConfig != nil {
 		m.ImageConfig = geminiOptions.ImageConfig
+	}
+
+	if len(geminiOptions.Labels) > 0 {
+		if cm.cli.ClientConfig().Backend != genai.BackendVertexAI {
+			return "", nil, nil, nil, fmt.Errorf("labels are only supported on the Vertex AI backend")
+		}
+		m.Labels = geminiOptions.Labels
 	}
 
 	if len(geminiOptions.CachedContentName) > 0 {

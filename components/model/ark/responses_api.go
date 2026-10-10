@@ -139,7 +139,7 @@ type ResponsesAPIConfig struct {
 
 	// EnableReasoningContentPassback controls whether reasoning content
 	// from assistant messages is passed back to the model in multi-turn conversations.
-	// When enabled, reasoning content is included as reasoning summary items in the input,
+	// When enabled, reasoning summaries and raw reasoning content are passed back in their original form,
 	// allowing the model to be aware of its prior chain-of-thought.
 	// However, if a valid previous_response_id is set (via session cache), the passback is
 	// automatically skipped because previous_response_id already preserves the full conversation
@@ -374,26 +374,18 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			cacheCfg.ExpireAt = responseReq.ExpireAt
 		}
 
-		cm.receivedStreamResponse(responseStreamReader, config, cacheCfg, sw)
+		cm.receivedStreamResponse(responseStreamReader, config, cacheCfg, sw, specOptions.thinking)
 
 	}()
 
-	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
-		func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
-			if src.Extra == nil {
-				src.Extra = make(map[string]any)
-			}
-			src.Extra[callbackExtraKeyThinking] = specOptions.thinking
-			return src, nil
-		}))
+	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, sr)
 
 	outStream = schema.StreamReaderWithConvert(nsr,
-		func(src callbacks.CallbackOutput) (*schema.Message, error) {
-			s := src.(*model.CallbackOutput)
-			if s.Message == nil {
+		func(src *model.CallbackOutput) (*schema.Message, error) {
+			if src.Message == nil {
 				return nil, schema.ErrNoValue
 			}
-			return s.Message, nil
+			return src.Message, nil
 		},
 	)
 
@@ -648,12 +640,26 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
 			if enableReasoningPassback && responseReq.PreviousResponseId == nil && msg.ReasoningContent != "" {
-				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_Reasoning{Reasoning: &responses.ItemReasoning{
-					Type: responses.ItemType_reasoning,
-					Summary: []*responses.ReasoningSummaryPart{
+				reasoning := &responses.ItemReasoning{Type: responses.ItemType_reasoning}
+				if rawReasoning, ok := getRawReasoningContent(msg); ok && rawReasoning == msg.ReasoningContent {
+					reasoning.Content = []*responses.OutputContentItem{
+						{
+							Union: &responses.OutputContentItem_Text{
+								Text: &responses.OutputContentItemText{
+									Type: responses.ContentItemType_reasoning_text,
+									Text: rawReasoning,
+								},
+							},
+						},
+					}
+				} else {
+					reasoning.Summary = []*responses.ReasoningSummaryPart{
 						{Text: msg.ReasoningContent},
-					},
-				}}})
+					}
+				}
+				itemList = append(itemList, &responses.InputItem{
+					Union: &responses.InputItem_Reasoning{Reasoning: reasoning},
+				})
 			}
 
 			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
@@ -682,14 +688,15 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Tool:
-			if len(msg.UserInputMultiContent) > 0 {
-				return fmt.Errorf("ark response api doesn't support multi modal tool result")
+			output, err := convToolResultToString(msg)
+			if err != nil {
+				return err
 			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCallOutput{
 				FunctionToolCallOutput: &responses.ItemFunctionToolCallOutput{
 					Type:   responses.ItemType_function_call_output,
 					CallId: msg.ToolCallID,
-					Output: msg.Content,
+					Output: output,
 				},
 			}})
 
@@ -705,6 +712,21 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 		},
 	}
 	return nil
+}
+
+func convToolResultToString(msg *schema.Message) (string, error) {
+	if len(msg.UserInputMultiContent) == 0 {
+		return msg.Content, nil
+	}
+
+	var output strings.Builder
+	for i, part := range msg.UserInputMultiContent {
+		if part.Type != schema.ChatMessagePartTypeText {
+			return "", fmt.Errorf("volcengine go sdk currently only supports text tool result, got type %s at index %d", part.Type, i)
+		}
+		output.WriteString(part.Text)
+	}
+	return output.String(), nil
 }
 
 func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options, enableToolWebSearch *ToolWebSearch, maxToolCalls *int64) error {
@@ -1017,6 +1039,9 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 		return nil, fmt.Errorf("received empty output from ARK")
 	}
 
+	var reasoningSummary strings.Builder
+	var rawReasoning strings.Builder
+
 	for _, item := range resp.Output {
 		switch asItem := item.GetUnion().(type) {
 		case *responses.OutputItem_OutputMessage:
@@ -1042,15 +1067,21 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 			if asItem.Reasoning == nil {
 				continue
 			}
+			for _, content := range asItem.Reasoning.GetContent() {
+				text := content.GetText()
+				if text == nil || text.GetType() != responses.ContentItemType_reasoning_text {
+					continue
+				}
+				rawReasoning.WriteString(text.GetText())
+			}
 			for _, s := range asItem.Reasoning.GetSummary() {
 				if s.Text == "" {
 					continue
 				}
-				if msg.ReasoningContent == "" {
-					msg.ReasoningContent = s.Text
-					continue
+				if reasoningSummary.Len() > 0 {
+					reasoningSummary.WriteString("\n\n")
 				}
-				msg.ReasoningContent = fmt.Sprintf("%s\n\n%s", msg.ReasoningContent, s.Text)
+				reasoningSummary.WriteString(s.Text)
 			}
 
 		case *responses.OutputItem_FunctionToolCall:
@@ -1066,6 +1097,14 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 				},
 			})
 		}
+	}
+
+	if rawReasoning.Len() > 0 {
+		msg.ReasoningContent = rawReasoning.String()
+		setReasoningContent(msg, msg.ReasoningContent)
+		setRawReasoningContent(msg, msg.ReasoningContent)
+	} else {
+		msg.ReasoningContent = reasoningSummary.String()
 	}
 
 	return msg, nil
@@ -1120,8 +1159,7 @@ func (cm *ResponsesAPIChatModel) toCallbackConfig(req *responses.ResponsesReques
 	}
 }
 
-func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
-	config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
+func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader, config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput], thinking *arkModel.Thinking) {
 	var itemFunctionToolCall *responses.ItemFunctionToolCall
 
 	for {
@@ -1141,7 +1179,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			}
 			msg := &schema.Message{Role: schema.Assistant}
 			cm.setStreamChunkDefaultExtra(msg, ev.Response.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.Response.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.Response.Response.Model, msg, thinking)
 
 		case *responses.Event_ResponseCompleted:
 			if ev.ResponseCompleted == nil || ev.ResponseCompleted.Response == nil {
@@ -1149,7 +1187,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			}
 			msg := cm.handleCompletedStreamEvent(ev.ResponseCompleted.Response)
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseCompleted.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.ResponseCompleted.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseCompleted.Response.Model, msg, thinking)
 
 		case *responses.Event_Error:
 			sw.Send(nil, fmt.Errorf("received error: %s", ev.Error.Message))
@@ -1167,7 +1205,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				},
 			}
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseIncomplete.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.ResponseIncomplete.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseIncomplete.Response.Model, msg, thinking)
 
 		case *responses.Event_ResponseFailed:
 			if ev.ResponseFailed == nil || ev.ResponseFailed.Response == nil {
@@ -1185,7 +1223,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				},
 			}
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseFailed.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.ResponseFailed.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseFailed.Response.Model, msg, thinking)
 
 		case *responses.Event_Item:
 			if ev.Item == nil || ev.Item.GetItem() == nil || ev.Item.GetItem().GetUnion() == nil {
@@ -1218,7 +1256,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 						},
 					},
 				}
-				cm.sendCallbackOutput(sw, config, "", msg)
+				cm.sendCallbackOutput(sw, config, "", msg, thinking)
 			}
 
 		case *responses.Event_ReasoningText:
@@ -1231,7 +1269,20 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				ReasoningContent: delta,
 			}
 			setReasoningContent(msg, delta)
-			cm.sendCallbackOutput(sw, config, "", msg)
+			cm.sendCallbackOutput(sw, config, "", msg, thinking)
+
+		case *responses.Event_ReasoningRawTextDelta:
+			if ev.ReasoningRawTextDelta == nil || ev.ReasoningRawTextDelta.Delta == nil {
+				continue
+			}
+			delta := *ev.ReasoningRawTextDelta.Delta
+			msg := &schema.Message{
+				Role:             schema.Assistant,
+				ReasoningContent: delta,
+			}
+			setReasoningContent(msg, delta)
+			setRawReasoningContent(msg, delta)
+			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		case *responses.Event_Text:
 			if ev.Text == nil || ev.Text.Delta == nil {
@@ -1241,7 +1292,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				Role:    schema.Assistant,
 				Content: *ev.Text.Delta,
 			}
-			cm.sendCallbackOutput(sw, config, "", msg)
+			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		}
 
@@ -1263,8 +1314,7 @@ func (cm *ResponsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message,
 
 }
 
-func (cm *ResponsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
-	msg *schema.Message) {
+func (cm *ResponsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string, msg *schema.Message, thinking *arkModel.Thinking) {
 
 	var token *model.TokenUsage
 	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
@@ -1278,11 +1328,11 @@ func (cm *ResponsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 		}
 	}
 
-	var extra map[string]any
+	extra := map[string]any{
+		callbackExtraKeyThinking: thinking,
+	}
 	if len(modelName) > 0 {
-		extra = map[string]any{
-			callbackExtraModelName: modelName,
-		}
+		extra[callbackExtraModelName] = modelName
 	}
 
 	sw.Send(&model.CallbackOutput{

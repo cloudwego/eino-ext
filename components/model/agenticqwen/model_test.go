@@ -59,16 +59,16 @@ func TestModel(t *testing.T) {
 		})
 
 		PatchConvey("test Generate success", func() {
+			extension := &ResponseMetaExtension{FinishReason: "stop"}
 			mockResp := &schema.AgenticMessage{
 				Role: schema.AgenticRoleTypeAssistant,
 				ContentBlocks: []*schema.ContentBlock{
 					schema.NewContentBlock(&schema.AssistantGenText{Text: "hi there"}),
 				},
 				Extra: map[string]any{
-					extraKeyResponseMetaExtension: &ResponseMetaExtension{
-						FinishReason: "stop",
-					},
+					extraKeyResponseMetaExtension: extension,
 				},
+				ResponseMeta: &schema.AgenticResponseMeta{Extension: extension},
 			}
 			Mock(GetMethod(cli, "Generate")).Return(mockResp, nil).Build()
 			msg, err := m.Generate(ctx, []*schema.AgenticMessage{
@@ -143,6 +143,7 @@ func TestModel(t *testing.T) {
 		})
 
 		PatchConvey("test Stream success", func() {
+			extension := &ResponseMetaExtension{FinishReason: "stop"}
 			chunks := []*schema.AgenticMessage{
 				{
 					Role: schema.AgenticRoleTypeAssistant,
@@ -150,10 +151,9 @@ func TestModel(t *testing.T) {
 						schema.NewContentBlock(&schema.AssistantGenText{Text: "hello"}),
 					},
 					Extra: map[string]any{
-						extraKeyResponseMetaExtension: &ResponseMetaExtension{
-							FinishReason: "stop",
-						},
+						extraKeyResponseMetaExtension: extension,
 					},
+					ResponseMeta: &schema.AgenticResponseMeta{Extension: extension},
 				},
 			}
 			mockStream := schema.StreamReaderFromArray(chunks)

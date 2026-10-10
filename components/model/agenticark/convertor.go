@@ -23,6 +23,7 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
+	openaischema "github.com/cloudwego/eino/schema/openai"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/volcengine/volcengine-go-sdk/service/arkruntime/model/responses"
 	"golang.org/x/sync/errgroup"
@@ -698,17 +699,38 @@ func reasoningToInputItem(block *schema.ContentBlock) (item *responses.InputItem
 
 	id, _ := getItemID(block)
 	status, _ := GetItemStatus(block)
+	reasoning := &responses.ItemReasoning{
+		Type:             responses.ItemType_reasoning,
+		Id:               ptrIfNonZero(id),
+		Status:           responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
+		EncryptedContent: ptrIfNonZero(content.Signature),
+	}
+	if content.Text != "" {
+		reasoning.Summary = []*responses.ReasoningSummaryPart{
+			{Text: content.Text},
+		}
+	}
+
+	if content.OpenAIExtension != nil {
+		reasoning.Content = make([]*responses.OutputContentItem, 0, len(content.OpenAIExtension.Content))
+		for _, c := range content.OpenAIExtension.Content {
+			if c == nil {
+				continue
+			}
+			reasoning.Content = append(reasoning.Content, &responses.OutputContentItem{
+				Union: &responses.OutputContentItem_Text{
+					Text: &responses.OutputContentItemText{
+						Type: responses.ContentItemType_reasoning_text,
+						Text: c.Text,
+					},
+				},
+			})
+		}
+	}
 
 	item = &responses.InputItem{
 		Union: &responses.InputItem_Reasoning{
-			Reasoning: &responses.ItemReasoning{
-				Type:   responses.ItemType_reasoning,
-				Id:     ptrIfNonZero(id),
-				Status: responses.ItemStatus_Enum(responses.ItemStatus_Enum_value[status]),
-				Summary: []*responses.ReasoningSummaryPart{
-					{Text: content.Text},
-				},
-			},
+			Reasoning: reasoning,
 		},
 	}
 
@@ -1646,9 +1668,25 @@ func reasoningToContentBlocks(item *responses.OutputItem_Reasoning) (block *sche
 		text.WriteString(s.Text)
 	}
 
-	block = schema.NewContentBlock(&schema.Reasoning{
-		Text: text.String(),
-	})
+	content := &schema.Reasoning{
+		Text:      text.String(),
+		Signature: reasoning.GetEncryptedContent(),
+	}
+	if len(reasoning.Content) > 0 {
+		content.OpenAIExtension = &openaischema.ReasoningExtension{
+			Content: make([]*openaischema.ReasoningContent, 0, len(reasoning.Content)),
+		}
+		for _, c := range reasoning.Content {
+			if c == nil || c.GetText() == nil {
+				continue
+			}
+			content.OpenAIExtension.Content = append(content.OpenAIExtension.Content, &openaischema.ReasoningContent{
+				Text: c.GetText().Text,
+			})
+		}
+	}
+
+	block = schema.NewContentBlock(content)
 
 	if reasoning.Id != nil {
 		setItemID(block, *reasoning.Id)

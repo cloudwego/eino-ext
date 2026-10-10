@@ -201,4 +201,4 @@ A: Default is 30 minutes (1800 seconds). Configure with `SessionTTL` (range: 60-
 
 ## License
 
-Licensed under the Apache License, Version 2.0. See the [LICENSE](../../LICENSE) file for details.
+Licensed under the Apache License, Version 2.0. See the [LICENSE](../../../LICENSE) file for details.

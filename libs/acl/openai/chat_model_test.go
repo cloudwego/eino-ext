@@ -762,6 +762,34 @@ func Test_genRequest(t *testing.T) {
 		assert.Len(t, reqOpts, 1)
 	})
 
+	t.Run("request extra fields replace defaults without mutating inputs", func(t *testing.T) {
+		defaultExtraFields := map[string]any{"default": "value"}
+		requestExtraFields := map[string]any{"request": "value"}
+		c := &Client{config: &Config{
+			Model:       "test-model",
+			ExtraFields: defaultExtraFields,
+			Modalities:  []Modality{TextModality},
+		}}
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+
+		_, _, _, firstSpec, err := c.genRequest(t.Context(), in, WithExtraFields(requestExtraFields))
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]any{
+			"request":    "value",
+			"modalities": []Modality{TextModality},
+		}, firstSpec.ExtraFields)
+		assert.Equal(t, map[string]any{"default": "value"}, defaultExtraFields)
+		assert.Equal(t, map[string]any{"request": "value"}, requestExtraFields)
+
+		_, _, _, secondSpec, err := c.genRequest(t.Context(), in)
+		assert.NoError(t, err)
+		assert.Equal(t, map[string]any{
+			"default":    "value",
+			"modalities": []Modality{TextModality},
+		}, secondSpec.ExtraFields)
+		assert.Equal(t, map[string]any{"default": "value"}, defaultExtraFields)
+	})
+
 	t.Run("forced tool choice without tools returns error", func(t *testing.T) {
 		c := &Client{config: &Config{Model: "test-model"}}
 		tc := schema.ToolChoiceForced

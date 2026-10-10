@@ -78,6 +78,16 @@ func main() {
 
 用户主动触发的 `context.Canceled` 会记录为 `cancelled`，可恢复的 Eino Tool、Graph、SubGraph 和 ADK interrupt 会记录为 `interrupted`，两者都不会统一标记成 `ERROR`。真正的超时和 callback 失败仍会标记为错误。
 
+ADK Agent 内的模型、工具和子 Agent 调用失败时，各自 observation 保留错误；是否让应用 root 失败，由最外层 Agent 的终止错误决定。事件或消息流中的 `adk.WillRetryError` 表示恢复过程，不会标记 Agent 失败。重试耗尽、预算或迭代限制等终止错误仍会让 Agent 和 root 显示错误，即使之前已经产生部分输出。这一行为不依赖 `CollapseAgentInternalSpans`；没有 Agent 包裹的调用仍沿用原有的 root 错误传播方式。
+
+Agent metadata 中的 `eino_retry_events` 保留重试通知的 operation、SDK 原始 attempt 值、错误和拒绝原因，也涵盖供应商正常返回后被 `ShouldRetry` 拒绝的情况。`eino_retry_event_count` 统计收到的通知数，不等于实际执行的重试次数；耗尽时也可能产生通知，attempt 编号沿用 Eino。error 类型的拒绝原因保存为文本，结构化原因保留 JSON，无法序列化时回退到文本。这些诊断信息遵循属性大小限制，不改变 Agent 的错误级别。
+
+根节点输出依次优先采用：非空的显式 `EndTrace` 结果、上下文终止结果（取消、中断或超时）、最外层 Agent 结果。无论回调结束顺序如何，嵌套调用都不能覆盖 Agent 结果，包括空结果。没有 Agent 的调用仍使用最后一个子调用输出兜底。
+
+回调自身的 goroutine 会恢复 panic 并记录堆栈。结束阶段的采集回调发生 panic 时，会记录 `eino_callback_panic` 诊断并结束 observation，释放根节点的子调用计数，同时保留已记录的输出。输入采集 panic 会先记录诊断再解除输入等待，由正常的结束或错误回调保存最终结果并收尾。回调 panic 将受影响的 observation 标记为遥测内部错误，不单独将应用根节点判为业务失败；根节点 metadata 保留诊断，已有业务错误继续保留。
+
+
+
 ## Trace 精简
 
 设置 `Config.CollapseAgentInternalSpans` 可折叠 Eino Agent 下同名的内部 Chain、内部 `ReAct` Graph、`Init` Lambda，以及匿名或默认命名的 Lambda 包装层。默认关闭，以保留完整的框架 trace。Generation、Tool 和 Sub-Agent 会通过标准 OTel context 继续挂在最近的保留父节点下。

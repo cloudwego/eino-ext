@@ -346,29 +346,18 @@ func (m *ResponsesModel) Stream(ctx context.Context, input []*schema.AgenticMess
 			sw.Close()
 		}()
 
-		receivedStreamingResponse(respStreamReader, config, sw, options)
+		receivedStreamingResponse(respStreamReader, config, sw, options, m.enableAutoCache)
 
 	}()
 
-	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
-		func(src *model.AgenticCallbackOutput) (callbacks.CallbackOutput, error) {
-			if src.Extra == nil {
-				src.Extra = make(map[string]any)
-			}
-			return src, nil
-		},
-	))
+	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, sr)
 
 	outStream = schema.StreamReaderWithConvert(nsr,
-		func(src callbacks.CallbackOutput) (*schema.AgenticMessage, error) {
-			s := src.(*model.AgenticCallbackOutput)
-			if s.Message == nil {
+		func(src *model.AgenticCallbackOutput) (*schema.AgenticMessage, error) {
+			if src.Message == nil {
 				return nil, schema.ErrNoValue
 			}
-			if m.enableAutoCache {
-				setAutoCached(s.Message)
-			}
-			return s.Message, nil
+			return src.Message, nil
 		},
 	)
 
@@ -516,6 +505,7 @@ func (m *ResponsesModel) getOptions(opts []model.Option) (*model.Options, *optio
 		parallelToolCalls: m.parallelToolCalls,
 		truncation:        m.truncation,
 		customHeaders:     m.customHeader,
+		extraFields:       m.extraFields,
 	}, opts...)
 
 	err := m.checkOptions(commonOpts)
@@ -886,7 +876,8 @@ func toModelTokenUsage(meta *schema.AgenticResponseMeta) *model.TokenUsage {
 	return &model.TokenUsage{
 		PromptTokens: usage.PromptTokens,
 		PromptTokenDetails: model.PromptTokenDetails{
-			CachedTokens: usage.PromptTokenDetails.CachedTokens,
+			CachedTokens:     usage.PromptTokenDetails.CachedTokens,
+			CacheWriteTokens: usage.PromptTokenDetails.CacheWriteTokens,
 		},
 		CompletionTokens: usage.CompletionTokens,
 		CompletionTokensDetails: model.CompletionTokensDetails{
