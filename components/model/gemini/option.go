@@ -17,6 +17,8 @@
 package gemini
 
 import (
+	"net/http"
+
 	"github.com/eino-contrib/jsonschema"
 	"google.golang.org/genai"
 
@@ -31,6 +33,8 @@ type options struct {
 	ImageConfig        *genai.ImageConfig
 	CachedContentName  string
 	Labels             map[string]string
+	ExtraFields        map[string]any
+	CustomHeaders      http.Header
 	ResponseLogprobs   *bool
 	Logprobs           *int32
 }
@@ -87,6 +91,28 @@ func WithImageConfig(cfg *genai.ImageConfig) model.Option {
 func WithLabels(labels map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *options) {
 		o.Labels = labels
+	})
+}
+
+// WithExtraFields sets additional JSON fields on this request's body.
+// Fields are merged by the Google SDK after protocol conversion and may override
+// native fields. Use only with endpoints that support the supplied extensions.
+// The map and its nested values must not be modified while the option is in use.
+func WithExtraFields(extraFields map[string]any) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.ExtraFields = extraFields
+	})
+}
+
+// WithCustomHeaders sets additional HTTP headers for this request.
+// Headers are merged with client headers by the Google SDK; request headers
+// override client headers with the same name (case-insensitively). SDK-managed
+// headers such as Content-Type and API-key authentication may take precedence.
+// The supplied headers are copied when the option is created.
+func WithCustomHeaders(headers http.Header) model.Option {
+	headers = headers.Clone()
+	return model.WrapImplSpecificOptFn(func(o *options) {
+		o.CustomHeaders = headers.Clone()
 	})
 }
 
