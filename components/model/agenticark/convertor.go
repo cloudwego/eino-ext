@@ -448,7 +448,7 @@ func userInputTextToInputItem(role responses.MessageRole_Enum, block *schema.Use
 }
 
 func userInputImageToInputItem(role responses.MessageRole_Enum, block *schema.UserInputImage) (inputItem *responses.InputItem, err error) {
-	imageURL, err := resolveURL(block.URL, block.Base64Data, block.MIMEType)
+	imageURL, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +462,8 @@ func userInputImageToInputItem(role responses.MessageRole_Enum, block *schema.Us
 		Union: &responses.ContentItem_Image{
 			Image: &responses.ContentItemImage{
 				Type:     responses.ContentItemType_input_image,
-				ImageUrl: &imageURL,
+				ImageUrl: optionalString(imageURL),
+				FileId:   optionalString(block.FileID),
 				Detail:   detail,
 			},
 		},
@@ -482,6 +483,9 @@ func userInputImageToInputItem(role responses.MessageRole_Enum, block *schema.Us
 }
 
 func toContentItemImageDetail(detail schema.ImageURLDetail) (*responses.ContentItemImageDetail_Enum, error) {
+	if detail == "" {
+		return nil, nil
+	}
 	switch detail {
 	case schema.ImageURLDetailHigh:
 		return responses.ContentItemImageDetail_high.Enum(), nil
@@ -495,7 +499,7 @@ func toContentItemImageDetail(detail schema.ImageURLDetail) (*responses.ContentI
 }
 
 func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.UserInputVideo) (inputItem *responses.InputItem, err error) {
-	videoURL, err := resolveURL(block.URL, block.Base64Data, block.MIMEType)
+	videoURL, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return nil, err
 	}
@@ -510,6 +514,7 @@ func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.Us
 			Video: &responses.ContentItemVideo{
 				Type:     responses.ContentItemType_input_video,
 				VideoUrl: videoURL,
+				FileId:   optionalString(block.FileID),
 				Fps:      fpsPtr,
 			},
 		},
@@ -529,7 +534,7 @@ func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.Us
 }
 
 func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.UserInputAudio) (inputItem *responses.InputItem, err error) {
-	audioURL, err := resolveURL(block.URL, block.Base64Data, block.MIMEType)
+	audioURL, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return nil, err
 	}
@@ -539,6 +544,7 @@ func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.Us
 			Audio: &responses.ContentItemAudio{
 				Type:     responses.ContentItemType_input_audio,
 				AudioUrl: audioURL,
+				FileId:   optionalString(block.FileID),
 			},
 		},
 	}
@@ -557,12 +563,17 @@ func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.Us
 }
 
 func userInputFileToInputItem(role responses.MessageRole_Enum, block *schema.UserInputFile) (inputItem *responses.InputItem, err error) {
+	if block.FileID != "" && (block.URL != "" || block.Base64Data != "") {
+		return nil, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+	}
 	fileItem := &responses.ContentItemFile{
 		Type:     responses.ContentItemType_input_file,
 		Filename: &block.Name,
 	}
 
-	if block.URL != "" {
+	if block.FileID != "" {
+		fileItem.FileId = &block.FileID
+	} else if block.URL != "" {
 		fileItem.FileUrl = &block.URL
 	} else if block.Base64Data != "" {
 		fileItem.FileData = &block.Base64Data
@@ -1924,4 +1935,21 @@ func ensureDataURL(base64Data, mimeType string) (string, error) {
 		return "", fmt.Errorf("mimeType is required")
 	}
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data), nil
+}
+
+func optionalString(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func resolveInputURL(url, base64Data, mimeType, fileID string) (string, error) {
+	if fileID != "" {
+		if url != "" || base64Data != "" {
+			return "", fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+		}
+		return "", nil
+	}
+	return resolveURL(url, base64Data, mimeType)
 }

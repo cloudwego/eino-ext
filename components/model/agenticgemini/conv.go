@@ -243,6 +243,13 @@ func convAgenticMessage(message *schema.AgenticMessage) (*genai.Content, error) 
 }
 
 func convUserInputImage(img *schema.UserInputImage) (*genai.Part, error) {
+	if img.FileID != "" {
+		if img.URL != "" || img.Base64Data != "" {
+			return nil, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+		}
+		return genai.NewPartFromURI(img.FileID, img.MIMEType), nil
+	}
+
 	if img.Base64Data != "" {
 		b, err := decodeBase64DataURL(img.Base64Data)
 		if err != nil {
@@ -269,6 +276,13 @@ func convAssistantGenImage(img *schema.AssistantGenImage) (*genai.Part, error) {
 }
 
 func convUserInputAudio(audio *schema.UserInputAudio) (*genai.Part, error) {
+	if audio.FileID != "" {
+		if audio.URL != "" || audio.Base64Data != "" {
+			return nil, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+		}
+		return genai.NewPartFromURI(audio.FileID, audio.MIMEType), nil
+	}
+
 	if audio.Base64Data != "" {
 		b, err := decodeBase64DataURL(audio.Base64Data)
 		if err != nil {
@@ -295,6 +309,13 @@ func convAssistantGenAudio(audio *schema.AssistantGenAudio) (*genai.Part, error)
 }
 
 func convUserInputVideo(video *schema.UserInputVideo) (*genai.Part, error) {
+	if video.FileID != "" {
+		if video.URL != "" || video.Base64Data != "" {
+			return nil, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+		}
+		return genai.NewPartFromURI(video.FileID, video.MIMEType), nil
+	}
+
 	if video.Base64Data != "" {
 		b, err := decodeBase64DataURL(video.Base64Data)
 		if err != nil {
@@ -321,6 +342,13 @@ func convAssistantGenVideo(video *schema.AssistantGenVideo) (*genai.Part, error)
 }
 
 func convUserInputFile(file *schema.UserInputFile) (*genai.Part, error) {
+	if file.FileID != "" {
+		if file.URL != "" || file.Base64Data != "" {
+			return nil, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+		}
+		return genai.NewPartFromURI(file.FileID, file.MIMEType), nil
+	}
+
 	if file.Base64Data != "" {
 		b, err := decodeBase64DataURL(file.Base64Data)
 		if err != nil {

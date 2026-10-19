@@ -453,6 +453,9 @@ func audioFormatFromMIME(mime string) string {
 // target API (e.g., wrapping base64 into a data URL for image/video, or
 // keeping it raw for audio).
 func validateMessagePartCommon(c schema.MessagePartCommon, partName string) (raw string, isBase64 bool, err error) {
+	if c.FileID != nil {
+		return "", false, fmt.Errorf("%s FileID is not supported by the current Ark Chat SDK; use the Responses API", partName)
+	}
 	if c.URL != nil && *c.URL != "" {
 		return *c.URL, false, nil
 	}

@@ -477,6 +477,17 @@ func functionToolResultContentToBlockParam(block *schema.FunctionToolResultConte
 }
 
 func imageToBlockParam(image *schema.UserInputImage) (anthropic.ContentBlockParamUnion, error) {
+	if image.FileID != "" {
+		if image.URL != "" || image.Base64Data != "" {
+			return anthropic.ContentBlockParamUnion{}, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+		}
+		// The SDK exposes file sources in its beta types; Override preserves the
+		// same source JSON for the stable Messages endpoint.
+		return anthropic.ContentBlockParamUnion{OfImage: &anthropic.ImageBlockParam{
+			Source: param.Override[anthropic.ImageBlockParamSourceUnion](anthropic.BetaFileImageSourceParam{FileID: image.FileID}),
+		}}, nil
+	}
+
 	switch {
 	case image.URL != "":
 		return anthropic.NewImageBlock(anthropic.URLImageSourceParam{URL: image.URL}), nil
@@ -495,6 +506,17 @@ func imageToBlockParam(image *schema.UserInputImage) (anthropic.ContentBlockPara
 }
 
 func documentToBlockParam(file *schema.UserInputFile) (anthropic.ContentBlockParamUnion, error) {
+	if file.FileID != "" {
+		if file.URL != "" || file.Base64Data != "" {
+			return anthropic.ContentBlockParamUnion{}, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
+		}
+		// The SDK exposes file sources in its beta types; Override preserves the
+		// same source JSON for the stable Messages endpoint.
+		return anthropic.ContentBlockParamUnion{OfDocument: &anthropic.DocumentBlockParam{
+			Source: param.Override[anthropic.DocumentBlockParamSourceUnion](anthropic.BetaFileDocumentSourceParam{FileID: file.FileID}),
+		}}, nil
+	}
+
 	switch {
 	case file.URL != "":
 		return anthropic.NewDocumentBlock(anthropic.URLPDFSourceParam{URL: file.URL}), nil
