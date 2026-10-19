@@ -489,8 +489,14 @@ func imageToBlockParam(image *schema.UserInputImage) (anthropic.ContentBlockPara
 			Data:      image.Base64Data,
 			MediaType: mediaType,
 		}), nil
+	case image.FileID != "":
+		// The SDK exposes file sources in its beta types; Override preserves the
+		// same source JSON for the stable Messages endpoint.
+		return anthropic.ContentBlockParamUnion{OfImage: &anthropic.ImageBlockParam{
+			Source: param.Override[anthropic.ImageBlockParamSourceUnion](anthropic.BetaFileImageSourceParam{FileID: image.FileID}),
+		}}, nil
 	default:
-		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("image input requires either URL or Base64Data")
+		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("image input requires URL, Base64Data or FileID")
 	}
 }
 
@@ -500,8 +506,14 @@ func documentToBlockParam(file *schema.UserInputFile) (anthropic.ContentBlockPar
 		return anthropic.NewDocumentBlock(anthropic.URLPDFSourceParam{URL: file.URL}), nil
 	case file.Base64Data != "":
 		return anthropic.NewDocumentBlock(anthropic.Base64PDFSourceParam{Data: file.Base64Data}), nil
+	case file.FileID != "":
+		// The SDK exposes file sources in its beta types; Override preserves the
+		// same source JSON for the stable Messages endpoint.
+		return anthropic.ContentBlockParamUnion{OfDocument: &anthropic.DocumentBlockParam{
+			Source: param.Override[anthropic.DocumentBlockParamSourceUnion](anthropic.BetaFileDocumentSourceParam{FileID: file.FileID}),
+		}}, nil
 	default:
-		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("file input requires either URL or Base64Data")
+		return anthropic.ContentBlockParamUnion{}, fmt.Errorf("file input requires URL, Base64Data or FileID")
 	}
 }
 
