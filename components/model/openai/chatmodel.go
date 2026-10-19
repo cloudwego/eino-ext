@@ -179,8 +179,8 @@ type ChatModelConfig struct {
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"extra_fields,omitempty"`
 
-	// ReasoningEffort will override the default reasoning level of "medium"
-	// Optional. Useful for fine tuning response latency vs. accuracy
+	// ReasoningEffort controls reasoning effort. Supported values depend on the model.
+	// Optional. When empty, the request omits reasoning_effort and uses the model's default.
 	ReasoningEffort ReasoningEffortLevel
 
 	// Modalities are output types that you would like the model to generate. Most models are capable of generating text, which is the default: ["text"]
