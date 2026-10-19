@@ -25,6 +25,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	gonanoid "github.com/matoous/go-nanoid"
 	"github.com/stretchr/testify/assert"
 
@@ -1819,4 +1820,30 @@ func Test_parseReflectTypeToTypeSchema(t *testing.T) {
 	assert.Equal(t, data.Properties["child9"].Title, "***map[string]string")
 	assert.Equal(t, data.Properties["child10"].Title, "***string")
 	assert.Equal(t, data.Properties["child11"].Title, "***map[string]***model.DemoV1")
+}
+
+func Test_parseReflectTypeToJsonSchema_TextJSONType(t *testing.T) {
+	type uuidSchema struct {
+		ID     uuid.UUID            `json:"customer_id" binding:"required"`
+		Ptr    *uuid.UUID           `json:"pointer"`
+		IDs    []uuid.UUID          `json:"ids"`
+		ByName map[string]uuid.UUID `json:"by_name"`
+	}
+
+	data := parseReflectTypeToJsonSchema(reflect.TypeOf(uuidSchema{}))
+	assert.Equal(t, devmodel.JsonTypeOfString, data.Properties["customer_id"].Type)
+	assert.Equal(t, "uuid.UUID", data.Properties["customer_id"].Title)
+	assert.Equal(t, devmodel.JsonTypeOfString, data.Properties["pointer"].Type)
+	assert.Equal(t, "*uuid.UUID", data.Properties["pointer"].Title)
+	assert.Equal(t, devmodel.JsonTypeOfString, data.Properties["ids"].Items.Type)
+	assert.Equal(t, devmodel.JsonTypeOfString, data.Properties["by_name"].AdditionalProperties.Type)
+	assert.Contains(t, data.Required, "customer_id")
+
+	ptrType := reflect.PointerTo(reflect.PointerTo(reflect.TypeOf(uuid.UUID{})))
+	data = parseReflectTypeToJsonSchema(ptrType)
+	assert.Equal(t, devmodel.JsonTypeOfString, data.Type)
+	assert.Equal(t, "**uuid.UUID", data.Title)
+
+	data = parseReflectTypeToJsonSchema(reflect.TypeOf(jsonOverrideTextCodec{}))
+	assert.Equal(t, devmodel.JsonTypeOfArray, data.Type)
 }

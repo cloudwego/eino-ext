@@ -21,8 +21,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/matoous/go-nanoid"
-
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
 	devmodel "github.com/cloudwego/eino-ext/devops/model"
 	"github.com/cloudwego/eino/components"
@@ -33,6 +31,7 @@ import (
 	"github.com/cloudwego/eino/components/prompt"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/compose"
+	gonanoid "github.com/matoous/go-nanoid"
 )
 
 type GraphContainer struct {
@@ -383,7 +382,7 @@ func (g *Graph) addNode(node string, gni compose.GraphNodeInfo, opts ...compose.
 			return fmt.Errorf("component is %s, but get unexpected instance=%v", gni.Component, reflect.TypeOf(gni.Instance))
 		}
 		return g.AddEmbeddingNode(node, ins, newOpts...)
-		
+
 	case components.ComponentOfRetriever:
 		ins, ok := gni.Instance.(retriever.Retriever)
 		if !ok {
@@ -469,6 +468,12 @@ func parseReflectTypeToJsonSchema(reflectType reflect.Type) (jsonSchema *devmode
 	recursionParseReflectTypeToJsonSchema = func(rt reflect.Type, ptrLevel int, visited map[reflect.Type]bool) (jsc *devmodel.JsonSchema) {
 		jsc = &devmodel.JsonSchema{}
 		jsc.Type = devmodel.JsonTypeOfNull
+
+		if isTextJSONType(rt) {
+			jsc.Type = devmodel.JsonTypeOfString
+			jsc.Title = processPointer(rt.String(), ptrLevel)
+			return jsc
+		}
 
 		switch rt.Kind() {
 		case reflect.Struct:
