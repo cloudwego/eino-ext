@@ -25,8 +25,8 @@ github.com/cloudwego/base64x v0.1.6 h1:t11wG9AECkCDk5fMSoxmufanudBtJ+/HemLstXDLI
 github.com/cloudwego/base64x v0.1.6/go.mod h1:OFcloc187FXDaYHvrNIjxSe8ncn0OOM8gEHfghB2IPU=
 github.com/cloudwego/eino v0.9.5 h1:0Nftjx9gPek/2S/hzm38LVxSjk5/6mqRr3I9VKrKvm4=
 github.com/cloudwego/eino v0.9.5/go.mod h1:OBD1mrkfkt/pJa4rkg1P0VnaMeOVl7l8IAdEqY//3IQ=
-github.com/cloudwego/eino v0.10.0-alpha.29.0.20261019082601-b7e48905672d h1:SN7d4ATTLTrIeWp4mEr1jHPrgSm3RAjHAA6adaHud7M=
-github.com/cloudwego/eino v0.10.0-alpha.29.0.20261019082601-b7e48905672d/go.mod h1:OBD1mrkfkt/pJa4rkg1P0VnaMeOVl7l8IAdEqY//3IQ=
+github.com/cloudwego/eino v0.9.22 h1:qBSgj+H5geYTysjta/bgdE9OVXX+9MVXP74vA6QA4GQ=
+github.com/cloudwego/eino v0.9.22/go.mod h1:OBD1mrkfkt/pJa4rkg1P0VnaMeOVl7l8IAdEqY//3IQ=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

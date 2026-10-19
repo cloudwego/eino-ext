@@ -592,7 +592,7 @@ func userInputTextToInputItem(role responses.EasyInputMessageRole, block *schema
 }
 
 func userInputImageToInputItem(role responses.EasyInputMessageRole, block *schema.UserInputImage) (item responses.ResponseInputItemUnionParam, err error) {
-	imageURL, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
+	imageURL, fileID, err := resolveInputSource(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return item, err
 	}
@@ -605,7 +605,7 @@ func userInputImageToInputItem(role responses.EasyInputMessageRole, block *schem
 	contentItem := responses.ResponseInputContentUnionParam{
 		OfInputImage: &responses.ResponseInputImageParam{
 			ImageURL: newOpenaiStrOpt(imageURL),
-			FileID:   newOpenaiStrOpt(block.FileID),
+			FileID:   newOpenaiStrOpt(fileID),
 			Detail:   detail,
 		},
 	}
@@ -643,7 +643,7 @@ func toInputItemImageDetail(detail schema.ImageURLDetail) (responses.ResponseInp
 }
 
 func userInputFileToInputItem(role responses.EasyInputMessageRole, block *schema.UserInputFile) (item responses.ResponseInputItemUnionParam, err error) {
-	fileURl, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
+	fileURl, fileID, err := resolveInputSource(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return item, err
 	}
@@ -653,12 +653,12 @@ func userInputFileToInputItem(role responses.EasyInputMessageRole, block *schema
 			Filename: newOpenaiStrOpt(block.Name),
 		},
 	}
-	if block.FileID != "" {
-		contentItem.OfInputFile.FileID = newOpenaiStrOpt(block.FileID)
-	} else if block.URL != "" {
+	if block.URL != "" {
 		contentItem.OfInputFile.FileURL = newOpenaiStrOpt(fileURl)
 	} else if block.Base64Data != "" {
 		contentItem.OfInputFile.FileData = newOpenaiStrOpt(block.Base64Data)
+	} else if fileID != "" {
+		contentItem.OfInputFile.FileID = newOpenaiStrOpt(fileID)
 	}
 
 	item = responses.ResponseInputItemUnionParam{
@@ -722,13 +722,13 @@ func functionToolResultContentToOutput(content []*schema.FunctionToolResultConte
 			})
 
 		case schema.FunctionToolResultContentBlockTypeImage:
-			imageURL, err := resolveInputURL(block.Image.URL, block.Image.Base64Data, block.Image.MIMEType, block.Image.FileID)
+			imageURL, fileID, err := resolveInputSource(block.Image.URL, block.Image.Base64Data, block.Image.MIMEType, block.Image.FileID)
 			if err != nil {
 				return responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}, err
 			}
 			imgParam := &responses.ResponseInputImageContentParam{
 				ImageURL: newOpenaiStrOpt(imageURL),
-				FileID:   newOpenaiStrOpt(block.Image.FileID),
+				FileID:   newOpenaiStrOpt(fileID),
 			}
 			if block.Image.Detail != "" {
 				imgParam.Detail = responses.ResponseInputImageContentDetail(block.Image.Detail)
@@ -738,14 +738,14 @@ func functionToolResultContentToOutput(content []*schema.FunctionToolResultConte
 			})
 
 		case schema.FunctionToolResultContentBlockTypeFile:
-			fileURL, err := resolveInputURL(block.File.URL, block.File.Base64Data, block.File.MIMEType, block.File.FileID)
+			fileURL, fileID, err := resolveInputSource(block.File.URL, block.File.Base64Data, block.File.MIMEType, block.File.FileID)
 			if err != nil {
 				return responses.ResponseInputItemFunctionCallOutputOutputUnionParam{}, err
 			}
 			items = append(items, responses.ResponseFunctionCallOutputItemUnionParam{
 				OfInputFile: &responses.ResponseInputFileContentParam{
 					FileURL:  newOpenaiStrOpt(fileURL),
-					FileID:   newOpenaiStrOpt(block.File.FileID),
+					FileID:   newOpenaiStrOpt(fileID),
 					Filename: newOpenaiStrOpt(block.File.Name),
 				},
 			})
@@ -2342,12 +2342,14 @@ func ensureDataURL(base64Data, mimeType string) (string, error) {
 	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64Data), nil
 }
 
-func resolveInputURL(url, base64Data, mimeType, fileID string) (string, error) {
-	if fileID != "" {
-		if url != "" || base64Data != "" {
-			return "", fmt.Errorf("FileID cannot be combined with URL or Base64Data")
-		}
-		return "", nil
+func resolveInputSource(url, base64Data, mimeType, fileID string) (inputURL, inputFileID string, err error) {
+	if url != "" || base64Data != "" {
+		inputURL, err = resolveURL(url, base64Data, mimeType)
+		return inputURL, "", err
 	}
-	return resolveURL(url, base64Data, mimeType)
+	if fileID != "" {
+		return "", fileID, nil
+	}
+	inputURL, err = resolveURL(url, base64Data, mimeType)
+	return inputURL, "", err
 }

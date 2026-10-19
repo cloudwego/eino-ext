@@ -1704,14 +1704,11 @@ func fileIDContentBlock(part schema.MessageInputPart) (anthropic.ContentBlockPar
 	default:
 		return anthropic.ContentBlockParamUnion{}, false, nil
 	}
-	if common.FileID == nil {
+	if common.URL != nil && *common.URL != "" || common.Base64Data != nil && *common.Base64Data != "" || common.FileID == nil {
 		return anthropic.ContentBlockParamUnion{}, false, nil
 	}
 	if *common.FileID == "" {
 		return anthropic.ContentBlockParamUnion{}, true, fmt.Errorf("FileID must not be empty")
-	}
-	if common.URL != nil || common.Base64Data != nil {
-		return anthropic.ContentBlockParamUnion{}, true, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
 	}
 	// The pinned SDK exposes file sources in beta types. Override emits the
 	// same source JSON on the stable Messages endpoint.

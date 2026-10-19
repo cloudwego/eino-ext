@@ -448,7 +448,7 @@ func userInputTextToInputItem(role responses.MessageRole_Enum, block *schema.Use
 }
 
 func userInputImageToInputItem(role responses.MessageRole_Enum, block *schema.UserInputImage) (inputItem *responses.InputItem, err error) {
-	imageURL, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
+	imageURL, fileID, err := resolveInputSource(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return nil, err
 	}
@@ -463,7 +463,7 @@ func userInputImageToInputItem(role responses.MessageRole_Enum, block *schema.Us
 			Image: &responses.ContentItemImage{
 				Type:     responses.ContentItemType_input_image,
 				ImageUrl: optionalString(imageURL),
-				FileId:   optionalString(block.FileID),
+				FileId:   optionalString(fileID),
 				Detail:   detail,
 			},
 		},
@@ -499,7 +499,7 @@ func toContentItemImageDetail(detail schema.ImageURLDetail) (*responses.ContentI
 }
 
 func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.UserInputVideo) (inputItem *responses.InputItem, err error) {
-	videoURL, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
+	videoURL, fileID, err := resolveInputSource(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +514,7 @@ func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.Us
 			Video: &responses.ContentItemVideo{
 				Type:     responses.ContentItemType_input_video,
 				VideoUrl: videoURL,
-				FileId:   optionalString(block.FileID),
+				FileId:   optionalString(fileID),
 				Fps:      fpsPtr,
 			},
 		},
@@ -534,7 +534,7 @@ func userInputVideoToInputItem(role responses.MessageRole_Enum, block *schema.Us
 }
 
 func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.UserInputAudio) (inputItem *responses.InputItem, err error) {
-	audioURL, err := resolveInputURL(block.URL, block.Base64Data, block.MIMEType, block.FileID)
+	audioURL, fileID, err := resolveInputSource(block.URL, block.Base64Data, block.MIMEType, block.FileID)
 	if err != nil {
 		return nil, err
 	}
@@ -544,7 +544,7 @@ func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.Us
 			Audio: &responses.ContentItemAudio{
 				Type:     responses.ContentItemType_input_audio,
 				AudioUrl: audioURL,
-				FileId:   optionalString(block.FileID),
+				FileId:   optionalString(fileID),
 			},
 		},
 	}
@@ -563,22 +563,19 @@ func userInputAudioToInputItem(role responses.MessageRole_Enum, block *schema.Us
 }
 
 func userInputFileToInputItem(role responses.MessageRole_Enum, block *schema.UserInputFile) (inputItem *responses.InputItem, err error) {
-	if block.FileID != "" && (block.URL != "" || block.Base64Data != "") {
-		return nil, fmt.Errorf("FileID cannot be combined with URL or Base64Data")
-	}
 	fileItem := &responses.ContentItemFile{
 		Type:     responses.ContentItemType_input_file,
 		Filename: &block.Name,
 	}
 
-	if block.FileID != "" {
-		fileItem.FileId = &block.FileID
-	} else if block.URL != "" {
+	if block.URL != "" {
 		fileItem.FileUrl = &block.URL
 	} else if block.Base64Data != "" {
 		fileItem.FileData = &block.Base64Data
+	} else if block.FileID != "" {
+		fileItem.FileId = &block.FileID
 	} else {
-		return nil, fmt.Errorf("file input must have either URL or Base64Data")
+		return nil, fmt.Errorf("file input must have URL, Base64Data or FileID")
 	}
 
 	contentItem := &responses.ContentItem{
@@ -1944,12 +1941,14 @@ func optionalString(value string) *string {
 	return &value
 }
 
-func resolveInputURL(url, base64Data, mimeType, fileID string) (string, error) {
-	if fileID != "" {
-		if url != "" || base64Data != "" {
-			return "", fmt.Errorf("FileID cannot be combined with URL or Base64Data")
-		}
-		return "", nil
+func resolveInputSource(url, base64Data, mimeType, fileID string) (inputURL, inputFileID string, err error) {
+	if url != "" || base64Data != "" {
+		inputURL, err = resolveURL(url, base64Data, mimeType)
+		return inputURL, "", err
 	}
-	return resolveURL(url, base64Data, mimeType)
+	if fileID != "" {
+		return "", fileID, nil
+	}
+	inputURL, err = resolveURL(url, base64Data, mimeType)
+	return inputURL, "", err
 }

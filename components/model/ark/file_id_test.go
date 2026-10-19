@@ -44,18 +44,6 @@ func TestInputFileID(t *testing.T) {
 				t.Fatalf("unexpected source field: %s", data)
 			}
 		}
-		url := "https://example.com/media"
-		input.URL = &url
-		if _, err := convMsgInputImageToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.URL = nil
-		base64 := "YWJj"
-		input.Base64Data = &base64
-		if _, err := convMsgInputImageToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.Base64Data = nil
 		fileID = ""
 		if _, err := convMsgInputImageToResponseContentItem(input); err == nil {
 			t.Fatal("expected empty FileID to fail")
@@ -80,18 +68,6 @@ func TestInputFileID(t *testing.T) {
 				t.Fatalf("unexpected source field: %s", data)
 			}
 		}
-		url := "https://example.com/media"
-		input.URL = &url
-		if _, err := convMsgInputAudioToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.URL = nil
-		base64 := "YWJj"
-		input.Base64Data = &base64
-		if _, err := convMsgInputAudioToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.Base64Data = nil
 		fileID = ""
 		if _, err := convMsgInputAudioToResponseContentItem(input); err == nil {
 			t.Fatal("expected empty FileID to fail")
@@ -116,18 +92,6 @@ func TestInputFileID(t *testing.T) {
 				t.Fatalf("unexpected source field: %s", data)
 			}
 		}
-		url := "https://example.com/media"
-		input.URL = &url
-		if _, err := convMsgInputVideoToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.URL = nil
-		base64 := "YWJj"
-		input.Base64Data = &base64
-		if _, err := convMsgInputVideoToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.Base64Data = nil
 		fileID = ""
 		if _, err := convMsgInputVideoToResponseContentItem(input); err == nil {
 			t.Fatal("expected empty FileID to fail")
@@ -152,18 +116,6 @@ func TestInputFileID(t *testing.T) {
 				t.Fatalf("unexpected source field: %s", data)
 			}
 		}
-		url := "https://example.com/media"
-		input.URL = &url
-		if _, err := convMsgInputFileToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.URL = nil
-		base64 := "YWJj"
-		input.Base64Data = &base64
-		if _, err := convMsgInputFileToResponseContentItem(input); err == nil {
-			t.Fatal("expected source conflict")
-		}
-		input.Base64Data = nil
 		fileID = ""
 		if _, err := convMsgInputFileToResponseContentItem(input); err == nil {
 			t.Fatal("expected empty FileID to fail")
@@ -175,5 +127,103 @@ func TestChatFileIDUnsupported(t *testing.T) {
 	id := "file-123"
 	if _, _, err := validateMessagePartCommon(schema.MessagePartCommon{FileID: &id}, "image"); err == nil {
 		t.Fatal("the pinned Chat SDK cannot represent FileID")
+	}
+}
+
+func TestInputFileIDPrecedence(t *testing.T) {
+	for _, media := range []struct {
+		name    string
+		convert func(schema.MessagePartCommon) (any, error)
+	}{
+		{name: "image", convert: func(common schema.MessagePartCommon) (any, error) {
+			return convMsgInputImageToResponseContentItem(&schema.MessageInputImage{MessagePartCommon: common})
+		}},
+		{name: "audio", convert: func(common schema.MessagePartCommon) (any, error) {
+			return convMsgInputAudioToResponseContentItem(&schema.MessageInputAudio{MessagePartCommon: common})
+		}},
+		{name: "video", convert: func(common schema.MessagePartCommon) (any, error) {
+			return convMsgInputVideoToResponseContentItem(&schema.MessageInputVideo{MessagePartCommon: common})
+		}},
+		{name: "file", convert: func(common schema.MessagePartCommon) (any, error) {
+			return convMsgInputFileToResponseContentItem(&schema.MessageInputFile{MessagePartCommon: common})
+		}},
+	} {
+		t.Run(media.name, func(t *testing.T) {
+			checkFileIDPrecedence(t, media.convert)
+		})
+	}
+}
+
+func checkFileIDPrecedence(t *testing.T, convert func(schema.MessagePartCommon) (any, error)) {
+	t.Helper()
+	id := "file-123"
+	url := "https://example.com/media"
+	base64Data := "YWJj"
+	invalidBase64 := "data:image/png;base64,YWJj"
+	empty := ""
+	for _, tc := range []struct {
+		name   string
+		common schema.MessagePartCommon
+	}{
+		{name: "URL", common: schema.MessagePartCommon{URL: &url}},
+		{name: "Base64Data", common: schema.MessagePartCommon{Base64Data: &base64Data, MIMEType: "image/png"}},
+		{name: "URL_and_Base64Data", common: schema.MessagePartCommon{URL: &url, Base64Data: &base64Data, MIMEType: "image/png"}},
+		{name: "invalid_Base64Data", common: schema.MessagePartCommon{Base64Data: &invalidBase64, MIMEType: "image/png"}},
+		{name: "missing_MIMEType", common: schema.MessagePartCommon{Base64Data: &base64Data}},
+		{name: "empty_URL", common: schema.MessagePartCommon{URL: &empty}},
+		{name: "empty_Base64Data", common: schema.MessagePartCommon{Base64Data: &empty, MIMEType: "image/png"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want, wantErr := convert(tc.common)
+			tc.common.FileID = &id
+			got, err := convert(tc.common)
+			if wantErr != nil {
+				if err == nil || err.Error() != wantErr.Error() {
+					t.Fatalf("FileID changed the selected source error: got %v, want %v", err, wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantJSON, err := json.Marshal(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotJSON, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(gotJSON) != string(wantJSON) {
+				t.Fatalf("FileID changed the selected source: got %s, want %s", gotJSON, wantJSON)
+			}
+		})
+	}
+}
+
+func TestChatFileIDPrecedence(t *testing.T) {
+	id := "file-123"
+	url := "https://example.com/media"
+	base64Data := "YWJj"
+	invalidBase64 := "data:image/png;base64,YWJj"
+	for _, common := range []schema.MessagePartCommon{
+		{URL: &url},
+		{Base64Data: &base64Data, MIMEType: "image/png"},
+		{URL: &url, Base64Data: &base64Data},
+		{Base64Data: &base64Data},
+		{Base64Data: &invalidBase64, MIMEType: "image/png"},
+	} {
+		wantRaw, wantBase64, wantErr := validateMessagePartCommon(common, "image")
+		common.FileID = &id
+		gotRaw, gotBase64, err := validateMessagePartCommon(common, "image")
+		if wantErr != nil {
+			if err == nil || err.Error() != wantErr.Error() {
+				t.Fatalf("FileID changed the selected source error: got %v, want %v", err, wantErr)
+			}
+			continue
+		}
+		if err != nil || gotRaw != wantRaw || gotBase64 != wantBase64 {
+			t.Fatalf("FileID changed the selected source: got (%q, %v, %v), want (%q, %v, nil)", gotRaw, gotBase64, err, wantRaw, wantBase64)
+		}
 	}
 }

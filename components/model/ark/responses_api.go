@@ -1498,7 +1498,7 @@ func convUserInputMultiContentToContentItems(parts []schema.MessageInputPart) ([
 	return items, nil
 }
 func convMsgInputImageToResponseContentItem(image *schema.MessageInputImage) (*responses.ContentItem, error) {
-	if image.FileID != nil {
+	if image.URL == nil && image.Base64Data == nil && image.FileID != nil {
 		if err := validateInputFileID(image.MessagePartCommon); err != nil {
 			return nil, err
 		}
@@ -1529,7 +1529,7 @@ func convMsgInputImageToResponseContentItem(image *schema.MessageInputImage) (*r
 }
 
 func convMsgInputVideoToResponseContentItem(video *schema.MessageInputVideo) (*responses.ContentItem, error) {
-	if video.FileID != nil {
+	if video.URL == nil && video.Base64Data == nil && video.FileID != nil {
 		if err := validateInputFileID(video.MessagePartCommon); err != nil {
 			return nil, err
 		}
@@ -1562,7 +1562,7 @@ func convMsgInputVideoToResponseContentItem(video *schema.MessageInputVideo) (*r
 }
 
 func convMsgInputAudioToResponseContentItem(audio *schema.MessageInputAudio) (*responses.ContentItem, error) {
-	if audio.FileID != nil {
+	if audio.URL == nil && audio.Base64Data == nil && audio.FileID != nil {
 		if err := validateInputFileID(audio.MessagePartCommon); err != nil {
 			return nil, err
 		}
@@ -1589,7 +1589,7 @@ func convMsgInputAudioToResponseContentItem(audio *schema.MessageInputAudio) (*r
 }
 
 func convMsgInputFileToResponseContentItem(file *schema.MessageInputFile) (*responses.ContentItem, error) {
-	if file.FileID != nil {
+	if file.URL == nil && file.Base64Data == nil && file.FileID != nil {
 		if err := validateInputFileID(file.MessagePartCommon); err != nil {
 			return nil, err
 		}
@@ -1849,9 +1849,6 @@ func validateInputFileID(common schema.MessagePartCommon) error {
 	}
 	if *common.FileID == "" {
 		return fmt.Errorf("FileID must not be empty")
-	}
-	if common.URL != nil || common.Base64Data != nil {
-		return fmt.Errorf("FileID cannot be combined with URL or Base64Data")
 	}
 	return nil
 }

@@ -1508,21 +1508,18 @@ func newPanicErr(info any, stack []byte) error {
 }
 
 func validateMediaFileID(common schema.MessagePartCommon) error {
-	if common.FileID == nil {
+	if common.Base64Data != nil || common.URL != nil || common.FileID == nil {
 		return nil
 	}
 	if *common.FileID == "" {
 		return fmt.Errorf("FileID must not be empty")
 	}
-	if common.URL != nil || common.Base64Data != nil {
-		return fmt.Errorf("FileID cannot be combined with URL or Base64Data")
-	}
 	return nil
 }
 
 func mediaFileURI(url, fileID *string) *string {
-	if fileID != nil {
-		return fileID
+	if url != nil {
+		return url
 	}
-	return url
+	return fileID
 }

@@ -30,20 +30,8 @@ func TestInputFileID(t *testing.T) {
 			var err error
 			if media == "image" {
 				value, err = imageToBlockParam(&schema.UserInputImage{FileID: "file-123"})
-				if _, conflict := imageToBlockParam(&schema.UserInputImage{FileID: "file-123", URL: "https://example.com"}); conflict == nil {
-					t.Fatal("expected source conflict")
-				}
-				if _, conflict := imageToBlockParam(&schema.UserInputImage{FileID: "file-123", Base64Data: "YWJj"}); conflict == nil {
-					t.Fatal("expected source conflict")
-				}
 			} else {
 				value, err = documentToBlockParam(&schema.UserInputFile{FileID: "file-123"})
-				if _, conflict := documentToBlockParam(&schema.UserInputFile{FileID: "file-123", URL: "https://example.com"}); conflict == nil {
-					t.Fatal("expected source conflict")
-				}
-				if _, conflict := documentToBlockParam(&schema.UserInputFile{FileID: "file-123", Base64Data: "YWJj"}); conflict == nil {
-					t.Fatal("expected source conflict")
-				}
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -65,6 +53,62 @@ func TestInputFileID(t *testing.T) {
 			}
 			if media == "file" && block["type"] != "document" {
 				t.Fatalf("wrong block: %s", data)
+			}
+		})
+	}
+}
+
+func TestInputFileIDPrecedence(t *testing.T) {
+	for _, media := range []struct {
+		name    string
+		convert func(url, base64Data, mimeType, fileID string) (any, error)
+	}{
+		{name: "image", convert: func(url, base64Data, mimeType, fileID string) (any, error) {
+			return imageToBlockParam(&schema.UserInputImage{URL: url, Base64Data: base64Data, MIMEType: mimeType, FileID: fileID})
+		}},
+		{name: "file", convert: func(url, base64Data, mimeType, fileID string) (any, error) {
+			return documentToBlockParam(&schema.UserInputFile{URL: url, Base64Data: base64Data, MIMEType: mimeType, FileID: fileID})
+		}},
+	} {
+		t.Run(media.name, func(t *testing.T) {
+			checkFileIDPrecedence(t, media.convert)
+		})
+	}
+}
+
+func checkFileIDPrecedence(t *testing.T, convert func(url, base64Data, mimeType, fileID string) (any, error)) {
+	t.Helper()
+	for _, tc := range []struct {
+		name, url, base64Data, mimeType string
+	}{
+		{name: "URL", url: "https://example.com/media"},
+		{name: "Base64Data", base64Data: "YWJj", mimeType: "image/png"},
+		{name: "URL_and_Base64Data", url: "https://example.com/media", base64Data: "YWJj", mimeType: "image/png"},
+		{name: "invalid_Base64Data", base64Data: "data:image/png;base64,YWJj", mimeType: "image/png"},
+		{name: "missing_MIMEType", base64Data: "YWJj"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want, wantErr := convert(tc.url, tc.base64Data, tc.mimeType, "")
+			got, err := convert(tc.url, tc.base64Data, tc.mimeType, "file-123")
+			if wantErr != nil {
+				if err == nil || err.Error() != wantErr.Error() {
+					t.Fatalf("FileID changed the selected source error: got %v, want %v", err, wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantJSON, err := json.Marshal(want)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gotJSON, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(gotJSON) != string(wantJSON) {
+				t.Fatalf("FileID changed the selected source: got %s, want %s", gotJSON, wantJSON)
 			}
 		})
 	}
