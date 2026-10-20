@@ -105,6 +105,11 @@ func TestRetrieverRetrieve(t *testing.T) {
 					Score: 0.95,
 					Payload: map[string]*qdrant.Value{
 						defaultContentKey: qdrant.NewValueString("Test content 1"),
+						defaultMetadataKey: qdrant.NewValueStruct(&qdrant.Struct{
+							Fields: map[string]*qdrant.Value{
+								"key": qdrant.NewValueString("value"),
+							},
+						}),
 					},
 				},
 			}, nil
