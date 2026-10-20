@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/bytedance/mockey"
@@ -248,6 +249,52 @@ func Test_containerServiceImpl_CreateCanvas(t *testing.T) {
 		c, ok := s.GetCanvas(id)
 		assert.True(t, ok)
 		assert.Equal(t, "graph", c.Name)
+	})
+
+	t.Run("create and get canvas concurrently", func(t *testing.T) {
+		s := newContainerService()
+		g := &compose.GraphInfo{
+			Name:       "graph",
+			InputType:  reflect.TypeOf(map[string]any{}),
+			OutputType: reflect.TypeOf(map[string]any{}),
+		}
+		id, err := s.AddGraphInfo("graph", g)
+		if !assert.NoError(t, err) {
+			return
+		}
+		_, err = s.CreateCanvas(id)
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		errCh := make(chan error, 1600)
+		var wg sync.WaitGroup
+		for i := 0; i < 8; i++ {
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					_, err := s.CreateCanvas(id)
+					if err != nil {
+						errCh <- err
+					}
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				for j := 0; j < 100; j++ {
+					_, ok := s.GetCanvas(id)
+					if !ok {
+						errCh <- fmt.Errorf("canvas not found")
+					}
+				}
+			}()
+		}
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			assert.NoError(t, err)
+		}
 	})
 }
 
