@@ -179,6 +179,10 @@ type ChatModelConfig struct {
 	// Optional. Useful for experimental features not yet officially supported.
 	ExtraFields map[string]any `json:"extra_fields,omitempty"`
 
+	// CustomHeaders specifies custom HTTP headers to include in API requests.
+	// Optional. Useful for custom routing, tracing, or experimental gateway features.
+	CustomHeaders map[string]string `json:"custom_headers,omitempty"`
+
 	// ReasoningEffort will override the default reasoning level of "medium"
 	// Optional. Useful for fine tuning response latency vs. accuracy
 	ReasoningEffort ReasoningEffortLevel
@@ -226,6 +230,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			User:                 config.User,
 			AzureModelMapperFunc: config.AzureModelMapperFunc,
 			ExtraFields:          config.ExtraFields,
+			CustomHeaders:        config.CustomHeaders,
 			ReasoningEffort:      openai.ReasoningEffortLevel(config.ReasoningEffort),
 			Modalities:           config.Modalities,
 		}
