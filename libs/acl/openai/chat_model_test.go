@@ -17,8 +17,13 @@
 package openai
 
 import (
+	"slices"
+	"sync"
+
 	"context"
 	"fmt"
+	"github.com/eino-contrib/jsonschema"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 	"io"
 	"math/rand"
 	"reflect"
@@ -1134,4 +1139,90 @@ func TestPopulateToolChoice(t *testing.T) {
 
 func ptr[T any](t T) *T {
 	return &t
+}
+
+// TestToToolsConcurrentSharedToolInfo is a regression test for the data race
+// in toTools: schema.ParamsOneOf.ToJSONSchema() returns the shared internal
+// schema, so sorting it in place corrupts Required under concurrency
+// (intermittent 400 "non-unique elements", see issue #1005).
+func TestToToolsConcurrentSharedToolInfo(t *testing.T) {
+	newProps := func(kv ...any) *orderedmap.OrderedMap[string, *jsonschema.Schema] {
+		m := orderedmap.New[string, *jsonschema.Schema]()
+		for i := 0; i+1 < len(kv); i += 2 {
+			m.Set(kv[i].(string), kv[i+1].(*jsonschema.Schema))
+		}
+		return m
+	}
+
+	shared := &jsonschema.Schema{
+		Type:     "object",
+		Required: []string{"limit", "file_path", "offset"}, // deliberately unsorted
+		Properties: newProps(
+			"options", &jsonschema.Schema{
+				Type:     "object",
+				Required: []string{"zulu", "alpha"}, // deliberately unsorted
+			},
+			"tags", &jsonschema.Schema{
+				Type: "array",
+				Items: &jsonschema.Schema{
+					Type:     "object",
+					Required: []string{"zeta", "eta"}, // deliberately unsorted
+				},
+			},
+		),
+	}
+
+	ti := &schema.ToolInfo{
+		Name:        "read_file",
+		Desc:        "reads a file",
+		ParamsOneOf: schema.NewParamsOneOfByJSONSchema(shared),
+	}
+
+	wantRoot := []string{"file_path", "limit", "offset"}
+	wantNested := []string{"alpha", "zulu"}
+	wantItems := []string{"eta", "zeta"}
+
+	var wg sync.WaitGroup
+	for w := 0; w < 4; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				tools, err := toTools([]*schema.ToolInfo{ti})
+				if err != nil {
+					t.Errorf("toTools: %v", err)
+					return
+				}
+				got := tools[0].Function.Parameters
+				if !slices.Equal(got.Required, wantRoot) {
+					t.Errorf("root Required corrupted: %v", got.Required)
+					return
+				}
+				nested, _ := got.Properties.Get("options")
+				if nested == nil || !slices.Equal(nested.Required, wantNested) {
+					t.Errorf("nested Required corrupted: %v", nested)
+					return
+				}
+				tags, _ := got.Properties.Get("tags")
+				if tags == nil || tags.Items == nil || !slices.Equal(tags.Items.Required, wantItems) {
+					t.Errorf("array items Required corrupted: %v", tags)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// The shared schema must be completely untouched.
+	if !slices.Equal(shared.Required, []string{"limit", "file_path", "offset"}) {
+		t.Errorf("shared schema Required was mutated: %v", shared.Required)
+	}
+	opts, _ := shared.Properties.Get("options")
+	if opts == nil || !slices.Equal(opts.Required, []string{"zulu", "alpha"}) {
+		t.Errorf("shared nested Required was mutated: %v", opts)
+	}
+	tags, _ := shared.Properties.Get("tags")
+	if tags == nil || tags.Items == nil || !slices.Equal(tags.Items.Required, []string{"zeta", "eta"}) {
+		t.Errorf("shared array items Required was mutated: %v", tags)
+	}
 }
