@@ -145,6 +145,14 @@ type Config struct {
 }
 ```
 
+## 函数工具调用 ID
+
+Gemini 返回 `FunctionCall.id` 时，本包会将其保留为
+`schema.FunctionToolCall.CallID`。回传 Gemini 的函数调用与结果会在
+`FunctionCall.id` 和 `FunctionResponse.id` 中使用同一个值，因此同名并行调用的结果即使乱序返回，也能正确配对。
+
+对于不返回 `FunctionCall.id` 的旧模型或旧网关，本包会为 `CallID` 生成唯一 UUID。
+构造对应的 `schema.FunctionToolResult` 时，应原样传入该 `CallID`。
 
 ## 扩展字段说明
 

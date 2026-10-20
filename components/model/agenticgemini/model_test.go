@@ -24,10 +24,10 @@ import (
 	"time"
 
 	"github.com/bytedance/mockey"
-	"github.com/cloudwego/eino/components/model"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/genai"
 
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -47,7 +47,7 @@ func TestNew(t *testing.T) {
 		},
 		ResponseModalities: []genai.Modality{genai.ModalityText, genai.ModalityImage},
 		ImageConfig:        &genai.ImageConfig{AspectRatio: "16:9", ImageSize: "1K"},
-		CacheExpiration: &CacheExpiration{TTL: ptrOf(time.Hour)},
+		CacheExpiration:    &CacheExpiration{TTL: ptrOf(time.Hour)},
 	}
 	m, err := New(context.Background(), config)
 	assert.NoError(t, err)
@@ -276,14 +276,36 @@ func TestModel_Stream_Success(t *testing.T) {
 			return
 		}
 
-		// Third chunk with finish reason
-		yield(&genai.GenerateContentResponse{
+		// Third chunk
+		if !yield(&genai.GenerateContentResponse{
 			Candidates: []*genai.Candidate{
 				{
 					Content: &genai.Content{
 						Role: roleModel,
 						Parts: []*genai.Part{
 							{Text: "!"},
+						},
+					},
+				},
+			},
+		}, nil) {
+			return
+		}
+
+		// Fourth chunk with a function call and finish reason
+		yield(&genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role: roleModel,
+						Parts: []*genai.Part{
+							{
+								FunctionCall: &genai.FunctionCall{
+									ID:   "provider-stream-call-id",
+									Name: "get_weather",
+									Args: map[string]any{"city": "Paris"},
+								},
+							},
 						},
 					},
 					FinishReason: genai.FinishReasonStop,
@@ -337,8 +359,7 @@ func TestModel_Stream_Success(t *testing.T) {
 		chunks = append(chunks, chunk)
 	}
 
-	// Should have 3 chunks
-	assert.Len(t, chunks, 3)
+	assert.Len(t, chunks, 4)
 
 	// Check first chunk
 	assert.Equal(t, "Hello", chunks[0].ContentBlocks[0].AssistantGenText.Text)
@@ -348,13 +369,21 @@ func TestModel_Stream_Success(t *testing.T) {
 	// Check second chunk
 	assert.Equal(t, " world", chunks[1].ContentBlocks[0].AssistantGenText.Text)
 
-	// Check third chunk (has finish reason and usage metadata)
+	// Check third chunk
 	assert.Equal(t, "!", chunks[2].ContentBlocks[0].AssistantGenText.Text)
-	assert.NotNil(t, chunks[2].ResponseMeta)
-	assert.NotNil(t, chunks[2].ResponseMeta.TokenUsage)
-	assert.Equal(t, 15, chunks[2].ResponseMeta.TokenUsage.TotalTokens)
 
-	assert.Equal(t, string(genai.FinishReasonStop), chunks[2].ResponseMeta.GeminiExtension.FinishReason)
+	// Check fourth chunk and the concatenated streaming result.
+	assert.Equal(t, "provider-stream-call-id", chunks[3].ContentBlocks[0].FunctionToolCall.CallID)
+	assert.NotNil(t, chunks[3].ResponseMeta)
+	assert.NotNil(t, chunks[3].ResponseMeta.TokenUsage)
+	assert.Equal(t, 15, chunks[3].ResponseMeta.TokenUsage.TotalTokens)
+	assert.Equal(t, string(genai.FinishReasonStop), chunks[3].ResponseMeta.GeminiExtension.FinishReason)
+
+	message, err := schema.ConcatAgenticMessages(chunks)
+	assert.NoError(t, err)
+	if assert.Len(t, message.ContentBlocks, 2) {
+		assert.Equal(t, "provider-stream-call-id", message.ContentBlocks[1].FunctionToolCall.CallID)
+	}
 }
 
 func TestConvCallbackOutput(t *testing.T) {
