@@ -37,7 +37,7 @@ func TestNewIterator(t *testing.T) {
 		convey.Convey("test with default values", func() {
 			iter := NewIterator("", 0)
 			convey.So(iter, convey.ShouldNotBeNil)
-			convey.So(iter.MetricType, convey.ShouldEqual, milvus2.L2)
+			convey.So(iter.MetricType, convey.ShouldBeEmpty)
 			convey.So(iter.BatchSize, convey.ShouldEqual, 100)
 		})
 
@@ -59,19 +59,6 @@ func TestNewIterator(t *testing.T) {
 			convey.So(iter.MetricType, convey.ShouldEqual, milvus2.COSINE)
 			convey.So(iter.BatchSize, convey.ShouldEqual, 200)
 		})
-	})
-}
-
-func TestIterator_WithSearchParams(t *testing.T) {
-	convey.Convey("test Iterator.WithSearchParams", t, func() {
-		iter := NewIterator(milvus2.L2, 100)
-		params := map[string]string{
-			"nprobe": "16",
-			"ef":     "64",
-		}
-		result := iter.WithSearchParams(params)
-		convey.So(result, convey.ShouldEqual, iter)
-		convey.So(iter.SearchParams, convey.ShouldResemble, params)
 	})
 }
 
@@ -128,11 +115,20 @@ func TestIterator_BuildSearchIteratorOption(t *testing.T) {
 		})
 
 		convey.Convey("test with search params", func() {
-			iter := NewIterator(milvus2.L2, 100).WithSearchParams(map[string]string{
-				"nprobe": "16",
-				"ef":     "64",
-			})
-			opt, err := iter.BuildSearchIteratorOption(ctx, config, queryVector)
+			iter := NewIterator(milvus2.L2, 100)
+			configWithParams := &milvus2.RetrieverConfig{
+				Collection:   "test_collection",
+				VectorField:  "vector",
+				TopK:         10,
+				OutputFields: []string{"id", "content"},
+				SearchParams: map[string]map[string]interface{}{
+					"vector": {
+						"nprobe": "16",
+						"ef":     64,
+					},
+				},
+			}
+			opt, err := iter.BuildSearchIteratorOption(ctx, configWithParams, queryVector)
 			convey.So(err, convey.ShouldBeNil)
 			convey.So(opt, convey.ShouldNotBeNil)
 		})

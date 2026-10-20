@@ -18,44 +18,14 @@ package search_mode
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/cloudwego/eino/callbacks"
-	"github.com/cloudwego/eino/components"
 	"github.com/cloudwego/eino/components/embedding"
+
+	milvus2 "github.com/cloudwego/eino-ext/components/retriever/milvus2"
 )
 
 // EmbedQuery embeds the query string into a vector.
-// It handles the callback context for the embedding operation.
+// Deprecated: Use milvus2.EmbedQuery instead.
 func EmbedQuery(ctx context.Context, emb embedding.Embedder, query string) ([]float32, error) {
-	if emb == nil {
-		return nil, fmt.Errorf("[Retriever] embedding not provided")
-	}
-
-	runInfo := &callbacks.RunInfo{
-		Component: components.ComponentOfEmbedding,
-	}
-
-	if embType, ok := components.GetType(emb); ok {
-		runInfo.Type = embType
-	}
-
-	runInfo.Name = runInfo.Type + string(runInfo.Component)
-
-	// Wrap the context with callback info
-	ctx = callbacks.ReuseHandlers(ctx, runInfo)
-
-	vectors, err := emb.EmbedStrings(ctx, []string{query})
-	if err != nil {
-		return nil, fmt.Errorf("[Retriever] failed to embed query: %w", err)
-	}
-	if len(vectors) != 1 {
-		return nil, fmt.Errorf("[Retriever] invalid embedding result: expected 1, got %d", len(vectors))
-	}
-
-	queryVector := make([]float32, len(vectors[0]))
-	for i, v := range vectors[0] {
-		queryVector[i] = float32(v)
-	}
-	return queryVector, nil
+	return milvus2.EmbedQuery(ctx, emb, query)
 }
