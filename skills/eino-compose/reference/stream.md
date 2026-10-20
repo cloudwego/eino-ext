@@ -53,6 +53,8 @@ copies := sr.Copy(n int) []*StreamReader[T]
 // Original reader becomes unusable after Copy
 ```
 
+**WARNING — Copy duplicates readers, NOT elements.** For pointer elements (e.g. `*schema.Message`), all branches receive the same object and may consume it concurrently. Treat received elements as read-only; never mutate them in place (especially map fields like `msg.Extra[k] = v`), or you risk concurrent map read/write panics. See "Never Mutate Stream Elements In Place" below.
+
 ### Merge (fan-in)
 
 ```go
@@ -78,6 +80,36 @@ strReader := schema.StreamReaderWithConvert(intReader,
     },
 )
 ```
+
+The convert callback must NOT modify its input in place — the element may be shared with other stream branches (see Copy above). Return a new value instead.
+
+### Never Mutate Stream Elements In Place
+
+Stream elements flowing through Graph/Chain/Workflow are routinely fanned out via `Copy` (callbacks, branches), so a `*schema.Message` / `*schema.AgenticMessage` you receive in a convert callback, callback handler, or middleware may be read concurrently by other goroutines. In-place writes — especially to map fields like `Extra` — cause `concurrent map read/write` panics.
+
+Always use copy-on-write:
+
+```go
+// WRONG: mutates a shared message
+schema.StreamReaderWithConvert(sr, func(msg *schema.Message) (*schema.Message, error) {
+    msg.Extra["trace_id"] = traceID // may panic: concurrent map read/write
+    return msg, nil
+})
+
+// RIGHT: shallow-copy the message, clone the map you change, modify the clone
+schema.StreamReaderWithConvert(sr, func(msg *schema.Message) (*schema.Message, error) {
+    cp := *msg // shallow copy
+    extra := make(map[string]any, len(msg.Extra)+1)
+    for k, v := range msg.Extra {
+        extra[k] = v
+    }
+    extra["trace_id"] = traceID
+    cp.Extra = extra
+    return &cp, nil
+})
+```
+
+The same rule applies to any map/slice field you modify (`ToolCalls`, `ContentBlocks`, nested `Extra` on `ToolCall`/`ContentBlock`, ...): clone the field before writing, and return the copy.
 
 ### From Array
 

@@ -131,3 +131,4 @@ Shared data types used across all layers:
 3. For component implementation details, always read the provider's reference file before generating code. Do not assume constructor or config naming conventions.
 4. Prefer ADK (ChatModelAgent + Runner) for agent use cases over manually building ReAct loops with compose graphs. For interactive multi-turn applications needing preemption and lifecycle management, recommend TurnLoop.
 5. When showing streaming code, always include `defer stream.Close()`.
+6. When generating code that modifies messages received from streams, callbacks, or middleware, never mutate them in place (especially `msg.Extra[k] = v`) -- stream fan-out shares message pointers across consumers and in-place writes can cause concurrent map read/write panics. Use copy-on-write: shallow-copy the message, clone the map/slice you change, return the copy (see reference/schema.md).
