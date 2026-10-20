@@ -189,6 +189,10 @@ type ChatModelConfig struct {
 
 	// Audio parameters for audio output. Required when audio output is requested with modalities: ["audio"]
 	Audio *Audio `json:"audio,omitempty"`
+
+	// CustomHeaders specifies custom HTTP headers to include in each request.
+	// Optional.
+	CustomHeaders map[string]string `json:"custom_headers,omitempty"`
 }
 
 type ChatModel struct {
@@ -228,6 +232,7 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			ExtraFields:          config.ExtraFields,
 			ReasoningEffort:      openai.ReasoningEffortLevel(config.ReasoningEffort),
 			Modalities:           config.Modalities,
+			CustomHeaders:        config.CustomHeaders,
 		}
 
 		if config.Audio != nil {
