@@ -133,7 +133,6 @@ func (c *CallbackHandler) OnStart(ctx context.Context, info *callbacks.RunInfo, 
 	if err != nil {
 		log.Printf("[langsmith] failed to create run: %v", err)
 	}
-	fmt.Printf("[langsmith] runinfo: %+v\n", run)
 	var newSyncMap = &sync.Map{}
 	for k, v := range run.Extra {
 		newSyncMap.Store(k, v)
