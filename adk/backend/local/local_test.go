@@ -28,11 +28,17 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/adk/filesystem"
+	"github.com/cloudwego/eino/adk/middlewares/plantask"
 	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/references"
 	"github.com/klippa-app/go-pdfium/requests"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+var (
+	_ filesystem.Backend = (*Local)(nil)
+	_ plantask.Backend   = (*Local)(nil)
 )
 
 func setupTestDir(t *testing.T) string {
@@ -184,6 +190,35 @@ func TestWrite(t *testing.T) {
 		err := s.Write(ctx, req)
 		assert.NoError(t, err)
 
+	})
+}
+
+func TestDelete(t *testing.T) {
+	ctx := context.Background()
+	s, err := NewBackend(ctx, &Config{})
+	assert.NoError(t, err)
+
+	t.Run("delete file successfully", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		filePath := filepath.Join(dir, "delete.txt")
+		assert.NoError(t, os.WriteFile(filePath, []byte("content"), 0644))
+
+		err := s.Delete(ctx, &plantask.DeleteRequest{FilePath: filePath})
+		assert.NoError(t, err)
+
+		_, err = os.Stat(filePath)
+		assert.True(t, os.IsNotExist(err))
+	})
+
+	t.Run("delete non-existent file", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		filePath := filepath.Join(dir, "missing.txt")
+
+		err := s.Delete(ctx, &plantask.DeleteRequest{FilePath: filePath})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to delete file")
 	})
 }
 
