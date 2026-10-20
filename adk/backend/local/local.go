@@ -322,6 +322,9 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("path is a directory, not a file: %s", path)
+	}
 	if info.Size() == 0 {
 		return &filesystem.FileContent{}, nil
 	}
@@ -891,6 +894,10 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 	path := filepath.Clean(req.FilePath)
 
+	if fi, statErr := os.Stat(path); statErr == nil && fi.IsDir() {
+		return fmt.Errorf("path is a directory, not a file: %s", path)
+	}
+
 	parentDir := filepath.Dir(path)
 	if err := os.MkdirAll(parentDir, 0755); err != nil {
 		return fmt.Errorf("failed to create parent directory: %w", err)
@@ -918,6 +925,10 @@ func (s *Local) Edit(ctx context.Context, req *filesystem.EditRequest) error {
 
 	if req.OldString == req.NewString {
 		return fmt.Errorf("new string must be different from old string")
+	}
+
+	if fi, statErr := os.Stat(path); statErr == nil && fi.IsDir() {
+		return fmt.Errorf("path is a directory, not a file: %s", path)
 	}
 
 	content, err := os.ReadFile(path)
