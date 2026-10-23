@@ -78,7 +78,7 @@ func run(ctx context.Context, config *ark.ChatModelConfig) error {
 		if common.MIMEType == "" {
 			common.MIMEType = mime.TypeByExtension(filepath.Ext(*value))
 		}
-		if *kind != "file" && common.MIMEType == "" {
+		if common.MIMEType == "" {
 			return fmt.Errorf("set -mime for this local media file")
 		}
 	default:
