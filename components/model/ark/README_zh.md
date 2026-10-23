@@ -1,5 +1,8 @@
 # Volcengine Ark 模型
 
+使用新官方 `ark-runtime-go` SDK 的 Chat Completions 请参阅独立的
+[ark/v2 模块使用说明](v2/README_zh.md)。本模块保留现有 SDK 和 API。
+
 一个 [Eino](https://github.com/cloudwego/eino) 的 Volcengine Ark 模型实现，实现了 `ToolCallingChatModel` 接口。这使得与 Eino 的 LLM 功能无缝集成，以增强自然语言处理和生成能力。
 
 该软件包提供了两种不同的模型：
