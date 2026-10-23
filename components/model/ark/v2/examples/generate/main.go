@@ -18,51 +18,33 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"log"
-	"os"
+	"time"
 
 	ark "github.com/cloudwego/eino-ext/components/model/ark/v2"
+	"github.com/cloudwego/eino-ext/components/model/ark/v2/examples/internal/exampleutil"
 	"github.com/cloudwego/eino/schema"
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	cm, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{APIKey: os.Getenv("ARK_API_KEY"), Model: os.Getenv("ARK_MODEL")})
-	if err != nil {
+	if err := exampleutil.Run(2*time.Minute, run); err != nil {
 		log.Fatal(err)
 	}
-	messages := []*schema.Message{{Role: schema.User, Content: "Hello"}}
-	// With ARK_FILE_ID, send a provider-hosted PDF instead. Files are uploaded
-	// and made active separately through the provider's Files API.
-	if fileID := os.Getenv("ARK_FILE_ID"); fileID != "" {
-		messages = []*schema.Message{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
-			{Type: schema.ChatMessagePartTypeText, Text: "Summarize this document."},
-			{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{FileID: &fileID}}},
-		}}}
-	}
-	result, err := cm.Generate(ctx, messages)
+}
+
+func run(ctx context.Context, config *ark.ChatModelConfig) error {
+	cm, err := ark.NewChatModel(ctx, config)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	fmt.Println(result.Content)
-	reader, err := cm.Stream(ctx, messages)
+	result, err := cm.Generate(ctx, []*schema.Message{
+		{Role: schema.System, Content: "Answer concisely."},
+		{Role: schema.User, Content: "What is a Go interface?"},
+	})
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer reader.Close()
-	for {
-		chunk, err := reader.Recv()
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Print(chunk.Content)
-	}
-	fmt.Println()
+	fmt.Printf("%s\nrequest_id=%s\nusage=%+v\n", result.Content, ark.GetArkRequestID(result), result.ResponseMeta.Usage)
+	return nil
 }

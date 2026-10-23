@@ -326,4 +326,46 @@ HTTP 连接池，支持非流式调用。
 多轮对话中保留返回的 assistant 消息，即可向 API 回传其中的思考内容、加密思考内容
 和工具调用。本包集成 Eino 模型回调，提供请求、响应、错误和用量信息。
 
-[可运行示例](examples/generate/main.go) 包含普通生成、流式输出和可选的文档 FileID。
+## 可运行示例
+
+在仓库的 `components/model/ark/v2` 目录下运行：
+
+```sh
+export ARK_API_KEY="your-api-key"
+export ARK_MODEL="your-model-or-endpoint-id"
+go run ./examples/generate
+```
+
+请选择支持相应能力的模型，不同示例可能需要使用不同的模型或接入点 ID。
+共用的[环境配置辅助函数](examples/internal/exampleutil/config.go) 会检查环境变量、
+为完整流程设置 context 超时，并支持可选的 `ARK_BASE_URL`，其中应包含 `/api/v3` 后缀。
+
+| 示例 | 演示内容 |
+| --- | --- |
+| [generate](examples/generate/main.go) | 文本生成、请求 ID 和 token 用量 |
+| [stream](examples/stream/main.go) | 思考过程输出、最终用量及 `schema.ConcatMessages` 拼接 |
+| [tools](examples/tools/main.go) | 限制候选工具、拼接流式参数、执行本地加法、回传结果并生成最终回答 |
+| [multimodal](examples/multimodal/main.go) | 图片、音频、视频和文件，支持 URL、本地文件 base64 或 FileID |
+| [tool_result](examples/tool_result/main.go) | 在多模态工具结果中回传文档 FileID，并匹配 `ToolCallID` |
+| [structured_output](examples/structured_output/main.go) | 严格 JSON schema 输出并解析为 Go 结构体 |
+| [modifiers](examples/modifiers/main.go) | 修改请求 JSON、读取原始响应以及流正常完成时的处理 |
+| [batch](examples/batch/main.go) | 并发发送两条同步 batch 请求，并限制整体重试时间 |
+
+其余示例可通过 `go run ./examples/stream`、`go run ./examples/tools`、
+`go run ./examples/structured_output`、`go run ./examples/modifiers` 或
+`go run ./examples/batch` 运行。
+
+多模态示例通过参数选择类型和来源。`base64` 来源会读取本地文件并编码，
+`-mime` 可以覆盖根据文件扩展名推断的 MIME 类型：
+
+```sh
+go run ./examples/multimodal -kind image -source base64 -value ../examples/generate_with_image/eino.png
+go run ./examples/multimodal -kind audio -source base64 -value /path/to/audio.mp3 -mime audio/mpeg
+go run ./examples/multimodal -kind video -source url -value "$ARK_VIDEO_URL"
+go run ./examples/multimodal -kind file -source file_id -value "$ARK_FILE_ID"
+go run ./examples/tool_result -file-id "$ARK_FILE_ID"
+```
+
+请提供自己的本地音频文件、可访问的视频 URL 或已处理完成的 FileID。
+FileID 示例需要先通过 Ark Files API 上传文件并等待处理完成。
+`-prompt` 可修改多模态问题，`-help` 可查看所有参数。连接到 Ark 时，这些程序会发起真实推理请求。

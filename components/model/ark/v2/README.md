@@ -342,5 +342,48 @@ Keep the returned assistant message in conversation history to pass its reasonin
 encrypted reasoning, and tool calls back to the API. The adapter integrates with
 Eino model callbacks for request, response, error, and usage reporting.
 
-See the [runnable example](examples/generate/main.go) for generation, streaming,
-and an optional document FileID.
+## Runnable examples
+
+Run these commands from `components/model/ark/v2` in the repository checkout:
+
+```sh
+export ARK_API_KEY="your-api-key"
+export ARK_MODEL="your-model-or-endpoint-id"
+go run ./examples/generate
+```
+
+Choose a model that supports the example's features. Different examples may need
+different model or endpoint IDs. The shared [environment helper](examples/internal/exampleutil/config.go)
+validates these variables, applies an overall context timeout, and accepts the
+optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
+
+| Example | Demonstrates |
+| --- | --- |
+| [generate](examples/generate/main.go) | Text generation, request ID, and token usage |
+| [stream](examples/stream/main.go) | Thinking/reasoning output, final usage, and `schema.ConcatMessages` |
+| [tools](examples/tools/main.go) | Restrict allowed tools, assemble streamed arguments, execute a local addition, and return the result for a final answer |
+| [multimodal](examples/multimodal/main.go) | Image/audio/video/file input using a URL, local-file base64, or FileID |
+| [tool_result](examples/tool_result/main.go) | Return a document FileID in a multimodal tool result with the matching `ToolCallID` |
+| [structured_output](examples/structured_output/main.go) | Strict JSON schema output and decoding into a Go struct |
+| [modifiers](examples/modifiers/main.go) | Request JSON edits, raw response access, and successful stream finalization |
+| [batch](examples/batch/main.go) | Two concurrent synchronous batch requests with a bounded retry lifetime |
+
+Run the other examples with `go run ./examples/stream`, `go run ./examples/tools`,
+`go run ./examples/structured_output`, `go run ./examples/modifiers`, or
+`go run ./examples/batch`.
+
+For multimodal input, select a kind and source. The base64 source reads the local
+file and encodes it; `-mime` overrides MIME type detection from its extension:
+
+```sh
+go run ./examples/multimodal -kind image -source base64 -value ../examples/generate_with_image/eino.png
+go run ./examples/multimodal -kind audio -source base64 -value /path/to/audio.mp3 -mime audio/mpeg
+go run ./examples/multimodal -kind video -source url -value "$ARK_VIDEO_URL"
+go run ./examples/multimodal -kind file -source file_id -value "$ARK_FILE_ID"
+go run ./examples/tool_result -file-id "$ARK_FILE_ID"
+```
+
+Supply your own local audio file, reachable video URL, or active FileID. FileID
+examples use files uploaded and processed separately through the Ark Files API.
+`-prompt` changes the multimodal question; `-help` lists the available flags.
+These programs make real inference calls when pointed at Ark.
