@@ -1,5 +1,8 @@
 # Volcengine Ark Model
 
+For Chat Completions using the new official `ark-runtime-go` SDK, see the separate
+[ark/v2 module](v2/README.md). This module retains its existing SDK and APIs.
+
 A Volcengine Ark model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
 
 This package provides two distinct models:
