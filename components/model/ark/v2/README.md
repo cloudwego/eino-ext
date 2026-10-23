@@ -143,7 +143,10 @@ conversation, then call the bound model again. Each result's `ToolCallID` must m
 the corresponding tool call ID. Tool results can contain text or multimodal parts.
 
 Use `model.WithTools` for per-call definitions, and `model.WithToolChoice` to allow,
-forbid, or require a tool call. `ToolStrict` sets the model-wide default for strict
+forbid, or require a tool call. Pass tool names to `model.WithToolChoice` to limit
+that call to a subset of the available tools; unknown names return an error.
+Both automatic and forced selection support multiple allowed names.
+`ToolStrict` sets the model-wide default for strict
 function schemas. Use `ark.WithToolStrict(tool, true)` or
 `ark.WithToolStrict(tool, false)` to override that default for an individual
 `*schema.ToolInfo`; the helper returns a copy. If neither the model default nor a
@@ -282,8 +285,9 @@ expose the raw response body. A Generate modifier must return a non-nil message.
 
 The streaming modifier receives `end == false` for each chunk. Its message can be
 nil when a chunk has no standard message projection; the raw JSON is still
-available. At EOF, it is called once with `end == true` and nil message/rawBody,
-and may return a final message. Returning nil skips a chunk.
+available. After the `[DONE]` event, it is called once with `end == true` and nil
+message/rawBody, and may return a final message. A premature EOF returns
+`io.ErrUnexpectedEOF` without this final call. Returning nil skips a chunk.
 
 A call-specific modifier replaces the corresponding configured modifier. Passing
 nil disables it for that call. Returning an error aborts the request or stream.

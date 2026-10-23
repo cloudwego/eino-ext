@@ -37,9 +37,10 @@ type ResponseMessageModifier func(ctx context.Context, message *schema.Message, 
 
 // ResponseChunkMessageModifier transforms Stream output before callbacks receive
 // it. message may be nil for a chunk without a standard message projection.
-// rawBody contains the original chunk JSON. At EOF it is called once with end
-// true and nil message/rawBody, and may return a final message. Returning nil skips
-// a chunk; returning an error terminates the stream.
+// rawBody contains the original chunk JSON. After [DONE] it is called once with
+// end true and nil message/rawBody, and may return a final message. A premature
+// EOF is an error and does not trigger this final call. Returning nil skips a
+// chunk; returning an error terminates the stream.
 type ResponseChunkMessageModifier func(ctx context.Context, message *schema.Message, rawBody []byte, end bool) (*schema.Message, error)
 
 type arkOptions struct {
@@ -51,6 +52,28 @@ type arkOptions struct {
 	requestPayloadModifier       RequestPayloadModifier
 	responseMessageModifier      ResponseMessageModifier
 	responseChunkMessageModifier ResponseChunkMessageModifier
+}
+
+func (cm *ChatModel) getOptions(opts ...model.Option) (*model.Options, *arkOptions) {
+	common := model.GetCommonOptions(&model.Options{
+		Temperature: cm.config.Temperature,
+		MaxTokens:   cm.config.MaxTokens,
+		Model:       &cm.config.Model,
+		TopP:        cm.config.TopP,
+		Stop:        cm.config.Stop,
+		ToolChoice:  cm.toolChoice,
+	}, opts...)
+	ark := model.GetImplSpecificOptions(&arkOptions{
+		customHeaders:                cm.config.CustomHeader,
+		thinking:                     cm.config.Thinking,
+		reasoningEffort:              cm.config.ReasoningEffort,
+		maxCompletionTokens:          cm.config.MaxCompletionTokens,
+		parallelToolCalls:            cm.config.ParallelToolCalls,
+		requestPayloadModifier:       cm.config.RequestPayloadModifier,
+		responseMessageModifier:      cm.config.ResponseMessageModifier,
+		responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier,
+	}, opts...)
+	return common, ark
 }
 
 // WithCustomHeader replaces the configured custom headers for one call.

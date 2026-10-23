@@ -138,7 +138,9 @@ for _, call := range reply.ToolCalls {
 结果消息的 `ToolCallID` 必须对应原工具调用 ID，工具结果可包含文本或多模态内容。
 
 使用 `model.WithTools` 设置单次调用的工具定义，使用 `model.WithToolChoice` 控制
-允许、禁止或强制工具调用。`ToolStrict` 设置模型级的严格 schema 默认值；对单个
+允许、禁止或强制工具调用。向 `model.WithToolChoice` 传入工具名可将本次调用限制在
+指定的工具子集内，未知名称会返回错误；自动和强制选择均支持多个候选工具名。
+`ToolStrict` 设置模型级的严格 schema 默认值；对单个
 `*schema.ToolInfo`，使用 `ark.WithToolStrict(tool, true)` 或
 `ark.WithToolStrict(tool, false)` 覆盖默认值，该函数会返回工具定义的副本。
 模型默认值和工具覆盖值都未设置时，不发送 `strict` 字段。启用严格模式时，schema
@@ -270,8 +272,9 @@ fmt.Println(reply.Content)
 该参数为 `nil`。`Generate` 的 modifier 必须返回非 nil 的消息。
 
 流式 modifier 处理每个分片时 `end == false`。当分片没有标准 Eino 消息投影时，
-消息可能为 nil，但仍可读取原始 JSON。流结束时会额外调用一次，此时 `end == true`，
-消息和 rawBody 均为 nil，可以返回一条结束消息。返回 nil 表示跳过该分片。
+消息可能为 nil，但仍可读取原始 JSON。收到 `[DONE]` 事件后会额外调用一次，
+此时 `end == true`，消息和 rawBody 均为 nil，可以返回一条结束消息。
+提前遇到 EOF 会返回 `io.ErrUnexpectedEOF`，不触发结束调用。返回 nil 表示跳过该分片。
 
 调用级 modifier 会替换初始化配置中的同名 modifier，传入 nil 可为本次调用禁用它。
 返回错误会中止请求或流。模型并发使用时，modifier 也应支持并发调用。

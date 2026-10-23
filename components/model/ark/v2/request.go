@@ -211,6 +211,26 @@ func populateToolChoice(req *chat.ChatCompletionRequest, choice *schema.ToolChoi
 	if choice == nil {
 		return nil
 	}
+	if len(names) > 0 && (*choice == schema.ToolChoiceAllowed || *choice == schema.ToolChoiceForced) {
+		allowed := make(map[string]bool, len(names))
+		for _, name := range names {
+			allowed[name] = false
+		}
+		// Allocate a new slice to preserve the tools bound to a shared model.
+		selected := make([]chat.ChatCompletionTool, 0, len(req.Tools))
+		for _, tool := range req.Tools {
+			if _, ok := allowed[tool.Function.Name]; ok {
+				selected = append(selected, tool)
+				allowed[tool.Function.Name] = true
+			}
+		}
+		for _, name := range names {
+			if !allowed[name] {
+				return fmt.Errorf("allowed tool name %q not found in tools list", name)
+			}
+		}
+		req.Tools = selected
+	}
 	mode := chat.ToolChoiceModeAuto
 	switch *choice {
 	case schema.ToolChoiceForbidden:
@@ -219,23 +239,8 @@ func populateToolChoice(req *chat.ChatCompletionRequest, choice *schema.ToolChoi
 		if len(req.Tools) == 0 {
 			return fmt.Errorf("tool_choice is forced but no tools are provided")
 		}
-		if len(names) > 1 {
-			return fmt.Errorf("only one allowed tool name can be configured")
-		}
 		var name string
-		if len(names) == 1 {
-			name = names[0]
-			found := false
-			for _, tool := range req.Tools {
-				if tool.Function.Name == name {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return fmt.Errorf("allowed tool name %q not found in tools list", name)
-			}
-		} else if len(req.Tools) == 1 {
+		if len(req.Tools) == 1 {
 			name = req.Tools[0].Function.Name
 		}
 		if name != "" {

@@ -36,26 +36,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
-	options := fmodel.GetCommonOptions(&fmodel.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-		Tools:       nil,
-		ToolChoice:  cm.toolChoice,
-	}, opts...)
-
-	specOptions := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders:                cm.config.CustomHeader,
-		thinking:                     cm.config.Thinking,
-		reasoningEffort:              cm.config.ReasoningEffort,
-		maxCompletionTokens:          cm.config.MaxCompletionTokens,
-		parallelToolCalls:            cm.config.ParallelToolCalls,
-		requestPayloadModifier:       cm.config.RequestPayloadModifier,
-		responseMessageModifier:      cm.config.ResponseMessageModifier,
-		responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier,
-	}, opts...)
+	options, specOptions := cm.getOptions(opts...)
 
 	req, err := cm.genRequest(in, options, specOptions)
 	if err != nil {
@@ -137,26 +118,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 
-	options := fmodel.GetCommonOptions(&fmodel.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-		Tools:       nil,
-		ToolChoice:  cm.toolChoice,
-	}, opts...)
-
-	arkOpts := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders:                cm.config.CustomHeader,
-		thinking:                     cm.config.Thinking,
-		reasoningEffort:              cm.config.ReasoningEffort,
-		maxCompletionTokens:          cm.config.MaxCompletionTokens,
-		parallelToolCalls:            cm.config.ParallelToolCalls,
-		requestPayloadModifier:       cm.config.RequestPayloadModifier,
-		responseMessageModifier:      cm.config.ResponseMessageModifier,
-		responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier,
-	}, opts...)
+	options, arkOpts := cm.getOptions(opts...)
 
 	req, err := cm.genRequest(in, options, arkOpts)
 	if err != nil {
@@ -220,6 +182,12 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
+				// The SDK also returns EOF for a body closed before [DONE]. Such
+				// a response is incomplete and must not run successful finalization.
+				if !stream.IsFinished {
+					_ = sw.Send(nil, io.ErrUnexpectedEOF)
+					return
+				}
 				if modifier := arkOpts.responseChunkMessageModifier; modifier != nil {
 					last, e := modifier(ctx, nil, nil, true)
 					if e != nil {

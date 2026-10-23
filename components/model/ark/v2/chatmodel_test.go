@@ -294,6 +294,43 @@ func TestStream(t *testing.T) {
 	equal(t, 0, *final.ToolCalls[0].Index)
 }
 
+func TestStreamRequiresDoneBeforeFinalModifier(t *testing.T) {
+	for _, done := range []bool{false, true} {
+		t.Run(map[bool]string{false: "truncated", true: "complete"}[done], func(t *testing.T) {
+			cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				sseChunk(w, modifierChunk)
+				if done {
+					sseChunk(w, "[DONE]")
+				}
+			}, nil)
+			finalized := make(chan struct{}, 1)
+			reader, err := cm.Stream(context.Background(), nil, WithResponseChunkMessageModifier(
+				func(_ context.Context, msg *schema.Message, _ []byte, end bool) (*schema.Message, error) {
+					if end {
+						finalized <- struct{}{}
+					}
+					return msg, nil
+				}))
+			check(t, err)
+			defer reader.Close()
+			msg, err := reader.Recv()
+			check(t, err)
+			equal(t, "done", msg.Content)
+			_, err = reader.Recv()
+			if done {
+				equal(t, io.EOF, err)
+				equal(t, 1, len(finalized))
+			} else {
+				if !errors.Is(err, io.ErrUnexpectedEOF) {
+					t.Fatalf("truncated stream reported success: %v", err)
+				}
+				equal(t, 0, len(finalized))
+			}
+		})
+	}
+}
+
 func TestBatchAndErrors(t *testing.T) {
 	t.Run("batch", func(t *testing.T) {
 		cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {

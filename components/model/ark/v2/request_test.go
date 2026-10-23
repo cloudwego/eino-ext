@@ -113,7 +113,7 @@ func TestToolChoiceAndBinding(t *testing.T) {
 		{schema.ToolChoiceForbidden, nil, `"none"`, false},
 		{schema.ToolChoiceForced, nil, `"required"`, false},
 		{schema.ToolChoiceForced, []string{"b"}, `{"type":"function","function":{"name":"b"}}`, false},
-		{schema.ToolChoiceForced, []string{"a", "b"}, "", true},
+		{schema.ToolChoiceForced, []string{"a", "b"}, `"required"`, false},
 		{schema.ToolChoiceForced, []string{"absent"}, "", true},
 	} {
 		req := &chat.ChatCompletionRequest{Tools: cm.tools}
