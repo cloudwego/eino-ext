@@ -30,6 +30,7 @@ import (
 	ark "github.com/cloudwego/eino-ext/components/model/ark/v2"
 	"github.com/cloudwego/eino-ext/components/model/ark/v2/examples/internal/exampleutil"
 	"github.com/cloudwego/eino/schema"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
 
 var (
@@ -38,6 +39,7 @@ var (
 	value    = flag.String("value", "", "URL, local file path, or provider FileID")
 	mimeType = flag.String("mime", "", "MIME type; inferred from the local file extension when possible")
 	prompt   = flag.String("prompt", "Describe the content of this media.", "Question about the media")
+	thinking = flag.String("thinking", "", "enabled or disabled; empty uses the model default")
 )
 
 func main() {
@@ -50,6 +52,13 @@ func main() {
 func run(ctx context.Context, config *ark.ChatModelConfig) error {
 	if *value == "" {
 		return fmt.Errorf("-value is required; see -help")
+	}
+	switch *thinking {
+	case "":
+	case "enabled", "disabled":
+		config.Thinking = &chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingMode(*thinking))}
+	default:
+		return fmt.Errorf("unsupported -thinking %q", *thinking)
 	}
 	common := schema.MessagePartCommon{MIMEType: *mimeType}
 	var filename string

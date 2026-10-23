@@ -132,6 +132,7 @@ func TestMediaWire(t *testing.T) {
 								sourceField = "data"
 							} else if kind == "file" {
 								sourceField = "file_data"
+								want = "data:" + common.MIMEType + ";base64," + want
 							} else {
 								want = "data:" + common.MIMEType + ";base64," + want
 							}

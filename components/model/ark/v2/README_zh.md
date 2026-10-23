@@ -160,9 +160,9 @@ for _, call := range reply.ToolCalls {
 | `schema.ChatMessagePartTypeFileURL` | `File` | `Name` 提供文件名 |
 
 每个媒体 part 在 `MessagePartCommon` 中选择一个来源：`URL`、`Base64Data` 或
-`FileID`。图片和视频的 base64 需要提供 `MIMEType`，发送时转换为 data URL；音频使用
-原始 base64 并根据 MIME 类型设置格式；文件 base64 通过 `file_data` 发送，必须设置
-`MessageInputFile.Name`。
+`FileID`。所有 base64 输入均需提供 `MIMEType`。图片、视频和文件发送时转换为
+data URL；音频使用原始 base64 并根据 MIME 类型设置格式。文件 base64 通过
+`file_data` 发送，例如 `data:application/pdf;base64,...`，还必须设置 `MessageInputFile.Name`。
 
 例如，传入已通过方舟 Files API 上传的文档：
 
@@ -281,6 +281,10 @@ fmt.Println(reply.Content)
 
 ## 同步批量推理
 
+Batch Chat API 要求 `Model` 为专用的批量推理接入点 ID（`ep-bi-*`）。运行示例时需将
+该 ID 设置为 `ARK_MODEL`，普通在线模型 ID 不能用于选择批量接入点。
+方舟目前已将 Batch Chat 标记为待下线，可用性与迁移方式参见[批量推理指南](https://docs.volcengine.com/docs/ark/batch-inference?lang=zh)。
+
 创建模型时设置 `ChatModelConfig.BatchChat`：
 
 ```go
@@ -349,17 +353,21 @@ go run ./examples/generate
 | [tool_result](examples/tool_result/main.go) | 在多模态工具结果中回传文档 FileID，并匹配 `ToolCallID` |
 | [structured_output](examples/structured_output/main.go) | 严格 JSON schema 输出并解析为 Go 结构体 |
 | [modifiers](examples/modifiers/main.go) | 修改请求 JSON、读取原始响应以及流正常完成时的处理 |
-| [batch](examples/batch/main.go) | 并发发送两条同步 batch 请求，并限制整体重试时间 |
+| [batch](examples/batch/main.go) | 使用专用 `ep-bi-*` 接入点，并发发送两条同步 batch 请求 |
 
 其余示例可通过 `go run ./examples/stream`、`go run ./examples/tools`、
-`go run ./examples/structured_output`、`go run ./examples/modifiers` 或
-`go run ./examples/batch` 运行。
+`go run ./examples/structured_output` 或 `go run ./examples/modifiers` 运行。
+batch 需要单独指定批量接入点：
+
+```sh
+ARK_MODEL="ep-bi-your-batch-endpoint-id" go run ./examples/batch
+```
 
 多模态示例通过参数选择类型和来源。`base64` 来源会读取本地文件并编码，
 `-mime` 可以覆盖根据文件扩展名推断的 MIME 类型：
 
 ```sh
-go run ./examples/multimodal -kind image -source base64 -value ../examples/generate_with_image/eino.png
+go run ./examples/multimodal -kind image -source base64 -value ../examples/generate_with_image/eino.png -thinking disabled
 go run ./examples/multimodal -kind audio -source base64 -value /path/to/audio.mp3 -mime audio/mpeg
 go run ./examples/multimodal -kind video -source url -value "$ARK_VIDEO_URL"
 go run ./examples/multimodal -kind file -source file_id -value "$ARK_FILE_ID"
@@ -368,4 +376,7 @@ go run ./examples/tool_result -file-id "$ARK_FILE_ID"
 
 请提供自己的本地音频文件、可访问的视频 URL 或已处理完成的 FileID。
 FileID 示例需要先通过 Ark Files API 上传文件并等待处理完成。
-`-prompt` 可修改多模态问题，`-help` 可查看所有参数。连接到 Ark 时，这些程序会发起真实推理请求。
+`-prompt` 可修改多模态问题。支持思考的模型可用 `-thinking disabled` 直接回答，
+或用 `-thinking enabled` 请求思考；不传此参数时保留模型默认配置。
+音频输入需要选择支持音频的模型，`-help` 可查看所有参数。
+连接到 Ark 时，这些程序会发起真实推理请求。

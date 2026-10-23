@@ -22,8 +22,28 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
+
+func TestFileBase64UsesDataURL(t *testing.T) {
+	cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+		body := decodeRequest(t, r)
+		file := body["messages"].([]any)[0].(map[string]any)["content"].([]any)[0].(map[string]any)["file"].(map[string]any)
+		// The real Chat API rejects bare base64 with InvalidParameter(file_data).
+		equal(t, "data:application/pdf;base64,eA==", file["file_data"])
+		equal(t, "fixture.pdf", file["filename"])
+		writeResponse(w)
+	}, &ChatModelConfig{Model: "model"})
+	_, err := cm.Generate(context.Background(), []*schema.Message{{Role: schema.User,
+		UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeFileURL,
+			File: &schema.MessageInputFile{Name: "fixture.pdf", MessagePartCommon: schema.MessagePartCommon{
+				Base64Data: ptr("eA=="), MIMEType: "application/pdf",
+			}},
+		}},
+	}})
+	check(t, err)
+}
 
 func TestStructuredOutputSerialization(t *testing.T) {
 	schemaJSON := []byte(`{"type":"object","properties":{"count":{"type":"integer","minimum":9007199254740993}},"required":["count"],"additionalProperties":false}`)

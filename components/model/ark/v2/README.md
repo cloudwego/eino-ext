@@ -168,9 +168,10 @@ Use `UserInputMultiContent` in `schema.User` or `schema.Tool` messages:
 | `schema.ChatMessagePartTypeFileURL` | `File` | `Name` provides the filename |
 
 For each media part, set one source in `MessagePartCommon`: `URL`, `Base64Data`,
-or `FileID`. Image and video base64 require `MIMEType` and are sent as data URLs.
-Audio uses raw base64 and a MIME-derived format. File base64 is sent as
-`file_data` and requires `MessageInputFile.Name`.
+or `FileID`. All base64 inputs require `MIMEType`. Images, videos, and files are
+sent as data URLs; audio uses raw base64 and a MIME-derived format. File base64
+uses `file_data` (for example, `data:application/pdf;base64,...`) and also requires
+`MessageInputFile.Name`.
 
 For example, send a document uploaded through the Ark Files API:
 
@@ -295,6 +296,11 @@ Modifiers must support concurrent calls when the model is shared.
 
 ## Synchronous batch inference
 
+The Batch Chat API requires a dedicated batch endpoint ID (`ep-bi-*`) as `Model`.
+Use that endpoint as `ARK_MODEL` for the example; ordinary online model IDs do
+not select a batch endpoint. See the [batch inference guide](https://docs.volcengine.com/docs/ark/batch-inference?lang=en)
+for availability and migration guidance; Ark currently marks Batch Chat for retirement.
+
 Set `ChatModelConfig.BatchChat` when constructing a model:
 
 ```go
@@ -366,17 +372,21 @@ optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
 | [tool_result](examples/tool_result/main.go) | Return a document FileID in a multimodal tool result with the matching `ToolCallID` |
 | [structured_output](examples/structured_output/main.go) | Strict JSON schema output and decoding into a Go struct |
 | [modifiers](examples/modifiers/main.go) | Request JSON edits, raw response access, and successful stream finalization |
-| [batch](examples/batch/main.go) | Two concurrent synchronous batch requests with a bounded retry lifetime |
+| [batch](examples/batch/main.go) | Two concurrent synchronous batch requests using a dedicated `ep-bi-*` endpoint |
 
 Run the other examples with `go run ./examples/stream`, `go run ./examples/tools`,
-`go run ./examples/structured_output`, `go run ./examples/modifiers`, or
-`go run ./examples/batch`.
+`go run ./examples/structured_output`, or `go run ./examples/modifiers`.
+Batch requires its own endpoint:
+
+```sh
+ARK_MODEL="ep-bi-your-batch-endpoint-id" go run ./examples/batch
+```
 
 For multimodal input, select a kind and source. The base64 source reads the local
 file and encodes it; `-mime` overrides MIME type detection from its extension:
 
 ```sh
-go run ./examples/multimodal -kind image -source base64 -value ../examples/generate_with_image/eino.png
+go run ./examples/multimodal -kind image -source base64 -value ../examples/generate_with_image/eino.png -thinking disabled
 go run ./examples/multimodal -kind audio -source base64 -value /path/to/audio.mp3 -mime audio/mpeg
 go run ./examples/multimodal -kind video -source url -value "$ARK_VIDEO_URL"
 go run ./examples/multimodal -kind file -source file_id -value "$ARK_FILE_ID"
@@ -385,5 +395,8 @@ go run ./examples/tool_result -file-id "$ARK_FILE_ID"
 
 Supply your own local audio file, reachable video URL, or active FileID. FileID
 examples use files uploaded and processed separately through the Ark Files API.
-`-prompt` changes the multimodal question; `-help` lists the available flags.
+`-prompt` changes the multimodal question. On thinking-capable models, use
+`-thinking disabled` for a direct answer or `-thinking enabled` to request
+reasoning; omitting it retains the model's default. Audio input requires an
+audio-capable model. `-help` lists the available flags.
 These programs make real inference calls when pointed at Ark.

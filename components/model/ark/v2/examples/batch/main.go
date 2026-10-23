@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	ark "github.com/cloudwego/eino-ext/components/model/ark/v2"
@@ -34,6 +35,9 @@ func main() {
 }
 
 func run(ctx context.Context, config *ark.ChatModelConfig) error {
+	if !strings.HasPrefix(config.Model, "ep-bi-") {
+		return fmt.Errorf("Batch Chat requires a dedicated ep-bi-* endpoint: set ARK_MODEL to that endpoint ID")
+	}
 	parallel := 2
 	config.BatchChat = &ark.BatchChatConfig{
 		EnableBatchChat:            true,

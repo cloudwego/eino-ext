@@ -199,10 +199,10 @@ func mediaSource(c schema.MessagePartCommon, kind mediaKind) (value, fileID chat
 		if strings.HasPrefix(raw, "data:") {
 			return value, fileID, true, fmt.Errorf("%s Base64Data must be raw base64, without a data URL prefix", kind)
 		}
-		if kind != mediaKindFile && c.MIMEType == "" {
+		if c.MIMEType == "" {
 			return value, fileID, true, fmt.Errorf("%s part must have MIMEType when using Base64Data", kind)
 		}
-		if kind == mediaKindImage || kind == mediaKindVideo {
+		if kind == mediaKindImage || kind == mediaKindVideo || kind == mediaKindFile {
 			raw = fmt.Sprintf("data:%s;base64,%s", c.MIMEType, raw)
 		}
 		return chat.NewOptString(raw), fileID, true, nil
