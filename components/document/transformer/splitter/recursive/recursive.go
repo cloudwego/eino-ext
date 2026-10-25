@@ -50,7 +50,8 @@ type Config struct {
 	OverlapSize int
 	// Separators are sequentially used to split text.
 	// When the current separator cannot split the text into a size smaller than ChunkSize, the next separator will be used to attempt to split until the chunk size is smaller than ChunkSize or there are no separator available.
-	// ["\n", ".", "?", "!"] by default.
+	// The default ends with an empty separator so text containing none of them still degrades to per-character pieces; list a trailing "" yourself to keep that behaviour when overriding.
+	// ["\n", ".", "?", "!", ""] by default.
 	Separators []string
 	// LenFunc is used to calculate string length. Use builtin function len() by default.
 	LenFunc func(string) int
@@ -69,6 +70,14 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	if config.OverlapSize < 0 {
 		return nil, fmt.Errorf("overlap must be greater than or equal to zero")
 	}
+	// Rejecting unknown values here keeps every switch over KeepType below
+	// exhaustive, so a bad config fails at construction instead of panicking
+	// once Transform starts walking documents.
+	switch config.KeepType {
+	case KeepTypeNone, KeepTypeStart, KeepTypeEnd:
+	default:
+		return nil, fmt.Errorf("unknown keep type: %v", config.KeepType)
+	}
 
 	lenFunc := config.LenFunc
 	if lenFunc == nil {
@@ -76,7 +85,11 @@ func NewSplitter(ctx context.Context, config *Config) (document.Transformer, err
 	}
 	seps := config.Separators
 	if len(seps) == 0 {
-		seps = []string{"\n", ".", "?", "!"}
+		// The trailing empty separator is what lets the splitter degrade to
+		// per-character pieces once none of the other separators can bring a
+		// piece under ChunkSize. Without it, a piece that no separator appears
+		// in is emitted whole, no matter how far over ChunkSize it is.
+		seps = []string{"\n", ".", "?", "!", ""}
 	}
 	idGenerator := config.IDGenerator
 	if idGenerator == nil {
@@ -176,6 +189,9 @@ func (s *splitter) split(text string, separator string, t KeepType) []string {
 		}
 		return splits
 	default:
+		// Unreachable through NewSplitter, which rejects unknown values before a
+		// splitter can be built. Left as an assertion because reaching here means
+		// the constructor's validation no longer covers what this switch handles.
 		panic(fmt.Sprintf("unknown keep type: %v", t))
 	}
 }
