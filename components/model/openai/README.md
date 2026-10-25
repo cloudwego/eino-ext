@@ -75,6 +75,21 @@ func main() {
 
 ```
 
+## Response ID
+
+Use `openai.GetResponseID(msg)` to read the Chat Completions response body's `id`
+from a `Generate` result or a `Stream` chunk. The ID is also preserved after
+combining chunks with `schema.ConcatMessages`; repeated IDs are not concatenated.
+This is the response ID (for example, `chatcmpl-...`), not the HTTP `X-Request-ID`
+header. The helper returns an empty string when no ID is available.
+
+```go
+responseID := openai.GetResponseID(resp)
+```
+
+The helper reuses the existing message metadata and its stream merge behavior.
+There is no need to import the lower-level ACL package or inspect `Message.Extra`.
+
 ## Configuration
 
 The model can be configured using the `openai.ChatModelConfig` struct:
