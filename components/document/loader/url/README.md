@@ -64,14 +64,28 @@ type LoaderConfig struct {
     Parser parser.Parser
     
     // Client specifies the HTTP client to use
-    // Optional. Default: http.DefaultClient
+    // Optional. Default: an http.Client with a 30s timeout that uses
+    // http.DefaultTransport (so HTTP(S)_PROXY and dial timeouts still apply)
     Client *http.Client
     
     // RequestBuilder customizes the HTTP request
     // Optional. Default: GET request builder
     RequestBuilder func(ctx context.Context, source document.Source, opts ...document.LoaderOption) (*http.Request, error)
+
+    // MaxResponseBytes caps how many response body bytes are passed to Parser.
+    // Exceeding it fails the load with ErrResponseTooLarge instead of silently
+    // truncating the document.
+    // Optional. Default: 10 MiB
+    MaxResponseBytes int64
 }
 ```
+
+### Behaviour notes
+
+- A non-2xx response is reported as an error instead of being parsed as
+  document content, so error pages can no longer enter the corpus.
+- `Load` returns `ErrResponseTooLarge` when the body exceeds `MaxResponseBytes`.
+- `RequestBuilder` receives the `document.LoaderOption` values passed to `Load`.
 
 ## Advanced Usage
 
