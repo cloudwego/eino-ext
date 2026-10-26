@@ -30,6 +30,7 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/eino-contrib/jsonschema"
 	"github.com/meguminnnnnnnnn/go-openai"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
@@ -676,6 +677,7 @@ func (c *Client) genRequest(ctx context.Context, in []*schema.Message, opts ...m
 					Name:        t.Function.Name,
 					Description: t.Function.Description,
 					Parameters:  t.Function.Parameters,
+					Strict:      specOptions.ToolStrictMode[t.Function.Name],
 				},
 			}
 		}
@@ -1282,33 +1284,6 @@ func (b *streamMessageBuilder) build(resp openai.ChatCompletionStreamResponse) (
 }
 
 func toTools(tis []*schema.ToolInfo) ([]tool, error) {
-	var sortArrayFields func(*jsonschema.Schema)
-	sortArrayFields = func(sc *jsonschema.Schema) {
-		if sc == nil {
-			return
-		}
-
-		switch sc.Type {
-		case string(schema.Object):
-			if len(sc.Required) == 0 {
-				return
-			}
-
-			sort.Strings(sc.Required)
-			for pair := sc.Properties.Oldest(); pair != nil; pair = pair.Next() {
-				sortArrayFields(pair.Value)
-			}
-
-		case string(schema.Array):
-			if sc.Items != nil {
-				sortArrayFields(sc.Items)
-			}
-
-		default:
-			return
-		}
-	}
-
 	tools := make([]tool, len(tis))
 	for i := range tis {
 		ti := tis[i]
@@ -1321,7 +1296,7 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 			return nil, fmt.Errorf("failed to convert tool parameters to JSONSchema: %w", err)
 		}
 
-		sortArrayFields(paramsJSONSchema)
+		paramsJSONSchema = sortedToolSchema(paramsJSONSchema)
 
 		tools[i] = tool{
 			Function: &functionDefinition{
@@ -1333,6 +1308,67 @@ func toTools(tis []*schema.ToolInfo) ([]tool, error) {
 	}
 
 	return tools, nil
+}
+
+func sortedToolSchema(sc *jsonschema.Schema) *jsonschema.Schema {
+	if sc == nil {
+		return nil
+	}
+
+	switch sc.Type {
+	case string(schema.Object):
+		if len(sc.Required) == 0 {
+			return sc
+		}
+		required := sc.Required
+		needsSorting := !sort.StringsAreSorted(required)
+		if needsSorting {
+			required = slices.Clone(required)
+			sort.Strings(required)
+		}
+		properties := sortedToolProperties(sc.Properties)
+		if !needsSorting && properties == sc.Properties {
+			return sc
+		}
+		sorted := *sc
+		sorted.Required = required
+		sorted.Properties = properties
+		return &sorted
+	case string(schema.Array):
+		items := sortedToolSchema(sc.Items)
+		if items == sc.Items {
+			return sc
+		}
+		sorted := *sc
+		sorted.Items = items
+		return &sorted
+	}
+	return sc
+}
+
+func sortedToolProperties(properties *orderedmap.OrderedMap[string, *jsonschema.Schema]) *orderedmap.OrderedMap[string, *jsonschema.Schema] {
+	if properties == nil {
+		return nil
+	}
+
+	var sorted *orderedmap.OrderedMap[string, *jsonschema.Schema]
+	for pair := properties.Oldest(); pair != nil; pair = pair.Next() {
+		child := sortedToolSchema(pair.Value)
+		if child == pair.Value {
+			continue
+		}
+		if sorted == nil {
+			sorted = orderedmap.New[string, *jsonschema.Schema](properties.Len())
+			for original := properties.Oldest(); original != nil; original = original.Next() {
+				sorted.Set(original.Key, original.Value)
+			}
+		}
+		sorted.Set(pair.Key, child)
+	}
+	if sorted == nil {
+		return properties
+	}
+	return sorted
 }
 
 func toEinoTokenUsage(usage *openai.Usage) *schema.TokenUsage {
