@@ -88,6 +88,25 @@ func TestTool(t *testing.T) {
 	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"Hi eino\"}]}", result)
 }
 
+func TestInvokableRunWithEmptyArguments(t *testing.T) {
+	ctx := context.Background()
+	cli, closeFn := newTestClientSession(t, func(server *mcp.Server) {
+		mcp.AddTool(server, &mcp.Tool{Name: "ping", Description: "no arguments"}, func(ctx context.Context, req *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "pong"}}}, nil, nil
+		})
+	})
+	defer closeFn()
+
+	tools, err := GetTools(ctx, &Config{Cli: cli, ToolNameList: []string{"ping"}})
+	require.NoError(t, err)
+	require.Len(t, tools, 1)
+
+	// Models omit the arguments of a parameter-less tool, so the call arrives with "".
+	result, err := tools[0].(tool.InvokableTool).InvokableRun(ctx, "")
+	require.NoError(t, err)
+	assert.Equal(t, "{\"content\":[{\"type\":\"text\",\"text\":\"pong\"}]}", result)
+}
+
 func TestToolNameMapperMetadataAndRawInvocation(t *testing.T) {
 	ctx := context.Background()
 	clientSession, cleanup := newTestClientSession(t, nil)
