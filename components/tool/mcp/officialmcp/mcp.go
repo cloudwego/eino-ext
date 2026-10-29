@@ -294,6 +294,9 @@ func (m *toolHelper) Info(ctx context.Context) (*schema.ToolInfo, error) {
 }
 
 func (m *toolHelper) InvokableRun(ctx context.Context, argumentsInJSON string, opts ...tool.Option) (string, error) {
+	if argumentsInJSON == "" {
+		argumentsInJSON = "{}"
+	}
 	result, err := m.cli.CallTool(ctx, &mcp.CallToolParams{
 		Name:      m.rawToolName,
 		Arguments: json.RawMessage(argumentsInJSON),
