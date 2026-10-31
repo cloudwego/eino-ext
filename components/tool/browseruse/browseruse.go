@@ -411,7 +411,7 @@ func (b *Tool) Execute(params *Param) (*ToolResult, error) {
 			return &ToolResult{Error: "index is required for 'click_element' action"}, nil
 		}
 		index := *params.Index
-		if index >= len(b.elements) {
+		if index < 0 || index >= len(b.elements) {
 			return &ToolResult{Error: fmt.Sprintf("index %d out of range", index)}, nil
 		}
 
