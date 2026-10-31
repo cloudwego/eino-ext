@@ -1285,3 +1285,55 @@ func TestVertexServiceAccountJSON(t *testing.T) {
 		})
 	})
 }
+
+func Test_convSchemaMessage_ThinkingReplay(t *testing.T) {
+	build := func(thinking *string, signature string) *schema.Message {
+		msg := &schema.Message{Role: schema.Assistant, Content: "answer"}
+		if thinking != nil {
+			setThinking(msg, *thinking)
+		}
+		if signature != "" {
+			setThinkingSignature(msg, signature)
+		}
+		return msg
+	}
+	empty, text := "", "reasoning"
+
+	// display "omitted" returns a signed thinking block whose text is empty; it must be replayed with its signature.
+	t.Run("signed thinking with empty text is replayed", func(t *testing.T) {
+		result, err := convSchemaMessage(build(&empty, "sig-1"))
+		assert.NoError(t, err)
+		if assert.Len(t, result.Content, 2) {
+			block := result.Content[0].OfThinking
+			if assert.NotNil(t, block) {
+				assert.Equal(t, "sig-1", block.Signature)
+				assert.Equal(t, "", block.Thinking)
+			}
+		}
+	})
+
+	// A stream that only delivers signature_delta never sets the thinking text at all.
+	t.Run("signature without any thinking text is replayed", func(t *testing.T) {
+		result, err := convSchemaMessage(build(nil, "sig-2"))
+		assert.NoError(t, err)
+		if assert.Len(t, result.Content, 2) {
+			assert.NotNil(t, result.Content[0].OfThinking)
+			assert.Equal(t, "sig-2", result.Content[0].OfThinking.Signature)
+		}
+	})
+
+	t.Run("signed thinking with text is replayed", func(t *testing.T) {
+		result, err := convSchemaMessage(build(&text, "sig-3"))
+		assert.NoError(t, err)
+		if assert.Len(t, result.Content, 2) {
+			assert.Equal(t, "reasoning", result.Content[0].OfThinking.Thinking)
+		}
+	})
+
+	t.Run("thinking without a signature is not replayed", func(t *testing.T) {
+		result, err := convSchemaMessage(build(&text, ""))
+		assert.NoError(t, err)
+		assert.Len(t, result.Content, 1)
+		assert.Nil(t, result.Content[0].OfThinking)
+	})
+}
