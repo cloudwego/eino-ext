@@ -354,6 +354,11 @@ func (s *SearxngClient) sendRequestWithRetry(ctx context.Context, req *http.Requ
 			break
 		}
 
+		// Close responses that will not be read before retrying or returning.
+		if resp.StatusCode == http.StatusTooManyRequests || attempt < s.config.MaxRetries {
+			resp.Body.Close()
+		}
+
 		// Check for rate limit response
 		if resp.StatusCode == http.StatusTooManyRequests {
 			if attempt == s.config.MaxRetries {
