@@ -116,22 +116,22 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 		}
 	}()
 
-	req := &api.EmbedRequest{
-		Model:    e.conf.Model,
-		Input:    texts,
-		Truncate: e.conf.Truncate,
-		Options:  e.conf.Options,
-	}
-	if e.conf.KeepAlive != nil {
-		req.KeepAlive = &api.Duration{Duration: *e.conf.KeepAlive}
-	}
-
 	options := embedding.GetCommonOptions(&embedding.Options{
 		Model: &e.conf.Model,
 	}, opts...)
 
 	conf := &embedding.Config{
 		Model: *options.Model,
+	}
+
+	req := &api.EmbedRequest{
+		Model:    conf.Model,
+		Input:    texts,
+		Truncate: e.conf.Truncate,
+		Options:  e.conf.Options,
+	}
+	if e.conf.KeepAlive != nil {
+		req.KeepAlive = &api.Duration{Duration: *e.conf.KeepAlive}
 	}
 
 	ctx = callbacks.EnsureRunInfo(ctx, e.GetType(), components.ComponentOfEmbedding)
