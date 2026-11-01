@@ -15,7 +15,7 @@ import (
  "context"
  "github.com/cloudwego/eino/components/embedding"
  qdrant "github.com/qdrant/go-client/qdrant"
- "github.com/cloudwego/eino-ext/components/retriever/qdrant"
+ qretriever "github.com/cloudwego/eino-ext/components/retriever/qdrant"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
  })
 
  // Create retriever
- retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+ retriever, _ := qretriever.NewRetriever(ctx, &qretriever.Config{
   Client:     client,
   Collection: "my_collection",
   Embedding:  &myEmbedding{},
@@ -49,10 +49,29 @@ type Config struct {
     Embedding      embedding.Embedder  // Query embedding component
     ScoreThreshold *float64            // Optional score threshold
     TopK           int                 // Number of results
+    VectorName     string              // Optional: named vector to query
 }
 ```
 
 ## Advanced Usage
+
+### Named Vectors
+
+When the collection stores several vector spaces (e.g. one per embedding
+model), set `VectorName` to the space that matches the query embedder. It must
+be one of the names configured in the indexer's `VectorConfig` list, so the
+query is compared against a space an embedding model actually wrote. Leaving it
+empty queries the collection's default (unnamed) vector, which is the previous
+behaviour.
+
+```go
+retriever, _ := qretriever.NewRetriever(ctx, &qretriever.Config{
+    Client:     client,
+    Collection: "docs",
+    VectorName: "bge-m3",
+    Embedding:  bgeM3,
+})
+```
 
 ### Filtering
 
@@ -72,7 +91,7 @@ docs, _ := retriever.Retrieve(ctx, "query",
 
 ```go
 scoreThreshold := 0.7
-retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+retriever, _ := qretriever.NewRetriever(ctx, &qretriever.Config{
     // ... other config
     ScoreThreshold: &scoreThreshold,
 })

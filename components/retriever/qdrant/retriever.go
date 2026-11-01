@@ -40,6 +40,12 @@ type Config struct {
 	ScoreThreshold *float64
 	// Number of top results to retrieve from Qdrant.
 	TopK int
+	// VectorName is the optional name of the vector space to query. It must be
+	// one of the names configured in the indexer's Config.Vectors, so that the
+	// query is compared against a space an embedding model actually wrote.
+	// When empty, the collection's default (unnamed) vector is used, which is
+	// the historical behaviour.
+	VectorName string
 }
 
 type Retriever struct {
@@ -48,6 +54,7 @@ type Retriever struct {
 	embedding      embedding.Embedder
 	scoreThreshold *float64
 	topK           int
+	vectorName     string
 }
 
 func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
@@ -75,6 +82,7 @@ func NewRetriever(ctx context.Context, config *Config) (*Retriever, error) {
 		embedding:      config.Embedding,
 		scoreThreshold: config.ScoreThreshold,
 		topK:           topK,
+		vectorName:     config.VectorName,
 	}, nil
 }
 
@@ -120,6 +128,9 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		Query:          qdrant.NewQueryDense(vec32),
 		Limit:          qdrant.PtrOf(uint64(*co.TopK)),
 		WithPayload:    qdrant.NewWithPayload(true),
+	}
+	if r.vectorName != "" {
+		searchReq.Using = qdrant.PtrOf(r.vectorName)
 	}
 	if r.scoreThreshold != nil {
 		searchReq.ScoreThreshold = qdrant.PtrOf(float32(*r.scoreThreshold))
