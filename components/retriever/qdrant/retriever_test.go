@@ -209,6 +209,56 @@ func TestRetrieverTypeAndCallbacks(t *testing.T) {
 	})
 }
 
+func TestRetrieverNamedVector(t *testing.T) {
+	PatchConvey("TestRetrieverNamedVector", t, func() {
+		ctx := context.Background()
+		mockEmbedding := &mockEmbeddingQdrant{dims: 4}
+		mockClient := &qdrant.Client{}
+
+		var queryReq *qdrant.QueryPoints
+
+		Mock((*qdrant.Client).Query).To(func(c *qdrant.Client, ctx context.Context, req *qdrant.QueryPoints) ([]*qdrant.ScoredPoint, error) {
+			queryReq = req
+			return []*qdrant.ScoredPoint{}, nil
+		}).Build()
+
+		Convey("Given a retriever with a named vector", func() {
+			retriever, err := NewRetriever(ctx, &Config{
+				Client:     mockClient,
+				Collection: CollectionName,
+				Embedding:  mockEmbedding,
+				TopK:       5,
+				VectorName: "model-a",
+			})
+			So(err, ShouldBeNil)
+
+			Convey("When retrieving, the query selects the named vector via Using", func() {
+				_, err := retriever.Retrieve(ctx, "test query")
+				So(err, ShouldBeNil)
+				So(queryReq, ShouldNotBeNil)
+				So(queryReq.GetUsing(), ShouldEqual, "model-a")
+			})
+		})
+
+		Convey("Given a retriever without a named vector", func() {
+			retriever, err := NewRetriever(ctx, &Config{
+				Client:     mockClient,
+				Collection: CollectionName,
+				Embedding:  mockEmbedding,
+				TopK:       5,
+			})
+			So(err, ShouldBeNil)
+
+			Convey("When retrieving, Using is left empty (backward compatible)", func() {
+				_, err := retriever.Retrieve(ctx, "test query")
+				So(err, ShouldBeNil)
+				So(queryReq, ShouldNotBeNil)
+				So(queryReq.GetUsing(), ShouldEqual, "")
+			})
+		})
+	})
+}
+
 type mockEmbeddingQdrant struct {
 	err  error
 	dims int
