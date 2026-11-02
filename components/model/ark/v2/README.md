@@ -480,22 +480,25 @@ once after `response.completed` or `response.incomplete`.
 
 ### Runnable examples and verification
 
-[Complete Responses examples](examples/responses/README.md) cover 11 modes;
-[example validation](examples/responses/VALIDATION.md) records actual standalone runs,
-including permissions and failed content checks.
+[Responses code examples](examples/responses/README.md) are split into one
+program per feature. Credentials and inputs come from environment variables;
+feature configuration and API calls are shown directly in each `main.go`.
+[Example validation](examples/responses/VALIDATION.md) records the standalone runs.
 
 ```sh
-go run ./examples/responses -mode generate -prompt "Hello"
-go run ./examples/responses -mode stream -prompt "Say hello briefly"
-go run ./examples/responses -mode tools
-go run ./examples/responses -mode structured -prompt "Return an answer in JSON"
-go run ./examples/responses -mode session
-go run ./examples/responses -mode web-search -prompt "Search today's technology news"
-go run ./examples/responses -file-id "$ARK_FILE_ID" -prompt "Summarize this document"
+go run ./examples/responses/generate
+go run ./examples/responses/stream
+go run ./examples/responses/tools
+go run ./examples/responses/structured_output
+go run ./examples/responses/reasoning
+go run ./examples/responses/modifiers
+go run ./examples/responses/file
 ```
 
-These commands use `ARK_API_KEY`, `ARK_MODEL`, and optional `ARK_BASE_URL`.
-Built-in search, cache, and media support depend on the account and model.
+Set `ARK_API_KEY`, `ARK_MODEL`, and optional `ARK_BASE_URL`. Use `ARK_PROMPT` for
+an optional question, `ARK_FILE_ID` for an existing document, or `ARK_FILE_PATH`
+for a local PDF. The file example defaults to the bundled marker PDF. Built-in
+search, cache, and media support depend on the account and model.
 The opt-in live tests also upload a temporary PDF and delete it after testing:
 
 ```sh

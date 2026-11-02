@@ -447,21 +447,24 @@ Context 和图片生成 API 仍使用旧模块。
 
 ### 运行示例与验证
 
-[Responses 示例使用说明](examples/responses/README.md) 覆盖 11 种模式；
-[示例运行记录](examples/responses/VALIDATION.md) 保存实际独立运行的结果，包含权限和内容校验失败。
+[Responses 代码示例](examples/responses/README.md) 按功能拆成独立程序，
+从环境变量读取凭证和输入；每个 `main.go` 直接展示功能配置、消息结构和 API 调用。
+[示例运行记录](examples/responses/VALIDATION.md) 保存独立运行结果与验证边界。
 
 ```sh
-go run ./examples/responses -mode generate -prompt "你好"
-go run ./examples/responses -mode stream -prompt "简短介绍一下自己"
-go run ./examples/responses -mode tools
-go run ./examples/responses -mode structured -prompt "返回包含 answer 的 JSON"
-go run ./examples/responses -mode session
-go run ./examples/responses -mode web-search -prompt "搜索今天的技术新闻"
-go run ./examples/responses -file-id "$ARK_FILE_ID" -prompt "总结这份文档"
+go run ./examples/responses/generate
+go run ./examples/responses/stream
+go run ./examples/responses/tools
+go run ./examples/responses/structured_output
+go run ./examples/responses/reasoning
+go run ./examples/responses/modifiers
+go run ./examples/responses/file
 ```
 
-使用 `ARK_API_KEY`、`ARK_MODEL` 和可选的 `ARK_BASE_URL`。内置搜索、缓存与各类媒体
-输入需要账号和模型支持。显式启用的实测还会上传临时 PDF，并在测试后删除：
+设置 `ARK_API_KEY`、`ARK_MODEL` 和可选的 `ARK_BASE_URL`。可用 `ARK_PROMPT` 修改问题，
+用 `ARK_FILE_ID` 指定已有文档，或用 `ARK_FILE_PATH` 指定本地 PDF；文件示例默认使用
+仓库中的标记 PDF。内置搜索、缓存与各类媒体输入需要账号和模型支持。
+显式启用的实测还会上传临时 PDF，并在测试后删除：
 
 ```sh
 GOWORK=off go test -race ./...
