@@ -99,7 +99,7 @@ type responseCaptureTransport struct {
 
 func (t *responseCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	capture, _ := req.Context().Value(responseCaptureKey{}).(*responseCapture)
-	if capture == nil || !strings.HasSuffix(req.URL.Path, "/chat/completions") {
+	if capture == nil || (!strings.HasSuffix(req.URL.Path, "/chat/completions") && !strings.HasSuffix(req.URL.Path, "/responses")) {
 		return t.next.RoundTrip(req)
 	}
 	resp, err := t.next.RoundTrip(req)

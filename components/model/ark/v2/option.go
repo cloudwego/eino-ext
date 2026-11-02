@@ -22,12 +22,13 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
 // RequestPayloadModifier transforms the serialized JSON request using the input
-// messages. The result must be an object containing model and messages. Generate
-// and Stream control stream flags; n must be omitted or 1. The modifier runs once
-// per call, before SDK retries, and must support concurrent calls on a shared model.
+// messages. The result must contain model and messages (Chat) or input (Responses).
+// Generate and Stream control stream flags; Chat's n must be omitted or 1. The
+// modifier runs once per call before SDK retries and must support concurrent calls.
 type RequestPayloadModifier func(ctx context.Context, messages []*schema.Message, rawBody []byte) ([]byte, error)
 
 // ResponseMessageModifier transforms Generate output before callbacks receive it.
@@ -36,22 +37,27 @@ type RequestPayloadModifier func(ctx context.Context, messages []*schema.Message
 type ResponseMessageModifier func(ctx context.Context, message *schema.Message, rawBody []byte) (*schema.Message, error)
 
 // ResponseChunkMessageModifier transforms Stream output before callbacks receive
-// it. message may be nil for a chunk without a standard message projection.
-// rawBody contains the original chunk JSON. After [DONE] it is called once with
-// end true and nil message/rawBody, and may return a final message. A premature
-// EOF is an error and does not trigger this final call. Returning nil skips a
-// chunk; returning an error terminates the stream.
+// it. message may be nil for an event without a standard message projection.
+// rawBody contains the original chunk/event JSON. After successful completion
+// ([DONE] for Chat; response.completed or response.incomplete for Responses), it
+// is called once with end true and nil message/rawBody and may return a final
+// message. A premature EOF is an error and does not trigger this final call.
+// Returning nil skips a chunk; returning an error terminates the stream.
 type ResponseChunkMessageModifier func(ctx context.Context, message *schema.Message, rawBody []byte, end bool) (*schema.Message, error)
 
 type arkOptions struct {
-	customHeaders                map[string]string
-	thinking                     *chat.Thinking
-	reasoningEffort              *chat.ReasoningEffort
-	maxCompletionTokens          *int
-	parallelToolCalls            *bool
-	requestPayloadModifier       RequestPayloadModifier
-	responseMessageModifier      ResponseMessageModifier
-	responseChunkMessageModifier ResponseChunkMessageModifier
+	cache                          *CacheOption
+	enableWebSearch                *responses.WebSearchTool
+	maxToolCalls                   *int64
+	enableReasoningContentPassback bool
+	customHeaders                  map[string]string
+	thinking                       *chat.Thinking
+	reasoningEffort                *chat.ReasoningEffort
+	maxCompletionTokens            *int
+	parallelToolCalls              *bool
+	requestPayloadModifier         RequestPayloadModifier
+	responseMessageModifier        ResponseMessageModifier
+	responseChunkMessageModifier   ResponseChunkMessageModifier
 }
 
 func (cm *ChatModel) getOptions(opts ...model.Option) (*model.Options, *arkOptions) {
@@ -109,4 +115,23 @@ func WithResponseMessageModifier(modifier ResponseMessageModifier) model.Option 
 // for one call. Passing nil disables the configured modifier.
 func WithResponseChunkMessageModifier(modifier ResponseChunkMessageModifier) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responseChunkMessageModifier = modifier })
+}
+
+// WithCache overrides the Responses API session-cache configuration for one call.
+func WithCache(cache *CacheOption) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.cache = cache })
+}
+
+// WithEnableToolWebSearch configures the Responses API's built-in search tool.
+// A nil value disables it for this call.
+func WithEnableToolWebSearch(tool *responses.WebSearchTool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.enableWebSearch = tool })
+}
+
+func WithMaxToolCalls(n int64) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.maxToolCalls = &n })
+}
+
+func WithEnableReasoningContentPassback(enabled bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.enableReasoningContentPassback = enabled })
 }

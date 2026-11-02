@@ -1,4 +1,4 @@
-# Ark Chat Completions
+# Ark Chat Completions and Responses
 
 [中文文档](README_zh.md)
 
@@ -7,6 +7,8 @@ An Eino `ToolCallingChatModel` built on the official
 by the [Ark installation guide](https://docs.volcengine.com/docs/ark/install-and-upgrade-sdk?lang=en).
 It provides Chat Completions generation, streaming, function calling, multimodal
 input, and synchronous batch inference through Eino messages and model options.
+`NewResponsesAPIChatModel` adds the Responses API, including context reuse,
+reasoning passback, structured output, and built-in Web Search.
 Authentication, HTTP requests, and retries use the official SDK.
 
 See [go.mod](go.mod) for Go requirements and dependency versions, and the
@@ -400,3 +402,113 @@ examples use files uploaded and processed separately through the Ark Files API.
 reasoning; omitting it retains the model's default. Audio input requires an
 audio-capable model. `-help` lists the available flags.
 These programs make real inference calls when pointed at Ark.
+
+
+## Responses API
+
+Use `NewResponsesAPIChatModel` for `/responses`. The independent constructor
+keeps the same Eino `Generate`, `Stream`, `WithTools`, and callback interfaces:
+
+```go
+cm, err := ark.NewResponsesAPIChatModel(ctx, &ark.ResponsesAPIConfig{
+    APIKey: os.Getenv("ARK_API_KEY"),
+    Model: os.Getenv("ARK_MODEL"),
+})
+if err != nil {
+    return err
+}
+reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Hello")})
+```
+
+`ResponsesAPIConfig` shares connection settings, thinking/reasoning controls,
+custom headers, parallel function calls, and request/response/chunk modifiers
+with `ChatModelConfig`. Use `MaxOutputTokens` (or `model.WithMaxTokens`) for its
+output limit. `Stop` sequences and synchronous batch inference apply to Chat
+Completions. Context and image-generation APIs remain in the legacy module.
+
+- `ResponseFormat` uses `arkruntime/model/responses.TextFormat`. For JSON schema,
+  set `type: json_schema`, `name`, `strict`, and the JSON schema in `schema`.
+- `EnableToolWebSearch` uses `responses.WebSearchTool`; use
+  `WithEnableToolWebSearch(nil)` to disable it for a call. The adapter supplies
+  `ark-beta-web-search: true` unless explicitly overridden in custom headers.
+  `MaxToolCalls` and
+  `WithMaxToolCalls` bound built-in tool rounds as supported by the service.
+- Function tools support `ToolStrict`, `WithToolStrict`, call-level tool options,
+  and allowed-name filtering. Eino tool calls retain `Type: "function"` and
+  `call_id` as `ToolCall.ID`; return results using that ID in `ToolCallID`.
+- Image/audio/video/file input and multimodal tool results use the same Eino
+  parts and URL → Base64Data → FileID precedence as Chat Completions. Responses
+  audio base64 is encoded as a MIME data URL in `audio_url`.
+- `EnableReasoningContentPassback` preserves reasoning items, including encrypted
+  content, when assistant messages are reused. It is skipped when a previous
+  response ID already supplies server context. Account/model support is required.
+- `GetResponseID` exposes the response ID; `GetArkRequestID` exposes the HTTP
+  request ID when returned. `GetResponsesTokenUsageDetails` returns full SDK
+  usage. `GetResponsesOutput` preserves final output items, including annotations
+  and built-in tool results beyond Eino's common message fields.
+
+### Context reuse
+
+Set `SessionCache: &ark.SessionCacheConfig{EnableCache: true, TTL: 3600}` to store
+responses and automatically reuse the newest unexpired cached message in later
+calls. Send the full conversation; the adapter trims it after that message and
+sets `previous_response_id`. Read expiry with `GetCacheExpiration`, and call
+`InvalidateMessageCaches(messages)` after editing cached history.
+
+`WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` explicitly continues a
+stored response or prefix. A valid cached message takes precedence over this
+head ID. `CreatePrefixCache(ctx, prefix, ttl)` creates a reusable prefix where
+supported. Zero TTL leaves expiration to the service. Cache availability must
+be enabled for the account and model; a permission error does not prove an
+adapter defect.
+
+### Streaming and modifiers
+
+Text/reasoning deltas and indexed function arguments can be concatenated with
+`schema.ConcatMessages`. Parallel function calls are tracked by output index.
+The terminal event supplies response metadata and token usage exactly once.
+`response.incomplete` preserves partial output and records its reason;
+`response.failed` and `error` return errors. EOF or `[DONE]` without a terminal
+response is `io.ErrUnexpectedEOF`.
+
+Request modifiers receive a JSON object with `model` and `input`. Unknown fields,
+strict tool settings, and exact JSON numbers survive SDK serialization. `Stream`
+and `Generate` retain control of `stream`. Response modifiers receive original
+response JSON. Chunk modifiers receive each original event, including events
+without a message projection; successful finalization (`end == true`) occurs
+once after `response.completed` or `response.incomplete`.
+
+### Runnable examples and verification
+
+[Complete Responses examples](examples/responses/README.md) cover 11 modes;
+[example validation](examples/responses/VALIDATION.md) records actual standalone runs,
+including permissions and failed content checks.
+
+```sh
+go run ./examples/responses -mode generate -prompt "Hello"
+go run ./examples/responses -mode stream -prompt "Say hello briefly"
+go run ./examples/responses -mode tools
+go run ./examples/responses -mode structured -prompt "Return an answer in JSON"
+go run ./examples/responses -mode session
+go run ./examples/responses -mode web-search -prompt "Search today's technology news"
+go run ./examples/responses -file-id "$ARK_FILE_ID" -prompt "Summarize this document"
+```
+
+These commands use `ARK_API_KEY`, `ARK_MODEL`, and optional `ARK_BASE_URL`.
+Built-in search, cache, and media support depend on the account and model.
+The opt-in live tests also upload a temporary PDF and delete it after testing:
+
+```sh
+GOWORK=off go test -race ./...
+ARK_RESPONSES_LIVE=1 GOWORK=off go test -run TestResponsesLive -v
+# Also enable the session test for accounts with the cache service activated:
+ARK_RESPONSES_LIVE=1 ARK_RESPONSES_LIVE_CACHE=1 GOWORK=off go test -run TestResponsesLive/session -v
+```
+
+The cache and search cases are separate opt-ins (`ARK_RESPONSES_LIVE_CACHE=1`
+and `ARK_RESPONSES_LIVE_WEBSEARCH=1`). Multimodal tool-result reading can be tested
+with `ARK_RESPONSES_LIVE_MULTIMODAL_TOOLS=1`; it requires model support beyond
+accepting the request. The supplied `doubao-seed-2-1-pro-260628` model did not
+reliably read a PDF returned by a tool in live validation. Ordinary PDF user input
+passed for both base64 and FileID. The adapter retains the documented native
+multimodal tool-result request shape; local wire tests cover each media source.

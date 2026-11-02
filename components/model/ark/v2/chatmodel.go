@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// Package ark implements the Ark Chat Completions API using ark-runtime-go.
+// Package ark implements Ark Chat Completions and Responses using ark-runtime-go.
 package ark
 
 import (

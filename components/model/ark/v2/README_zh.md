@@ -1,11 +1,12 @@
-# Ark Chat Completions 模型
+# Ark Chat Completions 与 Responses 模型
 
 [English](README.md)
 
 本包基于[方舟官方接入文档](https://docs.volcengine.com/docs/ark/install-and-upgrade-sdk?lang=zh)
 推荐的 [`ark-runtime-go`](https://github.com/volcengine/ark-runtime-go) SDK，
 实现 Eino `ToolCallingChatModel`，通过 Eino 消息和模型选项提供 Chat Completions
-生成、流式输出、函数调用、多模态输入和同步批量推理。鉴权、HTTP 请求和重试使用官方 SDK。
+生成、流式输出、函数调用、多模态输入和同步批量推理；`NewResponsesAPIChatModel` 另提供
+Responses API、缓存续接、推理回传和内置搜索。鉴权、HTTP 请求和重试使用官方 SDK。
 
 Go 版本要求和依赖版本以 [go.mod](go.mod) 为准。
 模型参数和能力要求参见 [Chat API 文档](https://docs.volcengine.com/docs/ark/chat-api?lang=zh)。
@@ -380,3 +381,98 @@ FileID 示例需要先通过 Ark Files API 上传文件并等待处理完成。
 或用 `-thinking enabled` 请求思考；不传此参数时保留模型默认配置。
 音频输入需要选择支持音频的模型，`-help` 可查看所有参数。
 连接到 Ark 时，这些程序会发起真实推理请求。
+
+
+## Responses API
+
+使用 `NewResponsesAPIChatModel` 调用 `/responses`，仍然实现 Eino 的
+`Generate`、`Stream`、`WithTools` 和 callback 接口：
+
+```go
+cm, err := ark.NewResponsesAPIChatModel(ctx, &ark.ResponsesAPIConfig{
+    APIKey: os.Getenv("ARK_API_KEY"),
+    Model: os.Getenv("ARK_MODEL"),
+})
+if err != nil {
+    return err
+}
+reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("你好")})
+```
+
+`ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置、思考和推理强度、请求头、
+并行工具调用和请求/响应/流式 modifier。输出上限使用 `MaxOutputTokens`，调用时可用
+`model.WithMaxTokens` 覆盖。停止序列和同步 batch 仅用于 Chat Completions。
+Context 和图片生成 API 仍使用旧模块。
+
+- `ResponseFormat` 使用 `arkruntime/model/responses.TextFormat`。JSON schema 的
+  `type` 为 `json_schema`，`name`、`strict` 和 `schema` 直接放在 format 中。
+- `EnableToolWebSearch` 使用 `responses.WebSearchTool`；单次调用可通过
+  `WithEnableToolWebSearch(nil)` 关闭。适配器默认发送 `ark-beta-web-search: true`，
+  可用自定义请求头覆盖。`MaxToolCalls` / `WithMaxToolCalls` 设置内置工具轮次上限。
+- 函数工具支持 `ToolStrict`、`WithToolStrict`、调用级工具配置和候选名称筛选。
+  Eino 工具调用的 `Type` 为 `function`，`ToolCall.ID` 保存 API 的 `call_id`；
+  回传结果时将该值放入 `ToolCallID`。
+- 图片、音频、视频、文件及多模态工具结果沿用相同 Eino 消息结构与
+  URL → Base64Data → FileID 优先级。Responses 音频 base64 使用 MIME data URL，
+  放入 `audio_url`。
+- `EnableReasoningContentPassback` 保留并回传推理 item，包括加密内容。
+  已有 previous response ID 时无需重复回传。需要账号与模型支持。
+- `GetResponseID` 读取响应 ID；`GetArkRequestID` 读取服务返回的 HTTP 请求 ID。
+  `GetResponsesTokenUsageDetails` 读取完整 SDK 用量，`GetResponsesOutput` 读取最终
+  输出 item，保留注释、内置工具结果等通用消息字段之外的信息。
+
+### 缓存与上下文续接
+
+通过 `SessionCache: &ark.SessionCacheConfig{EnableCache: true, TTL: 3600}` 存储响应。
+后续传入完整历史时，适配器寻找最近的未过期缓存消息，仅发送其后的增量，
+并设置 `previous_response_id`。`GetCacheExpiration` 读取过期时间；编辑缓存历史后，
+使用 `InvalidateMessageCaches(messages)` 使相关消息的缓存失效。
+
+`WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` 可以显式续接已存储的响应或
+前缀；历史中有效的缓存消息优先于此 ID。`CreatePrefixCache(ctx, prefix, ttl)` 用于
+服务支持的前缀缓存。TTL 为零时采用服务默认过期时间。缓存服务需要为账号和模型
+开通；服务权限错误不能视为适配器错误。
+
+### 流式事件与 modifier
+
+文本、推理增量和带索引的工具参数可用 `schema.ConcatMessages` 拼接。并行工具调用
+按输出索引区分，终止事件只发送一次响应元数据和 token 用量。
+`response.incomplete` 保留部分输出并记录结束原因；`response.failed` 和 `error`
+返回错误。未收到终止响应就遇到 EOF 或 `[DONE]`，返回 `io.ErrUnexpectedEOF`。
+
+请求 modifier 收到包含 `model` 和 `input` 的 JSON 对象，保留 SDK 未识别的字段、
+工具 strict 设置和 JSON 数字精度。`Generate` / `Stream` 控制 `stream` 字段。
+响应 modifier 收到原始响应 JSON；流式 modifier 收到每个原始事件，包括没有通用消息
+投影的事件。`response.completed` / `response.incomplete` 后调用一次 `end == true`。
+
+### 运行示例与验证
+
+[Responses 示例使用说明](examples/responses/README.md) 覆盖 11 种模式；
+[示例运行记录](examples/responses/VALIDATION.md) 保存实际独立运行的结果，包含权限和内容校验失败。
+
+```sh
+go run ./examples/responses -mode generate -prompt "你好"
+go run ./examples/responses -mode stream -prompt "简短介绍一下自己"
+go run ./examples/responses -mode tools
+go run ./examples/responses -mode structured -prompt "返回包含 answer 的 JSON"
+go run ./examples/responses -mode session
+go run ./examples/responses -mode web-search -prompt "搜索今天的技术新闻"
+go run ./examples/responses -file-id "$ARK_FILE_ID" -prompt "总结这份文档"
+```
+
+使用 `ARK_API_KEY`、`ARK_MODEL` 和可选的 `ARK_BASE_URL`。内置搜索、缓存与各类媒体
+输入需要账号和模型支持。显式启用的实测还会上传临时 PDF，并在测试后删除：
+
+```sh
+GOWORK=off go test -race ./...
+ARK_RESPONSES_LIVE=1 GOWORK=off go test -run TestResponsesLive -v
+# 已开通缓存服务的账号可额外启用会话缓存测试：
+ARK_RESPONSES_LIVE=1 ARK_RESPONSES_LIVE_CACHE=1 GOWORK=off go test -run TestResponsesLive/session -v
+```
+
+缓存和搜索测试分别通过 `ARK_RESPONSES_LIVE_CACHE=1` 与
+`ARK_RESPONSES_LIVE_WEBSEARCH=1` 启用。多模态工具结果阅读测试使用
+`ARK_RESPONSES_LIVE_MULTIMODAL_TOOLS=1`，需要模型真正理解工具结果中的媒体。
+实测 `doubao-seed-2-1-pro-260628` 未能可靠读出工具返回 PDF 的内容；普通用户输入的
+PDF base64 / FileID 均已通过。适配器保留官方文档的原生多模态工具结果结构，
+本地 HTTP 测试覆盖各类媒体及来源的序列化。
