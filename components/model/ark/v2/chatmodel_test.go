@@ -332,20 +332,7 @@ func TestStreamRequiresDoneBeforeFinalModifier(t *testing.T) {
 	}
 }
 
-func TestBatchAndErrors(t *testing.T) {
-	t.Run("batch", func(t *testing.T) {
-		cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
-			equal(t, "/api/v3/batch/chat/completions", r.URL.Path)
-			equal(t, false, decodeRequest(t, r)["stream"])
-			writeResponse(w)
-		}, &ChatModelConfig{Model: "test", BatchChat: &BatchChatConfig{EnableBatchChat: true, BatchChatAsyncRetryTimeout: time.Second, BatchMaxParallel: ptr(2)}})
-		_, err := cm.Generate(context.Background(), []*schema.Message{{Role: schema.User, Content: "hello"}})
-		check(t, err)
-		_, err = cm.Stream(context.Background(), nil)
-		if err == nil {
-			t.Fatal("expected streaming batch error")
-		}
-	})
+func TestErrors(t *testing.T) {
 	t.Run("api error", func(t *testing.T) {
 		cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(400)

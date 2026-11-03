@@ -32,8 +32,7 @@ import (
 type RequestPayloadModifier func(ctx context.Context, messages []*schema.Message, rawBody []byte) ([]byte, error)
 
 // ResponseMessageModifier transforms Generate output before callbacks receive it.
-// rawBody contains the original response JSON, or nil for synchronous batch calls
-// because the SDK's batch client does not expose it. The result must not be nil.
+// rawBody contains the original response JSON. The result must not be nil.
 type ResponseMessageModifier func(ctx context.Context, message *schema.Message, rawBody []byte) (*schema.Message, error)
 
 // ResponseChunkMessageModifier transforms Stream output before callbacks receive

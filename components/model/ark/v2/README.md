@@ -6,7 +6,7 @@ An Eino `ToolCallingChatModel` built on the official
 [`ark-runtime-go`](https://github.com/volcengine/ark-runtime-go) SDK recommended
 by the [Ark installation guide](https://docs.volcengine.com/docs/ark/install-and-upgrade-sdk?lang=en).
 It provides Chat Completions generation, streaming, function calling, multimodal
-input, and synchronous batch inference through Eino messages and model options.
+input through Eino messages and model options.
 `NewResponsesAPIChatModel` adds the Responses API, including context reuse,
 reasoning passback, structured output, and built-in Web Search.
 Authentication, HTTP requests, and retries use the official SDK.
@@ -234,8 +234,8 @@ Configure the modifiers in `ChatModelConfig`, or select them per call:
 
 | Option | Modified object | Applies to |
 | --- | --- | --- |
-| `WithRequestPayloadModifier` | Serialized request JSON, with the input Eino messages available as context | `Generate`, `Stream`, synchronous batch generation |
-| `WithResponseMessageModifier` | Converted `*schema.Message`, with the original response JSON available as context | `Generate`, including synchronous batch generation |
+| `WithRequestPayloadModifier` | Serialized request JSON, with the input Eino messages available as context | `Generate`, `Stream` |
+| `WithResponseMessageModifier` | Converted `*schema.Message`, with the original response JSON available as context | `Generate` |
 | `WithResponseChunkMessageModifier` | Converted message chunk, with the original chunk JSON available as context | `Stream` |
 
 To customize the request payload, import `encoding/json` for `json.RawMessage`
@@ -282,9 +282,8 @@ fmt.Println(reply.Content)
 ```
 
 Response modifiers run before Eino callbacks receive the message, so callbacks
-observe the modified output. `rawBody` contains the original response JSON; it is
-`nil` for synchronous batch generation because the SDK's batch client does not
-expose the raw response body. A Generate modifier must return a non-nil message.
+observe the modified output. `rawBody` contains the original response JSON.
+A Generate modifier must return a non-nil message.
 
 The streaming modifier receives `end == false` for each chunk. Its message can be
 nil when a chunk has no standard message projection; the raw JSON is still
@@ -295,40 +294,6 @@ message/rawBody, and may return a final message. A premature EOF returns
 A call-specific modifier replaces the corresponding configured modifier. Passing
 nil disables it for that call. Returning an error aborts the request or stream.
 Modifiers must support concurrent calls when the model is shared.
-
-## Synchronous batch inference
-
-The Batch Chat API requires a dedicated batch endpoint ID (`ep-bi-*`) as `Model`.
-Use that endpoint as `ARK_MODEL` for the example; ordinary online model IDs do
-not select a batch endpoint. See the [batch inference guide](https://docs.volcengine.com/docs/ark/batch-inference?lang=en)
-for availability and migration guidance; Ark currently marks Batch Chat for retirement.
-
-Set `ChatModelConfig.BatchChat` when constructing a model:
-
-```go
-batchModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
-    APIKey: os.Getenv("ARK_API_KEY"),
-    Model:  os.Getenv("ARK_MODEL"),
-    BatchChat: &ark.BatchChatConfig{
-        EnableBatchChat:            true,
-        BatchChatAsyncRetryTimeout: 30 * time.Minute,
-    },
-})
-if err != nil {
-    log.Fatal(err)
-}
-reply, err := batchModel.Generate(ctx, messages)
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(reply.Content)
-```
-
-Import `time` for this example. `Generate` then uses the synchronous batch Chat
-Completions endpoint. `BatchChatAsyncRetryTimeout` bounds the complete batch
-request and retry lifecycle; `BatchMaxParallel` configures the SDK connection pool.
-Batch inference uses its own HTTP connection pool, separate from `HTTPClient`,
-and supports non-streaming calls.
 
 ## Returned messages
 
@@ -374,15 +339,9 @@ optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
 | [tool_result](examples/tool_result/main.go) | Return a document FileID in a multimodal tool result with the matching `ToolCallID` |
 | [structured_output](examples/structured_output/main.go) | Strict JSON schema output and decoding into a Go struct |
 | [modifiers](examples/modifiers/main.go) | Request JSON edits, raw response access, and successful stream finalization |
-| [batch](examples/batch/main.go) | Two concurrent synchronous batch requests using a dedicated `ep-bi-*` endpoint |
 
 Run the other examples with `go run ./examples/stream`, `go run ./examples/tools`,
 `go run ./examples/structured_output`, or `go run ./examples/modifiers`.
-Batch requires its own endpoint:
-
-```sh
-ARK_MODEL="ep-bi-your-batch-endpoint-id" go run ./examples/batch
-```
 
 For multimodal input, select a kind and source. The base64 source reads the local
 file and encodes it; `-mime` overrides MIME type detection from its extension:
@@ -423,8 +382,8 @@ reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Hello")})
 `ResponsesAPIConfig` shares connection settings, thinking/reasoning controls,
 custom headers, parallel function calls, and request/response/chunk modifiers
 with `ChatModelConfig`. Use `MaxOutputTokens` (or `model.WithMaxTokens`) for its
-output limit. `Stop` sequences and synchronous batch inference apply to Chat
-Completions. Context and image-generation APIs remain in the legacy module.
+output limit. `Stop` sequences apply to Chat Completions. Context and
+image-generation APIs remain in the legacy module.
 
 - `ResponseFormat` uses `arkruntime/model/responses.TextFormat`. For JSON schema,
   set `type: json_schema`, `name`, `strict`, and the JSON schema in `schema`.

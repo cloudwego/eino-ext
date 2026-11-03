@@ -46,13 +46,10 @@ func modifyJSON(raw []byte, edit func(map[string]json.RawMessage)) ([]byte, erro
 }
 
 func TestRequestPayloadModifierWire(t *testing.T) {
-	for _, mode := range []string{"generate", "stream", "batch"} {
+	for _, mode := range []string{"generate", "stream"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls int
 			config := &ChatModelConfig{Model: "original", Temperature: ptr(float32(0.7))}
-			if mode == "batch" {
-				config.BatchChat = &BatchChatConfig{EnableBatchChat: true, BatchChatAsyncRetryTimeout: time.Second}
-			}
 			config.RequestPayloadModifier = func(ctx context.Context, in []*schema.Message, raw []byte) ([]byte, error) {
 				calls++
 				equal(t, "input", in[0].Content)
@@ -79,9 +76,7 @@ func TestRequestPayloadModifierWire(t *testing.T) {
 				equal(t, `"modified-model"`, string(body["model"]))
 				equal(t, `{"integer":9007199254740993}`, string(body["custom_param"]))
 				equal(t, `[{"role":"user","content":[{"type":"future_part","value":"x"}]}]`, string(body["messages"]))
-				if mode == "batch" {
-					equal(t, "/api/v3/batch/chat/completions", r.URL.Path)
-				}
+				equal(t, "/api/v3/chat/completions", r.URL.Path)
 				if mode == "stream" {
 					equal(t, `true`, string(body["stream"]))
 					var streamOptions map[string]bool
@@ -183,44 +178,33 @@ func TestRequestPayloadModifierValidation(t *testing.T) {
 }
 
 func TestResponseMessageModifierAndCallbacks(t *testing.T) {
-	for _, batch := range []bool{false, true} {
-		t.Run(map[bool]string{false: "generate", true: "batch"}[batch], func(t *testing.T) {
-			wire := strings.TrimSuffix(responseJSON, "}") + `,"unknown_field":"kept"}`
-			var observed *fmodel.CallbackOutput
-			config := &ChatModelConfig{Model: "model"}
-			if batch {
-				config.BatchChat = &BatchChatConfig{EnableBatchChat: true, BatchChatAsyncRetryTimeout: time.Second}
-			}
-			config.ResponseMessageModifier = func(ctx context.Context, msg *schema.Message, raw []byte) (*schema.Message, error) {
-				equal(t, "done", msg.Content)
-				if batch {
-					equal(t, []byte(nil), raw)
-				} else {
-					equal(t, wire, string(raw))
-				}
-				msg.Content = "modified"
-				msg.ResponseMeta.Usage.TotalTokens = 99
-				return msg, nil
-			}
-			cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = io.WriteString(w, wire)
-			}, config)
-			h := callbacks.NewHandlerBuilder().OnEndFn(func(ctx context.Context, _ *callbacks.RunInfo, out callbacks.CallbackOutput) context.Context {
-				observed = out.(*fmodel.CallbackOutput)
-				return ctx
-			}).Build()
-			ctx := callbacks.InitCallbacks(context.Background(), &callbacks.RunInfo{}, h)
-			msg, err := cm.Generate(ctx, nil)
-			check(t, err)
-			equal(t, "modified", msg.Content)
-			if observed == nil {
-				t.Fatal("missing callback")
-			}
-			equal(t, msg, observed.Message)
-			equal(t, 99, observed.TokenUsage.TotalTokens)
-		})
+	wire := strings.TrimSuffix(responseJSON, "}") + `,"unknown_field":"kept"}`
+	var observed *fmodel.CallbackOutput
+	config := &ChatModelConfig{Model: "model"}
+	config.ResponseMessageModifier = func(ctx context.Context, msg *schema.Message, raw []byte) (*schema.Message, error) {
+		equal(t, "done", msg.Content)
+		equal(t, wire, string(raw))
+		msg.Content = "modified"
+		msg.ResponseMeta.Usage.TotalTokens = 99
+		return msg, nil
 	}
+	cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, wire)
+	}, config)
+	h := callbacks.NewHandlerBuilder().OnEndFn(func(ctx context.Context, _ *callbacks.RunInfo, out callbacks.CallbackOutput) context.Context {
+		observed = out.(*fmodel.CallbackOutput)
+		return ctx
+	}).Build()
+	ctx := callbacks.InitCallbacks(context.Background(), &callbacks.RunInfo{}, h)
+	msg, err := cm.Generate(ctx, nil)
+	check(t, err)
+	equal(t, "modified", msg.Content)
+	if observed == nil {
+		t.Fatal("missing callback")
+	}
+	equal(t, msg, observed.Message)
+	equal(t, 99, observed.TokenUsage.TotalTokens)
 }
 
 func TestResponseMessageModifierErrors(t *testing.T) {

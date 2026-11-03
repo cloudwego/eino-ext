@@ -36,7 +36,7 @@ var _ fmodel.ToolCallingChatModel = (*ChatModel)(nil)
 var ErrEmptyResponse = errors.New("empty response received from model")
 
 // ChatModelConfig configures the Ark service connection, generation parameters,
-// function calling, and synchronous batch Chat Completions.
+// and function calling.
 type ChatModelConfig struct {
 	// Timeout defaults to 10 minutes. HTTPClient, when provided, takes precedence.
 	Timeout    *time.Duration `json:"timeout,omitempty"`
@@ -74,17 +74,9 @@ type ChatModelConfig struct {
 	// for tools without an explicit override.
 	ToolStrict                   *bool                        `json:"tool_strict,omitempty"`
 	CustomHeader                 map[string]string            `json:"custom_header,omitempty"`
-	BatchChat                    *BatchChatConfig             `json:"batch_chat,omitempty"`
 	RequestPayloadModifier       RequestPayloadModifier       `json:"-"`
 	ResponseMessageModifier      ResponseMessageModifier      `json:"-"`
 	ResponseChunkMessageModifier ResponseChunkMessageModifier `json:"-"`
-}
-
-// BatchChatConfig configures synchronous batch inference. Streaming is unsupported.
-type BatchChatConfig struct {
-	EnableBatchChat            bool          `json:"enable_batch_chat,omitempty"`
-	BatchChatAsyncRetryTimeout time.Duration `json:"batch_chat_async_retry_timeout,omitempty"`
-	BatchMaxParallel           *int          `json:"batch_max_parallel,omitempty"`
 }
 
 type ChatModel struct {
@@ -114,17 +106,6 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	}
 	if config.HTTPClient != nil {
 		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
-	}
-	if b := config.BatchChat; b != nil && b.EnableBatchChat {
-		if b.BatchChatAsyncRetryTimeout <= 0 {
-			return nil, errors.New("batch chat timeout must be positive when enable batch chat")
-		}
-		if b.BatchMaxParallel != nil {
-			if *b.BatchMaxParallel <= 0 {
-				return nil, errors.New("batch max parallel must be positive")
-			}
-			opts = append(opts, arkruntime.WithBatchMaxParallel(*b.BatchMaxParallel))
-		}
 	}
 	// Copy the SDK-configured HTTP client so capturing response bodies does not
 	// mutate a caller-owned client or change its transport/timeout policies.

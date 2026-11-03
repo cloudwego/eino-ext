@@ -73,15 +73,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		capture = &responseCapture{}
 	}
 	ctx = context.WithValue(ctx, responseCaptureKey{}, capture)
-	var resp *chat.ChatCompletionResponseWithHeader
-	if cm.config.BatchChat != nil && cm.config.BatchChat.EnableBatchChat {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, cm.config.BatchChat.BatchChatAsyncRetryTimeout)
-		defer cancel()
-		resp, err = cm.client.CreateBatchChatCompletion(ctx, wireReq, arkruntime.WithCustomHeaders(specOptions.customHeaders), arkruntime.WithExtraBody(extraBody))
-	} else {
-		resp, err = cm.client.CreateChatCompletion(ctx, wireReq, arkruntime.WithCustomHeaders(specOptions.customHeaders), arkruntime.WithExtraBody(extraBody))
-	}
+	resp, err := cm.client.CreateChatCompletion(ctx, wireReq, arkruntime.WithCustomHeaders(specOptions.customHeaders), arkruntime.WithExtraBody(extraBody))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -149,9 +141,6 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		}
 	}()
 
-	if cm.config.BatchChat != nil && cm.config.BatchChat.EnableBatchChat {
-		return nil, fmt.Errorf("batch chat does not support streaming")
-	}
 	wireReq, extraBody, err := prepareRequestPayload(ctx, in, req, arkOpts.requestPayloadModifier)
 	if err != nil {
 		return nil, err

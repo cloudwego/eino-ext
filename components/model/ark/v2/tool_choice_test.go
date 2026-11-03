@@ -21,14 +21,13 @@ import (
 	"io"
 	"net/http"
 	"testing"
-	"time"
 
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
 
 func TestAllowedToolNamesWire(t *testing.T) {
-	for _, mode := range []string{"generate", "stream", "batch"} {
+	for _, mode := range []string{"generate", "stream"} {
 		for _, binding := range []string{"bound", "per-call"} {
 			for _, selection := range []struct {
 				name   string
@@ -44,9 +43,6 @@ func TestAllowedToolNamesWire(t *testing.T) {
 				t.Run(mode+"/"+binding+"/"+selection.name, func(t *testing.T) {
 					tools := []*schema.ToolInfo{toolInfo("safe"), toolInfo("inspect"), toolInfo("other")}
 					config := &ChatModelConfig{Model: "test"}
-					if mode == "batch" {
-						config.BatchChat = &BatchChatConfig{EnableBatchChat: true, BatchChatAsyncRetryTimeout: time.Second}
-					}
 					cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
 						body := decodeRequest(t, r)
 						var names []string

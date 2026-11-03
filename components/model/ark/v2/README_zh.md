@@ -5,7 +5,7 @@
 本包基于[方舟官方接入文档](https://docs.volcengine.com/docs/ark/install-and-upgrade-sdk?lang=zh)
 推荐的 [`ark-runtime-go`](https://github.com/volcengine/ark-runtime-go) SDK，
 实现 Eino `ToolCallingChatModel`，通过 Eino 消息和模型选项提供 Chat Completions
-生成、流式输出、函数调用、多模态输入和同步批量推理；`NewResponsesAPIChatModel` 另提供
+生成、流式输出、函数调用、多模态输入；`NewResponsesAPIChatModel` 另提供
 Responses API、缓存续接、推理回传和内置搜索。鉴权、HTTP 请求和重试使用官方 SDK。
 
 Go 版本要求和依赖版本以 [go.mod](go.mod) 为准。
@@ -223,8 +223,8 @@ fmt.Println(reply.Content)
 
 | 选项 | 修改对象 | 适用范围 |
 | --- | --- | --- |
-| `WithRequestPayloadModifier` | 序列化后的请求 JSON，同时可读取输入的 Eino 消息 | `Generate`、`Stream`、同步批量生成 |
-| `WithResponseMessageModifier` | 转换后的 `*schema.Message`，同时可读取原始响应 JSON | `Generate`，包括同步批量生成 |
+| `WithRequestPayloadModifier` | 序列化后的请求 JSON，同时可读取输入的 Eino 消息 | `Generate`、`Stream` |
+| `WithResponseMessageModifier` | 转换后的 `*schema.Message`，同时可读取原始响应 JSON | `Generate` |
 | `WithResponseChunkMessageModifier` | 转换后的消息分片，同时可读取原始分片 JSON | `Stream` |
 
 定制请求 Payload 时，导入 `encoding/json` 使用 `json.RawMessage`，
@@ -269,8 +269,7 @@ fmt.Println(reply.Content)
 ```
 
 响应 modifier 在 Eino 回调收到消息之前执行，回调和调用方看到的是处理后的消息。
-`rawBody` 是原始响应 JSON；同步批量生成时，由于 SDK 的批量客户端不暴露原始响应体，
-该参数为 `nil`。`Generate` 的 modifier 必须返回非 nil 的消息。
+`rawBody` 是原始响应 JSON。`Generate` 的 modifier 必须返回非 nil 的消息。
 
 流式 modifier 处理每个分片时 `end == false`。当分片没有标准 Eino 消息投影时，
 消息可能为 nil，但仍可读取原始 JSON。收到 `[DONE]` 事件后会额外调用一次，
@@ -279,38 +278,6 @@ fmt.Println(reply.Content)
 
 调用级 modifier 会替换初始化配置中的同名 modifier，传入 nil 可为本次调用禁用它。
 返回错误会中止请求或流。模型并发使用时，modifier 也应支持并发调用。
-
-## 同步批量推理
-
-Batch Chat API 要求 `Model` 为专用的批量推理接入点 ID（`ep-bi-*`）。运行示例时需将
-该 ID 设置为 `ARK_MODEL`，普通在线模型 ID 不能用于选择批量接入点。
-方舟目前已将 Batch Chat 标记为待下线，可用性与迁移方式参见[批量推理指南](https://docs.volcengine.com/docs/ark/batch-inference?lang=zh)。
-
-创建模型时设置 `ChatModelConfig.BatchChat`：
-
-```go
-batchModel, err := ark.NewChatModel(ctx, &ark.ChatModelConfig{
-    APIKey: os.Getenv("ARK_API_KEY"),
-    Model:  os.Getenv("ARK_MODEL"),
-    BatchChat: &ark.BatchChatConfig{
-        EnableBatchChat:            true,
-        BatchChatAsyncRetryTimeout: 30 * time.Minute,
-    },
-})
-if err != nil {
-    log.Fatal(err)
-}
-reply, err := batchModel.Generate(ctx, messages)
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(reply.Content)
-```
-
-该示例需导入 `time`。配置后，`Generate` 使用同步批量 Chat Completions 接口。
-`BatchChatAsyncRetryTimeout` 限制整个批量请求及重试过程的时间，
-`BatchMaxParallel` 配置 SDK 的连接池并发上限。批量推理使用独立于 `HTTPClient` 的
-HTTP 连接池，支持非流式调用。
 
 ## 返回信息
 
@@ -354,15 +321,9 @@ go run ./examples/generate
 | [tool_result](examples/tool_result/main.go) | 在多模态工具结果中回传文档 FileID，并匹配 `ToolCallID` |
 | [structured_output](examples/structured_output/main.go) | 严格 JSON schema 输出并解析为 Go 结构体 |
 | [modifiers](examples/modifiers/main.go) | 修改请求 JSON、读取原始响应以及流正常完成时的处理 |
-| [batch](examples/batch/main.go) | 使用专用 `ep-bi-*` 接入点，并发发送两条同步 batch 请求 |
 
 其余示例可通过 `go run ./examples/stream`、`go run ./examples/tools`、
 `go run ./examples/structured_output` 或 `go run ./examples/modifiers` 运行。
-batch 需要单独指定批量接入点：
-
-```sh
-ARK_MODEL="ep-bi-your-batch-endpoint-id" go run ./examples/batch
-```
 
 多模态示例通过参数选择类型和来源。`base64` 来源会读取本地文件并编码，
 `-mime` 可以覆盖根据文件扩展名推断的 MIME 类型：
@@ -401,7 +362,7 @@ reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("你好")})
 
 `ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置、思考和推理强度、请求头、
 并行工具调用和请求/响应/流式 modifier。输出上限使用 `MaxOutputTokens`，调用时可用
-`model.WithMaxTokens` 覆盖。停止序列和同步 batch 仅用于 Chat Completions。
+`model.WithMaxTokens` 覆盖。停止序列仅用于 Chat Completions。
 Context 和图片生成 API 仍使用旧模块。
 
 - `ResponseFormat` 使用 `arkruntime/model/responses.TextFormat`。JSON schema 的

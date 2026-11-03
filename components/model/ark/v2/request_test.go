@@ -135,14 +135,6 @@ func TestToolChoiceAndBinding(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected no tools error")
 	}
-	for _, config := range []*ChatModelConfig{
-		{BatchChat: &BatchChatConfig{EnableBatchChat: true}},
-		{BatchChat: &BatchChatConfig{EnableBatchChat: true, BatchChatAsyncRetryTimeout: 1, BatchMaxParallel: ptr(0)}},
-	} {
-		if _, err = NewChatModel(context.Background(), config); err == nil {
-			t.Fatal("expected batch config error")
-		}
-	}
 }
 
 func TestStreamCompatibilityDecoder(t *testing.T) {
