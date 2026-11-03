@@ -91,38 +91,11 @@ func NewChatModel(_ context.Context, config *ChatModelConfig) (*ChatModel, error
 	if config == nil {
 		config = &ChatModelConfig{}
 	}
-	opts := []arkruntime.ConfigOption{}
-	if config.BaseURL != "" {
-		opts = append(opts, arkruntime.WithBaseUrl(config.BaseURL))
-	}
-	if config.Region != "" {
-		opts = append(opts, arkruntime.WithRegion(config.Region))
-	}
-	if config.Timeout != nil {
-		opts = append(opts, arkruntime.WithTimeout(*config.Timeout))
-	}
-	if config.RetryTimes != nil {
-		opts = append(opts, arkruntime.WithRetryTimes(*config.RetryTimes))
-	}
-	if config.HTTPClient != nil {
-		opts = append(opts, arkruntime.WithHTTPClient(config.HTTPClient))
-	}
-	// Copy the SDK-configured HTTP client so capturing response bodies does not
-	// mutate a caller-owned client or change its transport/timeout policies.
-	connection := arkruntime.NewClientConfig(config.APIKey, config.AccessKey, config.SecretKey, opts...)
-	httpClient := *connection.HTTPClient
-	transport := httpClient.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	httpClient.Transport = &responseCaptureTransport{next: transport}
-	opts = append(opts, arkruntime.WithHTTPClient(&httpClient))
-	var client *arkruntime.Client
-	if config.APIKey != "" {
-		client = arkruntime.NewClientWithApiKey(config.APIKey, opts...)
-	} else {
-		client = arkruntime.NewClientWithAkSk(config.AccessKey, config.SecretKey, opts...)
-	}
+	client := newArkClient(clientConfig{
+		timeout: config.Timeout, httpClient: config.HTTPClient, retryTimes: config.RetryTimes,
+		baseURL: config.BaseURL, region: config.Region,
+		apiKey: config.APIKey, accessKey: config.AccessKey, secretKey: config.SecretKey,
+	})
 	return &ChatModel{client: client, config: *config}, nil
 }
 

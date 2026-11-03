@@ -75,22 +75,19 @@ type ResponsesAPIChatModel struct {
 	toolChoice *schema.ToolChoice
 }
 
-func NewResponsesAPIChatModel(ctx context.Context, config *ResponsesAPIConfig) (*ResponsesAPIChatModel, error) {
+func NewResponsesAPIChatModel(_ context.Context, config *ResponsesAPIConfig) (*ResponsesAPIChatModel, error) {
 	if config == nil {
 		return nil, fmt.Errorf("config must not be nil")
 	}
 	if config.APIKey == "" && (config.AccessKey == "" || config.SecretKey == "") {
 		return nil, fmt.Errorf("set APIKey or both AccessKey and SecretKey")
 	}
-	// Reuse the v2 connection setup, including SDK defaults and the isolated
-	// response-capture transport, without altering a caller-owned HTTP client.
-	base, err := NewChatModel(ctx, &ChatModelConfig{Timeout: config.Timeout, HTTPClient: config.HTTPClient,
-		RetryTimes: config.RetryTimes, BaseURL: config.BaseURL, Region: config.Region,
-		APIKey: config.APIKey, AccessKey: config.AccessKey, SecretKey: config.SecretKey})
-	if err != nil {
-		return nil, err
-	}
-	return &ResponsesAPIChatModel{client: base.client, config: *config}, nil
+	client := newArkClient(clientConfig{
+		timeout: config.Timeout, httpClient: config.HTTPClient, retryTimes: config.RetryTimes,
+		baseURL: config.BaseURL, region: config.Region,
+		apiKey: config.APIKey, accessKey: config.AccessKey, secretKey: config.SecretKey,
+	})
+	return &ResponsesAPIChatModel{client: client, config: *config}, nil
 }
 
 func (cm *ResponsesAPIChatModel) GetType() string          { return "ResponsesAPI" }
