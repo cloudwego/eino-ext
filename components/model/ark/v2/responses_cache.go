@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
@@ -31,13 +30,6 @@ const (
 	keyResponsesUsage  = "ark-responses-usage-details"
 	keyResponsesOutput = "ark-responses-output"
 )
-
-type cacheExpiration int64
-
-func init() {
-	schema.RegisterName[cacheExpiration]("_eino_ext_ark_v2_cache_expiration")
-	compose.RegisterStreamChunkConcatFunc(lastValue[cacheExpiration])
-}
 
 // SessionCacheConfig enables storing Responses and reusing their server context.
 // TTL is in seconds. Zero leaves expiration to the service's default.

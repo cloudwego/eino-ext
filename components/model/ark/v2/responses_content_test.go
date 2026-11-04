@@ -150,7 +150,7 @@ func TestResponsesPayloadValidation(t *testing.T) {
 
 func TestResponsesMetadataAndCacheValidation(t *testing.T) {
 	now := time.Now().Unix()
-	msg := &schema.Message{Extra: map[string]any{keyResponseID: metadataString("cached"), keyCacheExpiration: cacheExpiration(now + 100)}}
+	msg := &schema.Message{Extra: map[string]any{keyResponseID: metadataString("cached"), keyCacheExpiration: metadataInt64(now + 100)}}
 	req := &responses.ResponsesRequest{}
 	remaining, err := populateResponsesCache([]*schema.Message{schema.UserMessage("old"), msg, schema.UserMessage("new")}, req, &CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}, HeadPreviousResponseID: ptr("prefix")})
 	check(t, err)

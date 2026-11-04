@@ -18,7 +18,6 @@ package ark
 
 import (
 	"fmt"
-	"reflect"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/compose"
@@ -37,27 +36,19 @@ const (
 	videoURLFPS          = "ark-model-video-url-fps"
 )
 
-// Distinct registration names let both major versions coexist in one process.
+// Named atomic values preserve last-value stream concatenation. JSON decoding
+// restores their built-in scalar types; gob preserves these registered types.
 type metadataString string
-
-// Named atomic values preserve last-value stream concatenation. Their Go types
-// need not survive JSON decoding; readers also accept ordinary scalar values.
 type metadataInt64 int64
 type metadataBool bool
-
-// jsonMetadata is a JSON string for variable-shaped SDK output/tool details.
-// Keeping the payload opaque preserves private SDK union fields with gob too.
-type jsonMetadata string
 
 func init() {
 	schema.RegisterName[metadataString]("_eino_ext_ark_v2_metadata")
 	schema.RegisterName[metadataInt64]("_eino_ext_ark_v2_metadata_int64")
 	schema.RegisterName[metadataBool]("_eino_ext_ark_v2_metadata_bool")
-	schema.RegisterName[jsonMetadata]("_eino_ext_ark_v2_json_metadata")
 	compose.RegisterStreamChunkConcatFunc(lastValue[metadataString])
 	compose.RegisterStreamChunkConcatFunc(lastValue[metadataInt64])
 	compose.RegisterStreamChunkConcatFunc(lastValue[metadataBool])
-	compose.RegisterStreamChunkConcatFunc(lastValue[jsonMetadata])
 }
 
 func setJSONExtra(msg *schema.Message, key string, value any) error {
@@ -65,7 +56,8 @@ func setJSONExtra(msg *schema.Message, key string, value any) error {
 	if err != nil {
 		return fmt.Errorf("encode %s metadata: %w", key, err)
 	}
-	msg.Extra[key] = jsonMetadata(string(raw))
+	// Keeping SDK JSON in a string preserves private union fields with gob too.
+	msg.Extra[key] = metadataString(raw)
 	return nil
 }
 
@@ -92,10 +84,11 @@ func extraString(msg *schema.Message, key string) (string, bool) {
 	if msg == nil {
 		return "", false
 	}
-	// JSON decoding restores named scalar values as ordinary strings.
-	value := reflect.ValueOf(msg.Extra[key])
-	if value.IsValid() && value.Kind() == reflect.String {
-		return value.String(), true
+	switch value := msg.Extra[key].(type) {
+	case metadataString:
+		return string(value), true
+	case string:
+		return value, true
 	}
 	return "", false
 }

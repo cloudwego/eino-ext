@@ -19,7 +19,6 @@ package ark
 import (
 	"encoding/json"
 	"math"
-	"reflect"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
@@ -30,32 +29,30 @@ func extraInt64(msg *schema.Message, key string) (int64, bool) {
 	if msg == nil {
 		return 0, false
 	}
-	if number, ok := msg.Extra[key].(json.Number); ok {
-		value, err := number.Int64()
-		return value, err == nil
-	}
-	value := reflect.ValueOf(msg.Extra[key])
-	if value.IsValid() {
-		switch value.Kind() {
-		case reflect.Int, reflect.Int32, reflect.Int64:
-			return value.Int(), true
-		case reflect.Float64:
-			// Ordinary JSON decoding restores numbers as float64.
-			f := value.Float()
-			if math.Trunc(f) == f && f >= math.MinInt64 && f < math.MaxInt64 {
-				return int64(f), true
-			}
+	switch value := msg.Extra[key].(type) {
+	case metadataInt64:
+		return int64(value), true
+	case json.Number:
+		n, err := value.Int64()
+		return n, err == nil
+	case float64:
+		// Ordinary JSON decoding restores numbers as float64.
+		if math.Trunc(value) == value && value >= math.MinInt64 && value < math.MaxInt64 {
+			return int64(value), true
 		}
 	}
 	return 0, false
 }
 
 func extraBool(msg *schema.Message, key string) (bool, bool) {
-	if msg != nil {
-		value := reflect.ValueOf(msg.Extra[key])
-		if value.IsValid() && value.Kind() == reflect.Bool {
-			return value.Bool(), true
-		}
+	if msg == nil {
+		return false, false
+	}
+	switch value := msg.Extra[key].(type) {
+	case metadataBool:
+		return bool(value), true
+	case bool:
+		return value, true
 	}
 	return false, false
 }

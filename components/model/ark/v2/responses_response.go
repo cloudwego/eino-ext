@@ -48,7 +48,7 @@ func responsesMetadata(resp *responses.Response, req *responses.ResponsesRequest
 	}
 	if req.Store.Or(false) {
 		if expires := resp.ExpireAt.Or(req.ExpireAt.Or(0)); expires > 0 {
-			msg.Extra[keyCacheExpiration] = cacheExpiration(expires)
+			msg.Extra[keyCacheExpiration] = metadataInt64(expires)
 		}
 	}
 	if usage, ok := resp.Usage.Get(); ok {
