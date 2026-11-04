@@ -51,7 +51,9 @@ type arkOptions struct {
 	enableReasoningContentPassback bool
 	customHeaders                  map[string]string
 	thinking                       *chat.Thinking
+	responsesThinking              *responses.Thinking
 	reasoningEffort                *chat.ReasoningEffort
+	responsesReasoningEffort       *responses.ReasoningEffort
 	maxCompletionTokens            *int
 	parallelToolCalls              *bool
 	requestPayloadModifier         RequestPayloadModifier
@@ -85,9 +87,13 @@ func (cm *ChatModel) getOptions(opts ...model.Option) (*model.Options, *arkOptio
 func WithCustomHeader(headers map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.customHeaders = headers })
 }
+
+// WithThinking configures thinking for Chat Completions.
 func WithThinking(thinking *chat.Thinking) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.thinking = thinking })
 }
+
+// WithReasoningEffort configures reasoning effort for Chat Completions.
 func WithReasoningEffort(effort chat.ReasoningEffort) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.reasoningEffort = &effort })
 }
@@ -133,4 +139,14 @@ func WithMaxToolCalls(n int64) model.Option {
 
 func WithEnableReasoningContentPassback(enabled bool) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.enableReasoningContentPassback = enabled })
+}
+
+// WithResponsesThinking configures thinking for the Responses API.
+func WithResponsesThinking(thinking *responses.Thinking) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responsesThinking = thinking })
+}
+
+// WithResponsesReasoningEffort configures reasoning effort for the Responses API.
+func WithResponsesReasoningEffort(effort responses.ReasoningEffort) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responsesReasoningEffort = &effort })
 }

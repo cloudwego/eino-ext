@@ -30,14 +30,13 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
 var _ model.ToolCallingChatModel = (*ResponsesAPIChatModel)(nil)
 
 // ResponsesAPIConfig configures an Ark Responses API model. Shared call options
-// (WithThinking, WithReasoningEffort, WithCustomHeader and modifiers) also apply.
+// (WithCustomHeader, WithParallelToolCalls and modifiers) also apply.
 // SDK-specific formats and built-in tools use ark-runtime-go Responses types.
 type ResponsesAPIConfig struct {
 	Timeout                        *time.Duration               `json:"timeout,omitempty"`
@@ -54,9 +53,9 @@ type ResponsesAPIConfig struct {
 	TopP                           *float32                     `json:"top_p,omitempty"`
 	CustomHeader                   map[string]string            `json:"custom_header,omitempty"`
 	ResponseFormat                 *responses.TextFormat        `json:"response_format,omitempty"`
-	Thinking                       *chat.Thinking               `json:"thinking,omitempty"`
+	Thinking                       *responses.Thinking          `json:"thinking,omitempty"`
 	ServiceTier                    *string                      `json:"service_tier,omitempty"`
-	ReasoningEffort                *chat.ReasoningEffort        `json:"reasoning_effort,omitempty"`
+	ReasoningEffort                *responses.ReasoningEffort   `json:"reasoning_effort,omitempty"`
 	ParallelToolCalls              *bool                        `json:"parallel_tool_calls,omitempty"`
 	ToolStrict                     *bool                        `json:"tool_strict,omitempty"`
 	SessionCache                   *SessionCacheConfig          `json:"session_cache,omitempty"`
@@ -97,7 +96,7 @@ func (cm *ResponsesAPIChatModel) WithTools(tools []*schema.ToolInfo) (model.Tool
 	if len(tools) == 0 {
 		return nil, fmt.Errorf("no tools to bind")
 	}
-	if _, err := toTools(tools, cm.config.ToolStrict); err != nil {
+	if _, _, err := toResponsesTools(tools, cm.config.ToolStrict); err != nil {
 		return nil, err
 	}
 	next := *cm
@@ -129,7 +128,7 @@ func (cm *ResponsesAPIChatModel) start(ctx context.Context, in []*schema.Message
 		tools = common.Tools
 	}
 	return callbacks.OnStart(ctx, &model.CallbackInput{Messages: in, Tools: tools, ToolChoice: common.ToolChoice,
-		Config: responsesCallbackConfig(req), Extra: map[string]any{"thinking": opts.thinking, "ark-previous-response-id": req.PreviousResponseID.Or("")}})
+		Config: responsesCallbackConfig(req), Extra: map[string]any{"thinking": opts.responsesThinking, "ark-previous-response-id": req.PreviousResponseID.Or("")}})
 }
 
 func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Message, options ...model.Option) (out *schema.Message, err error) {
@@ -176,7 +175,7 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 		}
 	}
 	callbacks.OnEnd(ctx, &model.CallbackOutput{Message: out, Config: responsesCallbackConfig(req), TokenUsage: toModelCallbackUsage(out.ResponseMeta),
-		Extra: map[string]any{"thinking": opts.thinking, "model_name": resp.Model}})
+		Extra: map[string]any{"thinking": opts.responsesThinking, "model_name": resp.Model}})
 	return out, nil
 }
 
@@ -216,7 +215,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 		}()
 		send := func(msg *schema.Message) bool {
 			return sw.Send(&model.CallbackOutput{Message: msg, Config: responsesCallbackConfig(req), TokenUsage: toModelCallbackUsage(msg.ResponseMeta),
-				Extra: map[string]any{"thinking": opts.thinking}}, nil)
+				Extra: map[string]any{"thinking": opts.responsesThinking}}, nil)
 		}
 		for {
 			event, e := stream.Recv()

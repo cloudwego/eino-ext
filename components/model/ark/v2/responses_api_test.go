@@ -34,7 +34,6 @@ import (
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
@@ -99,7 +98,7 @@ func TestResponsesGenerate(t *testing.T) {
 	var callbackContent string
 	var modifierCalls int
 	config := &ResponsesAPIConfig{Model: "requested-model", MaxOutputTokens: ptr(1024), Temperature: ptr(float32(0.7)), TopP: ptr(float32(0.9)),
-		Thinking: &chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingModeDisabled)}, ReasoningEffort: ptr(chat.ReasoningEffortLow),
+		Thinking: &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeDisabled)}, ReasoningEffort: ptr(responses.ReasoningEffortLow),
 		ParallelToolCalls: ptr(true), ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600},
 		EnableToolWebSearch: &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}, MaxToolCalls: ptr(int64(3)),
 		CustomHeader:   map[string]string{"X-Test": "configured"},

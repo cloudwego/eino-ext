@@ -26,15 +26,14 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
 func (cm *ResponsesAPIChatModel) getOptions(opts ...model.Option) (*model.Options, *arkOptions) {
 	return model.GetCommonOptions(&model.Options{Model: &cm.config.Model, MaxTokens: cm.config.MaxOutputTokens,
 			Temperature: cm.config.Temperature, TopP: cm.config.TopP, ToolChoice: cm.toolChoice}, opts...),
-		model.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader, thinking: cm.config.Thinking,
-			reasoningEffort: cm.config.ReasoningEffort, parallelToolCalls: cm.config.ParallelToolCalls,
+		model.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader, responsesThinking: cm.config.Thinking,
+			responsesReasoningEffort: cm.config.ReasoningEffort, parallelToolCalls: cm.config.ParallelToolCalls,
 			cache: &CacheOption{SessionCache: cm.config.SessionCache}, enableWebSearch: cm.config.EnableToolWebSearch,
 			maxToolCalls: cm.config.MaxToolCalls, enableReasoningContentPassback: cm.config.EnableReasoningContentPassback,
 			requestPayloadModifier: cm.config.RequestPayloadModifier, responseMessageModifier: cm.config.ResponseMessageModifier,
@@ -53,16 +52,16 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 		req.MaxOutputTokens = responses.NewOptInt64(int64(*common.MaxTokens))
 	}
 	if common.Temperature != nil {
-		req.Temperature = responses.NewOptFloat64(optFloat(common.Temperature).Value)
+		req.Temperature = responses.NewOptFloat64(float64FromFloat32(*common.Temperature))
 	}
 	if common.TopP != nil {
-		req.TopP = responses.NewOptFloat64(optFloat(common.TopP).Value)
+		req.TopP = responses.NewOptFloat64(float64FromFloat32(*common.TopP))
 	}
-	if opts.thinking != nil {
-		req.Thinking = responses.NewOptThinking(responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingMode(opts.thinking.Type.Or("")))})
+	if opts.responsesThinking != nil {
+		req.Thinking = responses.NewOptThinking(*opts.responsesThinking)
 	}
-	if opts.reasoningEffort != nil {
-		req.Reasoning = responses.NewOptReasoning(responses.Reasoning{Effort: responses.NewOptReasoningEffort(responses.ReasoningEffort(*opts.reasoningEffort))})
+	if opts.responsesReasoningEffort != nil {
+		req.Reasoning = responses.NewOptReasoning(responses.Reasoning{Effort: responses.NewOptReasoningEffort(*opts.responsesReasoningEffort)})
 	}
 	if opts.parallelToolCalls != nil {
 		req.ParallelToolCalls = responses.NewOptBool(*opts.parallelToolCalls)
@@ -87,74 +86,37 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	if common.Tools != nil {
 		tools = common.Tools
 	}
-	// Share strictness validation and allowed-name filtering with Chat Completions.
-	chatTools, err := toTools(tools, cm.config.ToolStrict)
+	tools, err = selectToolInfos(tools, common.ToolChoice, common.AllowedToolNames)
 	if err != nil {
 		return nil, nil, err
 	}
-	chatReq := &chat.ChatCompletionRequest{Tools: chatTools}
-	if err = populateToolChoice(chatReq, common.ToolChoice, common.AllowedToolNames); err != nil {
+	var rawTools []json.RawMessage
+	req.Tools, rawTools, err = toResponsesTools(tools, cm.config.ToolStrict)
+	if err != nil {
 		return nil, nil, err
 	}
-	rawTools := make([]json.RawMessage, 0, len(chatReq.Tools)+1)
-	hasStrict := false
-	for _, tool := range chatReq.Tools {
-		raw, e := sonic.Marshal(&tool.Function)
-		if e != nil {
-			return nil, nil, fmt.Errorf("serialize Responses function: %w", e)
-		}
-		var fields map[string]json.RawMessage
-		if e = sonic.Unmarshal(raw, &fields); e != nil {
-			return nil, nil, fmt.Errorf("serialize Responses function fields: %w", e)
-		}
-		fields["type"] = json.RawMessage(`"function"`)
-		if _, ok := fields["strict"]; ok {
-			hasStrict = true
-		}
-		raw, e = sonic.Marshal(fields)
-		if e != nil {
-			return nil, nil, fmt.Errorf("serialize Responses flatten function: %w", e)
-		}
-		var converted responses.Tool
-		if e = sonic.Unmarshal(raw, &converted); e != nil {
-			return nil, nil, fmt.Errorf("convert Responses tool: %w", e)
-		}
-		req.Tools = append(req.Tools, converted)
-		rawTools = append(rawTools, raw)
+	if err = populateResponsesToolChoice(req, common.ToolChoice); err != nil {
+		return nil, nil, err
 	}
 	if opts.enableWebSearch != nil {
 		tool := *opts.enableWebSearch
 		tool.Type = responses.WebSearchToolTypeWebSearch
 		req.Tools = append(req.Tools, responses.Tool{OneOf: responses.NewWebSearchToolToolSum(tool)})
-		raw, e := sonic.Marshal(&tool)
-		if e != nil {
-			return nil, nil, fmt.Errorf("serialize Responses web search: %w", e)
+		if rawTools != nil {
+			raw, e := sonic.Marshal(&tool)
+			if e != nil {
+				return nil, nil, fmt.Errorf("serialize Responses web search: %w", e)
+			}
+			rawTools = append(rawTools, raw)
 		}
-		rawTools = append(rawTools, raw)
 	}
 	if opts.maxToolCalls != nil {
 		req.MaxToolCalls = responses.NewOptInt64(*opts.maxToolCalls)
 	}
-	if choice, ok := chatReq.ToolChoice.Get(); ok {
-		var raw []byte
-		if choice.Type == chat.ToolChoiceModeChatCompletionToolChoice {
-			raw, err = sonic.Marshal(choice.ToolChoiceMode)
-		} else {
-			raw, err = sonic.Marshal(map[string]string{"type": "function", "name": choice.ChatCompletionNamedToolChoice.Function.Name})
-		}
-		if err != nil {
-			return nil, nil, err
-		}
-		var tc responses.ToolChoice
-		if err = sonic.Unmarshal(raw, &tc); err != nil {
-			return nil, nil, err
-		}
-		req.ToolChoice = responses.NewOptToolChoice(tc)
-	}
 	var extra map[string]interface{}
 	// The pinned SDK omits function strictness. Its public extra-body hook
 	// preserves that field without changing SDK authentication, retries or SSE.
-	if hasStrict {
+	if rawTools != nil {
 		raw, e := sonic.Marshal(rawTools)
 		if e != nil {
 			return nil, nil, fmt.Errorf("serialize Responses strict list: %w", e)

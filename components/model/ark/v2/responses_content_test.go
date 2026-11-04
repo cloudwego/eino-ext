@@ -123,7 +123,18 @@ func TestResponsesInputValidation(t *testing.T) {
 		{{Role: "unknown"}},
 		{{Role: schema.Tool, Content: "result"}},
 		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeImageURL}}}},
+		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL}}}},
+		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeVideoURL}}}},
+		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeFileURL}}}},
 		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: ptr("YQ==")}}}}}},
+		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{Base64Data: ptr("YQ=="), MIMEType: "application/pdf"}}}}}},
+		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL, Audio: &schema.MessageInputAudio{MessagePartCommon: schema.MessagePartCommon{Base64Data: ptr("data:audio/wav;base64,YQ=="), MIMEType: "audio/wav", FileID: ptr("fallback")}}}}}},
+		{{Role: schema.Assistant, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText}}}},
+		{{Role: schema.User, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText}}}},
+		{{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeAudioURL}}}},
+		{{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeImageURL}}}},
+		{{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeVideoURL}}}},
+		{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText}}, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText}}}},
 	} {
 		if _, err := cm.Generate(context.Background(), messages); err == nil {
 			t.Errorf("expected validation error: %+v", messages)

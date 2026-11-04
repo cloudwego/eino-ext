@@ -25,88 +25,30 @@ import (
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
 
-type mediaKind string
-
-const (
-	mediaKindImage mediaKind = "image"
-	mediaKindAudio mediaKind = "audio"
-	mediaKindVideo mediaKind = "video"
-	mediaKindFile  mediaKind = "file"
-)
-
 func toArkContent(msg *schema.Message) (chat.ChatCompletionMessageContent, error) {
-	empty := chat.ChatCompletionMessageContent{}
-	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
-		return empty, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+	inputs, err := messageInputParts(msg)
+	if err != nil {
+		return chat.ChatCompletionMessageContent{}, err
 	}
-	var parts []chat.ChatCompletionContentPart
-	if len(msg.UserInputMultiContent) > 0 {
-		if msg.Role != schema.User && msg.Role != schema.Tool {
-			return empty, fmt.Errorf("user input multi content only supports user and tool roles, got %s", msg.Role)
-		}
-		for _, part := range msg.UserInputMultiContent {
-			converted, err := toInputPart(part)
-			if err != nil {
-				return empty, err
-			}
-			parts = append(parts, converted)
-		}
-	} else if len(msg.AssistantGenMultiContent) > 0 {
-		if msg.Role != schema.Assistant {
-			return empty, fmt.Errorf("assistant gen multi content only supports assistant role, got %s", msg.Role)
-		}
-		for _, part := range msg.AssistantGenMultiContent {
-			input := schema.MessageInputPart{Type: part.Type, Text: part.Text}
-			switch part.Type {
-			case schema.ChatMessagePartTypeText:
-			case schema.ChatMessagePartTypeImageURL:
-				if part.Image == nil {
-					return empty, fmt.Errorf("assistant image must not be nil")
-				}
-				input.Image = &schema.MessageInputImage{MessagePartCommon: part.Image.MessagePartCommon}
-			case schema.ChatMessagePartTypeVideoURL:
-				if part.Video == nil {
-					return empty, fmt.Errorf("assistant video must not be nil")
-				}
-				input.Video = &schema.MessageInputVideo{MessagePartCommon: part.Video.MessagePartCommon}
-			default:
-				return empty, fmt.Errorf("unsupported assistant part type %s", part.Type)
-			}
-			converted, err := toInputPart(input)
-			if err != nil {
-				return empty, err
-			}
-			parts = append(parts, converted)
-		}
-	} else if len(msg.MultiContent) > 0 {
-		// Preserve the deprecated text/image/video representation for existing callers.
-		for _, part := range msg.MultiContent {
-			input := schema.MessageInputPart{Type: part.Type, Text: part.Text}
-			switch part.Type {
-			case schema.ChatMessagePartTypeText:
-			case schema.ChatMessagePartTypeImageURL:
-				if part.ImageURL == nil {
-					return empty, fmt.Errorf("ImageURL must not be nil")
-				}
-				input.Image = &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &part.ImageURL.URL}, Detail: part.ImageURL.Detail}
-			case schema.ChatMessagePartTypeVideoURL:
-				if part.VideoURL == nil {
-					return empty, fmt.Errorf("VideoURL must not be nil")
-				}
-				input.Video = &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: &part.VideoURL.URL, Extra: part.VideoURL.Extra}}
-			default:
-				return empty, fmt.Errorf("unsupported legacy part type %s", part.Type)
-			}
-			converted, err := toInputPart(input)
-			if err != nil {
-				return empty, err
-			}
-			parts = append(parts, converted)
-		}
-	} else {
+	if inputs == nil {
 		return chat.NewStringChatCompletionMessageContent(msg.Content), nil
 	}
+	parts := make([]chat.ChatCompletionContentPart, 0, len(inputs))
+	for _, input := range inputs {
+		part, err := toInputPart(input)
+		if err != nil {
+			return chat.ChatCompletionMessageContent{}, err
+		}
+		parts = append(parts, part)
+	}
 	return chat.NewChatCompletionContentPartArrayChatCompletionMessageContent(parts), nil
+}
+
+func chatString(value string) chat.OptString {
+	if value == "" {
+		return chat.OptString{}
+	}
+	return chat.NewOptString(value)
 }
 
 func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, error) {
@@ -118,11 +60,14 @@ func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, 
 		if part.Image == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("image must not be nil")
 		}
-		url, fileID, _, err := mediaSource(part.Image.MessagePartCommon, mediaKindImage)
+		url, fileID, base64, err := mediaSource(part.Image.MessagePartCommon, mediaKindImage)
 		if err != nil {
 			return chat.ChatCompletionContentPart{}, err
 		}
-		image := chat.ChatCompletionContentPartImageImageUrl{URL: url, FileID: fileID}
+		if base64 {
+			url = mediaDataURL(part.Image.MIMEType, url)
+		}
+		image := chat.ChatCompletionContentPartImageImageUrl{URL: chatString(url), FileID: chatString(fileID)}
 		if part.Image.Detail != "" {
 			image.Detail = chat.NewOptImageDetail(chat.ImageDetail(part.Image.Detail))
 		}
@@ -133,11 +78,14 @@ func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, 
 		if part.Video == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("video must not be nil")
 		}
-		url, fileID, _, err := mediaSource(part.Video.MessagePartCommon, mediaKindVideo)
+		url, fileID, base64, err := mediaSource(part.Video.MessagePartCommon, mediaKindVideo)
 		if err != nil {
 			return chat.ChatCompletionContentPart{}, err
 		}
-		video := chat.ChatCompletionContentPartVideoVideoUrl{URL: url, FileID: fileID}
+		if base64 {
+			url = mediaDataURL(part.Video.MIMEType, url)
+		}
+		video := chat.ChatCompletionContentPartVideoVideoUrl{URL: chatString(url), FileID: chatString(fileID)}
 		if fps := GetInputVideoFPS(part.Video); fps != nil {
 			video.Fps = chat.NewOptFloat64(*fps)
 		}
@@ -150,11 +98,11 @@ func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, 
 		if err != nil {
 			return chat.ChatCompletionContentPart{}, err
 		}
-		audio := chat.ChatCompletionContentPartAudioInputAudio{FileID: fileID}
+		audio := chat.ChatCompletionContentPartAudioInputAudio{FileID: chatString(fileID)}
 		if base64 {
-			audio.Data = raw
+			audio.Data = chatString(raw)
 		} else {
-			audio.URL = raw
+			audio.URL = chatString(raw)
 		}
 		if part.Audio.MIMEType != "" {
 			format := audioFormatFromMIME(part.Audio.MIMEType)
@@ -169,14 +117,14 @@ func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, 
 		if err != nil {
 			return chat.ChatCompletionContentPart{}, err
 		}
-		file := chat.ChatCompletionContentPartFileFile{FileID: fileID}
+		file := chat.ChatCompletionContentPartFileFile{FileID: chatString(fileID)}
 		if base64 {
 			if part.File.Name == "" {
 				return chat.ChatCompletionContentPart{}, fmt.Errorf("file Name is required with Base64Data")
 			}
-			file.FileData = raw
+			file.FileData = chat.NewOptString(mediaDataURL(part.File.MIMEType, raw))
 		} else {
-			file.FileURL = raw
+			file.FileURL = chatString(raw)
 		}
 		if part.File.Name != "" {
 			file.Filename = chat.NewOptString(part.File.Name)
@@ -186,31 +134,6 @@ func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, 
 		return chat.ChatCompletionContentPart{}, fmt.Errorf("unsupported input part type %s", part.Type)
 	}
 	return chat.ChatCompletionContentPart{OneOf: sum}, nil
-}
-
-// Select the first non-empty source: URL, then Base64Data, then FileID.
-// Only the selected source is serialized; validation failures do not fall through.
-func mediaSource(c schema.MessagePartCommon, kind mediaKind) (value, fileID chat.OptString, base64 bool, err error) {
-	if c.URL != nil && *c.URL != "" {
-		return chat.NewOptString(*c.URL), fileID, false, nil
-	}
-	if c.Base64Data != nil && *c.Base64Data != "" {
-		raw := *c.Base64Data
-		if strings.HasPrefix(raw, "data:") {
-			return value, fileID, true, fmt.Errorf("%s Base64Data must be raw base64, without a data URL prefix", kind)
-		}
-		if c.MIMEType == "" {
-			return value, fileID, true, fmt.Errorf("%s part must have MIMEType when using Base64Data", kind)
-		}
-		if kind == mediaKindImage || kind == mediaKindVideo || kind == mediaKindFile {
-			raw = fmt.Sprintf("data:%s;base64,%s", c.MIMEType, raw)
-		}
-		return chat.NewOptString(raw), fileID, true, nil
-	}
-	if c.FileID != nil && *c.FileID != "" {
-		return value, chat.NewOptString(*c.FileID), false, nil
-	}
-	return value, fileID, false, fmt.Errorf("%s part must contain URL, Base64Data or FileID", kind)
 }
 
 func audioFormatFromMIME(value string) string {

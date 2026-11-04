@@ -21,72 +21,107 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
-// Reuse the Chat adapter's content validation and source precedence, then map
-// the selected sources to the Responses API's flat content items.
 func toResponsesContent(msg *schema.Message) (responses.MessageContent, error) {
-	content, err := toArkContent(msg)
+	parts, err := messageInputParts(msg)
 	if err != nil {
 		return responses.MessageContent{}, err
 	}
-	if text, ok := content.GetString(); ok {
-		return responses.NewStringMessageContent(text), nil
+	if parts == nil {
+		return responses.NewStringMessageContent(msg.Content), nil
 	}
-	parts, _ := content.GetChatCompletionContentPartArray()
 	items := make([]responses.ContentItem, 0, len(parts))
-	for index, part := range parts {
-		var sum responses.ContentItemSum
-		switch part.OneOf.Type {
-		case chat.ChatCompletionContentPartTextChatCompletionContentPartSum:
-			sum.SetContentItemText(responses.ContentItemText{Type: responses.ContentItemTextTypeInputText, Text: part.OneOf.ChatCompletionContentPartText.Text})
-		case chat.ChatCompletionContentPartImageChatCompletionContentPartSum:
-			image := part.OneOf.ChatCompletionContentPartImage.ImageURL.ChatCompletionContentPartImageImageUrl
-			item := responses.ContentItemImage{Type: responses.ContentItemImageTypeInputImage, ImageURL: responseString(image.URL), FileID: responseString(image.FileID)}
-			if image.Detail.IsSet() {
-				item.Detail = responses.NewOptImageDetail(responses.ImageDetail(image.Detail.Value))
-			}
-			sum.SetContentItemImage(item)
-		case chat.ChatCompletionContentPartVideoChatCompletionContentPartSum:
-			video := part.OneOf.ChatCompletionContentPartVideo.VideoURL
-			item := responses.ContentItemVideo{Type: responses.ContentItemVideoTypeInputVideo, VideoURL: video.URL.Or(""), FileID: responseString(video.FileID)}
-			if video.Fps.IsSet() {
-				item.Fps = responses.NewOptFloat64(video.Fps.Value)
-			}
-			sum.SetContentItemVideo(item)
-		case chat.ChatCompletionContentPartAudioChatCompletionContentPartSum:
-			audio := part.OneOf.ChatCompletionContentPartAudio.InputAudio
-			item := responses.ContentItemAudio{Type: responses.ContentItemAudioTypeInputAudio, AudioURL: responseString(audio.URL), FileID: responseString(audio.FileID)}
-			if audio.Data.IsSet() {
-				// Responses accepts audio data URLs rather than Chat's data/format pair.
-				mime := msg.UserInputMultiContent[index].Audio.MIMEType
-				item.AudioURL = responses.NewOptString("data:" + mime + ";base64," + audio.Data.Value)
-			}
-			sum.SetContentItemAudio(item)
-		case chat.ChatCompletionContentPartFileChatCompletionContentPartSum:
-			file := part.OneOf.ChatCompletionContentPartFile.File
-			item := responses.ContentItemFile{Type: responses.ContentItemFileTypeInputFile,
-				FileURL: responseString(file.FileURL), FileData: responseString(file.FileData), FileID: responseString(file.FileID)}
-			// Ark accepts filename only alongside file_data, not file_url or file_id.
-			if file.FileData.IsSet() {
-				item.Filename = responseString(file.Filename)
-			}
-			sum.SetContentItemFile(item)
-		default:
-			return responses.MessageContent{}, fmt.Errorf("unsupported Responses content type %s", part.OneOf.Type)
+	for _, part := range parts {
+		item, err := toResponsesContentItem(part)
+		if err != nil {
+			return responses.MessageContent{}, err
 		}
-		items = append(items, responses.ContentItem{OneOf: sum})
+		items = append(items, item)
 	}
 	return responses.NewContentItemArrayMessageContent(items), nil
 }
 
-func responseString(value chat.OptString) responses.OptString {
-	if value.IsSet() {
-		return responses.NewOptString(value.Value)
+func toResponsesContentItem(part schema.MessageInputPart) (responses.ContentItem, error) {
+	var sum responses.ContentItemSum
+	switch part.Type {
+	case schema.ChatMessagePartTypeText:
+		sum.SetContentItemText(responses.ContentItemText{Type: responses.ContentItemTextTypeInputText, Text: part.Text})
+	case schema.ChatMessagePartTypeImageURL:
+		if part.Image == nil {
+			return responses.ContentItem{}, fmt.Errorf("image must not be nil")
+		}
+		url, fileID, base64, err := mediaSource(part.Image.MessagePartCommon, mediaKindImage)
+		if err != nil {
+			return responses.ContentItem{}, err
+		}
+		if base64 {
+			url = mediaDataURL(part.Image.MIMEType, url)
+		}
+		item := responses.ContentItemImage{Type: responses.ContentItemImageTypeInputImage, ImageURL: responseString(url), FileID: responseString(fileID)}
+		if part.Image.Detail != "" {
+			item.Detail = responses.NewOptImageDetail(responses.ImageDetail(part.Image.Detail))
+		}
+		sum.SetContentItemImage(item)
+	case schema.ChatMessagePartTypeVideoURL:
+		if part.Video == nil {
+			return responses.ContentItem{}, fmt.Errorf("video must not be nil")
+		}
+		url, fileID, base64, err := mediaSource(part.Video.MessagePartCommon, mediaKindVideo)
+		if err != nil {
+			return responses.ContentItem{}, err
+		}
+		if base64 {
+			url = mediaDataURL(part.Video.MIMEType, url)
+		}
+		item := responses.ContentItemVideo{Type: responses.ContentItemVideoTypeInputVideo, VideoURL: url, FileID: responseString(fileID)}
+		if fps := GetInputVideoFPS(part.Video); fps != nil {
+			item.Fps = responses.NewOptFloat64(*fps)
+		}
+		sum.SetContentItemVideo(item)
+	case schema.ChatMessagePartTypeAudioURL:
+		if part.Audio == nil {
+			return responses.ContentItem{}, fmt.Errorf("audio must not be nil")
+		}
+		url, fileID, base64, err := mediaSource(part.Audio.MessagePartCommon, mediaKindAudio)
+		if err != nil {
+			return responses.ContentItem{}, err
+		}
+		if base64 {
+			url = mediaDataURL(part.Audio.MIMEType, url)
+		}
+		sum.SetContentItemAudio(responses.ContentItemAudio{Type: responses.ContentItemAudioTypeInputAudio, AudioURL: responseString(url), FileID: responseString(fileID)})
+	case schema.ChatMessagePartTypeFileURL:
+		if part.File == nil {
+			return responses.ContentItem{}, fmt.Errorf("file must not be nil")
+		}
+		url, fileID, base64, err := mediaSource(part.File.MessagePartCommon, mediaKindFile)
+		if err != nil {
+			return responses.ContentItem{}, err
+		}
+		item := responses.ContentItemFile{Type: responses.ContentItemFileTypeInputFile, FileID: responseString(fileID)}
+		if base64 {
+			if part.File.Name == "" {
+				return responses.ContentItem{}, fmt.Errorf("file Name is required with Base64Data")
+			}
+			item.FileData = responses.NewOptString(mediaDataURL(part.File.MIMEType, url))
+			item.Filename = responses.NewOptString(part.File.Name)
+		} else {
+			item.FileURL = responseString(url)
+		}
+		sum.SetContentItemFile(item)
+	default:
+		return responses.ContentItem{}, fmt.Errorf("unsupported input part type %s", part.Type)
 	}
-	return responses.OptString{}
+	return responses.ContentItem{OneOf: sum}, nil
+}
+
+func responseString(value string) responses.OptString {
+	if value == "" {
+		return responses.OptString{}
+	}
+	return responses.NewOptString(value)
 }
 
 func toResponsesInput(messages []*schema.Message, passback bool) ([]responses.InputItem, error) {

@@ -372,8 +372,12 @@ if err != nil {
 reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("你好")})
 ```
 
-`ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置、思考和推理强度、请求头、
-并行工具调用和请求/响应/流式 modifier。输出上限使用 `MaxOutputTokens`，调用时可用
+`ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置、请求头、并行工具调用和
+请求/响应/流式 modifier。其 `Thinking`、`ReasoningEffort` 分别使用
+`responses.Thinking`、`responses.ReasoningEffort`，单次调用通过
+`WithResponsesThinking`、`WithResponsesReasoningEffort` 覆盖。
+Chat Completions 使用自己的 SDK 类型及 `WithThinking` / `WithReasoningEffort`。
+输出上限使用 `MaxOutputTokens`，调用时可用
 `model.WithMaxTokens` 覆盖。停止序列仅用于 Chat Completions。
 Context 和图片生成 API 仍使用旧模块。
 

@@ -32,7 +32,6 @@ import (
 
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
@@ -47,7 +46,7 @@ func TestResponsesLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 	config := &ResponsesAPIConfig{APIKey: os.Getenv("ARK_API_KEY"), Model: os.Getenv("ARK_MODEL"), BaseURL: os.Getenv("ARK_BASE_URL"),
-		Thinking: &chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingModeDisabled)}}
+		Thinking: &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeDisabled)}}
 	cm, err := NewResponsesAPIChatModel(ctx, config)
 	check(t, err)
 	t.Run("generate", func(t *testing.T) {
@@ -178,7 +177,7 @@ func TestResponsesLive(t *testing.T) {
 	})
 	t.Run("reasoning_passback", func(t *testing.T) {
 		next := *config
-		next.Thinking = &chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingModeEnabled)}
+		next.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
 		next.EnableReasoningContentPassback = true
 		reasoning, err := NewResponsesAPIChatModel(ctx, &next)
 		check(t, err)
@@ -190,7 +189,7 @@ func TestResponsesLive(t *testing.T) {
 			t.Fatal("missing reasoning")
 		}
 		history := []*schema.Message{schema.UserMessage("What is 17 times 19? Answer briefly."), assistant, schema.UserMessage("Add one to that answer. Reply with only the number.")}
-		answer, err := reasoning.Generate(ctx, history, WithThinking(config.Thinking))
+		answer, err := reasoning.Generate(ctx, history, WithResponsesThinking(config.Thinking))
 		check(t, err)
 		if !strings.Contains(answer.Content, "324") {
 			t.Fatalf("reasoning followup failed: %q", answer.Content)

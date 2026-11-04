@@ -19,7 +19,6 @@ package ark
 import (
 	"fmt"
 	"math"
-	"strconv"
 
 	"github.com/bytedance/sonic"
 	fmodel "github.com/cloudwego/eino/components/model"
@@ -173,31 +172,26 @@ func toTools(tools []*schema.ToolInfo, strict *bool) ([]chat.ChatCompletionTool,
 		if ti.Desc != "" {
 			function.Description = chat.NewOptString(ti.Desc)
 		}
-		if strict != nil {
-			function.Strict = chat.NewOptBool(*strict)
+
+		value, err := toolStrict(ti, strict)
+		if err != nil {
+			return nil, err
 		}
-		if value, exists := ti.Extra[toolStrictKey]; exists {
-			override, ok := value.(bool)
-			if !ok {
-				return nil, fmt.Errorf("tool %s strict must be a bool, got %T", ti.Name, value)
-			}
-			function.Strict = chat.NewOptBool(override)
+		if value != nil {
+			function.Strict = chat.NewOptBool(*value)
 		}
-		if ti.ParamsOneOf != nil {
-			params, err := ti.ParamsOneOf.ToJSONSchema()
-			if err != nil {
-				return nil, fmt.Errorf("tool %s parameters: %w", ti.Name, err)
-			}
-			data, err := sonic.Marshal(params)
-			if err != nil {
-				return nil, fmt.Errorf("tool %s schema: %w", ti.Name, err)
-			}
+		data, err := toolParametersJSON(ti)
+		if err != nil {
+			return nil, err
+		}
+		if data != nil {
 			var obj chat.FunctionObjectParameters
 			if err = sonic.Unmarshal(data, &obj); err != nil {
 				return nil, fmt.Errorf("tool %s schema object: %w", ti.Name, err)
 			}
 			function.Parameters = chat.NewOptFunctionObjectParameters(obj)
 		}
+
 		result = append(result, chat.ChatCompletionTool{Type: chat.ToolTypeFunction, Function: function})
 	}
 	return result, nil
@@ -257,8 +251,7 @@ func optFloat(v *float32) chat.OptFloat64 {
 	}
 	// Keep the decimal value emitted by the legacy float32 JSON encoder when
 	// widening into the new SDK's float64 fields (e.g. 0.7, not 0.699999988...).
-	value, _ := strconv.ParseFloat(strconv.FormatFloat(float64(*v), 'g', -1, 32), 64)
-	return chat.NewOptFloat64(value)
+	return chat.NewOptFloat64(float64FromFloat32(*v))
 }
 func optInt(v *int, name string) (chat.OptInt32, error) {
 	if v == nil {

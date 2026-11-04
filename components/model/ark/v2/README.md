@@ -395,9 +395,13 @@ if err != nil {
 reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Hello")})
 ```
 
-`ResponsesAPIConfig` shares connection settings, thinking/reasoning controls,
-custom headers, parallel function calls, and request/response/chunk modifiers
-with `ChatModelConfig`. Use `MaxOutputTokens` (or `model.WithMaxTokens`) for its
+`ResponsesAPIConfig` shares connection settings, custom headers, parallel function
+calls, and request/response/chunk modifiers with `ChatModelConfig`.
+Its `Thinking` and `ReasoningEffort` fields use `responses.Thinking` and
+`responses.ReasoningEffort`; override them with `WithResponsesThinking` and
+`WithResponsesReasoningEffort`. Chat Completions uses its own SDK types and
+`WithThinking` / `WithReasoningEffort` options.
+Use `MaxOutputTokens` (or `model.WithMaxTokens`) for its
 output limit. `Stop` sequences apply to Chat Completions. Context and
 image-generation APIs remain in the legacy module.
 

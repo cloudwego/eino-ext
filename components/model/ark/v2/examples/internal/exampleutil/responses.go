@@ -25,7 +25,7 @@ import (
 
 	ark "github.com/cloudwego/eino-ext/components/model/ark/v2"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
 // RunResponses shares only environment configuration and a bounded context.
@@ -33,7 +33,7 @@ import (
 func RunResponses(run func(context.Context, *ark.ResponsesAPIConfig) error) error {
 	config := &ark.ResponsesAPIConfig{
 		APIKey: os.Getenv("ARK_API_KEY"), Model: os.Getenv("ARK_MODEL"), BaseURL: os.Getenv("ARK_BASE_URL"),
-		Thinking: &chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingModeDisabled)},
+		Thinking: &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeDisabled)},
 	}
 	if config.APIKey == "" || config.Model == "" {
 		return errors.New("set ARK_API_KEY and ARK_MODEL")

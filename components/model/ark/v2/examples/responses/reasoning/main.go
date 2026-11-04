@@ -27,7 +27,7 @@ import (
 	ark "github.com/cloudwego/eino-ext/components/model/ark/v2"
 	"github.com/cloudwego/eino-ext/components/model/ark/v2/examples/internal/exampleutil"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
 func main() {
@@ -38,7 +38,7 @@ func main() {
 
 func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 
-	config.Thinking = &chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingModeEnabled)}
+	config.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
 	config.EnableReasoningContentPassback = true
 	cm, err := ark.NewResponsesAPIChatModel(ctx, config)
 	if err != nil {
@@ -69,7 +69,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	fmt.Println("\nReasoning characters:", len([]rune(assistant.ReasoningContent)))
 	// Reuse the assistant message so the adapter passes back its reasoning item.
 	reply, err := cm.Generate(ctx, []*schema.Message{question, assistant, schema.UserMessage("Add one to that answer. Reply with only the number.")},
-		ark.WithThinking(&chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingModeDisabled)}))
+		ark.WithResponsesThinking(&responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeDisabled)}))
 	if err != nil {
 		return err
 	}
