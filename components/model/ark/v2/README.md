@@ -148,6 +148,11 @@ Use `model.WithTools` for per-call definitions, and `model.WithToolChoice` to al
 forbid, or require a tool call. Pass tool names to `model.WithToolChoice` to limit
 that call to a subset of the available tools; unknown names return an error.
 Both automatic and forced selection support multiple allowed names.
+Forced selection sends `required`; only one explicitly supplied name sends a
+named function choice. Callbacks receive the same selected tool definitions.
+Request construction treats model configuration and call options as read-only,
+so the same options can be reused across turns or concurrent calls. Keep shared
+tool schemas and option values immutable while calls are in progress.
 `ToolStrict` sets the model-wide default for strict
 function schemas. Use `ark.WithToolStrict(tool, true)` or
 `ark.WithToolStrict(tool, false)` to override that default for an individual
@@ -302,12 +307,16 @@ fmt.Println(reply.Content)
 Response modifiers run before Eino callbacks receive the message, so callbacks
 observe the modified output. `rawBody` contains the original response JSON.
 A Generate modifier must return a non-nil message.
+Output callback configuration reflects the payload after request modification;
+the start callback observes the configuration before modification.
 
 The streaming modifier receives `end == false` for each chunk. Its message can be
 nil when a chunk has no standard message projection; the raw JSON is still
 available. After the `[DONE]` event, it is called once with `end == true` and nil
 message/rawBody, and may return a final message. A premature EOF returns
 `io.ErrUnexpectedEOF` without this final call. Returning nil skips a chunk.
+If no chunk contains completion choice 0, the stream returns `ErrEmptyResponse`
+without successful finalization. A valid choice with empty text is accepted.
 
 A call-specific modifier replaces the corresponding configured modifier. Passing
 nil disables it for that call. Returning an error aborts the request or stream.
@@ -369,6 +378,7 @@ optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
 | [generate](examples/generate/main.go) | Text generation, request ID, and token usage |
 | [stream](examples/stream/main.go) | Thinking/reasoning output, final usage, and `schema.ConcatMessages` |
 | [tools](examples/tools/main.go) | Restrict allowed tools, assemble streamed arguments, execute a local addition, and return the result for a final answer |
+| [tool_options](examples/tool_options/main.go) | Reuse per-call tool options, strict defaults and overrides, forced subsets, and an unnamed forced choice |
 | [multimodal](examples/multimodal/main.go) | Image/audio/video/file input using a URL, local-file base64, or FileID |
 | [tool_result](examples/tool_result/main.go) | Return a document FileID in a multimodal tool result with the matching `ToolCallID` |
 | [structured_output](examples/structured_output/main.go) | Strict JSON schema output and decoding into a Go struct |

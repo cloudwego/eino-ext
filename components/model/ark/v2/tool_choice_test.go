@@ -80,8 +80,8 @@ func TestAllowedToolNamesWire(t *testing.T) {
 					// Restricting a call must not change the tools on the shared model.
 					if binding == "bound" {
 						var names []string
-						for _, tool := range cm.tools {
-							names = append(names, tool.Function.Name)
+						for _, tool := range cm.rawTools {
+							names = append(names, tool.Name)
 						}
 						equal(t, []string{"safe", "inspect", "other"}, names)
 					}

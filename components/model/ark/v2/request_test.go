@@ -117,8 +117,7 @@ func TestToolChoiceAndBinding(t *testing.T) {
 		{schema.ToolChoiceForced, []string{"a", "b"}, `"required"`, false},
 		{schema.ToolChoiceForced, []string{"absent"}, "", true},
 	} {
-		req := &chat.ChatCompletionRequest{Tools: cm.tools}
-		err := populateToolChoice(req, &tc.choice, tc.names)
+		tools, err := cm.buildChatTools(&fmodel.Options{ToolChoice: &tc.choice, AllowedToolNames: tc.names})
 		if tc.fail {
 			if err == nil {
 				t.Fatal("expected tool choice error")
@@ -126,12 +125,11 @@ func TestToolChoiceAndBinding(t *testing.T) {
 			continue
 		}
 		check(t, err)
-		data, err := json.Marshal(&req.ToolChoice)
+		data, err := json.Marshal(&tools.choice)
 		check(t, err)
 		equal(t, tc.want, string(data))
 	}
-	req := &chat.ChatCompletionRequest{}
-	err = populateToolChoice(req, ptr(schema.ToolChoiceForced), nil)
+	_, err = (&ChatModel{}).buildChatTools(&fmodel.Options{ToolChoice: ptr(schema.ToolChoiceForced)})
 	if err == nil {
 		t.Fatal("expected no tools error")
 	}

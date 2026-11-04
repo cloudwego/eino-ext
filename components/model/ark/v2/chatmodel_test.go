@@ -190,7 +190,7 @@ func TestGenerateOptionsAndCallbacks(t *testing.T) {
 		tool := body["tools"].([]any)[0].(map[string]any)["function"].(map[string]any)
 		equal(t, "inspect", tool["name"])
 		equal(t, true, tool["strict"])
-		equal(t, map[string]any{"type": "function", "function": map[string]any{"name": "inspect"}}, body["tool_choice"])
+		equal(t, "required", body["tool_choice"])
 		messages := body["messages"].([]any)
 		assistant := messages[1].(map[string]any)
 		equal(t, "prior thinking", assistant["reasoning_content"])
@@ -203,7 +203,7 @@ func TestGenerateOptionsAndCallbacks(t *testing.T) {
 	})
 	bound, err := cm.WithTools([]*schema.ToolInfo{toolInfo("inspect")})
 	check(t, err)
-	equal(t, 0, len(cm.tools))
+	equal(t, 0, len(cm.rawTools))
 	ctx := callbacks.InitCallbacks(context.Background(), &callbacks.RunInfo{}, handler)
 	msg, err := bound.Generate(ctx, []*schema.Message{
 		{Role: Developer, Content: "instructions"},

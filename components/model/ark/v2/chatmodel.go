@@ -82,7 +82,6 @@ type ChatModelConfig struct {
 type ChatModel struct {
 	client     *arkruntime.Client
 	config     ChatModelConfig
-	tools      []chat.ChatCompletionTool
 	rawTools   []*schema.ToolInfo
 	toolChoice *schema.ToolChoice
 }
@@ -103,12 +102,12 @@ func (cm *ChatModel) WithTools(tools []*schema.ToolInfo) (fmodel.ToolCallingChat
 	if len(tools) == 0 {
 		return nil, errors.New("no tools to bind")
 	}
-	converted, err := toTools(tools, cm.config.ToolStrict)
+	_, err := toTools(tools, cm.config.ToolStrict)
 	if err != nil {
 		return nil, fmt.Errorf("convert tools: %w", err)
 	}
 	next := *cm
-	next.tools, next.rawTools = converted, tools
+	next.rawTools = append([]*schema.ToolInfo(nil), tools...)
 	return &next, nil
 }
 

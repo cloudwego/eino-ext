@@ -51,11 +51,13 @@ func prepareRequestPayload(ctx context.Context, messages []*schema.Message, req 
 		return nil, nil, fmt.Errorf("modified request payload must be a JSON object")
 	}
 	var model string
-	if value, ok := fields["model"]; !ok || sonic.Unmarshal(value, &model) != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-		return nil, nil, fmt.Errorf("modified request payload must contain a string model")
+	if value, ok := fields["model"]; !ok || sonic.Unmarshal(value, &model) != nil || model == "" {
+		return nil, nil, fmt.Errorf("modified request payload must contain a non-empty string model")
 	}
-	if _, ok := fields["messages"]; !ok {
-		return nil, nil, fmt.Errorf("modified request payload must contain messages")
+	var input []json.RawMessage
+	messagesRaw, ok := fields["messages"]
+	if !ok || bytes.Equal(bytes.TrimSpace(messagesRaw), []byte("null")) || sonic.Unmarshal(messagesRaw, &input) != nil {
+		return nil, nil, fmt.Errorf("modified request payload must contain a messages array")
 	}
 	if value, ok := fields["n"]; ok && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 		var n int
@@ -83,9 +85,22 @@ func prepareRequestPayload(ctx context.Context, messages []*schema.Message, req 
 		extra[key] = value
 	}
 	// The SDK's public WithExtraBody option sends every modified JSON field,
-	// including fields unknown to generated models. Keep only transport routing
-	// in the typed request so deleting an optional field does not restore it.
-	return &chat.ChatCompletionRequest{Model: model, Stream: chat.NewOptBool(stream)}, extra, nil
+	// including fields unknown to generated models. Start with an empty typed
+	// request so deleting an optional field does not restore its configured value.
+	wire := &chat.ChatCompletionRequest{Model: model, Stream: chat.NewOptBool(stream)}
+	// Decode only callback configuration. The original JSON remains the wire
+	// source, including unknown fields and exact numbers.
+	for key, target := range map[string]interface{}{
+		"max_tokens": &wire.MaxTokens, "max_completion_tokens": &wire.MaxCompletionTokens,
+		"temperature": &wire.Temperature, "top_p": &wire.TopP, "stop": &wire.Stop, "thinking": &wire.Thinking,
+	} {
+		if value, exists := fields[key]; exists && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			if err := sonic.Unmarshal(value, target); err != nil {
+				return nil, nil, fmt.Errorf("modified %s: %w", key, err)
+			}
+		}
+	}
+	return wire, extra, nil
 }
 
 type responseCaptureKey struct{}

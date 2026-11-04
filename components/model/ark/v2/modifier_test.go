@@ -146,6 +146,10 @@ func TestRequestPayloadModifierValidation(t *testing.T) {
 		{"truncated object", `{"model":"m","messages":[`, nil},
 		{"missing fields", "{}", nil}, {"model type", `{"model":7,"messages":[]}`, nil},
 		{"null model", `{"model":null,"messages":[]}`, nil}, {"missing messages", `{"model":"m"}`, nil},
+		{"empty model", `{"model":"","messages":[]}`, nil},
+		{"null messages", `{"model":"m","messages":null}`, nil},
+		{"object messages", `{"model":"m","messages":{}}`, nil},
+		{"number messages", `{"model":"m","messages":1}`, nil},
 		{"multiple completions", `{"model":"m","messages":[],"n":2}`, nil},
 	}
 	for _, tc := range cases {

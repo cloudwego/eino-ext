@@ -38,25 +38,14 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	options, specOptions := cm.getOptions(opts...)
 
-	req, err := cm.genRequest(in, options, specOptions)
+	request, err := cm.genRequest(in, options, specOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	reqConf := callbackConfig(req)
+	req := request.payload
 	req.Stream = chat.NewOptBool(false)
-	tools := cm.rawTools
-	if options.Tools != nil {
-		tools = options.Tools
-	}
-
-	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages:   in,
-		Tools:      tools, // join tool info from call options
-		ToolChoice: options.ToolChoice,
-		Config:     reqConf,
-		Extra:      map[string]any{"thinking": callbackThinking(req)},
-	})
+	ctx = cm.start(ctx, in, options, request)
 
 	defer func() {
 		if err != nil {
@@ -94,10 +83,10 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 
 	callbacks.OnEnd(ctx, &fmodel.CallbackOutput{
 		Message:    outMsg,
-		Config:     reqConf,
+		Config:     callbackConfig(wireReq),
 		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
 		Extra: map[string]any{
-			"thinking":   callbackThinking(req),
+			"thinking":   callbackThinking(wireReq),
 			"model_name": resp.Model,
 		},
 	})
@@ -112,29 +101,19 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 
 	options, arkOpts := cm.getOptions(opts...)
 
-	req, err := cm.genRequest(in, options, arkOpts)
+	request, err := cm.genRequest(in, options, arkOpts)
 	if err != nil {
 		return nil, err
 	}
 
+	req := request.payload
 	req.Stream = chat.NewOptBool(true)
 	streamOptions := req.StreamOptions.Or(chat.ChatCompletionStreamOptions{})
 	streamOptions.IncludeUsage = chat.NewOptBool(true)
 	req.StreamOptions = chat.NewOptChatCompletionStreamOptions(streamOptions)
 
-	reqConf := callbackConfig(req)
-	tools := cm.rawTools
-	if options.Tools != nil {
-		tools = options.Tools
-	}
+	ctx = cm.start(ctx, in, options, request)
 
-	ctx = callbacks.OnStart(ctx, &fmodel.CallbackInput{
-		Messages:   in,
-		Tools:      tools,
-		ToolChoice: options.ToolChoice,
-		Config:     reqConf,
-		Extra:      map[string]any{"thinking": callbackThinking(req)},
-	})
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
@@ -145,6 +124,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	if err != nil {
 		return nil, err
 	}
+	reqConf := callbackConfig(wireReq)
 	// A stream may be started from a response modifier's context. Do not let
 	// that parent's response capture buffer consume this SSE response body.
 	ctx = context.WithValue(ctx, responseCaptureKey{}, (*responseCapture)(nil))
@@ -168,6 +148,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 
 		}()
 
+		seenChoice := false
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
@@ -175,6 +156,10 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				// a response is incomplete and must not run successful finalization.
 				if !stream.IsFinished {
 					_ = sw.Send(nil, io.ErrUnexpectedEOF)
+					return
+				}
+				if !seenChoice {
+					_ = sw.Send(nil, ErrEmptyResponse)
 					return
 				}
 				if modifier := arkOpts.responseChunkMessageModifier; modifier != nil {
@@ -193,6 +178,14 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				return
 			}
 
+			if resp != nil {
+				for _, choice := range resp.Choices {
+					if choice.Index == 0 {
+						seenChoice = true
+						break
+					}
+				}
+			}
 			msg, msgFound, e := resolveStreamResponse(resp)
 			if e != nil {
 				_ = sw.Send(nil, e)
@@ -216,7 +209,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				Config:     reqConf,
 				TokenUsage: toModelCallbackUsage(msg.ResponseMeta),
 				Extra: map[string]any{
-					"thinking":   callbackThinking(req),
+					"thinking":   callbackThinking(wireReq),
 					"model_name": resp.Model,
 				},
 			}, nil)
@@ -243,4 +236,11 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 	)
 
 	return outStream, nil
+}
+
+func (cm *ChatModel) start(ctx context.Context, in []*schema.Message, common *fmodel.Options, request *chatRequest) context.Context {
+	return callbacks.OnStart(ctx, &fmodel.CallbackInput{
+		Messages: in, Tools: request.callbackTools, ToolChoice: common.ToolChoice,
+		Config: callbackConfig(request.payload), Extra: map[string]any{"thinking": callbackThinking(request.payload)},
+	})
 }

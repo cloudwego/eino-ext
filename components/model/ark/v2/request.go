@@ -20,19 +20,24 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/bytedance/sonic"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
 
-func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, opts *arkOptions) (*chat.ChatCompletionRequest, error) {
+// Keep the SDK payload and selected local callback metadata together.
+type chatRequest struct {
+	payload       *chat.ChatCompletionRequest
+	callbackTools []*schema.ToolInfo
+}
+
+func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, opts *arkOptions) (*chatRequest, error) {
 	c := &cm.config
 	req := &chat.ChatCompletionRequest{
 		Model: dereferenceOrZero(options.Model), Temperature: optFloat(options.Temperature),
 		TopP: optFloat(options.TopP), FrequencyPenalty: optFloat(c.FrequencyPenalty),
 		PresencePenalty: optFloat(c.PresencePenalty), RepetitionPenalty: optFloat(c.RepetitionPenalty),
-		Tools: append([]chat.ChatCompletionTool(nil), cm.tools...),
+		Messages: make([]chat.ChatCompletionRequestMessage, 0, len(in)),
 	}
 	var err error
 	if req.MaxTokens, err = optInt(options.MaxTokens, "max_tokens"); err != nil {
@@ -60,17 +65,13 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, o
 		req.LogitBias = chat.NewOptChatCompletionRequestLogitBias(bias)
 	}
 	if c.ResponseFormat != nil {
-		// Keep the request's schema independent from the configured schema bytes.
-		data, e := sonic.Marshal(c.ResponseFormat)
-		if e != nil {
-			return nil, fmt.Errorf("marshal response format: %w", e)
-		}
-		var format chat.ChatCompletionResponseFormat
-		if e = sonic.Unmarshal(data, &format); e != nil {
-			return nil, fmt.Errorf("decode response format: %w", e)
-		}
+		format := *c.ResponseFormat
+		// The schema bytes are the format's only reference-valued field.
+		// Copy them directly instead of serializing the entire SDK structure.
+		format.JSONSchema.Value.Schema = append([]byte(nil), format.JSONSchema.Value.Schema...)
 		req.ResponseFormat = chat.NewOptChatCompletionResponseFormat(format)
 	}
+
 	if opts.thinking != nil {
 		req.Thinking = chat.NewOptThinking(*opts.thinking)
 	}
@@ -86,12 +87,7 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, o
 	if c.User != nil {
 		req.User = chat.NewOptString(*c.User)
 	}
-	if options.Tools != nil {
-		req.Tools, err = toTools(options.Tools, c.ToolStrict)
-		if err != nil {
-			return nil, err
-		}
-	}
+
 	for i, msg := range in {
 		converted, e := toArkMessage(msg)
 		if e != nil {
@@ -99,10 +95,12 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, o
 		}
 		req.Messages = append(req.Messages, converted)
 	}
-	if err = populateToolChoice(req, options.ToolChoice, options.AllowedToolNames); err != nil {
+	tools, err := cm.buildChatTools(options)
+	if err != nil {
 		return nil, err
 	}
-	return req, nil
+	req.Tools, req.ToolChoice = tools.definitions, tools.choice
+	return &chatRequest{payload: req, callbackTools: tools.callbackTools}, nil
 }
 
 func toArkMessage(msg *schema.Message) (chat.ChatCompletionRequestMessage, error) {
@@ -179,92 +177,6 @@ func toArkMessage(msg *schema.Message) (chat.ChatCompletionRequestMessage, error
 	return chat.ChatCompletionRequestMessage{OneOf: sum}, nil
 }
 
-func toTools(tools []*schema.ToolInfo, strict *bool) ([]chat.ChatCompletionTool, error) {
-	if tools == nil {
-		return nil, nil
-	}
-	result := make([]chat.ChatCompletionTool, 0, len(tools))
-	for _, ti := range tools {
-		if ti == nil {
-			return nil, fmt.Errorf("tool info cannot be nil")
-		}
-		function := chat.FunctionObject{Name: ti.Name}
-		if ti.Desc != "" {
-			function.Description = chat.NewOptString(ti.Desc)
-		}
-
-		value, err := toolStrict(ti, strict)
-		if err != nil {
-			return nil, err
-		}
-		if value != nil {
-			function.Strict = chat.NewOptBool(*value)
-		}
-		data, err := toolParametersJSON(ti)
-		if err != nil {
-			return nil, err
-		}
-		if data != nil {
-			var obj chat.FunctionObjectParameters
-			if err = sonic.Unmarshal(data, &obj); err != nil {
-				return nil, fmt.Errorf("tool %s schema object: %w", ti.Name, err)
-			}
-			function.Parameters = chat.NewOptFunctionObjectParameters(obj)
-		}
-
-		result = append(result, chat.ChatCompletionTool{Type: chat.ToolTypeFunction, Function: function})
-	}
-	return result, nil
-}
-
-func populateToolChoice(req *chat.ChatCompletionRequest, choice *schema.ToolChoice, names []string) error {
-	if choice == nil {
-		return nil
-	}
-	if len(names) > 0 && (*choice == schema.ToolChoiceAllowed || *choice == schema.ToolChoiceForced) {
-		allowed := make(map[string]bool, len(names))
-		for _, name := range names {
-			allowed[name] = false
-		}
-		// Allocate a new slice to preserve the tools bound to a shared model.
-		selected := make([]chat.ChatCompletionTool, 0, len(req.Tools))
-		for _, tool := range req.Tools {
-			if _, ok := allowed[tool.Function.Name]; ok {
-				selected = append(selected, tool)
-				allowed[tool.Function.Name] = true
-			}
-		}
-		for _, name := range names {
-			if !allowed[name] {
-				return fmt.Errorf("allowed tool name %q not found in tools list", name)
-			}
-		}
-		req.Tools = selected
-	}
-	mode := chat.ToolChoiceModeAuto
-	switch *choice {
-	case schema.ToolChoiceForbidden:
-		mode = chat.ToolChoiceModeNone
-	case schema.ToolChoiceForced:
-		if len(req.Tools) == 0 {
-			return fmt.Errorf("tool_choice is forced but no tools are provided")
-		}
-		var name string
-		if len(req.Tools) == 1 {
-			name = req.Tools[0].Function.Name
-		}
-		if name != "" {
-			req.ToolChoice = chat.NewOptChatCompletionToolChoice(chat.NewChatCompletionNamedToolChoiceChatCompletionToolChoice(chat.ChatCompletionNamedToolChoice{
-				Type: chat.ChatCompletionNamedToolChoiceTypeFunction, Function: chat.ChatCompletionToolChoiceFunction{Name: name},
-			}))
-			return nil
-		}
-		mode = chat.ToolChoiceModeRequired
-	}
-	req.ToolChoice = chat.NewOptChatCompletionToolChoice(chat.NewToolChoiceModeChatCompletionToolChoice(mode))
-	return nil
-}
-
 func optFloat(v *float32) chat.OptFloat64 {
 	if v == nil {
 		return chat.OptFloat64{}
@@ -302,7 +214,7 @@ func callbackConfig(req *chat.ChatCompletionRequest) *fmodel.Config {
 			stop = []string{v}
 		}
 	}
-	return &fmodel.Config{Model: req.Model, MaxTokens: int(req.MaxTokens.Or(0)), Temperature: float32(req.Temperature.Or(0)), TopP: float32(req.TopP.Or(0)), Stop: stop}
+	return &fmodel.Config{Model: req.Model, MaxTokens: int(req.MaxTokens.Or(req.MaxCompletionTokens.Or(0))), Temperature: float32(req.Temperature.Or(0)), TopP: float32(req.TopP.Or(0)), Stop: stop}
 }
 
 func callbackThinking(req *chat.ChatCompletionRequest) *chat.Thinking {
