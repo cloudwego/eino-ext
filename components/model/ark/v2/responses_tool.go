@@ -28,6 +28,9 @@ import (
 // Map Eino tools directly to Responses; raw entries are needed only for strict,
 // which is missing from the pinned SDK's FunctionTool definition.
 func toResponsesTools(tools []*schema.ToolInfo, strict *bool) ([]responses.Tool, []json.RawMessage, error) {
+	if tools == nil {
+		return nil, nil, nil
+	}
 	converted := make([]responses.Tool, 0, len(tools))
 	stricts := make([]*bool, 0, len(tools))
 	hasStrict := false

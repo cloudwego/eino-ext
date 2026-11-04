@@ -113,6 +113,12 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	if opts.maxToolCalls != nil {
 		req.MaxToolCalls = responses.NewOptInt64(*opts.maxToolCalls)
 	}
+	// Cached responses already contain the tool definitions. Ark rejects even
+	// tools: [], so omit the SDK field and the strict extra-body override.
+	if req.PreviousResponseID.IsSet() {
+		req.Tools = nil
+		return req, nil, nil
+	}
 	var extra map[string]interface{}
 	// The pinned SDK omits function strictness. Its public extra-body hook
 	// preserves that field without changing SDK authentication, retries or SSE.

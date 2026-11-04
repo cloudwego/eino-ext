@@ -434,6 +434,12 @@ calls. Send the full conversation; the adapter trims it after that message and
 sets `previous_response_id`. Read expiry with `GetCacheExpiration`, and call
 `InvalidateMessageCaches(messages)` after editing cached history.
 
+Cached continuations inherit their tool definitions from the first request.
+The adapter omits `tools`, including its strict-schema override, whenever it
+sends `previous_response_id`. To change tool definitions, start a new cache
+chain; for automatic session caching, invalidate the message caches and resend
+the full conversation.
+
 `WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` explicitly continues a
 stored response or prefix. A valid cached message takes precedence over this
 head ID. `CreatePrefixCache(ctx, prefix, ttl)` creates a reusable prefix where

@@ -152,10 +152,15 @@ func TestResponsesCallsAfterHistorySerialization(t *testing.T) {
 				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 					body := decodeRequest(t, r)
 					requests <- body
+					if rejectCachedTools(w, body) {
+						return
+					}
 					writeResponsesHistoryReply(w, calls.Add(1) == 1, body["stream"] == true)
-				}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, EnableReasoningContentPassback: true})
+				}, &ResponsesAPIConfig{ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, EnableReasoningContentPassback: true})
+				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 				first := callHistoryModel(t, cm, mode, []*schema.Message{schema.UserMessage("hello")})
-				<-requests
+				firstRequest := <-requests
+				equal(t, true, firstRequest["tools"].([]any)[0].(map[string]any)["strict"])
 				restored := roundTripHistory(t, codec, historyWithToolResult(first))
 				reply := callHistoryModel(t, cm, mode, restored)
 				equal(t, "continued", reply.Content)
@@ -179,6 +184,7 @@ func TestResponsesCallsAfterHistorySerialization(t *testing.T) {
 				if _, exists := body["previous_response_id"]; exists {
 					t.Fatal("invalidated cache was reused")
 				}
+				equal(t, true, body["tools"].([]any)[0].(map[string]any)["strict"])
 				input = body["input"].([]any)
 				equal(t, 6, len(input))
 				reasoning := input[1].(map[string]any)

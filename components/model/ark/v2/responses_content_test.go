@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -196,8 +197,18 @@ func TestResponsesMetadataAndCacheValidation(t *testing.T) {
 }
 
 func TestResponsesPrefixCache(t *testing.T) {
+	var calls atomic.Int32
 	cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 		body := decodeRequest(t, r)
+		if rejectCachedTools(w, body) {
+			return
+		}
+		if calls.Add(1) == 2 {
+			equal(t, "resp-1", body["previous_response_id"])
+			writeResponses(w)
+			return
+		}
+		equal(t, true, body["tools"].([]any)[0].(map[string]any)["strict"])
 		equal(t, true, body["store"])
 		equal(t, true, body["caching"].(map[string]any)["prefix"])
 		equal(t, false, body["stream"])
@@ -208,9 +219,14 @@ func TestResponsesPrefixCache(t *testing.T) {
 		check(t, err)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(raw)
-	}, nil)
+	}, &ResponsesAPIConfig{ToolStrict: ptr(true)})
+	check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 	info, err := cm.CreatePrefixCache(context.Background(), []*schema.Message{schema.SystemMessage("prefix")}, 3600)
 	check(t, err)
 	equal(t, "resp-1", info.ResponseID)
 	equal(t, 11, info.Usage.TotalTokens)
+	reply, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("continue prefix")}, WithCache(&CacheOption{HeadPreviousResponseID: &info.ResponseID}))
+	check(t, err)
+	equal(t, "done", reply.Content)
+	equal(t, int32(2), calls.Load())
 }

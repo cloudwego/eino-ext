@@ -405,6 +405,10 @@ Context 和图片生成 API 仍使用旧模块。
 并设置 `previous_response_id`。`GetCacheExpiration` 读取过期时间；编辑缓存历史后，
 使用 `InvalidateMessageCaches(messages)` 使相关消息的缓存失效。
 
+缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools`，
+包括 strict schema 的额外请求体覆盖。需要更换工具定义时应建立新的缓存链；
+自动会话缓存可先使消息缓存失效，再发送完整对话。
+
 `WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` 可以显式续接已存储的响应或
 前缀；历史中有效的缓存消息优先于此 ID。`CreatePrefixCache(ctx, prefix, ttl)` 用于
 服务支持的前缀缓存。TTL 为零时采用服务默认过期时间。缓存服务需要为账号和模型
