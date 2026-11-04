@@ -57,21 +57,44 @@ func equalMetadataJSON(t *testing.T, want, got any) {
 }
 
 func TestMessageExtraSurvivesSerialization(t *testing.T) {
-	for _, mode := range []string{"chat", "responses", "responses stream"} {
+	for _, mode := range []string{"chat", "chat stream", "responses", "responses stream"} {
 		t.Run(mode, func(t *testing.T) {
 			var msg *schema.Message
 			var err error
-			if mode == "chat" {
+			var expectedChatUsage chat.CompletionUsage
+			chatAPI := mode == "chat" || mode == "chat stream"
+			if chatAPI {
 				var response map[string]json.RawMessage
 				check(t, json.Unmarshal([]byte(responseJSON), &response))
 				response["usage"] = json.RawMessage(`{"prompt_tokens":14,"completion_tokens":9,"total_tokens":23,"prompt_tokens_details":{"cached_tokens":2,"text_tokens":3,"image_tokens":4,"provisioned_tokens":5,"audio_tokens":6,"audio_cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":7,"provisioned_tokens":8}}`)
+				check(t, json.Unmarshal(response["usage"], &expectedChatUsage))
 				raw, marshalErr := json.Marshal(response)
 				check(t, marshalErr)
-				cm := testModel(t, func(w http.ResponseWriter, _ *http.Request) {
+				cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+					if decodeRequest(t, r)["stream"] == true {
+						w.Header().Set("Content-Type", "text/event-stream")
+						sseChunk(w, `{"id":"req-1","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"th","encrypted_content":"ci"},"finish_reason":null}],"usage":null}`)
+						sseChunk(w, `{"id":"req-1","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"content":"done","reasoning_content":"ink","encrypted_content":"pher"},"finish_reason":"stop"}],"usage":null}`)
+						usageChunk, encodeErr := json.Marshal(map[string]any{
+							"id": "req-1", "object": "chat.completion.chunk", "created": 1, "model": "actual-model", "choices": []any{},
+							"usage": response["usage"], "service_tier": response["service_tier"], "service_status": response["service_status"],
+						})
+						if encodeErr != nil {
+							t.Error(encodeErr)
+							return
+						}
+						sseChunk(w, string(usageChunk))
+						sseChunk(w, "[DONE]")
+						return
+					}
 					w.Header().Set("Content-Type", "application/json")
 					_, _ = w.Write(raw)
 				}, nil)
-				msg, err = cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+				if mode == "chat stream" {
+					msg = callHistoryModel(t, cm, "stream", []*schema.Message{schema.UserMessage("hello")})
+				} else {
+					msg, err = cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+				}
 			} else {
 				var response map[string]json.RawMessage
 				check(t, json.Unmarshal([]byte(responsesJSON), &response))
@@ -134,11 +157,19 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 					reasoning, ok := GetReasoningContent(&restored)
 					equal(t, true, ok)
 					equal(t, msg.ReasoningContent, reasoning)
-					if mode == "chat" {
-						wantUsage, _ := GetTokenUsageDetails(msg)
+					if chatAPI {
 						usage, ok := GetTokenUsageDetails(&restored)
 						equal(t, true, ok)
-						equal(t, wantUsage, usage)
+						equal(t, expectedChatUsage, usage)
+						model, ok := GetModelName(&restored)
+						equal(t, true, ok)
+						equal(t, "actual-model", model)
+						tier, ok := GetServiceTier(&restored)
+						equal(t, true, ok)
+						equal(t, "default", tier)
+						cipher, ok := GetEncryptedContent(&restored)
+						equal(t, true, ok)
+						equal(t, "cipher", cipher)
 						wantStatus, _ := GetServiceStatus(msg)
 						status, ok := GetServiceStatus(&restored)
 						equal(t, true, ok)

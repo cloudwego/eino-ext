@@ -136,11 +136,7 @@ func toArkMessage(msg *schema.Message) (chat.ChatCompletionRequestMessage, error
 		m := chat.ChatCompletionRequestAssistantMessage{
 			Role: chat.ChatCompletionRequestAssistantMessageRoleAssistant, Content: chat.NewOptNilChatCompletionMessageContent(content), Name: name,
 		}
-		reasoning := msg.ReasoningContent
-		if reasoning == "" {
-			reasoning, _ = GetReasoningContent(msg)
-		}
-		if reasoning != "" {
+		if reasoning, _ := GetReasoningContent(msg); reasoning != "" {
 			m.ReasoningContent = chat.NewOptNilChatCompletionMessageContent(chat.NewStringChatCompletionMessageContent(reasoning))
 		}
 		if encrypted, ok := GetEncryptedContent(msg); ok {
