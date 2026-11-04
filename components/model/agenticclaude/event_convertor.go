@@ -26,8 +26,9 @@ import (
 )
 
 type streamConverter struct {
-	blockKinds      map[int64]schema.ContentBlockType
-	serverToolNames map[int64]ServerToolName
+	responseExtraFieldKeys map[string]struct{}
+	blockKinds             map[int64]schema.ContentBlockType
+	serverToolNames        map[int64]ServerToolName
 }
 
 func newStreamConverter() *streamConverter {
@@ -40,7 +41,11 @@ func newStreamConverter() *streamConverter {
 func (c *streamConverter) toMessageStreamingChunk(event anthropic.MessageStreamEventUnion) (*schema.AgenticMessage, error) {
 	switch e := event.AsAny().(type) {
 	case anthropic.MessageStartEvent:
-		return toAgenticMessage(&e.Message)
+		msg, err := toAgenticMessage(&e.Message)
+		if err != nil {
+			return nil, err
+		}
+		return extractResponseExtraFields(msg, e.JSON.ExtraFields, c.responseExtraFieldKeys), nil
 	case anthropic.MessageDeltaEvent:
 		msg := &schema.AgenticMessage{
 			Role:         schema.AgenticRoleTypeAssistant,
@@ -51,19 +56,19 @@ func (c *streamConverter) toMessageStreamingChunk(event anthropic.MessageStreamE
 				keyOfCacheCreationInputTokens: int(e.Usage.CacheCreationInputTokens),
 			}
 		}
-		return msg, nil
+		return extractResponseExtraFields(msg, e.JSON.ExtraFields, c.responseExtraFieldKeys), nil
 	case anthropic.ContentBlockStartEvent:
 		contentBlock, err := c.toStreamingStartBlock(e.Index, e.ContentBlock.AsAny())
 		if err != nil {
 			return nil, err
 		}
-		return newAssistantStreamingChunk(contentBlock), nil
+		return extractResponseExtraFields(newAssistantStreamingChunk(contentBlock), e.JSON.ExtraFields, c.responseExtraFieldKeys), nil
 	case anthropic.ContentBlockDeltaEvent:
 		contentBlock, err := c.toStreamingDeltaBlock(e.Index, e.Delta.AsAny())
 		if err != nil {
 			return nil, err
 		}
-		return newAssistantStreamingChunk(contentBlock), nil
+		return extractResponseExtraFields(newAssistantStreamingChunk(contentBlock), e.JSON.ExtraFields, c.responseExtraFieldKeys), nil
 	default:
 		return nil, nil
 	}
