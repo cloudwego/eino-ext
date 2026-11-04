@@ -305,7 +305,6 @@ Additional Ark response data is available through these helpers:
 | --- | --- |
 | `GetArkRequestID` | Completion ID |
 | `GetModelName` | Actual model name |
-| `GetReasoningContent` | Current message reasoning |
 | `GetServiceTier` | Service tier |
 | `GetEncryptedContent` | Encrypted reasoning content |
 | `GetModerationHitType` | Moderation classification |
@@ -346,8 +345,6 @@ Choose a model that supports the example's features. Different examples may need
 different model or endpoint IDs. The shared [environment helper](examples/internal/exampleutil/config.go)
 validates these variables, applies an overall context timeout, and accepts the
 optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
-
-See [live example validation](examples/VALIDATION.md) for the latest real-service results and capability limitations.
 
 | Example | Demonstrates |
 | --- | --- |
@@ -461,7 +458,6 @@ once after `response.completed` or `response.incomplete`.
 [Responses code examples](examples/responses/README.md) are split into one
 program per feature. Credentials and inputs come from environment variables;
 feature configuration and API calls are shown directly in each `main.go`.
-[Example validation](examples/responses/VALIDATION.md) records the standalone runs.
 
 ```sh
 go run ./examples/responses/generate

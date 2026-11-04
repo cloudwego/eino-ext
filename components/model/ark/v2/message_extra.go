@@ -99,12 +99,6 @@ func GetArkRequestID(msg *schema.Message) string {
 func GetModelName(msg *schema.Message) (string, bool) {
 	return extraString(msg, keyModelName)
 }
-func GetReasoningContent(msg *schema.Message) (string, bool) {
-	if msg != nil && msg.ReasoningContent != "" {
-		return msg.ReasoningContent, true
-	}
-	return "", false
-}
 func GetServiceTier(msg *schema.Message) (string, bool) { return extraString(msg, keyServiceTier) }
 func GetModerationHitType(msg *schema.Message) (string, bool) {
 	return extraString(msg, keyModerationHitType)
@@ -138,21 +132,6 @@ func SetInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
 	part.Extra[videoURLFPS] = fps
 }
 func GetInputVideoFPS(part *schema.MessageInputVideo) *float64 {
-	if part == nil {
-		return nil
-	}
-	return getFPS(part.Extra)
-}
-func SetFPS(part *schema.ChatMessageVideoURL, fps float64) {
-	if part == nil {
-		return
-	}
-	if part.Extra == nil {
-		part.Extra = map[string]any{}
-	}
-	part.Extra[videoURLFPS] = fps
-}
-func GetFPS(part *schema.ChatMessageVideoURL) *float64 {
 	if part == nil {
 		return nil
 	}

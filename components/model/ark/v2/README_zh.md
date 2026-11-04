@@ -289,7 +289,6 @@ fmt.Println(reply.Content)
 | --- | --- |
 | `GetArkRequestID` | Completion ID |
 | `GetModelName` | 实际模型名称 |
-| `GetReasoningContent` | 当前消息的思考内容 |
 | `GetServiceTier` | 服务等级 |
 | `GetEncryptedContent` | 加密思考内容 |
 | `GetModerationHitType` | 内容审核分类 |
@@ -324,8 +323,6 @@ go run ./examples/generate
 请选择支持相应能力的模型，不同示例可能需要使用不同的模型或接入点 ID。
 共用的[环境配置辅助函数](examples/internal/exampleutil/config.go) 会检查环境变量、
 为完整流程设置 context 超时，并支持可选的 `ARK_BASE_URL`，其中应包含 `/api/v3` 后缀。
-
-最新真实服务测试结果及能力限制见[示例集成验证](examples/VALIDATION.md)。
 
 | 示例 | 演示内容 |
 | --- | --- |
@@ -425,7 +422,6 @@ Context 和图片生成 API 仍使用旧模块。
 
 [Responses 代码示例](examples/responses/README.md) 按功能拆成独立程序，
 从环境变量读取凭证和输入；每个 `main.go` 直接展示功能配置、消息结构和 API 调用。
-[示例运行记录](examples/responses/VALIDATION.md) 保存独立运行结果与验证边界。
 
 ```sh
 go run ./examples/responses/generate

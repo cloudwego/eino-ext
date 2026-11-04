@@ -204,9 +204,7 @@ func TestResponseMessageModifierAndCallbacks(t *testing.T) {
 	usage, ok := GetTokenUsageDetails(msg)
 	equal(t, true, ok)
 	equal(t, int32(99), usage.TotalTokens)
-	reasoning, ok := GetReasoningContent(msg)
-	equal(t, true, ok)
-	equal(t, "modified thought", reasoning)
+	equal(t, "modified thought", msg.ReasoningContent)
 	if observed == nil {
 		t.Fatal("missing callback")
 	}

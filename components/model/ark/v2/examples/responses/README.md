@@ -48,4 +48,3 @@ Cache, search, and media understanding require model/account support. In
 particular, an accepted tool-result request does not establish that the model
 read its document correctly. The examples demonstrate API usage; automated
 output checks belong to the separate validation harness and adapter tests.
-See [VALIDATION.md](VALIDATION.md) for the run results and their boundaries.

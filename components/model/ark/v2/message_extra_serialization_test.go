@@ -158,9 +158,7 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 					check(t, codec.unmarshal(raw, &restored))
 					equalMetadataJSON(t, msg, &restored)
 					equal(t, GetArkRequestID(msg), GetArkRequestID(&restored))
-					reasoning, ok := GetReasoningContent(&restored)
-					equal(t, true, ok)
-					equal(t, msg.ReasoningContent, reasoning)
+					equal(t, msg.ReasoningContent, restored.ReasoningContent)
 					if chatAPI {
 						usage, ok := GetTokenUsageDetails(&restored)
 						equal(t, true, ok)
