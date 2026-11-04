@@ -115,9 +115,6 @@ func setResponseExtra(msg *schema.Message, id, model string, tier chat.OptRespon
 	if status.IsSet() {
 		setServiceStatus(msg, status.Value)
 	}
-	if msg.ReasoningContent != "" {
-		msg.Extra[keyReasoningContent] = msg.ReasoningContent
-	}
 }
 
 func setUsage(msg *schema.Message, usage chat.CompletionUsage) {

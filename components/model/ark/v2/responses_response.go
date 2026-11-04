@@ -88,9 +88,6 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 		}
 	}
 	msg.ReasoningContent = responsesReasoningText(reasoning)
-	if msg.ReasoningContent != "" {
-		msg.Extra[keyReasoningContent] = msg.ReasoningContent
-	}
 	if err := setJSONExtra(msg, keyResponsesOutput, resp.Output); err != nil {
 		return nil, err
 	}
@@ -151,9 +148,6 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 		delta := ev.ResponseFunctionCallArgumentsDeltaEvent
 		index := int(delta.OutputIndex)
 		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
-	}
-	if msg != nil && msg.ReasoningContent != "" {
-		msg.Extra = map[string]any{keyReasoningContent: msg.ReasoningContent}
 	}
 	return msg, false, nil
 }

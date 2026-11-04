@@ -289,6 +289,7 @@ fmt.Println(reply.Content)
 | --- | --- |
 | `GetArkRequestID` | Completion ID |
 | `GetModelName` | 实际模型名称 |
+| `GetReasoningContent` | 当前消息的思考内容，兼容旧 Extra 元数据 |
 | `GetServiceTier` | 服务等级 |
 | `GetEncryptedContent` | 加密思考内容 |
 | `GetModerationHitType` | 内容审核分类 |
@@ -296,7 +297,10 @@ fmt.Println(reply.Content)
 | `GetTokenUsageDetails` | SDK 完整用量，包括各模态 token 明细 |
 
 `Extra` 中的方舟元数据使用原子值保存，支持 `encoding/json`、Sonic 和 gob 编解码往返。
-token 计数和服务状态平铺为独立 key，例如 `ark-responses-usage-details.input_tokens`
+通用 token 计数仅保存在 `ResponseMeta.Usage`，思考文本保存在 `ReasoningContent`。
+两个 usage getter 将当前通用统计与 `Extra` 中的 SDK 专有明细合并返回，
+因此 modifier 或流拼接对通用统计的修改也会反映在 getter 结果中。
+SDK 专有计数和服务状态平铺为独立 key，例如 `ark-responses-usage-details.input_tokens_details.audio_tokens`
 和 `ark-service-status.model_fallback.fallback_triggered`。结构可变的 Responses output
 和工具明细保存为 JSON 字符串，辅助函数在恢复后还原 SDK 类型。旧的元数据注册类型继续支持读取。
 Responses 推理回传使用保存的完整 output，不再重复保存一份 reasoning。

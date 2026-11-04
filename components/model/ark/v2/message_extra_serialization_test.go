@@ -105,6 +105,17 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 				}
 			}
 			check(t, err)
+			for _, key := range []string{
+				keyReasoningContent,
+				keyUsageDetails + ".prompt_tokens", keyUsageDetails + ".completion_tokens", keyUsageDetails + ".total_tokens",
+				keyUsageDetails + ".prompt_tokens_details.cached_tokens", keyUsageDetails + ".completion_tokens_details.reasoning_tokens",
+				keyResponsesUsage + ".input_tokens", keyResponsesUsage + ".output_tokens", keyResponsesUsage + ".total_tokens",
+				keyResponsesUsage + ".input_tokens_details.cached_tokens", keyResponsesUsage + ".output_tokens_details.reasoning_tokens",
+			} {
+				if _, exists := msg.Extra[key]; exists {
+					t.Fatalf("common message field duplicated in Extra[%q]", key)
+				}
+			}
 			for key, value := range msg.Extra {
 				switch reflect.TypeOf(value).Kind() {
 				case reflect.String, reflect.Bool, reflect.Int64:
@@ -120,6 +131,9 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 					check(t, codec.unmarshal(raw, &restored))
 					equalMetadataJSON(t, msg, &restored)
 					equal(t, GetArkRequestID(msg), GetArkRequestID(&restored))
+					reasoning, ok := GetReasoningContent(&restored)
+					equal(t, true, ok)
+					equal(t, msg.ReasoningContent, reasoning)
 					if mode == "chat" {
 						wantUsage, _ := GetTokenUsageDetails(msg)
 						usage, ok := GetTokenUsageDetails(&restored)
@@ -227,26 +241,33 @@ func TestLegacyReasoningSurvivesSerialization(t *testing.T) {
 	}
 }
 
-func TestAtomicMetadataConcatUsesLastUsage(t *testing.T) {
+func TestUsageConcatCombinesCommonCountsAndLastDetails(t *testing.T) {
 	for _, api := range []string{"chat", "responses"} {
 		t.Run(api, func(t *testing.T) {
-			first := &schema.Message{Extra: map[string]any{}}
-			last := &schema.Message{Extra: map[string]any{}}
+			first := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
+			last := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
 			var chatUsage chat.CompletionUsage
 			var responseUsage responses.ResponseUsage
 			if api == "chat" {
 				var response chat.ChatCompletionResponse
 				check(t, json.Unmarshal([]byte(responseJSON), &response))
-				setChatUsage(first, response.Usage.Value)
-				setChatUsage(last, chatUsage)
+				setUsage(first, response.Usage.Value)
+				setUsage(last, chatUsage)
+				chatUsage = response.Usage.Value
+				chatUsage.PromptTokensDetails.AudioTokens = chat.OptInt32{}
 				setServiceStatus(first, response.ServiceStatus.Value)
 				setServiceStatus(last, chat.ChatCompletionServiceStatus{})
 			} else {
 				var usage responses.ResponseUsage
 				check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &usage))
 				check(t, json.Unmarshal([]byte(sparseResponsesUsageJSON), &responseUsage))
-				check(t, setResponsesUsage(first, usage))
-				check(t, setResponsesUsage(last, responseUsage))
+				var err error
+				first, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(usage)}, &responses.ResponsesRequest{})
+				check(t, err)
+				var lower responses.ResponseUsage
+				check(t, json.Unmarshal([]byte(`{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}`), &lower))
+				last, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(lower)}, &responses.ResponsesRequest{})
+				check(t, err)
 			}
 			joined, err := schema.ConcatMessages([]*schema.Message{first, last})
 			check(t, err)
@@ -272,4 +293,91 @@ func TestAtomicMetadataConcatUsesLastUsage(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUsageDetailsFollowResponseMeta(t *testing.T) {
+	var chatResponse chat.ChatCompletionResponse
+	check(t, json.Unmarshal([]byte(responseJSON), &chatResponse))
+	var response responses.Response
+	check(t, json.Unmarshal([]byte(responsesJSON), &response))
+	check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &response.Usage.Value))
+	for _, format := range []string{"current", "legacy SDK", "legacy flat", "common only"} {
+		t.Run(format, func(t *testing.T) {
+			chatMessage, err := resolveChatResponse(&chatResponse)
+			check(t, err)
+			responseMessage, err := resolveResponsesResponse(&response, &responses.ResponsesRequest{})
+			check(t, err)
+			if format == "legacy SDK" {
+				chatMessage.Extra = map[string]any{keyUsageDetails: tokenUsageDetails(chatResponse.Usage.Value)}
+				responseMessage.Extra = map[string]any{keyResponsesUsage: responsesUsage(response.Usage.Value)}
+			} else if format == "legacy flat" {
+				for key, n := range map[string]int64{
+					keyUsageDetails + ".prompt_tokens": 8, keyUsageDetails + ".completion_tokens": 3, keyUsageDetails + ".total_tokens": 11,
+					keyUsageDetails + ".prompt_tokens_details.cached_tokens": 2, keyUsageDetails + ".completion_tokens_details.reasoning_tokens": 1,
+				} {
+					chatMessage.Extra[key] = metadataInt64(n)
+				}
+				for key, n := range map[string]int64{
+					keyResponsesUsage + ".input_tokens": 8, keyResponsesUsage + ".output_tokens": 3, keyResponsesUsage + ".total_tokens": 11,
+					keyResponsesUsage + ".input_tokens_details.cached_tokens": 2, keyResponsesUsage + ".output_tokens_details.reasoning_tokens": 1,
+				} {
+					responseMessage.Extra[key] = metadataInt64(n)
+				}
+			}
+			wantChat, wantResponse := chatResponse.Usage.Value, response.Usage.Value
+			// Change all common counts, including zero values, as a modifier may do.
+			wantChat.PromptTokens, wantChat.CompletionTokens, wantChat.TotalTokens = 0, 20, 20
+			wantChat.PromptTokensDetails.CachedTokens, wantChat.CompletionTokensDetails.ReasoningTokens = 0, 10
+			wantResponse.InputTokens, wantResponse.OutputTokens, wantResponse.TotalTokens = 0, 20, 20
+			wantResponse.InputTokensDetails.CachedTokens, wantResponse.OutputTokensDetails.ReasoningTokens = 0, 10
+			if format == "common only" {
+				chatMessage.Extra, responseMessage.Extra = nil, nil
+				wantChat.PromptTokensDetails.AudioTokens = chat.OptInt32{}
+				wantResponse.InputTokensDetails.AudioTokens, wantResponse.InputTokensDetails.AudioCachedTokens = responses.OptInt64{}, responses.OptInt64{}
+				wantResponse.ToolUsage, wantResponse.ToolUsageDetails = responses.OptToolUsage{}, responses.OptToolUsageDetails{}
+			}
+			for _, msg := range []*schema.Message{chatMessage, responseMessage} {
+				msg.ResponseMeta.Usage = &schema.TokenUsage{CompletionTokens: 20, TotalTokens: 20,
+					CompletionTokensDetails: schema.CompletionTokensDetails{ReasoningTokens: 10}}
+			}
+			for _, codec := range messagePersistenceCodecs() {
+				t.Run(codec.name, func(t *testing.T) {
+					raw, err := codec.marshal(chatMessage)
+					check(t, err)
+					var restored schema.Message
+					check(t, codec.unmarshal(raw, &restored))
+					chatUsage, ok := GetTokenUsageDetails(&restored)
+					equal(t, true, ok)
+					equal(t, wantChat, chatUsage)
+					raw, err = codec.marshal(responseMessage)
+					check(t, err)
+					var restoredResponse schema.Message
+					check(t, codec.unmarshal(raw, &restoredResponse))
+					responseUsage, ok := GetResponsesTokenUsageDetails(&restoredResponse)
+					equal(t, true, ok)
+					equal(t, wantResponse, responseUsage)
+				})
+			}
+			if format == "legacy flat" {
+				chatMessage.ResponseMeta, responseMessage.ResponseMeta = nil, nil
+				chatUsage, ok := GetTokenUsageDetails(chatMessage)
+				equal(t, true, ok)
+				equal(t, chatResponse.Usage.Value, chatUsage)
+				responseUsage, ok := GetResponsesTokenUsageDetails(responseMessage)
+				equal(t, true, ok)
+				equal(t, response.Usage.Value, responseUsage)
+			}
+		})
+	}
+}
+
+func TestReasoningGetterSupportsLegacyExtra(t *testing.T) {
+	msg := &schema.Message{Extra: map[string]any{keyReasoningContent: "legacy thought"}}
+	reasoning, ok := GetReasoningContent(msg)
+	equal(t, true, ok)
+	equal(t, "legacy thought", reasoning)
+	msg.ReasoningContent = "current thought"
+	reasoning, ok = GetReasoningContent(msg)
+	equal(t, true, ok)
+	equal(t, "current thought", reasoning)
 }

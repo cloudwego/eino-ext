@@ -95,13 +95,6 @@ func optionalCount(msg *schema.Message, key string) (int64, bool) {
 }
 
 func setChatUsage(msg *schema.Message, usage chat.CompletionUsage) {
-	for key, value := range map[string]int32{
-		"prompt_tokens": usage.PromptTokens, "completion_tokens": usage.CompletionTokens, "total_tokens": usage.TotalTokens,
-		"prompt_tokens_details.cached_tokens":        usage.PromptTokensDetails.CachedTokens,
-		"completion_tokens_details.reasoning_tokens": usage.CompletionTokensDetails.ReasoningTokens,
-	} {
-		msg.Extra[keyUsageDetails+"."+key] = metadataInt64(value)
-	}
 	for key, value := range map[string]chat.OptInt32{
 		"prompt_tokens_details.text_tokens":            usage.PromptTokensDetails.TextTokens,
 		"prompt_tokens_details.image_tokens":           usage.PromptTokensDetails.ImageTokens,
@@ -116,20 +109,37 @@ func setChatUsage(msg *schema.Message, usage chat.CompletionUsage) {
 }
 
 func readChatUsage(msg *schema.Message) (chat.CompletionUsage, bool) {
-	if _, ok := extraInt64(msg, keyUsageDetails+".total_tokens"); !ok {
-		return readJSONExtra[chat.CompletionUsage](msg, keyUsageDetails)
-	}
-	var result chat.CompletionUsage
-	for key, field := range map[string]*int32{
-		"prompt_tokens": &result.PromptTokens, "completion_tokens": &result.CompletionTokens, "total_tokens": &result.TotalTokens,
-		"prompt_tokens_details.cached_tokens":        &result.PromptTokensDetails.CachedTokens,
-		"completion_tokens_details.reasoning_tokens": &result.CompletionTokensDetails.ReasoningTokens,
-	} {
-		n, ok := extraInt64(msg, keyUsageDetails+"."+key)
-		if !ok || n < math.MinInt32 || n > math.MaxInt32 {
-			return chat.CompletionUsage{}, false
+	result, found := readJSONExtra[chat.CompletionUsage](msg, keyUsageDetails)
+	if msg != nil && msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
+		usage := msg.ResponseMeta.Usage
+		for field, n := range map[*int32]int{
+			&result.PromptTokens: usage.PromptTokens, &result.CompletionTokens: usage.CompletionTokens, &result.TotalTokens: usage.TotalTokens,
+			&result.PromptTokensDetails.CachedTokens:        usage.PromptTokenDetails.CachedTokens,
+			&result.CompletionTokensDetails.ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+		} {
+			if n < math.MinInt32 || n > math.MaxInt32 {
+				return chat.CompletionUsage{}, false
+			}
+			*field = int32(n)
 		}
-		*field = int32(n)
+		found = true
+	} else if _, flat := extraInt64(msg, keyUsageDetails+".total_tokens"); flat {
+		// Older messages also stored the common counts in Extra.
+		for key, field := range map[string]*int32{
+			"prompt_tokens": &result.PromptTokens, "completion_tokens": &result.CompletionTokens, "total_tokens": &result.TotalTokens,
+			"prompt_tokens_details.cached_tokens":        &result.PromptTokensDetails.CachedTokens,
+			"completion_tokens_details.reasoning_tokens": &result.CompletionTokensDetails.ReasoningTokens,
+		} {
+			n, ok := extraInt64(msg, keyUsageDetails+"."+key)
+			if !ok || n < math.MinInt32 || n > math.MaxInt32 {
+				return chat.CompletionUsage{}, false
+			}
+			*field = int32(n)
+		}
+		found = true
+	}
+	if !found {
+		return chat.CompletionUsage{}, false
 	}
 	for key, field := range map[string]*chat.OptInt32{
 		"prompt_tokens_details.text_tokens":            &result.PromptTokensDetails.TextTokens,
@@ -147,13 +157,6 @@ func readChatUsage(msg *schema.Message) (chat.CompletionUsage, bool) {
 }
 
 func setResponsesUsage(msg *schema.Message, usage responses.ResponseUsage) error {
-	for key, value := range map[string]int64{
-		"input_tokens": usage.InputTokens, "output_tokens": usage.OutputTokens, "total_tokens": usage.TotalTokens,
-		"input_tokens_details.cached_tokens":     usage.InputTokensDetails.CachedTokens,
-		"output_tokens_details.reasoning_tokens": usage.OutputTokensDetails.ReasoningTokens,
-	} {
-		msg.Extra[keyResponsesUsage+"."+key] = metadataInt64(value)
-	}
 	counts := map[string]responses.OptInt64{
 		"input_tokens_details.audio_tokens":        usage.InputTokensDetails.AudioTokens,
 		"input_tokens_details.audio_cached_tokens": usage.InputTokensDetails.AudioCachedTokens,
@@ -174,20 +177,30 @@ func setResponsesUsage(msg *schema.Message, usage responses.ResponseUsage) error
 }
 
 func readResponsesUsage(msg *schema.Message) (responses.ResponseUsage, bool) {
-	if _, ok := extraInt64(msg, keyResponsesUsage+".total_tokens"); !ok {
-		return readJSONExtra[responses.ResponseUsage](msg, keyResponsesUsage)
-	}
-	var result responses.ResponseUsage
-	for key, field := range map[string]*int64{
-		"input_tokens": &result.InputTokens, "output_tokens": &result.OutputTokens, "total_tokens": &result.TotalTokens,
-		"input_tokens_details.cached_tokens":     &result.InputTokensDetails.CachedTokens,
-		"output_tokens_details.reasoning_tokens": &result.OutputTokensDetails.ReasoningTokens,
-	} {
-		n, ok := extraInt64(msg, keyResponsesUsage+"."+key)
-		if !ok {
-			return responses.ResponseUsage{}, false
+	result, found := readJSONExtra[responses.ResponseUsage](msg, keyResponsesUsage)
+	if msg != nil && msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
+		usage := msg.ResponseMeta.Usage
+		result.InputTokens, result.OutputTokens, result.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+		result.InputTokensDetails.CachedTokens = int64(usage.PromptTokenDetails.CachedTokens)
+		result.OutputTokensDetails.ReasoningTokens = int64(usage.CompletionTokensDetails.ReasoningTokens)
+		found = true
+	} else if _, flat := extraInt64(msg, keyResponsesUsage+".total_tokens"); flat {
+		// Older messages also stored the common counts in Extra.
+		for key, field := range map[string]*int64{
+			"input_tokens": &result.InputTokens, "output_tokens": &result.OutputTokens, "total_tokens": &result.TotalTokens,
+			"input_tokens_details.cached_tokens":     &result.InputTokensDetails.CachedTokens,
+			"output_tokens_details.reasoning_tokens": &result.OutputTokensDetails.ReasoningTokens,
+		} {
+			n, ok := extraInt64(msg, keyResponsesUsage+"."+key)
+			if !ok {
+				return responses.ResponseUsage{}, false
+			}
+			*field = n
 		}
-		*field = n
+		found = true
+	}
+	if !found {
+		return responses.ResponseUsage{}, false
 	}
 	var tools responses.ToolUsage
 	for key, field := range map[string]*responses.OptInt64{

@@ -95,7 +95,9 @@ func InvalidateMessageCaches(messages []*schema.Message) error {
 	return nil
 }
 
-// GetResponsesTokenUsageDetails returns modality and built-in tool usage.
+// GetResponsesTokenUsageDetails combines the current ResponseMeta.Usage with
+// modality and built-in tool usage in Extra. Older messages with usage only in
+// Extra are supported.
 func GetResponsesTokenUsageDetails(msg *schema.Message) (responses.ResponseUsage, bool) {
 	return readResponsesUsage(msg)
 }

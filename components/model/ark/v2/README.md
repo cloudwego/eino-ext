@@ -305,6 +305,7 @@ Additional Ark response data is available through these helpers:
 | --- | --- |
 | `GetArkRequestID` | Completion ID |
 | `GetModelName` | Actual model name |
+| `GetReasoningContent` | Current message reasoning, with support for legacy Extra metadata |
 | `GetServiceTier` | Service tier |
 | `GetEncryptedContent` | Encrypted reasoning content |
 | `GetModerationHitType` | Moderation classification |
@@ -312,8 +313,12 @@ Additional Ark response data is available through these helpers:
 | `GetTokenUsageDetails` | Full SDK usage, including modality-specific counts |
 
 Ark metadata in `Extra` uses scalar values so messages can round-trip through
-`encoding/json`, Sonic, and gob. Token counts and service-status fields are flat
-keys, such as `ark-responses-usage-details.input_tokens` and
+`encoding/json`, Sonic, and gob. Common token counts are stored only in
+`ResponseMeta.Usage`, and reasoning text in `ReasoningContent`. Both usage helpers
+combine the current common counts with SDK-specific details in `Extra`, so changes
+made by modifiers or stream concatenation are reflected in their results.
+SDK-specific counts and service-status fields use flat keys, such as
+`ark-responses-usage-details.input_tokens_details.audio_tokens` and
 `ark-service-status.model_fallback.fallback_triggered`. Variable-shaped Responses
 output and tool details are JSON strings. The helpers reconstruct SDK types after
 restoration; older registered metadata types remain readable. Responses reasoning

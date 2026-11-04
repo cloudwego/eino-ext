@@ -185,6 +185,7 @@ func TestResponseMessageModifierAndCallbacks(t *testing.T) {
 		equal(t, "done", msg.Content)
 		equal(t, wire, string(raw))
 		msg.Content = "modified"
+		msg.ReasoningContent = "modified thought"
 		msg.ResponseMeta.Usage.TotalTokens = 99
 		return msg, nil
 	}
@@ -200,6 +201,12 @@ func TestResponseMessageModifierAndCallbacks(t *testing.T) {
 	msg, err := cm.Generate(ctx, nil)
 	check(t, err)
 	equal(t, "modified", msg.Content)
+	usage, ok := GetTokenUsageDetails(msg)
+	equal(t, true, ok)
+	equal(t, int32(99), usage.TotalTokens)
+	reasoning, ok := GetReasoningContent(msg)
+	equal(t, true, ok)
+	equal(t, "modified thought", reasoning)
 	if observed == nil {
 		t.Fatal("missing callback")
 	}

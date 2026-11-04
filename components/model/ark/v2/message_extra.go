@@ -155,6 +155,9 @@ func GetModelName(msg *schema.Message) (string, bool) {
 	return extraString(msg, keyModelName)
 }
 func GetReasoningContent(msg *schema.Message) (string, bool) {
+	if msg != nil && msg.ReasoningContent != "" {
+		return msg.ReasoningContent, true
+	}
 	return extraString(msg, keyReasoningContent)
 }
 func GetServiceTier(msg *schema.Message) (string, bool) { return extraString(msg, keyServiceTier) }
@@ -173,8 +176,9 @@ func GetServiceStatus(msg *schema.Message) (chat.ChatCompletionServiceStatus, bo
 	return readServiceStatus(msg)
 }
 
-// GetTokenUsageDetails returns the full SDK usage, including modality-specific
-// counts that the common Eino TokenUsage does not represent.
+// GetTokenUsageDetails combines the current ResponseMeta.Usage with SDK-specific
+// counts stored in Extra. Older messages with usage only in Extra are supported.
+// It returns false if common counts cannot fit the SDK's int32 fields.
 func GetTokenUsageDetails(msg *schema.Message) (chat.CompletionUsage, bool) {
 	return readChatUsage(msg)
 }
