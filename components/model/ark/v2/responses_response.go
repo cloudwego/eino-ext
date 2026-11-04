@@ -67,8 +67,8 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 	if err != nil {
 		return nil, err
 	}
-	if len(resp.Output) == 0 && resp.Status.Or("") != responses.ResponseStatusIncomplete && !req.Caching.Or(responses.ResponseCaching{}).Prefix.Or(false) {
-		return nil, ErrEmptyResponse
+	if err := validateResponsesOutput(resp, req); err != nil {
+		return nil, err
 	}
 	projectResponsesOutput(msg, resp.Output)
 	if err := setResponsesFinalOutput(msg, resp.Output, raw); err != nil {
@@ -77,14 +77,23 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 	return msg, nil
 }
 
+func validateResponsesOutput(resp *responses.Response, req *responses.ResponsesRequest) error {
+	if len(resp.Output) == 0 && resp.Status.Or("") != responses.ResponseStatusIncomplete && !req.Caching.Or(responses.ResponseCaching{}).Prefix.Or(false) {
+		return ErrEmptyResponse
+	}
+	return nil
+}
+
 func projectResponsesOutput(msg *schema.Message, outputs []responses.OutputItem) {
+	var content strings.Builder
+	content.WriteString(msg.Content)
 	var reasoning []responses.ItemReasoning
 	for _, output := range outputs {
 		switch output.OneOf.Type {
 		case responses.ItemOutputMessageOutputItemSum:
 			for _, part := range output.OneOf.ItemOutputMessage.Content {
 				if text, ok := part.OneOf.GetOutputContentItemText(); ok {
-					msg.Content += text.Text.Or("")
+					content.WriteString(text.Text.Or(""))
 				}
 			}
 		case responses.ItemFunctionToolCallOutputItemSum:
@@ -95,14 +104,23 @@ func projectResponsesOutput(msg *schema.Message, outputs []responses.OutputItem)
 			reasoning = append(reasoning, item)
 		}
 	}
+	msg.Content = content.String()
 	msg.ReasoningContent = responsesReasoningText(reasoning)
 }
 
 // Capture each original SSE payload while retaining the generated SDK decoder.
-type responsesPayloadDecoder struct{ raw []byte }
+type responsesPayloadDecoder struct {
+	raw    []byte
+	retain bool
+}
 
 func (d *responsesPayloadDecoder) Unmarshal(raw []byte, value interface{}) error {
-	d.raw = append(d.raw[:0], raw...)
+	if d.retain {
+		// Modifiers may retain the original frame in application metadata.
+		d.raw = append([]byte(nil), raw...)
+	} else {
+		d.raw = append(d.raw[:0], raw...)
+	}
 	return sonic.Unmarshal(raw, value)
 }
 

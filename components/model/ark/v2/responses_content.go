@@ -19,10 +19,7 @@ package ark
 import (
 	"encoding/json"
 	"fmt"
-
 	"strings"
-
-	"github.com/bytedance/sonic"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
@@ -70,7 +67,7 @@ func toResponsesContentItem(part schema.MessageInputPart) (responses.ContentItem
 		if part.Video == nil {
 			return responses.ContentItem{}, fmt.Errorf("video must not be nil")
 		}
-		return responsesVideoPart(part.Video.MessagePartCommon, GetInputVideoFPS(part.Video))
+		return responsesVideoPart(part.Video.MessagePartCommon, GetInputVideoFPS(&part))
 	case schema.ChatMessagePartTypeAudioURL:
 		if part.Audio == nil {
 			return responses.ContentItem{}, fmt.Errorf("audio must not be nil")
@@ -116,7 +113,7 @@ func responseString(value string) responses.OptString {
 }
 
 func toResponsesInput(messages []*schema.Message, passback bool) (*responsesInput, error) {
-	input := &responsesInput{items: make([]responses.InputItem, 0, len(messages)), output: make(map[int]json.RawMessage)}
+	input := &responsesInput{items: make([]responses.InputItem, 0, len(messages))}
 	for i, msg := range messages {
 		if msg == nil {
 			return nil, fmt.Errorf("message %d must not be nil", i)
@@ -130,14 +127,11 @@ func toResponsesInput(messages []*schema.Message, passback bool) (*responsesInpu
 				return nil, fmt.Errorf("message %d: %w", i, err)
 			}
 			if ok {
-				for _, raw := range output {
-					var item responses.InputItem
-					if err := sonic.Unmarshal(raw, &item); err != nil {
-						return nil, fmt.Errorf("message %d output: %w", i, err)
-					}
-					input.output[len(input.items)] = raw
-					input.items = append(input.items, item)
+				if input.output == nil {
+					input.output = make(map[int][]json.RawMessage)
 				}
+				index := len(input.items)
+				input.output[index] = append(input.output[index], output...)
 				continue
 			}
 			items, err := toResponsesAssistantInput(msg, passback)
@@ -156,7 +150,7 @@ func toResponsesInput(messages []*schema.Message, passback bool) (*responsesInpu
 		}
 		var sum responses.InputItemSum
 		switch msg.Role {
-		case schema.User, schema.System, schema.RoleType("developer"):
+		case schema.User, schema.System, Developer:
 			sum.SetItemEasyMessage(responses.ItemEasyMessage{Type: responses.NewOptItemEasyMessageType(responses.ItemEasyMessageTypeMessage),
 				Role: responses.NewOptMessageRole(responses.MessageRole(msg.Role)), Content: content})
 		case schema.Tool:
@@ -291,7 +285,7 @@ func toResponsesAssistantContentItem(part schema.MessageOutputPart) (responses.C
 		if part.Video == nil {
 			return responses.ContentItem{}, fmt.Errorf("assistant video must not be nil")
 		}
-		return responsesVideoPart(part.Video.MessagePartCommon, GetOutputVideoFPS(part.Video))
+		return responsesVideoPart(part.Video.MessagePartCommon, GetOutputVideoFPS(&part))
 	default:
 		return responses.ContentItem{}, fmt.Errorf("unsupported assistant part type %s", part.Type)
 	}
@@ -310,7 +304,7 @@ func toResponsesLegacyContentItem(part schema.ChatMessagePart) (responses.Conten
 		if part.VideoURL == nil {
 			return responses.ContentItem{}, fmt.Errorf("VideoURL must not be nil")
 		}
-		return responsesVideoPart(schema.MessagePartCommon{URL: &part.VideoURL.URL}, getFPS(part.VideoURL.Extra))
+		return responsesVideoPart(schema.MessagePartCommon{URL: &part.VideoURL.URL}, nil)
 	default:
 		return responses.ContentItem{}, fmt.Errorf("unsupported legacy part type %s", part.Type)
 	}

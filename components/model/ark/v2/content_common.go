@@ -23,6 +23,9 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+// Developer is the role for developer instructions sent to either Ark API.
+const Developer schema.RoleType = "developer"
+
 type mediaKind string
 
 const (
@@ -37,8 +40,8 @@ func validateMessageContent(msg *schema.Message) error {
 	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
 		return fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 	}
-	if len(msg.UserInputMultiContent) > 0 && msg.Role != schema.User && msg.Role != schema.Tool {
-		return fmt.Errorf("user input multi content only supports user and tool roles, got %s", msg.Role)
+	if len(msg.UserInputMultiContent) > 0 && msg.Role != schema.User && msg.Role != schema.Tool && msg.Role != schema.System && msg.Role != Developer {
+		return fmt.Errorf("input multi content only supports user, tool, system and developer roles, got %s", msg.Role)
 	}
 	if len(msg.AssistantGenMultiContent) > 0 && msg.Role != schema.Assistant {
 		return fmt.Errorf("assistant gen multi content only supports assistant role, got %s", msg.Role)

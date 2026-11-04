@@ -40,14 +40,14 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	if err != nil {
 		return err
 	}
-	first, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Remember the code CACHE_731. Reply OK.")})
+	first, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("The label on our sample box is CACHE_731. Remember the label. Reply OK.")})
 	if err != nil {
 		return err
 	}
 	id, _ := ark.GetResponseID(first)
 	fmt.Println("Cached response:", id)
 	// The adapter finds the cached response and sends only the incremental input.
-	reply, err := cm.Generate(ctx, []*schema.Message{first, schema.UserMessage("What was the code? Reply with the code only.")})
+	reply, err := cm.Generate(ctx, []*schema.Message{first, schema.UserMessage("What label was on the sample box? Reply with the label only.")})
 	if err != nil {
 		return err
 	}

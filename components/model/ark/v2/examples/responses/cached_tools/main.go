@@ -26,6 +26,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/ark/v2/examples/internal/exampleutil"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"github.com/eino-contrib/jsonschema"
 )
 
 func main() {
@@ -42,9 +43,15 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	if err != nil {
 		return err
 	}
-	err = cm.BindTools([]*schema.ToolInfo{{Name: "add", Desc: "Add two integers", ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-		"a": {Type: schema.Integer, Required: true}, "b": {Type: schema.Integer, Required: true},
-	})}})
+	var parameters jsonschema.Schema
+	if err := sonic.UnmarshalString(`{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}`, &parameters); err != nil {
+		return err
+	}
+	err = cm.BindTools([]*schema.ToolInfo{
+		{Name: "add", Desc: "Add two integers", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters)},
+		{Name: "multiply", Desc: "Multiply two integers", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters)},
+		{Name: "subtract", Desc: "Subtract b from a", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters)},
+	})
 	if err != nil {
 		return err
 	}
@@ -52,7 +59,10 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	// Bind tools once. Send the full history on every call; session caching
 	// selects the newest response ID and sends only the incremental messages.
 	history := []*schema.Message{schema.UserMessage("Use add to calculate 8 + 13, then tell me the result.")}
-	reader, err := cm.Stream(ctx, history, model.WithToolChoice(schema.ToolChoiceForced, "add"))
+	// Reuse these exact options for both tool calls. The first request filters out
+	// subtract; continuations inherit the same definitions without resending them.
+	options := []model.Option{model.WithToolChoice(schema.ToolChoiceForced, "add", "multiply")}
+	reader, err := cm.Stream(ctx, history, options...)
 	if err != nil {
 		return err
 	}
@@ -84,18 +94,43 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 
 	// The tool result continues the cached function call. Tool definitions are
 	// inherited from that cache; the adapter omits tools on this request.
-	answer, err := cm.Generate(ctx, history, model.WithToolChoice(schema.ToolChoiceForbidden))
+	// Keep Forced and the same candidate names on this cached continuation.
+	history = append(history, schema.UserMessage("Now use multiply to double the sum you just received."))
+	answer, err := cm.Generate(ctx, history, options...)
 	if err != nil {
 		return err
 	}
-	exampleutil.PrintResponse(answer)
+	id, _ = ark.GetResponseID(answer)
+	fmt.Println("Cached second tool-call response:", id)
+	if len(answer.ToolCalls) == 0 {
+		return fmt.Errorf("model returned no tool calls")
+	}
+	history = append(history, answer)
+	for _, call := range answer.ToolCalls {
+		if call.Function.Name != "multiply" {
+			return fmt.Errorf("unexpected tool %q", call.Function.Name)
+		}
+		var args struct {
+			A int `json:"a"`
+			B int `json:"b"`
+		}
+		if err := sonic.UnmarshalString(call.Function.Arguments, &args); err != nil {
+			return err
+		}
+		result := args.A * args.B
+		fmt.Printf("multiply(%d, %d) = %d\n", args.A, args.B, result)
+		history = append(history, &schema.Message{Role: schema.Tool, ToolCallID: call.ID, Content: fmt.Sprint(result)})
+	}
 	if answer.ResponseMeta != nil && answer.ResponseMeta.Usage != nil {
 		fmt.Println("Cached input tokens:", answer.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
 	}
-	history = append(history, answer, schema.UserMessage("What were the two operands and their sum? Reply briefly."))
 
-	// A normal next turn now continues answer's cache, rather than the older
-	// tool-call response. Keeping history also permits replay after expiration.
+	// Cached continuations cannot send tool_choice. Start a new chain from the
+	// complete history to make Forbidden take effect on the final answer.
+	if err := ark.InvalidateMessageCaches(history); err != nil {
+		return err
+	}
+	history = append(history, schema.UserMessage("What is the final result? Reply with only the number."))
 	followUp, err := cm.Generate(ctx, history, model.WithToolChoice(schema.ToolChoiceForbidden))
 	if err != nil {
 		return err

@@ -17,6 +17,7 @@
 package ark
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/bytedance/sonic"
@@ -33,7 +34,7 @@ const (
 	keyServiceStatus     = "ark-service-status"
 	keyUsageDetails      = "ark-usage-details"
 	keyModerationHitType = "ark-moderation-hit-type"
-	videoURLFPS          = "ark-model-video-url-fps"
+	keyVideoFPS          = "ark-model-video-url-fps"
 )
 
 // Named atomic values preserve last-value stream concatenation. JSON decoding
@@ -122,31 +123,44 @@ func GetTokenUsageDetails(msg *schema.Message) (chat.CompletionUsage, bool) {
 	return readChatUsage(msg)
 }
 
-func SetInputVideoFPS(part *schema.MessageInputVideo, fps float64) {
-	if part == nil {
+// SetInputVideoFPS sets the frame sampling rate in MessageInputPart.Extra.
+// Nil or non-video parts are ignored.
+func SetInputVideoFPS(part *schema.MessageInputPart, fps float64) {
+	if part == nil || part.Type != schema.ChatMessagePartTypeVideoURL {
 		return
 	}
 	if part.Extra == nil {
 		part.Extra = map[string]any{}
 	}
-	part.Extra[videoURLFPS] = fps
+	part.Extra[keyVideoFPS] = fps
 }
-func GetInputVideoFPS(part *schema.MessageInputVideo) *float64 {
-	if part == nil {
+
+// GetInputVideoFPS reads the FPS setting from a video input part's Extra.
+func GetInputVideoFPS(part *schema.MessageInputPart) *float64 {
+	if part == nil || part.Type != schema.ChatMessagePartTypeVideoURL {
 		return nil
 	}
 	return getFPS(part.Extra)
 }
-func GetOutputVideoFPS(part *schema.MessageOutputVideo) *float64 {
-	if part == nil {
+
+// GetOutputVideoFPS reads the FPS setting from a video output part's Extra.
+func GetOutputVideoFPS(part *schema.MessageOutputPart) *float64 {
+	if part == nil || part.Type != schema.ChatMessagePartTypeVideoURL {
 		return nil
 	}
 	return getFPS(part.Extra)
 }
 func getFPS(extra map[string]any) *float64 {
-	value, ok := extra[videoURLFPS].(float64)
-	if !ok {
-		return nil
+	switch value := extra[keyVideoFPS].(type) {
+	case float64:
+		return &value
+	case json.Number:
+		// JSON decoders configured with UseNumber restore the same numeric
+		// metadata as json.Number rather than float64.
+		fps, err := value.Float64()
+		if err == nil {
+			return &fps
+		}
 	}
-	return &value
+	return nil
 }

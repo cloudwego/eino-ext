@@ -88,7 +88,7 @@ func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, 
 		if part.Video == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("video must not be nil")
 		}
-		return chatVideoPart(part.Video.MessagePartCommon, GetInputVideoFPS(part.Video))
+		return chatVideoPart(part.Video.MessagePartCommon, GetInputVideoFPS(&part))
 	case schema.ChatMessagePartTypeAudioURL:
 		if part.Audio == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("audio must not be nil")
@@ -206,7 +206,7 @@ func toChatOutputPart(part schema.MessageOutputPart) (chat.ChatCompletionContent
 		if part.Video == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("assistant video must not be nil")
 		}
-		return chatVideoPart(part.Video.MessagePartCommon, GetOutputVideoFPS(part.Video))
+		return chatVideoPart(part.Video.MessagePartCommon, GetOutputVideoFPS(&part))
 	default:
 		return chat.ChatCompletionContentPart{}, fmt.Errorf("unsupported assistant part type %s", part.Type)
 	}
@@ -225,7 +225,7 @@ func toChatLegacyPart(part schema.ChatMessagePart) (chat.ChatCompletionContentPa
 		if part.VideoURL == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("VideoURL must not be nil")
 		}
-		return chatVideoPart(schema.MessagePartCommon{URL: &part.VideoURL.URL}, getFPS(part.VideoURL.Extra))
+		return chatVideoPart(schema.MessagePartCommon{URL: &part.VideoURL.URL}, nil)
 	default:
 		return chat.ChatCompletionContentPart{}, fmt.Errorf("unsupported legacy part type %s", part.Type)
 	}

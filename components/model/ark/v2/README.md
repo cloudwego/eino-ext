@@ -169,6 +169,24 @@ Use `UserInputMultiContent` in `schema.User` or `schema.Tool` messages:
 | `schema.ChatMessagePartTypeVideoURL` | `Video` | `SetInputVideoFPS` sets frame sampling |
 | `schema.ChatMessagePartTypeFileURL` | `File` | `Name` provides the filename |
 
+Video FPS helpers take the outer part and use its `Extra`:
+
+```go
+videoURL := os.Getenv("ARK_VIDEO_URL")
+part := schema.MessageInputPart{
+    Type: schema.ChatMessagePartTypeVideoURL,
+    Video: &schema.MessageInputVideo{
+        MessagePartCommon: schema.MessagePartCommon{URL: &videoURL},
+    },
+}
+ark.SetInputVideoFPS(&part, 1)
+```
+
+`GetInputVideoFPS(&part)` reads the configured value. `GetOutputVideoFPS` takes
+`*schema.MessageOutputPart` for assistant history.
+Nil or non-video parts are ignored. The deprecated `MessagePartCommon.Extra`
+is not read for FPS.
+
 For each media part, set one source in `MessagePartCommon`: `URL`, `Base64Data`,
 or `FileID`. All base64 inputs require `MIMEType`. Images, videos, and files are
 sent as data URLs; audio uses raw base64 and a MIME-derived format. File base64
@@ -415,6 +433,8 @@ image-generation APIs remain in the legacy module.
 - Function tools support `ToolStrict`, `WithToolStrict`, call-level tool options,
   and allowed-name filtering. Eino tool calls retain `Type: "function"` and
   `call_id` as `ToolCall.ID`; return results using that ID in `ToolCallID`.
+  Explicit allowed names restrict the call to those function tools, excluding
+  built-in search. Without names, forced choice can use any configured tool.
 - Image/audio/video/file input and multimodal tool results use the same Eino
   parts and URL → Base64Data → FileID precedence as Chat Completions. Responses
   audio base64 is encoded as a MIME data URL in `audio_url`.
@@ -426,6 +446,10 @@ image-generation APIs remain in the legacy module.
   A previous response ID supplies cached history without resending its output.
   `EnableReasoningContentPassback` controls only standalone `ReasoningContent`
   on hand-written messages without saved native output.
+- System and developer messages can appear between conversation turns. Put
+  text in `Content`, or input parts in `UserInputMultiContent`; the adapter
+  preserves their position in the message list. Use `ark.Developer` for the
+  developer role, for example `&schema.Message{Role: ark.Developer, Content: "Follow project conventions."}`.
 - Hand-written assistant messages map their own output parts directly to
   Responses input, including ordered reasoning parts. If an application edits
   the common content, reasoning or tool-call fields of a returned message, those
@@ -434,8 +458,28 @@ image-generation APIs remain in the legacy module.
   request ID when returned. `GetResponsesTokenUsageDetails` returns full SDK
   usage. `GetResponsesOutput` preserves final output items, including annotations
   and built-in tool results beyond Eino's common message fields.
+- Terminal stream events fill text and tool-call fields not already emitted as
+  deltas. An empty completed output returns `ErrEmptyResponse`, as in Generate.
+  When stopping a stream early, cancel its request context as well as closing
+  the reader: Eino v0.9.22 does not propagate reader closure to a blocked SDK read.
 
 ### Context reuse
+
+For Responses, forced selection uses `required` unless exactly one function name
+is explicitly provided. This also applies when only one tool is configured.
+
+The first request filters its tools by the allowed names. Reuse the same options
+for cached continuations with either allowed or forced selection, including
+multiple names; the server inherits the already filtered set. Cached calls omit
+both `tools` and `tool_choice`: the current call's choice cannot force or forbid
+inherited tools again. Start a new cache chain to change the set or apply a new
+choice. An explicit cache ID does not require local function definitions.
+
+Request construction treats model configuration and call options as read-only.
+Omitting cached tool definitions leaves the model's bindings intact, so a later
+full-history request can send them again. Callbacks receive the local function
+metadata derived for that call; it does not verify the remote tools of an
+arbitrary cached response ID.
 
 Set `SessionCache: &ark.SessionCacheConfig{EnableCache: true, TTL: 3600}` to store
 responses and automatically reuse the newest unexpired cached message in later
@@ -444,8 +488,8 @@ sets `previous_response_id`. Read expiry with `GetCacheExpiration`, and call
 `InvalidateMessageCaches(messages)` after editing cached history.
 
 Cached continuations inherit their tool definitions from the first request.
-The adapter omits `tools`, including its strict-schema override, whenever it
-sends `previous_response_id`. To change tool definitions, start a new cache
+The adapter omits `tools`, including its extra-body encoding, and `tool_choice`
+whenever it sends `previous_response_id`. To change tool settings, start a new cache
 chain; for automatic session caching, invalidate the message caches and resend
 the full conversation.
 
@@ -456,10 +500,15 @@ supported. Zero TTL leaves expiration to the service. Cache availability must
 be enabled for the account and model; a permission error does not prove an
 adapter defect.
 
-The [cached tools example](examples/responses/cached_tools/main.go) binds strict
-function tools, caches a streamed call, returns its tool result, and continues
-another user turn. It keeps full history on the client and prints cached token
-usage; subsequent requests inherit the original tool definitions.
+The [tool options example](examples/responses/tool_options/main.go) combines
+strict overrides and function-name subsets. The
+[forced cached tools example](examples/responses/cached_tools/main.go) reuses the
+same Forced multi-name options for addition and multiplication; the
+[allowed cached tools example](examples/responses/cached_tool_options/main.go)
+reuses unchanged Allowed options through a normal follow-up. Both retain full
+history, print cached token usage, and inherit the first request's tool set.
+The forced example invalidates local cache references before applying Forbidden
+in a new chain for its final answer.
 
 ### Streaming and modifiers
 

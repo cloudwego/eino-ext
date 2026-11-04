@@ -17,97 +17,144 @@
 package ark
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
 	"github.com/bytedance/sonic"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
-// Map Eino tools directly to Responses; raw entries are needed only for strict,
-// which is missing from the pinned SDK's FunctionTool definition.
-func toResponsesTools(tools []*schema.ToolInfo, strict *bool) ([]responses.Tool, []json.RawMessage, error) {
-	if tools == nil {
-		return nil, nil, nil
+// Tool definitions have one wire representation. Callback tools are local
+// function metadata; they cannot describe an arbitrary server-side cache.
+type responsesTools struct {
+	definitions   json.RawMessage
+	choice        responses.OptToolChoice
+	callbackTools []*schema.ToolInfo
+}
+
+// Build tool settings from read-only configuration and options. Cached calls
+// inherit their original definitions, including the initial name restriction.
+func (cm *ResponsesAPIChatModel) buildResponsesTools(common *model.Options, opts *arkOptions, inherited bool) (responsesTools, error) {
+	tools := cm.rawTools
+	if common.Tools != nil {
+		tools = common.Tools
 	}
-	converted := make([]responses.Tool, 0, len(tools))
-	stricts := make([]*bool, 0, len(tools))
-	hasStrict := false
+	named := common.ToolChoice != nil && len(common.AllowedToolNames) > 0 && (*common.ToolChoice == schema.ToolChoiceAllowed || *common.ToolChoice == schema.ToolChoiceForced)
+	if inherited {
+		if named {
+			tools = responsesCallbackTools(tools, common.AllowedToolNames)
+		}
+		// The cache service rejects tool_choice as well as tools on a
+		// continuation. Keep options read-only and let it use the saved context.
+		return responsesTools{callbackTools: tools}, nil
+	}
+
+	tools, err := selectToolInfos(tools, common.ToolChoice, common.AllowedToolNames)
+	if err != nil {
+		return responsesTools{}, err
+	}
+	search := opts.enableWebSearch
+	if named {
+		search = nil
+	}
+	if common.ToolChoice != nil && *common.ToolChoice == schema.ToolChoiceForced && len(tools) == 0 && search == nil {
+		return responsesTools{}, fmt.Errorf("tool_choice is forced but no tools are provided")
+	}
+	choice := toResponsesToolChoice(common.ToolChoice, common.AllowedToolNames)
+	definitions, err := toResponsesTools(tools, search, cm.config.ToolStrict)
+	if err != nil {
+		return responsesTools{}, err
+	}
+	return responsesTools{definitions: definitions, choice: choice, callbackTools: tools}, nil
+}
+
+// Cached functions need no local definition. Match any available metadata
+// without validating schemas or treating absent local names as unknown tools.
+func responsesCallbackTools(tools []*schema.ToolInfo, names []string) []*schema.ToolInfo {
+	allowed := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		allowed[name] = struct{}{}
+	}
+	var selected []*schema.ToolInfo
+	for _, tool := range tools {
+		if tool != nil {
+			if _, ok := allowed[tool.Name]; ok {
+				selected = append(selected, tool)
+			}
+		}
+	}
+	return selected
+}
+
+// The pinned SDK's function tool lacks strict. Encode every function using this
+// representation so strict does not select a different serialization path.
+type responsesFunctionTool struct {
+	Type        responses.FunctionToolType `json:"type"`
+	Name        string                     `json:"name"`
+	Description string                     `json:"description,omitempty"`
+	Parameters  json.RawMessage            `json:"parameters,omitempty"`
+	Strict      *bool                      `json:"strict,omitempty"`
+}
+
+func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool, strict *bool) (json.RawMessage, error) {
+	if tools == nil && search == nil {
+		return nil, nil
+	}
+	wireTools := make([]interface{}, 0, len(tools)+1)
 	for _, ti := range tools {
 		if ti == nil {
-			return nil, nil, fmt.Errorf("tool info cannot be nil")
-		}
-		function := responses.FunctionTool{Type: responses.FunctionToolTypeFunction, Name: ti.Name}
-		if ti.Desc != "" {
-			function.Description = responses.NewOptString(ti.Desc)
+			return nil, fmt.Errorf("tool info cannot be nil")
 		}
 		setting, err := toolStrict(ti, strict)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		stricts = append(stricts, setting)
-		hasStrict = hasStrict || setting != nil
 		data, err := toolParametersJSON(ti)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		if data != nil {
-			var params responses.FunctionToolParameters
-			if err = sonic.Unmarshal(data, &params); err != nil {
-				return nil, nil, fmt.Errorf("tool %s schema object: %w", ti.Name, err)
-			}
-			function.Parameters = responses.NewOptFunctionToolParameters(params)
+		// Preserve the SDK's object-or-null contract without decoding schema
+		// JSON into a second representation.
+		if len(data) > 0 && data[0] != '{' && !bytes.Equal(data, []byte("null")) {
+			return nil, fmt.Errorf("tool %s schema must be an object", ti.Name)
 		}
-		converted = append(converted, responses.Tool{OneOf: responses.NewFunctionToolToolSum(function)})
+		wireTools = append(wireTools, &responsesFunctionTool{
+			Type: responses.FunctionToolTypeFunction, Name: ti.Name,
+			Description: ti.Desc, Parameters: data, Strict: setting,
+		})
 	}
-	if !hasStrict {
-		return converted, nil, nil
+	if search != nil {
+		tool := *search
+		tool.Type = responses.WebSearchToolTypeWebSearch
+		wireTools = append(wireTools, &tool)
 	}
-	rawTools := make([]json.RawMessage, 0, len(converted))
-	for i := range converted {
-		raw, err := sonic.Marshal(&converted[i].OneOf.FunctionTool)
-		if err != nil {
-			return nil, nil, fmt.Errorf("serialize Responses function: %w", err)
-		}
-		if stricts[i] != nil {
-			var fields map[string]json.RawMessage
-			if err = sonic.Unmarshal(raw, &fields); err != nil {
-				return nil, nil, err
-			}
-			fields["strict"], _ = sonic.Marshal(*stricts[i])
-			raw, err = sonic.Marshal(fields)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		rawTools = append(rawTools, raw)
+	raw, err := sonic.Marshal(wireTools)
+	if err != nil {
+		return nil, fmt.Errorf("serialize Responses tools: %w", err)
 	}
-	return converted, rawTools, nil
+	return json.RawMessage(raw), nil
 }
 
-func populateResponsesToolChoice(req *responses.ResponsesRequest, choice *schema.ToolChoice) error {
+func toResponsesToolChoice(choice *schema.ToolChoice, names []string) responses.OptToolChoice {
 	if choice == nil {
-		return nil
+		return responses.OptToolChoice{}
 	}
 	mode := responses.ToolChoiceOptionsAuto
 	switch *choice {
 	case schema.ToolChoiceForbidden:
 		mode = responses.ToolChoiceOptionsNone
 	case schema.ToolChoiceForced:
-		if len(req.Tools) == 0 {
-			return fmt.Errorf("tool_choice is forced but no tools are provided")
-		}
-		if len(req.Tools) == 1 && req.Tools[0].OneOf.FunctionTool.Name != "" {
-			req.ToolChoice = responses.NewOptToolChoice(responses.NewTypedToolChoiceToolChoice(responses.TypedToolChoice{
+		if len(names) == 1 {
+			return responses.NewOptToolChoice(responses.NewTypedToolChoiceToolChoice(responses.TypedToolChoice{
 				OneOf: responses.NewToolChoiceFunctionTypedToolChoiceSum(responses.ToolChoiceFunction{
-					Type: responses.ToolChoiceFunctionTypeFunction, Name: req.Tools[0].OneOf.FunctionTool.Name,
+					Type: responses.ToolChoiceFunctionTypeFunction, Name: names[0],
 				}),
 			}))
-			return nil
 		}
 		mode = responses.ToolChoiceOptionsRequired
 	}
-	req.ToolChoice = responses.NewOptToolChoice(responses.NewToolChoiceOptionsToolChoice(mode))
-	return nil
+	return responses.NewOptToolChoice(responses.NewToolChoiceOptionsToolChoice(mode))
 }

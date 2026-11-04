@@ -30,11 +30,13 @@ import (
 
 func rejectCachedTools(w http.ResponseWriter, body map[string]any) bool {
 	if body["previous_response_id"] != nil {
-		if _, present := body["tools"]; present {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, `{"error":{"code":"InvalidParameter","message":"can not set tools when previous response cached","type":"BadRequest"}}`)
-			return true
+		for _, field := range []string{"tools", "tool_choice"} {
+			if _, present := body[field]; present {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				_, _ = io.WriteString(w, `{"error":{"code":"InvalidParameter","message":"can not set `+field+` when previous response cached","type":"BadRequest"}}`)
+				return true
+			}
 		}
 	}
 	return false

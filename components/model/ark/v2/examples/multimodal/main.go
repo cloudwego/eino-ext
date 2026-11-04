@@ -93,9 +93,9 @@ func run(ctx context.Context, config *ark.ChatModelConfig) error {
 		part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeAudioURL,
 			Audio: &schema.MessageInputAudio{MessagePartCommon: common}}
 	case "video":
-		video := &schema.MessageInputVideo{MessagePartCommon: common}
-		ark.SetInputVideoFPS(video, 1)
-		part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: video}
+		part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL,
+			Video: &schema.MessageInputVideo{MessagePartCommon: common}}
+		ark.SetInputVideoFPS(&part, 1)
 	case "file":
 		part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL,
 			File: &schema.MessageInputFile{MessagePartCommon: common, Name: filename}}

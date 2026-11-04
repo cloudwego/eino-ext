@@ -50,7 +50,8 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 		return err
 	}
 	messages := []*schema.Message{schema.UserMessage("Use add to calculate 8 + 13, then explain the result.")}
-	reader, err := bound.Stream(ctx, messages, model.WithToolChoice(schema.ToolChoiceForced, "add"))
+	// With no explicit name, Forced sends required, even for this single tool.
+	reader, err := bound.Stream(ctx, messages, model.WithToolChoice(schema.ToolChoiceForced))
 	if err != nil {
 		return err
 	}

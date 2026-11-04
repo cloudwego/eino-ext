@@ -106,7 +106,7 @@ func TestMediaWire(t *testing.T) {
 						field = "input_audio"
 					case "video":
 						part.Type, part.Video = schema.ChatMessagePartTypeVideoURL, &schema.MessageInputVideo{MessagePartCommon: common}
-						SetInputVideoFPS(part.Video, 0.5)
+						SetInputVideoFPS(&part, 0.5)
 						field = "video_url"
 					case "file":
 						part.Type, part.File = schema.ChatMessagePartTypeFileURL, &schema.MessageInputFile{MessagePartCommon: common, Name: "report.pdf"}
@@ -206,7 +206,7 @@ func TestGenerateOptionsAndCallbacks(t *testing.T) {
 	equal(t, 0, len(cm.tools))
 	ctx := callbacks.InitCallbacks(context.Background(), &callbacks.RunInfo{}, handler)
 	msg, err := bound.Generate(ctx, []*schema.Message{
-		{Role: schema.RoleType("developer"), Content: "instructions"},
+		{Role: Developer, Content: "instructions"},
 		{Role: schema.Assistant, Content: "prior", ReasoningContent: "prior thinking", Extra: map[string]any{keyEncryptedContent: "prior cipher"}},
 	}, fmodel.WithModel("override-model"), fmodel.WithTemperature(0), fmodel.WithTopP(0), fmodel.WithMaxTokens(0), fmodel.WithStop([]string{"stop"}),
 		fmodel.WithToolChoice(schema.ToolChoiceForced), WithMaxCompletionTokens(16), WithParallelToolCalls(false),

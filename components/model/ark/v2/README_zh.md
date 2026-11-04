@@ -160,6 +160,23 @@ for _, call := range reply.ToolCalls {
 | `schema.ChatMessagePartTypeVideoURL` | `Video` | `SetInputVideoFPS` 设置抽帧频率 |
 | `schema.ChatMessagePartTypeFileURL` | `File` | `Name` 提供文件名 |
 
+视频 FPS helper 接收外层 part，并读写它的 `Extra`：
+
+```go
+videoURL := os.Getenv("ARK_VIDEO_URL")
+part := schema.MessageInputPart{
+    Type: schema.ChatMessagePartTypeVideoURL,
+    Video: &schema.MessageInputVideo{
+        MessagePartCommon: schema.MessagePartCommon{URL: &videoURL},
+    },
+}
+ark.SetInputVideoFPS(&part, 1)
+```
+
+`GetInputVideoFPS(&part)` 读取配置值。`GetOutputVideoFPS` 接收
+`*schema.MessageOutputPart`，用于助手视频历史。
+nil 或非视频 part 会忽略；FPS 不再从废弃的 `MessagePartCommon.Extra` 读取。
+
 每个媒体 part 在 `MessagePartCommon` 中选择一个来源：`URL`、`Base64Data` 或
 `FileID`。所有 base64 输入均需提供 `MIMEType`。图片、视频和文件发送时转换为
 data URL；音频使用原始 base64 并根据 MIME 类型设置格式。文件 base64 通过
@@ -398,27 +415,51 @@ Context 和图片生成 API 仍使用旧模块。
   原始 reasoning item 及加密内容默认完整回传；使用 previous response ID 时无需
   重复发送缓存历史。`EnableReasoningContentPassback` 仅控制没有原生 output 的
   手工消息是否补入单独填写的 `ReasoningContent`。
+- system 和 developer 消息可位于对话中间；文本放入 `Content`，输入内容块放入
+  `UserInputMultiContent`。适配器保留它们在消息列表中的位置。
+  developer 角色使用 `ark.Developer`，例如
+  `&schema.Message{Role: ark.Developer, Content: "遵循项目规范。"}`。
 - 手工构造的助手消息直接按其输出 part 转换，包括有序的 reasoning part。
   若应用修改返回消息的正文、推理或工具调用字段，则优先使用这些修改构造输入，
   不恢复过时的 output；复用前还应使对应缓存失效。
 - `GetResponseID` 读取响应 ID；`GetArkRequestID` 读取服务返回的 HTTP 请求 ID。
   `GetResponsesTokenUsageDetails` 读取完整 SDK 用量，`GetResponsesOutput` 读取最终
   输出 item，保留注释、内置工具结果等通用消息字段之外的信息。
+- 流式终止事件会补齐 delta 尚未发出的正文与工具调用；completed 的空输出与
+  Generate 一样返回 `ErrEmptyResponse`。提前停止读取时，同时取消请求 context 并
+  关闭 reader；Eino v0.9.22 的 reader 关闭不会中断 SDK 中阻塞的读取。
 
 ### 缓存与上下文续接
+
+Responses 的强制选择仅在显式提供一个函数名称时按名称调用，其余情况使用
+`required`；即使只配置了一个工具，也不会自动推断函数名称。
+
+首轮会按候选名称筛选工具。后续缓存请求可复用相同 options，允许或强制选择均支持
+多个候选名称，服务端直接继承已经筛选的集合。缓存请求中的候选名称不会再次筛选
+这个集合。续接会省略 tools 和 tool_choice，本轮选项不能重新强制或禁止继承的工具；
+需要更换集合或应用新的工具策略时应建立新的缓存链。显式缓存 ID 无需重复本地函数定义。
+非缓存调用显式指定允许的函数名时，
+内置搜索也会排除；没有名称限制时，强制调用可选择任一已配置工具。
+
+请求构造只读模型配置和本次 options。省略缓存工具定义不会清空模型绑定，
+后续完整历史请求仍可重新发送工具。回调提供本次推导的本地函数资料，
+不代表已核验任意缓存响应 ID 在远端保存的工具集合。
 
 通过 `SessionCache: &ark.SessionCacheConfig{EnableCache: true, TTL: 3600}` 存储响应。
 后续传入完整历史时，适配器寻找最近的未过期缓存消息，仅发送其后的增量，
 并设置 `previous_response_id`。`GetCacheExpiration` 读取过期时间；编辑缓存历史后，
 使用 `InvalidateMessageCaches(messages)` 使相关消息的缓存失效。
 
-缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools`，
-包括 strict schema 的额外请求体覆盖。需要更换工具定义时应建立新的缓存链；
+缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools`
+（包括额外请求体中的工具编码）和 `tool_choice`。需要更换工具设置时应建立新的缓存链；
 自动会话缓存可先使消息缓存失效，再发送完整对话。
 
-[缓存工具调用示例](examples/responses/cached_tools/main.go) 展示绑定 strict 工具、
-流式生成并缓存工具调用、回传工具结果、再继续普通下一轮。客户端保留完整历史，
-续接自动使用最新缓存并继承首轮工具定义，同时打印服务返回的缓存输入 token 数。
+[工具配置示例](examples/responses/tool_options/main.go) 展示 strict 覆盖值与候选名称
+筛选。[强制缓存工具示例](examples/responses/cached_tools/main.go) 用相同的 Forced
+多名称 options 完成加法和乘法；[允许缓存工具示例](examples/responses/cached_tool_options/main.go)
+保持 Allowed options 不变，直到普通下一轮。两者都保留完整历史、打印缓存 token 数，
+续接继承首轮工具集合。强制调用示例在最终使用 Forbidden 前使本地缓存引用失效，
+通过完整历史建立新链，让新的策略生效。
 
 `WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` 可以显式续接已存储的响应或
 前缀；历史中有效的缓存消息优先于此 ID。`CreatePrefixCache(ctx, prefix, ttl)` 用于

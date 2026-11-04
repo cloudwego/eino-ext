@@ -127,7 +127,7 @@ func toArkMessage(msg *schema.Message) (chat.ChatCompletionRequestMessage, error
 		sum = chat.NewChatCompletionRequestSystemMessageChatCompletionRequestMessageSum(chat.ChatCompletionRequestSystemMessage{
 			Role: chat.ChatCompletionRequestSystemMessageRoleSystem, Content: content, Name: name,
 		})
-	case schema.RoleType("developer"):
+	case Developer:
 		sum = chat.NewChatCompletionRequestDeveloperMessageChatCompletionRequestMessageSum(chat.ChatCompletionRequestDeveloperMessage{
 			Role: chat.ChatCompletionRequestDeveloperMessageRoleDeveloper, Content: content, Name: name,
 		})

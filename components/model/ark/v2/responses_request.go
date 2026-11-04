@@ -40,14 +40,22 @@ func (cm *ResponsesAPIChatModel) getOptions(opts ...model.Option) (*model.Option
 			responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier}, opts...)
 }
 
-func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.Options, opts *arkOptions) (*responses.ResponsesRequest, map[string]interface{}, error) {
+// A built request owns its wire payload and derived callback data. Caller
+// configuration and parsed options remain inputs throughout construction.
+type responsesRequest struct {
+	payload       *responses.ResponsesRequest
+	extra         map[string]interface{}
+	callbackTools []*schema.ToolInfo
+}
+
+func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.Options, opts *arkOptions) (*responsesRequest, error) {
 	if len(common.Stop) > 0 {
-		return nil, nil, fmt.Errorf("Responses API does not support stop sequences")
+		return nil, fmt.Errorf("Responses API does not support stop sequences")
 	}
 	req := &responses.ResponsesRequest{Model: dereferenceOrZero(common.Model), Store: responses.NewOptBool(false)}
 	if common.MaxTokens != nil {
 		if *common.MaxTokens <= 0 {
-			return nil, nil, fmt.Errorf("max_output_tokens must be positive")
+			return nil, fmt.Errorf("max_output_tokens must be positive")
 		}
 		req.MaxOutputTokens = responses.NewOptInt64(int64(*common.MaxTokens))
 	}
@@ -66,6 +74,9 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	if opts.parallelToolCalls != nil {
 		req.ParallelToolCalls = responses.NewOptBool(*opts.parallelToolCalls)
 	}
+	if opts.maxToolCalls != nil {
+		req.MaxToolCalls = responses.NewOptInt64(*opts.maxToolCalls)
+	}
 	if cm.config.ServiceTier != nil {
 		req.ServiceTier = responses.NewOptServiceTier(responses.ServiceTier(*cm.config.ServiceTier))
 	}
@@ -75,67 +86,29 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	var err error
 	in, err = populateResponsesCache(in, req, opts.cache)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	items, err := toResponsesInput(in, opts.enableReasoningContentPassback && !req.PreviousResponseID.IsSet())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	req.Input = responses.NewInputItemArrayResponsesInput(items.items)
 	var extra map[string]interface{}
 	if len(items.output) > 0 {
 		extra = map[string]interface{}{"input": items}
 	}
-	tools := cm.rawTools
-	if common.Tools != nil {
-		tools = common.Tools
-	}
-	tools, err = selectToolInfos(tools, common.ToolChoice, common.AllowedToolNames)
+	tools, err := cm.buildResponsesTools(common, opts, req.PreviousResponseID.IsSet())
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	var rawTools []json.RawMessage
-	req.Tools, rawTools, err = toResponsesTools(tools, cm.config.ToolStrict)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err = populateResponsesToolChoice(req, common.ToolChoice); err != nil {
-		return nil, nil, err
-	}
-	if opts.enableWebSearch != nil {
-		tool := *opts.enableWebSearch
-		tool.Type = responses.WebSearchToolTypeWebSearch
-		req.Tools = append(req.Tools, responses.Tool{OneOf: responses.NewWebSearchToolToolSum(tool)})
-		if rawTools != nil {
-			raw, e := sonic.Marshal(&tool)
-			if e != nil {
-				return nil, nil, fmt.Errorf("serialize Responses web search: %w", e)
-			}
-			rawTools = append(rawTools, raw)
-		}
-	}
-	if opts.maxToolCalls != nil {
-		req.MaxToolCalls = responses.NewOptInt64(*opts.maxToolCalls)
-	}
-	// Cached responses already contain the tool definitions. Ark rejects even
-	// tools: [], so omit the SDK field and the strict extra-body override.
-	if req.PreviousResponseID.IsSet() {
-		req.Tools = nil
-		return req, extra, nil
-	}
-	// The pinned SDK omits function strictness. Its public extra-body hook
-	// preserves that field without changing SDK authentication, retries or SSE.
-	if rawTools != nil {
-		raw, e := sonic.Marshal(rawTools)
-		if e != nil {
-			return nil, nil, fmt.Errorf("serialize Responses strict list: %w", e)
-		}
+	req.ToolChoice = tools.choice
+	if tools.definitions != nil {
 		if extra == nil {
 			extra = make(map[string]interface{})
 		}
-		extra["tools"] = json.RawMessage(raw)
+		extra["tools"] = tools.definitions
 	}
-	return req, extra, nil
+	return &responsesRequest{payload: req, extra: extra, callbackTools: tools.callbackTools}, nil
 }
 
 func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *responses.ResponsesRequest, extra map[string]interface{}, modifier RequestPayloadModifier) (*responses.ResponsesRequest, map[string]interface{}, error) {
@@ -177,27 +150,38 @@ func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *res
 	if !ok || bytes.Equal(bytes.TrimSpace(input), []byte("null")) {
 		return nil, nil, fmt.Errorf("modified request payload must contain input")
 	}
-	// Validate the input union before dispatch; retain original JSON for unknown
-	// fields and exact numbers instead of round-tripping through generated types.
-	var typedInput responses.ResponsesInput
-	if err = sonic.Unmarshal(input, &typedInput); err != nil {
-		return nil, nil, fmt.Errorf("modified input: %w", err)
-	}
 	fields["stream"], _ = sonic.Marshal(req.Stream.Or(false))
 	body := make(map[string]interface{}, len(fields))
 	for key, value := range fields {
 		body[key] = value
 	}
-	wire := &responses.ResponsesRequest{Model: name, Input: typedInput, Stream: req.Stream}
-	// When input was not edited, retain the live SDK view used by native output
-	// replay. Its new file:// inputs are updated during SDK preprocessing.
-	if replay, ok := extra["input"].(*responsesInput); ok && bytes.Equal(input, originalInput) {
+	wire := &responses.ResponsesRequest{Model: name, Stream: req.Stream}
+	if bytes.Equal(input, originalInput) {
 		wire.Input = req.Input
-		body["input"] = replay
+		if replay, ok := extra["input"].(*responsesInput); ok {
+			body["input"] = replay
+		} else {
+			body["input"] = responsesInputWithFiles(&wire.Input, input)
+		}
+	} else {
+		// Decode edited input only for SDK file preprocessing. Preserve the raw
+		// JSON for unknown fields and exact numbers in the final payload.
+		if err = sonic.Unmarshal(input, &wire.Input); err != nil {
+			return nil, nil, fmt.Errorf("modified input: %w", err)
+		}
+		body["input"] = responsesInputWithFiles(&wire.Input, input)
 	}
 	// Cache metadata must describe the payload actually sent after modification.
 	for key, target := range map[string]interface{}{"store": &wire.Store, "expire_at": &wire.ExpireAt, "caching": &wire.Caching} {
 		if value, exists := fields[key]; exists {
+			if err = sonic.Unmarshal(value, target); err != nil {
+				return nil, nil, fmt.Errorf("modified %s: %w", key, err)
+			}
+		}
+	}
+	// These fields also describe the effective request in output callbacks.
+	for key, target := range map[string]interface{}{"max_output_tokens": &wire.MaxOutputTokens, "temperature": &wire.Temperature, "top_p": &wire.TopP} {
+		if value, exists := fields[key]; exists && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			if err = sonic.Unmarshal(value, target); err != nil {
 				return nil, nil, fmt.Errorf("modified %s: %w", key, err)
 			}

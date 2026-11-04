@@ -25,10 +25,11 @@ import (
 )
 
 const (
-	keyResponseID      = "ark-response-id"
-	keyCacheExpiration = "ark-response-cache-expire-at"
-	keyResponsesUsage  = "ark-responses-usage-details"
-	keyResponsesOutput = "ark-responses-output"
+	keyResponseID                     = "ark-response-id"
+	keyCacheExpiration                = "ark-response-cache-expire-at"
+	keyResponsesUsage                 = "ark-responses-usage-details"
+	keyResponsesOutput                = "ark-responses-output"
+	keyResponsesStreamReasoningDigest = "ark-responses-stream-reasoning-digest"
 )
 
 // SessionCacheConfig enables storing Responses and reusing their server context.
@@ -40,6 +41,9 @@ type SessionCacheConfig struct {
 
 // CacheOption controls Responses context reuse. A valid cached message takes
 // precedence over HeadPreviousResponseID; only later messages are then sent.
+// Continuations inherit the initial tool set, including name filtering. Start
+// a new cache chain to change that set or apply a new ToolChoice. Continuations
+// omit both tools and tool_choice; local options do not replace cached settings.
 type CacheOption struct {
 	HeadPreviousResponseID *string
 	SessionCache           *SessionCacheConfig

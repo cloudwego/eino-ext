@@ -98,7 +98,7 @@ func (cm *ResponsesAPIChatModel) WithTools(tools []*schema.ToolInfo) (model.Tool
 	if len(tools) == 0 {
 		return nil, fmt.Errorf("no tools to bind")
 	}
-	if _, _, err := toResponsesTools(tools, cm.config.ToolStrict); err != nil {
+	if _, err := toResponsesTools(tools, nil, cm.config.ToolStrict); err != nil {
 		return nil, err
 	}
 	next := *cm
@@ -124,30 +124,27 @@ func (cm *ResponsesAPIChatModel) BindForcedTools(tools []*schema.ToolInfo) error
 	return nil
 }
 
-func (cm *ResponsesAPIChatModel) start(ctx context.Context, in []*schema.Message, common *model.Options, opts *arkOptions, req *responses.ResponsesRequest) context.Context {
-	tools := cm.rawTools
-	if common.Tools != nil {
-		tools = common.Tools
-	}
-	return callbacks.OnStart(ctx, &model.CallbackInput{Messages: in, Tools: tools, ToolChoice: common.ToolChoice,
+func (cm *ResponsesAPIChatModel) start(ctx context.Context, in []*schema.Message, common *model.Options, opts *arkOptions, request *responsesRequest) context.Context {
+	req := request.payload
+	return callbacks.OnStart(ctx, &model.CallbackInput{Messages: in, Tools: request.callbackTools, ToolChoice: common.ToolChoice,
 		Config: responsesCallbackConfig(req), Extra: map[string]any{"thinking": opts.responsesThinking, "ark-previous-response-id": req.PreviousResponseID.Or("")}})
 }
 
 func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Message, options ...model.Option) (out *schema.Message, err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	common, opts := cm.getOptions(options...)
-	req, extra, err := cm.genRequest(in, common, opts)
+	request, err := cm.genRequest(in, common, opts)
 	if err != nil {
 		return nil, err
 	}
-	req.Stream = responses.NewOptBool(false)
-	ctx = cm.start(ctx, in, common, opts, req)
+	request.payload.Stream = responses.NewOptBool(false)
+	ctx = cm.start(ctx, in, common, opts, request)
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	wire, extra, err := prepareResponsesPayload(ctx, in, req, extra, opts.requestPayloadModifier)
+	wire, extra, err := prepareResponsesPayload(ctx, in, request.payload, request.extra, opts.requestPayloadModifier)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +170,7 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 			return nil, fmt.Errorf("response message modifier returned nil")
 		}
 	}
-	callbacks.OnEnd(ctx, &model.CallbackOutput{Message: out, Config: responsesCallbackConfig(req), TokenUsage: toModelCallbackUsage(out.ResponseMeta),
+	callbacks.OnEnd(ctx, &model.CallbackOutput{Message: out, Config: responsesCallbackConfig(wire), TokenUsage: toModelCallbackUsage(out.ResponseMeta),
 		Extra: map[string]any{"thinking": opts.responsesThinking, "model_name": resp.Model}})
 	return out, nil
 }
@@ -181,18 +178,18 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Message, options ...model.Option) (out *schema.StreamReader[*schema.Message], err error) {
 	ctx = callbacks.EnsureRunInfo(ctx, cm.GetType(), components.ComponentOfChatModel)
 	common, opts := cm.getOptions(options...)
-	req, extra, err := cm.genRequest(in, common, opts)
+	request, err := cm.genRequest(in, common, opts)
 	if err != nil {
 		return nil, err
 	}
-	req.Stream = responses.NewOptBool(true)
-	ctx = cm.start(ctx, in, common, opts, req)
+	request.payload.Stream = responses.NewOptBool(true)
+	ctx = cm.start(ctx, in, common, opts, request)
 	defer func() {
 		if err != nil {
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	wire, extra, err := prepareResponsesPayload(ctx, in, req, extra, opts.requestPayloadModifier)
+	wire, extra, err := prepareResponsesPayload(ctx, in, request.payload, request.extra, opts.requestPayloadModifier)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +198,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 	if err != nil {
 		return nil, err
 	}
-	decoder := &responsesPayloadDecoder{}
+	decoder := &responsesPayloadDecoder{retain: opts.responseChunkMessageModifier != nil}
 	stream.Unmarshaler = decoder
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func() {
@@ -213,9 +210,10 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 			_ = stream.Close()
 		}()
 		send := func(msg *schema.Message) bool {
-			return sw.Send(&model.CallbackOutput{Message: msg, Config: responsesCallbackConfig(req), TokenUsage: toModelCallbackUsage(msg.ResponseMeta),
+			return sw.Send(&model.CallbackOutput{Message: msg, Config: responsesCallbackConfig(wire), TokenUsage: toModelCallbackUsage(msg.ResponseMeta),
 				Extra: map[string]any{"thinking": opts.responsesThinking}}, nil)
 		}
+		state := &responsesStreamState{}
 		for {
 			event, e := stream.Recv()
 			// The SDK may return (nil, nil) on a clean HTTP EOF. A Responses
@@ -228,7 +226,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 				_ = sw.Send(nil, e)
 				return
 			}
-			msg, terminal, e := resolveResponsesStreamEvent(event, wire, decoder.raw)
+			msg, terminal, e := state.resolve(event, wire, decoder.raw)
 			if e != nil {
 				_ = sw.Send(nil, e)
 				return
@@ -279,22 +277,23 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	if ttl < 0 {
 		return nil, fmt.Errorf("prefix TTL must not be negative")
 	}
-	// Build independently so session-history trimming cannot discard prefix input.
-	next := *cm
-	next.config.SessionCache = nil
-	common, opts := next.getOptions(options...)
-	opts.cache = nil
-	req, extra, err := next.genRequest(prefix, common, opts)
+	// Prefix creation ignores history reuse without modifying the model or the
+	// parsed options. Only the derived options passed to this build omit cache.
+	common, opts := cm.getOptions(options...)
+	prefixOptions := *opts
+	prefixOptions.cache = nil
+	request, err := cm.genRequest(prefix, common, &prefixOptions)
 	if err != nil {
 		return nil, err
 	}
+	req := request.payload
 	req.Store = responses.NewOptBool(true)
 	req.Stream = responses.NewOptBool(false)
 	req.Caching = responses.NewOptResponseCaching(responses.ResponseCaching{Type: responses.NewOptCacheMode(responses.CacheModeEnabled), Prefix: responses.NewOptBool(true)})
 	if ttl > 0 {
 		req.ExpireAt = responses.NewOptInt64(time.Now().Unix() + int64(ttl))
 	}
-	wire, extra, err := prepareResponsesPayload(ctx, prefix, req, extra, opts.requestPayloadModifier)
+	wire, extra, err := prepareResponsesPayload(ctx, prefix, req, request.extra, opts.requestPayloadModifier)
 	if err != nil {
 		return nil, err
 	}

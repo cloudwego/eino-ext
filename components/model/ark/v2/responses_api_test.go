@@ -17,6 +17,7 @@
 package ark
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -65,10 +66,17 @@ func responseEvent(kind string, fields map[string]any) string {
 	raw, _ := sonic.Marshal(fields)
 	return "event: " + kind + "\ndata: " + string(raw) + "\n\n"
 }
-func terminalEvent(kind string) string {
+func terminalEvent(kind string, output ...json.RawMessage) string {
 	var resp map[string]any
 	_ = sonic.UnmarshalString(responsesJSON, &resp)
 	resp["status"] = strings.TrimPrefix(kind, "response.")
+	if len(output) > 0 {
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, output[0]); err != nil {
+			panic(err)
+		}
+		resp["output"] = json.RawMessage(compact.Bytes())
+	}
 	if kind == "response.incomplete" {
 		resp["incomplete_details"] = map[string]any{"reason": "max_output_tokens"}
 	}
@@ -221,7 +229,12 @@ func TestResponsesStream(t *testing.T) {
 				}
 				_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{"output_index": 2, "content_index": 0, "item_id": "msg-1", "delta": "hello"}))
 				_, _ = io.WriteString(w, responseEvent("response.reasoning_text.delta", map[string]any{"output_index": 3, "content_index": 0, "item_id": "rs-1", "delta": "thought"}))
-				_, _ = io.WriteString(w, terminalEvent(ending))
+				_, _ = io.WriteString(w, terminalEvent(ending, json.RawMessage(`[
+					{"type":"function_call","id":"fc-0","call_id":"call-0","name":"first","arguments":"{{","status":"completed"},
+					{"type":"function_call","id":"fc-1","call_id":"call-1","name":"second","arguments":"{{","status":"completed"},
+					{"type":"message","id":"msg-1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hello","annotations":[]}]},
+					{"type":"reasoning","id":"rs-1","status":"completed","summary":[],"content":[{"type":"reasoning_text","text":"thought"}]}
+				]`)))
 			}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, ResponseChunkMessageModifier: func(_ context.Context, msg *schema.Message, raw []byte, end bool) (*schema.Message, error) {
 				if end {
 					finalized++

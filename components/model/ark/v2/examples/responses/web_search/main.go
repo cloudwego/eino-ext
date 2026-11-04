@@ -18,12 +18,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"os"
 
 	ark "github.com/cloudwego/eino-ext/components/model/ark/v2"
 	"github.com/cloudwego/eino-ext/components/model/ark/v2/examples/internal/exampleutil"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
@@ -36,6 +38,8 @@ func main() {
 
 func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 
+	// This version uses the web-content plugin, activated separately from
+	// Doubao Search Custom. See the web_search_doubao example for that version.
 	config.EnableToolWebSearch = &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}
 	cm, err := ark.NewResponsesAPIChatModel(ctx, config)
 	if err != nil {
@@ -45,10 +49,22 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	if prompt == "" {
 		prompt = "Search the web for the official CloudWeGo Eino GitHub repository and return its URL."
 	}
-	reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage(prompt)})
+	// Require the configured search tool instead of allowing an answer from
+	// model knowledge alone. Bound the response to one tool round.
+	reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage(prompt)},
+		model.WithToolChoice(schema.ToolChoiceForced), ark.WithMaxToolCalls(1))
 	if err != nil {
 		return err
 	}
 	exampleutil.PrintResponse(reply)
+	output, _ := ark.GetResponsesOutput(reply)
+	for _, item := range output {
+		if search, ok := item.OneOf.GetItemFunctionWebSearch(); ok {
+			fmt.Printf("Search item: %s status=%s\n", search.ID, search.Status)
+		}
+	}
+	if usage, ok := ark.GetResponsesTokenUsageDetails(reply); ok {
+		fmt.Println("Web search calls:", usage.ToolUsage.Or(responses.ToolUsage{}).WebSearch.Or(0))
+	}
 	return nil
 }

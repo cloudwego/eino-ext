@@ -36,7 +36,7 @@ func TestResponsesAssistantMediaHistory(t *testing.T) {
 	_, err := cm.Generate(context.Background(), []*schema.Message{{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
 		{Type: schema.ChatMessagePartTypeText, Text: "caption"},
 		{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("image-1")}}},
-		{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: ptr("https://example.com/video"), Extra: map[string]any{videoURLFPS: 0.25}}}},
+		{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{URL: ptr("https://example.com/video")}}, Extra: map[string]any{keyVideoFPS: 0.25}},
 	}}})
 	check(t, err)
 	item := (<-requests)["input"].([]any)[0].(map[string]any)

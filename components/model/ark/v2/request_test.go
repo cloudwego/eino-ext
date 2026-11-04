@@ -68,17 +68,17 @@ func TestInvalidInputsDoNotSendRequests(t *testing.T) {
 }
 
 func TestLegacyContentAndAssistantHistory(t *testing.T) {
-	video := &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: ptr("https://example.com/video")}}
-	SetInputVideoFPS(video, 0.25)
-	output := &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("video-file"), Extra: map[string]any{videoURLFPS: 0.5}}}
+	video := schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: ptr("https://example.com/video")}}}
+	SetInputVideoFPS(&video, 0.25)
+	output := schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("video-file")}}, Extra: map[string]any{keyVideoFPS: 0.5}}
 	cases := []struct {
 		msg        *schema.Message
 		field, key string
 		want       any
 	}{
-		{&schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: video}}}, "video_url", "fps", 0.25},
+		{&schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{video}}, "video_url", "fps", 0.25},
 		{&schema.Message{Role: schema.User, MultiContent: []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: "https://example.com/image", Detail: schema.ImageURLDetailLow}}}}, "image_url", "detail", "low"},
-		{&schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: output}}}, "video_url", "file_id", "video-file"},
+		{&schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{output}}, "video_url", "file_id", "video-file"},
 		{&schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("image-file")}}}}}, "image_url", "file_id", "image-file"},
 	}
 	for _, tc := range cases {
@@ -90,8 +90,8 @@ func TestLegacyContentAndAssistantHistory(t *testing.T) {
 		check(t, json.Unmarshal(data, &body))
 		equal(t, tc.want, body["content"].([]any)[0].(map[string]any)[tc.field].(map[string]any)[tc.key])
 	}
-	equal(t, 0.5, *GetOutputVideoFPS(output))
-	equal(t, 0.25, *GetInputVideoFPS(video))
+	equal(t, 0.5, *GetOutputVideoFPS(&output))
+	equal(t, 0.25, *GetInputVideoFPS(&video))
 }
 
 func TestToolChoiceAndBinding(t *testing.T) {

@@ -65,7 +65,7 @@ func TestResponsesMediaWire(t *testing.T) {
 					case "video":
 						part.Type = schema.ChatMessagePartTypeVideoURL
 						part.Video = &schema.MessageInputVideo{MessagePartCommon: common}
-						SetInputVideoFPS(part.Video, 0.5)
+						SetInputVideoFPS(&part, 0.5)
 						sourceKey = "video_url"
 					case "file":
 						part.Type = schema.ChatMessagePartTypeFileURL

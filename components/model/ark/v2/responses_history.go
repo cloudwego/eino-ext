@@ -17,6 +17,7 @@
 package ark
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 
@@ -25,27 +26,26 @@ import (
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
-// Keep native output items alongside the SDK input view. The SDK can preprocess
-// new file:// inputs in items before its extra-body hook serializes this value.
-// Replayed output is emitted verbatim: the input model cannot express every
-// output field, annotation or future variant.
+// Only new inputs need an SDK input view for file:// preprocessing. Native
+// output is inserted before the indexed input (or after the last input), without
+// converting it to the SDK's less expressive input union.
 type responsesInput struct {
 	items  []responses.InputItem
-	output map[int]json.RawMessage
+	output map[int][]json.RawMessage
 }
 
 func (in *responsesInput) MarshalJSON() ([]byte, error) {
-	raw := make([]json.RawMessage, len(in.items))
-	for i := range in.items {
-		if saved, ok := in.output[i]; ok {
-			raw[i] = saved
-			continue
+	raw := make([]json.RawMessage, 0, len(in.items))
+	for i := 0; i <= len(in.items); i++ {
+		raw = append(raw, in.output[i]...)
+		if i == len(in.items) {
+			break
 		}
 		value, err := sonic.Marshal(&in.items[i])
 		if err != nil {
 			return nil, err
 		}
-		raw[i] = value
+		raw = append(raw, value)
 	}
 	return sonic.Marshal(raw)
 }
@@ -87,7 +87,15 @@ func responsesOutputForReplay(msg *schema.Message) ([]json.RawMessage, bool, err
 	// construct input from those edits instead of silently restoring stale data.
 	projection := &schema.Message{}
 	projectResponsesOutput(projection, output)
-	if msg.Content != projection.Content || msg.ReasoningContent != projection.ReasoningContent ||
+	reasoningMatches := msg.ReasoningContent == projection.ReasoningContent
+	if digest, ok := extraString(msg, keyResponsesStreamReasoningDigest); ok {
+		// Stream deltas may contain several summary parts or both summary and
+		// raw reasoning. Compare against what was streamed, not a different
+		// textual projection of the terminal output. The digest avoids storing
+		// another copy of the reasoning text in Extra.
+		reasoningMatches = digest == fmt.Sprintf("%x", sha256.Sum256([]byte(msg.ReasoningContent)))
+	}
+	if msg.Content != projection.Content || !reasoningMatches ||
 		len(msg.ToolCalls) != len(projection.ToolCalls) || len(msg.AssistantGenMultiContent) > 0 || len(msg.MultiContent) > 0 {
 		return nil, false, nil
 	}

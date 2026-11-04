@@ -20,7 +20,8 @@ go run ./examples/responses/tools
 | --- | --- | --- |
 | [generate](generate/main.go) | Generate a text response | Optional `ARK_PROMPT` |
 | [stream](stream/main.go) | Receive deltas and concatenate final usage | Optional `ARK_PROMPT` |
-| [tools](tools/main.go) | Assemble a streamed function call, execute addition, and return its result | Uses a fixed `8 + 13` conversation |
+| [tools](tools/main.go) | Force a streamed call without naming the sole tool, execute addition, and return its result | Uses a fixed `8 + 13` conversation |
+| [tool_options](tool_options/main.go) | Combine strict defaults/overrides, full JSON Schema, bound/call-level tools, and Allowed/Forced name subsets | Uses fixed addition and multiplication prompts |
 | [structured_output](structured_output/main.go) | Configure strict JSON schema and decode the answer | Optional `ARK_PROMPT` |
 | [reasoning](reasoning/main.go) | Stream reasoning and pass the assistant message back for a follow-up | Uses a fixed multiplication/follow-up conversation |
 | [modifiers](modifiers/main.go) | Modify request JSON, inspect original response bytes, and finalize a stream | Optional `ARK_PROMPT` |
@@ -28,10 +29,12 @@ go run ./examples/responses/tools
 | [file](file/main.go) | Send a PDF by FileID or local base64 | `ARK_FILE_ID` or `ARK_FILE_PATH`; optional `ARK_PROMPT` |
 | [upload](upload/main.go) | Upload a PDF, wait for processing, send its FileID, and delete the temporary file | Optional `ARK_FILE_PATH` and `ARK_PROMPT` |
 | [tool_result](tool_result/main.go) | Return a document FileID in a native multimodal tool result | Required `ARK_FILE_ID`; optional `ARK_PROMPT` |
-| [cached_tools](cached_tools/main.go) | Bind strict tools, cache a streamed function call, return its result and continue another turn | Uses a fixed `8 + 13` conversation |
+| [cached_tools](cached_tools/main.go) | Reuse the same Forced multi-name options across cached calls, then request a final answer | Uses a fixed `(8 + 13) * 2` conversation |
+| [cached_tool_options](cached_tool_options/main.go) | Reuse the same Allowed multi-name options across a cached tool result and ordinary follow-up | Uses a fixed `8 + 13` conversation |
 | [session_cache](session_cache/main.go) | Store a response and reuse its cached context | Uses a fixed recall conversation |
 | [prefix_cache](prefix_cache/main.go) | Create a reusable prefix and continue from its response ID | Uses a fixed prefix and recall conversation |
-| [web_search](web_search/main.go) | Configure the built-in search tool | Optional `ARK_PROMPT` |
+| [web_search](web_search/main.go) | Require the web-content plugin and inspect native search items and usage | Optional `ARK_PROMPT` |
+| [web_search_doubao](web_search_doubao/main.go) | Select Doubao Search Custom with `sources: ["doubao"]` and inspect its execution | Optional `ARK_PROMPT` |
 
 The multimodal example uses remote media when their URL variables are present.
 Otherwise it reads `ARK_IMAGE_FILE`, defaulting to the repository's EINO logo.
@@ -50,9 +53,27 @@ particular, an accepted tool-result request does not establish that the model
 read its document correctly. The examples demonstrate API usage; automated
 output checks belong to the separate validation harness and adapter tests.
 
-The [cached tools example](cached_tools/main.go) keeps one bound model and the
-complete Eino history across all three calls. Tools are sent when creating the
-cache; tool-result and ordinary continuations inherit them. It prints the
-response IDs and cached input token count returned by the service. Both it and
-the basic session/prefix examples require the cache service to be enabled for
-the selected account and model.
+The [tool options example](tool_options/main.go) shows a full parameter schema
+with `additionalProperties: false`. `add` inherits the model's strict default,
+`multiply` overrides it with false, and `subtract` is excluded by candidate names.
+Allowed permits a direct answer; Forced requires a call. A single explicit name
+selects that function; Forced without a name or with multiple names uses
+`required`. The basic tools example leaves strict unset.
+
+The [forced cached tools example](cached_tools/main.go) keeps the same model,
+complete Eino history, and Forced candidate options across two function calls.
+It invalidates local cache references before applying Forbidden in a new chain
+to finish with a plain answer. The
+[allowed cached tools example](cached_tool_options/main.go) keeps its options
+unchanged across all three calls, including the ordinary follow-up. Tools are
+sent on the first call and inherited on continuations; `tools` and `tool_choice`
+are both omitted from cached requests. Response IDs and cached input token counts
+are printed. Change tool definitions, the candidate set, or the tool-choice policy
+by starting a new cache chain. Both examples and the session/prefix examples
+require the cache service to be enabled for the selected account and model.
+
+The `web_search` example requires the **web-content plugin**. The
+`web_search_doubao` example sets `sources: ["doubao"]` and requires **Doubao Search
+Custom**. These are separate activations in the console. Both require a search
+call and print native search item status and service usage, so a URL in the
+answer alone is not mistaken for an executed search.
