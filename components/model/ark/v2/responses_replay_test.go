@@ -284,3 +284,16 @@ func TestResponsesManualReasoningPassback(t *testing.T) {
 		})
 	}
 }
+
+func TestChatCannotMergeReasoningSignatures(t *testing.T) {
+	cm := testModel(t, func(_ http.ResponseWriter, _ *http.Request) {
+		t.Error("multiple encrypted reasoning values reached Chat HTTP")
+	}, nil)
+	_, err := cm.Generate(context.Background(), []*schema.Message{{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
+		{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: "first", Signature: "first-cipher"}},
+		{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: "second", Signature: "second-cipher"}},
+	}}})
+	if err == nil {
+		t.Fatal("encrypted reasoning values must not be concatenated")
+	}
+}

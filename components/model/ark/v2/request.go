@@ -141,7 +141,12 @@ func toArkMessage(msg *schema.Message) (chat.ChatCompletionRequestMessage, error
 		for _, part := range msg.AssistantGenMultiContent {
 			if part.Type == schema.ChatMessagePartTypeReasoning {
 				partReasoning += part.Reasoning.Text
-				partEncrypted += part.Reasoning.Signature
+				if !hasEncrypted && part.Reasoning.Signature != "" {
+					if partEncrypted != "" {
+						return chat.ChatCompletionRequestMessage{}, fmt.Errorf("Chat Completions cannot merge encrypted reasoning from multiple output parts")
+					}
+					partEncrypted = part.Reasoning.Signature
+				}
 			}
 		}
 		if reasoning == "" {
