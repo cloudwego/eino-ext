@@ -1,0 +1,163 @@
+/*
+ * Copyright 2026 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package ark
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"hash"
+	"strings"
+
+	"github.com/cloudwego/eino/schema"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
+)
+
+// Track the original projections before modifiers. Terminal output supplies any
+// fields or suffixes not already emitted, without duplicating existing deltas.
+type responsesStreamState struct {
+	content   strings.Builder
+	tools     map[int]*responsesStreamTool
+	reasoning hash.Hash
+}
+
+type responsesStreamTool struct {
+	id, name  string
+	arguments strings.Builder
+}
+
+func (s *responsesStreamState) record(msg *schema.Message) error {
+	s.content.WriteString(msg.Content)
+	if msg.ReasoningContent != "" {
+		if s.reasoning == nil {
+			s.reasoning = sha256.New()
+		}
+		_, _ = s.reasoning.Write([]byte(msg.ReasoningContent))
+	}
+	for _, call := range msg.ToolCalls {
+		index := *call.Index
+		if s.tools == nil {
+			s.tools = make(map[int]*responsesStreamTool)
+		}
+		tool := s.tools[index]
+		if tool == nil {
+			tool = &responsesStreamTool{}
+			s.tools[index] = tool
+		}
+		if call.ID != "" {
+			if _, err := responsesStreamIdentity(call.ID, tool.id, "tool call ID"); err != nil {
+				return err
+			}
+			tool.id = call.ID
+		}
+		if call.Function.Name != "" {
+			if _, err := responsesStreamIdentity(call.Function.Name, tool.name, "tool name"); err != nil {
+				return err
+			}
+			tool.name = call.Function.Name
+		}
+		tool.arguments.WriteString(call.Function.Arguments)
+	}
+	return nil
+}
+
+func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest, raw []byte) (*schema.Message, bool, error) {
+	msg, terminal, err := resolveResponsesStreamEvent(event, req, raw)
+	if err != nil || msg == nil {
+		return msg, terminal, err
+	}
+	if !terminal {
+		if err := s.record(msg); err != nil {
+			return nil, false, err
+		}
+		return msg, false, nil
+	}
+	var resp *responses.Response
+	switch event.OneOf.Type {
+	case responses.ResponseCompletedEventResponseStreamEventSum:
+		resp = &event.OneOf.ResponseCompletedEvent.Response
+	case responses.ResponseIncompleteEventResponseStreamEventSum:
+		resp = &event.OneOf.ResponseIncompleteEvent.Response
+	default:
+		return msg, terminal, nil
+	}
+	if err := validateResponsesOutput(resp, req); err != nil {
+		return nil, true, err
+	}
+	projection := &schema.Message{}
+	projectResponsesOutput(projection, resp.Output)
+	msg.Content, err = responsesStreamSuffix(projection.Content, s.content.String(), "content")
+	if err != nil {
+		return nil, true, err
+	}
+	// Reasoning deltas can expose summary text, raw text, or both. Fill only a
+	// missing reasoning projection; preserve a projection already streamed.
+	if s.reasoning == nil {
+		msg.ReasoningContent = projection.ReasoningContent
+	}
+	for index, output := range resp.Output {
+		call, ok := output.OneOf.GetItemFunctionToolCall()
+		if !ok {
+			continue
+		}
+		seen := s.tools[index]
+		if seen == nil {
+			seen = &responsesStreamTool{}
+		}
+		id, err := responsesStreamIdentity(call.CallID.Or(seen.id), seen.id, "tool call ID")
+		if err != nil {
+			return nil, true, err
+		}
+		name, err := responsesStreamIdentity(call.Name.Or(seen.name), seen.name, "tool name")
+		if err != nil {
+			return nil, true, err
+		}
+		args, err := responsesStreamSuffix(call.Arguments.Or(seen.arguments.String()), seen.arguments.String(), "tool arguments")
+		if err != nil {
+			return nil, true, err
+		}
+		if id != "" || name != "" || args != "" {
+			toolIndex := index
+			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{Index: &toolIndex, ID: id, Type: "function", Function: schema.FunctionCall{Name: name, Arguments: args}})
+		}
+	}
+	if err := s.record(msg); err != nil {
+		return nil, true, err
+	}
+	if s.reasoning == nil {
+		s.reasoning = sha256.New()
+	}
+	msg.Extra[keyResponsesStreamReasoningDigest] = metadataString(fmt.Sprintf("%x", s.reasoning.Sum(nil)))
+	return msg, true, nil
+}
+
+// Eino merges tool IDs and names atomically; only arguments are text deltas.
+func responsesStreamIdentity(full, emitted, field string) (string, error) {
+	if emitted == "" {
+		return full, nil
+	}
+	if full != emitted {
+		return "", fmt.Errorf("Responses stream %s differs from terminal output", field)
+	}
+	return "", nil
+}
+
+func responsesStreamSuffix(full, emitted, field string) (string, error) {
+	if !strings.HasPrefix(full, emitted) {
+		return "", fmt.Errorf("Responses stream %s differs from terminal output", field)
+	}
+	return full[len(emitted):], nil
+}
