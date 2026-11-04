@@ -18,97 +18,88 @@ package ddgsearch
 
 import (
 	"context"
-	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 )
 
 func TestDDGS_News(t *testing.T) {
-	// Create a client with custom configuration for testing
-	cfg := &Config{
-		Headers: map[string]string{
-			"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-		},
-		Timeout:    30 * time.Second,
-		MaxRetries: 3,
-	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			if got := r.URL.Query().Get("q"); got == "" {
+				t.Error("VQD request is missing the search query")
+			}
+			_, _ = w.Write([]byte(`<script>vqd="test-vqd";</script>`))
+		case "/news.js":
+			query := r.URL.Query()
+			if got := query.Get("vqd"); got != "test-vqd" {
+				t.Errorf("news request vqd = %q, want test-vqd", got)
+			}
+			if got := query.Get("t"); got != "n" {
+				t.Errorf("news request t = %q, want n", got)
+			}
+			if query.Get("q") == "artificial intelligence" && query.Get("df") != string(TimeRangeDay) {
+				t.Errorf("news request df = %q, want %q", query.Get("df"), TimeRangeDay)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"results": [
+					{"date": 1704067200, "title": "First result", "excerpt": "first excerpt", "url": "https://example.com/first", "image": "https://example.com/first.png", "source": "Example"},
+					{"date": 1704153600, "title": "Second result", "excerpt": "second excerpt", "url": "https://example.com/second", "image": "https://example.com/second.png", "source": "Example"},
+					{"date": 1704240000, "title": "Third result", "excerpt": "third excerpt", "url": "https://example.com/third", "image": "https://example.com/third.png", "source": "Example"}
+				]
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	useTestEndpoints(t, server.URL)
 
-	client, err := New(cfg)
+	client, err := New(&Config{
+		Headers:    map[string]string{"User-Agent": "test"},
+		Timeout:    time.Second,
+		MaxRetries: 1,
+	})
 	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
+		t.Fatalf("New() error = %v", err)
 	}
-
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
 
 	tests := []struct {
-		name    string
-		params  *NewsParams
-		want    func(*NewsResponse) error
-		wantErr bool
+		name      string
+		params    *NewsParams
+		wantCount int
+		wantErr   bool
 	}{
 		{
-			name: "basic_search",
+			name: "basic search",
 			params: &NewsParams{
 				Query:      "technology news",
 				Region:     RegionUS,
 				SafeSearch: SafeSearchModerate,
 				MaxResults: 5,
 			},
-			want: func(resp *NewsResponse) error {
-				if len(resp.Results) == 0 {
-					return fmt.Errorf("expected results, got none")
-				}
-				for i, r := range resp.Results {
-					if r.Title == "" {
-						return fmt.Errorf("result %d has empty title", i)
-					}
-					if r.URL == "" {
-						return fmt.Errorf("result %d has empty URL", i)
-					}
-					if r.Source == "" {
-						return fmt.Errorf("result %d has empty source", i)
-					}
-					if r.Date == "" {
-						return fmt.Errorf("result %d has empty date", i)
-					}
-				}
-				return nil
-			},
-			wantErr: false,
+			wantCount: 3,
 		},
 		{
-			name: "empty_query",
-			params: &NewsParams{
-				Query: "",
-			},
-			want:    nil,
+			name:    "empty query",
+			params:  &NewsParams{},
 			wantErr: true,
 		},
 		{
-			name: "search_with_max_results",
+			name: "max results",
 			params: &NewsParams{
 				Query:      "technology",
 				Region:     RegionUS,
 				SafeSearch: SafeSearchModerate,
 				MaxResults: 2,
 			},
-			want: func(resp *NewsResponse) error {
-				if len(resp.Results) > 2 {
-					return fmt.Errorf("expected at most 2 results, got %d", len(resp.Results))
-				}
-				// Print sample results for debugging
-				t.Logf("Sample results for %q:", "search with max results")
-				for i, r := range resp.Results {
-					t.Logf("  %d. %s (%s) - %s", i+1, r.Title, r.Source, r.Date)
-				}
-				return nil
-			},
-			wantErr: false,
+			wantCount: 2,
 		},
 		{
-			name: "search_with_time_range",
+			name: "time range",
 			params: &NewsParams{
 				Query:      "artificial intelligence",
 				Region:     RegionUS,
@@ -116,88 +107,28 @@ func TestDDGS_News(t *testing.T) {
 				TimeRange:  TimeRangeDay,
 				MaxResults: 3,
 			},
-			want: func(resp *NewsResponse) error {
-				if len(resp.Results) == 0 {
-					return fmt.Errorf("expected results, got none")
-				}
-				// Verify date is within the last day
-				now := time.Now()
-				for i, r := range resp.Results {
-					date, err := time.Parse(time.RFC3339, r.Date)
-					if err != nil {
-						return fmt.Errorf("result %d has invalid date format: %s", i, r.Date)
-					}
-					if now.Sub(date) > 24*time.Hour {
-						return fmt.Errorf("result %d date %s is older than 24 hours", i, r.Date)
-					}
-				}
-				return nil
-			},
-			wantErr: false,
-		},
-		{
-			name: "search_with_region",
-			params: &NewsParams{
-				Query:      "news",
-				Region:     RegionJP,
-				SafeSearch: SafeSearchModerate,
-				MaxResults: 3,
-			},
-			want: func(resp *NewsResponse) error {
-				if len(resp.Results) == 0 {
-					return fmt.Errorf("expected results, got none")
-				}
-				return nil
-			},
-			wantErr: false,
+			wantCount: 3,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var resp *NewsResponse
-			var err error
-
-			// Retry logic for flaky tests
-			for retries := 0; retries < 3; retries++ {
-				if retries > 0 {
-					t.Logf("Retry %d for %s", retries, tt.name)
-					time.Sleep(time.Second * time.Duration(retries))
-				}
-
-				resp, err = client.News(ctx, tt.params)
-
-				if (err != nil) == tt.wantErr {
-					break // Test passed
-				}
-
-				if err != nil {
-					t.Logf("Retry %d failed: %v", retries+1, err)
-					continue
-				}
-
-				if tt.want != nil {
-					if err := tt.want(resp); err == nil {
-						break // Test passed
-					} else {
-						t.Logf("Retry %d failed: %v", retries+1, err)
-					}
-				}
-			}
-
+			response, err := client.News(context.Background(), tt.params)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("DDGS.News() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("News() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
 				return
 			}
-
-			if !tt.wantErr && tt.want != nil {
-				if err := tt.want(resp); err != nil {
-					t.Errorf("DDGS.News() validation failed: %v", err)
-				}
+			if got := len(response.Results); got != tt.wantCount {
+				t.Fatalf("News() returned %d results, want %d", got, tt.wantCount)
+			}
+			if response.Results[0].Date != "2024-01-01T00:00:00Z" {
+				t.Errorf("first result date = %q, want RFC3339 timestamp", response.Results[0].Date)
+			}
+			if response.Results[0].Title != "First result" || response.Results[0].Source != "Example" {
+				t.Errorf("first result = %#v, want parsed fixture data", response.Results[0])
 			}
 		})
-
-		// Add delay between tests to avoid rate limiting
-		time.Sleep(time.Second)
 	}
 }

@@ -190,14 +190,12 @@ func (m *ChatModel) Generate(ctx context.Context, in []*schema.AgenticMessage, o
 	*schema.AgenticMessage, error) {
 
 	opts = m.parseCustomOptions(opts...)
-	opts = append(opts, responseMetaModifier())
+	opts = append(opts, responseMetaModifier(), responseAgenticMetaModifier())
 
 	out, err := m.cli.Generate(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
-
-	extractChatResponseMetaExtension(out)
 
 	return out, nil
 }
@@ -206,30 +204,27 @@ func (m *ChatModel) Stream(ctx context.Context, in []*schema.AgenticMessage, opt
 	*schema.StreamReader[*schema.AgenticMessage], error) {
 
 	opts = m.parseCustomOptions(opts...)
-	opts = append(opts, responseMetaChunkModifier())
+	opts = append(opts, responseMetaChunkModifier(), responseChunkAgenticMetaModifier())
 
 	sr, err := m.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	return schema.StreamReaderWithConvert(sr, func(msg *schema.AgenticMessage) (*schema.AgenticMessage, error) {
-		extractChatResponseMetaExtension(msg)
-		return msg, nil
-	}), nil
+	return sr, nil
 }
 
 func (m *ChatModel) parseCustomOptions(opts ...model.Option) []model.Option {
 	customOpts := model.GetImplSpecificOptions(&options{}, opts...)
 
 	headers := m.customHeaders
-	if len(customOpts.customHeaders) > 0 {
+	if customOpts.customHeaders != nil {
 		headers = customOpts.customHeaders
 	}
-	if len(headers) > 0 {
+	if headers != nil {
 		opts = append(opts, openai.WithExtraHeader(headers))
 	}
-	if len(customOpts.extraFields) > 0 {
+	if customOpts.extraFields != nil {
 		opts = append(opts, openai.WithExtraFields(customOpts.extraFields))
 	}
 

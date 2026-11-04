@@ -191,14 +191,12 @@ func (m *Model) Generate(ctx context.Context, in []*schema.AgenticMessage, opts 
 	*schema.AgenticMessage, error) {
 
 	opts = m.parseCustomOptions(opts...)
-	opts = append(opts, responseMetaModifier())
+	opts = append(opts, responseMetaModifier(), responseAgenticMetaModifier())
 
 	out, err := m.cli.Generate(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
-
-	extractResponseMetaExtension(out)
 
 	return out, nil
 }
@@ -207,17 +205,14 @@ func (m *Model) Stream(ctx context.Context, in []*schema.AgenticMessage, opts ..
 	*schema.StreamReader[*schema.AgenticMessage], error) {
 
 	opts = m.parseCustomOptions(opts...)
-	opts = append(opts, responseMetaChunkModifier())
+	opts = append(opts, responseMetaChunkModifier(), responseChunkAgenticMetaModifier())
 
 	sr, err := m.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	return schema.StreamReaderWithConvert(sr, func(msg *schema.AgenticMessage) (*schema.AgenticMessage, error) {
-		extractResponseMetaExtension(msg)
-		return msg, nil
-	}), nil
+	return sr, nil
 }
 
 func (m *Model) parseCustomOptions(opts ...model.Option) []model.Option {

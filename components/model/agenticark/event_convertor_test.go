@@ -499,7 +499,7 @@ func TestReceivedStreamResponseWithRawReasoningDelta(t *testing.T) {
 	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](1)
 	defer sr.Close()
 
-	receivedStreamResponse(streamReader, &model.AgenticConfig{}, sw)
+	receivedStreamResponse(streamReader, &model.AgenticConfig{}, sw, false)
 	sw.Close()
 
 	output, err := sr.Recv()
@@ -586,7 +586,7 @@ func TestMakeIndexKeyFunctions(t *testing.T) {
 
 func TestNewCallbackSenderAndSend(t *testing.T) {
 	sr, sw := schema.Pipe[*model.AgenticCallbackOutput](8)
-	s := newCallbackSender(sw, &model.AgenticConfig{})
+	s := newCallbackSender(sw, &model.AgenticConfig{}, false)
 	r0 := sr.Copy(1)[0]
 
 	// Send a meta message first

@@ -149,14 +149,12 @@ func New(ctx context.Context, config *Config) (*Model, error) {
 func (m *Model) Generate(ctx context.Context, in []*schema.AgenticMessage, opts ...model.Option) (
 	*schema.AgenticMessage, error) {
 
-	opts = append(opts, responseMetaModifier())
+	opts = append(opts, responseMetaModifier(), responseAgenticMetaModifier())
 
 	out, err := m.cli.Generate(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
-
-	extractResponseMetaExtension(out)
 
 	return out, nil
 }
@@ -164,17 +162,14 @@ func (m *Model) Generate(ctx context.Context, in []*schema.AgenticMessage, opts 
 func (m *Model) Stream(ctx context.Context, in []*schema.AgenticMessage, opts ...model.Option) (
 	*schema.StreamReader[*schema.AgenticMessage], error) {
 
-	opts = append(opts, responseMetaChunkModifier())
+	opts = append(opts, responseMetaChunkModifier(), responseChunkAgenticMetaModifier())
 
 	sr, err := m.cli.Stream(ctx, in, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	return schema.StreamReaderWithConvert(sr, func(msg *schema.AgenticMessage) (*schema.AgenticMessage, error) {
-		extractResponseMetaExtension(msg)
-		return msg, nil
-	}), nil
+	return sr, nil
 }
 
 func (m *Model) GetType() string {

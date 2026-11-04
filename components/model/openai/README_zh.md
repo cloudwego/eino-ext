@@ -204,7 +204,6 @@ Audio *Audio `json:"audio,omitempty"`
 - [意图识别与工具调用](./examples/intent_tool/)
 - [流式响应](./examples/stream/)
 - [结构化输出](./examples/structured/)
-- [超时处理](./examples/timeout/)
 
 
 

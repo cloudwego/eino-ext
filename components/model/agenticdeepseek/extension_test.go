@@ -26,10 +26,10 @@ import (
 )
 
 func TestExtractResponseMetaExtension(t *testing.T) {
-	PatchConvey("test extractResponseMetaExtension", t, func() {
+	PatchConvey("test applyAgenticResponseMetaExtension", t, func() {
 		PatchConvey("nil Extra", func() {
 			msg := &schema.AgenticMessage{}
-			extractResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldBeNil)
 		})
 
@@ -37,7 +37,7 @@ func TestExtractResponseMetaExtension(t *testing.T) {
 			msg := &schema.AgenticMessage{
 				Extra: map[string]any{"other_key": "value"},
 			}
-			extractResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldBeNil)
 		})
 
@@ -45,7 +45,7 @@ func TestExtractResponseMetaExtension(t *testing.T) {
 			msg := &schema.AgenticMessage{
 				Extra: map[string]any{extraKeyResponseMetaExtension: "wrong_type"},
 			}
-			extractResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldBeNil)
 		})
 
@@ -54,7 +54,7 @@ func TestExtractResponseMetaExtension(t *testing.T) {
 			msg := &schema.AgenticMessage{
 				Extra: map[string]any{extraKeyResponseMetaExtension: ext},
 			}
-			extractResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta, convey.ShouldNotBeNil)
 			convey.So(msg.ResponseMeta.Extension, convey.ShouldEqual, ext)
 		})
@@ -65,7 +65,7 @@ func TestExtractResponseMetaExtension(t *testing.T) {
 				Extra:        map[string]any{extraKeyResponseMetaExtension: ext},
 				ResponseMeta: &schema.AgenticResponseMeta{},
 			}
-			extractResponseMetaExtension(msg)
+			applyAgenticResponseMetaExtension(msg)
 			convey.So(msg.ResponseMeta.Extension, convey.ShouldEqual, ext)
 		})
 	})

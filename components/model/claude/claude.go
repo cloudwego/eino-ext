@@ -35,8 +35,8 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"golang.org/x/oauth2/google"
 	"github.com/eino-contrib/jsonschema"
+	"golang.org/x/oauth2/google"
 
 	"github.com/cloudwego/eino/components"
 
@@ -1018,7 +1018,8 @@ func (cm *ChatModel) getCallbackOutput(output *schema.Message) *model.CallbackOu
 		result.TokenUsage = &model.TokenUsage{
 			PromptTokens: output.ResponseMeta.Usage.PromptTokens,
 			PromptTokenDetails: model.PromptTokenDetails{
-				CachedTokens: output.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+				CachedTokens:     output.ResponseMeta.Usage.PromptTokenDetails.CachedTokens,
+				CacheWriteTokens: output.ResponseMeta.Usage.PromptTokenDetails.CacheWriteTokens,
 			},
 			CompletionTokens: output.ResponseMeta.Usage.CompletionTokens,
 			TotalTokens:      output.ResponseMeta.Usage.TotalTokens,
@@ -1127,6 +1128,13 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 			}
 		} else {
 			for i := range message.UserInputMultiContent {
+				if block, found, err := fileIDContentBlock(message.UserInputMultiContent[i]); found {
+					if err != nil {
+						return mp, err
+					}
+					messageParams = append(messageParams, block)
+					continue
+				}
 				switch message.UserInputMultiContent[i].Type {
 				case schema.ChatMessagePartTypeText:
 					messageParams = append(messageParams, anthropic.NewTextBlock(message.UserInputMultiContent[i].Text))
@@ -1316,6 +1324,15 @@ func convToolMultiContent(callID string, parts []schema.MessageInputPart) (anthr
 		Content:   make([]anthropic.ToolResultBlockParamContentUnion, 0, len(parts)),
 	}}
 	for _, part := range parts {
+		if block, found, err := fileIDContentBlock(part); found {
+			if err != nil {
+				return result, err
+			}
+			result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
+				OfImage: block.OfImage, OfDocument: block.OfDocument,
+			})
+			continue
+		}
 		switch part.Type {
 		case schema.ChatMessagePartTypeText:
 			result.OfToolResult.Content = append(result.OfToolResult.Content, anthropic.ToolResultBlockParamContentUnion{
@@ -1392,7 +1409,8 @@ func toTokenUsage(u anthropic.Usage) *schema.TokenUsage {
 	return &schema.TokenUsage{
 		PromptTokens: promptTokens,
 		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(u.CacheReadInputTokens),
+			CachedTokens:     int(u.CacheReadInputTokens),
+			CacheWriteTokens: int(u.CacheCreationInputTokens),
 		},
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
@@ -1411,7 +1429,8 @@ func toDeltaTokenUsage(u anthropic.MessageDeltaUsage) *schema.TokenUsage {
 	return &schema.TokenUsage{
 		PromptTokens: promptTokens,
 		PromptTokenDetails: schema.PromptTokenDetails{
-			CachedTokens: int(u.CacheReadInputTokens),
+			CachedTokens:     int(u.CacheReadInputTokens),
+			CacheWriteTokens: int(u.CacheCreationInputTokens),
 		},
 		CompletionTokens: completionTokens,
 		TotalTokens:      promptTokens + completionTokens,
@@ -1673,4 +1692,32 @@ func getEnvWithFallbacks(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func fileIDContentBlock(part schema.MessageInputPart) (anthropic.ContentBlockParamUnion, bool, error) {
+	var common schema.MessagePartCommon
+	switch {
+	case part.Type == schema.ChatMessagePartTypeImageURL && part.Image != nil:
+		common = part.Image.MessagePartCommon
+	case part.Type == schema.ChatMessagePartTypeFileURL && part.File != nil:
+		common = part.File.MessagePartCommon
+	default:
+		return anthropic.ContentBlockParamUnion{}, false, nil
+	}
+	if common.URL != nil && *common.URL != "" || common.Base64Data != nil && *common.Base64Data != "" || common.FileID == nil {
+		return anthropic.ContentBlockParamUnion{}, false, nil
+	}
+	if *common.FileID == "" {
+		return anthropic.ContentBlockParamUnion{}, true, fmt.Errorf("FileID must not be empty")
+	}
+	// The pinned SDK exposes file sources in beta types. Override emits the
+	// same source JSON on the stable Messages endpoint.
+	if part.Type == schema.ChatMessagePartTypeImageURL {
+		return anthropic.ContentBlockParamUnion{OfImage: &anthropic.ImageBlockParam{
+			Source: param.Override[anthropic.ImageBlockParamSourceUnion](anthropic.BetaFileImageSourceParam{FileID: *common.FileID}),
+		}}, true, nil
+	}
+	return anthropic.ContentBlockParamUnion{OfDocument: &anthropic.DocumentBlockParam{
+		Source: param.Override[anthropic.DocumentBlockParamSourceUnion](anthropic.BetaFileDocumentSourceParam{FileID: *common.FileID}),
+	}}, true, nil
 }

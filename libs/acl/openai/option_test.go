@@ -34,13 +34,15 @@ func Test_OpenAIOptions_Setters(t *testing.T) {
 		assert.Equal(t, fields, spec.ExtraFields)
 	})
 
-	t.Run("WithExtraFields merges on multiple calls", func(t *testing.T) {
+	t.Run("WithExtraFields replaces previous fields", func(t *testing.T) {
+		firstFields := map[string]any{"a": 1}
+		lastFields := map[string]any{"b": 2}
 		opts := []model.Option{
-			WithExtraFields(map[string]any{"a": 1}),
-			WithExtraFields(map[string]any{"b": 2}),
+			WithExtraFields(firstFields),
+			WithExtraFields(lastFields),
 		}
 		spec := model.GetImplSpecificOptions(&openaiOptions{}, opts...)
-		assert.Equal(t, map[string]any{"a": 1, "b": 2}, spec.ExtraFields)
+		assert.Equal(t, lastFields, spec.ExtraFields)
 	})
 
 	t.Run("WithReasoningEffort", func(t *testing.T) {

@@ -3,9 +3,9 @@ module github.com/cloudwego/eino-ext/components/model/ark
 go 1.18
 
 require (
-	github.com/bytedance/mockey v1.2.14
+	github.com/bytedance/mockey v1.4.6
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.7.37
+	github.com/cloudwego/eino v0.9.22
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/smartystreets/goconvey v1.8.1
 	github.com/stretchr/testify v1.11.1

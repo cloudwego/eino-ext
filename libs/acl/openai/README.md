@@ -278,8 +278,8 @@ This library is typically used:
 3. **Custom Solutions**: When building custom LLM integrations
 
 For most Eino integrations, use the higher-level component packages instead:
-- [components/model/openai](../../components/model/openai) for chat models
-- [components/embedding/openai](../../components/embedding/openai) for embeddings
+- [components/model/openai](../../../components/model/openai) for chat models
+- [components/embedding/openai](../../../components/embedding/openai) for embeddings
 
 ## License
 

@@ -18,6 +18,7 @@ package opentelemetry
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"time"
 
@@ -28,7 +29,13 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/grpc/credentials"
 )
+
+func tlsInsecureConfig() *tls.Config {
+	// #nosec G402 -- this configuration is exposed only through WithTLSInsecure.
+	return &tls.Config{InsecureSkipVerify: true}
+}
 
 type OtelProvider struct {
 	TracerProvider *sdktrace.TracerProvider
@@ -83,6 +90,8 @@ func NewOpenTelemetryProvider(opts ...Option) (*OtelProvider, error) {
 		}
 		if cfg.exportInsecure {
 			traceClientOpts = append(traceClientOpts, otlptracegrpc.WithInsecure())
+		} else if cfg.exportTLSInsecure {
+			traceClientOpts = append(traceClientOpts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsInsecureConfig())))
 		}
 
 		// trace provider
@@ -119,6 +128,8 @@ func NewOpenTelemetryProvider(opts ...Option) (*OtelProvider, error) {
 		}
 		if cfg.exportInsecure {
 			metricsClientOpts = append(metricsClientOpts, otlpmetricgrpc.WithInsecure())
+		} else if cfg.exportTLSInsecure {
+			metricsClientOpts = append(metricsClientOpts, otlpmetricgrpc.WithTLSCredentials(credentials.NewTLS(tlsInsecureConfig())))
 		}
 
 		meterProvider = cfg.meterProvider

@@ -34,6 +34,28 @@ import (
 	"github.com/cloudwego/eino/schema"
 )
 
+func TestCompletionAPIToModelCallbackUsage(t *testing.T) {
+	cm := &completionAPIChatModel{}
+	usage := cm.toModelCallbackUsage(&schema.ResponseMeta{Usage: &schema.TokenUsage{
+		CompletionTokens: 7,
+		PromptTokens:     11,
+		TotalTokens:      18,
+		PromptTokenDetails: schema.PromptTokenDetails{
+			CachedTokens: 3,
+		},
+		CompletionTokensDetails: schema.CompletionTokensDetails{
+			ReasoningTokens: 4,
+		},
+	}})
+
+	assert.NotNil(t, usage)
+	assert.Equal(t, 11, usage.PromptTokens)
+	assert.Equal(t, 7, usage.CompletionTokens)
+	assert.Equal(t, 18, usage.TotalTokens)
+	assert.Equal(t, 3, usage.PromptTokenDetails.CachedTokens)
+	assert.Equal(t, 4, usage.CompletionTokensDetails.ReasoningTokens)
+}
+
 func TestChatCompletionAPIStream(t *testing.T) {
 	PatchConvey("test Stream", t, func() {
 		ctx := context.Background()

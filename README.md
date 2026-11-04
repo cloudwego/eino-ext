@@ -31,7 +31,7 @@ For more details about component implementations, please refer to the [Eino ecos
 
 If you discover a potential security issue in this project, or think you may
 have discovered a security issue, we ask that you notify Bytedance Security via
-our [security center](https://security.bytedance.com/src) or [vulnerability reporting email](sec@bytedance.com).
+our [security center](https://security.bytedance.com/src) or [vulnerability reporting email](mailto:sec@bytedance.com).
 
 Please do **not** create a public GitHub issue.
 

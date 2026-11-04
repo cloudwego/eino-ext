@@ -278,8 +278,8 @@ openai.WithStreamOptions(&openai.StreamOptions{
 3. **自定义解决方案**：构建自定义 LLM 集成时
 
 对于大多数 Eino 集成，请改用更高级别的组件包：
-- [components/model/openai](../../components/model/openai) 用于聊天模型
-- [components/embedding/openai](../../components/embedding/openai) 用于嵌入
+- [components/model/openai](../../../components/model/openai) 用于聊天模型
+- [components/embedding/openai](../../../components/embedding/openai) 用于嵌入
 
 ## 许可证
 

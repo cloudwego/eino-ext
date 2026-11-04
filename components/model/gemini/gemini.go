@@ -294,6 +294,12 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 		}()
 		for resp, err_ := range resultIter {
 			if err_ != nil {
+				// The SDK can report a JSON error when cancellation interrupts an
+				// SSE event. Preserve the request's context error for both callbacks
+				// and stream consumers instead of reporting the partial event.
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					err_ = ctxErr
+				}
 				sw.Send(nil, err_)
 				return
 			}
@@ -601,6 +607,13 @@ func (cm *ChatModel) genInputAndConf(input []*schema.Message, opts ...model.Opti
 		m.ImageConfig = geminiOptions.ImageConfig
 	}
 
+	if geminiOptions.ExtraFields != nil || geminiOptions.CustomHeaders != nil {
+		m.HTTPOptions = &genai.HTTPOptions{
+			ExtraBody: geminiOptions.ExtraFields,
+			Headers:   geminiOptions.CustomHeaders,
+		}
+	}
+
 	if len(geminiOptions.Labels) > 0 {
 		if cm.cli.ClientConfig().Backend != genai.BackendVertexAI {
 			return "", nil, nil, nil, fmt.Errorf("labels are only supported on the Vertex AI backend")
@@ -679,7 +692,10 @@ func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInp
 			if input.Image == nil {
 				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in tool message")
 			}
-			part, err := toFunctionResponsePart(input.Image.Base64Data, input.Image.URL, input.Image.MIMEType, input.Type, displayName)
+			if err := validateMediaFileID(input.Image.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			part, err := toFunctionResponsePart(input.Image.Base64Data, mediaFileURI(input.Image.URL, input.Image.FileID), input.Image.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
 			}
@@ -689,7 +705,10 @@ func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInp
 			if input.Video == nil {
 				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in tool message")
 			}
-			part, err := toFunctionResponsePart(input.Video.Base64Data, input.Video.URL, input.Video.MIMEType, input.Type, displayName)
+			if err := validateMediaFileID(input.Video.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			part, err := toFunctionResponsePart(input.Video.Base64Data, mediaFileURI(input.Video.URL, input.Video.FileID), input.Video.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
 			}
@@ -699,7 +718,10 @@ func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInp
 			if input.Audio == nil {
 				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in tool message")
 			}
-			part, err := toFunctionResponsePart(input.Audio.Base64Data, input.Audio.URL, input.Audio.MIMEType, input.Type, displayName)
+			if err := validateMediaFileID(input.Audio.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			part, err := toFunctionResponsePart(input.Audio.Base64Data, mediaFileURI(input.Audio.URL, input.Audio.FileID), input.Audio.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
 			}
@@ -709,7 +731,10 @@ func convMultiModalToolMessageToPart(toolName string, inputs []schema.MessageInp
 			if input.File == nil {
 				return nil, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in tool message")
 			}
-			part, err := toFunctionResponsePart(input.File.Base64Data, input.File.URL, input.File.MIMEType, input.Type, displayName)
+			if err := validateMediaFileID(input.File.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			part, err := toFunctionResponsePart(input.File.Base64Data, mediaFileURI(input.File.URL, input.File.FileID), input.File.MIMEType, input.Type, displayName)
 			if err != nil {
 				return nil, err
 			}
@@ -914,7 +939,10 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 			if content.Image == nil {
 				return nil, fmt.Errorf("image field must not be nil when Type is ChatMessagePartTypeImageURL in user message")
 			}
-			p, err := toGenAIDataPart(content.Image.Base64Data, content.Image.URL, content.Image.MIMEType, schema.ChatMessagePartTypeImageURL)
+			if err := validateMediaFileID(content.Image.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			p, err := toGenAIDataPart(content.Image.Base64Data, mediaFileURI(content.Image.URL, content.Image.FileID), content.Image.MIMEType, schema.ChatMessagePartTypeImageURL)
 			if err != nil {
 				return nil, err
 			}
@@ -924,7 +952,10 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 			if content.Audio == nil {
 				return nil, fmt.Errorf("audio field must not be nil when Type is ChatMessagePartTypeAudioURL in user message")
 			}
-			p, err := toGenAIDataPart(content.Audio.Base64Data, content.Audio.URL, content.Audio.MIMEType, schema.ChatMessagePartTypeAudioURL)
+			if err := validateMediaFileID(content.Audio.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			p, err := toGenAIDataPart(content.Audio.Base64Data, mediaFileURI(content.Audio.URL, content.Audio.FileID), content.Audio.MIMEType, schema.ChatMessagePartTypeAudioURL)
 			if err != nil {
 				return nil, err
 			}
@@ -935,7 +966,10 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 				return nil, fmt.Errorf("video field must not be nil when Type is ChatMessagePartTypeVideoURL in user message")
 			}
 
-			p, err := toGenAIDataPart(content.Video.Base64Data, content.Video.URL, content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
+			if err := validateMediaFileID(content.Video.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			p, err := toGenAIDataPart(content.Video.Base64Data, mediaFileURI(content.Video.URL, content.Video.FileID), content.Video.MIMEType, schema.ChatMessagePartTypeVideoURL)
 			if err != nil {
 				return nil, err
 			}
@@ -952,7 +986,10 @@ func convInputMedia(contents []schema.MessageInputPart) ([]*genai.Part, error) {
 			if content.File == nil {
 				return nil, fmt.Errorf("file field must not be nil when Type is ChatMessagePartTypeFileURL in user message")
 			}
-			p, err := toGenAIDataPart(content.File.Base64Data, content.File.URL, content.File.MIMEType, schema.ChatMessagePartTypeFileURL)
+			if err := validateMediaFileID(content.File.MessagePartCommon); err != nil {
+				return nil, err
+			}
+			p, err := toGenAIDataPart(content.File.Base64Data, mediaFileURI(content.File.URL, content.File.FileID), content.File.MIMEType, schema.ChatMessagePartTypeFileURL)
 			if err != nil {
 				return nil, err
 			}
@@ -1475,4 +1512,21 @@ func newPanicErr(info any, stack []byte) error {
 		info:  info,
 		stack: stack,
 	}
+}
+
+func validateMediaFileID(common schema.MessagePartCommon) error {
+	if common.Base64Data != nil || common.URL != nil || common.FileID == nil {
+		return nil
+	}
+	if *common.FileID == "" {
+		return fmt.Errorf("FileID must not be empty")
+	}
+	return nil
+}
+
+func mediaFileURI(url, fileID *string) *string {
+	if url != nil {
+		return url
+	}
+	return fileID
 }

@@ -374,26 +374,18 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, input []*schema.Mes
 			cacheCfg.ExpireAt = responseReq.ExpireAt
 		}
 
-		cm.receivedStreamResponse(responseStreamReader, config, cacheCfg, sw)
+		cm.receivedStreamResponse(responseStreamReader, config, cacheCfg, sw, specOptions.thinking)
 
 	}()
 
-	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
-		func(src *model.CallbackOutput) (callbacks.CallbackOutput, error) {
-			if src.Extra == nil {
-				src.Extra = make(map[string]any)
-			}
-			src.Extra[callbackExtraKeyThinking] = specOptions.thinking
-			return src, nil
-		}))
+	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, sr)
 
 	outStream = schema.StreamReaderWithConvert(nsr,
-		func(src callbacks.CallbackOutput) (*schema.Message, error) {
-			s := src.(*model.CallbackOutput)
-			if s.Message == nil {
+		func(src *model.CallbackOutput) (*schema.Message, error) {
+			if src.Message == nil {
 				return nil, schema.ErrNoValue
 			}
-			return s.Message, nil
+			return src.Message, nil
 		},
 	)
 
@@ -1167,8 +1159,7 @@ func (cm *ResponsesAPIChatModel) toCallbackConfig(req *responses.ResponsesReques
 	}
 }
 
-func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader,
-	config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput]) {
+func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader, config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput], thinking *arkModel.Thinking) {
 	var itemFunctionToolCall *responses.ItemFunctionToolCall
 
 	for {
@@ -1188,7 +1179,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			}
 			msg := &schema.Message{Role: schema.Assistant}
 			cm.setStreamChunkDefaultExtra(msg, ev.Response.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.Response.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.Response.Response.Model, msg, thinking)
 
 		case *responses.Event_ResponseCompleted:
 			if ev.ResponseCompleted == nil || ev.ResponseCompleted.Response == nil {
@@ -1196,7 +1187,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			}
 			msg := cm.handleCompletedStreamEvent(ev.ResponseCompleted.Response)
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseCompleted.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.ResponseCompleted.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseCompleted.Response.Model, msg, thinking)
 
 		case *responses.Event_Error:
 			sw.Send(nil, fmt.Errorf("received error: %s", ev.Error.Message))
@@ -1214,7 +1205,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				},
 			}
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseIncomplete.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.ResponseIncomplete.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseIncomplete.Response.Model, msg, thinking)
 
 		case *responses.Event_ResponseFailed:
 			if ev.ResponseFailed == nil || ev.ResponseFailed.Response == nil {
@@ -1232,7 +1223,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				},
 			}
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseFailed.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.ResponseFailed.Response.Model, msg)
+			cm.sendCallbackOutput(sw, config, ev.ResponseFailed.Response.Model, msg, thinking)
 
 		case *responses.Event_Item:
 			if ev.Item == nil || ev.Item.GetItem() == nil || ev.Item.GetItem().GetUnion() == nil {
@@ -1265,7 +1256,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 						},
 					},
 				}
-				cm.sendCallbackOutput(sw, config, "", msg)
+				cm.sendCallbackOutput(sw, config, "", msg, thinking)
 			}
 
 		case *responses.Event_ReasoningText:
@@ -1278,7 +1269,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				ReasoningContent: delta,
 			}
 			setReasoningContent(msg, delta)
-			cm.sendCallbackOutput(sw, config, "", msg)
+			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		case *responses.Event_ReasoningRawTextDelta:
 			if ev.ReasoningRawTextDelta == nil || ev.ReasoningRawTextDelta.Delta == nil {
@@ -1291,7 +1282,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			}
 			setReasoningContent(msg, delta)
 			setRawReasoningContent(msg, delta)
-			cm.sendCallbackOutput(sw, config, "", msg)
+			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		case *responses.Event_Text:
 			if ev.Text == nil || ev.Text.Delta == nil {
@@ -1301,7 +1292,7 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 				Role:    schema.Assistant,
 				Content: *ev.Text.Delta,
 			}
-			cm.sendCallbackOutput(sw, config, "", msg)
+			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		}
 
@@ -1323,8 +1314,7 @@ func (cm *ResponsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message,
 
 }
 
-func (cm *ResponsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string,
-	msg *schema.Message) {
+func (cm *ResponsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*model.CallbackOutput], reqConf *model.Config, modelName string, msg *schema.Message, thinking *arkModel.Thinking) {
 
 	var token *model.TokenUsage
 	if msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
@@ -1338,11 +1328,11 @@ func (cm *ResponsesAPIChatModel) sendCallbackOutput(sw *schema.StreamWriter[*mod
 		}
 	}
 
-	var extra map[string]any
+	extra := map[string]any{
+		callbackExtraKeyThinking: thinking,
+	}
 	if len(modelName) > 0 {
-		extra = map[string]any{
-			callbackExtraModelName: modelName,
-		}
+		extra[callbackExtraModelName] = modelName
 	}
 
 	sw.Send(&model.CallbackOutput{
@@ -1508,6 +1498,17 @@ func convUserInputMultiContentToContentItems(parts []schema.MessageInputPart) ([
 	return items, nil
 }
 func convMsgInputImageToResponseContentItem(image *schema.MessageInputImage) (*responses.ContentItem, error) {
+	if image.URL == nil && image.Base64Data == nil && image.FileID != nil {
+		if err := validateInputFileID(image.MessagePartCommon); err != nil {
+			return nil, err
+		}
+		item := &responses.ContentItemImage{Type: responses.ContentItemType_input_image, FileId: image.FileID}
+		if err := toContentItemImageDetail(item, image.Detail); err != nil {
+			return nil, err
+		}
+		return &responses.ContentItem{Union: &responses.ContentItem_Image{Image: item}}, nil
+	}
+
 	imageURL, err := convMessagePartCommonToURL(image.MessagePartCommon)
 	if err != nil {
 		return nil, fmt.Errorf("convert message input image failed err: %w", err)
@@ -1528,6 +1529,14 @@ func convMsgInputImageToResponseContentItem(image *schema.MessageInputImage) (*r
 }
 
 func convMsgInputVideoToResponseContentItem(video *schema.MessageInputVideo) (*responses.ContentItem, error) {
+	if video.URL == nil && video.Base64Data == nil && video.FileID != nil {
+		if err := validateInputFileID(video.MessagePartCommon); err != nil {
+			return nil, err
+		}
+		item := &responses.ContentItemVideo{Type: responses.ContentItemType_input_video, FileId: video.FileID}
+		return &responses.ContentItem{Union: &responses.ContentItem_Video{Video: item}}, nil
+	}
+
 	videoURL, err := convMessagePartCommonToURL(video.MessagePartCommon)
 	if err != nil {
 		return nil, fmt.Errorf("convert message input video failed err: %w", err)
@@ -1553,6 +1562,14 @@ func convMsgInputVideoToResponseContentItem(video *schema.MessageInputVideo) (*r
 }
 
 func convMsgInputAudioToResponseContentItem(audio *schema.MessageInputAudio) (*responses.ContentItem, error) {
+	if audio.URL == nil && audio.Base64Data == nil && audio.FileID != nil {
+		if err := validateInputFileID(audio.MessagePartCommon); err != nil {
+			return nil, err
+		}
+		item := &responses.ContentItemAudio{Type: responses.ContentItemType_input_audio, FileId: audio.FileID}
+		return &responses.ContentItem{Union: &responses.ContentItem_Audio{Audio: item}}, nil
+	}
+
 	audioURL, err := convMessagePartCommonToURL(audio.MessagePartCommon)
 	if err != nil {
 		return nil, fmt.Errorf("convert message input audio failed err: %w", err)
@@ -1572,6 +1589,17 @@ func convMsgInputAudioToResponseContentItem(audio *schema.MessageInputAudio) (*r
 }
 
 func convMsgInputFileToResponseContentItem(file *schema.MessageInputFile) (*responses.ContentItem, error) {
+	if file.URL == nil && file.Base64Data == nil && file.FileID != nil {
+		if err := validateInputFileID(file.MessagePartCommon); err != nil {
+			return nil, err
+		}
+		item := &responses.ContentItemFile{Type: responses.ContentItemType_input_file, FileId: file.FileID}
+		if file.Name != "" {
+			item.Filename = &file.Name
+		}
+		return &responses.ContentItem{Union: &responses.ContentItem_File{File: item}}, nil
+	}
+
 	var (
 		fileURL  string
 		err      error
@@ -1813,4 +1841,14 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	}
 
 	return info, nil
+}
+
+func validateInputFileID(common schema.MessagePartCommon) error {
+	if common.FileID == nil {
+		return nil
+	}
+	if *common.FileID == "" {
+		return fmt.Errorf("FileID must not be empty")
+	}
+	return nil
 }

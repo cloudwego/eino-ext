@@ -352,29 +352,18 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 			sw.Close()
 		}()
 
-		receivedStreamResponse(responseStreamReader, config, sw)
+		receivedStreamResponse(responseStreamReader, config, sw, m.enableAutoCache)
 
 	}()
 
-	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
-		func(src *model.AgenticCallbackOutput) (callbacks.CallbackOutput, error) {
-			if src.Extra == nil {
-				src.Extra = make(map[string]any)
-			}
-			return src, nil
-		},
-	))
+	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, sr)
 
 	outStream = schema.StreamReaderWithConvert(nsr,
-		func(src callbacks.CallbackOutput) (*schema.AgenticMessage, error) {
-			s := src.(*model.AgenticCallbackOutput)
-			if s.Message == nil {
+		func(src *model.AgenticCallbackOutput) (*schema.AgenticMessage, error) {
+			if src.Message == nil {
 				return nil, schema.ErrNoValue
 			}
-			if m.enableAutoCache {
-				setAutoCached(s.Message)
-			}
-			return s.Message, nil
+			return src.Message, nil
 		},
 	)
 

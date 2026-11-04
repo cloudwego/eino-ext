@@ -187,7 +187,7 @@ func (d *DDGS) sendRequestWithRetry(ctx context.Context, req *http.Request, para
 
 // getVQD retrieves the VQD token required for search requests
 func (d *DDGS) getVQD(ctx context.Context, query string) (string, error) {
-	endpoint := "https://duckduckgo.com"
+	endpoint := baseURL
 
 	// Create request with query parameter
 	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
