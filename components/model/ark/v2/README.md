@@ -305,7 +305,7 @@ Additional Ark response data is available through these helpers:
 | --- | --- |
 | `GetArkRequestID` | Completion ID |
 | `GetModelName` | Actual model name |
-| `GetReasoningContent` | Current message reasoning, with support for legacy Extra metadata |
+| `GetReasoningContent` | Current message reasoning |
 | `GetServiceTier` | Service tier |
 | `GetEncryptedContent` | Encrypted reasoning content |
 | `GetModerationHitType` | Moderation classification |
@@ -321,8 +321,12 @@ SDK-specific counts and service-status fields use flat keys, such as
 `ark-responses-usage-details.input_tokens_details.audio_tokens` and
 `ark-service-status.model_fallback.fallback_triggered`. Variable-shaped Responses
 output and tool details are JSON strings. The helpers reconstruct SDK types after
-restoration; older registered metadata types remain readable. Responses reasoning
-passback uses the complete stored output instead of keeping a second copy.
+restoration. Usage helpers read common counts from `ResponseMeta.Usage` and
+SDK-specific fields from the current `Extra` format. An optional count is set
+when its key exists, including an explicit zero. Stream concatenation keeps the
+last provided value for each SDK-specific field; an omitted field leaves it
+unchanged. Responses reasoning passback uses the complete stored output instead
+of keeping a second copy.
 
 Keep the returned assistant message in conversation history to pass its reasoning,
 encrypted reasoning, and tool calls back to the API. The adapter integrates with

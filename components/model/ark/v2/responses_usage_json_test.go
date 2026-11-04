@@ -25,7 +25,6 @@ import (
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
 const sparseResponsesUsageJSON = `{"input_tokens":8,"output_tokens":3,"total_tokens":11,"input_tokens_details":{"cached_tokens":2},"output_tokens_details":{"reasoning_tokens":1}}`
@@ -40,36 +39,6 @@ type metadataTestCodec struct {
 var responsesUsageJSONCodecs = []metadataTestCodec{
 	{"encoding/json", json.Marshal, json.Unmarshal},
 	{"sonic", sonic.Marshal, sonic.Unmarshal},
-}
-
-func TestResponsesUsageJSONRoundTrip(t *testing.T) {
-	for _, usage := range []struct {
-		name string
-		raw  string
-	}{
-		{"sparse", sparseResponsesUsageJSON},
-		{"details", detailedResponsesUsageJSON},
-	} {
-		for _, codec := range responsesUsageJSONCodecs {
-			t.Run(usage.name+"/"+codec.name, func(t *testing.T) {
-				var want responses.ResponseUsage
-				check(t, codec.unmarshal([]byte(usage.raw), &want))
-				// The SDK's pointer codec handles unset optional fields correctly.
-				_, err := codec.marshal(&want)
-				check(t, err)
-				value := responsesUsage(want)
-				// Extra stores a value in an interface, so both value and pointer
-				// encodings must use the SDK codec.
-				for _, input := range []any{value, &value} {
-					raw, err := codec.marshal(input)
-					check(t, err)
-					var restored responsesUsage
-					check(t, codec.unmarshal(raw, &restored))
-					equal(t, want, responses.ResponseUsage(restored))
-				}
-			})
-		}
-	}
 }
 
 func TestResponsesMessageJSONRoundTrip(t *testing.T) {

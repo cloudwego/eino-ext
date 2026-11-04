@@ -289,7 +289,7 @@ fmt.Println(reply.Content)
 | --- | --- |
 | `GetArkRequestID` | Completion ID |
 | `GetModelName` | 实际模型名称 |
-| `GetReasoningContent` | 当前消息的思考内容，兼容旧 Extra 元数据 |
+| `GetReasoningContent` | 当前消息的思考内容 |
 | `GetServiceTier` | 服务等级 |
 | `GetEncryptedContent` | 加密思考内容 |
 | `GetModerationHitType` | 内容审核分类 |
@@ -302,7 +302,10 @@ fmt.Println(reply.Content)
 因此 modifier 或流拼接对通用统计的修改也会反映在 getter 结果中。
 SDK 专有计数和服务状态平铺为独立 key，例如 `ark-responses-usage-details.input_tokens_details.audio_tokens`
 和 `ark-service-status.model_fallback.fallback_triggered`。结构可变的 Responses output
-和工具明细保存为 JSON 字符串，辅助函数在恢复后还原 SDK 类型。旧的元数据注册类型继续支持读取。
+和工具明细保存为 JSON 字符串，辅助函数在恢复后还原 SDK 类型。
+usage getter 只读取 `ResponseMeta.Usage` 和当前 `Extra` 格式。
+可选计数通过 key 是否存在区分未设置和显式零值；流拼接保留每个 SDK 专有字段
+最后一次提供的值，后续缺失字段不会清空此前的值。
 Responses 推理回传使用保存的完整 output，不再重复保存一份 reasoning。
 
 多轮对话中保留返回的 assistant 消息，即可向 API 回传其中的思考内容、加密思考内容

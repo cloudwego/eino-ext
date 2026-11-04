@@ -26,39 +26,17 @@ import (
 )
 
 const (
-	keyResponseID         = "ark-response-id"
-	keyCacheExpiration    = "ark-response-cache-expire-at"
-	keyResponsesReasoning = "ark-responses-reasoning"
-	keyResponsesUsage     = "ark-responses-usage-details"
-	keyResponsesOutput    = "ark-responses-output"
+	keyResponseID      = "ark-response-id"
+	keyCacheExpiration = "ark-response-cache-expire-at"
+	keyResponsesUsage  = "ark-responses-usage-details"
+	keyResponsesOutput = "ark-responses-output"
 )
 
 type cacheExpiration int64
 
-// Keep the SDK-backed types registered for older gob/checkpoint messages.
-// New messages store atomic fields and JSON strings instead.
-type responsesReasoning []responses.ItemReasoning
-type responsesUsage responses.ResponseUsage
-type responsesOutput []responses.OutputItem
-
-func (u responsesUsage) MarshalJSON() ([]byte, error) {
-	value := responses.ResponseUsage(u)
-	return value.MarshalJSON()
-}
-
-func (u *responsesUsage) UnmarshalJSON(data []byte) error {
-	return (*responses.ResponseUsage)(u).UnmarshalJSON(data)
-}
-
 func init() {
 	schema.RegisterName[cacheExpiration]("_eino_ext_ark_v2_cache_expiration")
-	schema.RegisterName[responsesReasoning]("_eino_ext_ark_v2_responses_reasoning")
-	schema.RegisterName[responsesUsage]("_eino_ext_ark_v2_responses_usage")
-	schema.RegisterName[responsesOutput]("_eino_ext_ark_v2_responses_output")
 	compose.RegisterStreamChunkConcatFunc(lastValue[cacheExpiration])
-	compose.RegisterStreamChunkConcatFunc(lastValue[responsesReasoning])
-	compose.RegisterStreamChunkConcatFunc(lastValue[responsesUsage])
-	compose.RegisterStreamChunkConcatFunc(lastValue[responsesOutput])
 }
 
 // SessionCacheConfig enables storing Responses and reusing their server context.
@@ -96,8 +74,8 @@ func InvalidateMessageCaches(messages []*schema.Message) error {
 }
 
 // GetResponsesTokenUsageDetails combines the current ResponseMeta.Usage with
-// modality and built-in tool usage in Extra. Older messages with usage only in
-// Extra are supported.
+// modality and built-in tool usage in Extra. It returns false when
+// ResponseMeta.Usage is absent.
 func GetResponsesTokenUsageDetails(msg *schema.Message) (responses.ResponseUsage, bool) {
 	return readResponsesUsage(msg)
 }
@@ -116,9 +94,6 @@ func getResponsesReasoning(msg *schema.Message) ([]responses.ItemReasoning, bool
 				value = append(value, reasoning)
 			}
 		}
-	} else {
-		// Older messages stored a separate reasoning copy.
-		value, _ = readJSONExtra[[]responses.ItemReasoning](msg, keyResponsesReasoning)
 	}
 	if len(value) == 0 {
 		return nil, false

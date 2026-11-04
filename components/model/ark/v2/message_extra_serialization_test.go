@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -129,7 +130,7 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 			}
 			check(t, err)
 			for _, key := range []string{
-				keyReasoningContent,
+				"ark-reasoning-content",
 				keyUsageDetails + ".prompt_tokens", keyUsageDetails + ".completion_tokens", keyUsageDetails + ".total_tokens",
 				keyUsageDetails + ".prompt_tokens_details.cached_tokens", keyUsageDetails + ".completion_tokens_details.reasoning_tokens",
 				keyResponsesUsage + ".input_tokens", keyResponsesUsage + ".output_tokens", keyResponsesUsage + ".total_tokens",
@@ -140,6 +141,9 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 				}
 			}
 			for key, value := range msg.Extra {
+				if strings.HasSuffix(key, ".set") {
+					t.Fatalf("optional presence duplicated in Extra[%q]", key)
+				}
 				switch reflect.TypeOf(value).Kind() {
 				case reflect.String, reflect.Bool, reflect.Int64:
 				default:
@@ -199,83 +203,11 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 	}
 }
 
-func TestLegacyMessageExtraSurvivesSerialization(t *testing.T) {
-	var chatResponse chat.ChatCompletionResponse
-	check(t, json.Unmarshal([]byte(responseJSON), &chatResponse))
-	var response responses.Response
-	check(t, json.Unmarshal([]byte(responsesJSON), &response))
-	msg := &schema.Message{Extra: map[string]any{
-		keyServiceStatus:  serviceStatus(chatResponse.ServiceStatus.Value),
-		keyUsageDetails:   tokenUsageDetails(chatResponse.Usage.Value),
-		keyResponsesUsage: responsesUsage(response.Usage.Value),
-		keyResponsesOutput: responsesOutput{
-			response.Output[2],
-		},
-	}}
-	for _, codec := range messagePersistenceCodecs() {
-		t.Run(codec.name, func(t *testing.T) {
-			raw, err := codec.marshal(msg)
-			check(t, err)
-			var restored schema.Message
-			check(t, codec.unmarshal(raw, &restored))
-			equalMetadataJSON(t, msg, &restored)
-			_, ok := GetServiceStatus(&restored)
-			equal(t, true, ok)
-			_, ok = GetTokenUsageDetails(&restored)
-			equal(t, true, ok)
-			_, ok = GetResponsesTokenUsageDetails(&restored)
-			equal(t, true, ok)
-			_, ok = GetResponsesOutput(&restored)
-			equal(t, true, ok)
-		})
-	}
-}
-
-func TestEmptyLegacyMessageExtraJSON(t *testing.T) {
-	msg := &schema.Message{Extra: map[string]any{
-		keyServiceStatus: serviceStatus{}, keyUsageDetails: tokenUsageDetails{}, keyResponsesUsage: responsesUsage{},
-	}}
-	for _, codec := range responsesUsageJSONCodecs {
-		t.Run(codec.name, func(t *testing.T) {
-			raw, err := codec.marshal(msg)
-			check(t, err)
-			var restored schema.Message
-			check(t, codec.unmarshal(raw, &restored))
-			_, ok := GetServiceStatus(&restored)
-			equal(t, true, ok)
-			_, ok = GetTokenUsageDetails(&restored)
-			equal(t, true, ok)
-			_, ok = GetResponsesTokenUsageDetails(&restored)
-			equal(t, true, ok)
-		})
-	}
-}
-
-func TestLegacyReasoningSurvivesSerialization(t *testing.T) {
-	var response responses.Response
-	check(t, json.Unmarshal([]byte(responsesJSON), &response))
-	reasoning := response.Output[0].OneOf.ItemReasoning
-	msg := &schema.Message{Role: schema.Assistant, ReasoningContent: responsesReasoningText([]responses.ItemReasoning{reasoning}), Extra: map[string]any{
-		keyResponsesReasoning: responsesReasoning{reasoning},
-	}}
-	for _, codec := range messagePersistenceCodecs() {
-		t.Run(codec.name, func(t *testing.T) {
-			raw, err := codec.marshal(msg)
-			check(t, err)
-			var restored schema.Message
-			check(t, codec.unmarshal(raw, &restored))
-			items, ok := getResponsesReasoning(&restored)
-			equal(t, true, ok)
-			equal(t, "cipher", items[0].EncryptedContent.Or(""))
-			equal(t, msg.ReasoningContent, responsesReasoningText(items))
-		})
-	}
-}
-
 func TestUsageConcatCombinesCommonCountsAndLastDetails(t *testing.T) {
 	for _, api := range []string{"chat", "responses"} {
 		t.Run(api, func(t *testing.T) {
 			first := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
+			middle := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
 			last := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
 			var chatUsage chat.CompletionUsage
 			var responseUsage responses.ResponseUsage
@@ -283,24 +215,33 @@ func TestUsageConcatCombinesCommonCountsAndLastDetails(t *testing.T) {
 				var response chat.ChatCompletionResponse
 				check(t, json.Unmarshal([]byte(responseJSON), &response))
 				setUsage(first, response.Usage.Value)
+				var update chat.CompletionUsage
+				update.PromptTokensDetails.AudioTokens = chat.NewOptInt32(0)
+				setUsage(middle, update)
 				setUsage(last, chatUsage)
 				chatUsage = response.Usage.Value
-				chatUsage.PromptTokensDetails.AudioTokens = chat.OptInt32{}
+				chatUsage.PromptTokensDetails.AudioTokens = chat.NewOptInt32(0)
 				setServiceStatus(first, response.ServiceStatus.Value)
 				setServiceStatus(last, chat.ChatCompletionServiceStatus{})
 			} else {
 				var usage responses.ResponseUsage
 				check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &usage))
-				check(t, json.Unmarshal([]byte(sparseResponsesUsageJSON), &responseUsage))
+				check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &responseUsage))
+				usage.InputTokensDetails.AudioTokens = responses.NewOptInt64(7)
 				var err error
 				first, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(usage)}, &responses.ResponsesRequest{})
+				check(t, err)
+				var update responses.ResponseUsage
+				update.InputTokensDetails.AudioTokens = responses.NewOptInt64(0)
+				middle, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(update)}, &responses.ResponsesRequest{})
 				check(t, err)
 				var lower responses.ResponseUsage
 				check(t, json.Unmarshal([]byte(`{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}`), &lower))
 				last, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(lower)}, &responses.ResponsesRequest{})
 				check(t, err)
 			}
-			joined, err := schema.ConcatMessages([]*schema.Message{first, last})
+			// Explicit zero replaces a count; a later omission leaves it available.
+			joined, err := schema.ConcatMessages([]*schema.Message{first, middle, last})
 			check(t, err)
 			for _, codec := range messagePersistenceCodecs() {
 				t.Run(codec.name, func(t *testing.T) {
@@ -332,29 +273,12 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 	var response responses.Response
 	check(t, json.Unmarshal([]byte(responsesJSON), &response))
 	check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &response.Usage.Value))
-	for _, format := range []string{"current", "legacy SDK", "legacy flat", "common only"} {
+	for _, format := range []string{"current", "common only"} {
 		t.Run(format, func(t *testing.T) {
 			chatMessage, err := resolveChatResponse(&chatResponse)
 			check(t, err)
 			responseMessage, err := resolveResponsesResponse(&response, &responses.ResponsesRequest{})
 			check(t, err)
-			if format == "legacy SDK" {
-				chatMessage.Extra = map[string]any{keyUsageDetails: tokenUsageDetails(chatResponse.Usage.Value)}
-				responseMessage.Extra = map[string]any{keyResponsesUsage: responsesUsage(response.Usage.Value)}
-			} else if format == "legacy flat" {
-				for key, n := range map[string]int64{
-					keyUsageDetails + ".prompt_tokens": 8, keyUsageDetails + ".completion_tokens": 3, keyUsageDetails + ".total_tokens": 11,
-					keyUsageDetails + ".prompt_tokens_details.cached_tokens": 2, keyUsageDetails + ".completion_tokens_details.reasoning_tokens": 1,
-				} {
-					chatMessage.Extra[key] = metadataInt64(n)
-				}
-				for key, n := range map[string]int64{
-					keyResponsesUsage + ".input_tokens": 8, keyResponsesUsage + ".output_tokens": 3, keyResponsesUsage + ".total_tokens": 11,
-					keyResponsesUsage + ".input_tokens_details.cached_tokens": 2, keyResponsesUsage + ".output_tokens_details.reasoning_tokens": 1,
-				} {
-					responseMessage.Extra[key] = metadataInt64(n)
-				}
-			}
 			wantChat, wantResponse := chatResponse.Usage.Value, response.Usage.Value
 			// Change all common counts, including zero values, as a modifier may do.
 			wantChat.PromptTokens, wantChat.CompletionTokens, wantChat.TotalTokens = 0, 20, 20
@@ -389,26 +313,6 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 					equal(t, wantResponse, responseUsage)
 				})
 			}
-			if format == "legacy flat" {
-				chatMessage.ResponseMeta, responseMessage.ResponseMeta = nil, nil
-				chatUsage, ok := GetTokenUsageDetails(chatMessage)
-				equal(t, true, ok)
-				equal(t, chatResponse.Usage.Value, chatUsage)
-				responseUsage, ok := GetResponsesTokenUsageDetails(responseMessage)
-				equal(t, true, ok)
-				equal(t, response.Usage.Value, responseUsage)
-			}
 		})
 	}
-}
-
-func TestReasoningGetterSupportsLegacyExtra(t *testing.T) {
-	msg := &schema.Message{Extra: map[string]any{keyReasoningContent: "legacy thought"}}
-	reasoning, ok := GetReasoningContent(msg)
-	equal(t, true, ok)
-	equal(t, "legacy thought", reasoning)
-	msg.ReasoningContent = "current thought"
-	reasoning, ok = GetReasoningContent(msg)
-	equal(t, true, ok)
-	equal(t, "current thought", reasoning)
 }

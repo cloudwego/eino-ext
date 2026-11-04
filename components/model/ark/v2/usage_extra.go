@@ -70,7 +70,7 @@ func setServiceStatus(msg *schema.Message, status chat.ChatCompletionServiceStat
 
 func readServiceStatus(msg *schema.Message) (chat.ChatCompletionServiceStatus, bool) {
 	if present, ok := extraBool(msg, keyServiceStatus); !ok || !present {
-		return readJSONExtra[chat.ChatCompletionServiceStatus](msg, keyServiceStatus)
+		return chat.ChatCompletionServiceStatus{}, false
 	}
 	var result chat.ChatCompletionServiceStatus
 	if present, _ := extraBool(msg, keyServiceStatus+".model_fallback"); present {
@@ -82,16 +82,11 @@ func readServiceStatus(msg *schema.Message) (chat.ChatCompletionServiceStatus, b
 }
 
 func setOptionalCount(msg *schema.Message, key string, value int64, present bool) {
-	msg.Extra[key] = metadataInt64(value)
-	// Explicit absence lets a later usage chunk clear an earlier optional count.
-	msg.Extra[key+".set"] = metadataBool(present)
-}
-
-func optionalCount(msg *schema.Message, key string) (int64, bool) {
-	if present, exists := extraBool(msg, key+".set"); exists && !present {
-		return 0, false
+	if present {
+		msg.Extra[key] = metadataInt64(value)
+	} else {
+		delete(msg.Extra, key)
 	}
-	return extraInt64(msg, key)
 }
 
 func setChatUsage(msg *schema.Message, usage chat.CompletionUsage) {
@@ -109,37 +104,20 @@ func setChatUsage(msg *schema.Message, usage chat.CompletionUsage) {
 }
 
 func readChatUsage(msg *schema.Message) (chat.CompletionUsage, bool) {
-	result, found := readJSONExtra[chat.CompletionUsage](msg, keyUsageDetails)
-	if msg != nil && msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
-		usage := msg.ResponseMeta.Usage
-		for field, n := range map[*int32]int{
-			&result.PromptTokens: usage.PromptTokens, &result.CompletionTokens: usage.CompletionTokens, &result.TotalTokens: usage.TotalTokens,
-			&result.PromptTokensDetails.CachedTokens:        usage.PromptTokenDetails.CachedTokens,
-			&result.CompletionTokensDetails.ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
-		} {
-			if n < math.MinInt32 || n > math.MaxInt32 {
-				return chat.CompletionUsage{}, false
-			}
-			*field = int32(n)
-		}
-		found = true
-	} else if _, flat := extraInt64(msg, keyUsageDetails+".total_tokens"); flat {
-		// Older messages also stored the common counts in Extra.
-		for key, field := range map[string]*int32{
-			"prompt_tokens": &result.PromptTokens, "completion_tokens": &result.CompletionTokens, "total_tokens": &result.TotalTokens,
-			"prompt_tokens_details.cached_tokens":        &result.PromptTokensDetails.CachedTokens,
-			"completion_tokens_details.reasoning_tokens": &result.CompletionTokensDetails.ReasoningTokens,
-		} {
-			n, ok := extraInt64(msg, keyUsageDetails+"."+key)
-			if !ok || n < math.MinInt32 || n > math.MaxInt32 {
-				return chat.CompletionUsage{}, false
-			}
-			*field = int32(n)
-		}
-		found = true
-	}
-	if !found {
+	if msg == nil || msg.ResponseMeta == nil || msg.ResponseMeta.Usage == nil {
 		return chat.CompletionUsage{}, false
+	}
+	usage := msg.ResponseMeta.Usage
+	var result chat.CompletionUsage
+	for field, n := range map[*int32]int{
+		&result.PromptTokens: usage.PromptTokens, &result.CompletionTokens: usage.CompletionTokens, &result.TotalTokens: usage.TotalTokens,
+		&result.PromptTokensDetails.CachedTokens:        usage.PromptTokenDetails.CachedTokens,
+		&result.CompletionTokensDetails.ReasoningTokens: usage.CompletionTokensDetails.ReasoningTokens,
+	} {
+		if n < math.MinInt32 || n > math.MaxInt32 {
+			return chat.CompletionUsage{}, false
+		}
+		*field = int32(n)
 	}
 	for key, field := range map[string]*chat.OptInt32{
 		"prompt_tokens_details.text_tokens":            &result.PromptTokensDetails.TextTokens,
@@ -149,7 +127,7 @@ func readChatUsage(msg *schema.Message) (chat.CompletionUsage, bool) {
 		"prompt_tokens_details.audio_cached_tokens":    &result.PromptTokensDetails.AudioCachedTokens,
 		"completion_tokens_details.provisioned_tokens": &result.CompletionTokensDetails.ProvisionedTokens,
 	} {
-		if n, ok := optionalCount(msg, keyUsageDetails+"."+key); ok && n >= math.MinInt32 && n <= math.MaxInt32 {
+		if n, ok := extraInt64(msg, keyUsageDetails+"."+key); ok && n >= math.MinInt32 && n <= math.MaxInt32 {
 			*field = chat.NewOptInt32(int32(n))
 		}
 	}
@@ -162,7 +140,11 @@ func setResponsesUsage(msg *schema.Message, usage responses.ResponseUsage) error
 		"input_tokens_details.audio_cached_tokens": usage.InputTokensDetails.AudioCachedTokens,
 	}
 	tools, present := usage.ToolUsage.Get()
-	msg.Extra[keyResponsesUsage+".tool_usage"] = metadataBool(present)
+	if present {
+		msg.Extra[keyResponsesUsage+".tool_usage"] = metadataBool(true)
+	} else {
+		delete(msg.Extra, keyResponsesUsage+".tool_usage")
+	}
 	counts["tool_usage.web_search"], counts["tool_usage.mcp"] = tools.WebSearch, tools.Mcp
 	counts["tool_usage.knowledge_search"], counts["tool_usage.doubao_app"] = tools.KnowledgeSearch, tools.DoubaoApp
 	for key, value := range counts {
@@ -172,36 +154,19 @@ func setResponsesUsage(msg *schema.Message, usage responses.ResponseUsage) error
 	if details, ok := usage.ToolUsageDetails.Get(); ok {
 		return setJSONExtra(msg, keyResponsesUsage+".tool_usage_details", &details)
 	}
-	msg.Extra[keyResponsesUsage+".tool_usage_details"] = jsonMetadata("")
+	delete(msg.Extra, keyResponsesUsage+".tool_usage_details")
 	return nil
 }
 
 func readResponsesUsage(msg *schema.Message) (responses.ResponseUsage, bool) {
-	result, found := readJSONExtra[responses.ResponseUsage](msg, keyResponsesUsage)
-	if msg != nil && msg.ResponseMeta != nil && msg.ResponseMeta.Usage != nil {
-		usage := msg.ResponseMeta.Usage
-		result.InputTokens, result.OutputTokens, result.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
-		result.InputTokensDetails.CachedTokens = int64(usage.PromptTokenDetails.CachedTokens)
-		result.OutputTokensDetails.ReasoningTokens = int64(usage.CompletionTokensDetails.ReasoningTokens)
-		found = true
-	} else if _, flat := extraInt64(msg, keyResponsesUsage+".total_tokens"); flat {
-		// Older messages also stored the common counts in Extra.
-		for key, field := range map[string]*int64{
-			"input_tokens": &result.InputTokens, "output_tokens": &result.OutputTokens, "total_tokens": &result.TotalTokens,
-			"input_tokens_details.cached_tokens":     &result.InputTokensDetails.CachedTokens,
-			"output_tokens_details.reasoning_tokens": &result.OutputTokensDetails.ReasoningTokens,
-		} {
-			n, ok := extraInt64(msg, keyResponsesUsage+"."+key)
-			if !ok {
-				return responses.ResponseUsage{}, false
-			}
-			*field = n
-		}
-		found = true
-	}
-	if !found {
+	if msg == nil || msg.ResponseMeta == nil || msg.ResponseMeta.Usage == nil {
 		return responses.ResponseUsage{}, false
 	}
+	usage := msg.ResponseMeta.Usage
+	var result responses.ResponseUsage
+	result.InputTokens, result.OutputTokens, result.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+	result.InputTokensDetails.CachedTokens = int64(usage.PromptTokenDetails.CachedTokens)
+	result.OutputTokensDetails.ReasoningTokens = int64(usage.CompletionTokensDetails.ReasoningTokens)
 	var tools responses.ToolUsage
 	for key, field := range map[string]*responses.OptInt64{
 		"input_tokens_details.audio_tokens":        &result.InputTokensDetails.AudioTokens,
@@ -209,7 +174,7 @@ func readResponsesUsage(msg *schema.Message) (responses.ResponseUsage, bool) {
 		"tool_usage.web_search":                    &tools.WebSearch, "tool_usage.mcp": &tools.Mcp,
 		"tool_usage.knowledge_search": &tools.KnowledgeSearch, "tool_usage.doubao_app": &tools.DoubaoApp,
 	} {
-		if n, ok := optionalCount(msg, keyResponsesUsage+"."+key); ok {
+		if n, ok := extraInt64(msg, keyResponsesUsage+"."+key); ok {
 			*field = responses.NewOptInt64(n)
 		}
 	}

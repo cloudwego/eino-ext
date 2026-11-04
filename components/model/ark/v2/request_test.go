@@ -171,9 +171,4 @@ func TestMetadataSurvivesCheckpoint(t *testing.T) {
 	usage, ok := GetTokenUsageDetails(&restored)
 	equal(t, true, ok)
 	equal(t, int32(11), usage.TotalTokens)
-	// Legacy metadata uses defined string types; plain JSON uses strings.
-	type legacyName string
-	name, ok := GetModelName(&schema.Message{Extra: map[string]any{keyModelName: legacyName("legacy")}})
-	equal(t, true, ok)
-	equal(t, "legacy", name)
 }
