@@ -347,6 +347,8 @@ different model or endpoint IDs. The shared [environment helper](examples/intern
 validates these variables, applies an overall context timeout, and accepts the
 optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
 
+See [live example validation](examples/VALIDATION.md) for the latest real-service results and capability limitations.
+
 | Example | Demonstrates |
 | --- | --- |
 | [generate](examples/generate/main.go) | Text generation, request ID, and token usage |

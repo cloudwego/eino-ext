@@ -1,5 +1,8 @@
 # Responses code example validation
 
+Latest rerun: [2026-11-04 Chat and Responses validation](../VALIDATION.md).
+The results below preserve the 2026-11-02 run.
+
 Date: 2026-11-02 (Asia/Singapore). Model: `doubao-seed-2-1-pro-260628`.
 
 All 13 standalone programs compiled with Go 1.25.1. Each was run as its own

@@ -325,6 +325,8 @@ go run ./examples/generate
 共用的[环境配置辅助函数](examples/internal/exampleutil/config.go) 会检查环境变量、
 为完整流程设置 context 超时，并支持可选的 `ARK_BASE_URL`，其中应包含 `/api/v3` 后缀。
 
+最新真实服务测试结果及能力限制见[示例集成验证](examples/VALIDATION.md)。
+
 | 示例 | 演示内容 |
 | --- | --- |
 | [generate](examples/generate/main.go) | 文本生成、请求 ID 和 token 用量 |
