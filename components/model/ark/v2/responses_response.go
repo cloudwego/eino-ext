@@ -55,7 +55,9 @@ func responsesMetadata(resp *responses.Response, req *responses.ResponsesRequest
 		msg.ResponseMeta.Usage = &schema.TokenUsage{PromptTokens: int(usage.InputTokens), CompletionTokens: int(usage.OutputTokens), TotalTokens: int(usage.TotalTokens),
 			PromptTokenDetails:      schema.PromptTokenDetails{CachedTokens: int(usage.InputTokensDetails.CachedTokens)},
 			CompletionTokensDetails: schema.CompletionTokensDetails{ReasoningTokens: int(usage.OutputTokensDetails.ReasoningTokens)}}
-		msg.Extra[keyResponsesUsage] = responsesUsage(usage)
+		if err := setResponsesUsage(msg, usage); err != nil {
+			return nil, err
+		}
 	}
 	return msg, nil
 }
@@ -89,10 +91,9 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 	if msg.ReasoningContent != "" {
 		msg.Extra[keyReasoningContent] = msg.ReasoningContent
 	}
-	if len(reasoning) > 0 {
-		msg.Extra[keyResponsesReasoning] = responsesReasoning(reasoning)
+	if err := setJSONExtra(msg, keyResponsesOutput, resp.Output); err != nil {
+		return nil, err
 	}
-	msg.Extra[keyResponsesOutput] = responsesOutput(resp.Output)
 	return msg, nil
 }
 
@@ -115,13 +116,13 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	case responses.ResponseCompletedEventResponseStreamEventSum:
 		msg, err = responsesMetadata(&ev.ResponseCompletedEvent.Response, req)
 		if err == nil {
-			setResponsesFinalOutput(msg, ev.ResponseCompletedEvent.Response.Output)
+			err = setResponsesFinalOutput(msg, ev.ResponseCompletedEvent.Response.Output)
 		}
 		return msg, true, err
 	case responses.ResponseIncompleteEventResponseStreamEventSum:
 		msg, err = responsesMetadata(&ev.ResponseIncompleteEvent.Response, req)
 		if err == nil {
-			setResponsesFinalOutput(msg, ev.ResponseIncompleteEvent.Response.Output)
+			err = setResponsesFinalOutput(msg, ev.ResponseIncompleteEvent.Response.Output)
 		}
 		return msg, true, err
 	case responses.ResponseFailedEventResponseStreamEventSum:
@@ -157,17 +158,8 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	return msg, false, nil
 }
 
-func setResponsesFinalOutput(msg *schema.Message, output []responses.OutputItem) {
-	msg.Extra[keyResponsesOutput] = responsesOutput(output)
-	var reasoning []responses.ItemReasoning
-	for _, item := range output {
-		if r, ok := item.OneOf.GetItemReasoning(); ok {
-			reasoning = append(reasoning, r)
-		}
-	}
-	if len(reasoning) > 0 {
-		msg.Extra[keyResponsesReasoning] = responsesReasoning(reasoning)
-	}
+func setResponsesFinalOutput(msg *schema.Message, output []responses.OutputItem) error {
+	return setJSONExtra(msg, keyResponsesOutput, output)
 }
 
 func responsesReasoningText(items []responses.ItemReasoning) string {

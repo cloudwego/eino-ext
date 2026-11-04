@@ -18,10 +18,8 @@ package ark
 
 import (
 	"fmt"
-	"reflect"
 	"time"
 
-	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
@@ -36,9 +34,21 @@ const (
 )
 
 type cacheExpiration int64
+
+// Keep the SDK-backed types registered for older gob/checkpoint messages.
+// New messages store atomic fields and JSON strings instead.
 type responsesReasoning []responses.ItemReasoning
 type responsesUsage responses.ResponseUsage
 type responsesOutput []responses.OutputItem
+
+func (u responsesUsage) MarshalJSON() ([]byte, error) {
+	value := responses.ResponseUsage(u)
+	return value.MarshalJSON()
+}
+
+func (u *responsesUsage) UnmarshalJSON(data []byte) error {
+	return (*responses.ResponseUsage)(u).UnmarshalJSON(data)
+}
 
 func init() {
 	schema.RegisterName[cacheExpiration]("_eino_ext_ark_v2_cache_expiration")
@@ -72,18 +82,7 @@ type CacheInfo struct {
 
 func GetResponseID(msg *schema.Message) (string, bool) { return extraString(msg, keyResponseID) }
 func GetCacheExpiration(msg *schema.Message) (int64, bool) {
-	if msg == nil {
-		return 0, false
-	}
-	v := reflect.ValueOf(msg.Extra[keyCacheExpiration])
-	if v.IsValid() && v.Kind() == reflect.Int64 {
-		return v.Int(), true
-	}
-	// Support messages restored from plain JSON too.
-	if value, ok := msg.Extra[keyCacheExpiration].(float64); ok {
-		return int64(value), true
-	}
-	return 0, false
+	return extraInt64(msg, keyCacheExpiration)
 }
 
 // InvalidateMessageCaches prevents automatic cache reuse for these messages.
@@ -98,41 +97,35 @@ func InvalidateMessageCaches(messages []*schema.Message) error {
 
 // GetResponsesTokenUsageDetails returns modality and built-in tool usage.
 func GetResponsesTokenUsageDetails(msg *schema.Message) (responses.ResponseUsage, bool) {
-	if msg == nil {
-		return responses.ResponseUsage{}, false
-	}
-	value, ok := msg.Extra[keyResponsesUsage].(responsesUsage)
-	return responses.ResponseUsage(value), ok
+	return readResponsesUsage(msg)
 }
 
 // GetResponsesOutput returns all final SDK output items, including built-in tool
 // results and annotations that are not represented by Eino's common fields.
 func GetResponsesOutput(msg *schema.Message) ([]responses.OutputItem, bool) {
-	if msg == nil {
-		return nil, false
-	}
-	value, ok := msg.Extra[keyResponsesOutput].(responsesOutput)
-	return []responses.OutputItem(value), ok
+	return readJSONExtra[[]responses.OutputItem](msg, keyResponsesOutput)
 }
 
 func getResponsesReasoning(msg *schema.Message) ([]responses.ItemReasoning, bool) {
-	value, ok := msg.Extra[keyResponsesReasoning].(responsesReasoning)
-	if !ok && msg.Extra[keyResponsesReasoning] != nil {
-		// Plain JSON restoration does not retain registered Go types.
-		raw, err := sonic.Marshal(msg.Extra[keyResponsesReasoning])
-		if err != nil || sonic.Unmarshal(raw, &value) != nil {
-			return nil, false
+	var value []responses.ItemReasoning
+	if output, ok := GetResponsesOutput(msg); ok {
+		for _, item := range output {
+			if reasoning, ok := item.OneOf.GetItemReasoning(); ok {
+				value = append(value, reasoning)
+			}
 		}
-		ok = true
+	} else {
+		// Older messages stored a separate reasoning copy.
+		value, _ = readJSONExtra[[]responses.ItemReasoning](msg, keyResponsesReasoning)
 	}
-	if !ok {
+	if len(value) == 0 {
 		return nil, false
 	}
 	// Respect caller edits instead of restoring stale reasoning from Extra.
 	if responsesReasoningText(value) != msg.ReasoningContent {
 		return nil, false
 	}
-	return []responses.ItemReasoning(value), true
+	return value, true
 }
 
 func populateResponsesCache(in []*schema.Message, req *responses.ResponsesRequest, config *CacheOption) ([]*schema.Message, error) {

@@ -17,8 +17,10 @@
 package ark
 
 import (
+	"fmt"
 	"reflect"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
@@ -38,16 +40,94 @@ const (
 
 // Distinct registration names let both major versions coexist in one process.
 type metadataString string
+
+// Named atomic values preserve last-value stream concatenation. Their Go types
+// need not survive JSON decoding; readers also accept ordinary scalar values.
+type metadataInt64 int64
+type metadataBool bool
+
+// jsonMetadata is a JSON string for variable-shaped SDK output/tool details.
+// Keeping the payload opaque preserves private SDK union fields with gob too.
+type jsonMetadata string
+
+// Keep these types registered so older gob/checkpoint data remains readable.
 type serviceStatus chat.ChatCompletionServiceStatus
 type tokenUsageDetails chat.CompletionUsage
 
+func (s serviceStatus) MarshalJSON() ([]byte, error) {
+	value := chat.ChatCompletionServiceStatus(s)
+	return value.MarshalJSON()
+}
+
+func (s *serviceStatus) UnmarshalJSON(data []byte) error {
+	return (*chat.ChatCompletionServiceStatus)(s).UnmarshalJSON(data)
+}
+
+func (u tokenUsageDetails) MarshalJSON() ([]byte, error) {
+	value := chat.CompletionUsage(u)
+	return value.MarshalJSON()
+}
+
+func (u *tokenUsageDetails) UnmarshalJSON(data []byte) error {
+	return (*chat.CompletionUsage)(u).UnmarshalJSON(data)
+}
+
 func init() {
 	schema.RegisterName[metadataString]("_eino_ext_ark_v2_metadata")
+	schema.RegisterName[metadataInt64]("_eino_ext_ark_v2_metadata_int64")
+	schema.RegisterName[metadataBool]("_eino_ext_ark_v2_metadata_bool")
+	schema.RegisterName[jsonMetadata]("_eino_ext_ark_v2_json_metadata")
 	schema.RegisterName[serviceStatus]("_eino_ext_ark_v2_service_status")
 	schema.RegisterName[tokenUsageDetails]("_eino_ext_ark_v2_usage_details")
 	compose.RegisterStreamChunkConcatFunc(lastValue[metadataString])
+	compose.RegisterStreamChunkConcatFunc(lastValue[metadataInt64])
+	compose.RegisterStreamChunkConcatFunc(lastValue[metadataBool])
+	compose.RegisterStreamChunkConcatFunc(lastValue[jsonMetadata])
 	compose.RegisterStreamChunkConcatFunc(lastValue[serviceStatus])
 	compose.RegisterStreamChunkConcatFunc(lastValue[tokenUsageDetails])
+}
+
+func setJSONExtra(msg *schema.Message, key string, value any) error {
+	raw, err := sonic.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode %s metadata: %w", key, err)
+	}
+	msg.Extra[key] = jsonMetadata(string(raw))
+	return nil
+}
+
+func readJSONExtra[T any](msg *schema.Message, key string) (T, bool) {
+	var zero T
+	if msg == nil {
+		return zero, false
+	}
+	value, exists := msg.Extra[key]
+	if !exists || value == nil {
+		return zero, false
+	}
+	if typed, ok := value.(T); ok {
+		return typed, true
+	}
+	// Accept current JSON metadata, older registered values, and the maps/slices
+	// produced when callers restore a Message with an ordinary JSON decoder.
+	var raw []byte
+	switch value := value.(type) {
+	case jsonMetadata:
+		raw = []byte(value)
+	case string:
+		raw = []byte(value)
+	default:
+		var err error
+		raw, err = sonic.Marshal(value)
+		if err != nil {
+			return zero, false
+		}
+	}
+	var result T
+	if err := sonic.Unmarshal(raw, &result); err != nil {
+		return zero, false
+	}
+	return result, true
 }
 func lastValue[T any](chunks []T) (T, error) {
 	if len(chunks) == 0 {
@@ -90,21 +170,13 @@ func GetEncryptedContent(msg *schema.Message) (string, bool) {
 
 // GetServiceStatus returns the service's model fallback information.
 func GetServiceStatus(msg *schema.Message) (chat.ChatCompletionServiceStatus, bool) {
-	if msg == nil {
-		return chat.ChatCompletionServiceStatus{}, false
-	}
-	value, ok := msg.Extra[keyServiceStatus].(serviceStatus)
-	return chat.ChatCompletionServiceStatus(value), ok
+	return readServiceStatus(msg)
 }
 
 // GetTokenUsageDetails returns the full SDK usage, including modality-specific
 // counts that the common Eino TokenUsage does not represent.
 func GetTokenUsageDetails(msg *schema.Message) (chat.CompletionUsage, bool) {
-	if msg == nil {
-		return chat.CompletionUsage{}, false
-	}
-	value, ok := msg.Extra[keyUsageDetails].(tokenUsageDetails)
-	return chat.CompletionUsage(value), ok
+	return readChatUsage(msg)
 }
 
 func SetInputVideoFPS(part *schema.MessageInputVideo, fps float64) {

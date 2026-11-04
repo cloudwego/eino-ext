@@ -311,6 +311,14 @@ Additional Ark response data is available through these helpers:
 | `GetServiceStatus` | Service status, including model fallback information |
 | `GetTokenUsageDetails` | Full SDK usage, including modality-specific counts |
 
+Ark metadata in `Extra` uses scalar values so messages can round-trip through
+`encoding/json`, Sonic, and gob. Token counts and service-status fields are flat
+keys, such as `ark-responses-usage-details.input_tokens` and
+`ark-service-status.model_fallback.fallback_triggered`. Variable-shaped Responses
+output and tool details are JSON strings. The helpers reconstruct SDK types after
+restoration; older registered metadata types remain readable. Responses reasoning
+passback uses the complete stored output instead of keeping a second copy.
+
 Keep the returned assistant message in conversation history to pass its reasoning,
 encrypted reasoning, and tool calls back to the API. The adapter integrates with
 Eino model callbacks for request, response, error, and usage reporting.

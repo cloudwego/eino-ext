@@ -295,6 +295,12 @@ fmt.Println(reply.Content)
 | `GetServiceStatus` | 服务状态，包括模型回退信息 |
 | `GetTokenUsageDetails` | SDK 完整用量，包括各模态 token 明细 |
 
+`Extra` 中的方舟元数据使用原子值保存，支持 `encoding/json`、Sonic 和 gob 编解码往返。
+token 计数和服务状态平铺为独立 key，例如 `ark-responses-usage-details.input_tokens`
+和 `ark-service-status.model_fallback.fallback_triggered`。结构可变的 Responses output
+和工具明细保存为 JSON 字符串，辅助函数在恢复后还原 SDK 类型。旧的元数据注册类型继续支持读取。
+Responses 推理回传使用保存的完整 output，不再重复保存一份 reasoning。
+
 多轮对话中保留返回的 assistant 消息，即可向 API 回传其中的思考内容、加密思考内容
 和工具调用。本包集成 Eino 模型回调，提供请求、响应、错误和用量信息。
 

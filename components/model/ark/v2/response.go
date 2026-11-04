@@ -113,7 +113,7 @@ func setResponseExtra(msg *schema.Message, id, model string, tier chat.OptRespon
 		msg.Extra[keyServiceTier] = metadataString(tier.Value)
 	}
 	if status.IsSet() {
-		msg.Extra[keyServiceStatus] = serviceStatus(status.Value)
+		setServiceStatus(msg, status.Value)
 	}
 	if msg.ReasoningContent != "" {
 		msg.Extra[keyReasoningContent] = msg.ReasoningContent
@@ -126,7 +126,7 @@ func setUsage(msg *schema.Message, usage chat.CompletionUsage) {
 		PromptTokenDetails:      schema.PromptTokenDetails{CachedTokens: int(usage.PromptTokensDetails.CachedTokens)},
 		CompletionTokensDetails: schema.CompletionTokensDetails{ReasoningTokens: int(usage.CompletionTokensDetails.ReasoningTokens)},
 	}
-	msg.Extra[keyUsageDetails] = tokenUsageDetails(usage)
+	setChatUsage(msg, usage)
 }
 
 func toLogProbs(probs []chat.ChatCompletionTokenLogprob) *schema.LogProbs {
