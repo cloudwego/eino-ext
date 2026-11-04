@@ -78,25 +78,6 @@ func GetResponsesOutput(msg *schema.Message) ([]responses.OutputItem, bool) {
 	return readJSONExtra[[]responses.OutputItem](msg, keyResponsesOutput)
 }
 
-func getResponsesReasoning(msg *schema.Message) ([]responses.ItemReasoning, bool) {
-	var value []responses.ItemReasoning
-	if output, ok := GetResponsesOutput(msg); ok {
-		for _, item := range output {
-			if reasoning, ok := item.OneOf.GetItemReasoning(); ok {
-				value = append(value, reasoning)
-			}
-		}
-	}
-	if len(value) == 0 {
-		return nil, false
-	}
-	// Respect caller edits instead of restoring stale reasoning from Extra.
-	if responsesReasoningText(value) != msg.ReasoningContent {
-		return nil, false
-	}
-	return value, true
-}
-
 func populateResponsesCache(in []*schema.Message, req *responses.ResponsesRequest, config *CacheOption) ([]*schema.Message, error) {
 	if config == nil {
 		return in, nil

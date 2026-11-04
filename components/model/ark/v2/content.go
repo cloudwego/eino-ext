@@ -26,20 +26,43 @@ import (
 )
 
 func toArkContent(msg *schema.Message) (chat.ChatCompletionMessageContent, error) {
-	inputs, err := messageInputParts(msg)
-	if err != nil {
+	if err := validateMessageContent(msg); err != nil {
 		return chat.ChatCompletionMessageContent{}, err
 	}
-	if inputs == nil {
-		return chat.NewStringChatCompletionMessageContent(msg.Content), nil
-	}
-	parts := make([]chat.ChatCompletionContentPart, 0, len(inputs))
-	for _, input := range inputs {
-		part, err := toInputPart(input)
-		if err != nil {
-			return chat.ChatCompletionMessageContent{}, err
+	var parts []chat.ChatCompletionContentPart
+	switch {
+	case len(msg.UserInputMultiContent) > 0:
+		for _, input := range msg.UserInputMultiContent {
+			part, err := toInputPart(input)
+			if err != nil {
+				return chat.ChatCompletionMessageContent{}, err
+			}
+			parts = append(parts, part)
 		}
-		parts = append(parts, part)
+	case len(msg.AssistantGenMultiContent) > 0:
+		for _, output := range msg.AssistantGenMultiContent {
+			if output.Type == schema.ChatMessagePartTypeReasoning {
+				if output.Reasoning == nil {
+					return chat.ChatCompletionMessageContent{}, fmt.Errorf("assistant reasoning must not be nil")
+				}
+				continue
+			}
+			part, err := toChatOutputPart(output)
+			if err != nil {
+				return chat.ChatCompletionMessageContent{}, err
+			}
+			parts = append(parts, part)
+		}
+	case len(msg.MultiContent) > 0:
+		for _, legacy := range msg.MultiContent {
+			part, err := toChatLegacyPart(legacy)
+			if err != nil {
+				return chat.ChatCompletionMessageContent{}, err
+			}
+			parts = append(parts, part)
+		}
+	default:
+		return chat.NewStringChatCompletionMessageContent(msg.Content), nil
 	}
 	return chat.NewChatCompletionContentPartArrayChatCompletionMessageContent(parts), nil
 }
@@ -60,36 +83,12 @@ func toInputPart(part schema.MessageInputPart) (chat.ChatCompletionContentPart, 
 		if part.Image == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("image must not be nil")
 		}
-		url, fileID, base64, err := mediaSource(part.Image.MessagePartCommon, mediaKindImage)
-		if err != nil {
-			return chat.ChatCompletionContentPart{}, err
-		}
-		if base64 {
-			url = mediaDataURL(part.Image.MIMEType, url)
-		}
-		image := chat.ChatCompletionContentPartImageImageUrl{URL: chatString(url), FileID: chatString(fileID)}
-		if part.Image.Detail != "" {
-			image.Detail = chat.NewOptImageDetail(chat.ImageDetail(part.Image.Detail))
-		}
-		sum = chat.NewChatCompletionContentPartImageChatCompletionContentPartSum(chat.ChatCompletionContentPartImage{
-			Type: chat.ChatCompletionContentPartImageTypeImageURL, ImageURL: chat.NewChatCompletionContentPartImageImageUrlChatCompletionContentPartImageImageURL(image),
-		})
+		return chatImagePart(part.Image.MessagePartCommon, part.Image.Detail)
 	case schema.ChatMessagePartTypeVideoURL:
 		if part.Video == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("video must not be nil")
 		}
-		url, fileID, base64, err := mediaSource(part.Video.MessagePartCommon, mediaKindVideo)
-		if err != nil {
-			return chat.ChatCompletionContentPart{}, err
-		}
-		if base64 {
-			url = mediaDataURL(part.Video.MIMEType, url)
-		}
-		video := chat.ChatCompletionContentPartVideoVideoUrl{URL: chatString(url), FileID: chatString(fileID)}
-		if fps := GetInputVideoFPS(part.Video); fps != nil {
-			video.Fps = chat.NewOptFloat64(*fps)
-		}
-		sum = chat.NewChatCompletionContentPartVideoChatCompletionContentPartSum(chat.ChatCompletionContentPartVideo{Type: chat.ChatCompletionContentPartVideoTypeVideoURL, VideoURL: video})
+		return chatVideoPart(part.Video.MessagePartCommon, GetInputVideoFPS(part.Video))
 	case schema.ChatMessagePartTypeAudioURL:
 		if part.Audio == nil {
 			return chat.ChatCompletionContentPart{}, fmt.Errorf("audio must not be nil")
@@ -150,4 +149,84 @@ func audioFormatFromMIME(value string) string {
 		return "pcm"
 	}
 	return strings.TrimPrefix(value, "audio/")
+}
+
+func chatTextPart(text string) chat.ChatCompletionContentPart {
+	var sum chat.ChatCompletionContentPartSum
+	sum.SetChatCompletionContentPartText(chat.ChatCompletionContentPartText{Type: chat.ChatCompletionContentPartTextTypeText, Text: text})
+	return chat.ChatCompletionContentPart{OneOf: sum}
+}
+
+func chatImagePart(common schema.MessagePartCommon, detail schema.ImageURLDetail) (chat.ChatCompletionContentPart, error) {
+	var sum chat.ChatCompletionContentPartSum
+	url, fileID, base64, err := mediaSource(common, mediaKindImage)
+	if err != nil {
+		return chat.ChatCompletionContentPart{}, err
+	}
+	if base64 {
+		url = mediaDataURL(common.MIMEType, url)
+	}
+	image := chat.ChatCompletionContentPartImageImageUrl{URL: chatString(url), FileID: chatString(fileID)}
+	if detail != "" {
+		image.Detail = chat.NewOptImageDetail(chat.ImageDetail(detail))
+	}
+	sum = chat.NewChatCompletionContentPartImageChatCompletionContentPartSum(chat.ChatCompletionContentPartImage{
+		Type: chat.ChatCompletionContentPartImageTypeImageURL, ImageURL: chat.NewChatCompletionContentPartImageImageUrlChatCompletionContentPartImageImageURL(image),
+	})
+	return chat.ChatCompletionContentPart{OneOf: sum}, nil
+}
+
+func chatVideoPart(common schema.MessagePartCommon, fps *float64) (chat.ChatCompletionContentPart, error) {
+	var sum chat.ChatCompletionContentPartSum
+	url, fileID, base64, err := mediaSource(common, mediaKindVideo)
+	if err != nil {
+		return chat.ChatCompletionContentPart{}, err
+	}
+	if base64 {
+		url = mediaDataURL(common.MIMEType, url)
+	}
+	video := chat.ChatCompletionContentPartVideoVideoUrl{URL: chatString(url), FileID: chatString(fileID)}
+	if fps != nil {
+		video.Fps = chat.NewOptFloat64(*fps)
+	}
+	sum = chat.NewChatCompletionContentPartVideoChatCompletionContentPartSum(chat.ChatCompletionContentPartVideo{Type: chat.ChatCompletionContentPartVideoTypeVideoURL, VideoURL: video})
+	return chat.ChatCompletionContentPart{OneOf: sum}, nil
+}
+
+func toChatOutputPart(part schema.MessageOutputPart) (chat.ChatCompletionContentPart, error) {
+	switch part.Type {
+	case schema.ChatMessagePartTypeText:
+		return chatTextPart(part.Text), nil
+	case schema.ChatMessagePartTypeImageURL:
+		if part.Image == nil {
+			return chat.ChatCompletionContentPart{}, fmt.Errorf("assistant image must not be nil")
+		}
+		return chatImagePart(part.Image.MessagePartCommon, "")
+	case schema.ChatMessagePartTypeVideoURL:
+		if part.Video == nil {
+			return chat.ChatCompletionContentPart{}, fmt.Errorf("assistant video must not be nil")
+		}
+		return chatVideoPart(part.Video.MessagePartCommon, GetOutputVideoFPS(part.Video))
+	default:
+		return chat.ChatCompletionContentPart{}, fmt.Errorf("unsupported assistant part type %s", part.Type)
+	}
+}
+
+func toChatLegacyPart(part schema.ChatMessagePart) (chat.ChatCompletionContentPart, error) {
+	switch part.Type {
+	case schema.ChatMessagePartTypeText:
+		return chatTextPart(part.Text), nil
+	case schema.ChatMessagePartTypeImageURL:
+		if part.ImageURL == nil {
+			return chat.ChatCompletionContentPart{}, fmt.Errorf("ImageURL must not be nil")
+		}
+		return chatImagePart(schema.MessagePartCommon{URL: &part.ImageURL.URL}, part.ImageURL.Detail)
+	case schema.ChatMessagePartTypeVideoURL:
+		if part.VideoURL == nil {
+			return chat.ChatCompletionContentPart{}, fmt.Errorf("VideoURL must not be nil")
+		}
+		return chatVideoPart(schema.MessagePartCommon{URL: &part.VideoURL.URL}, getFPS(part.VideoURL.Extra))
+	default:
+		return chat.ChatCompletionContentPart{}, fmt.Errorf("unsupported legacy part type %s", part.Type)
+	}
 }

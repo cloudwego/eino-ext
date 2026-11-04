@@ -32,64 +32,18 @@ const (
 	mediaKindFile  mediaKind = "file"
 )
 
-// Normalize Eino's content representations without introducing SDK types.
-// A nil slice denotes the plain Message.Content string.
-func messageInputParts(msg *schema.Message) ([]schema.MessageInputPart, error) {
+// Validate content ownership without converting inputs and outputs to one type.
+func validateMessageContent(msg *schema.Message) error {
 	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
-		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
+		return fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 	}
-	if len(msg.UserInputMultiContent) > 0 {
-		if msg.Role != schema.User && msg.Role != schema.Tool {
-			return nil, fmt.Errorf("user input multi content only supports user and tool roles, got %s", msg.Role)
-		}
-		return msg.UserInputMultiContent, nil
+	if len(msg.UserInputMultiContent) > 0 && msg.Role != schema.User && msg.Role != schema.Tool {
+		return fmt.Errorf("user input multi content only supports user and tool roles, got %s", msg.Role)
 	}
-	var parts []schema.MessageInputPart
-	if len(msg.AssistantGenMultiContent) > 0 {
-		if msg.Role != schema.Assistant {
-			return nil, fmt.Errorf("assistant gen multi content only supports assistant role, got %s", msg.Role)
-		}
-		for _, part := range msg.AssistantGenMultiContent {
-			input := schema.MessageInputPart{Type: part.Type, Text: part.Text}
-			switch part.Type {
-			case schema.ChatMessagePartTypeText:
-			case schema.ChatMessagePartTypeImageURL:
-				if part.Image == nil {
-					return nil, fmt.Errorf("assistant image must not be nil")
-				}
-				input.Image = &schema.MessageInputImage{MessagePartCommon: part.Image.MessagePartCommon}
-			case schema.ChatMessagePartTypeVideoURL:
-				if part.Video == nil {
-					return nil, fmt.Errorf("assistant video must not be nil")
-				}
-				input.Video = &schema.MessageInputVideo{MessagePartCommon: part.Video.MessagePartCommon}
-			default:
-				return nil, fmt.Errorf("unsupported assistant part type %s", part.Type)
-			}
-			parts = append(parts, input)
-		}
-	} else {
-		for _, part := range msg.MultiContent {
-			input := schema.MessageInputPart{Type: part.Type, Text: part.Text}
-			switch part.Type {
-			case schema.ChatMessagePartTypeText:
-			case schema.ChatMessagePartTypeImageURL:
-				if part.ImageURL == nil {
-					return nil, fmt.Errorf("ImageURL must not be nil")
-				}
-				input.Image = &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &part.ImageURL.URL}, Detail: part.ImageURL.Detail}
-			case schema.ChatMessagePartTypeVideoURL:
-				if part.VideoURL == nil {
-					return nil, fmt.Errorf("VideoURL must not be nil")
-				}
-				input.Video = &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: &part.VideoURL.URL, Extra: part.VideoURL.Extra}}
-			default:
-				return nil, fmt.Errorf("unsupported legacy part type %s", part.Type)
-			}
-			parts = append(parts, input)
-		}
+	if len(msg.AssistantGenMultiContent) > 0 && msg.Role != schema.Assistant {
+		return fmt.Errorf("assistant gen multi content only supports assistant role, got %s", msg.Role)
 	}
-	return parts, nil
+	return nil
 }
 
 // Select URL, then raw Base64Data, then FileID. Validate only the selected source.

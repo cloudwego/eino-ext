@@ -39,7 +39,6 @@ func main() {
 func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 
 	config.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
-	config.EnableReasoningContentPassback = true
 	cm, err := ark.NewResponsesAPIChatModel(ctx, config)
 	if err != nil {
 		return err
@@ -67,7 +66,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 		return err
 	}
 	fmt.Println("\nReasoning characters:", len([]rune(assistant.ReasoningContent)))
-	// Reuse the assistant message so the adapter passes back its reasoning item.
+	// Reuse the assistant message to replay its complete native output, including reasoning.
 	reply, err := cm.Generate(ctx, []*schema.Message{question, assistant, schema.UserMessage("Add one to that answer. Reply with only the number.")},
 		ark.WithResponsesThinking(&responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeDisabled)}))
 	if err != nil {

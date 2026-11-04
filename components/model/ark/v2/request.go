@@ -135,10 +135,25 @@ func toArkMessage(msg *schema.Message) (chat.ChatCompletionRequestMessage, error
 		m := chat.ChatCompletionRequestAssistantMessage{
 			Role: chat.ChatCompletionRequestAssistantMessageRoleAssistant, Content: chat.NewOptNilChatCompletionMessageContent(content), Name: name,
 		}
-		if msg.ReasoningContent != "" {
-			m.ReasoningContent = chat.NewOptNilChatCompletionMessageContent(chat.NewStringChatCompletionMessageContent(msg.ReasoningContent))
+		reasoning := msg.ReasoningContent
+		encrypted, hasEncrypted := GetEncryptedContent(msg)
+		var partReasoning, partEncrypted string
+		for _, part := range msg.AssistantGenMultiContent {
+			if part.Type == schema.ChatMessagePartTypeReasoning {
+				partReasoning += part.Reasoning.Text
+				partEncrypted += part.Reasoning.Signature
+			}
 		}
-		if encrypted, ok := GetEncryptedContent(msg); ok {
+		if reasoning == "" {
+			reasoning = partReasoning
+		}
+		if !hasEncrypted {
+			encrypted = partEncrypted
+		}
+		if reasoning != "" {
+			m.ReasoningContent = chat.NewOptNilChatCompletionMessageContent(chat.NewStringChatCompletionMessageContent(reasoning))
+		}
+		if hasEncrypted || encrypted != "" {
 			m.EncryptedContent = chat.NewOptString(encrypted)
 		}
 		for _, tc := range msg.ToolCalls {

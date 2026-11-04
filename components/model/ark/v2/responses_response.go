@@ -62,7 +62,7 @@ func responsesMetadata(resp *responses.Response, req *responses.ResponsesRequest
 	return msg, nil
 }
 
-func resolveResponsesResponse(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
+func resolveResponsesResponse(resp *responses.Response, req *responses.ResponsesRequest, raw []byte) (*schema.Message, error) {
 	msg, err := responsesMetadata(resp, req)
 	if err != nil {
 		return nil, err
@@ -70,8 +70,16 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 	if len(resp.Output) == 0 && resp.Status.Or("") != responses.ResponseStatusIncomplete && !req.Caching.Or(responses.ResponseCaching{}).Prefix.Or(false) {
 		return nil, ErrEmptyResponse
 	}
+	projectResponsesOutput(msg, resp.Output)
+	if err := setResponsesFinalOutput(msg, resp.Output, raw); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func projectResponsesOutput(msg *schema.Message, outputs []responses.OutputItem) {
 	var reasoning []responses.ItemReasoning
-	for _, output := range resp.Output {
+	for _, output := range outputs {
 		switch output.OneOf.Type {
 		case responses.ItemOutputMessageOutputItemSum:
 			for _, part := range output.OneOf.ItemOutputMessage.Content {
@@ -88,10 +96,6 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 		}
 	}
 	msg.ReasoningContent = responsesReasoningText(reasoning)
-	if err := setJSONExtra(msg, keyResponsesOutput, resp.Output); err != nil {
-		return nil, err
-	}
-	return msg, nil
 }
 
 // Capture each original SSE payload while retaining the generated SDK decoder.
@@ -104,7 +108,7 @@ func (d *responsesPayloadDecoder) Unmarshal(raw []byte, value interface{}) error
 
 // Metadata is emitted once at the terminal event, so token usage and IDs do
 // not get duplicated when Eino concatenates stream chunks.
-func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest) (msg *schema.Message, terminal bool, err error) {
+func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest, raw []byte) (msg *schema.Message, terminal bool, err error) {
 	if event == nil {
 		return nil, false, nil
 	}
@@ -113,13 +117,13 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	case responses.ResponseCompletedEventResponseStreamEventSum:
 		msg, err = responsesMetadata(&ev.ResponseCompletedEvent.Response, req)
 		if err == nil {
-			err = setResponsesFinalOutput(msg, ev.ResponseCompletedEvent.Response.Output)
+			err = setResponsesFinalOutput(msg, ev.ResponseCompletedEvent.Response.Output, raw)
 		}
 		return msg, true, err
 	case responses.ResponseIncompleteEventResponseStreamEventSum:
 		msg, err = responsesMetadata(&ev.ResponseIncompleteEvent.Response, req)
 		if err == nil {
-			err = setResponsesFinalOutput(msg, ev.ResponseIncompleteEvent.Response.Output)
+			err = setResponsesFinalOutput(msg, ev.ResponseIncompleteEvent.Response.Output, raw)
 		}
 		return msg, true, err
 	case responses.ResponseFailedEventResponseStreamEventSum:
@@ -152,7 +156,10 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	return msg, false, nil
 }
 
-func setResponsesFinalOutput(msg *schema.Message, output []responses.OutputItem) error {
+func setResponsesFinalOutput(msg *schema.Message, output []responses.OutputItem, raw []byte) error {
+	if len(raw) > 0 {
+		return retainResponsesOutput(msg, raw)
+	}
 	return setJSONExtra(msg, keyResponsesOutput, output)
 }
 

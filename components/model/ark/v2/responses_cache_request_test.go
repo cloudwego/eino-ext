@@ -187,3 +187,44 @@ func TestResponsesCachedTextConversation(t *testing.T) {
 		})
 	}
 }
+
+func TestResponsesCachedToolConversation(t *testing.T) {
+	for _, mode := range []string{"generate", "stream"} {
+		for _, codec := range messagePersistenceCodecs() {
+			t.Run(mode+"/"+codec.name, func(t *testing.T) {
+				var calls atomic.Int32
+				requests := make(chan map[string]any, 3)
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					body := decodeRequest(t, r)
+					requests <- body
+					if rejectCachedTools(w, body) {
+						return
+					}
+					writeResponsesHistoryReply(w, calls.Add(1) == 1, body["stream"] == true)
+				}, &ResponsesAPIConfig{ToolStrict: ptr(true), EnableReasoningContentPassback: true, SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
+				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
+				user := schema.UserMessage("inspect")
+				first := callResponsesWithOptions(t, cm, mode, []*schema.Message{user})
+				equal(t, true, (<-requests)["tools"].([]any)[0].(map[string]any)["strict"])
+				history := roundTripHistory(t, codec, []*schema.Message{user, first, {Role: schema.Tool, ToolCallID: "call-1", Content: "tool result"}})
+				answer := callResponsesWithOptions(t, cm, mode, history)
+				body := <-requests
+				equal(t, "resp-1", body["previous_response_id"])
+				input := body["input"].([]any)
+				equal(t, 1, len(input))
+				equal(t, "function_call_output", input[0].(map[string]any)["type"])
+				equal(t, "tool result", input[0].(map[string]any)["output"])
+				history = roundTripHistory(t, codec, append(history, answer, schema.UserMessage("next question")))
+				reply := callResponsesWithOptions(t, cm, mode, history)
+				equal(t, "continued", reply.Content)
+				body = <-requests
+				// Reuse the latest cache, rather than the original tool call.
+				equal(t, "resp-2", body["previous_response_id"])
+				input = body["input"].([]any)
+				equal(t, 1, len(input))
+				equal(t, "next question", input[0].(map[string]any)["content"])
+				equal(t, int32(3), calls.Load())
+			})
+		}
+	}
+}

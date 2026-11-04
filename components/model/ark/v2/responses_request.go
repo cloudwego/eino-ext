@@ -81,7 +81,11 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	if err != nil {
 		return nil, nil, err
 	}
-	req.Input = responses.NewInputItemArrayResponsesInput(items)
+	req.Input = responses.NewInputItemArrayResponsesInput(items.items)
+	var extra map[string]interface{}
+	if len(items.output) > 0 {
+		extra = map[string]interface{}{"input": items}
+	}
 	tools := cm.rawTools
 	if common.Tools != nil {
 		tools = common.Tools
@@ -117,9 +121,8 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	// tools: [], so omit the SDK field and the strict extra-body override.
 	if req.PreviousResponseID.IsSet() {
 		req.Tools = nil
-		return req, nil, nil
+		return req, extra, nil
 	}
-	var extra map[string]interface{}
 	// The pinned SDK omits function strictness. Its public extra-body hook
 	// preserves that field without changing SDK authentication, retries or SSE.
 	if rawTools != nil {
@@ -127,7 +130,10 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 		if e != nil {
 			return nil, nil, fmt.Errorf("serialize Responses strict list: %w", e)
 		}
-		extra = map[string]interface{}{"tools": json.RawMessage(raw)}
+		if extra == nil {
+			extra = make(map[string]interface{})
+		}
+		extra["tools"] = json.RawMessage(raw)
 	}
 	return req, extra, nil
 }
@@ -150,6 +156,7 @@ func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *res
 			return nil, nil, err
 		}
 	}
+	originalInput := fields["input"]
 	raw, err = sonic.Marshal(fields)
 	if err != nil {
 		return nil, nil, err
@@ -182,6 +189,12 @@ func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *res
 		body[key] = value
 	}
 	wire := &responses.ResponsesRequest{Model: name, Input: typedInput, Stream: req.Stream}
+	// When input was not edited, retain the live SDK view used by native output
+	// replay. Its new file:// inputs are updated during SDK preprocessing.
+	if replay, ok := extra["input"].(*responsesInput); ok && bytes.Equal(input, originalInput) {
+		wire.Input = req.Input
+		body["input"] = replay
+	}
 	// Cache metadata must describe the payload actually sent after modification.
 	for key, target := range map[string]interface{}{"store": &wire.Store, "expire_at": &wire.ExpireAt, "caching": &wire.Caching} {
 		if value, exists := fields[key]; exists {

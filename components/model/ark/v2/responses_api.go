@@ -39,28 +39,30 @@ var _ model.ToolCallingChatModel = (*ResponsesAPIChatModel)(nil)
 // (WithCustomHeader, WithParallelToolCalls and modifiers) also apply.
 // SDK-specific formats and built-in tools use ark-runtime-go Responses types.
 type ResponsesAPIConfig struct {
-	Timeout                        *time.Duration               `json:"timeout,omitempty"`
-	HTTPClient                     *http.Client                 `json:"http_client,omitempty"`
-	RetryTimes                     *int                         `json:"retry_times,omitempty"`
-	BaseURL                        string                       `json:"base_url,omitempty"`
-	Region                         string                       `json:"region,omitempty"`
-	APIKey                         string                       `json:"api_key,omitempty"`
-	AccessKey                      string                       `json:"access_key,omitempty"`
-	SecretKey                      string                       `json:"secret_key,omitempty"`
-	Model                          string                       `json:"model"`
-	MaxOutputTokens                *int                         `json:"max_output_tokens,omitempty"`
-	Temperature                    *float32                     `json:"temperature,omitempty"`
-	TopP                           *float32                     `json:"top_p,omitempty"`
-	CustomHeader                   map[string]string            `json:"custom_header,omitempty"`
-	ResponseFormat                 *responses.TextFormat        `json:"response_format,omitempty"`
-	Thinking                       *responses.Thinking          `json:"thinking,omitempty"`
-	ServiceTier                    *string                      `json:"service_tier,omitempty"`
-	ReasoningEffort                *responses.ReasoningEffort   `json:"reasoning_effort,omitempty"`
-	ParallelToolCalls              *bool                        `json:"parallel_tool_calls,omitempty"`
-	ToolStrict                     *bool                        `json:"tool_strict,omitempty"`
-	SessionCache                   *SessionCacheConfig          `json:"session_cache,omitempty"`
-	EnableToolWebSearch            *responses.WebSearchTool     `json:"enable_tool_web_search,omitempty"`
-	MaxToolCalls                   *int64                       `json:"max_tool_calls,omitempty"`
+	Timeout             *time.Duration             `json:"timeout,omitempty"`
+	HTTPClient          *http.Client               `json:"http_client,omitempty"`
+	RetryTimes          *int                       `json:"retry_times,omitempty"`
+	BaseURL             string                     `json:"base_url,omitempty"`
+	Region              string                     `json:"region,omitempty"`
+	APIKey              string                     `json:"api_key,omitempty"`
+	AccessKey           string                     `json:"access_key,omitempty"`
+	SecretKey           string                     `json:"secret_key,omitempty"`
+	Model               string                     `json:"model"`
+	MaxOutputTokens     *int                       `json:"max_output_tokens,omitempty"`
+	Temperature         *float32                   `json:"temperature,omitempty"`
+	TopP                *float32                   `json:"top_p,omitempty"`
+	CustomHeader        map[string]string          `json:"custom_header,omitempty"`
+	ResponseFormat      *responses.TextFormat      `json:"response_format,omitempty"`
+	Thinking            *responses.Thinking        `json:"thinking,omitempty"`
+	ServiceTier         *string                    `json:"service_tier,omitempty"`
+	ReasoningEffort     *responses.ReasoningEffort `json:"reasoning_effort,omitempty"`
+	ParallelToolCalls   *bool                      `json:"parallel_tool_calls,omitempty"`
+	ToolStrict          *bool                      `json:"tool_strict,omitempty"`
+	SessionCache        *SessionCacheConfig        `json:"session_cache,omitempty"`
+	EnableToolWebSearch *responses.WebSearchTool   `json:"enable_tool_web_search,omitempty"`
+	MaxToolCalls        *int64                     `json:"max_tool_calls,omitempty"`
+	// Include standalone ReasoningContent on manually constructed messages.
+	// Native output items, including reasoning, are always replayed intact.
 	EnableReasoningContentPassback bool                         `json:"enable_reasoning_content_passback,omitempty"`
 	RequestPayloadModifier         RequestPayloadModifier       `json:"-"`
 	ResponseMessageModifier        ResponseMessageModifier      `json:"-"`
@@ -149,16 +151,13 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 	if err != nil {
 		return nil, err
 	}
-	var capture *responseCapture
-	if opts.responseMessageModifier != nil {
-		capture = &responseCapture{}
-	}
+	capture := &responseCapture{}
 	ctx = context.WithValue(ctx, responseCaptureKey{}, capture)
 	resp, err := cm.client.CreateResponses(ctx, wire, arkruntime.WithCustomHeaders(responsesHeaders(opts)), arkruntime.WithExtraBody(extra))
 	if err != nil {
 		return nil, fmt.Errorf("create Responses: %w", err)
 	}
-	out, err = resolveResponsesResponse(&resp.Response, wire)
+	out, err = resolveResponsesResponse(&resp.Response, wire, capture.rawBody)
 	if err != nil {
 		return nil, err
 	}
@@ -229,7 +228,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 				_ = sw.Send(nil, e)
 				return
 			}
-			msg, terminal, e := resolveResponsesStreamEvent(event, wire)
+			msg, terminal, e := resolveResponsesStreamEvent(event, wire, decoder.raw)
 			if e != nil {
 				_ = sw.Send(nil, e)
 				return

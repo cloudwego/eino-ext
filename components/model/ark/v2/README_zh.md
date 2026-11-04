@@ -392,8 +392,15 @@ Context 和图片生成 API 仍使用旧模块。
 - 图片、音频、视频、文件及多模态工具结果沿用相同 Eino 消息结构与
   URL → Base64Data → FileID 优先级。Responses 音频 base64 使用 MIME data URL，
   放入 `audio_url`。
-- `EnableReasoningContentPassback` 保留并回传推理 item，包括加密内容。
-  已有 previous response ID 时无需重复回传。需要账号与模型支持。
+- Responses 返回的助手历史按原顺序回放保存的原生 output item，保留 ID、状态、
+  注释、内置工具 item 和固定 SDK 尚不认识的字段，不经过 Eino 输入 part 重建。
+  原始 output JSON 以字符串存储，可经过 JSON/gob 持久化。
+  原始 reasoning item 及加密内容默认完整回传；使用 previous response ID 时无需
+  重复发送缓存历史。`EnableReasoningContentPassback` 仅控制没有原生 output 的
+  手工消息是否补入单独填写的 `ReasoningContent`。
+- 手工构造的助手消息直接按其输出 part 转换，包括有序的 reasoning part。
+  若应用修改返回消息的正文、推理或工具调用字段，则优先使用这些修改构造输入，
+  不恢复过时的 output；复用前还应使对应缓存失效。
 - `GetResponseID` 读取响应 ID；`GetArkRequestID` 读取服务返回的 HTTP 请求 ID。
   `GetResponsesTokenUsageDetails` 读取完整 SDK 用量，`GetResponsesOutput` 读取最终
   输出 item，保留注释、内置工具结果等通用消息字段之外的信息。
@@ -408,6 +415,10 @@ Context 和图片生成 API 仍使用旧模块。
 缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools`，
 包括 strict schema 的额外请求体覆盖。需要更换工具定义时应建立新的缓存链；
 自动会话缓存可先使消息缓存失效，再发送完整对话。
+
+[缓存工具调用示例](examples/responses/cached_tools/main.go) 展示绑定 strict 工具、
+流式生成并缓存工具调用、回传工具结果、再继续普通下一轮。客户端保留完整历史，
+续接自动使用最新缓存并继承首轮工具定义，同时打印服务返回的缓存输入 token 数。
 
 `WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` 可以显式续接已存储的响应或
 前缀；历史中有效的缓存消息优先于此 ID。`CreatePrefixCache(ctx, prefix, ttl)` 用于

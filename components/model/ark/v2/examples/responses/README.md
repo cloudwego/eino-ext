@@ -28,6 +28,7 @@ go run ./examples/responses/tools
 | [file](file/main.go) | Send a PDF by FileID or local base64 | `ARK_FILE_ID` or `ARK_FILE_PATH`; optional `ARK_PROMPT` |
 | [upload](upload/main.go) | Upload a PDF, wait for processing, send its FileID, and delete the temporary file | Optional `ARK_FILE_PATH` and `ARK_PROMPT` |
 | [tool_result](tool_result/main.go) | Return a document FileID in a native multimodal tool result | Required `ARK_FILE_ID`; optional `ARK_PROMPT` |
+| [cached_tools](cached_tools/main.go) | Bind strict tools, cache a streamed function call, return its result and continue another turn | Uses a fixed `8 + 13` conversation |
 | [session_cache](session_cache/main.go) | Store a response and reuse its cached context | Uses a fixed recall conversation |
 | [prefix_cache](prefix_cache/main.go) | Create a reusable prefix and continue from its response ID | Uses a fixed prefix and recall conversation |
 | [web_search](web_search/main.go) | Configure the built-in search tool | Optional `ARK_PROMPT` |
@@ -48,3 +49,10 @@ Cache, search, and media understanding require model/account support. In
 particular, an accepted tool-result request does not establish that the model
 read its document correctly. The examples demonstrate API usage; automated
 output checks belong to the separate validation harness and adapter tests.
+
+The [cached tools example](cached_tools/main.go) keeps one bound model and the
+complete Eino history across all three calls. Tools are sent when creating the
+cache; tool-result and ordinary continuations inherit them. It prints the
+response IDs and cached input token count returned by the service. Both it and
+the basic session/prefix examples require the cache service to be enabled for
+the selected account and model.

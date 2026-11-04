@@ -418,9 +418,18 @@ image-generation APIs remain in the legacy module.
 - Image/audio/video/file input and multimodal tool results use the same Eino
   parts and URL → Base64Data → FileID precedence as Chat Completions. Responses
   audio base64 is encoded as a MIME data URL in `audio_url`.
-- `EnableReasoningContentPassback` preserves reasoning items, including encrypted
-  content, when assistant messages are reused. It is skipped when a previous
-  response ID already supplies server context. Account/model support is required.
+- Assistant history from Responses replays the saved native output items in
+  their original order, including IDs, status, annotations, built-in tool items
+  and fields unknown to the pinned SDK. It is not reconstructed through Eino
+  input parts. The output JSON is stored as a string and survives JSON/gob.
+  Original reasoning items and encrypted content are replayed automatically.
+  A previous response ID supplies cached history without resending its output.
+  `EnableReasoningContentPassback` controls only standalone `ReasoningContent`
+  on hand-written messages without saved native output.
+- Hand-written assistant messages map their own output parts directly to
+  Responses input, including ordered reasoning parts. If an application edits
+  the common content, reasoning or tool-call fields of a returned message, those
+  edits take precedence over saved output. Invalidate its cache before reuse.
 - `GetResponseID` exposes the response ID; `GetArkRequestID` exposes the HTTP
   request ID when returned. `GetResponsesTokenUsageDetails` returns full SDK
   usage. `GetResponsesOutput` preserves final output items, including annotations
@@ -446,6 +455,11 @@ head ID. `CreatePrefixCache(ctx, prefix, ttl)` creates a reusable prefix where
 supported. Zero TTL leaves expiration to the service. Cache availability must
 be enabled for the account and model; a permission error does not prove an
 adapter defect.
+
+The [cached tools example](examples/responses/cached_tools/main.go) binds strict
+function tools, caches a streamed call, returns its tool result, and continues
+another user turn. It keeps full history on the client and prints cached token
+usage; subsequent requests inherit the original tool definitions.
 
 ### Streaming and modifiers
 
