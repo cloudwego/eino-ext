@@ -867,7 +867,7 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 			}
 			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
 				Text: &responses.ContentItemText{
-					Type: responses.ContentItemType_input_text,
+					Type: responses.ContentItemType_output_text,
 					Text: part.Text,
 				},
 			}})
@@ -878,7 +878,7 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 	if msg.Content != "" {
 		inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
 			Text: &responses.ContentItemText{
-				Type: responses.ContentItemType_input_text,
+				Type: responses.ContentItemType_output_text,
 				Text: msg.Content,
 			},
 		}})
@@ -892,7 +892,7 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 			}
 			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
 				Text: &responses.ContentItemText{
-					Type: responses.ContentItemType_input_text,
+					Type: responses.ContentItemType_output_text,
 					Text: c.Text,
 				},
 			}})
