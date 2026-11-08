@@ -3,9 +3,9 @@ module github.com/cloudwego/eino-ext/components/model/gemini
 go 1.24
 
 require (
-	github.com/bytedance/mockey v1.2.13
-	github.com/bytedance/sonic v1.14.1
-	github.com/cloudwego/eino v0.7.13
+	github.com/bytedance/mockey v1.4.6
+	github.com/bytedance/sonic v1.15.0
+	github.com/cloudwego/eino v0.9.22
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.10.0
@@ -20,7 +20,7 @@ require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.1 // indirect
 	github.com/bytedance/gopkg v0.1.3 // indirect
-	github.com/bytedance/sonic/loader v0.3.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

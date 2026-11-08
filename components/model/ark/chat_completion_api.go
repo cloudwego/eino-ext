@@ -465,6 +465,9 @@ func validateMessagePartCommon(c schema.MessagePartCommon, partName string) (raw
 		}
 		return *c.Base64Data, true, nil
 	}
+	if c.FileID != nil {
+		return "", false, fmt.Errorf("%s FileID is not supported by the current Ark Chat SDK; use the Responses API", partName)
+	}
 	return "", false, fmt.Errorf("%s part must contain either a URL or Base64Data", partName)
 }
 
