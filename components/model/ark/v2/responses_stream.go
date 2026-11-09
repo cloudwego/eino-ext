@@ -27,6 +27,7 @@ import (
 // Track the original projections before modifiers. Terminal output supplies any
 // fields or suffixes not already emitted, without duplicating existing deltas.
 type responsesStreamState struct {
+	parts            responsesPartsStream
 	content          strings.Builder
 	tools            map[int]*responsesStreamTool
 	reasoning        strings.Builder
@@ -71,9 +72,20 @@ func (s *responsesStreamState) record(msg *schema.Message) error {
 
 func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest) (*schema.Message, bool, error) {
 	msg, terminal, err := resolveResponsesStreamEvent(event, req)
-	if err != nil || msg == nil {
+	if err != nil {
 		return msg, terminal, err
 	}
+	parts, err := s.parts.resolve(event, msg, terminal)
+	if err != nil {
+		return nil, terminal, err
+	}
+	if msg == nil && len(parts) > 0 {
+		msg = &schema.Message{Role: schema.Assistant}
+	}
+	if msg == nil {
+		return nil, terminal, nil
+	}
+	msg.AssistantGenMultiContent = parts
 	if !terminal {
 		if msg.ReasoningContent != "" {
 			summary := event.OneOf.Type == responses.ResponseReasoningSummaryTextDeltaEventResponseStreamEventSum
@@ -135,12 +147,6 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		return nil, true, err
 	}
 
-	// Parts are emitted once, as the complete terminal projection. These are
-	// final positions, not positions in individual delta events. Distinct indices
-	// keep Concat from merging adjacent text or reasoning parts.
-	for index := range msg.AssistantGenMultiContent {
-		msg.AssistantGenMultiContent[index].StreamingMeta = &schema.MessageStreamingMeta{Index: index}
-	}
 	return msg, true, nil
 }
 

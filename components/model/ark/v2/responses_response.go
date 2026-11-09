@@ -119,23 +119,84 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 		return nil, false, fmt.Errorf("Ark stream error (%s): %s", ev.ResponseErrorEvent.Code.Or(""), ev.ResponseErrorEvent.Message)
 	case responses.ResponseTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, Content: ev.ResponseTextDeltaEvent.Delta.Or("")}
+		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesContentDelta(int(ev.ResponseTextDeltaEvent.OutputIndex), int(ev.ResponseTextDeltaEvent.ContentIndex), msg.Content, false)}
 	case responses.ResponseReasoningTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningTextDeltaEvent.Delta.Or("")}
+		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesContentDelta(int(ev.ResponseReasoningTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningTextDeltaEvent.ContentIndex), msg.ReasoningContent, true)}
 	case responses.ResponseReasoningRawTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningRawTextDeltaEvent.Delta.Or("")}
+		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesContentDelta(int(ev.ResponseReasoningRawTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningRawTextDeltaEvent.ContentIndex), msg.ReasoningContent, true)}
 	case responses.ResponseReasoningSummaryTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningSummaryTextDeltaEvent.Delta.Or("")}
+		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesSummaryDelta(int(ev.ResponseReasoningSummaryTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningSummaryTextDeltaEvent.SummaryIndex), msg.ReasoningContent)}
+	case responses.ResponseContentPartAddedEventResponseStreamEventSum:
+		e := ev.ResponseContentPartAddedEvent
+		msg, err = responsesPartEvent(e.Part, int(e.OutputIndex), int(e.ContentIndex))
+	case responses.ResponseContentPartDoneEventResponseStreamEventSum:
+		e := ev.ResponseContentPartDoneEvent
+		msg, err = responsesPartEvent(e.Part, int(e.OutputIndex), int(e.ContentIndex))
+	case responses.ResponseReasoningSummaryPartAddedEventResponseStreamEventSum:
+		e := ev.ResponseReasoningSummaryPartAddedEvent
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{responsesSummaryDelta(int(e.OutputIndex), int(e.SummaryIndex), e.Part.Text.Or(""))}}
+	case responses.ResponseReasoningSummaryPartDoneEventResponseStreamEventSum:
+		e := ev.ResponseReasoningSummaryPartDoneEvent
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{responsesSummaryDelta(int(e.OutputIndex), int(e.SummaryIndex), e.Part.Text.Or(""))}}
+	case responses.ResponseOutputItemDoneEventResponseStreamEventSum:
+		parts, e := projectResponsesItem(ev.ResponseOutputItemDoneEvent.Item, int(ev.ResponseOutputItemDoneEvent.OutputIndex))
+		if e != nil {
+			return nil, false, e
+		}
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: parts}
 	case responses.ResponseOutputItemAddedEventResponseStreamEventSum:
 		added := ev.ResponseOutputItemAddedEvent
 		if call, ok := added.Item.OneOf.GetItemFunctionToolCall(); ok {
 			index := int(added.OutputIndex)
 			msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, ID: call.CallID.Or(""), Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)},
 				Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}}}}
+		} else if added.Item.OneOf.Type == responses.ItemOutputMessageOutputItemSum || added.Item.OneOf.Type == responses.ItemReasoningOutputItemSum {
+			parts, e := projectResponsesItem(added.Item, int(added.OutputIndex))
+			if e != nil {
+				return nil, false, e
+			}
+			msg = &schema.Message{Role: schema.Assistant}
+			for _, part := range parts {
+				if section, ok := extraString(part.Extra, keyResponsesSection); ok && section != "" {
+					msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, part)
+				}
+			}
 		}
 	case responses.ResponseFunctionCallArgumentsDeltaEventResponseStreamEventSum:
 		delta := ev.ResponseFunctionCallArgumentsDeltaEvent
 		index := int(delta.OutputIndex)
 		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
 	}
-	return msg, false, nil
+	return msg, false, err
+}
+
+func responsesContentDelta(itemIndex, contentIndex int, text string, reasoning bool) schema.MessageOutputPart {
+	part := schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText, Text: text, Extra: map[string]any{
+		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("content"), keyResponsesContentIndex: metadataInt64(contentIndex), keyResponsesContentType: metadataString("output_text"),
+	}}
+	if reasoning {
+		part.Type, part.Text = schema.ChatMessagePartTypeReasoning, ""
+		part.Reasoning = &schema.MessageOutputReasoning{Text: text}
+		part.Extra[keyResponsesContentType] = metadataString("reasoning_text")
+	}
+	return part
+}
+
+func responsesSummaryDelta(itemIndex, summaryIndex int, text string) schema.MessageOutputPart {
+	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: text}, Extra: map[string]any{
+		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("summary"), keyResponsesSummaryIndex: metadataInt64(summaryIndex),
+	}}
+}
+
+func responsesPartEvent(part responses.OutputContentItem, itemIndex, contentIndex int) (*schema.Message, error) {
+	reasoning := part.OneOf.Type == responses.OutputContentItemReasoningTextOutputContentItemSum
+	parts, err := projectResponsesContent([]responses.OutputContentItem{part}, itemIndex, reasoning)
+	if err != nil {
+		return nil, err
+	}
+	parts[0].Extra[keyResponsesContentIndex] = metadataInt64(contentIndex)
+	return &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: parts}, nil
 }

@@ -131,7 +131,9 @@ func writeResponsesHistoryReply(w http.ResponseWriter, first, stream bool) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	text := "continued"
+	outputIndex, itemID := 0, "msg-2"
 	if first {
+		outputIndex, itemID = 1, "msg-1"
 		text = "done"
 		_, _ = io.WriteString(w, responseEvent("response.reasoning_text.delta", map[string]any{"output_index": 0, "content_index": 0, "item_id": "rs-1", "delta": "raw thought"}))
 		_, _ = io.WriteString(w, responseEvent("response.output_item.added", map[string]any{
@@ -139,7 +141,7 @@ func writeResponsesHistoryReply(w http.ResponseWriter, first, stream bool) {
 		}))
 		_, _ = io.WriteString(w, responseEvent("response.function_call_arguments.delta", map[string]any{"output_index": 2, "item_id": "fc-1", "delta": "{}"}))
 	}
-	_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{"output_index": 1, "content_index": 0, "item_id": "msg-1", "delta": text}))
+	_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{"output_index": outputIndex, "content_index": 0, "item_id": itemID, "delta": text}))
 	_, _ = io.WriteString(w, responseEvent("response.completed", map[string]any{"response": json.RawMessage(response)}))
 }
 

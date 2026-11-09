@@ -72,6 +72,9 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	if err != nil {
 		return err
 	}
+	if err := exampleutil.PrintResponsesConcat(chunks, assistant); err != nil {
+		return err
+	}
 	if len(assistant.ToolCalls) == 0 {
 		return errors.New("model returned no tool calls")
 	}

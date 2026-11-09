@@ -424,9 +424,10 @@ Context 和图片生成 API 仍使用旧模块。
   SDK annotations codec 和未知变体兼容机制保留自身值，经 JSON/gob 持久化保留数字精度。
   这些输出元数据不会自动成为请求字段；文本、签名和函数值只保存在公开字段。
   `ark-responses-item-index` 保存 parts/tools 的 item 归属和顺序，section/content-index
-  保存 item 内的 content 数组，独立于流式合包索引。reasoning.summary 按换行符合成
-  一个展示 part，不保留分段索引；输入转换至多生成一个 summary_text。
-  初始投影时，首个 reasoning part 保存该 item 的加密 `Signature`；输入转换读取
+  以及 `ark-responses-summary-index` 保存 item 内两种数组的原生索引，独立于流式合包索引。
+  每个 summary 对应一个 reasoning part，输入转换恢复有序 summary 数组。
+  首个 summary part 保存该 item 唯一的加密 `Signature`；没有 summary 时使用首个
+  reasoning content part。输入转换读取
   同一 item 任意 reasoning part 的签名，非空签名冲突则报错。
   消息、推理和函数调用历史直接映射到 SDK 输入类型；输出专用 item 在后续输入中忽略。
   当前适配器不提供 server-side MCP、Tool Search 的配置与历史转换，
@@ -435,9 +436,12 @@ Context 和图片生成 API 仍使用旧模块。
   历史转换限于 SDK 输入类型，不通过整体替换 input 补充 SDK 未支持的字段。
   工具 strict 和显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
   使用 SDK codec 自带的未知变体保留机制。
-  Generate 的 part `StreamingMeta` 为 nil。流式完整 parts 在终止事件一次性发出，
-  索引表示最终位置，防止 Concat 合并相邻 parts；正文、推理和函数参数保持增量输出，
-  这些增量事件不输出局部 output parts。
+  Generate 的 part `StreamingMeta` 为 nil。流式根据原生
+  `(output_index, section, summary_index/content_index)` 为 added、delta、done
+  分配稳定的 part 索引；item done 或终止事件补齐元数据/签名，不重放完整正文。
+  Eino Concat 只合并相邻 chunk，因此后续 parts/items 可能等待当前 item 的最终元数据；
+  item 内优先输出已经开始的 section，持久索引确保下轮恢复原始 SDK 数组顺序。
+  旧正文、推理和函数参数字段仍保持增量输出。
   previous response ID 提供缓存历史，无需重发历史内容。
   reasoning parts 及其签名自动回传。
 - system 和 developer 消息可位于对话中间；文本放入 `Content`，输入内容块放入

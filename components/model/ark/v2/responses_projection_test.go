@@ -43,7 +43,7 @@ const responsesProjectionJSON = `[
 // Only fields represented by the SDK input schema belong in the next request.
 const responsesProjectionInputJSON = `[
  {"type":"function_call","id":"fc","call_id":"call","name":"inspect","arguments":"{}","status":"completed"},
- {"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"one\ntwo"}],"content":[{"type":"reasoning_text","text":"raw","annotations":[]}],"encrypted_content":"cipher"},
+ {"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"one"},{"type":"summary_text","text":"two"}],"content":[{"type":"reasoning_text","text":"raw","annotations":[]}],"encrypted_content":"cipher"},
  {"type":"message","id":"m","role":"assistant","content":[{"type":"output_text","text":"A","annotations":[{"type":"future_annotation","value":9007199254740993}]},{"type":"output_text","text":"B"}]},
  {"type":"message","id":"empty","role":"assistant","content":[]}
 ]`
@@ -103,7 +103,7 @@ func TestResponsesOutputProjection(t *testing.T) {
 							part.Text = "edited"
 							foundText = true
 						}
-						if part.Reasoning != nil && part.Reasoning.Text == "one\ntwo" {
+						if part.Reasoning != nil && part.Reasoning.Text == "one" {
 							part.Reasoning.Text = "changed"
 
 							foundReasoning = true
@@ -118,7 +118,7 @@ func TestResponsesOutputProjection(t *testing.T) {
 					check(t, err)
 					raw, err = json.Marshal(input)
 					check(t, err)
-					want := strings.NewReplacer(`"text":"A"`, `"text":"edited"`, `"text":"one\ntwo"`, `"text":"changed"`, `"encrypted_content":"cipher"`, `"encrypted_content":"new cipher"`, `"call_id":"call"`, `"call_id":"changed call"`, `"name":"inspect"`, `"name":"new_name"`, `"arguments":"{}"`, `"arguments":"{\"x\":1}"`).Replace(responsesProjectionInputJSON)
+					want := strings.NewReplacer(`"text":"A"`, `"text":"edited"`, `"text":"one"`, `"text":"changed"`, `"encrypted_content":"cipher"`, `"encrypted_content":"new cipher"`, `"call_id":"call"`, `"call_id":"changed call"`, `"name":"inspect"`, `"name":"new_name"`, `"arguments":"{}"`, `"arguments":"{\"x\":1}"`).Replace(responsesProjectionInputJSON)
 					equalRawJSON(t, []byte(want), raw)
 					for _, item := range input {
 						if _, _, unknown := item.OneOf.GetUnknown(); unknown {
@@ -463,7 +463,6 @@ func TestResponsesReorderedPartsAndTools(t *testing.T) {
 					check(t, err)
 					expected := strings.ReplaceAll(output, `"status":"completed","role":"assistant",`, `"role":"assistant",`)
 					expected = strings.ReplaceAll(expected, `"content":[],"encrypted_content"`, `"encrypted_content"`)
-					expected = strings.Replace(expected, `{"type":"summary_text","text":"summary one"},{"type":"summary_text","text":"summary two"}`, `{"type":"summary_text","text":"summary one\nsummary two"}`, 1)
 					equalRawJSON(t, []byte(expected), raw)
 				})
 			}
@@ -475,7 +474,7 @@ func TestResponsesItemMetadataMergesIntoFirstDataPart(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		t.Run(mode, func(t *testing.T) {
 			msg := projectedResponsesMessage(t, mode, responsesProjectionJSON)
-			equal(t, 7, len(msg.AssistantGenMultiContent))
+			equal(t, 8, len(msg.AssistantGenMultiContent))
 			seen := map[int]bool{}
 			for _, part := range msg.AssistantGenMultiContent {
 				index, exists, err := extraIndex(part.Extra, keyResponsesItemIndex)
@@ -489,8 +488,15 @@ func TestResponsesItemMetadataMergesIntoFirstDataPart(t *testing.T) {
 					}
 				}
 				if section, _ := extraString(part.Extra, keyResponsesSection); section == "summary" {
-					equal(t, "one\ntwo", part.Reasoning.Text)
-					equal(t, "cipher", part.Reasoning.Signature)
+					index, exists, err := extraIndex(part.Extra, keyResponsesSummaryIndex)
+					check(t, err)
+					equal(t, true, exists)
+					if index == 0 {
+						equal(t, "one", part.Reasoning.Text)
+						equal(t, "cipher", part.Reasoning.Signature)
+					} else {
+						equal(t, "two", part.Reasoning.Text)
+					}
 					if _, exists := part.Extra[keyResponsesContentIndex]; exists {
 						t.Fatal("summary retains a segment index")
 					}
@@ -642,11 +648,13 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 				chunks = append(chunks, chunk)
 			}
 			equal(t, 4, len(chunks))
-			for _, chunk := range chunks[:len(chunks)-1] {
+			equal(t, 1, len(chunks[0].AssistantGenMultiContent))
+			equal(t, "R1", chunks[0].AssistantGenMultiContent[0].Reasoning.Text)
+			for _, chunk := range chunks[1 : len(chunks)-1] {
 				equal(t, 0, len(chunk.AssistantGenMultiContent))
 			}
 			terminal := chunks[len(chunks)-1]
-			equal(t, 7, len(terminal.AssistantGenMultiContent))
+			equal(t, 8, len(terminal.AssistantGenMultiContent))
 			for index, part := range terminal.AssistantGenMultiContent {
 				if part.StreamingMeta == nil {
 					t.Fatal("terminal stream part has no merge identity")
@@ -657,8 +665,8 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 			check(t, err)
 			equal(t, "ABC", merged.Content)
 			equal(t, "R1R2", merged.ReasoningContent)
-			equal(t, 7, len(merged.AssistantGenMultiContent))
-			for index, want := range []string{"S1\nS2", "R1", "R2", "A", "B", "C"} {
+			equal(t, 8, len(merged.AssistantGenMultiContent))
+			for index, want := range []string{"R1", "R2", "S1", "S2", "A", "B", "C"} {
 				part := merged.AssistantGenMultiContent[index]
 				if part.Reasoning != nil {
 					equal(t, want, part.Reasoning.Text)
@@ -666,7 +674,7 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 					equal(t, want, part.Text)
 				}
 			}
-			equal(t, "cipher", merged.AssistantGenMultiContent[0].Reasoning.Signature)
+			equal(t, "cipher", merged.AssistantGenMultiContent[2].Reasoning.Signature)
 			input, err := toResponsesInput([]*schema.Message{merged})
 			check(t, err)
 			raw, err := json.Marshal(input)

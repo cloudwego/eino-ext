@@ -470,11 +470,12 @@ image-generation APIs remain in the legacy module.
   as request fields, and mapped text, signatures and function values are not
   duplicated in Extra.
   `ark-responses-item-index` records item ownership and order across parts/tools;
-  section/content indices preserve the content array within an item. A reasoning
-  summary array is joined with newlines into one display part without segment
-  indices; input conversion emits at most one summary_text for that part.
+  section plus `ark-responses-summary-index` / content indices preserve the SDK
+  part boundaries within an item. Each summary has its own reasoning part;
+  input conversion restores the ordered summary array.
   These persistent indices are independent of stream merge indices. The first
-  reasoning part initially carries its item's encrypted `Signature`; input
+  summary part carries its item's encrypted `Signature` (or the first reasoning
+  content part when no summary exists); input
   conversion accepts it on any reasoning part of that item and rejects
   conflicting nonempty signatures.
   Message, reasoning and function-call history maps directly to SDK input types.
@@ -487,10 +488,14 @@ image-generation APIs remain in the legacy module.
   the adapter does not replace the entire input to implement unsupported fields.
   SDK-documented extensions remain in use for tool strictness and explicit
   payload modifiers; SDK annotation codecs preserve unknown annotation variants.
-  Generate leaves part `StreamingMeta` nil. Streams emit complete parts once at
-  the terminal event, with indices identifying their final positions so Concat
-  keeps adjacent parts separate. Text, reasoning and function arguments continue
-  through existing delta fields; these events do not emit partial output parts.
+  Generate leaves part `StreamingMeta` nil. Streams map the native
+  `(output_index, section, summary_index/content_index)` identity to a stable
+  part index across added, delta and done events. Metadata/signatures are completed
+  at item done or the terminal response; complete text is not replayed. Because
+  Eino Concat merges adjacent chunks, later parts/items may wait for the current
+  item's final metadata. Within an item, an already-started section is emitted
+  first; persistent SDK indices preserve the original arrays for history input.
+  Legacy text, reasoning and function arguments remain incremental.
   A previous response ID supplies cached history without resending it.
   Reasoning parts and their signatures are included automatically.
 - System and developer messages can appear between conversation turns. Put

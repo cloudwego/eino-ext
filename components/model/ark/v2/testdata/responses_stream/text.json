@@ -1,0 +1,39 @@
+{
+  "role": "assistant",
+  "content": "CONCAT_OK_731",
+  "assistant_output_multi_content": [
+    {
+      "type": "text",
+      "text": "CONCAT_OK_731",
+      "extra": {
+        "ark-responses-content-type": "output_text",
+        "ark-responses-section": "content",
+        "ark-responses-item-status": "completed",
+        "ark-responses-item-index": 0,
+        "ark-responses-item-role": "assistant",
+        "ark-responses-item-type": "message",
+        "ark-responses-item-id": "fixture-text-message-1",
+        "ark-responses-content-index": 0
+      }
+    }
+  ],
+  "response_meta": {
+    "finish_reason": "completed",
+    "usage": {
+      "prompt_tokens": 56,
+      "prompt_token_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0
+      },
+      "completion_tokens": 7,
+      "total_tokens": 63,
+      "completion_token_details": {}
+    }
+  },
+  "extra": {
+    "ark-response-id": "fixture-text-response-1",
+    "ark-model-name": "doubao-seed-2-1-pro-260628",
+    "ark-service-tier": "default",
+    "ark-request-id": "fixture-request-text"
+  }
+}

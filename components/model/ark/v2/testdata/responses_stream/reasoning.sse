@@ -1,0 +1,194 @@
+event: response.created
+data: {"type":"response.created","response":{"created_at":1,"id":"fixture-reasoning-response-1","max_output_tokens":32768,"model":"doubao-seed-2-1-pro-260628","object":"response","output":[],"thinking":{"type":"enabled"},"service_tier":"auto","status":"in_progress","caching":{"type":"disabled"},"store":false},"sequence_number":0}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"created_at":1,"id":"fixture-reasoning-response-1","max_output_tokens":32768,"model":"doubao-seed-2-1-pro-260628","object":"response","output":[],"thinking":{"type":"enabled"},"service_tier":"auto","status":"in_progress","caching":{"type":"disabled"},"store":false},"sequence_number":1}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"fixture-reasoning-reasoning-1","type":"reasoning","summary":[],"status":"in_progress","encrypted_content":""},"sequence_number":2}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","item_id":"fixture-reasoning-reasoning-1","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""},"sequence_number":3}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"\n","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":4}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"用户","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":5}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"现在","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":6}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"问","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":7}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"1","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":8}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"7","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":9}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"乘","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":10}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"1","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":11}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"9","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":12}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"是","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":13}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"多少","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":14}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"，","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":15}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"\n\n","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":16}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"经","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":17}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"核对","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":18}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"，","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":19}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"1","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":20}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"7","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":21}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"乘","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":22}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"1","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":23}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"9","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":24}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"的","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":25}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"计算","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":26}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"结果","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":27}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"准确","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":28}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"无误","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":29}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"，","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":30}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"我","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":31}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"将","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":32}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"直接","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":33}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"告知","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":34}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"用户","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":35}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"最终","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":36}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"答案","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":37}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"。","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":38}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"符合","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":39}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"用户","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":40}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"简短","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":41}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"回答","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":42}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"要求","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":43}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"的","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":44}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"最终","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":45}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"结果","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":46}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"为","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":47}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"3","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":48}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"2","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":49}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"3","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":50}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"。","item_id":"fixture-reasoning-reasoning-1","output_index":0,"sequence_number":51}
+
+event: response.reasoning_summary_text.done
+data: {"type":"response.reasoning_summary_text.done","summary_index":0,"item_id":"fixture-reasoning-reasoning-1","output_index":0,"text":"\n用户现在问17乘19是多少，\n\n经核对，17乘19的计算结果准确无误，我将直接告知用户最终答案。符合用户简短回答要求的最终结果为323。","sequence_number":52}
+
+event: response.reasoning_summary_part.done
+data: {"type":"response.reasoning_summary_part.done","item_id":"fixture-reasoning-reasoning-1","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":"\n用户现在问17乘19是多少，\n\n经核对，17乘19的计算结果准确无误，我将直接告知用户最终答案。符合用户简短回答要求的最终结果为323。"},"sequence_number":53}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"fixture-reasoning-reasoning-1","type":"reasoning","summary":[{"type":"summary_text","text":"\n用户现在问17乘19是多少，\n\n经核对，17乘19的计算结果准确无误，我将直接告知用户最终答案。符合用户简短回答要求的最终结果为323。"}],"status":"completed","encrypted_content":"fixture-encrypted-reasoning"},"sequence_number":54}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","role":"assistant","content":[],"status":"in_progress","id":"fixture-reasoning-message-1"},"sequence_number":55}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","content_index":0,"item_id":"fixture-reasoning-message-1","output_index":1,"part":{"type":"output_text","text":""},"sequence_number":56}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","content_index":0,"delta":"3","item_id":"fixture-reasoning-message-1","output_index":1,"sequence_number":57}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","content_index":0,"delta":"2","item_id":"fixture-reasoning-message-1","output_index":1,"sequence_number":58}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","content_index":0,"delta":"3","item_id":"fixture-reasoning-message-1","output_index":1,"sequence_number":59}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","content_index":0,"item_id":"fixture-reasoning-message-1","output_index":1,"text":"323","sequence_number":60}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","content_index":0,"item_id":"fixture-reasoning-message-1","output_index":1,"part":{"type":"output_text","text":"323"},"sequence_number":61}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"323"}],"status":"completed","id":"fixture-reasoning-message-1"},"sequence_number":62}
+
+event: response.completed
+data: {"type":"response.completed","response":{"created_at":1,"id":"fixture-reasoning-response-1","max_output_tokens":32768,"model":"doubao-seed-2-1-pro-260628","object":"response","output":[{"id":"fixture-reasoning-reasoning-1","type":"reasoning","summary":[{"type":"summary_text","text":"\n用户现在问17乘19是多少，\n\n经核对，17乘19的计算结果准确无误，我将直接告知用户最终答案。符合用户简短回答要求的最终结果为323。"}],"status":"completed","encrypted_content":"fixture-encrypted-reasoning"},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"323"}],"status":"completed","id":"fixture-reasoning-message-1"}],"thinking":{"type":"enabled"},"service_tier":"default","status":"completed","usage":{"input_tokens":59,"output_tokens":247,"total_tokens":306,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":244}},"caching":{"type":"disabled"},"store":false},"sequence_number":63}
+
+data: [DONE]
+

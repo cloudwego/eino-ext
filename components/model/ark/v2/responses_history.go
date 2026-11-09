@@ -196,7 +196,7 @@ func toResponsesHistoryMessage(extra map[string]any, parts []*schema.MessageOutp
 	if err != nil {
 		return item, err
 	}
-	if summary != nil {
+	if len(summary) > 0 {
 		return item, fmt.Errorf("message cannot contain reasoning summaries")
 	}
 	content := make([]responses.ContentItem, 0, len(ordered))
@@ -239,8 +239,8 @@ func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOu
 	if err != nil {
 		return item, err
 	}
-	if summary != nil {
-		item.Summary = []responses.ReasoningSummaryPart{{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(summary.Reasoning.Text)}}
+	for _, part := range summary {
+		item.Summary = append(item.Summary, responses.ReasoningSummaryPart{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(part.Reasoning.Text)})
 	}
 	for _, part := range content {
 		kind, _ := extraString(part.Extra, keyResponsesContentType)
@@ -278,9 +278,10 @@ func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOu
 	return item, nil
 }
 
-// Summary is a single display part; only content keeps its original indices.
-func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool) (summary *schema.MessageOutputPart, ordered []*schema.MessageOutputPart, err error) {
+// Summary and content preserve their SDK indices independently.
+func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool) (summary []*schema.MessageOutputPart, ordered []*schema.MessageOutputPart, err error) {
 	content := make(map[int]*schema.MessageOutputPart)
+	summaries := make(map[int]*schema.MessageOutputPart)
 	for _, part := range parts {
 		sectionValue, hasSection := part.Extra[keyResponsesSection]
 		section, sectionOK := stringValue(sectionValue)
@@ -293,10 +294,14 @@ func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool)
 				continue // A reasoning item can contain just an encrypted signature.
 			}
 			if sectionOK && section == "summary" {
-				if summary != nil {
-					return nil, nil, fmt.Errorf("duplicate reasoning summary part")
+				summaryIndex, _, err := extraIndex(part.Extra, keyResponsesSummaryIndex)
+				if err != nil {
+					return nil, nil, err
 				}
-				summary = part
+				if summaries[summaryIndex] != nil {
+					return nil, nil, fmt.Errorf("duplicate reasoning summary index %d", summaryIndex)
+				}
+				summaries[summaryIndex] = part
 				continue
 			}
 		}
@@ -307,6 +312,14 @@ func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool)
 			return nil, nil, fmt.Errorf("duplicate Responses content index %d", index)
 		}
 		content[index] = part
+	}
+	var summaryIndices []int
+	for index := range summaries {
+		summaryIndices = append(summaryIndices, index)
+	}
+	sort.Ints(summaryIndices)
+	for _, index := range summaryIndices {
+		summary = append(summary, summaries[index])
 	}
 	indices := make([]int, 0, len(content))
 	for index := range content {

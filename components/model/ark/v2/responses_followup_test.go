@@ -101,7 +101,7 @@ func TestResponsesTerminalReasoningSuffix(t *testing.T) {
 			{"raw prefix", `{"summary":[],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "raw thought", []string{"raw"}, ""},
 			{"summary prefix", `{"summary":[{"type":"summary_text","text":"one"},{"type":"summary_text","text":"two"}]}`, "onetwo", nil, "one"},
 			{"complete", `{"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "raw thought", []string{"raw thought"}, ""},
-			{"mixed", `{"summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "oneraw", []string{"raw"}, "one"},
+			{"mixed", `{"summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "sumraw", []string{"raw"}, "sum"},
 			{"no terminal plaintext", `{"summary":[],"encrypted_content":"cipher"}`, "raw", []string{"raw"}, ""},
 			{"different flattened order", `{"content":[{"type":"reasoning_text","text":"A1"},{"type":"reasoning_text","text":"B"}]}`, "AB", []string{"A", "B"}, ""},
 		} {

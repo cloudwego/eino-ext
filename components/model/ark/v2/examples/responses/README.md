@@ -19,7 +19,7 @@ go run ./examples/responses/tools
 | Example | Code to read | Environment values |
 | --- | --- | --- |
 | [generate](generate/main.go) | Generate a text response | Optional `ARK_PROMPT` |
-| [stream](stream/main.go) | Receive deltas and concatenate final usage | Optional `ARK_PROMPT` |
+| [stream](stream/main.go) | Receive deltas, concatenate, and check/print the assembled message structure | Optional `ARK_PROMPT` |
 | [tools](tools/main.go) | Force a streamed call without naming the sole tool, execute addition, and return its result | Uses a fixed `8 + 13` conversation |
 | [tool_options](tool_options/main.go) | Combine strict defaults/overrides, full JSON Schema, bound/call-level tools, and Allowed/Forced name subsets | Uses fixed addition and multiplication prompts |
 | [structured_output](structured_output/main.go) | Configure strict JSON schema and decode the answer | Optional `ARK_PROMPT` |
@@ -50,8 +50,11 @@ copied or edited directly.
 
 Cache, search, and media understanding require model/account support. In
 particular, an accepted tool-result request does not establish that the model
-read its document correctly. The examples demonstrate API usage; automated
-output checks belong to the separate validation harness and adapter tests.
+read its document correctly. The stream, reasoning and tools examples check the concatenated parts, metadata,
+usage and function-call structure, then print the assembled message. Encrypted
+signatures are abbreviated in the printed copy; the original message is used
+for subsequent calls. Model-answer checks belong to the separate validation
+harness and adapter tests.
 
 The [tool options example](tool_options/main.go) shows a full parameter schema
 with `additionalProperties: false`. `add` inherits the model's strict default,
@@ -83,5 +86,7 @@ changes the aggregate compatibility fields to unrelated values, persists the
 message through JSON, and continues with Stream. The model receives the edited
 parts. The first data part carries item metadata; other parts reference its
 item-index. Transfer item-level Extra before deleting that data part. Reasoning
-summaries are joined with newlines; native summary segment boundaries are not
-retained. Item and tool positions remain independent of stream merge indices.
+summaries retain their native summary indices. One encrypted signature belongs
+to the item and is carried by its first summary part. Item and tool positions
+remain independent of stream merge indices. Added/delta/done chunks belonging
+to the same SDK part reuse one stream merge index.

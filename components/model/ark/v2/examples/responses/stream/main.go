@@ -67,6 +67,9 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	if err != nil {
 		return err
 	}
+	if err := exampleutil.PrintResponsesConcat(chunks, reply); err != nil {
+		return err
+	}
 	fmt.Printf("\nUsage: %+v\n", reply.ResponseMeta.Usage)
 	return nil
 }

@@ -20,6 +20,7 @@ const (
 	keyResponsesItemIndex    = "ark-responses-item-index"
 	keyResponsesSection      = "ark-responses-section"
 	keyResponsesContentIndex = "ark-responses-content-index"
+	keyResponsesSummaryIndex = "ark-responses-summary-index"
 	keyResponsesItemType     = "ark-responses-item-type"
 	keyResponsesContentType  = "ark-responses-content-type"
 	keyResponsesItemID       = "ark-responses-item-id"

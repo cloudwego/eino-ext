@@ -65,6 +65,9 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	if err != nil {
 		return err
 	}
+	if err := exampleutil.PrintResponsesConcat(chunks, assistant); err != nil {
+		return err
+	}
 	fmt.Println("\nReasoning characters:", len([]rune(assistant.ReasoningContent)))
 	// Reuse the assistant message to replay its complete native output, including reasoning.
 	reply, err := cm.Generate(ctx, []*schema.Message{question, assistant, schema.UserMessage("Add one to that answer. Reply with only the number.")},

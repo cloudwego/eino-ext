@@ -87,14 +87,10 @@ func projectResponsesItem(item responses.OutputItem, index int) ([]schema.Messag
 			extra[keyResponsesItemID] = metadataString(id)
 		}
 		extra[keyResponsesItemStatus] = metadataString(reasoning.Status)
-		if len(reasoning.Summary) > 0 {
-			texts := make([]string, len(reasoning.Summary))
-			for i, part := range reasoning.Summary {
-				texts[i] = part.Text.Or("")
-			}
+		for summaryIndex, part := range reasoning.Summary {
 			children = append(children, schema.MessageOutputPart{
-				Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: strings.Join(texts, "\n")},
-				Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index), keyResponsesSection: metadataString("summary")},
+				Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: part.Text.Or("")},
+				Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index), keyResponsesSection: metadataString("summary"), keyResponsesSummaryIndex: metadataInt64(summaryIndex)},
 			})
 		}
 		var content []schema.MessageOutputPart
