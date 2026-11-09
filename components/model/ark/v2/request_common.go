@@ -16,10 +16,17 @@
 
 package ark
 
-import "strconv"
+import (
+	"fmt"
+	"strconv"
+)
 
 // Preserve the decimal JSON representation when widening a float32 setting.
 func float64FromFloat32(value float32) float64 {
 	result, _ := strconv.ParseFloat(strconv.FormatFloat(float64(value), 'g', -1, 32), 64)
 	return result
+}
+
+func newPanicErr(info any, stack []byte) error {
+	return fmt.Errorf("panic error: %v, stack: %s", info, stack)
 }

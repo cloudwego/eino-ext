@@ -201,9 +201,6 @@ func dereferenceOrZero[T any](v *T) T {
 	}
 	return *v
 }
-func newPanicErr(info any, stack []byte) error {
-	return fmt.Errorf("panic error: %v, stack: %s", info, stack)
-}
 
 func callbackConfig(req *chat.ChatCompletionRequest) *fmodel.Config {
 	var stop []string

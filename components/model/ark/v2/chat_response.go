@@ -19,7 +19,6 @@ package ark
 import (
 	"fmt"
 
-	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
@@ -146,14 +145,4 @@ func toBytes(bytes []int32) []int64 {
 		out[i] = int64(b)
 	}
 	return out
-}
-func toModelCallbackUsage(meta *schema.ResponseMeta) *fmodel.TokenUsage {
-	if meta == nil || meta.Usage == nil {
-		return nil
-	}
-	u := meta.Usage
-	return &fmodel.TokenUsage{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
-		PromptTokenDetails:      fmodel.PromptTokenDetails{CachedTokens: u.PromptTokenDetails.CachedTokens},
-		CompletionTokensDetails: fmodel.CompletionTokensDetails{ReasoningTokens: u.CompletionTokensDetails.ReasoningTokens},
-	}
 }

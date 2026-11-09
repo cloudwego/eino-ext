@@ -60,45 +60,11 @@ type arkOptions struct {
 	responseChunkMessageModifier ResponseChunkMessageModifier
 }
 
-func (cm *ChatModel) getOptions(opts ...model.Option) (*model.Options, *arkOptions) {
-	common := model.GetCommonOptions(&model.Options{
-		Temperature: cm.config.Temperature,
-		MaxTokens:   cm.config.MaxTokens,
-		Model:       &cm.config.Model,
-		TopP:        cm.config.TopP,
-		Stop:        cm.config.Stop,
-		ToolChoice:  cm.toolChoice,
-	}, opts...)
-	ark := model.GetImplSpecificOptions(&arkOptions{
-		customHeaders:                cm.config.CustomHeader,
-		thinking:                     cm.config.Thinking,
-		reasoningEffort:              cm.config.ReasoningEffort,
-		maxCompletionTokens:          cm.config.MaxCompletionTokens,
-		parallelToolCalls:            cm.config.ParallelToolCalls,
-		requestPayloadModifier:       cm.config.RequestPayloadModifier,
-		responseMessageModifier:      cm.config.ResponseMessageModifier,
-		responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier,
-	}, opts...)
-	return common, ark
-}
-
 // WithCustomHeader replaces the configured custom headers for one call.
 func WithCustomHeader(headers map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.customHeaders = headers })
 }
 
-// WithThinking configures thinking for Chat Completions.
-func WithThinking(thinking *chat.Thinking) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.thinking = thinking })
-}
-
-// WithReasoningEffort configures reasoning effort for Chat Completions.
-func WithReasoningEffort(effort chat.ReasoningEffort) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.reasoningEffort = &effort })
-}
-func WithMaxCompletionTokens(n int) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.maxCompletionTokens = &n })
-}
 func WithParallelToolCalls(enabled bool) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.parallelToolCalls = &enabled })
 }
@@ -119,29 +85,4 @@ func WithResponseMessageModifier(modifier ResponseMessageModifier) model.Option 
 // for one call. Passing nil disables the configured modifier.
 func WithResponseChunkMessageModifier(modifier ResponseChunkMessageModifier) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responseChunkMessageModifier = modifier })
-}
-
-// WithCache overrides the Responses API session-cache configuration for one call.
-func WithCache(cache *CacheOption) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.cache = cache })
-}
-
-// WithEnableToolWebSearch configures the Responses API's built-in search tool.
-// A nil value disables it for this call.
-func WithEnableToolWebSearch(tool *responses.WebSearchTool) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.enableWebSearch = tool })
-}
-
-func WithMaxToolCalls(n int64) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.maxToolCalls = &n })
-}
-
-// WithResponsesThinking configures thinking for the Responses API.
-func WithResponsesThinking(thinking *responses.Thinking) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responsesThinking = thinking })
-}
-
-// WithResponsesReasoningEffort configures reasoning effort for the Responses API.
-func WithResponsesReasoningEffort(effort responses.ReasoningEffort) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responsesReasoningEffort = &effort })
 }

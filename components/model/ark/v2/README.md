@@ -78,6 +78,13 @@ Ark-specific options include `WithThinking`, `WithReasoningEffort`,
 `WithMaxCompletionTokens`, `WithParallelToolCalls`, and `WithCustomHeader`.
 `WithCustomHeader` replaces the configured custom header map for that call.
 
+Chat Completions uses Ark's [implicit caching](https://docs.volcengine.com/docs/ark/context-cache?lang=en),
+which is automatic for supported models and requires no cache option here.
+`Generate` and `Stream` send the full message history to `/chat/completions`;
+they do not call Context or Responses endpoints to manage a cache. Server-reported
+cache hits appear in `reply.ResponseMeta.Usage.PromptTokenDetails.CachedTokens`.
+Explicit session and prefix caching below apply to `ResponsesAPIModel`.
+
 ## Streaming
 
 Using the model and messages created above, add `errors` and `io` to the imports:
@@ -627,7 +634,7 @@ go run ./examples/responses/file
 
 Set `ARK_API_KEY`, `ARK_MODEL`, and optional `ARK_BASE_URL`. Use `ARK_PROMPT` for
 an optional question, `ARK_FILE_ID` for an existing document, or `ARK_FILE_PATH`
-for a local PDF. The file example defaults to the bundled marker PDF. Built-in
+for a local PDF; the file example requires one of these document inputs. Built-in
 search, cache, and media support depend on the account and model.
 The opt-in live tests also upload a temporary PDF and delete it after testing:
 
@@ -645,3 +652,14 @@ accepting the request. The supplied `doubao-seed-2-1-pro-260628` model did not
 reliably read a PDF returned by a tool in live validation. Ordinary PDF user input
 passed for both base64 and FileID. The adapter retains the documented native
 multimodal tool-result request shape; local wire tests cover each media source.
+
+## Source layout
+
+| Files | Responsibility |
+| --- | --- |
+| `chat_*.go` | Chat Completions model, requests, responses, streaming, options, and usage |
+| `responses_*.go` | Responses model, input/history mapping, output projection, streaming, options, and caching |
+| `*_common.go`, `client.go`, `option.go`, `message_extra.go` | Shared transport, helpers, call options, and message metadata primitives |
+
+Tests follow the same prefixes when they cover a single API. Shared history and
+serialization tests exercise both implementations. Both APIs remain in package `ark`.

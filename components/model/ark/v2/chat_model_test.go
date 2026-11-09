@@ -18,13 +18,11 @@ package ark
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -34,26 +32,6 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
-
-func ptr[T any](v T) *T { return &v }
-func check(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-func equal(t *testing.T, want, got any) {
-	t.Helper()
-	if !reflect.DeepEqual(want, got) {
-		t.Fatalf("want %#v, got %#v", want, got)
-	}
-}
-func decodeRequest(t *testing.T, r *http.Request) map[string]any {
-	t.Helper()
-	var body map[string]any
-	check(t, json.NewDecoder(r.Body).Decode(&body))
-	return body
-}
 
 const responseJSON = `{"id":"req-1","object":"chat.completion","created":1,"model":"actual-model","choices":[{"index":0,"message":{"role":"assistant","content":"done","reasoning_content":"think","encrypted_content":"cipher","tool_calls":[{"id":"call-1","type":"function","function":{"name":"inspect","arguments":"{}"}}]},"finish_reason":"tool_calls","logprobs":{"content":[{"token":"done","logprob":-0.2,"bytes":[100],"top_logprobs":[{"token":"ok","logprob":-0.4,"bytes":[111]}]}]}}],"usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":2,"audio_tokens":1},"completion_tokens_details":{"reasoning_tokens":1}},"service_tier":"default","service_status":{"model_fallback":{"fallback_triggered":true,"original_model":"requested-model"}}}`
 
@@ -72,9 +50,6 @@ func testModel(t *testing.T, handler http.HandlerFunc, config *ChatModelConfig) 
 func writeResponse(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = io.WriteString(w, responseJSON)
-}
-func toolInfo(name string) *schema.ToolInfo {
-	return &schema.ToolInfo{Name: name, Desc: "inspect a file", ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{"path": {Type: schema.String, Required: true}})}
 }
 
 func TestMediaWire(t *testing.T) {

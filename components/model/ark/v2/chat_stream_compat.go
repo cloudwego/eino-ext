@@ -89,3 +89,15 @@ func omitNull(fields map[string]json.RawMessage, names ...string) {
 		}
 	}
 }
+
+type streamPayloadDecoder struct {
+	rawBody []byte
+	capture bool
+}
+
+func (d *streamPayloadDecoder) Unmarshal(raw []byte, value interface{}) error {
+	if _, ok := value.(*chat.ChatCompletionStreamResponse); ok && d.capture {
+		d.rawBody = append([]byte(nil), raw...)
+	}
+	return (chatStreamUnmarshaler{}).Unmarshal(raw, value)
+}

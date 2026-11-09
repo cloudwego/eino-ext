@@ -21,12 +21,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 
 	"github.com/bytedance/sonic"
-
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
@@ -101,44 +97,4 @@ func prepareRequestPayload(ctx context.Context, messages []*schema.Message, req 
 		}
 	}
 	return wire, extra, nil
-}
-
-type responseCaptureKey struct{}
-type responseCapture struct {
-	rawBody []byte
-}
-
-type responseCaptureTransport struct {
-	next http.RoundTripper
-}
-
-func (t *responseCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	capture, _ := req.Context().Value(responseCaptureKey{}).(*responseCapture)
-	if capture == nil || (!strings.HasSuffix(req.URL.Path, "/chat/completions") && !strings.HasSuffix(req.URL.Path, "/responses")) {
-		return t.next.RoundTrip(req)
-	}
-	resp, err := t.next.RoundTrip(req)
-	if err != nil || resp == nil || resp.Body == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp, err
-	}
-	raw, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, fmt.Errorf("read response payload: %w", err)
-	}
-	capture.rawBody = raw
-	resp.Body = io.NopCloser(bytes.NewReader(raw))
-	return resp, nil
-}
-
-type streamPayloadDecoder struct {
-	rawBody []byte
-	capture bool
-}
-
-func (d *streamPayloadDecoder) Unmarshal(raw []byte, value interface{}) error {
-	if _, ok := value.(*chat.ChatCompletionStreamResponse); ok && d.capture {
-		d.rawBody = append([]byte(nil), raw...)
-	}
-	return (chatStreamUnmarshaler{}).Unmarshal(raw, value)
 }

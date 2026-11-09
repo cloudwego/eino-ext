@@ -74,6 +74,12 @@ func main() {
 `WithParallelToolCalls` 和 `WithCustomHeader`。
 `WithCustomHeader` 会替换该次调用的自定义请求头配置。
 
+Chat Completions 使用方舟的[隐式缓存](https://docs.volcengine.com/docs/ark/context-cache?lang=zh)，
+支持该能力的模型自动启用，本包无需额外缓存配置。`Generate` 和 `Stream` 始终将完整
+消息历史发送到 `/chat/completions`，不会调用 Context 或 Responses 接口管理缓存。
+服务端返回的缓存命中量映射为 `reply.ResponseMeta.Usage.PromptTokenDetails.CachedTokens`。
+下文显式 Session、Prefix 缓存仅适用于 `ResponsesAPIModel`。
+
 ## 流式输出
 
 使用上面创建的模型和消息，在 import 中加入 `errors` 和 `io`：
@@ -541,8 +547,8 @@ go run ./examples/responses/file
 ```
 
 设置 `ARK_API_KEY`、`ARK_MODEL` 和可选的 `ARK_BASE_URL`。可用 `ARK_PROMPT` 修改问题，
-用 `ARK_FILE_ID` 指定已有文档，或用 `ARK_FILE_PATH` 指定本地 PDF；文件示例默认使用
-仓库中的标记 PDF。内置搜索、缓存与各类媒体输入需要账号和模型支持。
+用 `ARK_FILE_ID` 指定已有文档，或用 `ARK_FILE_PATH` 指定本地 PDF；文件示例需要提供
+其中一种文档输入。内置搜索、缓存与各类媒体输入需要账号和模型支持。
 显式启用的实测还会上传临时 PDF，并在测试后删除：
 
 ```sh
@@ -558,3 +564,14 @@ ARK_RESPONSES_LIVE=1 ARK_RESPONSES_LIVE_CACHE=1 GOWORK=off go test -run TestResp
 实测 `doubao-seed-2-1-pro-260628` 未能可靠读出工具返回 PDF 的内容；普通用户输入的
 PDF base64 / FileID 均已通过。适配器保留官方文档的原生多模态工具结果结构，
 本地 HTTP 测试覆盖各类媒体及来源的序列化。
+
+## 源码布局
+
+| 文件 | 职责 |
+| --- | --- |
+| `chat_*.go` | Chat Completions 的模型、请求、响应、流式处理、选项和用量 |
+| `responses_*.go` | Responses 的模型、输入与历史映射、输出投影、流式处理、选项和缓存 |
+| `*_common.go`、`client.go`、`option.go`、`message_extra.go` | 共用传输、辅助函数、调用选项和消息元数据基础类型 |
+
+仅覆盖单个 API 的测试使用对应前缀，共用历史和序列化测试覆盖两类实现。
+两类 API 仍属于同一个 `ark` 包。

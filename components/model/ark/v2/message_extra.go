@@ -24,18 +24,13 @@ import (
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
-	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 )
 
 const (
-	keyRequestID         = "ark-request-id"
-	keyModelName         = "ark-model-name"
-	keyServiceTier       = "ark-service-tier"
-	keyEncryptedContent  = "ark-encrypted-content"
-	keyServiceStatus     = "ark-service-status"
-	keyUsageDetails      = "ark-usage-details"
-	keyModerationHitType = "ark-moderation-hit-type"
-	keyVideoFPS          = "ark-model-video-url-fps"
+	keyRequestID   = "ark-request-id"
+	keyModelName   = "ark-model-name"
+	keyServiceTier = "ark-service-tier"
+	keyVideoFPS    = "ark-model-video-url-fps"
 )
 
 // Named atomic values preserve last-value stream concatenation. JSON decoding
@@ -163,33 +158,6 @@ func GetServiceTier(msg *schema.Message) (string, bool) {
 		return "", false
 	}
 	return extraString(msg.Extra, keyServiceTier)
-}
-func GetModerationHitType(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	return extraString(msg.Extra, keyModerationHitType)
-}
-
-// GetEncryptedContent returns encrypted reasoning for passing an assistant message
-// back to the API. Stream fragments concatenate as ordinary strings.
-func GetEncryptedContent(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	return extraString(msg.Extra, keyEncryptedContent)
-}
-
-// GetServiceStatus returns the service's model fallback information.
-func GetServiceStatus(msg *schema.Message) (chat.ChatCompletionServiceStatus, bool) {
-	return readServiceStatus(msg)
-}
-
-// GetTokenUsageDetails combines the current ResponseMeta.Usage with SDK-specific
-// counts stored in Extra. It returns false when ResponseMeta.Usage is absent.
-// It returns false if common counts cannot fit the SDK's int32 fields.
-func GetTokenUsageDetails(msg *schema.Message) (chat.CompletionUsage, bool) {
-	return readChatUsage(msg)
 }
 
 // SetInputVideoFPS sets the frame sampling rate in MessageInputPart.Extra.
