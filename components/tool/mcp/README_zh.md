@@ -10,6 +10,8 @@
 
 ## 安装
 
+需要 Go 1.25.5 或更高版本。
+
 ```bash
 go get github.com/cloudwego/eino-ext/components/tool/mcp@latest
 ```
