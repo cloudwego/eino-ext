@@ -320,7 +320,7 @@ func (c *CallbackHandler) setOutput(state *spanState, info *callbacks.RunInfo, o
 }
 
 func (c *CallbackHandler) setJSONAttribute(state *spanState, key string, value any) string {
-	serialized, err := json.Marshal(value)
+	serialized, err := marshalAttribute(value)
 	if err != nil {
 		c.losses.Add(lossPayloadSerialization, 1)
 		state.recordError("serialize "+key, err)
