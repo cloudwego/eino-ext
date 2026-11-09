@@ -51,7 +51,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) (err error) {
 	client := arkruntime.NewClientWithApiKey(config.APIKey, options...)
 	path := os.Getenv("ARK_FILE_PATH")
 	if path == "" {
-		path = "examples/responses/testdata/marker.pdf"
+		return errors.New("set ARK_FILE_PATH to a PDF document to upload")
 	}
 	local, err := os.Open(path)
 	if err != nil {
@@ -82,7 +82,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) (err error) {
 	}
 	prompt := os.Getenv("ARK_PROMPT")
 	if prompt == "" {
-		prompt = "Read the exact verification marker printed on this page. Reply with the marker only."
+		prompt = "Summarize this PDF briefly."
 	}
 	reply, err := cm.Generate(ctx, []*schema.Message{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
 		{Type: schema.ChatMessagePartTypeText, Text: prompt},

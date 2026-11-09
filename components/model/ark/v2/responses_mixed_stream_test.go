@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -35,9 +34,7 @@ import (
 // This hand-authored protocol fixture deliberately interleaves two functions
 // with reasoning and message deltas. It is not a captured model response.
 func TestResponsesMixedStreamConcat(t *testing.T) {
-	raw, err := os.ReadFile("testdata/responses_stream/mixed.sse")
-	check(t, err)
-	wire := string(raw)
+	wire := mixedResponsesTestStream(t)
 	prefix, last, ok := strings.Cut(wire, "event: response.completed\n")
 	equal(t, true, ok)
 	var terminal struct {
@@ -190,4 +187,104 @@ func TestResponsesMixedStreamConcat(t *testing.T) {
 			})
 		}
 	}
+}
+
+// Build only the protocol events needed by this regression, without recorded
+// model responses or external test data files.
+func mixedResponsesTestStream(t *testing.T) string {
+	t.Helper()
+	const reasoning = `{"type":"reasoning","id":"fixture-reason","status":"completed","summary":[{"type":"summary_text","text":"Add first."},{"type":"summary_text","text":"Multiply second."}],"content":[{"type":"reasoning_text","text":"Check independent operations.","annotations":[]}]}`
+	const message = `{"type":"message","id":"fixture-message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"I will ","annotations":[]},{"type":"output_text","text":"call both tools.","annotations":[]}]}`
+	const add = `{"type":"function_call","id":"fixture-add","call_id":"call-add","name":"add","arguments":"{\"a\":8,\"b\":13}","status":"completed","namespace":"math"}`
+	const multiply = `{"type":"function_call","id":"fixture-multiply","call_id":"call-multiply","name":"multiply","arguments":"{\"a\":6,\"b\":7}","status":"completed"}`
+	const tail = `{"type":"message","id":"fixture-tail","role":"assistant","status":"completed","content":[{"type":"output_text","text":"\nWaiting for results.","annotations":[]}]}`
+	var wire strings.Builder
+	sequence := 0
+	emit := func(kind string, fields map[string]any) {
+		fields["type"], fields["sequence_number"] = kind, sequence
+		sequence++
+		raw, err := sonic.Marshal(fields)
+		check(t, err)
+		fmt.Fprintf(&wire, "event: %s\ndata: %s\n\n", kind, raw)
+	}
+	ids := map[int]string{0: "fixture-reason", 1: "fixture-message", 2: "fixture-add", 3: "fixture-multiply", 4: "fixture-tail"}
+	added := func(index int, full string) {
+		var item map[string]any
+		check(t, sonic.UnmarshalString(full, &item))
+		item["status"] = "in_progress"
+		switch item["type"] {
+		case "reasoning":
+			item["summary"], item["content"] = []any{}, []any{}
+		case "message":
+			item["content"] = []any{}
+		case "function_call":
+			item["arguments"] = ""
+			delete(item, "namespace")
+		}
+		emit("response.output_item.added", map[string]any{"output_index": index, "item": item})
+	}
+	delta := func(kind string, index, subindex int, text string) {
+		fields := map[string]any{"output_index": index, "item_id": ids[index], "delta": text}
+		if subindex >= 0 {
+			key := "content_index"
+			if strings.Contains(kind, "summary") {
+				key = "summary_index"
+			}
+			fields[key] = subindex
+		}
+		emit(kind, fields)
+	}
+	part := func(kind string, index, subindex int, value string) {
+		key := "content_index"
+		if strings.Contains(kind, "summary") {
+			key = "summary_index"
+		}
+		emit(kind, map[string]any{"output_index": index, "item_id": ids[index], key: subindex, "part": json.RawMessage(value)})
+	}
+	done := func(index int, full string) {
+		emit("response.output_item.done", map[string]any{"output_index": index, "item": json.RawMessage(full)})
+	}
+	added(0, reasoning)
+	part("response.reasoning_summary_part.added", 0, 0, `{"type":"summary_text","text":""}`)
+	delta("response.reasoning_summary_text.delta", 0, 0, "Add ")
+	added(1, message)
+	added(2, add)
+	added(3, multiply)
+	delta("response.output_text.delta", 1, 0, "I ")
+	delta("response.function_call_arguments.delta", 2, -1, `{"a":`)
+	delta("response.reasoning_summary_text.delta", 0, 0, "first.")
+	delta("response.function_call_arguments.delta", 3, -1, `{"a":6,`)
+	part("response.content_part.added", 0, 0, `{"type":"reasoning_text","text":""}`)
+	delta("response.reasoning_text.delta", 0, 0, "Check ")
+	part("response.reasoning_summary_part.added", 0, 1, `{"type":"summary_text","text":""}`)
+	delta("response.reasoning_summary_text.delta", 0, 1, "Multiply second.")
+	delta("response.output_text.delta", 1, 0, "will ")
+	delta("response.function_call_arguments.delta", 2, -1, `8,"b":`)
+	part("response.content_part.added", 1, 1, `{"type":"output_text","text":""}`)
+	delta("response.output_text.delta", 1, 1, "call both ")
+	delta("response.function_call_arguments.delta", 3, -1, `"b":7}`)
+	part("response.reasoning_summary_part.done", 0, 0, `{"type":"summary_text","text":"Add first."}`)
+	delta("response.reasoning_text.delta", 0, 0, "independent operations.")
+	part("response.content_part.done", 0, 0, `{"type":"reasoning_text","text":"Check independent operations.","annotations":[]}`)
+	part("response.reasoning_summary_part.done", 0, 1, `{"type":"summary_text","text":"Multiply second."}`)
+	done(0, reasoning)
+	done(2, add)
+	delta("response.output_text.delta", 1, 1, "tools.")
+	part("response.content_part.done", 1, 0, `{"type":"output_text","text":"I will ","annotations":[]}`)
+	part("response.content_part.done", 1, 1, `{"type":"output_text","text":"call both tools.","annotations":[]}`)
+	done(3, multiply)
+	done(1, message)
+	added(4, tail)
+	delta("response.output_text.delta", 4, 0, "\nWaiting for results.")
+	done(4, tail)
+	var encrypted map[string]any
+	check(t, sonic.UnmarshalString(reasoning, &encrypted))
+	encrypted["encrypted_content"] = "fixture-encrypted-reasoning"
+	emit("response.completed", map[string]any{"response": map[string]any{
+		"id": "fixture-mixed-response", "object": "response", "created_at": 1, "model": "fixture-model", "status": "completed",
+		"output": []any{encrypted, json.RawMessage(message), json.RawMessage(add), json.RawMessage(multiply), json.RawMessage(tail)},
+		"usage": map[string]any{"input_tokens": 100, "input_tokens_details": map[string]any{"cached_tokens": 20}, "output_tokens": 30,
+			"output_tokens_details": map[string]any{"reasoning_tokens": 10}, "total_tokens": 130},
+	}})
+	return wire.String()
 }

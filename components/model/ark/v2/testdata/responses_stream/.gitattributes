@@ -1,2 +1,0 @@
-# SSE frames end with an empty line, including the final [DONE] frame.
-*.sse whitespace=-blank-at-eof

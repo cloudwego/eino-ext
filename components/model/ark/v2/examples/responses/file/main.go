@@ -21,6 +21,7 @@ import (
 	"log"
 
 	"encoding/base64"
+	"errors"
 	"os"
 	"path/filepath"
 
@@ -47,7 +48,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	} else {
 		path := os.Getenv("ARK_FILE_PATH")
 		if path == "" {
-			path = "examples/responses/testdata/marker.pdf"
+			return errors.New("set ARK_FILE_PATH or ARK_FILE_ID to a PDF document")
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -58,7 +59,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	}
 	prompt := os.Getenv("ARK_PROMPT")
 	if prompt == "" {
-		prompt = "Read the exact verification marker printed on this page. Reply with the marker only."
+		prompt = "Summarize this PDF briefly."
 	}
 	reply, err := cm.Generate(ctx, []*schema.Message{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
 		{Type: schema.ChatMessagePartTypeText, Text: prompt}, {Type: schema.ChatMessagePartTypeFileURL, File: document},

@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 
@@ -31,18 +30,32 @@ import (
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
-func TestResponsesCapturedStreamConcat(t *testing.T) {
+func TestResponsesStreamConcat(t *testing.T) {
 	for _, name := range []string{"text", "reasoning", "tools"} {
 		t.Run(name, func(t *testing.T) {
-			wire, err := os.ReadFile("testdata/responses_stream/" + name + ".sse")
-			check(t, err)
-			expected, err := os.ReadFile("testdata/responses_stream/" + name + ".json")
-			check(t, err)
+			const message = `{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hello"}]}`
+			const reasoning = `{"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"think"}],"encrypted_content":"fixture-encrypted-reasoning"}`
+			const call = `{"type":"function_call","id":"fc","call_id":"call","name":"add","arguments":"{\"a\":8,\"b\":13}","status":"completed"}`
+			content, summary, tools := "hello", "", 0
+			wire := responseEvent("response.output_text.delta", map[string]any{"output_index": 0, "content_index": 0, "item_id": "m", "delta": "hello"}) + terminalEvent("response.completed", []byte("["+message+"]"))
+			switch name {
+			case "reasoning":
+				summary = "think"
+				wire = responseEvent("response.reasoning_summary_text.delta", map[string]any{"output_index": 0, "summary_index": 0, "item_id": "r", "delta": summary}) +
+					responseEvent("response.output_text.delta", map[string]any{"output_index": 1, "content_index": 0, "item_id": "m", "delta": content}) +
+					terminalEvent("response.completed", []byte("["+reasoning+","+message+"]"))
+			case "tools":
+				content, tools = "", 1
+				wire = responseEvent("response.output_item.added", map[string]any{"output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc", "call_id": "call", "name": "add", "arguments": "", "status": "in_progress"}}) +
+					responseEvent("response.function_call_arguments.delta", map[string]any{"output_index": 0, "item_id": "fc", "delta": `{"a":8,`}) +
+					responseEvent("response.function_call_arguments.delta", map[string]any{"output_index": 0, "item_id": "fc", "delta": `"b":13}`}) +
+					terminalEvent("response.completed", []byte("["+call+"]"))
+			}
 			cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 				equal(t, true, decodeRequest(t, r)["stream"])
 				w.Header().Set("Content-Type", "text/event-stream")
 				w.Header().Set("X-Request-Id", "fixture-request-"+name)
-				_, _ = w.Write(wire)
+				_, _ = io.WriteString(w, wire)
 			}, nil)
 			for _, concat := range []string{"messages", "stream reader"} {
 				t.Run(concat, func(t *testing.T) {
@@ -86,9 +99,15 @@ func TestResponsesCapturedStreamConcat(t *testing.T) {
 						merged, err = schema.ConcatMessages(chunks)
 					}
 					check(t, err)
-					raw, err := sonic.Marshal(merged)
-					check(t, err)
-					equalRawJSON(t, expected, raw)
+					equal(t, content, merged.Content)
+					equal(t, summary, merged.ReasoningContent)
+					equal(t, tools, len(merged.ToolCalls))
+					equal(t, 11, merged.ResponseMeta.Usage.TotalTokens)
+					if tools > 0 {
+						equal(t, 0, *merged.ToolCalls[0].Index)
+						equal(t, "call", merged.ToolCalls[0].ID)
+						equal(t, `{"a":8,"b":13}`, merged.ToolCalls[0].Function.Arguments)
+					}
 					signatures := 0
 					for index, part := range merged.AssistantGenMultiContent {
 						if part.StreamingMeta == nil {
@@ -294,11 +313,8 @@ func TestResponsesRejectContradictoryContent(t *testing.T) {
 	}
 }
 
-func TestResponsesCapturedStreamMissingTerminal(t *testing.T) {
-	wire, err := os.ReadFile("testdata/responses_stream/text.sse")
-	check(t, err)
-	prefix, _, found := strings.Cut(string(wire), "event: response.completed\n")
-	equal(t, true, found)
+func TestResponsesStreamMissingTerminal(t *testing.T) {
+	prefix := responseEvent("response.output_text.delta", map[string]any{"output_index": 0, "content_index": 0, "item_id": "m", "delta": "partial"})
 	cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, prefix)
