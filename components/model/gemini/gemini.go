@@ -1221,7 +1221,9 @@ func convResponse(resp *genai.GenerateContentResponse) (*schema.Message, error) 
 			message.ResponseMeta = &schema.ResponseMeta{}
 		}
 		message.ResponseMeta.Usage = &schema.TokenUsage{
-			PromptTokens: int(resp.UsageMetadata.PromptTokenCount),
+			// ToolUsePromptTokenCount covers tokens of tool results (e.g. GoogleSearch,
+			// CodeExecution) fed back to the model; they are billed as input tokens.
+			PromptTokens: int(resp.UsageMetadata.PromptTokenCount) + int(resp.UsageMetadata.ToolUsePromptTokenCount),
 			PromptTokenDetails: schema.PromptTokenDetails{
 				CachedTokens: int(resp.UsageMetadata.CachedContentTokenCount),
 			},

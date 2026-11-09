@@ -72,6 +72,31 @@ func TestGemini(t *testing.T) {
 		assert.Equal(t, 100, resp.ResponseMeta.Usage.CompletionTokens)
 		assert.Equal(t, 50, resp.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
 	})
+	mockey.PatchConvey("tool use prompt tokens count as prompt tokens", t, func() {
+		defer mockey.Mock(genai.Models.GenerateContent).Return(&genai.GenerateContentResponse{
+			Candidates: []*genai.Candidate{
+				{
+					Content: &genai.Content{
+						Role:  "model",
+						Parts: []*genai.Part{genai.NewPartFromText("ok")},
+					},
+				},
+			},
+			UsageMetadata: &genai.GenerateContentResponseUsageMetadata{
+				PromptTokenCount:        10,
+				ToolUsePromptTokenCount: 30,
+				CandidatesTokenCount:    5,
+				ThoughtsTokenCount:      5,
+				TotalTokenCount:         50,
+			},
+		}, nil).Build().UnPatch()
+
+		resp, err := model.Generate(ctx, []*schema.Message{{Role: schema.User, Content: "Hi"}})
+		assert.NoError(t, err)
+		assert.Equal(t, 40, resp.ResponseMeta.Usage.PromptTokens)
+		assert.Equal(t, 10, resp.ResponseMeta.Usage.CompletionTokens)
+		assert.Equal(t, 50, resp.ResponseMeta.Usage.TotalTokens)
+	})
 	mockey.PatchConvey("stream", t, func() {
 		respList := []*genai.GenerateContentResponse{
 			{Candidates: []*genai.Candidate{{
