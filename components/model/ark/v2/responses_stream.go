@@ -166,7 +166,7 @@ func (s *responsesStreamState) reasoningSuffix(output []responses.OutputItem) st
 		}
 		if s.reasoningSummary {
 			// Keep the legacy delta display's concatenation. Canonical parts
-			// independently join summary segments with newlines.
+			// retain the individual summary segments and their indices.
 			for _, part := range reasoning.Summary {
 				full.WriteString(part.Text.Or(""))
 			}

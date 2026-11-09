@@ -40,6 +40,7 @@ type responsesStreamPart struct {
 }
 
 type responsesStreamItem struct {
+	kind         responses.OutputItemSumType
 	parts        map[responsesPartKey]*responsesStreamPart
 	section      string
 	source       []schema.MessageOutputPart
@@ -112,7 +113,7 @@ func (s *responsesPartsStream) resolve(event *responses.ResponseStreamEvent, msg
 		if ev.ResponseOutputItemAddedEvent.OutputIndex < 0 {
 			return nil, fmt.Errorf("negative Responses output index")
 		}
-		s.item(int(ev.ResponseOutputItemAddedEvent.OutputIndex))
+		s.item(int(ev.ResponseOutputItemAddedEvent.OutputIndex)).kind = ev.ResponseOutputItemAddedEvent.Item.OneOf.Type
 		if reasoning, ok := ev.ResponseOutputItemAddedEvent.Item.OneOf.GetItemReasoning(); ok && reasoning.EncryptedContent.Or("") != "" {
 			s.item(int(ev.ResponseOutputItemAddedEvent.OutputIndex)).signature = reasoning.EncryptedContent.Value
 		}
@@ -140,6 +141,11 @@ func (s *responsesPartsStream) resolve(event *responses.ResponseStreamEvent, msg
 					return nil, fmt.Errorf("negative Responses content index")
 				}
 				item := s.item(index)
+				if key.section == "content" &&
+					((item.kind == responses.ItemReasoningOutputItemSum && part.Type == schema.ChatMessagePartTypeText) ||
+						(item.kind == responses.ItemOutputMessageOutputItemSum && part.Type == schema.ChatMessagePartTypeReasoning)) {
+					return nil, fmt.Errorf("Responses item %d (%s) cannot contain a %s part", index, item.kind, part.Type)
+				}
 				if item.closed {
 					return nil, fmt.Errorf("Responses item %d received a delta after output_item.done", index)
 				}

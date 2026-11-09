@@ -478,6 +478,9 @@ image-generation APIs remain in the legacy module.
   content part when no summary exists); input
   conversion accepts it on any reasoning part of that item and rejects
   conflicting nonempty signatures.
+  Message content maps `output_text` to `Text`; reasoning content maps
+  `reasoning_text` to `Reasoning.Text`. Known content types that contradict the
+  parent item are rejected in complete responses, streams and native history.
   Message, reasoning and function-call history maps directly to SDK input types.
   Output-only items are omitted from subsequent input. Server-side MCP and
   Tool Search configuration and history mapping are outside this adapter's

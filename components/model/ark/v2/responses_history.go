@@ -206,15 +206,11 @@ func toResponsesHistoryMessage(extra map[string]any, parts []*schema.MessageOutp
 		if err != nil {
 			return item, err
 		}
-		var sum responses.ContentItemSum
-		switch kind {
-		case "output_text":
-			sum.SetOutputContentItemText(responses.OutputContentItemText{Type: responses.OutputContentItemTextTypeOutputText, Text: text, Annotations: annotations})
-		case "reasoning_text":
-			sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text, Annotations: annotations})
-		default:
-			return item, fmt.Errorf("unsupported Responses input content type %q", kind)
+		if kind != "output_text" || part.Type != schema.ChatMessagePartTypeText {
+			return item, fmt.Errorf("Responses message content must be output_text with a text part")
 		}
+		var sum responses.ContentItemSum
+		sum.SetOutputContentItemText(responses.OutputContentItemText{Type: responses.OutputContentItemTextTypeOutputText, Text: text, Annotations: annotations})
 		content = append(content, responses.ContentItem{OneOf: sum})
 	}
 	item.Content = responses.NewContentItemArrayMessageContent(content)
@@ -248,15 +244,11 @@ func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOu
 		if err != nil {
 			return item, err
 		}
-		var sum responses.OutputContentItemSum
-		switch kind {
-		case "output_text":
-			sum.SetOutputContentItemText(responses.OutputContentItemText{Type: responses.OutputContentItemTextTypeOutputText, Text: text, Annotations: annotations})
-		case "reasoning_text":
-			sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text, Annotations: annotations})
-		default:
-			return item, fmt.Errorf("unsupported reasoning input content type %q", kind)
+		if kind != "reasoning_text" || part.Type != schema.ChatMessagePartTypeReasoning {
+			return item, fmt.Errorf("Responses reasoning content must be reasoning_text with a reasoning part")
 		}
+		var sum responses.OutputContentItemSum
+		sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text, Annotations: annotations})
 		item.Content = append(item.Content, responses.OutputContentItem{OneOf: sum})
 	}
 	var signature string

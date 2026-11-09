@@ -198,6 +198,101 @@ func TestResponsesContradictoryPartEvents(t *testing.T) {
 	}
 }
 
+func TestResponsesContentKinds(t *testing.T) {
+	for _, itemType := range []string{"message", "reasoning"} {
+		contentType := "output_text"
+		if itemType == "reasoning" {
+			contentType = "reasoning_text"
+		}
+		for _, mode := range []string{"generate", "stream"} {
+			t.Run(itemType+"/"+mode, func(t *testing.T) {
+				output := fmt.Sprintf(`[{"type":%q,"id":"item","role":"assistant","status":"completed","summary":[],"content":[{"type":%q,"text":"AB"}]}]`, itemType, contentType)
+				msg := projectedResponsesMessage(t, mode, output)
+				equal(t, 1, len(msg.AssistantGenMultiContent))
+				part := msg.AssistantGenMultiContent[0]
+				raw, err := sonic.Marshal(part)
+				check(t, err)
+				var fields map[string]any
+				check(t, sonic.Unmarshal(raw, &fields))
+				if itemType == "reasoning" {
+					equal(t, schema.ChatMessagePartTypeReasoning, part.Type)
+					equal(t, "", part.Text)
+					equal(t, "AB", part.Reasoning.Text)
+					if _, exists := fields["text"]; exists {
+						t.Fatal("reasoning JSON has a top-level text field")
+					}
+					equal(t, "", msg.Content)
+					equal(t, "AB", msg.ReasoningContent)
+				} else {
+					equal(t, schema.ChatMessagePartTypeText, part.Type)
+					equal(t, "AB", part.Text)
+					if _, exists := fields["reasoning"]; exists {
+						t.Fatal("text JSON has a reasoning field")
+					}
+					equal(t, "AB", msg.Content)
+					equal(t, "", msg.ReasoningContent)
+				}
+			})
+		}
+	}
+}
+
+func TestResponsesRejectContradictoryContent(t *testing.T) {
+	for _, itemType := range []string{"message", "reasoning"} {
+		contentType, wrongType := "output_text", "reasoning_text"
+		if itemType == "reasoning" {
+			contentType, wrongType = wrongType, contentType
+		}
+		t.Run(itemType, func(t *testing.T) {
+			item := fmt.Sprintf(`{"type":%q,"id":"item","role":"assistant","status":"completed","summary":[],"content":[{"type":%q,"text":"AB"}]}`, itemType, wrongType)
+			t.Run("generate", func(t *testing.T) {
+				var value responses.OutputItem
+				check(t, sonic.UnmarshalString(item, &value))
+				_, err := projectResponsesItem(value, 0)
+				if err == nil {
+					t.Fatal("contradictory item/content types accepted")
+				}
+			})
+			for stage, event := range map[string]string{
+				"part added": fmt.Sprintf(`{"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":%q,"text":""}}`, wrongType),
+				"part done":  fmt.Sprintf(`{"type":"response.content_part.done","output_index":0,"content_index":0,"part":{"type":%q,"text":"AB"}}`, wrongType),
+				"delta":      fmt.Sprintf(`{"type":"response.%s.delta","output_index":0,"content_index":0,"delta":"AB"}`, wrongType),
+				"item added": fmt.Sprintf(`{"type":"response.output_item.added","output_index":0,"item":%s}`, item),
+				"item done":  fmt.Sprintf(`{"type":"response.output_item.done","output_index":0,"item":%s}`, item),
+				"terminal":   fmt.Sprintf(`{"type":"response.completed","response":{"id":"r","object":"response","created_at":1,"model":"test","status":"completed","output":[%s]}}`, item),
+			} {
+				t.Run("stream/"+stage, func(t *testing.T) {
+					var state responsesStreamState
+					_, err := resolveResponsesTestEvent(t, &state, fmt.Sprintf(`{"type":"response.output_item.added","output_index":0,"item":{"type":%q,"id":"item","role":"assistant","status":"in_progress","summary":[],"content":[]}}`, itemType))
+					check(t, err)
+					_, err = resolveResponsesTestEvent(t, &state, event)
+					if err == nil {
+						t.Fatal("contradictory stream content accepted")
+					}
+				})
+			}
+			for _, edit := range []string{"wire type", "part type"} {
+				t.Run("history/"+edit, func(t *testing.T) {
+					valid := strings.Replace(item, wrongType, contentType, 1)
+					msg := projectedResponsesMessage(t, "generate", "["+valid+"]")
+					part := &msg.AssistantGenMultiContent[0]
+					if edit == "wire type" {
+						part.Extra[keyResponsesContentType] = metadataString(wrongType)
+					} else if itemType == "message" {
+						part.Type, part.Text = schema.ChatMessagePartTypeReasoning, ""
+						part.Reasoning = &schema.MessageOutputReasoning{Text: "AB"}
+					} else {
+						part.Type, part.Text, part.Reasoning = schema.ChatMessagePartTypeText, "AB", nil
+					}
+					if _, err := toResponsesInput([]*schema.Message{msg}); err == nil {
+						t.Fatal("contradictory native history accepted")
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestResponsesCapturedStreamMissingTerminal(t *testing.T) {
 	wire, err := os.ReadFile("testdata/responses_stream/text.sse")
 	check(t, err)

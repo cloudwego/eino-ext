@@ -429,6 +429,8 @@ Context 和图片生成 API 仍使用旧模块。
   首个 summary part 保存该 item 唯一的加密 `Signature`；没有 summary 时使用首个
   reasoning content part。输入转换读取
   同一 item 任意 reasoning part 的签名，非空签名冲突则报错。
+  message 的 `output_text` 映射到 `Text`，reasoning 的 `reasoning_text` 映射到
+  `Reasoning.Text`；完整响应、流式和原生历史均拒绝已知 content 类型与父 item 矛盾的组合。
   消息、推理和函数调用历史直接映射到 SDK 输入类型；输出专用 item 在后续输入中忽略。
   当前适配器不提供 server-side MCP、Tool Search 的配置与历史转换，
   即使 SDK 已声明相应输入类型，也不自动回传。这些 SDK 输出值留在 Message 中供读取；
