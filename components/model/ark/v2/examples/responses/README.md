@@ -24,6 +24,7 @@ go run ./examples/responses/tools
 | [tool_options](tool_options/main.go) | Combine strict defaults/overrides, full JSON Schema, bound/call-level tools, and Allowed/Forced name subsets | Uses fixed addition and multiplication prompts |
 | [structured_output](structured_output/main.go) | Configure strict JSON schema and decode the answer | Optional `ARK_PROMPT` |
 | [reasoning](reasoning/main.go) | Stream reasoning and pass the assistant message back for a follow-up | Uses a fixed multiplication/follow-up conversation |
+| [mixed_stream](mixed_stream/main.go) | Enable thinking and parallel tools, print every chunk and its native/merge indices, concatenate, and execute addition and multiplication | Optional `ARK_PROMPT` |
 | [modifiers](modifiers/main.go) | Modify request JSON, inspect original response bytes, and finalize a stream | Optional `ARK_PROMPT` |
 | [multimodal](multimodal/main.go) | Build image/audio/video message parts, or read a local image as base64 | `ARK_IMAGE_URL`, `ARK_AUDIO_URL`, `ARK_VIDEO_URL`; optional `ARK_IMAGE_FILE` and `ARK_PROMPT` |
 | [file](file/main.go) | Send a PDF by FileID or local base64 | `ARK_FILE_ID` or `ARK_FILE_PATH`; optional `ARK_PROMPT` |
@@ -43,7 +44,7 @@ The file and upload examples default to the synthetic
 `ARK_FILE_ID` is never deleted; the upload example deletes only its own upload,
 including on processing or inference errors.
 
-Thinking is disabled in the shared defaults. The reasoning example enables it
+Thinking is disabled in the shared defaults. The reasoning and mixed_stream examples enable it
 explicitly in its own model configuration. Sampling, tools, schemas, prompts,
 and other feature settings are shown in the individual examples so they can be
 copied or edited directly.
@@ -93,3 +94,16 @@ to the same SDK part reuse one stream merge index. `ReasoningContent` displays
 only summaries; raw reasoning text remains in the structured output parts.
 Function call item metadata is stored in `ToolCall.Extra`; function calls do not
 create empty output parts.
+
+The [mixed stream example](mixed_stream/main.go) requests a visible progress
+message and two independent function calls with thinking enabled. It prints the
+actual shape; a model may omit the progress message. It never inserts missing
+text or combines responses from different turns to manufacture a mixed response.
+The two tool results are passed back together after the first stream is assembled.
+
+For deterministic coverage, `TestResponsesMixedStreamConcat` replays the
+hand-authored `testdata/responses_stream/mixed.sse` through the public SDK stream.
+It interleaves multiple summaries/content parts with two function argument
+streams, delays the encrypted signature until the terminal event, and verifies
+both Concat APIs and persisted history. This protocol fixture is separate from
+real model captures.

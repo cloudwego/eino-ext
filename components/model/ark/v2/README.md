@@ -495,7 +495,10 @@ image-generation APIs remain in the legacy module.
   payload modifiers; SDK annotation codecs preserve unknown annotation variants.
   Generate leaves part `StreamingMeta` nil. Streams map the native
   `(output_index, section, summary_index/content_index)` identity to a stable
-  part index across added, delta and done events. Metadata/signatures are completed
+  part index across added, delta and done events. Each part receives the next
+  zero-based index when first emitted; this index is reused, rather than derived
+  arithmetically from `output_index`. Function calls use `ToolCall.Index =
+  output_index` separately and allocate no part index. Metadata/signatures are completed
   at item done or the terminal response; complete text is not replayed. Because
   Eino Concat merges adjacent chunks, later parts/items may wait for the current
   item's final metadata. Within an item, an already-started section is emitted

@@ -9,3 +9,11 @@ Response, item, call and request IDs, creation timestamps and encrypted reasonin
 values are replaced with deterministic fixtures. No API credentials or original
 encrypted values are included. Usage and ordinary model text are retained.
 Tests replay these files through a local HTTP server and make no external calls.
+
+`mixed.sse` is a hand-authored protocol fixture, not a captured model response.
+It interleaves two function calls with two reasoning summaries, raw reasoning,
+and three visible text parts across two message items. Its encrypted signature
+arrives only in the terminal response. Native output indices are 0 through 4;
+function calls occupy output indices 2 and 3 but allocate no part indices.
+`TestResponsesMixedStreamConcat` checks the six part indices, the two tool indices,
+completed/incomplete responses, both Concat APIs, and JSON/Sonic/gob history.

@@ -82,11 +82,45 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 		return fmt.Errorf("streamed text was not exposed through incremental output parts")
 	}
 	fmt.Printf("\nConcat structure OK: chunks=%d parts=%d tools=%d incremental_part_chunks=%d\n", len(chunks), len(merged.AssistantGenMultiContent), len(merged.ToolCalls), incremental)
-	display := *merged
-	display.AssistantGenMultiContent = append([]schema.MessageOutputPart(nil), merged.AssistantGenMultiContent...)
-	for index := range display.AssistantGenMultiContent {
-		part := &display.AssistantGenMultiContent[index]
+	display := responsesMessageForDisplay(merged)
+	for index, part := range merged.AssistantGenMultiContent {
 		fmt.Printf("Part %d: type=%s stream_index=%d\n", index, part.Type, part.StreamingMeta.Index)
+	}
+	raw, err := sonic.MarshalIndent(&display, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Concatenated message (signatures abbreviated):\n%s\n", raw)
+	return nil
+}
+
+// PrintResponsesChunk prints one public Recv result and its JSON-excluded indices.
+func PrintResponsesChunk(sequence int, chunk *schema.Message) error {
+	display := responsesMessageForDisplay(chunk)
+	raw, err := sonic.MarshalIndent(&display, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\nChunk %d (signatures abbreviated):\n%s\n", sequence, raw)
+	for index, part := range chunk.AssistantGenMultiContent {
+		if part.StreamingMeta != nil {
+			fmt.Printf("Chunk %d part %d: item=%v section=%v summary=%v content=%v stream_index=%d\n", sequence, index,
+				part.Extra["ark-responses-item-index"], part.Extra["ark-responses-section"], part.Extra["ark-responses-summary-index"], part.Extra["ark-responses-content-index"], part.StreamingMeta.Index)
+		}
+	}
+	for _, call := range chunk.ToolCalls {
+		if call.Index != nil {
+			fmt.Printf("Chunk %d tool: item=%v tool_index=%d\n", sequence, call.Extra["ark-responses-item-index"], *call.Index)
+		}
+	}
+	return nil
+}
+
+func responsesMessageForDisplay(message *schema.Message) schema.Message {
+	display := *message
+	display.AssistantGenMultiContent = append([]schema.MessageOutputPart(nil), message.AssistantGenMultiContent...)
+	for i := range display.AssistantGenMultiContent {
+		part := &display.AssistantGenMultiContent[i]
 		if part.Reasoning != nil {
 			reasoning := *part.Reasoning
 			if reasoning.Signature != "" {
@@ -95,10 +129,5 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 			part.Reasoning = &reasoning
 		}
 	}
-	raw, err := sonic.MarshalIndent(&display, "", "  ")
-	if err != nil {
-		return err
-	}
-	fmt.Printf("Concatenated message (signatures abbreviated):\n%s\n", raw)
-	return nil
+	return display
 }
