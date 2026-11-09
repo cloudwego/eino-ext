@@ -52,7 +52,13 @@ func toResponsesHistoryInput(msg *schema.Message) ([]responses.InputItem, bool, 
 		}
 		partsByItem[index] = append(partsByItem[index], part)
 	}
-	if len(partsByItem) == 0 {
+	native := len(partsByItem) > 0
+	for _, call := range msg.ToolCalls {
+		if _, exists := call.Extra[keyResponsesItemType]; exists {
+			native = true
+		}
+	}
+	if !native {
 		return nil, false, nil
 	}
 	callsByItem := make(map[int]*schema.ToolCall)
@@ -64,6 +70,9 @@ func toResponsesHistoryInput(msg *schema.Message) ([]responses.InputItem, bool, 
 			return nil, true, fmt.Errorf("tool %d: %w", i, err)
 		}
 		if !exists {
+			if _, native := call.Extra[keyResponsesItemType]; native {
+				return nil, true, fmt.Errorf("tool %d has no Responses item index", i)
+			}
 			standardCalls = append(standardCalls, *call)
 			continue
 		}
@@ -95,6 +104,12 @@ func toResponsesHistoryInput(msg *schema.Message) ([]responses.InputItem, bool, 
 }
 
 func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.ToolCall) (*responses.InputItem, error) {
+	if call != nil {
+		if len(parts) != 0 {
+			return nil, fmt.Errorf("tool call overlaps content parts")
+		}
+		return toResponsesHistoryToolCall(call)
+	}
 	var metadataPart *schema.MessageOutputPart
 	var content []*schema.MessageOutputPart
 	for _, part := range parts {
@@ -111,7 +126,7 @@ func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.Tool
 		}
 	}
 	var extra map[string]any
-	kind := "function_call"
+	var kind string
 	if metadataPart != nil {
 		extra = metadataPart.Extra
 		var ok bool
@@ -119,42 +134,11 @@ func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.Tool
 		if !ok {
 			return nil, fmt.Errorf("missing Responses item type")
 		}
-	} else if len(content) != 0 || call == nil {
+	} else {
 		return nil, fmt.Errorf("content has no item metadata")
-	}
-	if call != nil && kind != "function_call" {
-		return nil, fmt.Errorf("tool call overlaps %q item", kind)
 	}
 	var sum responses.InputItemSum
 	switch kind {
-	case "function_call":
-		if call == nil {
-			return nil, nil // Deleting the ToolCall removes its function input.
-		}
-		if len(content) != 0 {
-			return nil, fmt.Errorf("function call has content parts")
-		}
-		if call.Type != "" && call.Type != "function" {
-			return nil, fmt.Errorf("unsupported tool call type %q", call.Type)
-		}
-		id, err := responsesMetadataString(extra, keyResponsesItemID)
-		if err != nil {
-			return nil, err
-		}
-		status, err := responsesMetadataString(extra, keyResponsesItemStatus)
-		if err != nil {
-			return nil, err
-		}
-		item := responses.ItemFunctionToolCall{Type: responses.ItemFunctionToolCallTypeFunctionCall,
-			ID: id, CallID: responseString(call.ID), Name: responseString(call.Function.Name), Arguments: responseString(call.Function.Arguments)}
-		item.Namespace, err = responsesMetadataString(extra, keyResponsesNamespace)
-		if err != nil {
-			return nil, err
-		}
-		if status.IsSet() {
-			item.Status = responses.NewOptItemStatus(responses.ItemStatus(status.Value))
-		}
-		sum.SetItemFunctionToolCall(item)
 	case "message":
 		item, err := toResponsesHistoryMessage(extra, content)
 		if err != nil {
@@ -173,6 +157,39 @@ func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.Tool
 		// values in Message parts for inspection, without constructing input.
 		return nil, nil
 	}
+	return &responses.InputItem{OneOf: sum}, nil
+}
+
+func toResponsesHistoryToolCall(call *schema.ToolCall) (*responses.InputItem, error) {
+	extra := call.Extra
+	if _, exists := extra[keyResponsesItemType]; exists {
+		kind, ok := extraString(extra, keyResponsesItemType)
+		if !ok || kind != "function_call" {
+			return nil, fmt.Errorf("invalid tool call item type")
+		}
+	}
+	if call.Type != "" && call.Type != "function" {
+		return nil, fmt.Errorf("unsupported tool call type %q", call.Type)
+	}
+	id, err := responsesMetadataString(extra, keyResponsesItemID)
+	if err != nil {
+		return nil, err
+	}
+	status, err := responsesMetadataString(extra, keyResponsesItemStatus)
+	if err != nil {
+		return nil, err
+	}
+	item := responses.ItemFunctionToolCall{Type: responses.ItemFunctionToolCallTypeFunctionCall,
+		ID: id, CallID: responseString(call.ID), Name: responseString(call.Function.Name), Arguments: responseString(call.Function.Arguments)}
+	item.Namespace, err = responsesMetadataString(extra, keyResponsesNamespace)
+	if err != nil {
+		return nil, err
+	}
+	if status.IsSet() {
+		item.Status = responses.NewOptItemStatus(responses.ItemStatus(status.Value))
+	}
+	var sum responses.InputItemSum
+	sum.SetItemFunctionToolCall(item)
 	return &responses.InputItem{OneOf: sum}, nil
 }
 

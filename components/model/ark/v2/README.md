@@ -455,8 +455,10 @@ image-generation APIs remain in the legacy module.
   authoritative; `Content` and `ReasoningContent` are display-only compatibility views.
   Edit text/reasoning parts or function values in `ToolCalls` to change history.
   Item metadata is attached to the first data part. `ark.ResponsesOutputItem`
-  is needed only when there is no mapped data part, such as an empty message,
-  a function call represented in ToolCalls, or an opaque built-in output.
+  is needed only for items without a standard Eino field, such as an empty
+  message or an opaque built-in output. A function call's item metadata belongs
+  to its `ToolCalls[i].Extra`, alongside the function values; it creates no
+  `AssistantGenMultiContent` part.
   Item metadata uses `ark-responses-item-type`, `ark-responses-item-id`,
   `ark-responses-item-status`, `ark-responses-item-role`, and `ark-responses-partial`;
   content uses its own `ark-responses-content-type` and `ark-responses-annotations`.

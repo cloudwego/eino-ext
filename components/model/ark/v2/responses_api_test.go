@@ -172,7 +172,8 @@ func TestResponsesGenerate(t *testing.T) {
 			itemCount++
 		}
 	}
-	equal(t, 3, itemCount)
+	equal(t, 2, itemCount)
+	equal(t, "function_call", fmt.Sprint(out.ToolCalls[0].Extra[keyResponsesItemType]))
 }
 
 func TestResponsesToolsAndPayload(t *testing.T) {

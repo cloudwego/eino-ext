@@ -72,17 +72,19 @@ func projectResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 		e := ev.ResponseReasoningSummaryPartDoneEvent
 		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projectResponsesSummaryPart(int(e.OutputIndex), int(e.SummaryIndex), e.Part.Text.Or(""))}}
 	case responses.ResponseOutputItemDoneEventResponseStreamEventSum:
-		parts, e := projectResponsesItem(ev.ResponseOutputItemDoneEvent.Item, int(ev.ResponseOutputItemDoneEvent.OutputIndex))
+		done := ev.ResponseOutputItemDoneEvent
+		parts, e := projectResponsesItem(done.Item, int(done.OutputIndex))
 		if e != nil {
 			return nil, false, e
 		}
 		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: parts}
+		if call, ok := done.Item.OneOf.GetItemFunctionToolCall(); ok {
+			msg.ToolCalls = []schema.ToolCall{projectResponsesToolCall(call, int(done.OutputIndex))}
+		}
 	case responses.ResponseOutputItemAddedEventResponseStreamEventSum:
 		added := ev.ResponseOutputItemAddedEvent
 		if call, ok := added.Item.OneOf.GetItemFunctionToolCall(); ok {
-			index := int(added.OutputIndex)
-			msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, ID: call.CallID.Or(""), Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)},
-				Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}}}}
+			msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{projectResponsesToolCall(call, int(added.OutputIndex))}}
 		} else if added.Item.OneOf.Type == responses.ItemOutputMessageOutputItemSum || added.Item.OneOf.Type == responses.ItemReasoningOutputItemSum {
 			parts, e := projectResponsesItem(added.Item, int(added.OutputIndex))
 			if e != nil {

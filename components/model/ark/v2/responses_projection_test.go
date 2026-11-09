@@ -325,11 +325,6 @@ func TestResponsesFlatMetadata(t *testing.T) {
 			foundItem, foundText := false, false
 			for i := range msg.AssistantGenMultiContent {
 				part := &msg.AssistantGenMultiContent[i]
-				if id, _ := extraString(part.Extra, "ark-responses-item-id"); id == "fc" {
-					foundItem = true
-					part.Extra["ark-responses-item-id"] = "edited-fc"
-					part.Extra["ark-responses-item-status"] = "in_progress"
-				}
 				if part.Type == schema.ChatMessagePartTypeText && part.Text == "A" {
 					foundText = true
 					kind, ok := extraString(part.Extra, keyResponsesContentType)
@@ -346,6 +341,14 @@ func TestResponsesFlatMetadata(t *testing.T) {
 					if _, exists := part.Extra[key]; exists {
 						t.Fatalf("whole object is still stored in Extra[%q]", key)
 					}
+				}
+			}
+			for i := range msg.ToolCalls {
+				call := &msg.ToolCalls[i]
+				if id, _ := extraString(call.Extra, keyResponsesItemID); id == "fc" {
+					foundItem = true
+					call.Extra[keyResponsesItemID] = "edited-fc"
+					call.Extra[keyResponsesItemStatus] = "in_progress"
 				}
 			}
 			equal(t, true, foundItem)
@@ -474,7 +477,7 @@ func TestResponsesItemMetadataMergesIntoFirstDataPart(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		t.Run(mode, func(t *testing.T) {
 			msg := projectedResponsesMessage(t, mode, responsesProjectionJSON)
-			equal(t, 8, len(msg.AssistantGenMultiContent))
+			equal(t, 7, len(msg.AssistantGenMultiContent))
 			seen := map[int]bool{}
 			for _, part := range msg.AssistantGenMultiContent {
 				index, exists, err := extraIndex(part.Extra, keyResponsesItemIndex)
@@ -573,7 +576,7 @@ func TestResponsesProjectionUsesSDKFields(t *testing.T) {
 							t.Fatalf("projected field outside SDK schema: %s", unsupported)
 						}
 					}
-					equal(t, 4, len(msg.AssistantGenMultiContent))
+					equal(t, 3, len(msg.AssistantGenMultiContent))
 					id, _ := extraString(msg.AssistantGenMultiContent[1].Extra, keyResponsesItemID)
 					status, _ := extraString(msg.AssistantGenMultiContent[1].Extra, keyResponsesItemStatus)
 					equal(t, "search", id)
@@ -581,7 +584,7 @@ func TestResponsesProjectionUsesSDKFields(t *testing.T) {
 					search, ok := extraString(msg.AssistantGenMultiContent[1].Extra, keyResponsesItemData)
 					equal(t, true, ok)
 					equalRawJSON(t, []byte(`{"type":"web_search_call","id":"search","status":"completed","action":{"type":"search","query":"sdk query"}}`), []byte(search))
-					unknown, ok := extraString(msg.AssistantGenMultiContent[3].Extra, keyResponsesItemData)
+					unknown, ok := extraString(msg.AssistantGenMultiContent[2].Extra, keyResponsesItemData)
 					equal(t, true, ok)
 					equalRawJSON(t, []byte(`{"type":"future_output","payload":{"integer":9007199254740993}}`), []byte(unknown))
 					input, err := toResponsesInput([]*schema.Message{&msg})
@@ -654,7 +657,7 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 				equal(t, 0, len(chunk.AssistantGenMultiContent))
 			}
 			terminal := chunks[len(chunks)-1]
-			equal(t, 8, len(terminal.AssistantGenMultiContent))
+			equal(t, 7, len(terminal.AssistantGenMultiContent))
 			for index, part := range terminal.AssistantGenMultiContent {
 				if part.StreamingMeta == nil {
 					t.Fatal("terminal stream part has no merge identity")
@@ -665,7 +668,7 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 			check(t, err)
 			equal(t, "ABC", merged.Content)
 			equal(t, "S1\nS2", merged.ReasoningContent)
-			equal(t, 8, len(merged.AssistantGenMultiContent))
+			equal(t, 7, len(merged.AssistantGenMultiContent))
 			for index, want := range []string{"R1", "R2", "S1", "S2", "A", "B", "C"} {
 				part := merged.AssistantGenMultiContent[index]
 				if part.Reasoning != nil {

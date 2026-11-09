@@ -1,17 +1,6 @@
 {
   "role": "assistant",
   "content": "",
-  "assistant_output_multi_content": [
-    {
-      "type": "ark_responses_item",
-      "extra": {
-        "ark-responses-item-index": 0,
-        "ark-responses-item-type": "function_call",
-        "ark-responses-item-id": "fixture-tools-function-1",
-        "ark-responses-item-status": "completed"
-      }
-    }
-  ],
   "tool_calls": [
     {
       "index": 0,
@@ -22,7 +11,10 @@
         "arguments": "{\"a\": 8, \"b\": 13}"
       },
       "extra": {
-        "ark-responses-item-index": 0
+        "ark-responses-item-index": 0,
+        "ark-responses-item-type": "function_call",
+        "ark-responses-item-id": "fixture-tools-function-1",
+        "ark-responses-item-status": "completed"
       }
     }
   ],

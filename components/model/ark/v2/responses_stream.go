@@ -86,6 +86,24 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 	msg.AssistantGenMultiContent = parts
 	msg.ReasoningContent = s.summaryDelta(parts)
 	if !terminal {
+		// Added/done carry snapshots, whereas argument events carry deltas.
+		var item responses.OutputItem
+		var index int
+		switch event.OneOf.Type {
+		case responses.ResponseOutputItemAddedEventResponseStreamEventSum:
+			item = event.OneOf.ResponseOutputItemAddedEvent.Item
+			index = int(event.OneOf.ResponseOutputItemAddedEvent.OutputIndex)
+		case responses.ResponseOutputItemDoneEventResponseStreamEventSum:
+			item = event.OneOf.ResponseOutputItemDoneEvent.Item
+			index = int(event.OneOf.ResponseOutputItemDoneEvent.OutputIndex)
+		}
+		if call, ok := item.OneOf.GetItemFunctionToolCall(); ok {
+			delta, err := s.toolDelta(call, index)
+			if err != nil {
+				return nil, false, err
+			}
+			msg.ToolCalls = []schema.ToolCall{delta}
+		}
 		if err := s.record(msg); err != nil {
 			return nil, false, err
 		}
@@ -110,26 +128,11 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		if !ok {
 			continue
 		}
-		seen := s.tools[index]
-		if seen == nil {
-			seen = &responsesStreamTool{}
-		}
-		id, err := responsesStreamIdentity(call.CallID.Or(seen.id), seen.id, "tool call ID")
+		delta, err := s.toolDelta(call, index)
 		if err != nil {
 			return nil, true, err
 		}
-		name, err := responsesStreamIdentity(call.Name.Or(seen.name), seen.name, "tool name")
-		if err != nil {
-			return nil, true, err
-		}
-		args, err := responsesStreamSuffix(call.Arguments.Or(seen.arguments.String()), seen.arguments.String(), "tool arguments")
-		if err != nil {
-			return nil, true, err
-		}
-		if id != "" || name != "" || args != "" {
-			toolIndex := index
-			toolDeltas = append(toolDeltas, schema.ToolCall{Index: &toolIndex, ID: id, Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Name: name, Arguments: args}})
-		}
+		toolDeltas = append(toolDeltas, delta)
 	}
 	msg.ToolCalls = toolDeltas
 	if err := s.record(msg); err != nil {
@@ -137,6 +140,28 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 	}
 
 	return msg, true, nil
+}
+
+// Reconcile values as deltas but emit metadata atomically, including status
+// updates when all function arguments were already sent before item.done.
+func (s *responsesStreamState) toolDelta(call responses.ItemFunctionToolCall, index int) (schema.ToolCall, error) {
+	seen := s.tools[index]
+	if seen == nil {
+		seen = &responsesStreamTool{}
+	}
+	delta := projectResponsesToolCall(call, index)
+	delta.Index = &index
+	var err error
+	delta.ID, err = responsesStreamIdentity(call.CallID.Or(seen.id), seen.id, "tool call ID")
+	if err != nil {
+		return delta, err
+	}
+	delta.Function.Name, err = responsesStreamIdentity(call.Name.Or(seen.name), seen.name, "tool name")
+	if err != nil {
+		return delta, err
+	}
+	delta.Function.Arguments, err = responsesStreamSuffix(call.Arguments.Or(seen.arguments.String()), seen.arguments.String(), "tool arguments")
+	return delta, err
 }
 
 // Canonical part chunks already contain only un-emitted suffixes in order.

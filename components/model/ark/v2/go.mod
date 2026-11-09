@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/bytedance/sonic v1.15.0
-	github.com/cloudwego/eino v0.9.22
+	github.com/cloudwego/eino v0.9.23
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/volcengine/ark-runtime-go v0.19.0
 )

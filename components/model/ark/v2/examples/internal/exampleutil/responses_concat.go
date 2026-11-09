@@ -40,7 +40,6 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 		return fmt.Errorf("concat lost or duplicated terminal metadata or usage")
 	}
 	var text strings.Builder
-	functionItems := 0
 	for index, part := range merged.AssistantGenMultiContent {
 		if part.StreamingMeta == nil || part.StreamingMeta.Index != index {
 			return fmt.Errorf("part %d has an unexpected stream merge index", index)
@@ -49,19 +48,20 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 			text.WriteString(part.Text)
 		}
 		if fmt.Sprint(part.Extra["ark-responses-item-type"]) == "function_call" {
-			functionItems++
+			return fmt.Errorf("function call metadata belongs in ToolCall.Extra")
 		}
 	}
 	if text.String() != merged.Content {
 		return fmt.Errorf("concatenated text differs from the complete output parts")
 	}
-	if functionItems != len(merged.ToolCalls) {
-		return fmt.Errorf("expected %d function calls, got %d after concat", functionItems, len(merged.ToolCalls))
-	}
 	seen := make(map[string]bool)
 	for _, call := range merged.ToolCalls {
 		if call.Type != "function" || call.ID == "" || call.Function.Name == "" || seen[call.ID] {
 			return fmt.Errorf("incomplete or duplicate function call after concat")
+		}
+		if call.Index == nil || fmt.Sprint(call.Extra["ark-responses-item-index"]) != fmt.Sprint(*call.Index) ||
+			fmt.Sprint(call.Extra["ark-responses-item-type"]) != "function_call" {
+			return fmt.Errorf("function call lost its Responses item metadata after concat")
 		}
 		seen[call.ID] = true
 		if merged.ResponseMeta.FinishReason == "completed" && !sonic.ValidString(call.Function.Arguments) {

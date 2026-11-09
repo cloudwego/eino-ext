@@ -91,3 +91,5 @@ to the item and is carried by its first summary part. Item and tool positions
 remain independent of stream merge indices. Added/delta/done chunks belonging
 to the same SDK part reuse one stream merge index. `ReasoningContent` displays
 only summaries; raw reasoning text remains in the structured output parts.
+Function call item metadata is stored in `ToolCall.Extra`; function calls do not
+create empty output parts.

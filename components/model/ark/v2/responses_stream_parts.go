@@ -197,12 +197,20 @@ func (s *responsesPartsStream) resolve(event *responses.ResponseStreamEvent, msg
 			}
 			groups[index] = append(groups[index], part)
 		}
+		// ToolCalls occupy SDK output slots but produce no content parts.
+		var outputCount int
+		switch ev.Type {
+		case responses.ResponseCompletedEventResponseStreamEventSum:
+			outputCount = len(ev.ResponseCompletedEvent.Response.Output)
+		case responses.ResponseIncompleteEventResponseStreamEventSum:
+			outputCount = len(ev.ResponseIncompleteEvent.Response.Output)
+		}
 		for index, item := range s.items {
-			if index >= len(groups) && len(item.parts) > 0 {
+			if index >= outputCount && (len(item.parts) > 0 || item.kind != "") {
 				return nil, fmt.Errorf("terminal response omitted streamed item %d", index)
 			}
 		}
-		for index := 0; index < len(groups); index++ {
+		for index := 0; index < outputCount; index++ {
 			if err := s.finish(index, groups[index], true); err != nil {
 				return nil, err
 			}

@@ -414,7 +414,8 @@ Context 和图片生成 API 仍使用旧模块。
   本适配器自身的输出以 `AssistantGenMultiContent` 和 `ToolCalls` 为准；`Content`、
   `ReasoningContent` 仅为展示用兼容视图。修改文本/推理 part 或函数值即可编辑历史。
   item 元数据合入首个 data part；仅没有映射 data part 时使用独立的
-  `ark.ResponsesOutputItem`，例如空消息、由 ToolCalls 承载的函数调用和内置工具输出。
+  `ark.ResponsesOutputItem`，例如空消息和内置工具输出。函数调用的 item 元数据
+  保存在对应的 `ToolCalls[i].Extra`，与函数值放在一起，不生成 `AssistantGenMultiContent` part。
   item 使用 `ark-responses-item-type`、`ark-responses-item-id`、`ark-responses-item-status`、
   `ark-responses-item-role`、`ark-responses-partial`；content 使用独立的
   `ark-responses-content-type` 和 `ark-responses-annotations`。

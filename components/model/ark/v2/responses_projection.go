@@ -109,9 +109,7 @@ func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem) 
 				}
 			}
 		case responses.ItemFunctionToolCallOutputItemSum:
-			call := item.OneOf.ItemFunctionToolCall
-			toolCalls = append(toolCalls, schema.ToolCall{ID: call.CallID.Or(""), Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)},
-				Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}})
+			toolCalls = append(toolCalls, projectResponsesToolCall(item.OneOf.ItemFunctionToolCall, index))
 		case responses.ItemReasoningOutputItemSum:
 			reasoning = append(reasoning, item.OneOf.ItemReasoning)
 		}
@@ -165,16 +163,8 @@ func projectResponsesItem(item responses.OutputItem, index int) ([]schema.Messag
 		}
 		children[carrier].Reasoning.Signature = reasoning.EncryptedContent.Or("")
 	case responses.ItemFunctionToolCallOutputItemSum:
-		call := item.OneOf.ItemFunctionToolCall
-		if id, ok := call.ID.Get(); ok {
-			extra[keyResponsesItemID] = metadataString(id)
-		}
-		if status, ok := call.Status.Get(); ok {
-			extra[keyResponsesItemStatus] = metadataString(status)
-		}
-		if namespace, ok := call.Namespace.Get(); ok {
-			extra[keyResponsesNamespace] = metadataString(namespace)
-		}
+		// Function values and item metadata belong to the same ToolCall.
+		return nil, nil
 	case responses.ItemFunctionWebSearchOutputItemSum:
 		search := item.OneOf.ItemFunctionWebSearch
 		extra[keyResponsesItemID] = metadataString(search.ID)
@@ -202,6 +192,21 @@ func projectResponsesItem(item responses.OutputItem, index int) ([]schema.Messag
 		children[0].Extra[key] = value
 	}
 	return children, nil
+}
+
+func projectResponsesToolCall(call responses.ItemFunctionToolCall, index int) schema.ToolCall {
+	extra := map[string]any{keyResponsesItemIndex: metadataInt64(index), keyResponsesItemType: metadataString("function_call")}
+	if id, ok := call.ID.Get(); ok {
+		extra[keyResponsesItemID] = metadataString(id)
+	}
+	if status, ok := call.Status.Get(); ok {
+		extra[keyResponsesItemStatus] = metadataString(status)
+	}
+	if namespace, ok := call.Namespace.Get(); ok {
+		extra[keyResponsesNamespace] = metadataString(namespace)
+	}
+	return schema.ToolCall{ID: call.CallID.Or(""), Type: "function", Extra: extra,
+		Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}}
 }
 
 // The SDK shares the wire union; the parent item restricts the valid variant.
