@@ -134,7 +134,7 @@ func projectResponsesItem(item responses.OutputItem, index int) ([]schema.Messag
 func projectResponsesContent(content []responses.OutputContentItem, index int, reasoning bool) ([]schema.MessageOutputPart, error) {
 	parts := make([]schema.MessageOutputPart, 0, len(content))
 	for childIndex, child := range content {
-		part := schema.MessageOutputPart{Type: ResponsesOutputItem, Extra: map[string]any{
+		part := schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText, Extra: map[string]any{
 			keyResponsesItemIndex: metadataInt64(index), keyResponsesSection: metadataString("content"), keyResponsesContentIndex: metadataInt64(childIndex),
 			keyResponsesContentType: metadataString(child.OneOf.Type),
 		}}
@@ -148,6 +148,7 @@ func projectResponsesContent(content []responses.OutputContentItem, index int, r
 			value := child.OneOf.OutputContentItemReasoningText
 			text, annotations = value.Text.Or(""), value.Annotations
 		default:
+			part.Type = ResponsesOutputItem
 			if kind, _, unknown := child.OneOf.GetUnknown(); unknown {
 				part.Extra[keyResponsesContentType] = metadataString(kind)
 			}
@@ -163,7 +164,6 @@ func projectResponsesContent(content []responses.OutputContentItem, index int, r
 			part.Type = schema.ChatMessagePartTypeReasoning
 			part.Reasoning = &schema.MessageOutputReasoning{Text: text}
 		} else {
-			part.Type = schema.ChatMessagePartTypeText
 			part.Text = text
 		}
 		if annotations != nil {

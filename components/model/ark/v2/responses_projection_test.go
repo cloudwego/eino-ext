@@ -672,3 +672,33 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestResponsesUnknownContentRemainsOpaque(t *testing.T) {
+	const unknown = `{"type":"future_content","payload":{"note":"SDK unknown variant"}}`
+	for _, mode := range []string{"generate", "stream"} {
+		for _, kind := range []string{"message", "reasoning"} {
+			t.Run(mode+"/"+kind, func(t *testing.T) {
+				contentType := "output_text"
+				if kind == "reasoning" {
+					contentType = "reasoning_text"
+				}
+				output := fmt.Sprintf(`[{"type":%q,"id":"item","role":"assistant","status":"completed","content":[{"type":%q,"text":"A"},%s,{"type":%q,"text":"B"}]}]`, kind, contentType, unknown, contentType)
+				msg := projectedResponsesMessage(t, mode, output)
+				equal(t, 3, len(msg.AssistantGenMultiContent))
+				part := msg.AssistantGenMultiContent[1]
+				equal(t, ResponsesOutputItem, part.Type)
+				equal(t, "", part.Text)
+				if part.Reasoning != nil {
+					t.Fatal("unknown SDK content was projected as reasoning text")
+				}
+				data, ok := extraString(part.Extra, keyResponsesContentData)
+				equal(t, true, ok)
+				equalRawJSON(t, []byte(unknown), []byte(data))
+				_, err := toResponsesInput([]*schema.Message{msg})
+				if err == nil {
+					t.Fatal("unknown content was converted to supported SDK input")
+				}
+			})
+		}
+	}
+}
