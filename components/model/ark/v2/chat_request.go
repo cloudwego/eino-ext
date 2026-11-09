@@ -17,9 +17,13 @@
 package ark
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 
+	"github.com/bytedance/sonic"
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
@@ -219,4 +223,160 @@ func callbackThinking(req *chat.ChatCompletionRequest) *chat.Thinking {
 		return nil
 	}
 	return &req.Thinking.Value
+}
+
+type chatTools struct {
+	definitions   []chat.ChatCompletionTool
+	choice        chat.OptChatCompletionToolChoice
+	callbackTools []*schema.ToolInfo
+}
+
+// Select before encoding so wire definitions and callback metadata describe
+// the same tools. The model and both option sets remain read-only.
+func (cm *ChatModel) buildChatTools(common *fmodel.Options) (chatTools, error) {
+	tools := cm.rawTools
+	if common.Tools != nil {
+		tools = common.Tools
+	}
+	selected, err := selectToolInfos(tools, common.ToolChoice, common.AllowedToolNames)
+	if err != nil {
+		return chatTools{}, err
+	}
+	if common.ToolChoice != nil && *common.ToolChoice == schema.ToolChoiceForced && len(selected) == 0 {
+		return chatTools{}, fmt.Errorf("tool_choice is forced but no tools are provided")
+	}
+	definitions, err := toTools(selected, cm.config.ToolStrict)
+	if err != nil {
+		return chatTools{}, err
+	}
+	return chatTools{definitions: definitions, choice: toChatToolChoice(common.ToolChoice, common.AllowedToolNames), callbackTools: selected}, nil
+}
+
+func toChatToolChoice(choice *schema.ToolChoice, names []string) chat.OptChatCompletionToolChoice {
+	if choice == nil {
+		return chat.OptChatCompletionToolChoice{}
+	}
+	mode := chat.ToolChoiceModeAuto
+	switch *choice {
+	case schema.ToolChoiceForbidden:
+		mode = chat.ToolChoiceModeNone
+	case schema.ToolChoiceForced:
+		if len(names) == 1 {
+			return chat.NewOptChatCompletionToolChoice(chat.NewChatCompletionNamedToolChoiceChatCompletionToolChoice(chat.ChatCompletionNamedToolChoice{
+				Type: chat.ChatCompletionNamedToolChoiceTypeFunction, Function: chat.ChatCompletionToolChoiceFunction{Name: names[0]},
+			}))
+		}
+		mode = chat.ToolChoiceModeRequired
+	}
+	return chat.NewOptChatCompletionToolChoice(chat.NewToolChoiceModeChatCompletionToolChoice(mode))
+}
+
+func toTools(tools []*schema.ToolInfo, strict *bool) ([]chat.ChatCompletionTool, error) {
+	if tools == nil {
+		return nil, nil
+	}
+	result := make([]chat.ChatCompletionTool, 0, len(tools))
+	for _, ti := range tools {
+		if ti == nil {
+			return nil, fmt.Errorf("tool info cannot be nil")
+		}
+		function := chat.FunctionObject{Name: ti.Name}
+		if ti.Desc != "" {
+			function.Description = chat.NewOptString(ti.Desc)
+		}
+
+		value, err := toolStrict(ti, strict)
+		if err != nil {
+			return nil, err
+		}
+		if value != nil {
+			function.Strict = chat.NewOptBool(*value)
+		}
+		data, err := toolParametersJSON(ti)
+		if err != nil {
+			return nil, err
+		}
+		if data != nil {
+			var obj chat.FunctionObjectParameters
+			if err = sonic.Unmarshal(data, &obj); err != nil {
+				return nil, fmt.Errorf("tool %s schema object: %w", ti.Name, err)
+			}
+			function.Parameters = chat.NewOptFunctionObjectParameters(obj)
+		}
+
+		result = append(result, chat.ChatCompletionTool{Type: chat.ToolTypeFunction, Function: function})
+	}
+	return result, nil
+}
+
+func prepareRequestPayload(ctx context.Context, messages []*schema.Message, req *chat.ChatCompletionRequest, modifier RequestPayloadModifier) (*chat.ChatCompletionRequest, map[string]interface{}, error) {
+	if modifier == nil {
+		return req, nil, nil
+	}
+	raw, err := sonic.Marshal(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("marshal request payload: %w", err)
+	}
+	raw, err = modifier(ctx, messages, raw)
+	if err != nil {
+		return nil, nil, fmt.Errorf("modify request payload: %w", err)
+	}
+	var fields map[string]json.RawMessage
+	if err = sonic.Unmarshal(raw, &fields); err != nil {
+		return nil, nil, fmt.Errorf("decode modified request payload: %w", err)
+	}
+	if fields == nil {
+		return nil, nil, fmt.Errorf("modified request payload must be a JSON object")
+	}
+	var model string
+	if value, ok := fields["model"]; !ok || sonic.Unmarshal(value, &model) != nil || model == "" {
+		return nil, nil, fmt.Errorf("modified request payload must contain a non-empty string model")
+	}
+	var input []json.RawMessage
+	messagesRaw, ok := fields["messages"]
+	if !ok || bytes.Equal(bytes.TrimSpace(messagesRaw), []byte("null")) || sonic.Unmarshal(messagesRaw, &input) != nil {
+		return nil, nil, fmt.Errorf("modified request payload must contain a messages array")
+	}
+	if value, ok := fields["n"]; ok && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+		var n int
+		if sonic.Unmarshal(value, &n) != nil || n != 1 {
+			return nil, nil, fmt.Errorf("Eino ChatModel supports one completion: n must be omitted or 1")
+		}
+	}
+	stream := req.Stream.Or(false)
+	fields["stream"], _ = sonic.Marshal(stream)
+	if stream {
+		var options map[string]json.RawMessage
+		if value, ok := fields["stream_options"]; ok {
+			if err = sonic.Unmarshal(value, &options); err != nil {
+				return nil, nil, fmt.Errorf("modified stream_options must be an object: %w", err)
+			}
+		}
+		if options == nil {
+			options = make(map[string]json.RawMessage)
+		}
+		options["include_usage"] = json.RawMessage("true")
+		fields["stream_options"], _ = sonic.Marshal(options)
+	}
+	extra := make(map[string]interface{}, len(fields))
+	for key, value := range fields {
+		extra[key] = value
+	}
+	// The SDK's public WithExtraBody option sends every modified JSON field,
+	// including fields unknown to generated models. Start with an empty typed
+	// request so deleting an optional field does not restore its configured value.
+	wire := &chat.ChatCompletionRequest{Model: model, Stream: chat.NewOptBool(stream)}
+	// Decode only callback configuration. The original JSON remains the wire
+	// source, including unknown fields and exact numbers.
+	for key, target := range map[string]interface{}{
+		"max_tokens": &wire.MaxTokens, "max_completion_tokens": &wire.MaxCompletionTokens,
+		"temperature": &wire.Temperature, "top_p": &wire.TopP, "stop": &wire.Stop, "thinking": &wire.Thinking,
+	} {
+		if value, exists := fields[key]; exists && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
+			if err := sonic.Unmarshal(value, target); err != nil {
+				return nil, nil, fmt.Errorf("modified %s: %w", key, err)
+			}
+		}
+	}
+	return wire, extra, nil
 }

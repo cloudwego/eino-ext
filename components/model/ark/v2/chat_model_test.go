@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -367,4 +368,48 @@ func TestErrors(t *testing.T) {
 			t.Fatal("HTTP request not cancelled")
 		}
 	})
+}
+
+func TestChatCacheUsesOnlyChatCompletions(t *testing.T) {
+	for _, mode := range []string{"generate", "stream"} {
+		t.Run(mode, func(t *testing.T) {
+			var calls atomic.Int32
+			requests := make(chan map[string]any, 1)
+			cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				equal(t, http.MethodPost, r.Method)
+				equal(t, "/api/v3/chat/completions", r.URL.Path)
+				requests <- decodeRequest(t, r)
+				writeChatHistoryReply(w, true, mode == "stream")
+			}, nil)
+			// Responses cache metadata must not switch APIs or truncate Chat history.
+			history := []*schema.Message{
+				schema.UserMessage("original question"),
+				{
+					Role: schema.Assistant, Content: "previous answer",
+					Extra: map[string]any{
+						keyResponseID:      metadataString("resp-cached"),
+						keyCacheExpiration: metadataInt64(time.Now().Add(time.Hour).Unix()),
+					},
+				},
+				schema.UserMessage("follow-up"),
+			}
+			reply := callHistoryModel(t, cm, mode, history)
+			equal(t, 2, reply.ResponseMeta.Usage.PromptTokenDetails.CachedTokens)
+			equal(t, int32(1), calls.Load())
+			body := <-requests
+			messages := body["messages"].([]any)
+			equal(t, len(history), len(messages))
+			for i, message := range history {
+				got := messages[i].(map[string]any)
+				equal(t, string(message.Role), got["role"])
+				equal(t, message.Content, got["content"])
+			}
+			for _, key := range []string{"previous_response_id", "caching", "context_id"} {
+				if _, exists := body[key]; exists {
+					t.Errorf("Chat Completions request contains %s", key)
+				}
+			}
+		})
+	}
 }

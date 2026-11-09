@@ -569,9 +569,13 @@ PDF base64 / FileID 均已通过。适配器保留官方文档的原生多模态
 
 | 文件 | 职责 |
 | --- | --- |
-| `chat_*.go` | Chat Completions 的模型、请求、响应、流式处理、选项和用量 |
-| `responses_*.go` | Responses 的模型、输入与历史映射、输出投影、流式处理、选项和缓存 |
-| `*_common.go`、`client.go`、`option.go`、`message_extra.go` | 共用传输、辅助函数、调用选项和消息元数据基础类型 |
+| `chat_model.go` | Chat Completions 配置、调用选项、Generate 和 Stream |
+| `chat_request.go`、`chat_content.go` | Chat 请求构造、工具、payload modifier 和内容转换 |
+| `chat_response.go` | Chat 响应解码、投影、用量和元数据 |
+| `responses_api.go`、`responses_request.go` | Responses 配置、调用选项、API 调用和请求构造 |
+| `responses_content.go`、`responses_history.go` | 标准消息转换和原生 Responses 历史重建 |
+| `responses_projection.go`、`responses_stream.go`、`responses_cache.go` | Responses 输出投影、流式合包和缓存管理 |
+| `client.go`、`request_common.go`、`option.go`、`message_extra.go` | 共用传输、请求辅助函数、调用选项和消息元数据 |
 
-仅覆盖单个 API 的测试使用对应前缀，共用历史和序列化测试覆盖两类实现。
+测试保留 API 前缀，按功能聚合相关场景；共用历史和元数据测试覆盖两类实现。
 两类 API 仍属于同一个 `ark` 包。

@@ -27,7 +27,6 @@ import (
 const (
 	keyResponseID      = "ark-response-id"
 	keyCacheExpiration = "ark-response-cache-expire-at"
-	keyResponsesUsage  = "ark-responses-usage-details"
 )
 
 // SessionCacheConfig enables storing Responses and reusing their server context.
@@ -73,13 +72,6 @@ func InvalidateMessageCaches(messages []*schema.Message) error {
 		}
 	}
 	return nil
-}
-
-// GetResponsesTokenUsageDetails combines the current ResponseMeta.Usage with
-// modality and built-in tool usage in Extra. It returns false when
-// ResponseMeta.Usage is absent.
-func GetResponsesTokenUsageDetails(msg *schema.Message) (responses.ResponseUsage, bool) {
-	return readResponsesUsage(msg)
 }
 
 func populateResponsesCache(in []*schema.Message, req *responses.ResponsesRequest, config *CacheOption) ([]*schema.Message, error) {

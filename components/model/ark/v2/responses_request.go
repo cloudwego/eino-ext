@@ -212,3 +212,221 @@ func responsesHeaders(opts *arkOptions) map[string]string {
 	}
 	return headers
 }
+
+// Tool definitions have one wire representation. Callback tools are local
+// function metadata; they cannot describe an arbitrary server-side cache.
+type responsesTools struct {
+	definitions   json.RawMessage
+	choice        responses.OptToolChoice
+	callbackTools []*schema.ToolInfo
+}
+
+// Build tool settings from read-only configuration and options. Cached calls
+// inherit their original definitions, including the initial name restriction.
+func (cm *ResponsesAPIChatModel) buildResponsesTools(common *model.Options, opts *arkOptions, inherited bool) (responsesTools, error) {
+	tools := cm.rawTools
+	if common.Tools != nil {
+		tools = common.Tools
+	}
+	named := common.ToolChoice != nil && len(common.AllowedToolNames) > 0 && (*common.ToolChoice == schema.ToolChoiceAllowed || *common.ToolChoice == schema.ToolChoiceForced)
+	if inherited {
+		if named {
+			tools = responsesCallbackTools(tools, common.AllowedToolNames)
+		}
+		// The cache service rejects tool_choice as well as tools on a
+		// continuation. Keep options read-only and let it use the saved context.
+		return responsesTools{callbackTools: tools}, nil
+	}
+
+	tools, err := selectToolInfos(tools, common.ToolChoice, common.AllowedToolNames)
+	if err != nil {
+		return responsesTools{}, err
+	}
+	search := opts.enableWebSearch
+	if named {
+		search = nil
+	}
+	if common.ToolChoice != nil && *common.ToolChoice == schema.ToolChoiceForced && len(tools) == 0 && search == nil {
+		return responsesTools{}, fmt.Errorf("tool_choice is forced but no tools are provided")
+	}
+	choice := toResponsesToolChoice(common.ToolChoice, common.AllowedToolNames)
+	definitions, err := toResponsesTools(tools, search, cm.config.ToolStrict)
+	if err != nil {
+		return responsesTools{}, err
+	}
+	return responsesTools{definitions: definitions, choice: choice, callbackTools: tools}, nil
+}
+
+// Cached functions need no local definition. Match any available metadata
+// without validating schemas or treating absent local names as unknown tools.
+func responsesCallbackTools(tools []*schema.ToolInfo, names []string) []*schema.ToolInfo {
+	allowed := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		allowed[name] = struct{}{}
+	}
+	var selected []*schema.ToolInfo
+	for _, tool := range tools {
+		if tool != nil {
+			if _, ok := allowed[tool.Name]; ok {
+				selected = append(selected, tool)
+			}
+		}
+	}
+	return selected
+}
+
+// The pinned SDK's function tool lacks strict. Encode every function using this
+// representation so strict does not select a different serialization path.
+type responsesFunctionTool struct {
+	Type        responses.FunctionToolType `json:"type"`
+	Name        string                     `json:"name"`
+	Description string                     `json:"description,omitempty"`
+	Parameters  json.RawMessage            `json:"parameters,omitempty"`
+	Strict      *bool                      `json:"strict,omitempty"`
+}
+
+func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool, strict *bool) (json.RawMessage, error) {
+	if tools == nil && search == nil {
+		return nil, nil
+	}
+	wireTools := make([]interface{}, 0, len(tools)+1)
+	for _, ti := range tools {
+		if ti == nil {
+			return nil, fmt.Errorf("tool info cannot be nil")
+		}
+		setting, err := toolStrict(ti, strict)
+		if err != nil {
+			return nil, err
+		}
+		data, err := toolParametersJSON(ti)
+		if err != nil {
+			return nil, err
+		}
+		// Preserve the SDK's object-or-null contract without decoding schema
+		// JSON into a second representation.
+		if len(data) > 0 && data[0] != '{' && !bytes.Equal(data, []byte("null")) {
+			return nil, fmt.Errorf("tool %s schema must be an object", ti.Name)
+		}
+		wireTools = append(wireTools, &responsesFunctionTool{
+			Type: responses.FunctionToolTypeFunction, Name: ti.Name,
+			Description: ti.Desc, Parameters: data, Strict: setting,
+		})
+	}
+	if search != nil {
+		tool := *search
+		tool.Type = responses.WebSearchToolTypeWebSearch
+		wireTools = append(wireTools, &tool)
+	}
+	raw, err := sonic.Marshal(wireTools)
+	if err != nil {
+		return nil, fmt.Errorf("serialize Responses tools: %w", err)
+	}
+	return json.RawMessage(raw), nil
+}
+
+func toResponsesToolChoice(choice *schema.ToolChoice, names []string) responses.OptToolChoice {
+	if choice == nil {
+		return responses.OptToolChoice{}
+	}
+	mode := responses.ToolChoiceOptionsAuto
+	switch *choice {
+	case schema.ToolChoiceForbidden:
+		mode = responses.ToolChoiceOptionsNone
+	case schema.ToolChoiceForced:
+		if len(names) == 1 {
+			return responses.NewOptToolChoice(responses.NewTypedToolChoiceToolChoice(responses.TypedToolChoice{
+				OneOf: responses.NewToolChoiceFunctionTypedToolChoiceSum(responses.ToolChoiceFunction{
+					Type: responses.ToolChoiceFunctionTypeFunction, Name: names[0],
+				}),
+			}))
+		}
+		mode = responses.ToolChoiceOptionsRequired
+	}
+	return responses.NewOptToolChoice(responses.NewToolChoiceOptionsToolChoice(mode))
+}
+
+// Modified JSON must retain fields the SDK does not know about, while local
+// file URLs must reflect SDK preprocessing. Patch only those media sources.
+type responsesFileInput struct {
+	input *responses.ResponsesInput
+	raw   json.RawMessage
+	files []responsesFilePart
+}
+
+type responsesFilePart struct{ item, content int }
+
+func responsesInputWithFiles(input *responses.ResponsesInput, raw json.RawMessage) interface{} {
+	items, _ := input.GetInputItemArray()
+	var files []responsesFilePart
+	for i := range items {
+		message, ok := items[i].OneOf.GetItemEasyMessage()
+		if !ok {
+			continue
+		}
+		parts, _ := message.Content.GetContentItemArray()
+		for j := range parts {
+			_, url, _ := responsesFileSource(parts[j])
+			if strings.HasPrefix(url, "file://") {
+				files = append(files, responsesFilePart{item: i, content: j})
+			}
+		}
+	}
+	if len(files) == 0 {
+		return raw
+	}
+	return &responsesFileInput{input: input, raw: raw, files: files}
+}
+
+func (in *responsesFileInput) MarshalJSON() ([]byte, error) {
+	var rawItems []json.RawMessage
+	if err := sonic.Unmarshal(in.raw, &rawItems); err != nil {
+		return nil, err
+	}
+	items, _ := in.input.GetInputItemArray()
+	for _, file := range in.files {
+		part := items[file.item].OneOf.ItemEasyMessage.Content.ContentItemArray[file.content]
+		key, url, id := responsesFileSource(part)
+		if url != "" || !id.IsSet() {
+			continue
+		}
+		var message map[string]json.RawMessage
+		if err := sonic.Unmarshal(rawItems[file.item], &message); err != nil {
+			return nil, err
+		}
+		var parts []map[string]json.RawMessage
+		if err := sonic.Unmarshal(message["content"], &parts); err != nil {
+			return nil, err
+		}
+		delete(parts[file.content], key)
+		var err error
+		parts[file.content]["file_id"], err = sonic.Marshal(id.Value)
+		if err != nil {
+			return nil, err
+		}
+		message["content"], err = sonic.Marshal(parts)
+		if err != nil {
+			return nil, err
+		}
+		rawItems[file.item], err = sonic.Marshal(message)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return sonic.Marshal(rawItems)
+}
+
+func responsesFileSource(part responses.ContentItem) (key, url string, id responses.OptString) {
+	switch part.OneOf.Type {
+	case responses.ContentItemImageContentItemSum:
+		image := part.OneOf.ContentItemImage
+		return "image_url", image.ImageURL.Or(""), image.FileID
+	case responses.ContentItemVideoContentItemSum:
+		video := part.OneOf.ContentItemVideo
+		return "video_url", video.VideoURL, video.FileID
+	case responses.ContentItemFileContentItemSum:
+		file := part.OneOf.ContentItemFile
+		return "file_url", file.FileURL.Or(""), file.FileID
+	default:
+		return "", "", responses.OptString{}
+	}
+}

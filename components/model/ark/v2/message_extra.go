@@ -22,6 +22,7 @@ import (
 	"math"
 
 	"github.com/bytedance/sonic"
+	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
@@ -200,4 +201,23 @@ func getFPS(extra map[string]any) *float64 {
 		}
 	}
 	return nil
+}
+
+func setOptionalCount(msg *schema.Message, key string, value int64, present bool) {
+	if present {
+		msg.Extra[key] = metadataInt64(value)
+	} else {
+		delete(msg.Extra, key)
+	}
+}
+
+func toModelCallbackUsage(meta *schema.ResponseMeta) *fmodel.TokenUsage {
+	if meta == nil || meta.Usage == nil {
+		return nil
+	}
+	u := meta.Usage
+	return &fmodel.TokenUsage{PromptTokens: u.PromptTokens, CompletionTokens: u.CompletionTokens, TotalTokens: u.TotalTokens,
+		PromptTokenDetails:      fmodel.PromptTokenDetails{CachedTokens: u.PromptTokenDetails.CachedTokens},
+		CompletionTokensDetails: fmodel.CompletionTokensDetails{ReasoningTokens: u.CompletionTokensDetails.ReasoningTokens},
+	}
 }

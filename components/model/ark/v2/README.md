@@ -657,9 +657,13 @@ multimodal tool-result request shape; local wire tests cover each media source.
 
 | Files | Responsibility |
 | --- | --- |
-| `chat_*.go` | Chat Completions model, requests, responses, streaming, options, and usage |
-| `responses_*.go` | Responses model, input/history mapping, output projection, streaming, options, and caching |
-| `*_common.go`, `client.go`, `option.go`, `message_extra.go` | Shared transport, helpers, call options, and message metadata primitives |
+| `chat_model.go` | Chat Completions configuration, call options, Generate, and Stream |
+| `chat_request.go`, `chat_content.go` | Chat request construction, tools, payload modifiers, and content conversion |
+| `chat_response.go` | Chat response decoding, projection, usage, and metadata |
+| `responses_api.go`, `responses_request.go` | Responses configuration, call options, API calls, and request construction |
+| `responses_content.go`, `responses_history.go` | Standard message conversion and native Responses history reconstruction |
+| `responses_projection.go`, `responses_stream.go`, `responses_cache.go` | Responses output projection, stream assembly, and cache management |
+| `client.go`, `request_common.go`, `option.go`, `message_extra.go` | Shared transport, request helpers, call options, and message metadata |
 
-Tests follow the same prefixes when they cover a single API. Shared history and
-serialization tests exercise both implementations. Both APIs remain in package `ark`.
+Tests use the same API prefixes and group related scenarios by function. Shared
+history and metadata tests exercise both implementations. Both APIs remain in package `ark`.

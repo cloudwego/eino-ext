@@ -313,3 +313,28 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	}
 	return result, nil
 }
+
+// WithCache overrides the Responses API session-cache configuration for one call.
+func WithCache(cache *CacheOption) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.cache = cache })
+}
+
+// WithEnableToolWebSearch configures the Responses API's built-in search tool.
+// A nil value disables it for this call.
+func WithEnableToolWebSearch(tool *responses.WebSearchTool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.enableWebSearch = tool })
+}
+
+func WithMaxToolCalls(n int64) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.maxToolCalls = &n })
+}
+
+// WithResponsesThinking configures thinking for the Responses API.
+func WithResponsesThinking(thinking *responses.Thinking) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responsesThinking = thinking })
+}
+
+// WithResponsesReasoningEffort configures reasoning effort for the Responses API.
+func WithResponsesReasoningEffort(effort responses.ReasoningEffort) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responsesReasoningEffort = &effort })
+}

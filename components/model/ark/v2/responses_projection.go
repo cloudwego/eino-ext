@@ -25,6 +25,27 @@ import (
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
+const (
+	keyResponsesUsage = "ark-responses-usage-details"
+
+	keyResponsesItemIndex    = "ark-responses-item-index"
+	keyResponsesSection      = "ark-responses-section"
+	keyResponsesContentIndex = "ark-responses-content-index"
+	keyResponsesSummaryIndex = "ark-responses-summary-index"
+	keyResponsesItemType     = "ark-responses-item-type"
+	keyResponsesContentType  = "ark-responses-content-type"
+	keyResponsesItemID       = "ark-responses-item-id"
+	keyResponsesItemStatus   = "ark-responses-item-status"
+	keyResponsesItemRole     = "ark-responses-item-role"
+	keyResponsesPartial      = "ark-responses-partial"
+	keyResponsesNamespace    = "ark-responses-namespace"
+	keyResponsesAnnotations  = "ark-responses-annotations"
+	// SDK values without an Eino data mapping remain observable as atomic JSON.
+	// They are never decoded into additional request fields.
+	keyResponsesItemData    = "ark-responses-item-data"
+	keyResponsesContentData = "ark-responses-content-data"
+)
+
 // ResponsesOutputItem carries an item with no mapped data part, such as an
 // empty message or a built-in tool output. Other items attach their metadata to
 // the first data part. Applications can skip this type when rendering text.
@@ -292,4 +313,64 @@ func projectResponsesSummaryText(items []responses.ItemReasoning) string {
 		}
 	}
 	return strings.Join(summary, "\n")
+}
+
+// GetResponsesTokenUsageDetails combines the current ResponseMeta.Usage with
+// modality and built-in tool usage in Extra. It returns false when
+// ResponseMeta.Usage is absent.
+func GetResponsesTokenUsageDetails(msg *schema.Message) (responses.ResponseUsage, bool) {
+	return readResponsesUsage(msg)
+}
+
+func setResponsesUsage(msg *schema.Message, usage responses.ResponseUsage) error {
+	counts := map[string]responses.OptInt64{
+		"input_tokens_details.audio_tokens":        usage.InputTokensDetails.AudioTokens,
+		"input_tokens_details.audio_cached_tokens": usage.InputTokensDetails.AudioCachedTokens,
+	}
+	tools, present := usage.ToolUsage.Get()
+	if present {
+		msg.Extra[keyResponsesUsage+".tool_usage"] = metadataBool(true)
+	} else {
+		delete(msg.Extra, keyResponsesUsage+".tool_usage")
+	}
+	counts["tool_usage.web_search"], counts["tool_usage.mcp"] = tools.WebSearch, tools.Mcp
+	counts["tool_usage.knowledge_search"], counts["tool_usage.doubao_app"] = tools.KnowledgeSearch, tools.DoubaoApp
+	for key, value := range counts {
+		n, present := value.Get()
+		setOptionalCount(msg, keyResponsesUsage+"."+key, n, present)
+	}
+	if details, ok := usage.ToolUsageDetails.Get(); ok {
+		return setJSONExtra(msg, keyResponsesUsage+".tool_usage_details", &details)
+	}
+	delete(msg.Extra, keyResponsesUsage+".tool_usage_details")
+	return nil
+}
+
+func readResponsesUsage(msg *schema.Message) (responses.ResponseUsage, bool) {
+	if msg == nil || msg.ResponseMeta == nil || msg.ResponseMeta.Usage == nil {
+		return responses.ResponseUsage{}, false
+	}
+	usage := msg.ResponseMeta.Usage
+	var result responses.ResponseUsage
+	result.InputTokens, result.OutputTokens, result.TotalTokens = int64(usage.PromptTokens), int64(usage.CompletionTokens), int64(usage.TotalTokens)
+	result.InputTokensDetails.CachedTokens = int64(usage.PromptTokenDetails.CachedTokens)
+	result.OutputTokensDetails.ReasoningTokens = int64(usage.CompletionTokensDetails.ReasoningTokens)
+	var tools responses.ToolUsage
+	for key, field := range map[string]*responses.OptInt64{
+		"input_tokens_details.audio_tokens":        &result.InputTokensDetails.AudioTokens,
+		"input_tokens_details.audio_cached_tokens": &result.InputTokensDetails.AudioCachedTokens,
+		"tool_usage.web_search":                    &tools.WebSearch, "tool_usage.mcp": &tools.Mcp,
+		"tool_usage.knowledge_search": &tools.KnowledgeSearch, "tool_usage.doubao_app": &tools.DoubaoApp,
+	} {
+		if n, ok := extraInt64(msg.Extra, keyResponsesUsage+"."+key); ok {
+			*field = responses.NewOptInt64(n)
+		}
+	}
+	if present, _ := extraBool(msg.Extra, keyResponsesUsage+".tool_usage"); present {
+		result.ToolUsage = responses.NewOptToolUsage(tools)
+	}
+	if details, ok := readJSONExtra[responses.ToolUsageDetails](msg, keyResponsesUsage+".tool_usage_details"); ok {
+		result.ToolUsageDetails = responses.NewOptToolUsageDetails(details)
+	}
+	return result, true
 }
