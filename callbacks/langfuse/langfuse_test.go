@@ -18,6 +18,7 @@ package langfuse
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strconv"
@@ -35,6 +36,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLangfuseCallback(t *testing.T) {
@@ -240,6 +242,91 @@ func TestLangfuseCallback(t *testing.T) {
 					},
 				},
 			},
+		})
+	})
+
+	mockey.PatchConvey("test generation with tool definitions", t, func() {
+		toolChoice := schema.ToolChoiceAllowed
+		toolCbh, _ := NewLangfuseHandler(&Config{ReportTools: true})
+		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id-tools", nil).Times(1)
+		mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) (string, error) {
+			assert.Equal(t, "model", body.Model)
+			assert.Equal(t, body.ModelParameters.(*model.Config), &model.Config{
+				Model: "model", MaxTokens: 1, Temperature: 2, TopP: 3, Stop: []string{"stop"},
+			})
+			assert.Empty(t, body.InMessages)
+			assert.NotEmpty(t, body.Input)
+
+			var payload struct {
+				Messages []json.RawMessage `json:"messages"`
+				Tools    []struct {
+					Type     string `json:"type"`
+					Function struct {
+						Name        string          `json:"name"`
+						Description string          `json:"description"`
+						Parameters  json.RawMessage `json:"parameters"`
+					} `json:"function"`
+				} `json:"tools"`
+				ToolChoice string `json:"tool_choice"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(body.Input), &payload))
+			require.Len(t, payload.Messages, 1)
+			require.Len(t, payload.Tools, 1)
+			assert.Equal(t, "function", payload.Tools[0].Type)
+			assert.Equal(t, "get_weather", payload.Tools[0].Function.Name)
+			assert.Equal(t, "Get weather by city", payload.Tools[0].Function.Description)
+			assert.NotEmpty(t, payload.Tools[0].Function.Parameters)
+			assert.Equal(t, "auto", payload.ToolChoice)
+			return "generation id with tools", nil
+		}).Times(1)
+		mockLangfuse.EXPECT().EndGeneration(gomock.Any()).Return(nil).Times(1)
+
+		toolCtx := SetTrace(context.Background(), WithName("tool-trace"), WithUserID("u1"))
+		ctx1 := toolCbh.OnStart(toolCtx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackInput{
+			Messages: []*schema.Message{{Role: schema.User, Content: "weather in SF?"}},
+			Tools: []*schema.ToolInfo{{
+				Name: "get_weather",
+				Desc: "Get weather by city",
+				ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+					"city": {Type: schema.String, Desc: "city name", Required: true},
+				}),
+			}},
+			ToolChoice: &toolChoice,
+			Config: &model.Config{
+				Model: "model", MaxTokens: 1, Temperature: 2, TopP: 3, Stop: []string{"stop"},
+			},
+		})
+		toolCbh.OnEnd(ctx1, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackOutput{
+			Message: &schema.Message{
+				Role:    schema.Assistant,
+				Content: "",
+				ToolCalls: []schema.ToolCall{{
+					ID: "call_1",
+					Function: schema.FunctionCall{Name: "get_weather", Arguments: `{"city":"SF"}`},
+				}},
+			},
+		})
+	})
+
+	mockey.PatchConvey("test generation with all-nil tools falls back to InMessages", t, func() {
+		nilToolsCbh, _ := NewLangfuseHandler(&Config{ReportTools: true})
+		msgs := []*schema.Message{{Role: schema.User, Content: "hello"}}
+		mockLangfuse.EXPECT().CreateTrace(gomock.Any()).Return("trace-id-nil-tools", nil).Times(1)
+		mockLangfuse.EXPECT().CreateGeneration(gomock.Any()).DoAndReturn(func(body *langfuse.GenerationEventBody) (string, error) {
+			assert.Equal(t, msgs, body.InMessages)
+			assert.Empty(t, body.Input)
+			return "generation id nil tools", nil
+		}).Times(1)
+		mockLangfuse.EXPECT().EndGeneration(gomock.Any()).Return(nil).Times(1)
+
+		nilCtx := SetTrace(context.Background(), WithName("nil-tools-trace"))
+		ctx1 := nilToolsCbh.OnStart(nilCtx, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackInput{
+			Messages: msgs,
+			Tools:    []*schema.ToolInfo{nil},
+			Config:   &model.Config{Model: "model"},
+		})
+		nilToolsCbh.OnEnd(ctx1, &callbacks.RunInfo{Component: components.ComponentOfChatModel}, &model.CallbackOutput{
+			Message: &schema.Message{Role: schema.Assistant, Content: "hi"},
 		})
 	})
 
