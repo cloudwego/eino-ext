@@ -45,7 +45,7 @@ The file and upload examples default to the synthetic
 including on processing or inference errors.
 
 Thinking is disabled in the shared defaults. The reasoning and mixed_stream examples enable it
-explicitly in its own model configuration. Sampling, tools, schemas, prompts,
+explicitly in their own model configuration. Sampling, tools, schemas, prompts,
 and other feature settings are shown in the individual examples so they can be
 copied or edited directly.
 
@@ -107,3 +107,8 @@ It interleaves multiple summaries/content parts with two function argument
 streams, delays the encrypted signature until the terminal event, and verifies
 both Concat APIs and persisted history. This protocol fixture is separate from
 real model captures.
+
+Streamed ToolCall.Index values are independent zero-based tool ordinals assigned
+on first occurrence, including argument chunks that precede item metadata.
+All later chunks reuse that index. Extra retains the native output_index so
+history conversion restores SDK item order even if chunks arrived out of order.

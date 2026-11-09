@@ -29,28 +29,40 @@ import (
 type responsesStreamState struct {
 	parts          responsesPartsStream
 	content        strings.Builder
-	tools          map[int]*responsesStreamTool
+	tools          map[int]*responsesStreamTool // keyed by SDK output_index
 	summaryIndex   int
 	summaryStarted bool
 }
 
 type responsesStreamTool struct {
+	index     int
 	id, name  string
 	arguments strings.Builder
 }
 
 func (s *responsesStreamState) record(msg *schema.Message) error {
 	s.content.WriteString(msg.Content)
-	for _, call := range msg.ToolCalls {
-		index := *call.Index
+	for i := range msg.ToolCalls {
+		call := &msg.ToolCalls[i]
+		outputIndex, exists, err := extraIndex(call.Extra, keyResponsesItemIndex)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("Responses tool call has no item index")
+		}
 		if s.tools == nil {
 			s.tools = make(map[int]*responsesStreamTool)
 		}
-		tool := s.tools[index]
+		tool := s.tools[outputIndex]
 		if tool == nil {
-			tool = &responsesStreamTool{}
-			s.tools[index] = tool
+			tool = &responsesStreamTool{index: len(s.tools)}
+			s.tools[outputIndex] = tool
 		}
+		// A stream's tool-call ordinals follow first occurrence. Keep the native
+		// output index in Extra for history, and never renumber emitted chunks.
+		index := tool.index
+		call.Index = &index
 		if call.ID != "" {
 			if _, err := responsesStreamIdentity(call.ID, tool.id, "tool call ID"); err != nil {
 				return err
@@ -150,7 +162,6 @@ func (s *responsesStreamState) toolDelta(call responses.ItemFunctionToolCall, in
 		seen = &responsesStreamTool{}
 	}
 	delta := projectResponsesToolCall(call, index)
-	delta.Index = &index
 	var err error
 	delta.ID, err = responsesStreamIdentity(call.CallID.Or(seen.id), seen.id, "tool call ID")
 	if err != nil {

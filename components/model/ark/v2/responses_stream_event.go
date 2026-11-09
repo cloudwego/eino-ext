@@ -100,7 +100,7 @@ func projectResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	case responses.ResponseFunctionCallArgumentsDeltaEventResponseStreamEventSum:
 		delta := ev.ResponseFunctionCallArgumentsDeltaEvent
 		index := int(delta.OutputIndex)
-		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
+		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
 	}
 	return msg, false, err
 }

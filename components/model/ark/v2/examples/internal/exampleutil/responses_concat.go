@@ -19,6 +19,7 @@ package exampleutil
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/bytedance/sonic"
@@ -55,14 +56,20 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 		return fmt.Errorf("concatenated text differs from the complete output parts")
 	}
 	seen := make(map[string]bool)
-	for _, call := range merged.ToolCalls {
+	items := make(map[int]bool)
+	for index, call := range merged.ToolCalls {
 		if call.Type != "function" || call.ID == "" || call.Function.Name == "" || seen[call.ID] {
 			return fmt.Errorf("incomplete or duplicate function call after concat")
 		}
-		if call.Index == nil || fmt.Sprint(call.Extra["ark-responses-item-index"]) != fmt.Sprint(*call.Index) ||
+		if call.Index == nil || *call.Index != index ||
 			fmt.Sprint(call.Extra["ark-responses-item-type"]) != "function_call" {
 			return fmt.Errorf("function call lost its Responses item metadata after concat")
 		}
+		item, err := strconv.Atoi(fmt.Sprint(call.Extra["ark-responses-item-index"]))
+		if err != nil || item < 0 || items[item] {
+			return fmt.Errorf("function call has an invalid or duplicate Responses item index")
+		}
+		items[item] = true
 		seen[call.ID] = true
 		if merged.ResponseMeta.FinishReason == "completed" && !sonic.ValidString(call.Function.Arguments) {
 			return fmt.Errorf("function %s has incomplete JSON arguments", call.Function.Name)

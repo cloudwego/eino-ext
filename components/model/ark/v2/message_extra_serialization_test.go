@@ -156,7 +156,19 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 					check(t, err)
 					var restored schema.Message
 					check(t, codec.unmarshal(raw, &restored))
-					equalMetadataJSON(t, msg, &restored)
+					// ToolCall.Index is runtime merge state. In particular, gob
+					// flattens a pointer to zero back to nil. Compare persisted
+					// message data without those indices; history uses native Extra.
+					want, got := *msg, restored
+					want.ToolCalls = append([]schema.ToolCall(nil), msg.ToolCalls...)
+					got.ToolCalls = append([]schema.ToolCall(nil), restored.ToolCalls...)
+					for i := range want.ToolCalls {
+						want.ToolCalls[i].Index = nil
+					}
+					for i := range got.ToolCalls {
+						got.ToolCalls[i].Index = nil
+					}
+					equalMetadataJSON(t, &want, &got)
 					equal(t, GetArkRequestID(msg), GetArkRequestID(&restored))
 					equal(t, msg.ReasoningContent, restored.ReasoningContent)
 					if chatAPI {

@@ -118,8 +118,8 @@ func TestResponsesMixedStreamConcat(t *testing.T) {
 						}
 					}
 					equal(t, 6, len(identities))
-					equal(t, true, partialTools[2])
-					equal(t, true, partialTools[3])
+					equal(t, true, partialTools[0])
+					equal(t, true, partialTools[1])
 					merged, err = schema.ConcatMessages(chunks)
 				}
 				check(t, err)
@@ -151,7 +151,10 @@ func TestResponsesMixedStreamConcat(t *testing.T) {
 					name, args string
 				}{{2, "add", `{"a":8,"b":13}`}, {3, "multiply", `{"a":6,"b":7}`}} {
 					call := merged.ToolCalls[i]
-					equal(t, want.index, *call.Index)
+					equal(t, i, *call.Index)
+					native, _, err := extraIndex(call.Extra, keyResponsesItemIndex)
+					check(t, err)
+					equal(t, want.index, native)
 					equal(t, want.name, call.Function.Name)
 					equal(t, want.args, call.Function.Arguments)
 					equal(t, "completed", fmt.Sprint(call.Extra[keyResponsesItemStatus]))

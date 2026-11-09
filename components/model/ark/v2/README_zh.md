@@ -442,8 +442,9 @@ Context 和图片生成 API 仍使用旧模块。
   Generate 的 part `StreamingMeta` 为 nil。流式根据原生
   `(output_index, section, summary_index/content_index)` 为 added、delta、done
   分配稳定的 part 索引。每个 part 首次发出时，从 0 开始递增分配并在后续包复用，
-  不按 `output_index` 做算术编码。函数调用单独使用 `ToolCall.Index = output_index`，
-  不占用 part 索引。item done 或终止事件补齐元数据/签名，不重放完整正文。
+  不按 `output_index` 做算术编码。函数调用单独从 0 开始按首次出现顺序分配
+  `ToolCall.Index`，后续包复用；原生 `output_index` 保存在 ToolCall.Extra 以恢复历史顺序。
+  函数调用不占用 part 索引。item done 或终止事件补齐元数据/签名，不重放完整正文。
   Eino Concat 只合并相邻 chunk，因此后续 parts/items 可能等待当前 item 的最终元数据；
   item 内优先输出已经开始的 section，持久索引确保下轮恢复原始 SDK 数组顺序。
   旧正文和函数参数字段仍保持增量输出，summary 展示随对应 part chunks 输出。

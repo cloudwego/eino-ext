@@ -137,7 +137,10 @@ func TestResponsesToolSnapshotsAndContentSlots(t *testing.T) {
 			equal(t, 2, len(merged.ToolCalls))
 			for i, index := range []int{0, 2} {
 				call := merged.ToolCalls[i]
-				equal(t, index, *call.Index)
+				equal(t, i, *call.Index)
+				native, _, err := extraIndex(call.Extra, keyResponsesItemIndex)
+				check(t, err)
+				equal(t, index, native)
 				equal(t, "completed", fmt.Sprint(call.Extra[keyResponsesItemStatus]))
 				equal(t, fmt.Sprint("fc-", index), fmt.Sprint(call.Extra[keyResponsesItemID]))
 			}
@@ -148,5 +151,77 @@ func TestResponsesToolSnapshotsAndContentSlots(t *testing.T) {
 			expected := strings.Replace(output, `,"status":"completed","content"`, `,"content"`, 1)
 			equalRawJSON(t, []byte(expected), raw)
 		})
+	}
+}
+
+func TestResponsesToolIndicesFollowFirstOccurrence(t *testing.T) {
+	const add = `{"type":"function_call","id":"fc-add","call_id":"call-add","name":"add","arguments":"{\"a\":8,\"b\":13}","status":"completed"}`
+	const multiply = `{"type":"function_call","id":"fc-multiply","call_id":"call-multiply","name":"multiply","arguments":"{\"a\":6,\"b\":7}","status":"completed"}`
+	message := func(id string) string {
+		return fmt.Sprintf(`{"type":"message","id":%q,"role":"assistant","status":"completed","content":[]}`, id)
+	}
+	output := "[" + message("m0") + "," + message("m1") + "," + add + "," + message("m3") + "," + multiply + "]"
+	var state responsesStreamState
+	var chunks []*schema.Message
+	for _, event := range []string{
+		// The second native function arrives first, before its item metadata.
+		`{"type":"response.function_call_arguments.delta","output_index":4,"delta":"{\"a\":6,"}`,
+		`{"type":"response.output_item.added","output_index":2,"item":{"type":"function_call","id":"fc-add","call_id":"call-add","name":"add","arguments":"","status":"in_progress"}}`,
+		`{"type":"response.output_item.added","output_index":4,"item":{"type":"function_call","id":"fc-multiply","call_id":"call-multiply","name":"multiply","status":"in_progress"}}`,
+		`{"type":"response.function_call_arguments.delta","output_index":2,"delta":"{\"a\":8,\"b\":"}`,
+		`{"type":"response.function_call_arguments.delta","output_index":4,"delta":"\"b\":7}"}`,
+		`{"type":"response.output_item.done","output_index":2,"item":` + add + `}`,
+		`{"type":"response.output_item.done","output_index":4,"item":` + multiply + `}`,
+		`{"type":"response.completed","response":{"id":"r","object":"response","created_at":1,"model":"test","status":"completed","output":` + output + `}}`,
+	} {
+		msg, err := resolveResponsesTestEvent(t, &state, event)
+		check(t, err)
+		if msg == nil {
+			continue
+		}
+		for _, call := range msg.ToolCalls {
+			native, _, err := extraIndex(call.Extra, keyResponsesItemIndex)
+			check(t, err)
+			equal(t, map[int]int{4: 0, 2: 1}[native], *call.Index)
+		}
+		chunks = append(chunks, msg)
+	}
+	merged, err := schema.ConcatMessages(chunks)
+	check(t, err)
+	equal(t, 2, len(merged.ToolCalls))
+	for index, want := range []struct{ id, args string }{{"call-multiply", `{"a":6,"b":7}`}, {"call-add", `{"a":8,"b":13}`}} {
+		call := merged.ToolCalls[index]
+		equal(t, index, *call.Index)
+		equal(t, want.id, call.ID)
+		equal(t, want.args, call.Function.Arguments)
+	}
+	// Native item indices restore SDK order, independently of Eino tool order.
+	for _, codec := range messagePersistenceCodecs() {
+		restored := roundTripHistory(t, codec, []*schema.Message{merged})
+		input, err := toResponsesInput(restored)
+		check(t, err)
+		equal(t, 5, len(input))
+		equal(t, "call-add", input[2].OneOf.ItemFunctionToolCall.CallID.Or(""))
+		equal(t, "call-multiply", input[4].OneOf.ItemFunctionToolCall.CallID.Or(""))
+	}
+}
+
+func TestResponsesToolIndicesFromTerminalOnly(t *testing.T) {
+	const output = `[
+ {"type":"message","id":"m0","role":"assistant","status":"completed","content":[{"type":"output_text","text":"before"}]},
+ {"type":"function_call","id":"fc-a","call_id":"call-a","name":"add","arguments":"{}","status":"completed"},
+ {"type":"message","id":"m2","role":"assistant","status":"completed","content":[{"type":"output_text","text":"between"}]},
+ {"type":"function_call","id":"fc-b","call_id":"call-b","name":"multiply","arguments":"{}","status":"completed"}
+]`
+	stream := projectedResponsesMessage(t, "stream", output)
+	full := projectedResponsesMessage(t, "generate", output)
+	for index, native := range []int{1, 3} {
+		equal(t, index, *stream.ToolCalls[index].Index)
+		actual, _, err := extraIndex(stream.ToolCalls[index].Extra, keyResponsesItemIndex)
+		check(t, err)
+		equal(t, native, actual)
+		if full.ToolCalls[index].Index != nil {
+			t.Fatal("Generate has a tool stream index")
+		}
 	}
 }
