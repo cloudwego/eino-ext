@@ -62,7 +62,7 @@ func responsesMetadata(resp *responses.Response, req *responses.ResponsesRequest
 	return msg, nil
 }
 
-func resolveResponsesResponse(resp *responses.Response, req *responses.ResponsesRequest, raw []byte) (*schema.Message, error) {
+func resolveResponsesResponse(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
 	msg, err := responsesMetadata(resp, req)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 		return nil, err
 	}
 	projectResponsesOutput(msg, resp.Output)
-	if err := setResponsesFinalOutput(msg, resp.Output, raw); err != nil {
+	if err := setResponsesFinalOutput(msg, resp.Output); err != nil {
 		return nil, err
 	}
 	return msg, nil
@@ -108,7 +108,7 @@ func projectResponsesOutput(msg *schema.Message, outputs []responses.OutputItem)
 	msg.ReasoningContent = responsesReasoningText(reasoning)
 }
 
-// Capture each original SSE payload while retaining the generated SDK decoder.
+// Capture original SSE payloads only for an explicitly configured modifier.
 type responsesPayloadDecoder struct {
 	raw    []byte
 	retain bool
@@ -118,15 +118,13 @@ func (d *responsesPayloadDecoder) Unmarshal(raw []byte, value interface{}) error
 	if d.retain {
 		// Modifiers may retain the original frame in application metadata.
 		d.raw = append([]byte(nil), raw...)
-	} else {
-		d.raw = append(d.raw[:0], raw...)
 	}
 	return sonic.Unmarshal(raw, value)
 }
 
 // Metadata is emitted once at the terminal event, so token usage and IDs do
 // not get duplicated when Eino concatenates stream chunks.
-func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest, raw []byte) (msg *schema.Message, terminal bool, err error) {
+func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest) (msg *schema.Message, terminal bool, err error) {
 	if event == nil {
 		return nil, false, nil
 	}
@@ -135,13 +133,13 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	case responses.ResponseCompletedEventResponseStreamEventSum:
 		msg, err = responsesMetadata(&ev.ResponseCompletedEvent.Response, req)
 		if err == nil {
-			err = setResponsesFinalOutput(msg, ev.ResponseCompletedEvent.Response.Output, raw)
+			err = setResponsesFinalOutput(msg, ev.ResponseCompletedEvent.Response.Output)
 		}
 		return msg, true, err
 	case responses.ResponseIncompleteEventResponseStreamEventSum:
 		msg, err = responsesMetadata(&ev.ResponseIncompleteEvent.Response, req)
 		if err == nil {
-			err = setResponsesFinalOutput(msg, ev.ResponseIncompleteEvent.Response.Output, raw)
+			err = setResponsesFinalOutput(msg, ev.ResponseIncompleteEvent.Response.Output)
 		}
 		return msg, true, err
 	case responses.ResponseFailedEventResponseStreamEventSum:

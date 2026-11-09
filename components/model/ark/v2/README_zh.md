@@ -418,9 +418,10 @@ Context 和图片生成 API 仍使用旧模块。
   item 使用 `ark-responses-item-type`、`ark-responses-item-id`、`ark-responses-item-status`、
   `ark-responses-item-role`、`ark-responses-partial`；content 使用独立的
   `ark-responses-content-type` 和 `ark-responses-annotations`。
-  未知属性分别放入 `ark-responses-item-raw.<字段名>`、
-  `ark-responses-content-raw.<字段名>`，避免合并后覆盖；复杂值保留自身 JSON，
-  经 JSON/gob 持久化保留嵌套值和数字精度。
+  输出直接读取 SDK 类型，不从 raw JSON 补取 SDK 未声明的 `message.phase`、
+  `action.queries` 等字段。没有标准 Eino 映射的内置工具或未知变体，仅将 SDK 值
+  以原子 JSON 保存在 `ark-responses-item-data` / `ark-responses-content-data`。
+  SDK annotations codec 和未知变体兼容机制保留自身值，经 JSON/gob 持久化保留数字精度。
   这些输出元数据不会自动成为请求字段；文本、签名和函数值只保存在公开字段。
   `ark-responses-item-index` 保存 parts/tools 的 item 归属和顺序，section/content-index
   保存 item 内的 content 数组，独立于流式合包索引。reasoning.summary 按换行符合成
@@ -429,7 +430,7 @@ Context 和图片生成 API 仍使用旧模块。
   同一 item 任意 reasoning part 的签名，非空签名冲突则报错。
   消息、推理和函数调用历史直接映射到 SDK 输入类型。输出专有的内置工具 item 留在
   Message 中供读取，不作为未定义输入发送；没有支持的输入映射的未知内容 part 会报错。
-  `phase`、`item_reference` 等待 SDK typed 支持，不通过整体替换 input 绕过这些缺口。
+  历史转换限于 SDK 输入类型，不通过整体替换 input 补充 SDK 未支持的字段。
   工具 strict 和显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
   使用 SDK codec 自带的未知变体保留机制。
   流式完整 parts 在终止事件一次性发出，正文、推理和函数参数保持增量输出。

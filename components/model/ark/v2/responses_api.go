@@ -145,13 +145,16 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 	if err != nil {
 		return nil, err
 	}
-	capture := &responseCapture{}
+	var capture *responseCapture
+	if opts.responseMessageModifier != nil {
+		capture = &responseCapture{}
+	}
 	ctx = context.WithValue(ctx, responseCaptureKey{}, capture)
 	resp, err := cm.client.CreateResponses(ctx, wire, arkruntime.WithCustomHeaders(responsesHeaders(opts)), arkruntime.WithExtraBody(extra))
 	if err != nil {
 		return nil, fmt.Errorf("create Responses: %w", err)
 	}
-	out, err = resolveResponsesResponse(&resp.Response, wire, capture.rawBody)
+	out, err = resolveResponsesResponse(&resp.Response, wire)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +228,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 				_ = sw.Send(nil, e)
 				return
 			}
-			msg, terminal, e := state.resolve(event, wire, decoder.raw)
+			msg, terminal, e := state.resolve(event, wire)
 			if e != nil {
 				_ = sw.Send(nil, e)
 				return

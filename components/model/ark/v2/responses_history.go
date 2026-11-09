@@ -147,6 +147,10 @@ func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.Tool
 		}
 		item := responses.ItemFunctionToolCall{Type: responses.ItemFunctionToolCallTypeFunctionCall,
 			ID: id, CallID: responseString(call.ID), Name: responseString(call.Function.Name), Arguments: responseString(call.Function.Arguments)}
+		item.Namespace, err = responsesMetadataString(extra, keyResponsesNamespace)
+		if err != nil {
+			return nil, err
+		}
 		if status.IsSet() {
 			item.Status = responses.NewOptItemStatus(responses.ItemStatus(status.Value))
 		}
@@ -166,7 +170,6 @@ func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.Tool
 	default:
 		// Built-in tool outputs and unknown output-only items remain observable
 		// in Message parts. They do not define SDK input items.
-		// TODO: support context item_reference when ark-runtime-go models it.
 		return nil, nil
 	}
 	return &responses.InputItem{OneOf: sum}, nil
@@ -187,8 +190,7 @@ func toResponsesHistoryMessage(extra map[string]any, parts []*schema.MessageOutp
 		}
 		item.Partial = responses.NewOptBool(partial)
 	}
-	// TODO: pass message.phase when ark-runtime-go adds the typed field.
-	// message.status and unknown output attributes are not input fields.
+	// Only SDK input fields are mapped; output-only attributes are omitted.
 	summary, ordered, err := responsesHistorySections(parts, false)
 	if err != nil {
 		return item, err
@@ -330,13 +332,13 @@ func responsesHistoryText(part *schema.MessageOutputPart) (responses.OptString, 
 		return responses.OptString{}, nil, fmt.Errorf("unsupported Responses content part %q", part.Type)
 	}
 	var annotations []responses.Annotation
-	if _, exists := part.Extra[keyResponsesAnnotations]; exists {
-		raw, err := responseRawField(part.Extra, keyResponsesAnnotations)
-		if err != nil {
-			return responses.OptString{}, nil, err
+	if value, exists := part.Extra[keyResponsesAnnotations]; exists {
+		raw, ok := stringValue(value)
+		if !ok {
+			return responses.OptString{}, nil, fmt.Errorf("Extra[%q] must contain JSON", keyResponsesAnnotations)
 		}
 		// AnnotationSum explicitly preserves unknown variants in the SDK codec.
-		if err := sonic.Unmarshal(raw, &annotations); err != nil {
+		if err := sonic.UnmarshalString(raw, &annotations); err != nil {
 			return responses.OptString{}, nil, err
 		}
 	}

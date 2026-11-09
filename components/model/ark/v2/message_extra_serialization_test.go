@@ -272,7 +272,7 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			chatMessage, err := resolveChatResponse(&chatResponse)
 			check(t, err)
-			responseMessage, err := resolveResponsesResponse(&response, &responses.ResponsesRequest{}, nil)
+			responseMessage, err := resolveResponsesResponse(&response, &responses.ResponsesRequest{})
 			check(t, err)
 			wantChat, wantResponse := chatResponse.Usage.Value, response.Usage.Value
 			// Change all common counts, including zero values, as a modifier may do.

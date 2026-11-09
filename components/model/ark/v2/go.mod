@@ -5,7 +5,8 @@ go 1.20
 require (
 	github.com/bytedance/sonic v1.15.0
 	github.com/cloudwego/eino v0.9.22
-	github.com/volcengine/ark-runtime-go v0.12.0
+	github.com/eino-contrib/jsonschema v1.0.3
+	github.com/volcengine/ark-runtime-go v0.19.0
 )
 
 require (
@@ -16,7 +17,6 @@ require (
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

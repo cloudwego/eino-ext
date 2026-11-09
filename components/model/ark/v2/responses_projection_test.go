@@ -25,7 +25,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
 const responsesProjectionJSON = `[
@@ -286,9 +288,11 @@ func TestResponsesProjectionEditsAndIndices(t *testing.T) {
 }
 
 func TestResponsesProjectionPresence(t *testing.T) {
-	output := `[{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text"},{"type":"output_text","text":null},{"type":"output_text","text":""}]},{"type":"reasoning","id":null,"partial":null,"status":"completed","summary":null,"content":[],"encrypted_content":null},{"type":"future_output","id":9007199254740993,"partial":{"nested":true},"content":{"number":9007199254740993},"text":"opaque text","arguments":null}]`
+	output := `[{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text"},{"type":"output_text","text":""}]},{"type":"reasoning","status":"completed","content":[]},{"type":"future_output","id":9007199254740993,"partial":{"nested":true},"content":{"number":9007199254740993},"text":"opaque text","arguments":null}]`
+	var items []responses.OutputItem
+	check(t, sonic.UnmarshalString(output, &items))
 	msg := &schema.Message{Role: schema.Assistant}
-	check(t, setResponsesFinalOutput(msg, nil, []byte(`{"output":`+output+`}`)))
+	check(t, setResponsesFinalOutput(msg, items))
 	for _, codec := range messagePersistenceCodecs() {
 		t.Run(codec.name, func(t *testing.T) {
 			raw, err := codec.marshal(msg)
@@ -299,7 +303,7 @@ func TestResponsesProjectionPresence(t *testing.T) {
 			check(t, err)
 			raw, err = json.Marshal(input)
 			check(t, err)
-			equalRawJSON(t, []byte(`[{"type":"message","id":"m","role":"assistant","content":[{"type":"output_text","text":""},{"type":"output_text","text":""},{"type":"output_text","text":""}]},{"type":"reasoning","status":"completed"}]`), raw)
+			equalRawJSON(t, []byte(`[{"type":"message","id":"m","role":"assistant","content":[{"type":"output_text","text":""},{"type":"output_text","text":""}]},{"type":"reasoning","status":"completed"}]`), raw)
 			equalMetadataJSON(t, msg, &restored)
 		})
 	}
@@ -329,12 +333,6 @@ func TestResponsesFlatMetadata(t *testing.T) {
 					itemKind, ok := extraString(part.Extra, keyResponsesItemType)
 					equal(t, true, ok)
 					equal(t, "message", itemKind)
-					itemExtension, ok := extraString(part.Extra, keyResponsesItemRawPrefix+"extension")
-					equal(t, true, ok)
-					equal(t, "true", itemExtension)
-					contentExtension, ok := extraString(part.Extra, keyResponsesContentRawPrefix+"extension")
-					equal(t, true, ok)
-					equal(t, "9007199254740993", contentExtension)
 					annotations, ok := extraString(part.Extra, "ark-responses-annotations")
 					equal(t, true, ok)
 					equalRawJSON(t, []byte(`[{"type":"future_annotation","value":9007199254740993}]`), []byte(annotations))
@@ -367,10 +365,9 @@ func TestResponsesOutputMetadataDoesNotExtendInput(t *testing.T) {
 	for i := range msg.AssistantGenMultiContent {
 		part := &msg.AssistantGenMultiContent[i]
 		if hasResponsesItemMetadata(part) {
-			// Output attributes are retained for inspection, not decoded into a
-			// replacement request body or merged into SDK input fields.
-			part.Extra[keyResponsesItemRawPrefix+"extension"] = "not request JSON"
-			part.Extra[keyResponsesItemRawPrefix+"id"] = `"must-not-replace-id"`
+			// Unrecognized application metadata cannot bypass SDK input fields.
+			part.Extra["ark-responses-item-raw.extension"] = "not request JSON"
+			part.Extra["ark-responses-item-raw.id"] = `"must-not-replace-id"`
 		}
 	}
 	items, err := toResponsesInput([]*schema.Message{msg})
@@ -512,7 +509,7 @@ func TestResponsesMoveMetadataBeforeDeletingFirstDataPart(t *testing.T) {
 			continue
 		}
 		if part.Text == "B" {
-			for _, key := range []string{keyResponsesItemType, keyResponsesItemID, keyResponsesItemStatus, keyResponsesItemRole, keyResponsesItemRawPrefix + "phase", keyResponsesItemRawPrefix + "extension"} {
+			for _, key := range []string{keyResponsesItemType, keyResponsesItemID, keyResponsesItemStatus, keyResponsesItemRole} {
 				part.Extra[key] = metadata[key]
 			}
 		}
@@ -540,4 +537,52 @@ func TestResponsesSignatureOnlyItemHasOnePart(t *testing.T) {
 	equal(t, true, ok)
 	equal(t, "cipher", reasoning.EncryptedContent.Or(""))
 	equal(t, 0, len(reasoning.Summary))
+}
+
+func TestResponsesProjectionUsesSDKFields(t *testing.T) {
+	output := `[
+ {"type":"message","id":"m","role":"assistant","status":"completed","partial":true,"phase":"final_answer","extension":"not-in-sdk","content":[{"type":"output_text","text":"answer","extension":"not-in-sdk","annotations":[]}]},
+ {"type":"web_search_call","id":"search","status":"completed","action":{"type":"search","query":"sdk query","queries":["not-in-sdk"]}},
+ {"type":"function_call","id":"fc","call_id":"call","name":"inspect","namespace":"sdk_namespace","arguments":"{}","status":"completed"},
+ {"type":"future_output","payload":{"integer":9007199254740993}}
+]`
+	for _, mode := range []string{"generate", "stream"} {
+		t.Run(mode, func(t *testing.T) {
+			original := projectedResponsesMessage(t, mode, output)
+			for _, codec := range messagePersistenceCodecs() {
+				t.Run(codec.name, func(t *testing.T) {
+					raw, err := codec.marshal(original)
+					check(t, err)
+					var msg schema.Message
+					check(t, codec.unmarshal(raw, &msg))
+					raw, err = json.Marshal(msg)
+					check(t, err)
+					for _, unsupported := range []string{"phase", "queries", "not-in-sdk", "ark-responses-item-raw.", "ark-responses-content-raw."} {
+						if strings.Contains(string(raw), unsupported) {
+							t.Fatalf("projected field outside SDK schema: %s", unsupported)
+						}
+					}
+					equal(t, 4, len(msg.AssistantGenMultiContent))
+					id, _ := extraString(msg.AssistantGenMultiContent[1].Extra, keyResponsesItemID)
+					status, _ := extraString(msg.AssistantGenMultiContent[1].Extra, keyResponsesItemStatus)
+					equal(t, "search", id)
+					equal(t, "completed", status)
+					search, ok := extraString(msg.AssistantGenMultiContent[1].Extra, keyResponsesItemData)
+					equal(t, true, ok)
+					equalRawJSON(t, []byte(`{"type":"web_search_call","id":"search","status":"completed","action":{"type":"search","query":"sdk query"}}`), []byte(search))
+					unknown, ok := extraString(msg.AssistantGenMultiContent[3].Extra, keyResponsesItemData)
+					equal(t, true, ok)
+					equalRawJSON(t, []byte(`{"type":"future_output","payload":{"integer":9007199254740993}}`), []byte(unknown))
+					input, err := toResponsesInput([]*schema.Message{&msg})
+					check(t, err)
+					raw, err = json.Marshal(input)
+					check(t, err)
+					equalRawJSON(t, []byte(`[
+ {"type":"message","id":"m","role":"assistant","partial":true,"content":[{"type":"output_text","text":"answer","annotations":[]}]},
+ {"type":"function_call","id":"fc","call_id":"call","name":"inspect","namespace":"sdk_namespace","arguments":"{}","status":"completed"}
+]`), raw)
+				})
+			}
+		})
+	}
 }

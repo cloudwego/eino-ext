@@ -460,9 +460,12 @@ image-generation APIs remain in the legacy module.
   Item metadata uses `ark-responses-item-type`, `ark-responses-item-id`,
   `ark-responses-item-status`, `ark-responses-item-role`, and `ark-responses-partial`;
   content uses its own `ark-responses-content-type` and `ark-responses-annotations`.
-  Unknown attributes use separate `ark-responses-item-raw.<field>` and
-  `ark-responses-content-raw.<field>` keys to avoid collisions. Complex values
-  retain their own JSON, including exact numbers, through JSON/gob persistence.
+  Output projection reads SDK types directly. Fields not exposed by the SDK,
+  including `message.phase` and `action.queries`, are not extracted from raw JSON.
+  Built-in or unknown variants without a standard Eino mapping retain the SDK
+  value as atomic JSON in `ark-responses-item-data` / `ark-responses-content-data`.
+  SDK annotation codecs and unknown-variant fallbacks preserve their own values
+  and number precision through JSON/gob persistence.
   These metadata fields are not automatically sent
   as request fields, and mapped text, signatures and function values are not
   duplicated in Extra.
@@ -477,8 +480,8 @@ image-generation APIs remain in the legacy module.
   Message, reasoning and function-call history maps directly to SDK input types.
   Output-only built-in items remain in Message parts for inspection and are not
   sent as undocumented input variants. Unknown content without a supported input
-  mapping returns an error. `phase` and `item_reference` await typed SDK support;
-  the adapter does not replace the entire input to implement these gaps.
+  mapping returns an error. History conversion stays within SDK input types;
+  the adapter does not replace the entire input to implement unsupported fields.
   SDK-documented extensions remain in use for tool strictness and explicit
   payload modifiers; SDK annotation codecs preserve unknown annotation variants.
   Streams emit complete parts once at the terminal event while text, reasoning

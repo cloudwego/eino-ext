@@ -174,7 +174,7 @@ func TestResponsesMetadataAndCacheValidation(t *testing.T) {
 	}
 	var decoded responses.Response
 	check(t, sonic.UnmarshalString(responsesJSON, &decoded))
-	out, err := resolveResponsesResponse(&decoded, &responses.ResponsesRequest{}, nil)
+	out, err := resolveResponsesResponse(&decoded, &responses.ResponsesRequest{})
 	check(t, err)
 	items, err := toResponsesInput([]*schema.Message{out})
 	check(t, err)
