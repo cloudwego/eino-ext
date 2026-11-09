@@ -168,8 +168,9 @@ func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.Tool
 		}
 		sum.SetItemReasoning(item)
 	default:
-		// Built-in tool outputs and unknown output-only items remain observable
-		// in Message parts. They do not define SDK input items.
+		// Output-only items have no SDK input member. Server-side MCP and tool
+		// search are outside this adapter's supported workflows. Keep these SDK
+		// values in Message parts for inspection, without constructing input.
 		return nil, nil
 	}
 	return &responses.InputItem{OneOf: sum}, nil

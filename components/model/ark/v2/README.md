@@ -478,8 +478,11 @@ image-generation APIs remain in the legacy module.
   conversion accepts it on any reasoning part of that item and rejects
   conflicting nonempty signatures.
   Message, reasoning and function-call history maps directly to SDK input types.
-  Output-only built-in items remain in Message parts for inspection and are not
-  sent as undocumented input variants. Unknown content without a supported input
+  Output-only items are omitted from subsequent input. Server-side MCP and
+  Tool Search configuration and history mapping are outside this adapter's
+  supported workflows, even where the SDK declares corresponding input types.
+  These SDK output values remain in Message parts for inspection.
+  Unknown content without a supported input
   mapping returns an error. History conversion stays within SDK input types;
   the adapter does not replace the entire input to implement unsupported fields.
   SDK-documented extensions remain in use for tool strictness and explicit

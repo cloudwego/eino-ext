@@ -428,8 +428,10 @@ Context 和图片生成 API 仍使用旧模块。
   一个展示 part，不保留分段索引；输入转换至多生成一个 summary_text。
   初始投影时，首个 reasoning part 保存该 item 的加密 `Signature`；输入转换读取
   同一 item 任意 reasoning part 的签名，非空签名冲突则报错。
-  消息、推理和函数调用历史直接映射到 SDK 输入类型。输出专有的内置工具 item 留在
-  Message 中供读取，不作为未定义输入发送；没有支持的输入映射的未知内容 part 会报错。
+  消息、推理和函数调用历史直接映射到 SDK 输入类型；输出专用 item 在后续输入中忽略。
+  当前适配器不提供 server-side MCP、Tool Search 的配置与历史转换，
+  即使 SDK 已声明相应输入类型，也不自动回传。这些 SDK 输出值留在 Message 中供读取；
+  没有支持的输入映射的未知内容 part 会报错。
   历史转换限于 SDK 输入类型，不通过整体替换 input 补充 SDK 未支持的字段。
   工具 strict 和显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
   使用 SDK codec 自带的未知变体保留机制。
