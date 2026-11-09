@@ -292,6 +292,7 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			}
 			sw.Close()
 		}()
+		outputPartIndex := 0
 		for resp, err_ := range resultIter {
 			if err_ != nil {
 				// The SDK can report a JSON error when cancellation interrupts an
@@ -307,6 +308,19 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			if err_ != nil {
 				sw.Send(nil, err_)
 				return
+			}
+			// Keep signed parts separate from surrounding text when consumers
+			// concatenate stream chunks. A signature belongs to its original part.
+			for i := range message.AssistantGenMultiContent {
+				part := &message.AssistantGenMultiContent[i]
+				sig, _ := GetThoughtSignatureFromExtra(part.Extra)
+				if len(sig) > 0 {
+					outputPartIndex++
+				}
+				part.StreamingMeta = &schema.MessageStreamingMeta{Index: outputPartIndex}
+				if len(sig) > 0 || part.Type != schema.ChatMessagePartTypeText {
+					outputPartIndex++
+				}
 			}
 			closed := sw.Send(convCallbackOutput(message, cbConf), nil)
 			if closed {
@@ -1272,6 +1286,7 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 		// - output parts (text/inlineData/...): signature stored on MessageOutputPart.Extra
 		// - message.Extra is only used when output parts are absent
 		for _, part := range candidate.Content.Parts {
+			outputPartCount := len(outParts)
 			// Store thought signature at message level for non-functionCall parts
 			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil {
 				setMessageThoughtSignature(result, part.ThoughtSignature)
@@ -1329,6 +1344,15 @@ func convCandidate(candidate *genai.Candidate) (*schema.Message, error) {
 				if err != nil {
 					return nil, err
 				}
+				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
+				outParts = append(outParts, outPart)
+			}
+			// Streaming text responses may end with an empty, signature-only
+			// part. Keep it in the output parts, not only in message.Extra:
+			// convSchemaMessage prefers AssistantGenMultiContent when present.
+			if len(part.ThoughtSignature) > 0 && part.FunctionCall == nil &&
+				!part.Thought && len(outParts) == outputPartCount {
+				outPart := schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText}
 				setMessageOutputPartThoughtSignature(&outPart, part.ThoughtSignature)
 				outParts = append(outParts, outPart)
 			}
