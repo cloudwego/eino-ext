@@ -224,15 +224,15 @@ func TestUsageConcatCombinesCommonCountsAndLastDetails(t *testing.T) {
 				check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &responseUsage))
 				usage.InputTokensDetails.AudioTokens = responses.NewOptInt64(7)
 				var err error
-				first, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(usage)}, &responses.ResponsesRequest{})
+				first, err = projectResponsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(usage)}, &responses.ResponsesRequest{})
 				check(t, err)
 				var update responses.ResponseUsage
 				update.InputTokensDetails.AudioTokens = responses.NewOptInt64(0)
-				middle, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(update)}, &responses.ResponsesRequest{})
+				middle, err = projectResponsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(update)}, &responses.ResponsesRequest{})
 				check(t, err)
 				var lower responses.ResponseUsage
 				check(t, json.Unmarshal([]byte(`{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}`), &lower))
-				last, err = responsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(lower)}, &responses.ResponsesRequest{})
+				last, err = projectResponsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(lower)}, &responses.ResponsesRequest{})
 				check(t, err)
 			}
 			// Explicit zero replaces a count; a later omission leaves it available.
@@ -272,7 +272,7 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			chatMessage, err := resolveChatResponse(&chatResponse)
 			check(t, err)
-			responseMessage, err := resolveResponsesResponse(&response, &responses.ResponsesRequest{})
+			responseMessage, err := projectResponsesResponse(&response, &responses.ResponsesRequest{})
 			check(t, err)
 			wantChat, wantResponse := chatResponse.Usage.Value, response.Usage.Value
 			// Change all common counts, including zero values, as a modifier may do.

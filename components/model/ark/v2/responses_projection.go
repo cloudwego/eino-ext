@@ -30,6 +30,64 @@ import (
 // the first data part. Applications can skip this type when rendering text.
 const ResponsesOutputItem schema.ChatMessagePartType = "ark_responses_item"
 
+func projectResponsesResponse(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
+	msg, err := projectResponsesMetadata(resp, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateResponsesOutput(resp, req); err != nil {
+		return nil, err
+	}
+	if err := projectResponsesOutput(msg, resp.Output); err != nil {
+		return nil, err
+	}
+	return msg, nil
+}
+
+func projectResponsesMetadata(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
+	if resp == nil {
+		return nil, ErrEmptyResponse
+	}
+	if resp.Status.Or("") == responses.ResponseStatusFailed || resp.Error.IsSet() {
+		problem := resp.Error.Or(responses.ResponseError{})
+		return nil, fmt.Errorf("Ark response failed (%s): %s", problem.Code, problem.Message)
+	}
+	msg := &schema.Message{Role: schema.Assistant, ResponseMeta: &schema.ResponseMeta{FinishReason: string(resp.Status.Or(""))}, Extra: map[string]any{}}
+	if d, ok := resp.IncompleteDetails.Get(); ok {
+		msg.ResponseMeta.FinishReason = d.Reason
+	}
+	if resp.ID != "" {
+		msg.Extra[keyResponseID] = metadataString(resp.ID)
+	}
+	if resp.Model != "" {
+		msg.Extra[keyModelName] = metadataString(resp.Model)
+	}
+	if tier, ok := resp.ServiceTier.Get(); ok {
+		msg.Extra[keyServiceTier] = metadataString(tier)
+	}
+	if req.Store.Or(false) {
+		if expires := resp.ExpireAt.Or(req.ExpireAt.Or(0)); expires > 0 {
+			msg.Extra[keyCacheExpiration] = metadataInt64(expires)
+		}
+	}
+	if usage, ok := resp.Usage.Get(); ok {
+		msg.ResponseMeta.Usage = &schema.TokenUsage{PromptTokens: int(usage.InputTokens), CompletionTokens: int(usage.OutputTokens), TotalTokens: int(usage.TotalTokens),
+			PromptTokenDetails:      schema.PromptTokenDetails{CachedTokens: int(usage.InputTokensDetails.CachedTokens)},
+			CompletionTokensDetails: schema.CompletionTokensDetails{ReasoningTokens: int(usage.OutputTokensDetails.ReasoningTokens)}}
+		if err := setResponsesUsage(msg, usage); err != nil {
+			return nil, err
+		}
+	}
+	return msg, nil
+}
+
+func validateResponsesOutput(resp *responses.Response, req *responses.ResponsesRequest) error {
+	if len(resp.Output) == 0 && resp.Status.Or("") != responses.ResponseStatusIncomplete && !req.Caching.Or(responses.ResponseCaching{}).Prefix.Or(false) {
+		return ErrEmptyResponse
+	}
+	return nil
+}
+
 // Project a complete SDK output into canonical parts and legacy message fields
 // together. Streaming callers reconcile the legacy fields after projection.
 func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem) error {
@@ -60,7 +118,7 @@ func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem) 
 	}
 	msg.AssistantGenMultiContent = parts
 	msg.Content = content.String()
-	msg.ReasoningContent = responsesSummaryText(reasoning)
+	msg.ReasoningContent = projectResponsesSummaryText(reasoning)
 	msg.ToolCalls = toolCalls
 	return nil
 }
@@ -80,7 +138,7 @@ func projectResponsesItem(item responses.OutputItem, index int) ([]schema.Messag
 		if partial, ok := message.Partial.Get(); ok {
 			extra[keyResponsesPartial] = metadataBool(partial)
 		}
-		children, err = projectResponsesContent(message.Content, index, responses.OutputContentItemTextOutputContentItemSum)
+		children, err = projectResponsesOutputContent(message.Content, index, responses.OutputContentItemTextOutputContentItemSum)
 	case responses.ItemReasoningOutputItemSum:
 		reasoning := item.OneOf.ItemReasoning
 		if id, ok := reasoning.ID.Get(); ok {
@@ -88,13 +146,10 @@ func projectResponsesItem(item responses.OutputItem, index int) ([]schema.Messag
 		}
 		extra[keyResponsesItemStatus] = metadataString(reasoning.Status)
 		for summaryIndex, part := range reasoning.Summary {
-			children = append(children, schema.MessageOutputPart{
-				Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: part.Text.Or("")},
-				Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index), keyResponsesSection: metadataString("summary"), keyResponsesSummaryIndex: metadataInt64(summaryIndex)},
-			})
+			children = append(children, projectResponsesSummaryPart(index, summaryIndex, part.Text.Or("")))
 		}
 		var content []schema.MessageOutputPart
-		content, err = projectResponsesContent(reasoning.Content, index, responses.OutputContentItemReasoningTextOutputContentItemSum)
+		content, err = projectResponsesOutputContent(reasoning.Content, index, responses.OutputContentItemReasoningTextOutputContentItemSum)
 		children = append(children, content...)
 		carrier := -1
 		for i := range children {
@@ -149,38 +204,15 @@ func projectResponsesItem(item responses.OutputItem, index int) ([]schema.Messag
 	return children, nil
 }
 
-func responsesTextOutputPart(itemIndex, contentIndex int, text string) schema.MessageOutputPart {
-	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText, Text: text,
-		Extra: responsesContentIndices(itemIndex, contentIndex, "output_text")}
-}
-
-func responsesReasoningOutputPart(itemIndex, contentIndex int, text string) schema.MessageOutputPart {
-	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: text},
-		Extra: responsesContentIndices(itemIndex, contentIndex, "reasoning_text")}
-}
-
-func responsesSummaryDelta(itemIndex, summaryIndex int, text string) schema.MessageOutputPart {
-	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: text}, Extra: map[string]any{
-		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("summary"), keyResponsesSummaryIndex: metadataInt64(summaryIndex),
-	}}
-}
-
-func responsesContentIndices(itemIndex, contentIndex int, contentType string) map[string]any {
-	return map[string]any{
-		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("content"),
-		keyResponsesContentIndex: metadataInt64(contentIndex), keyResponsesContentType: metadataString(contentType),
-	}
-}
-
 // The SDK shares the wire union; the parent item restricts the valid variant.
-func projectResponsesContent(content []responses.OutputContentItem, index int, expected responses.OutputContentItemSumType) ([]schema.MessageOutputPart, error) {
+func projectResponsesOutputContent(content []responses.OutputContentItem, index int, expected responses.OutputContentItemSumType) ([]schema.MessageOutputPart, error) {
 	parts := make([]schema.MessageOutputPart, 0, len(content))
 	for contentIndex, child := range content {
 		kind := child.OneOf.Type
 		if (kind == responses.OutputContentItemTextOutputContentItemSum || kind == responses.OutputContentItemReasoningTextOutputContentItemSum) && kind != expected {
 			return nil, fmt.Errorf("content part %d: expected %s, got %s", contentIndex, expected, kind)
 		}
-		part, err := projectResponsesContentPart(child, index, contentIndex)
+		part, err := projectResponsesOutputContentPart(child, index, contentIndex)
 		if err != nil {
 			return nil, err
 		}
@@ -189,18 +221,20 @@ func projectResponsesContent(content []responses.OutputContentItem, index int, e
 	return parts, nil
 }
 
-func projectResponsesContentPart(child responses.OutputContentItem, itemIndex, contentIndex int) (schema.MessageOutputPart, error) {
+// OutputContentItem covers both message.content and reasoning.content. Parent
+// type constraints are checked by the full-item or streaming-state caller.
+func projectResponsesOutputContentPart(child responses.OutputContentItem, itemIndex, contentIndex int) (schema.MessageOutputPart, error) {
 	var part schema.MessageOutputPart
 	var annotations []responses.Annotation
 	switch child.OneOf.Type {
 	case responses.OutputContentItemTextOutputContentItemSum:
 		value := child.OneOf.OutputContentItemText
-		part, annotations = responsesTextOutputPart(itemIndex, contentIndex, value.Text.Or("")), value.Annotations
+		part, annotations = projectResponsesTextPart(itemIndex, contentIndex, value.Text.Or("")), value.Annotations
 	case responses.OutputContentItemReasoningTextOutputContentItemSum:
 		value := child.OneOf.OutputContentItemReasoningText
-		part, annotations = responsesReasoningOutputPart(itemIndex, contentIndex, value.Text.Or("")), value.Annotations
+		part, annotations = projectResponsesReasoningPart(itemIndex, contentIndex, value.Text.Or("")), value.Annotations
 	default:
-		part = schema.MessageOutputPart{Type: ResponsesOutputItem, Extra: responsesContentIndices(itemIndex, contentIndex, string(child.OneOf.Type))}
+		part = schema.MessageOutputPart{Type: ResponsesOutputItem, Extra: responsesContentPartExtra(itemIndex, contentIndex, string(child.OneOf.Type))}
 		if kind, _, unknown := child.OneOf.GetUnknown(); unknown {
 			part.Extra[keyResponsesContentType] = metadataString(kind)
 		}
@@ -220,7 +254,30 @@ func projectResponsesContentPart(child responses.OutputContentItem, itemIndex, c
 	return part, nil
 }
 
-func responsesSummaryText(items []responses.ItemReasoning) string {
+func projectResponsesTextPart(itemIndex, contentIndex int, text string) schema.MessageOutputPart {
+	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText, Text: text,
+		Extra: responsesContentPartExtra(itemIndex, contentIndex, "output_text")}
+}
+
+func projectResponsesReasoningPart(itemIndex, contentIndex int, text string) schema.MessageOutputPart {
+	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: text},
+		Extra: responsesContentPartExtra(itemIndex, contentIndex, "reasoning_text")}
+}
+
+func projectResponsesSummaryPart(itemIndex, summaryIndex int, text string) schema.MessageOutputPart {
+	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: text}, Extra: map[string]any{
+		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("summary"), keyResponsesSummaryIndex: metadataInt64(summaryIndex),
+	}}
+}
+
+func responsesContentPartExtra(itemIndex, contentIndex int, contentType string) map[string]any {
+	return map[string]any{
+		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("content"),
+		keyResponsesContentIndex: metadataInt64(contentIndex), keyResponsesContentType: metadataString(contentType),
+	}
+}
+
+func projectResponsesSummaryText(items []responses.ItemReasoning) string {
 	var summary []string
 	for _, item := range items {
 		for _, part := range item.Summary {

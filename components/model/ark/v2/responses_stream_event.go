@@ -24,125 +24,53 @@ import (
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
-func responsesMetadata(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
-	if resp == nil {
-		return nil, ErrEmptyResponse
-	}
-	if resp.Status.Or("") == responses.ResponseStatusFailed || resp.Error.IsSet() {
-		problem := resp.Error.Or(responses.ResponseError{})
-		return nil, fmt.Errorf("Ark response failed (%s): %s", problem.Code, problem.Message)
-	}
-	msg := &schema.Message{Role: schema.Assistant, ResponseMeta: &schema.ResponseMeta{FinishReason: string(resp.Status.Or(""))}, Extra: map[string]any{}}
-	if d, ok := resp.IncompleteDetails.Get(); ok {
-		msg.ResponseMeta.FinishReason = d.Reason
-	}
-	if resp.ID != "" {
-		msg.Extra[keyResponseID] = metadataString(resp.ID)
-	}
-	if resp.Model != "" {
-		msg.Extra[keyModelName] = metadataString(resp.Model)
-	}
-	if tier, ok := resp.ServiceTier.Get(); ok {
-		msg.Extra[keyServiceTier] = metadataString(tier)
-	}
-	if req.Store.Or(false) {
-		if expires := resp.ExpireAt.Or(req.ExpireAt.Or(0)); expires > 0 {
-			msg.Extra[keyCacheExpiration] = metadataInt64(expires)
-		}
-	}
-	if usage, ok := resp.Usage.Get(); ok {
-		msg.ResponseMeta.Usage = &schema.TokenUsage{PromptTokens: int(usage.InputTokens), CompletionTokens: int(usage.OutputTokens), TotalTokens: int(usage.TotalTokens),
-			PromptTokenDetails:      schema.PromptTokenDetails{CachedTokens: int(usage.InputTokensDetails.CachedTokens)},
-			CompletionTokensDetails: schema.CompletionTokensDetails{ReasoningTokens: int(usage.OutputTokensDetails.ReasoningTokens)}}
-		if err := setResponsesUsage(msg, usage); err != nil {
-			return nil, err
-		}
-	}
-	return msg, nil
-}
-
-func resolveResponsesResponse(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
-	msg, err := responsesMetadata(resp, req)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateResponsesOutput(resp, req); err != nil {
-		return nil, err
-	}
-	if err := projectResponsesOutput(msg, resp.Output); err != nil {
-		return nil, err
-	}
-	return msg, nil
-}
-
-func validateResponsesOutput(resp *responses.Response, req *responses.ResponsesRequest) error {
-	if len(resp.Output) == 0 && resp.Status.Or("") != responses.ResponseStatusIncomplete && !req.Caching.Or(responses.ResponseCaching{}).Prefix.Or(false) {
-		return ErrEmptyResponse
-	}
-	return nil
-}
-
-// Capture original SSE payloads only for an explicitly configured modifier.
-type responsesPayloadDecoder struct {
-	raw    []byte
-	retain bool
-}
-
-func (d *responsesPayloadDecoder) Unmarshal(raw []byte, value interface{}) error {
-	if d.retain {
-		// Modifiers may retain the original frame in application metadata.
-		d.raw = append([]byte(nil), raw...)
-	}
-	return sonic.Unmarshal(raw, value)
-}
-
 // Metadata is emitted once at the terminal event, so token usage and IDs do
 // not get duplicated when Eino concatenates stream chunks.
-func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest) (msg *schema.Message, terminal bool, err error) {
+func projectResponsesStreamEvent(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest) (msg *schema.Message, terminal bool, err error) {
 	if event == nil {
 		return nil, false, nil
 	}
 	ev := &event.OneOf
 	switch ev.Type {
 	case responses.ResponseCompletedEventResponseStreamEventSum:
-		msg, err = resolveResponsesResponse(&ev.ResponseCompletedEvent.Response, req)
+		msg, err = projectResponsesResponse(&ev.ResponseCompletedEvent.Response, req)
 		return msg, true, err
 	case responses.ResponseIncompleteEventResponseStreamEventSum:
-		msg, err = resolveResponsesResponse(&ev.ResponseIncompleteEvent.Response, req)
+		msg, err = projectResponsesResponse(&ev.ResponseIncompleteEvent.Response, req)
 		return msg, true, err
 	case responses.ResponseFailedEventResponseStreamEventSum:
 		resp := ev.ResponseFailedEvent.Response
 		resp.Status = responses.NewOptResponseStatus(responses.ResponseStatusFailed)
-		msg, err = responsesMetadata(&resp, req)
+		msg, err = projectResponsesMetadata(&resp, req)
 		return msg, true, err
 	case responses.ResponseErrorEventResponseStreamEventSum:
 		return nil, false, fmt.Errorf("Ark stream error (%s): %s", ev.ResponseErrorEvent.Code.Or(""), ev.ResponseErrorEvent.Message)
 	case responses.ResponseTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, Content: ev.ResponseTextDeltaEvent.Delta.Or("")}
-		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesTextOutputPart(int(ev.ResponseTextDeltaEvent.OutputIndex), int(ev.ResponseTextDeltaEvent.ContentIndex), msg.Content)}
+		msg.AssistantGenMultiContent = []schema.MessageOutputPart{projectResponsesTextPart(int(ev.ResponseTextDeltaEvent.OutputIndex), int(ev.ResponseTextDeltaEvent.ContentIndex), msg.Content)}
 	case responses.ResponseReasoningTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
-			responsesReasoningOutputPart(int(ev.ResponseReasoningTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningTextDeltaEvent.ContentIndex), ev.ResponseReasoningTextDeltaEvent.Delta.Or("")),
+			projectResponsesReasoningPart(int(ev.ResponseReasoningTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningTextDeltaEvent.ContentIndex), ev.ResponseReasoningTextDeltaEvent.Delta.Or("")),
 		}}
 	case responses.ResponseReasoningRawTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
-			responsesReasoningOutputPart(int(ev.ResponseReasoningRawTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningRawTextDeltaEvent.ContentIndex), ev.ResponseReasoningRawTextDeltaEvent.Delta.Or("")),
+			projectResponsesReasoningPart(int(ev.ResponseReasoningRawTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningRawTextDeltaEvent.ContentIndex), ev.ResponseReasoningRawTextDeltaEvent.Delta.Or("")),
 		}}
 	case responses.ResponseReasoningSummaryTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningSummaryTextDeltaEvent.Delta.Or("")}
-		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesSummaryDelta(int(ev.ResponseReasoningSummaryTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningSummaryTextDeltaEvent.SummaryIndex), msg.ReasoningContent)}
+		msg.AssistantGenMultiContent = []schema.MessageOutputPart{projectResponsesSummaryPart(int(ev.ResponseReasoningSummaryTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningSummaryTextDeltaEvent.SummaryIndex), msg.ReasoningContent)}
 	case responses.ResponseContentPartAddedEventResponseStreamEventSum:
 		e := ev.ResponseContentPartAddedEvent
-		msg, err = responsesPartEvent(e.Part, int(e.OutputIndex), int(e.ContentIndex))
+		msg, err = projectResponsesStreamContentPart(e.Part, int(e.OutputIndex), int(e.ContentIndex))
 	case responses.ResponseContentPartDoneEventResponseStreamEventSum:
 		e := ev.ResponseContentPartDoneEvent
-		msg, err = responsesPartEvent(e.Part, int(e.OutputIndex), int(e.ContentIndex))
+		msg, err = projectResponsesStreamContentPart(e.Part, int(e.OutputIndex), int(e.ContentIndex))
 	case responses.ResponseReasoningSummaryPartAddedEventResponseStreamEventSum:
 		e := ev.ResponseReasoningSummaryPartAddedEvent
-		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{responsesSummaryDelta(int(e.OutputIndex), int(e.SummaryIndex), e.Part.Text.Or(""))}}
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projectResponsesSummaryPart(int(e.OutputIndex), int(e.SummaryIndex), e.Part.Text.Or(""))}}
 	case responses.ResponseReasoningSummaryPartDoneEventResponseStreamEventSum:
 		e := ev.ResponseReasoningSummaryPartDoneEvent
-		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{responsesSummaryDelta(int(e.OutputIndex), int(e.SummaryIndex), e.Part.Text.Or(""))}}
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projectResponsesSummaryPart(int(e.OutputIndex), int(e.SummaryIndex), e.Part.Text.Or(""))}}
 	case responses.ResponseOutputItemDoneEventResponseStreamEventSum:
 		parts, e := projectResponsesItem(ev.ResponseOutputItemDoneEvent.Item, int(ev.ResponseOutputItemDoneEvent.OutputIndex))
 		if e != nil {
@@ -175,10 +103,24 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	return msg, false, err
 }
 
-func responsesPartEvent(part responses.OutputContentItem, itemIndex, contentIndex int) (*schema.Message, error) {
-	projected, err := projectResponsesContentPart(part, itemIndex, contentIndex)
+func projectResponsesStreamContentPart(part responses.OutputContentItem, itemIndex, contentIndex int) (*schema.Message, error) {
+	projected, err := projectResponsesOutputContentPart(part, itemIndex, contentIndex)
 	if err != nil {
 		return nil, err
 	}
 	return &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projected}}, nil
+}
+
+// Capture original SSE payloads only for an explicitly configured modifier.
+type responsesPayloadDecoder struct {
+	raw    []byte
+	retain bool
+}
+
+func (d *responsesPayloadDecoder) Unmarshal(raw []byte, value interface{}) error {
+	if d.retain {
+		// Modifiers may retain the original frame in application metadata.
+		d.raw = append([]byte(nil), raw...)
+	}
+	return sonic.Unmarshal(raw, value)
 }

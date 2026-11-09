@@ -69,7 +69,7 @@ func (s *responsesStreamState) record(msg *schema.Message) error {
 }
 
 func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req *responses.ResponsesRequest) (*schema.Message, bool, error) {
-	msg, terminal, err := resolveResponsesStreamEvent(event, req)
+	msg, terminal, err := projectResponsesStreamEvent(event, req)
 	if err != nil {
 		return msg, terminal, err
 	}

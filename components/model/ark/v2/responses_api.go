@@ -154,7 +154,7 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 	if err != nil {
 		return nil, fmt.Errorf("create Responses: %w", err)
 	}
-	out, err = resolveResponsesResponse(&resp.Response, wire)
+	out, err = projectResponsesResponse(&resp.Response, wire)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +303,7 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	if err != nil {
 		return nil, err
 	}
-	msg, err := responsesMetadata(&resp.Response, wire)
+	msg, err := projectResponsesMetadata(&resp.Response, wire)
 	if err != nil {
 		return nil, err
 	}
