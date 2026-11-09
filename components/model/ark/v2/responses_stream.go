@@ -96,20 +96,14 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 	default:
 		return msg, terminal, nil
 	}
-	if err := validateResponsesOutput(resp, req); err != nil {
-		return nil, true, err
-	}
-	projection := &schema.Message{}
-	projectResponsesOutput(projection, resp.Output)
-	msg.Content, err = responsesStreamSuffix(projection.Content, s.content.String(), "content")
+	msg.Content, err = responsesStreamSuffix(msg.Content, s.content.String(), "content")
 	if err != nil {
 		return nil, true, err
 	}
-	if s.reasoning.Len() == 0 {
-		msg.ReasoningContent = projection.ReasoningContent
-	} else {
+	if s.reasoning.Len() > 0 {
 		msg.ReasoningContent = s.reasoningSuffix(resp.Output)
 	}
+	var toolDeltas []schema.ToolCall
 	for index, output := range resp.Output {
 		call, ok := output.OneOf.GetItemFunctionToolCall()
 		if !ok {
@@ -133,9 +127,10 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		}
 		if id != "" || name != "" || args != "" {
 			toolIndex := index
-			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{Index: &toolIndex, ID: id, Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Name: name, Arguments: args}})
+			toolDeltas = append(toolDeltas, schema.ToolCall{Index: &toolIndex, ID: id, Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Name: name, Arguments: args}})
 		}
 	}
+	msg.ToolCalls = toolDeltas
 	if err := s.record(msg); err != nil {
 		return nil, true, err
 	}

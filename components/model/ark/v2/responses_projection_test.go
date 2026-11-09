@@ -71,6 +71,9 @@ func TestResponsesOutputProjection(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		t.Run(mode, func(t *testing.T) {
 			original := projectedResponsesMessage(t, mode, responsesProjectionJSON)
+			equal(t, "AB", original.Content)
+			equal(t, "raw", original.ReasoningContent)
+			equal(t, 1, len(original.ToolCalls))
 			if len(original.AssistantGenMultiContent) == 0 {
 				t.Fatal("native output has no canonical parts")
 			}
@@ -294,7 +297,7 @@ func TestResponsesProjectionPresence(t *testing.T) {
 	var items []responses.OutputItem
 	check(t, sonic.UnmarshalString(output, &items))
 	msg := &schema.Message{Role: schema.Assistant}
-	check(t, setResponsesFinalOutput(msg, items))
+	check(t, projectResponsesOutput(msg, items))
 	for _, codec := range messagePersistenceCodecs() {
 		t.Run(codec.name, func(t *testing.T) {
 			raw, err := codec.marshal(msg)

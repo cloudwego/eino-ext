@@ -30,16 +30,38 @@ import (
 // the first data part. Applications can skip this type when rendering text.
 const ResponsesOutputItem schema.ChatMessagePartType = "ark_responses_item"
 
-func setResponsesFinalOutput(msg *schema.Message, output []responses.OutputItem) error {
+// Project a complete SDK output into canonical parts and legacy message fields
+// together. Streaming callers reconcile the legacy fields after projection.
+func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem) error {
 	var parts []schema.MessageOutputPart
+	var content strings.Builder
+	var reasoning []responses.ItemReasoning
+	var toolCalls []schema.ToolCall
 	for index, item := range output {
 		children, err := projectResponsesItem(item, index)
 		if err != nil {
 			return fmt.Errorf("Responses output item %d: %w", index, err)
 		}
 		parts = append(parts, children...)
+		switch item.OneOf.Type {
+		case responses.ItemOutputMessageOutputItemSum:
+			for _, part := range item.OneOf.ItemOutputMessage.Content {
+				if text, ok := part.OneOf.GetOutputContentItemText(); ok {
+					content.WriteString(text.Text.Or(""))
+				}
+			}
+		case responses.ItemFunctionToolCallOutputItemSum:
+			call := item.OneOf.ItemFunctionToolCall
+			toolCalls = append(toolCalls, schema.ToolCall{ID: call.CallID.Or(""), Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)},
+				Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}})
+		case responses.ItemReasoningOutputItemSum:
+			reasoning = append(reasoning, item.OneOf.ItemReasoning)
+		}
 	}
 	msg.AssistantGenMultiContent = parts
+	msg.Content = content.String()
+	msg.ReasoningContent = responsesReasoningText(reasoning)
+	msg.ToolCalls = toolCalls
 	return nil
 }
 
@@ -176,4 +198,24 @@ func projectResponsesContent(content []responses.OutputContentItem, index int, r
 		parts = append(parts, part)
 	}
 	return parts, nil
+}
+
+func responsesReasoningText(items []responses.ItemReasoning) string {
+	var summary, raw []string
+	for _, item := range items {
+		for _, part := range item.Summary {
+			if text := part.Text.Or(""); text != "" {
+				summary = append(summary, text)
+			}
+		}
+		for _, part := range item.Content {
+			if text, ok := part.OneOf.GetOutputContentItemReasoningText(); ok {
+				raw = append(raw, text.Text.Or(""))
+			}
+		}
+	}
+	if len(raw) > 0 {
+		return strings.Join(raw, "")
+	}
+	return strings.Join(summary, "\n")
 }

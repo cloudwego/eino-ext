@@ -18,7 +18,6 @@ package ark
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
@@ -70,8 +69,7 @@ func resolveResponsesResponse(resp *responses.Response, req *responses.Responses
 	if err := validateResponsesOutput(resp, req); err != nil {
 		return nil, err
 	}
-	projectResponsesOutput(msg, resp.Output)
-	if err := setResponsesFinalOutput(msg, resp.Output); err != nil {
+	if err := projectResponsesOutput(msg, resp.Output); err != nil {
 		return nil, err
 	}
 	return msg, nil
@@ -82,30 +80,6 @@ func validateResponsesOutput(resp *responses.Response, req *responses.ResponsesR
 		return ErrEmptyResponse
 	}
 	return nil
-}
-
-func projectResponsesOutput(msg *schema.Message, outputs []responses.OutputItem) {
-	var content strings.Builder
-	content.WriteString(msg.Content)
-	var reasoning []responses.ItemReasoning
-	for index, output := range outputs {
-		switch output.OneOf.Type {
-		case responses.ItemOutputMessageOutputItemSum:
-			for _, part := range output.OneOf.ItemOutputMessage.Content {
-				if text, ok := part.OneOf.GetOutputContentItemText(); ok {
-					content.WriteString(text.Text.Or(""))
-				}
-			}
-		case responses.ItemFunctionToolCallOutputItemSum:
-			call := output.OneOf.ItemFunctionToolCall
-			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{ID: call.CallID.Or(""), Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}})
-		case responses.ItemReasoningOutputItemSum:
-			item := output.OneOf.ItemReasoning
-			reasoning = append(reasoning, item)
-		}
-	}
-	msg.Content = content.String()
-	msg.ReasoningContent = responsesReasoningText(reasoning)
 }
 
 // Capture original SSE payloads only for an explicitly configured modifier.
@@ -131,16 +105,10 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	ev := &event.OneOf
 	switch ev.Type {
 	case responses.ResponseCompletedEventResponseStreamEventSum:
-		msg, err = responsesMetadata(&ev.ResponseCompletedEvent.Response, req)
-		if err == nil {
-			err = setResponsesFinalOutput(msg, ev.ResponseCompletedEvent.Response.Output)
-		}
+		msg, err = resolveResponsesResponse(&ev.ResponseCompletedEvent.Response, req)
 		return msg, true, err
 	case responses.ResponseIncompleteEventResponseStreamEventSum:
-		msg, err = responsesMetadata(&ev.ResponseIncompleteEvent.Response, req)
-		if err == nil {
-			err = setResponsesFinalOutput(msg, ev.ResponseIncompleteEvent.Response.Output)
-		}
+		msg, err = resolveResponsesResponse(&ev.ResponseIncompleteEvent.Response, req)
 		return msg, true, err
 	case responses.ResponseFailedEventResponseStreamEventSum:
 		resp := ev.ResponseFailedEvent.Response
@@ -170,24 +138,4 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
 	}
 	return msg, false, nil
-}
-
-func responsesReasoningText(items []responses.ItemReasoning) string {
-	var summary, raw []string
-	for _, item := range items {
-		for _, part := range item.Summary {
-			if text := part.Text.Or(""); text != "" {
-				summary = append(summary, text)
-			}
-		}
-		for _, part := range item.Content {
-			if text, ok := part.OneOf.GetOutputContentItemReasoningText(); ok {
-				raw = append(raw, text.Text.Or(""))
-			}
-		}
-	}
-	if len(raw) > 0 {
-		return strings.Join(raw, "")
-	}
-	return strings.Join(summary, "\n")
 }
