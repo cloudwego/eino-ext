@@ -19,6 +19,7 @@ package ark
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/compose"
@@ -64,7 +65,10 @@ func setJSONExtra(msg *schema.Message, key string, value any) error {
 
 func readJSONExtra[T any](msg *schema.Message, key string) (T, bool) {
 	var zero T
-	raw, ok := extraString(msg, key)
+	if msg == nil {
+		return zero, false
+	}
+	raw, ok := extraString(msg.Extra, key)
 	if !ok {
 		return zero, false
 	}
@@ -81,11 +85,12 @@ func lastValue[T any](chunks []T) (T, error) {
 	}
 	return chunks[len(chunks)-1], nil
 }
-func extraString(msg *schema.Message, key string) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	switch value := msg.Extra[key].(type) {
+func extraString(extra map[string]any, key string) (string, bool) {
+	return stringValue(extra[key])
+}
+
+func stringValue(raw any) (string, bool) {
+	switch value := raw.(type) {
 	case metadataString:
 		return string(value), true
 	case string:
@@ -93,22 +98,86 @@ func extraString(msg *schema.Message, key string) (string, bool) {
 	}
 	return "", false
 }
+func extraInt64(extra map[string]any, key string) (int64, bool) {
+	return int64Value(extra[key])
+}
+
+func int64Value(raw any) (int64, bool) {
+	switch value := raw.(type) {
+	case metadataInt64:
+		return int64(value), true
+	case json.Number:
+		n, err := value.Int64()
+		return n, err == nil
+	case float64:
+		// Ordinary JSON decoding restores numbers as float64.
+		if math.Trunc(value) == value && value >= math.MinInt64 && value < math.MaxInt64 {
+			return int64(value), true
+		}
+	}
+	return 0, false
+}
+
+func extraBool(extra map[string]any, key string) (bool, bool) {
+	return boolValue(extra[key])
+}
+
+func boolValue(raw any) (bool, bool) {
+	switch value := raw.(type) {
+	case metadataBool:
+		return bool(value), true
+	case bool:
+		return value, true
+	}
+	return false, false
+}
+
+// extraIndex distinguishes a missing key from a present, invalid index.
+func extraIndex(extra map[string]any, key string) (index int, exists bool, err error) {
+	raw, exists := extra[key]
+	if !exists {
+		return 0, false, nil
+	}
+	value, ok := int64Value(raw)
+	if !ok || value < 0 || int64(int(value)) != value {
+		return 0, true, fmt.Errorf("Extra[%q] must be a non-negative index that fits int", key)
+	}
+	return int(value), true, nil
+}
+
 func GetArkRequestID(msg *schema.Message) string {
-	value, _ := extraString(msg, keyRequestID)
+	if msg == nil {
+		return ""
+	}
+	value, _ := extraString(msg.Extra, keyRequestID)
 	return value
 }
 func GetModelName(msg *schema.Message) (string, bool) {
-	return extraString(msg, keyModelName)
+	if msg == nil {
+		return "", false
+	}
+	return extraString(msg.Extra, keyModelName)
 }
-func GetServiceTier(msg *schema.Message) (string, bool) { return extraString(msg, keyServiceTier) }
+func GetServiceTier(msg *schema.Message) (string, bool) {
+	if msg == nil {
+		return "", false
+	}
+	return extraString(msg.Extra, keyServiceTier)
+}
 func GetModerationHitType(msg *schema.Message) (string, bool) {
-	return extraString(msg, keyModerationHitType)
+	if msg == nil {
+		return "", false
+	}
+	return extraString(msg.Extra, keyModerationHitType)
 }
 
 // GetEncryptedContent returns encrypted reasoning for passing an assistant message
 // back to the API. Stream fragments concatenate as ordinary strings.
 func GetEncryptedContent(msg *schema.Message) (string, bool) {
-	return extraString(msg, keyEncryptedContent)
+	if msg == nil {
+		return "", false
+	}
+	return extraString(msg.Extra, keyEncryptedContent)
 }
 
 // GetServiceStatus returns the service's model fallback information.

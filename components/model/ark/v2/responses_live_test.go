@@ -180,7 +180,6 @@ func TestResponsesLive(t *testing.T) {
 	t.Run("reasoning_passback", func(t *testing.T) {
 		next := *config
 		next.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
-		next.EnableReasoningContentPassback = true
 		reasoning, err := NewResponsesAPIChatModel(ctx, &next)
 		check(t, err)
 		sr, err := reasoning.Stream(ctx, []*schema.Message{schema.UserMessage("What is 17 times 19? Answer briefly.")})
@@ -303,10 +302,9 @@ func TestResponsesLive(t *testing.T) {
 		if !strings.Contains(strings.ToLower(msg.Content), "github.com/cloudwego/eino") {
 			t.Fatalf("search result missing: %q", msg.Content)
 		}
-		output, _ := GetResponsesOutput(msg)
 		found := false
-		for _, item := range output {
-			if _, ok := item.OneOf.GetItemFunctionWebSearch(); ok {
+		for _, part := range msg.AssistantGenMultiContent {
+			if kind, _ := extraString(part.Extra, keyResponsesItemType); part.Type == ResponsesOutputItem && kind == "web_search_call" {
 				found = true
 			}
 		}

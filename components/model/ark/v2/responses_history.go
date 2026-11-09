@@ -17,97 +17,340 @@
 package ark
 
 import (
-	"crypto/sha256"
-	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
-// Only new inputs need an SDK input view for file:// preprocessing. Native
-// output is inserted before the indexed input (or after the last input), without
-// converting it to the SDK's less expressive input union.
-type responsesInput struct {
-	items  []responses.InputItem
-	output map[int][]json.RawMessage
+func hasResponsesItemMetadata(part *schema.MessageOutputPart) bool {
+	_, exists := part.Extra[keyResponsesItemType]
+	return exists
 }
 
-func (in *responsesInput) MarshalJSON() ([]byte, error) {
-	raw := make([]json.RawMessage, 0, len(in.items))
-	for i := 0; i <= len(in.items); i++ {
-		raw = append(raw, in.output[i]...)
-		if i == len(in.items) {
-			break
+// Native item/content indices preserve the order of the projected parts and
+// ToolCalls. Build SDK input items directly; output JSON is never replayed.
+// Without Ark item metadata, leave the entire message to the standard mapping.
+func toResponsesHistoryInput(msg *schema.Message) ([]responses.InputItem, bool, error) {
+	partsByItem := make(map[int][]*schema.MessageOutputPart)
+	var indices []int
+	var standardParts []schema.MessageOutputPart
+	for i := range msg.AssistantGenMultiContent {
+		part := &msg.AssistantGenMultiContent[i]
+		index, exists, err := extraIndex(part.Extra, keyResponsesItemIndex)
+		if err != nil {
+			return nil, true, fmt.Errorf("part %d: %w", i, err)
 		}
-		value, err := sonic.Marshal(&in.items[i])
+		if !exists {
+			standardParts = append(standardParts, *part)
+			continue
+		}
+		if _, exists := partsByItem[index]; !exists {
+			indices = append(indices, index)
+		}
+		partsByItem[index] = append(partsByItem[index], part)
+	}
+	if len(partsByItem) == 0 {
+		return nil, false, nil
+	}
+	callsByItem := make(map[int]*schema.ToolCall)
+	var standardCalls []schema.ToolCall
+	for i := range msg.ToolCalls {
+		call := &msg.ToolCalls[i]
+		index, exists, err := extraIndex(call.Extra, keyResponsesItemIndex)
+		if err != nil {
+			return nil, true, fmt.Errorf("tool %d: %w", i, err)
+		}
+		if !exists {
+			standardCalls = append(standardCalls, *call)
+			continue
+		}
+		if callsByItem[index] != nil {
+			return nil, true, fmt.Errorf("Responses item %d has duplicate tool calls", index)
+		}
+		callsByItem[index] = call
+		if _, exists := partsByItem[index]; !exists {
+			indices = append(indices, index)
+		}
+	}
+	sort.Ints(indices)
+	var result []responses.InputItem
+	for _, index := range indices {
+		item, err := toResponsesHistoryItem(partsByItem[index], callsByItem[index])
+		if err != nil {
+			return nil, true, fmt.Errorf("Responses item %d: %w", index, err)
+		}
+		if item != nil {
+			result = append(result, *item)
+		}
+	}
+	// Parts and calls without native indices use only their standard fields.
+	items, err := toResponsesAssistantInput(&schema.Message{AssistantGenMultiContent: standardParts, ToolCalls: standardCalls})
+	if err != nil {
+		return nil, true, err
+	}
+	return append(result, items...), true, nil
+}
+
+func toResponsesHistoryItem(parts []*schema.MessageOutputPart, call *schema.ToolCall) (*responses.InputItem, error) {
+	var metadataPart *schema.MessageOutputPart
+	var content []*schema.MessageOutputPart
+	for _, part := range parts {
+		if hasResponsesItemMetadata(part) {
+			if metadataPart != nil {
+				return nil, fmt.Errorf("duplicate item metadata")
+			}
+			metadataPart = part
+		}
+		_, section := part.Extra[keyResponsesSection]
+		_, indexed := part.Extra[keyResponsesContentIndex]
+		if part.Type != ResponsesOutputItem || section || indexed {
+			content = append(content, part)
+		}
+	}
+	var extra map[string]any
+	kind := "function_call"
+	if metadataPart != nil {
+		extra = metadataPart.Extra
+		var ok bool
+		kind, ok = extraString(extra, keyResponsesItemType)
+		if !ok {
+			return nil, fmt.Errorf("missing Responses item type")
+		}
+	} else if len(content) != 0 || call == nil {
+		return nil, fmt.Errorf("content has no item metadata")
+	}
+	if call != nil && kind != "function_call" {
+		return nil, fmt.Errorf("tool call overlaps %q item", kind)
+	}
+	var sum responses.InputItemSum
+	switch kind {
+	case "function_call":
+		if call == nil {
+			return nil, nil // Deleting the ToolCall removes its function input.
+		}
+		if len(content) != 0 {
+			return nil, fmt.Errorf("function call has content parts")
+		}
+		if call.Type != "" && call.Type != "function" {
+			return nil, fmt.Errorf("unsupported tool call type %q", call.Type)
+		}
+		id, err := responsesMetadataString(extra, keyResponsesItemID)
 		if err != nil {
 			return nil, err
 		}
-		raw = append(raw, value)
+		status, err := responsesMetadataString(extra, keyResponsesItemStatus)
+		if err != nil {
+			return nil, err
+		}
+		item := responses.ItemFunctionToolCall{Type: responses.ItemFunctionToolCallTypeFunctionCall,
+			ID: id, CallID: responseString(call.ID), Name: responseString(call.Function.Name), Arguments: responseString(call.Function.Arguments)}
+		if status.IsSet() {
+			item.Status = responses.NewOptItemStatus(responses.ItemStatus(status.Value))
+		}
+		sum.SetItemFunctionToolCall(item)
+	case "message":
+		item, err := toResponsesHistoryMessage(extra, content)
+		if err != nil {
+			return nil, err
+		}
+		sum.SetItemEasyMessage(item)
+	case "reasoning":
+		item, err := toResponsesHistoryReasoning(extra, content)
+		if err != nil {
+			return nil, err
+		}
+		sum.SetItemReasoning(item)
+	default:
+		// Built-in tool outputs and unknown output-only items remain observable
+		// in Message parts. They do not define SDK input items.
+		// TODO: support context item_reference when ark-runtime-go models it.
+		return nil, nil
 	}
-	return sonic.Marshal(raw)
+	return &responses.InputItem{OneOf: sum}, nil
 }
 
-// Save the original output from a JSON response or a terminal SSE event, rather
-// than re-encoding generated SDK structs that may discard unknown fields.
-func retainResponsesOutput(msg *schema.Message, raw []byte) error {
-	if len(raw) == 0 {
-		return nil
+func toResponsesHistoryMessage(extra map[string]any, parts []*schema.MessageOutputPart) (responses.ItemEasyMessage, error) {
+	item := responses.ItemEasyMessage{Type: responses.NewOptItemEasyMessageType(responses.ItemEasyMessageTypeMessage),
+		Role: responses.NewOptMessageRole(responses.MessageRoleAssistant)}
+	var err error
+	item.ID, err = responsesMetadataString(extra, keyResponsesItemID)
+	if err != nil {
+		return item, err
 	}
-	var envelope struct {
-		Output   json.RawMessage `json:"output"`
-		Response *struct {
-			Output json.RawMessage `json:"output"`
-		} `json:"response"`
+	if value, exists := extra[keyResponsesPartial]; exists && value != nil {
+		partial, ok := boolValue(value)
+		if !ok {
+			return item, fmt.Errorf("Extra[%q] must be boolean", keyResponsesPartial)
+		}
+		item.Partial = responses.NewOptBool(partial)
 	}
-	if err := sonic.Unmarshal(raw, &envelope); err != nil {
-		return fmt.Errorf("decode Responses output: %w", err)
+	// TODO: pass message.phase when ark-runtime-go adds the typed field.
+	// message.status and unknown output attributes are not input fields.
+	summary, ordered, err := responsesHistorySections(parts, false)
+	if err != nil {
+		return item, err
 	}
-	if envelope.Response != nil {
-		envelope.Output = envelope.Response.Output
+	if summary != nil {
+		return item, fmt.Errorf("message cannot contain reasoning summaries")
 	}
-	if len(envelope.Output) > 0 {
-		msg.Extra[keyResponsesOutput] = metadataString(envelope.Output)
+	content := make([]responses.ContentItem, 0, len(ordered))
+	for _, part := range ordered {
+		kind, _ := extraString(part.Extra, keyResponsesContentType)
+		text, annotations, err := responsesHistoryText(part)
+		if err != nil {
+			return item, err
+		}
+		var sum responses.ContentItemSum
+		switch kind {
+		case "output_text":
+			sum.SetOutputContentItemText(responses.OutputContentItemText{Type: responses.OutputContentItemTextTypeOutputText, Text: text, Annotations: annotations})
+		case "reasoning_text":
+			sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text, Annotations: annotations})
+		default:
+			return item, fmt.Errorf("unsupported Responses input content type %q", kind)
+		}
+		content = append(content, responses.ContentItem{OneOf: sum})
 	}
-	return nil
+	item.Content = responses.NewContentItemArrayMessageContent(content)
+	return item, nil
 }
 
-func responsesOutputForReplay(msg *schema.Message) ([]json.RawMessage, bool, error) {
-	raw, exists := extraString(msg, keyResponsesOutput)
-	if !exists {
-		return nil, false, nil
+func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOutputPart) (responses.ItemReasoning, error) {
+	item := responses.ItemReasoning{Type: responses.ItemReasoningTypeReasoning, Status: responses.ItemStatusCompleted}
+	var err error
+	item.ID, err = responsesMetadataString(extra, keyResponsesItemID)
+	if err != nil {
+		return item, err
 	}
-	var output []responses.OutputItem
-	if err := sonic.UnmarshalString(raw, &output); err != nil {
-		return nil, false, fmt.Errorf("decode saved Responses output: %w", err)
+	status, err := responsesMetadataString(extra, keyResponsesItemStatus)
+	if err != nil {
+		return item, err
 	}
-	// Common fields are projections for applications. If callers edit them,
-	// construct input from those edits instead of silently restoring stale data.
-	projection := &schema.Message{}
-	projectResponsesOutput(projection, output)
-	reasoningMatches := msg.ReasoningContent == projection.ReasoningContent
-	if digest, ok := extraString(msg, keyResponsesStreamReasoningDigest); ok {
-		// Stream deltas may contain several summary parts or both summary and
-		// raw reasoning. Compare against what was streamed, not a different
-		// textual projection of the terminal output. The digest avoids storing
-		// another copy of the reasoning text in Extra.
-		reasoningMatches = digest == fmt.Sprintf("%x", sha256.Sum256([]byte(msg.ReasoningContent)))
+	if status.IsSet() {
+		item.Status = responses.ItemStatus(status.Value)
 	}
-	if msg.Content != projection.Content || !reasoningMatches ||
-		len(msg.ToolCalls) != len(projection.ToolCalls) || len(msg.AssistantGenMultiContent) > 0 || len(msg.MultiContent) > 0 {
-		return nil, false, nil
+	summary, content, err := responsesHistorySections(parts, true)
+	if err != nil {
+		return item, err
 	}
-	for i, call := range msg.ToolCalls {
-		expected := projection.ToolCalls[i]
-		if call.ID != expected.ID || call.Function != expected.Function {
-			return nil, false, nil
+	if summary != nil {
+		item.Summary = []responses.ReasoningSummaryPart{{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(summary.Reasoning.Text)}}
+	}
+	for _, part := range content {
+		kind, _ := extraString(part.Extra, keyResponsesContentType)
+		text, annotations, err := responsesHistoryText(part)
+		if err != nil {
+			return item, err
+		}
+		var sum responses.OutputContentItemSum
+		switch kind {
+		case "output_text":
+			sum.SetOutputContentItemText(responses.OutputContentItemText{Type: responses.OutputContentItemTextTypeOutputText, Text: text, Annotations: annotations})
+		case "reasoning_text":
+			sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text, Annotations: annotations})
+		default:
+			return item, fmt.Errorf("unsupported reasoning input content type %q", kind)
+		}
+		item.Content = append(item.Content, responses.OutputContentItem{OneOf: sum})
+	}
+	var signature string
+	for _, part := range parts {
+		if part.Type != schema.ChatMessagePartTypeReasoning || part.Reasoning == nil {
+			continue
+		}
+		if value := part.Reasoning.Signature; value != "" {
+			if signature != "" && signature != value {
+				return item, fmt.Errorf("conflicting reasoning signatures")
+			}
+			signature = value
+		}
+		if _, hasSection := part.Extra[keyResponsesSection]; !hasSection && part.Reasoning.Text != "" {
+			item.Summary = append(item.Summary, responses.ReasoningSummaryPart{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(part.Reasoning.Text)})
 		}
 	}
-	var items []json.RawMessage
-	if err := sonic.UnmarshalString(raw, &items); err != nil {
-		return nil, false, err
+	item.EncryptedContent = responseString(signature)
+	return item, nil
+}
+
+// Summary is a single display part; only content keeps its original indices.
+func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool) (summary *schema.MessageOutputPart, ordered []*schema.MessageOutputPart, err error) {
+	content := make(map[int]*schema.MessageOutputPart)
+	for _, part := range parts {
+		sectionValue, hasSection := part.Extra[keyResponsesSection]
+		section, sectionOK := stringValue(sectionValue)
+		index, hasIndex, err := extraIndex(part.Extra, keyResponsesContentIndex)
+		if err != nil {
+			return nil, nil, err
+		}
+		if reasoning && !hasIndex && part.Type == schema.ChatMessagePartTypeReasoning && part.Reasoning != nil {
+			if !hasSection {
+				continue // A reasoning item can contain just an encrypted signature.
+			}
+			if sectionOK && section == "summary" {
+				if summary != nil {
+					return nil, nil, fmt.Errorf("duplicate reasoning summary part")
+				}
+				summary = part
+				continue
+			}
+		}
+		if !sectionOK || section != "content" || !hasIndex {
+			return nil, nil, fmt.Errorf("incomplete Responses content metadata")
+		}
+		if content[index] != nil {
+			return nil, nil, fmt.Errorf("duplicate Responses content index %d", index)
+		}
+		content[index] = part
 	}
-	return items, true, nil
+	indices := make([]int, 0, len(content))
+	for index := range content {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+	for _, index := range indices {
+		ordered = append(ordered, content[index])
+	}
+	return summary, ordered, nil
+}
+
+func responsesHistoryText(part *schema.MessageOutputPart) (responses.OptString, []responses.Annotation, error) {
+	var text string
+	switch part.Type {
+	case schema.ChatMessagePartTypeText:
+		text = part.Text
+	case schema.ChatMessagePartTypeReasoning:
+		if part.Reasoning == nil {
+			return responses.OptString{}, nil, fmt.Errorf("assistant reasoning must not be nil")
+		}
+		text = part.Reasoning.Text
+	default:
+		return responses.OptString{}, nil, fmt.Errorf("unsupported Responses content part %q", part.Type)
+	}
+	var annotations []responses.Annotation
+	if _, exists := part.Extra[keyResponsesAnnotations]; exists {
+		raw, err := responseRawField(part.Extra, keyResponsesAnnotations)
+		if err != nil {
+			return responses.OptString{}, nil, err
+		}
+		// AnnotationSum explicitly preserves unknown variants in the SDK codec.
+		if err := sonic.Unmarshal(raw, &annotations); err != nil {
+			return responses.OptString{}, nil, err
+		}
+	}
+	return responses.NewOptString(text), annotations, nil
+}
+
+func responsesMetadataString(extra map[string]any, key string) (responses.OptString, error) {
+	value, exists := extra[key]
+	if !exists || value == nil {
+		return responses.OptString{}, nil
+	}
+	text, ok := stringValue(value)
+	if !ok {
+		return responses.OptString{}, fmt.Errorf("Extra[%q] must be a string", key)
+	}
+	return responses.NewOptString(text), nil
 }

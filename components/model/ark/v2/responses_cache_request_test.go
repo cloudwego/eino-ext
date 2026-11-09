@@ -203,7 +203,7 @@ func TestResponsesCachedToolConversation(t *testing.T) {
 						return
 					}
 					writeResponsesHistoryReply(w, calls.Add(1) == 1, body["stream"] == true)
-				}, &ResponsesAPIConfig{ToolStrict: ptr(true), EnableReasoningContentPassback: true, SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
+				}, &ResponsesAPIConfig{ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 				user := schema.UserMessage("inspect")
 				first := callResponsesWithOptions(t, cm, mode, []*schema.Message{user})

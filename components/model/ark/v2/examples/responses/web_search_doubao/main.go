@@ -56,10 +56,9 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 		return err
 	}
 	exampleutil.PrintResponse(reply)
-	output, _ := ark.GetResponsesOutput(reply)
-	for _, item := range output {
-		if search, ok := item.OneOf.GetItemFunctionWebSearch(); ok {
-			fmt.Printf("Search item: %s status=%s\n", search.ID, search.Status)
+	for _, part := range reply.AssistantGenMultiContent {
+		if part.Type == ark.ResponsesOutputItem && fmt.Sprint(part.Extra["ark-responses-item-type"]) == "web_search_call" {
+			fmt.Printf("Search item: %v status=%v\n", part.Extra["ark-responses-item-id"], part.Extra["ark-responses-item-status"])
 		}
 	}
 	if usage, ok := ark.GetResponsesTokenUsageDetails(reply); ok {

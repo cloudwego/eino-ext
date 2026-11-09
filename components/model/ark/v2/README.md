@@ -345,14 +345,14 @@ combine the current common counts with SDK-specific details in `Extra`, so chang
 made by modifiers or stream concatenation are reflected in their results.
 SDK-specific counts and service-status fields use flat keys, such as
 `ark-responses-usage-details.input_tokens_details.audio_tokens` and
-`ark-service-status.model_fallback.fallback_triggered`. Variable-shaped Responses
-output and tool details are JSON strings. The helpers reconstruct SDK types after
-restoration. Usage helpers read common counts from `ResponseMeta.Usage` and
+`ark-service-status.model_fallback.fallback_triggered`. Complex provider
+attributes and tool details are JSON strings. Usage helpers reconstruct SDK types
+after restoration. Usage helpers read common counts from `ResponseMeta.Usage` and
 SDK-specific fields from the current `Extra` format. An optional count is set
 when its key exists, including an explicit zero. Stream concatenation keeps the
 last provided value for each SDK-specific field; an omitted field leaves it
-unchanged. Responses reasoning passback uses the complete stored output instead
-of keeping a second copy.
+unchanged. Responses history is generated from the canonical output parts and
+ToolCalls described below.
 
 Keep the returned assistant message in conversation history to pass its reasoning,
 encrypted reasoning, and tool calls back to the API. The adapter integrates with
@@ -448,28 +448,72 @@ image-generation APIs remain in the legacy module.
 - Image/audio/video/file input and multimodal tool results use the same Eino
   parts and URL → Base64Data → FileID precedence as Chat Completions. Responses
   audio base64 is encoded as a MIME data URL in `audio_url`.
-- Assistant history from Responses replays the saved native output items in
-  their original order, including IDs, status, annotations, built-in tool items
-  and fields unknown to the pinned SDK. It is not reconstructed through Eino
-  input parts. The output JSON is stored as a string and survives JSON/gob.
-  Original reasoning items and encrypted content are replayed automatically.
-  A previous response ID supplies cached history without resending its output.
-  `EnableReasoningContentPassback` controls only standalone `ReasoningContent`
-  on hand-written messages without saved native output.
+- Two independent conversion paths map Responses output → Eino message, and Eino
+  message → SDK `responses.InputItem`. It does not reconstruct output items as
+  an intermediate request representation or replay raw output JSON.
+  For this adapter's own output, `AssistantGenMultiContent` and `ToolCalls` are
+  authoritative; `Content` and `ReasoningContent` are display-only compatibility views.
+  Edit text/reasoning parts or function values in `ToolCalls` to change history.
+  Item metadata is attached to the first data part. `ark.ResponsesOutputItem`
+  is needed only when there is no mapped data part, such as an empty message,
+  a function call represented in ToolCalls, or an opaque built-in output.
+  Item metadata uses `ark-responses-item-type`, `ark-responses-item-id`,
+  `ark-responses-item-status`, `ark-responses-item-role`, and `ark-responses-partial`;
+  content uses its own `ark-responses-content-type` and `ark-responses-annotations`.
+  Unknown attributes use separate `ark-responses-item-raw.<field>` and
+  `ark-responses-content-raw.<field>` keys to avoid collisions. Complex values
+  retain their own JSON, including exact numbers, through JSON/gob persistence.
+  These metadata fields are not automatically sent
+  as request fields, and mapped text, signatures and function values are not
+  duplicated in Extra.
+  `ark-responses-item-index` records item ownership and order across parts/tools;
+  section/content indices preserve the content array within an item. A reasoning
+  summary array is joined with newlines into one display part without segment
+  indices; input conversion emits at most one summary_text for that part.
+  These persistent indices are independent of stream merge indices. The first
+  reasoning part initially carries its item's encrypted `Signature`; input
+  conversion accepts it on any reasoning part of that item and rejects
+  conflicting nonempty signatures.
+  Message, reasoning and function-call history maps directly to SDK input types.
+  Output-only built-in items remain in Message parts for inspection and are not
+  sent as undocumented input variants. Unknown content without a supported input
+  mapping returns an error. `phase` and `item_reference` await typed SDK support;
+  the adapter does not replace the entire input to implement these gaps.
+  SDK-documented extensions remain in use for tool strictness and explicit
+  payload modifiers; SDK annotation codecs preserve unknown annotation variants.
+  Streams emit complete parts once at the terminal event while text, reasoning
+  and function arguments continue through existing delta fields. A previous
+  response ID supplies cached history without resending it.
+  Reasoning parts and their signatures are included automatically.
 - System and developer messages can appear between conversation turns. Put
   text in `Content`, or input parts in `UserInputMultiContent`; the adapter
   preserves their position in the message list. Use `ark.Developer` for the
   developer role, for example `&schema.Message{Role: ark.Developer, Content: "Follow project conventions."}`.
-- Hand-written assistant messages map their own output parts directly to
-  Responses input, including ordered reasoning parts. If an application edits
-  the common content, reasoning or tool-call fields of a returned message, those
-  edits take precedence over saved output. Invalidate its cache before reuse.
+- Assistant messages from other models or applications use only standard Eino
+  fields. `AssistantGenMultiContent` takes precedence over legacy `MultiContent`
+  and `Content`; text, reasoning, image, audio and video parts retain their array
+  order. Reasoning parts preserve `Text` and `Signature`; without reasoning parts,
+  `ReasoningContent` supplies a reasoning item, including alongside media parts.
+  Tool calls retain their array order, IDs, function names and arguments.
+  Provider-specific `Extra` is ignored. Streaming merge indices do not define
+  ordering between the separate parts and tool-call arrays.
+- For this adapter's output, native item/content indices determine original
+  output order across parts and tools. Deleting a
+  `ToolCall` removes its function item; deleting content parts removes those
+  segments. Before deleting the data part that carries item metadata, transfer
+  its item-level Extra entries to a retained part; unresolved item references are
+  rejected. New parts without native metadata are appended as new input items.
+  Invalidate a cached
+  message before reusing edited history.
 - `GetResponseID` exposes the response ID; `GetArkRequestID` exposes the HTTP
   request ID when returned. `GetResponsesTokenUsageDetails` returns full SDK
-  usage. `GetResponsesOutput` preserves final output items, including annotations
-  and built-in tool results beyond Eino's common message fields.
+  usage. Inspect output parts and their Extra for annotations and built-in tool
+  information beyond Eino's common fields.
 - Terminal stream events fill text and tool-call fields not already emitted as
   deltas. An empty completed output returns `ErrEmptyResponse`, as in Generate.
+  Reasoning display text also receives a missing suffix when one delta channel
+  matches a terminal prefix. Mixed channels or a different flattened segment
+  order keep the streamed display; complete reasoning remains in output parts.
   When stopping a stream early, cancel its request context as well as closing
   the reader: Eino v0.9.22 does not propagate reader closure to a blocked SDK read.
 
@@ -509,6 +553,9 @@ head ID. `CreatePrefixCache(ctx, prefix, ttl)` creates a reusable prefix where
 supported. Zero TTL leaves expiration to the service. Cache availability must
 be enabled for the account and model; a permission error does not prove an
 adapter defect.
+
+The [message parts example](examples/responses/message_parts/main.go) edits and
+persists canonical output parts before continuing the conversation.
 
 The [tool options example](examples/responses/tool_options/main.go) combines
 strict overrides and function-name subsets. The

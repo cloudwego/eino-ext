@@ -88,7 +88,7 @@ func projectResponsesOutput(msg *schema.Message, outputs []responses.OutputItem)
 	var content strings.Builder
 	content.WriteString(msg.Content)
 	var reasoning []responses.ItemReasoning
-	for _, output := range outputs {
+	for index, output := range outputs {
 		switch output.OneOf.Type {
 		case responses.ItemOutputMessageOutputItemSum:
 			for _, part := range output.OneOf.ItemOutputMessage.Content {
@@ -98,7 +98,7 @@ func projectResponsesOutput(msg *schema.Message, outputs []responses.OutputItem)
 			}
 		case responses.ItemFunctionToolCallOutputItemSum:
 			call := output.OneOf.ItemFunctionToolCall
-			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{ID: call.CallID.Or(""), Type: "function", Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}})
+			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{ID: call.CallID.Or(""), Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}})
 		case responses.ItemReasoningOutputItemSum:
 			item := output.OneOf.ItemReasoning
 			reasoning = append(reasoning, item)
@@ -163,22 +163,15 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 		added := ev.ResponseOutputItemAddedEvent
 		if call, ok := added.Item.OneOf.GetItemFunctionToolCall(); ok {
 			index := int(added.OutputIndex)
-			msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, ID: call.CallID.Or(""), Type: "function",
+			msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, ID: call.CallID.Or(""), Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)},
 				Function: schema.FunctionCall{Name: call.Name.Or(""), Arguments: call.Arguments.Or("")}}}}
 		}
 	case responses.ResponseFunctionCallArgumentsDeltaEventResponseStreamEventSum:
 		delta := ev.ResponseFunctionCallArgumentsDeltaEvent
 		index := int(delta.OutputIndex)
-		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
+		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
 	}
 	return msg, false, nil
-}
-
-func setResponsesFinalOutput(msg *schema.Message, output []responses.OutputItem, raw []byte) error {
-	if len(raw) > 0 {
-		return retainResponsesOutput(msg, raw)
-	}
-	return setJSONExtra(msg, keyResponsesOutput, output)
 }
 
 func responsesReasoningText(items []responses.ItemReasoning) string {
@@ -198,5 +191,5 @@ func responsesReasoningText(items []responses.ItemReasoning) string {
 	if len(raw) > 0 {
 		return strings.Join(raw, "")
 	}
-	return strings.Join(summary, "\n\n")
+	return strings.Join(summary, "\n")
 }

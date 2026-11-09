@@ -91,6 +91,48 @@ func TestResponsesEmptyCompletedStream(t *testing.T) {
 	}
 }
 
+func TestResponsesTerminalReasoningSuffix(t *testing.T) {
+	for _, ending := range []string{"completed", "incomplete"} {
+		for _, tc := range []struct {
+			name, output, want string
+			rawDeltas          []string
+			summary            string
+		}{
+			{"raw prefix", `{"summary":[],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "raw thought", []string{"raw"}, ""},
+			{"summary prefix", `{"summary":[{"type":"summary_text","text":"one"},{"type":"summary_text","text":"two"}]}`, "onetwo", nil, "one"},
+			{"complete", `{"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "raw thought", []string{"raw thought"}, ""},
+			{"mixed", `{"summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "oneraw", []string{"raw"}, "one"},
+			{"no terminal plaintext", `{"summary":[],"encrypted_content":"cipher"}`, "raw", []string{"raw"}, ""},
+			{"different flattened order", `{"content":[{"type":"reasoning_text","text":"A1"},{"type":"reasoning_text","text":"B"}]}`, "AB", []string{"A", "B"}, ""},
+		} {
+			t.Run(ending+"/"+tc.name, func(t *testing.T) {
+				cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					if tc.summary != "" {
+						_, _ = io.WriteString(w, responseEvent("response.reasoning_summary_text.delta", map[string]any{"item_id": "rs-1", "output_index": 0, "summary_index": 0, "delta": tc.summary}))
+					}
+					for index, delta := range tc.rawDeltas {
+						_, _ = io.WriteString(w, responseEvent("response.reasoning_text.delta", map[string]any{"item_id": "rs-1", "output_index": 0, "content_index": index, "delta": delta}))
+					}
+					var reasoning map[string]json.RawMessage
+					check(t, json.Unmarshal([]byte(tc.output), &reasoning))
+					reasoning["type"] = json.RawMessage(`"reasoning"`)
+					reasoning["id"] = json.RawMessage(`"rs-1"`)
+					reasoning["status"] = json.RawMessage(`"completed"`)
+					_, _ = io.WriteString(w, responseEvent("response."+ending, map[string]any{"response": map[string]any{
+						"id": "resp-1", "created_at": 1, "object": "response", "model": "test", "status": ending, "output": []any{reasoning},
+					}}))
+				}, nil)
+				msg := callResponsesWithOptions(t, cm, "stream", []*schema.Message{schema.UserMessage("first")})
+				equal(t, tc.want, msg.ReasoningContent)
+				if len(msg.AssistantGenMultiContent) == 0 {
+					t.Fatal("missing canonical terminal parts")
+				}
+			})
+		}
+	}
+}
+
 func TestResponsesChunkModifierRetainsRaw(t *testing.T) {
 	var saved [][]byte
 	cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -268,6 +310,84 @@ func TestResponsesEffectiveCallbackConfig(t *testing.T) {
 				equal(t, float32(0.25), config.Temperature)
 			}
 		})
+	}
+}
+
+func TestResponsesEffectiveCallbackThinking(t *testing.T) {
+	for _, mode := range []string{"generate", "stream"} {
+		for _, tc := range []struct {
+			name, modified, want string
+			configured           bool
+		}{
+			{"unchanged", "", "enabled", true},
+			{"replaced", `{"type":"disabled"}`, "disabled", true},
+			{"added", `{"type":"disabled"}`, "disabled", false},
+			{"deleted", "delete", "", true},
+			{"null", "null", "", true},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				var observed []string
+				observe := func(out callbacks.CallbackOutput) {
+					thinking, ok := out.(*model.CallbackOutput).Extra["thinking"].(*responses.Thinking)
+					if !ok {
+						t.Error("callback thinking must use the Responses SDK type")
+					}
+					value := ""
+					if thinking != nil {
+						value = string(thinking.Type.Or(""))
+					}
+					observed = append(observed, value)
+				}
+				handler := callbacks.NewHandlerBuilder().OnEndFn(func(ctx context.Context, _ *callbacks.RunInfo, out callbacks.CallbackOutput) context.Context {
+					observe(out)
+					return ctx
+				}).OnEndWithStreamOutputFn(func(ctx context.Context, _ *callbacks.RunInfo, sr *schema.StreamReader[callbacks.CallbackOutput]) context.Context {
+					defer sr.Close()
+					for {
+						out, err := sr.Recv()
+						if err != nil {
+							return ctx
+						}
+						observe(out)
+					}
+				}).Build()
+				config := &ResponsesAPIConfig{}
+				if tc.configured {
+					config.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
+				}
+				if tc.modified != "" {
+					config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
+						var fields map[string]json.RawMessage
+						if err := json.Unmarshal(raw, &fields); err != nil {
+							return nil, err
+						}
+						if tc.modified == "delete" {
+							delete(fields, "thinking")
+						} else {
+							fields["thinking"] = json.RawMessage(tc.modified)
+						}
+						return json.Marshal(fields)
+					}
+				}
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					body := decodeRequest(t, r)
+					if tc.want == "" {
+						equal(t, nil, body["thinking"])
+					} else {
+						equal(t, tc.want, body["thinking"].(map[string]any)["type"])
+					}
+					writeResponsesHistoryReply(w, false, body["stream"] == true)
+				}, config)
+				ctx := callbacks.InitCallbacks(context.Background(), nil, handler)
+				callResponsesWithOptionsContext(t, ctx, cm, mode)
+				if len(observed) == 0 {
+					t.Fatal("missing callback output")
+				}
+				for _, value := range observed {
+					equal(t, tc.want, value)
+				}
+			})
+		}
 	}
 }
 

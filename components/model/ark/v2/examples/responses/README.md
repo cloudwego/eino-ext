@@ -77,3 +77,11 @@ The `web_search` example requires the **web-content plugin**. The
 Custom**. These are separate activations in the console. Both require a search
 call and print native search item status and service usage, so a URL in the
 answer alone is not mistaken for an executed search.
+
+The [message parts example](message_parts/main.go) edits returned text parts,
+changes the aggregate compatibility fields to unrelated values, persists the
+message through JSON, and continues with Stream. The model receives the edited
+parts. The first data part carries item metadata; other parts reference its
+item-index. Transfer item-level Extra before deleting that data part. Reasoning
+summaries are joined with newlines; native summary segment boundaries are not
+retained. Item and tool positions remain independent of stream merge indices.

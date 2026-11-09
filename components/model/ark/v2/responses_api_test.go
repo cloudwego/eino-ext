@@ -166,9 +166,13 @@ func TestResponsesGenerate(t *testing.T) {
 	usage, ok := GetResponsesTokenUsageDetails(out)
 	equal(t, true, ok)
 	equal(t, int64(2), usage.InputTokensDetails.CachedTokens)
-	items, ok := GetResponsesOutput(out)
-	equal(t, true, ok)
-	equal(t, 3, len(items))
+	itemCount := 0
+	for i := range out.AssistantGenMultiContent {
+		if hasResponsesItemMetadata(&out.AssistantGenMultiContent[i]) {
+			itemCount++
+		}
+	}
+	equal(t, 3, itemCount)
 }
 
 func TestResponsesToolsAndPayload(t *testing.T) {
@@ -318,7 +322,7 @@ func TestResponsesCacheAndReasoning(t *testing.T) {
 			equal(t, "cipher", input[1].(map[string]any)["encrypted_content"])
 		}
 		writeResponses(w)
-	}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, EnableReasoningContentPassback: true})
+	}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 	first, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
 	check(t, err)
 	history := []*schema.Message{schema.UserMessage("hi"), first, schema.UserMessage("next")}

@@ -17,9 +17,7 @@
 package ark
 
 import (
-	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
@@ -72,14 +70,7 @@ func toResponsesContentItem(part schema.MessageInputPart) (responses.ContentItem
 		if part.Audio == nil {
 			return responses.ContentItem{}, fmt.Errorf("audio must not be nil")
 		}
-		url, fileID, base64, err := mediaSource(part.Audio.MessagePartCommon, mediaKindAudio)
-		if err != nil {
-			return responses.ContentItem{}, err
-		}
-		if base64 {
-			url = mediaDataURL(part.Audio.MIMEType, url)
-		}
-		sum.SetContentItemAudio(responses.ContentItemAudio{Type: responses.ContentItemAudioTypeInputAudio, AudioURL: responseString(url), FileID: responseString(fileID)})
+		return responsesAudioPart(part.Audio.MessagePartCommon)
 	case schema.ChatMessagePartTypeFileURL:
 		if part.File == nil {
 			return responses.ContentItem{}, fmt.Errorf("file must not be nil")
@@ -112,8 +103,8 @@ func responseString(value string) responses.OptString {
 	return responses.NewOptString(value)
 }
 
-func toResponsesInput(messages []*schema.Message, passback bool) (*responsesInput, error) {
-	input := &responsesInput{items: make([]responses.InputItem, 0, len(messages))}
+func toResponsesInput(messages []*schema.Message) ([]responses.InputItem, error) {
+	input := make([]responses.InputItem, 0, len(messages))
 	for i, msg := range messages {
 		if msg == nil {
 			return nil, fmt.Errorf("message %d must not be nil", i)
@@ -122,23 +113,21 @@ func toResponsesInput(messages []*schema.Message, passback bool) (*responsesInpu
 			return nil, fmt.Errorf("message %d: %w", i, err)
 		}
 		if msg.Role == schema.Assistant {
-			output, ok, err := responsesOutputForReplay(msg)
+			// Ark output carries its item boundaries in private metadata. Other
+			// models use only the standard schema.Message fields below.
+			items, ok, err := toResponsesHistoryInput(msg)
 			if err != nil {
 				return nil, fmt.Errorf("message %d: %w", i, err)
 			}
 			if ok {
-				if input.output == nil {
-					input.output = make(map[int][]json.RawMessage)
-				}
-				index := len(input.items)
-				input.output[index] = append(input.output[index], output...)
+				input = append(input, items...)
 				continue
 			}
-			items, err := toResponsesAssistantInput(msg, passback)
+			items, err = toResponsesAssistantInput(msg)
 			if err != nil {
 				return nil, fmt.Errorf("message %d: %w", i, err)
 			}
-			input.items = append(input.items, items...)
+			input = append(input, items...)
 			continue
 		}
 		if len(msg.ToolCalls) > 0 {
@@ -162,31 +151,26 @@ func toResponsesInput(messages []*schema.Message, passback bool) (*responsesInpu
 		default:
 			return nil, fmt.Errorf("unsupported role %q", msg.Role)
 		}
-		input.items = append(input.items, responses.InputItem{OneOf: sum})
+		input = append(input, responses.InputItem{OneOf: sum})
 	}
 	return input, nil
 }
 
-// This fallback handles assistant messages created or edited by applications.
-// Responses-generated history takes the native output replay path above.
-func toResponsesAssistantInput(msg *schema.Message, passback bool) ([]responses.InputItem, error) {
+// Convert messages from other models or applications using only Eino's standard
+// fields. Part order and tool-call order are independent in schema.Message.
+func toResponsesAssistantInput(msg *schema.Message) ([]responses.InputItem, error) {
 	var items []responses.InputItem
-	appendReasoning := func(text, signature string) {
-		item := responses.ItemReasoning{Type: responses.ItemReasoningTypeReasoning, Status: responses.ItemStatusCompleted}
-		if text != "" {
-			item.Summary = []responses.ReasoningSummaryPart{{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(text)}}
+	if msg.ReasoningContent != "" {
+		hasReasoningPart := false
+		for _, part := range msg.AssistantGenMultiContent {
+			if part.Type == schema.ChatMessagePartTypeReasoning {
+				hasReasoningPart = true
+				break
+			}
 		}
-		item.EncryptedContent = responseString(signature)
-		items = append(items, responses.InputItem{OneOf: responses.NewItemReasoningInputItemSum(item)})
-	}
-	hasReasoningParts := false
-	for _, part := range msg.AssistantGenMultiContent {
-		if part.Type == schema.ChatMessagePartTypeReasoning {
-			hasReasoningParts = true
+		if !hasReasoningPart {
+			items = append(items, responsesReasoningInput(msg.ReasoningContent, ""))
 		}
-	}
-	if passback && !hasReasoningParts && msg.ReasoningContent != "" {
-		appendReasoning(msg.ReasoningContent, "")
 	}
 	appendMessage := func(content responses.MessageContent) {
 		items = append(items, responses.InputItem{OneOf: responses.NewItemEasyMessageInputItemSum(responses.ItemEasyMessage{
@@ -207,7 +191,7 @@ func toResponsesAssistantInput(msg *schema.Message, passback bool) ([]responses.
 					return nil, fmt.Errorf("assistant reasoning must not be nil")
 				}
 				flush()
-				appendReasoning(part.Reasoning.Text, part.Reasoning.Signature)
+				items = append(items, responsesReasoningInput(part.Reasoning.Text, part.Reasoning.Signature))
 				continue
 			}
 			content, err := toResponsesAssistantContentItem(part)
@@ -217,19 +201,47 @@ func toResponsesAssistantInput(msg *schema.Message, passback bool) ([]responses.
 			parts = append(parts, content)
 		}
 		flush()
-	} else if strings.TrimSpace(msg.Content) != "" || len(msg.MultiContent) > 0 {
-		content, err := toResponsesContent(msg)
-		if err != nil {
-			return nil, err
+	} else if len(msg.MultiContent) > 0 {
+		var content []responses.ContentItem
+		for _, part := range msg.MultiContent {
+			if part.Type == schema.ChatMessagePartTypeText {
+				content = append(content, responsesOutputTextPart(part.Text))
+				continue
+			}
+			item, err := toResponsesLegacyContentItem(part)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, item)
 		}
-		appendMessage(content)
+		appendMessage(responses.NewContentItemArrayMessageContent(content))
+	} else if msg.Content != "" {
+		appendMessage(responses.NewStringMessageContent(msg.Content))
 	}
 	for _, call := range msg.ToolCalls {
+		if call.Type != "" && call.Type != "function" {
+			return nil, fmt.Errorf("unsupported tool call type %q", call.Type)
+		}
 		items = append(items, responses.InputItem{OneOf: responses.NewItemFunctionToolCallInputItemSum(responses.ItemFunctionToolCall{
 			Type: responses.ItemFunctionToolCallTypeFunctionCall, CallID: responses.NewOptString(call.ID), Name: responses.NewOptString(call.Function.Name), Arguments: responses.NewOptString(call.Function.Arguments),
 		})})
 	}
 	return items, nil
+}
+
+func responsesReasoningInput(text, signature string) responses.InputItem {
+	item := responses.ItemReasoning{Type: responses.ItemReasoningTypeReasoning, Status: responses.ItemStatusCompleted,
+		EncryptedContent: responseString(signature)}
+	if text != "" {
+		item.Summary = []responses.ReasoningSummaryPart{{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(text)}}
+	}
+	return responses.InputItem{OneOf: responses.NewItemReasoningInputItemSum(item)}
+}
+
+func responsesOutputTextPart(text string) responses.ContentItem {
+	var sum responses.ContentItemSum
+	sum.SetOutputContentItemText(responses.OutputContentItemText{Type: responses.OutputContentItemTextTypeOutputText, Text: responses.NewOptString(text)})
+	return responses.ContentItem{OneOf: sum}
 }
 
 func responsesTextPart(text string) responses.ContentItem {
@@ -272,10 +284,23 @@ func responsesVideoPart(common schema.MessagePartCommon, fps *float64) (response
 	return responses.ContentItem{OneOf: sum}, nil
 }
 
+func responsesAudioPart(common schema.MessagePartCommon) (responses.ContentItem, error) {
+	url, fileID, base64, err := mediaSource(common, mediaKindAudio)
+	if err != nil {
+		return responses.ContentItem{}, err
+	}
+	if base64 {
+		url = mediaDataURL(common.MIMEType, url)
+	}
+	var sum responses.ContentItemSum
+	sum.SetContentItemAudio(responses.ContentItemAudio{Type: responses.ContentItemAudioTypeInputAudio, AudioURL: responseString(url), FileID: responseString(fileID)})
+	return responses.ContentItem{OneOf: sum}, nil
+}
+
 func toResponsesAssistantContentItem(part schema.MessageOutputPart) (responses.ContentItem, error) {
 	switch part.Type {
 	case schema.ChatMessagePartTypeText:
-		return responsesTextPart(part.Text), nil
+		return responsesOutputTextPart(part.Text), nil
 	case schema.ChatMessagePartTypeImageURL:
 		if part.Image == nil {
 			return responses.ContentItem{}, fmt.Errorf("assistant image must not be nil")
@@ -285,7 +310,12 @@ func toResponsesAssistantContentItem(part schema.MessageOutputPart) (responses.C
 		if part.Video == nil {
 			return responses.ContentItem{}, fmt.Errorf("assistant video must not be nil")
 		}
-		return responsesVideoPart(part.Video.MessagePartCommon, GetOutputVideoFPS(&part))
+		return responsesVideoPart(part.Video.MessagePartCommon, nil)
+	case schema.ChatMessagePartTypeAudioURL:
+		if part.Audio == nil {
+			return responses.ContentItem{}, fmt.Errorf("assistant audio must not be nil")
+		}
+		return responsesAudioPart(part.Audio.MessagePartCommon)
 	default:
 		return responses.ContentItem{}, fmt.Errorf("unsupported assistant part type %s", part.Type)
 	}

@@ -156,7 +156,7 @@ func TestResponsesCallsAfterHistorySerialization(t *testing.T) {
 						return
 					}
 					writeResponsesHistoryReply(w, calls.Add(1) == 1, body["stream"] == true)
-				}, &ResponsesAPIConfig{ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, EnableReasoningContentPassback: true})
+				}, &ResponsesAPIConfig{ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 				first := callHistoryModel(t, cm, mode, []*schema.Message{schema.UserMessage("hello")})
 				firstRequest := <-requests
@@ -192,7 +192,10 @@ func TestResponsesCallsAfterHistorySerialization(t *testing.T) {
 				equal(t, "rs-1", reasoning["id"])
 				equal(t, "cipher", reasoning["encrypted_content"])
 				equal(t, "msg-1", input[2].(map[string]any)["id"])
-				equal(t, "completed", input[2].(map[string]any)["status"])
+				equal(t, "completed", reasoning["status"])
+				if _, exists := input[2].(map[string]any)["status"]; exists {
+					t.Fatal("output-only message status was sent as input")
+				}
 				text := input[2].(map[string]any)["content"].([]any)[0].(map[string]any)
 				equal(t, "output_text", text["type"])
 				equal(t, "done", text["text"])

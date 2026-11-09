@@ -317,12 +317,12 @@ fmt.Println(reply.Content)
 两个 usage getter 将当前通用统计与 `Extra` 中的 SDK 专有明细合并返回，
 因此 modifier 或流拼接对通用统计的修改也会反映在 getter 结果中。
 SDK 专有计数和服务状态平铺为独立 key，例如 `ark-responses-usage-details.input_tokens_details.audio_tokens`
-和 `ark-service-status.model_fallback.fallback_triggered`。结构可变的 Responses output
-和工具明细保存为 JSON 字符串，辅助函数在恢复后还原 SDK 类型。
+和 `ark-service-status.model_fallback.fallback_triggered`。复杂的 provider 属性和工具明细
+保存为 JSON 字符串，用量辅助函数在恢复后还原 SDK 类型。
 usage getter 只读取 `ResponseMeta.Usage` 和当前 `Extra` 格式。
 可选计数通过 key 是否存在区分未设置和显式零值；流拼接保留每个 SDK 专有字段
 最后一次提供的值，后续缺失字段不会清空此前的值。
-Responses 推理回传使用保存的完整 output，不再重复保存一份 reasoning。
+Responses 历史根据下文所述的输出 parts 和 ToolCalls 构造。
 
 多轮对话中保留返回的 assistant 消息，即可向 API 回传其中的思考内容、加密思考内容
 和工具调用。本包集成 Eino 模型回调，提供请求、响应、错误和用量信息。
@@ -409,25 +409,56 @@ Context 和图片生成 API 仍使用旧模块。
 - 图片、音频、视频、文件及多模态工具结果沿用相同 Eino 消息结构与
   URL → Base64Data → FileID 优先级。Responses 音频 base64 使用 MIME data URL，
   放入 `audio_url`。
-- Responses 返回的助手历史按原顺序回放保存的原生 output item，保留 ID、状态、
-  注释、内置工具 item 和固定 SDK 尚不认识的字段，不经过 Eino 输入 part 重建。
-  原始 output JSON 以字符串存储，可经过 JSON/gob 持久化。
-  原始 reasoning item 及加密内容默认完整回传；使用 previous response ID 时无需
-  重复发送缓存历史。`EnableReasoningContentPassback` 仅控制没有原生 output 的
-  手工消息是否补入单独填写的 `ReasoningContent`。
+- 转换链为 Responses output → Eino Message，以及 Eino Message → SDK
+  `responses.InputItem`；不反向还原 output 作为请求中间表示，也不直接回放 raw output。
+  本适配器自身的输出以 `AssistantGenMultiContent` 和 `ToolCalls` 为准；`Content`、
+  `ReasoningContent` 仅为展示用兼容视图。修改文本/推理 part 或函数值即可编辑历史。
+  item 元数据合入首个 data part；仅没有映射 data part 时使用独立的
+  `ark.ResponsesOutputItem`，例如空消息、由 ToolCalls 承载的函数调用和内置工具输出。
+  item 使用 `ark-responses-item-type`、`ark-responses-item-id`、`ark-responses-item-status`、
+  `ark-responses-item-role`、`ark-responses-partial`；content 使用独立的
+  `ark-responses-content-type` 和 `ark-responses-annotations`。
+  未知属性分别放入 `ark-responses-item-raw.<字段名>`、
+  `ark-responses-content-raw.<字段名>`，避免合并后覆盖；复杂值保留自身 JSON，
+  经 JSON/gob 持久化保留嵌套值和数字精度。
+  这些输出元数据不会自动成为请求字段；文本、签名和函数值只保存在公开字段。
+  `ark-responses-item-index` 保存 parts/tools 的 item 归属和顺序，section/content-index
+  保存 item 内的 content 数组，独立于流式合包索引。reasoning.summary 按换行符合成
+  一个展示 part，不保留分段索引；输入转换至多生成一个 summary_text。
+  初始投影时，首个 reasoning part 保存该 item 的加密 `Signature`；输入转换读取
+  同一 item 任意 reasoning part 的签名，非空签名冲突则报错。
+  消息、推理和函数调用历史直接映射到 SDK 输入类型。输出专有的内置工具 item 留在
+  Message 中供读取，不作为未定义输入发送；没有支持的输入映射的未知内容 part 会报错。
+  `phase`、`item_reference` 等待 SDK typed 支持，不通过整体替换 input 绕过这些缺口。
+  工具 strict 和显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
+  使用 SDK codec 自带的未知变体保留机制。
+  流式完整 parts 在终止事件一次性发出，正文、推理和函数参数保持增量输出。
+  previous response ID 提供缓存历史，无需重发历史内容。
+  reasoning parts 及其签名自动回传。
 - system 和 developer 消息可位于对话中间；文本放入 `Content`，输入内容块放入
   `UserInputMultiContent`。适配器保留它们在消息列表中的位置。
   developer 角色使用 `ark.Developer`，例如
   `&schema.Message{Role: ark.Developer, Content: "遵循项目规范。"}`。
-- 手工构造的助手消息直接按其输出 part 转换，包括有序的 reasoning part。
-  若应用修改返回消息的正文、推理或工具调用字段，则优先使用这些修改构造输入，
-  不恢复过时的 output；复用前还应使对应缓存失效。
+- 其他模型或应用构造的助手消息只依赖 Eino 标准字段。`AssistantGenMultiContent` 优先于
+  旧 `MultiContent` 和 `Content`；文本、推理、图片、音频和视频 parts 保持数组顺序。
+  reasoning parts 保留 `Text` 和 `Signature`；没有 reasoning part 时，用 `ReasoningContent`
+  生成推理 item，与媒体 parts 共存时也会保留。工具调用保持数组顺序、ID、函数名和参数。
+  此路径不读取模型私有 `Extra`；流式合包索引不代表 parts 与工具调用两个数组之间的顺序。
+- 本适配器自身的输出通过原生 item/content 索引确定 parts 和 tools 的原始顺序；删除 `ToolCall` 会删除
+  对应函数 item，删除内容 part 会删除对应分段。删除承载 item 元数据的 data part 前，
+  应先将其 item 级 Extra 转移到保留的 part；缺少 item 元数据的引用会报错。
+  新增且没有原生元数据的 part 会追加为新的输入 item。编辑缓存历史后，应先使其缓存失效。
 - `GetResponseID` 读取响应 ID；`GetArkRequestID` 读取服务返回的 HTTP 请求 ID。
-  `GetResponsesTokenUsageDetails` 读取完整 SDK 用量，`GetResponsesOutput` 读取最终
-  输出 item，保留注释、内置工具结果等通用消息字段之外的信息。
+  `GetResponsesTokenUsageDetails` 读取完整 SDK 用量；输出 parts 和 Extra 提供注释、
+  内置工具结果等通用字段之外的信息。
 - 流式终止事件会补齐 delta 尚未发出的正文与工具调用；completed 的空输出与
-  Generate 一样返回 `ErrEmptyResponse`。提前停止读取时，同时取消请求 context 并
+  Generate 一样返回 `ErrEmptyResponse`。单一推理渠道与终态文本前缀匹配时，也会补齐
+  展示字段缺少的后缀；混合渠道或分段压平后顺序不同时保留已输出的展示文本，完整推理
+  仍保存在输出 parts 中。提前停止读取时，同时取消请求 context 并
   关闭 reader；Eino v0.9.22 的 reader 关闭不会中断 SDK 中阻塞的读取。
+
+[message parts 示例](examples/responses/message_parts/main.go) 演示编辑输出 parts、
+经 JSON 持久化后继续对话，聚合兼容字段的修改不会覆盖 parts。
 
 ### 缓存与上下文续接
 

@@ -42,9 +42,9 @@ func TestResponsesAssistantMediaHistory(t *testing.T) {
 	item := (<-requests)["input"].([]any)[0].(map[string]any)
 	equal(t, "assistant", item["role"])
 	equal(t, []any{
-		map[string]any{"type": "input_text", "text": "caption"},
+		map[string]any{"type": "output_text", "text": "caption"},
 		map[string]any{"type": "input_image", "file_id": "image-1"},
-		map[string]any{"type": "input_video", "video_url": "https://example.com/video", "fps": 0.25},
+		map[string]any{"type": "input_video", "video_url": "https://example.com/video"},
 	}, item["content"])
 }
 

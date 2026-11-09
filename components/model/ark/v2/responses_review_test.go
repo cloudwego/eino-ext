@@ -100,7 +100,7 @@ func TestResponsesReplayAdjacentMessages(t *testing.T) {
 	_, err = cm.Generate(context.Background(), []*schema.Message{first, first})
 	check(t, err)
 	var output []json.RawMessage
-	saved, _ := extraString(first, keyResponsesOutput)
+	saved, _ := responsesInputJSON(first)
 	check(t, json.Unmarshal([]byte(saved), &output))
 	equal(t, 2*len(output), len(requests[1]))
 	for i, raw := range requests[1] {
@@ -216,14 +216,9 @@ func TestResponsesReplayStreamedReasoning(t *testing.T) {
 							return
 						}
 						input := body["input"].([]any)
-						if edited {
-							equal(t, 1, len(input))
-							equal(t, "done", input[0].(map[string]any)["content"])
-						} else {
-							equal(t, 2, len(input))
-							equal(t, "cipher", input[0].(map[string]any)["encrypted_content"])
-							equal(t, "rs-1", input[0].(map[string]any)["id"])
-						}
+						equal(t, 2, len(input))
+						equal(t, "cipher", input[0].(map[string]any)["encrypted_content"])
+						equal(t, "rs-1", input[0].(map[string]any)["id"])
 						writeResponses(w)
 					}, nil)
 					first := callResponsesWithOptions(t, cm, "stream", []*schema.Message{schema.UserMessage("first")})

@@ -17,45 +17,12 @@
 package ark
 
 import (
-	"encoding/json"
 	"math"
 
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
-
-func extraInt64(msg *schema.Message, key string) (int64, bool) {
-	if msg == nil {
-		return 0, false
-	}
-	switch value := msg.Extra[key].(type) {
-	case metadataInt64:
-		return int64(value), true
-	case json.Number:
-		n, err := value.Int64()
-		return n, err == nil
-	case float64:
-		// Ordinary JSON decoding restores numbers as float64.
-		if math.Trunc(value) == value && value >= math.MinInt64 && value < math.MaxInt64 {
-			return int64(value), true
-		}
-	}
-	return 0, false
-}
-
-func extraBool(msg *schema.Message, key string) (bool, bool) {
-	if msg == nil {
-		return false, false
-	}
-	switch value := msg.Extra[key].(type) {
-	case metadataBool:
-		return bool(value), true
-	case bool:
-		return value, true
-	}
-	return false, false
-}
 
 func setServiceStatus(msg *schema.Message, status chat.ChatCompletionServiceStatus) {
 	msg.Extra[keyServiceStatus] = metadataBool(true)
@@ -66,13 +33,16 @@ func setServiceStatus(msg *schema.Message, status chat.ChatCompletionServiceStat
 }
 
 func readServiceStatus(msg *schema.Message) (chat.ChatCompletionServiceStatus, bool) {
-	if present, ok := extraBool(msg, keyServiceStatus); !ok || !present {
+	if msg == nil {
+		return chat.ChatCompletionServiceStatus{}, false
+	}
+	if present, ok := extraBool(msg.Extra, keyServiceStatus); !ok || !present {
 		return chat.ChatCompletionServiceStatus{}, false
 	}
 	var result chat.ChatCompletionServiceStatus
-	if present, _ := extraBool(msg, keyServiceStatus+".model_fallback"); present {
-		triggered, _ := extraBool(msg, keyServiceStatus+".model_fallback.fallback_triggered")
-		model, _ := extraString(msg, keyServiceStatus+".model_fallback.original_model")
+	if present, _ := extraBool(msg.Extra, keyServiceStatus+".model_fallback"); present {
+		triggered, _ := extraBool(msg.Extra, keyServiceStatus+".model_fallback.fallback_triggered")
+		model, _ := extraString(msg.Extra, keyServiceStatus+".model_fallback.original_model")
 		result.ModelFallback = chat.NewOptModelFallbackStatus(chat.ModelFallbackStatus{FallbackTriggered: triggered, OriginalModel: model})
 	}
 	return result, true
@@ -124,7 +94,7 @@ func readChatUsage(msg *schema.Message) (chat.CompletionUsage, bool) {
 		"prompt_tokens_details.audio_cached_tokens":    &result.PromptTokensDetails.AudioCachedTokens,
 		"completion_tokens_details.provisioned_tokens": &result.CompletionTokensDetails.ProvisionedTokens,
 	} {
-		if n, ok := extraInt64(msg, keyUsageDetails+"."+key); ok && n >= math.MinInt32 && n <= math.MaxInt32 {
+		if n, ok := extraInt64(msg.Extra, keyUsageDetails+"."+key); ok && n >= math.MinInt32 && n <= math.MaxInt32 {
 			*field = chat.NewOptInt32(int32(n))
 		}
 	}
@@ -171,11 +141,11 @@ func readResponsesUsage(msg *schema.Message) (responses.ResponseUsage, bool) {
 		"tool_usage.web_search":                    &tools.WebSearch, "tool_usage.mcp": &tools.Mcp,
 		"tool_usage.knowledge_search": &tools.KnowledgeSearch, "tool_usage.doubao_app": &tools.DoubaoApp,
 	} {
-		if n, ok := extraInt64(msg, keyResponsesUsage+"."+key); ok {
+		if n, ok := extraInt64(msg.Extra, keyResponsesUsage+"."+key); ok {
 			*field = responses.NewOptInt64(n)
 		}
 	}
-	if present, _ := extraBool(msg, keyResponsesUsage+".tool_usage"); present {
+	if present, _ := extraBool(msg.Extra, keyResponsesUsage+".tool_usage"); present {
 		result.ToolUsage = responses.NewOptToolUsage(tools)
 	}
 	if details, ok := readJSONExtra[responses.ToolUsageDetails](msg, keyResponsesUsage+".tool_usage_details"); ok {

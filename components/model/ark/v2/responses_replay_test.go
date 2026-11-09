@@ -38,6 +38,21 @@ const responsesReplayOutputJSON = `[
   {"type":"future_output","id":"future-1","payload":{"sequence":9007199254740993}}
 ]`
 
+const responsesReplayInputJSON = `[
+ {"type":"function_call","id":"fc-1","call_id":"call-1","name":"inspect","arguments":"{}","status":"completed"},
+ {"type":"reasoning","id":"rs-1","status":"completed","summary":[{"type":"summary_text","text":"thought"}],"encrypted_content":"cipher"},
+ {"type":"message","id":"msg-1","role":"assistant","content":[{"type":"output_text","text":"done","annotations":[{"type":"url_citation","url":"https://example.com","title":"source"}]}]}
+]`
+
+func responsesInputJSON(msg *schema.Message) (string, bool) {
+	items, err := toResponsesInput([]*schema.Message{msg})
+	if err != nil {
+		return "", false
+	}
+	raw, err := json.Marshal(items)
+	return string(raw), err == nil
+}
+
 func equalRawJSON(t *testing.T, want, got []byte) {
 	t.Helper()
 	values := make([]any, 2)
@@ -49,7 +64,7 @@ func equalRawJSON(t *testing.T, want, got []byte) {
 	equal(t, values[0], values[1])
 }
 
-func TestResponsesReplayOriginalOutput(t *testing.T) {
+func TestResponsesHistoryUsesSDKInputs(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		for _, codec := range messagePersistenceCodecs() {
 			for _, modifier := range []bool{false, true} {
@@ -102,14 +117,14 @@ func TestResponsesReplayOriginalOutput(t *testing.T) {
 					equal(t, "continued", reply.Content)
 					input := <-requests
 					var output []json.RawMessage
-					check(t, json.Unmarshal([]byte(responsesReplayOutputJSON), &output))
+					check(t, json.Unmarshal([]byte(responsesReplayInputJSON), &output))
 					equal(t, len(output)+3, len(input))
 					for i := range output {
 						equalRawJSON(t, output[i], input[i+1])
 					}
-					saved, ok := extraString(history[1], keyResponsesOutput)
+					saved, ok := responsesInputJSON(history[1])
 					equal(t, true, ok)
-					equalRawJSON(t, []byte(responsesReplayOutputJSON), []byte(saved))
+					equalRawJSON(t, []byte(responsesReplayInputJSON), []byte(saved))
 				})
 			}
 		}
@@ -123,7 +138,7 @@ func TestResponsesOutputEdits(t *testing.T) {
 			cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 				requests <- decodeRequest(t, r)
 				writeResponses(w)
-			}, &ResponsesAPIConfig{EnableReasoningContentPassback: true})
+			}, &ResponsesAPIConfig{})
 			first, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("first")})
 			check(t, err)
 			<-requests
@@ -140,13 +155,11 @@ func TestResponsesOutputEdits(t *testing.T) {
 			input := (<-requests)["input"].([]any)
 			switch field {
 			case "content":
-				equal(t, "edited content", input[1].(map[string]any)["content"])
+				equal(t, "done", input[1].(map[string]any)["content"].([]any)[0].(map[string]any)["text"])
 			case "reasoning":
 				reasoning := input[0].(map[string]any)
-				equal(t, "edited reasoning", reasoning["summary"].([]any)[0].(map[string]any)["text"])
-				if _, exists := reasoning["encrypted_content"]; exists {
-					t.Fatal("stale encrypted reasoning restored")
-				}
+				equal(t, "summary", reasoning["summary"].([]any)[0].(map[string]any)["text"])
+				equal(t, "cipher", reasoning["encrypted_content"])
 			case "tool":
 				equal(t, `{"path":"edited"}`, input[2].(map[string]any)["arguments"])
 			}
@@ -171,7 +184,7 @@ func TestResponsesReplayByDefault(t *testing.T) {
 	_, err = cm.Generate(context.Background(), []*schema.Message{first})
 	check(t, err)
 	input := <-requests
-	saved, ok := extraString(first, keyResponsesOutput)
+	saved, ok := responsesInputJSON(first)
 	equal(t, true, ok)
 	var output []json.RawMessage
 	check(t, json.Unmarshal([]byte(saved), &output))
@@ -222,7 +235,7 @@ func TestResponsesReplayWithSDKFilePreprocessing(t *testing.T) {
 		t.Run(fmt.Sprint(modifier), func(t *testing.T) {
 			var calls, uploads, retrieves atomic.Int32
 			requests := make(chan map[string]any, 2)
-			config := &ResponsesAPIConfig{EnableReasoningContentPassback: true}
+			config := &ResponsesAPIConfig{}
 			if modifier {
 				config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }
 			}
@@ -265,23 +278,39 @@ func TestResponsesReplayWithSDKFilePreprocessing(t *testing.T) {
 	}
 }
 
-func TestResponsesManualReasoningPassback(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
-			requests := make(chan map[string]any, 1)
-			cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) { requests <- decodeRequest(t, r); writeResponses(w) }, &ResponsesAPIConfig{EnableReasoningContentPassback: enabled})
-			_, err := cm.Generate(context.Background(), []*schema.Message{{Role: schema.Assistant, Content: "answer", ReasoningContent: "manual thought"}})
-			check(t, err)
-			input := (<-requests)["input"].([]any)
-			if enabled {
-				equal(t, 2, len(input))
-				equal(t, "reasoning", input[0].(map[string]any)["type"])
-				equal(t, "manual thought", input[0].(map[string]any)["summary"].([]any)[0].(map[string]any)["text"])
-			} else {
-				equal(t, 1, len(input))
-			}
-			equal(t, "answer", input[len(input)-1].(map[string]any)["content"])
-		})
+func TestResponsesReasoningInputDefaults(t *testing.T) {
+	for _, mode := range []string{"generate", "stream"} {
+		for _, structured := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/structured=%t", mode, structured), func(t *testing.T) {
+				requests := make(chan map[string]any, 1)
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					body := decodeRequest(t, r)
+					requests <- body
+					writeResponsesHistoryReply(w, false, body["stream"] == true)
+				}, nil)
+				msg := &schema.Message{Role: schema.Assistant, Content: "answer", ReasoningContent: "display thought"}
+				if structured {
+					msg.AssistantGenMultiContent = []schema.MessageOutputPart{
+						{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: "explicit thought", Signature: "cipher"}},
+						{Type: schema.ChatMessagePartTypeText, Text: "answer"},
+					}
+				}
+				callResponsesWithOptions(t, cm, mode, []*schema.Message{msg})
+				input := (<-requests)["input"].([]any)
+				if structured {
+					equal(t, 2, len(input))
+					reasoning := input[0].(map[string]any)
+					equal(t, "reasoning", reasoning["type"])
+					equal(t, "cipher", reasoning["encrypted_content"])
+					equal(t, "explicit thought", reasoning["summary"].([]any)[0].(map[string]any)["text"])
+					equal(t, "answer", input[1].(map[string]any)["content"].([]any)[0].(map[string]any)["text"])
+				} else {
+					equal(t, 2, len(input))
+					equal(t, "display thought", input[0].(map[string]any)["summary"].([]any)[0].(map[string]any)["text"])
+					equal(t, "answer", input[1].(map[string]any)["content"])
+				}
+			})
+		}
 	}
 }
 

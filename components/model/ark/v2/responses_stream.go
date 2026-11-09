@@ -17,9 +17,7 @@
 package ark
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"hash"
 	"strings"
 
 	"github.com/cloudwego/eino/schema"
@@ -29,9 +27,11 @@ import (
 // Track the original projections before modifiers. Terminal output supplies any
 // fields or suffixes not already emitted, without duplicating existing deltas.
 type responsesStreamState struct {
-	content   strings.Builder
-	tools     map[int]*responsesStreamTool
-	reasoning hash.Hash
+	content          strings.Builder
+	tools            map[int]*responsesStreamTool
+	reasoning        strings.Builder
+	reasoningSummary bool
+	mixedReasoning   bool
 }
 
 type responsesStreamTool struct {
@@ -41,12 +41,7 @@ type responsesStreamTool struct {
 
 func (s *responsesStreamState) record(msg *schema.Message) error {
 	s.content.WriteString(msg.Content)
-	if msg.ReasoningContent != "" {
-		if s.reasoning == nil {
-			s.reasoning = sha256.New()
-		}
-		_, _ = s.reasoning.Write([]byte(msg.ReasoningContent))
-	}
+	s.reasoning.WriteString(msg.ReasoningContent)
 	for _, call := range msg.ToolCalls {
 		index := *call.Index
 		if s.tools == nil {
@@ -80,6 +75,13 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		return msg, terminal, err
 	}
 	if !terminal {
+		if msg.ReasoningContent != "" {
+			summary := event.OneOf.Type == responses.ResponseReasoningSummaryTextDeltaEventResponseStreamEventSum
+			if s.reasoning.Len() > 0 && s.reasoningSummary != summary {
+				s.mixedReasoning = true
+			}
+			s.reasoningSummary = summary
+		}
 		if err := s.record(msg); err != nil {
 			return nil, false, err
 		}
@@ -103,10 +105,10 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 	if err != nil {
 		return nil, true, err
 	}
-	// Reasoning deltas can expose summary text, raw text, or both. Fill only a
-	// missing reasoning projection; preserve a projection already streamed.
-	if s.reasoning == nil {
+	if s.reasoning.Len() == 0 {
 		msg.ReasoningContent = projection.ReasoningContent
+	} else {
+		msg.ReasoningContent = s.reasoningSuffix(resp.Output)
 	}
 	for index, output := range resp.Output {
 		call, ok := output.OneOf.GetItemFunctionToolCall()
@@ -131,17 +133,48 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		}
 		if id != "" || name != "" || args != "" {
 			toolIndex := index
-			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{Index: &toolIndex, ID: id, Type: "function", Function: schema.FunctionCall{Name: name, Arguments: args}})
+			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{Index: &toolIndex, ID: id, Type: "function", Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Name: name, Arguments: args}})
 		}
 	}
 	if err := s.record(msg); err != nil {
 		return nil, true, err
 	}
-	if s.reasoning == nil {
-		s.reasoning = sha256.New()
-	}
-	msg.Extra[keyResponsesStreamReasoningDigest] = metadataString(fmt.Sprintf("%x", s.reasoning.Sum(nil)))
+
 	return msg, true, nil
+}
+
+// This compatibility view flattens indexed reasoning segments. Only a uniform
+// channel with a matching terminal prefix has an unambiguous missing suffix.
+// Mixed channels or a different flattened order retain the streamed display;
+// canonical terminal parts always contain the complete reasoning output.
+func (s *responsesStreamState) reasoningSuffix(output []responses.OutputItem) string {
+	if s.mixedReasoning {
+		return ""
+	}
+	var full strings.Builder
+	for _, item := range output {
+		reasoning, ok := item.OneOf.GetItemReasoning()
+		if !ok {
+			continue
+		}
+		if s.reasoningSummary {
+			// Keep the legacy delta display's concatenation. Canonical parts
+			// independently join summary segments with newlines.
+			for _, part := range reasoning.Summary {
+				full.WriteString(part.Text.Or(""))
+			}
+		} else {
+			for _, part := range reasoning.Content {
+				if text, ok := part.OneOf.GetOutputContentItemReasoningText(); ok {
+					full.WriteString(text.Text.Or(""))
+				}
+			}
+		}
+	}
+	if strings.HasPrefix(full.String(), s.reasoning.String()) {
+		return full.String()[s.reasoning.Len():]
+	}
+	return ""
 }
 
 // Eino merges tool IDs and names atomically; only arguments are text deltas.

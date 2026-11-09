@@ -176,7 +176,7 @@ func TestResponsesMetadataAndCacheValidation(t *testing.T) {
 	check(t, sonic.UnmarshalString(responsesJSON, &decoded))
 	out, err := resolveResponsesResponse(&decoded, &responses.ResponsesRequest{}, nil)
 	check(t, err)
-	items, err := toResponsesInput([]*schema.Message{out}, true)
+	items, err := toResponsesInput([]*schema.Message{out})
 	check(t, err)
 	raw, err := sonic.Marshal(items)
 	check(t, err)
@@ -187,7 +187,7 @@ func TestResponsesMetadataAndCacheValidation(t *testing.T) {
 	var buffer bytes.Buffer
 	check(t, gob.NewEncoder(&buffer).Encode(out))
 	check(t, gob.NewDecoder(&buffer).Decode(&restored))
-	items, err = toResponsesInput([]*schema.Message{&restored}, true)
+	items, err = toResponsesInput([]*schema.Message{&restored})
 	check(t, err)
 	raw, err = sonic.Marshal(items)
 	check(t, err)

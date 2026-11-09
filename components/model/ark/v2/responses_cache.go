@@ -25,11 +25,9 @@ import (
 )
 
 const (
-	keyResponseID                     = "ark-response-id"
-	keyCacheExpiration                = "ark-response-cache-expire-at"
-	keyResponsesUsage                 = "ark-responses-usage-details"
-	keyResponsesOutput                = "ark-responses-output"
-	keyResponsesStreamReasoningDigest = "ark-responses-stream-reasoning-digest"
+	keyResponseID      = "ark-response-id"
+	keyCacheExpiration = "ark-response-cache-expire-at"
+	keyResponsesUsage  = "ark-responses-usage-details"
 )
 
 // SessionCacheConfig enables storing Responses and reusing their server context.
@@ -54,9 +52,17 @@ type CacheInfo struct {
 	Usage      schema.TokenUsage
 }
 
-func GetResponseID(msg *schema.Message) (string, bool) { return extraString(msg, keyResponseID) }
+func GetResponseID(msg *schema.Message) (string, bool) {
+	if msg == nil {
+		return "", false
+	}
+	return extraString(msg.Extra, keyResponseID)
+}
 func GetCacheExpiration(msg *schema.Message) (int64, bool) {
-	return extraInt64(msg, keyCacheExpiration)
+	if msg == nil {
+		return 0, false
+	}
+	return extraInt64(msg.Extra, keyCacheExpiration)
 }
 
 // InvalidateMessageCaches prevents automatic cache reuse for these messages.
@@ -74,12 +80,6 @@ func InvalidateMessageCaches(messages []*schema.Message) error {
 // ResponseMeta.Usage is absent.
 func GetResponsesTokenUsageDetails(msg *schema.Message) (responses.ResponseUsage, bool) {
 	return readResponsesUsage(msg)
-}
-
-// GetResponsesOutput returns all final SDK output items, including built-in tool
-// results and annotations that are not represented by Eino's common fields.
-func GetResponsesOutput(msg *schema.Message) ([]responses.OutputItem, bool) {
-	return readJSONExtra[[]responses.OutputItem](msg, keyResponsesOutput)
 }
 
 func populateResponsesCache(in []*schema.Message, req *responses.ResponsesRequest, config *CacheOption) ([]*schema.Message, error) {

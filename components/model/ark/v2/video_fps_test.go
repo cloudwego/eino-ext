@@ -70,10 +70,12 @@ func TestVideoFPSOuterExtraWire(t *testing.T) {
 								if api == "chat" {
 									video = video["video_url"].(map[string]any)
 								}
-								if location == "outer" {
+								// Responses assistant history uses standard fields only;
+								// private output FPS is not a portable media property.
+								if location == "outer" && !(api == "responses" && role == schema.Assistant) {
 									equal(t, float64(0.25), video["fps"])
 								} else if _, exists := video["fps"]; exists {
-									t.Error("deprecated inner FPS was sent")
+									t.Error("private FPS was sent outside its supported input")
 								}
 								if api == "chat" {
 									writeChatHistoryReply(w, false, body["stream"] == true)

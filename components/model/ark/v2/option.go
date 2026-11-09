@@ -45,20 +45,19 @@ type ResponseMessageModifier func(ctx context.Context, message *schema.Message, 
 type ResponseChunkMessageModifier func(ctx context.Context, message *schema.Message, rawBody []byte, end bool) (*schema.Message, error)
 
 type arkOptions struct {
-	cache                          *CacheOption
-	enableWebSearch                *responses.WebSearchTool
-	maxToolCalls                   *int64
-	enableReasoningContentPassback bool
-	customHeaders                  map[string]string
-	thinking                       *chat.Thinking
-	responsesThinking              *responses.Thinking
-	reasoningEffort                *chat.ReasoningEffort
-	responsesReasoningEffort       *responses.ReasoningEffort
-	maxCompletionTokens            *int
-	parallelToolCalls              *bool
-	requestPayloadModifier         RequestPayloadModifier
-	responseMessageModifier        ResponseMessageModifier
-	responseChunkMessageModifier   ResponseChunkMessageModifier
+	cache                        *CacheOption
+	enableWebSearch              *responses.WebSearchTool
+	maxToolCalls                 *int64
+	customHeaders                map[string]string
+	thinking                     *chat.Thinking
+	responsesThinking            *responses.Thinking
+	reasoningEffort              *chat.ReasoningEffort
+	responsesReasoningEffort     *responses.ReasoningEffort
+	maxCompletionTokens          *int
+	parallelToolCalls            *bool
+	requestPayloadModifier       RequestPayloadModifier
+	responseMessageModifier      ResponseMessageModifier
+	responseChunkMessageModifier ResponseChunkMessageModifier
 }
 
 func (cm *ChatModel) getOptions(opts ...model.Option) (*model.Options, *arkOptions) {
@@ -135,10 +134,6 @@ func WithEnableToolWebSearch(tool *responses.WebSearchTool) model.Option {
 
 func WithMaxToolCalls(n int64) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.maxToolCalls = &n })
-}
-
-func WithEnableReasoningContentPassback(enabled bool) model.Option {
-	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.enableReasoningContentPassback = enabled })
 }
 
 // WithResponsesThinking configures thinking for the Responses API.

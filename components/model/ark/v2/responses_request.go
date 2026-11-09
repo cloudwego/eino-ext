@@ -35,7 +35,7 @@ func (cm *ResponsesAPIChatModel) getOptions(opts ...model.Option) (*model.Option
 		model.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader, responsesThinking: cm.config.Thinking,
 			responsesReasoningEffort: cm.config.ReasoningEffort, parallelToolCalls: cm.config.ParallelToolCalls,
 			cache: &CacheOption{SessionCache: cm.config.SessionCache}, enableWebSearch: cm.config.EnableToolWebSearch,
-			maxToolCalls: cm.config.MaxToolCalls, enableReasoningContentPassback: cm.config.EnableReasoningContentPassback,
+			maxToolCalls:           cm.config.MaxToolCalls,
 			requestPayloadModifier: cm.config.RequestPayloadModifier, responseMessageModifier: cm.config.ResponseMessageModifier,
 			responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier}, opts...)
 }
@@ -88,15 +88,12 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	if err != nil {
 		return nil, err
 	}
-	items, err := toResponsesInput(in, opts.enableReasoningContentPassback && !req.PreviousResponseID.IsSet())
+	items, err := toResponsesInput(in)
 	if err != nil {
 		return nil, err
 	}
-	req.Input = responses.NewInputItemArrayResponsesInput(items.items)
+	req.Input = responses.NewInputItemArrayResponsesInput(items)
 	var extra map[string]interface{}
-	if len(items.output) > 0 {
-		extra = map[string]interface{}{"input": items}
-	}
 	tools, err := cm.buildResponsesTools(common, opts, req.PreviousResponseID.IsSet())
 	if err != nil {
 		return nil, err
@@ -158,11 +155,7 @@ func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *res
 	wire := &responses.ResponsesRequest{Model: name, Stream: req.Stream}
 	if bytes.Equal(input, originalInput) {
 		wire.Input = req.Input
-		if replay, ok := extra["input"].(*responsesInput); ok {
-			body["input"] = replay
-		} else {
-			body["input"] = responsesInputWithFiles(&wire.Input, input)
-		}
+		body["input"] = responsesInputWithFiles(&wire.Input, input)
 	} else {
 		// Decode edited input only for SDK file preprocessing. Preserve the raw
 		// JSON for unknown fields and exact numbers in the final payload.
@@ -180,7 +173,7 @@ func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *res
 		}
 	}
 	// These fields also describe the effective request in output callbacks.
-	for key, target := range map[string]interface{}{"max_output_tokens": &wire.MaxOutputTokens, "temperature": &wire.Temperature, "top_p": &wire.TopP} {
+	for key, target := range map[string]interface{}{"max_output_tokens": &wire.MaxOutputTokens, "temperature": &wire.Temperature, "top_p": &wire.TopP, "thinking": &wire.Thinking} {
 		if value, exists := fields[key]; exists && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			if err = sonic.Unmarshal(value, target); err != nil {
 				return nil, nil, fmt.Errorf("modified %s: %w", key, err)
@@ -193,6 +186,13 @@ func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *res
 func responsesCallbackConfig(req *responses.ResponsesRequest) *model.Config {
 	return &model.Config{Model: req.Model, MaxTokens: int(req.MaxOutputTokens.Or(0)),
 		Temperature: float32(req.Temperature.Or(0)), TopP: float32(req.TopP.Or(0))}
+}
+
+func responsesCallbackThinking(req *responses.ResponsesRequest) *responses.Thinking {
+	if !req.Thinking.IsSet() {
+		return nil
+	}
+	return &req.Thinking.Value
 }
 
 func responsesHeaders(opts *arkOptions) map[string]string {
