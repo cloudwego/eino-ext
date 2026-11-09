@@ -15,7 +15,7 @@ import (
  "context"
  "github.com/cloudwego/eino/components/embedding"
  qdrant "github.com/qdrant/go-client/qdrant"
- "github.com/cloudwego/eino-ext/components/retriever/qdrant"
+ qdrantRetriever "github.com/cloudwego/eino-ext/components/retriever/qdrant"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
  })
 
  // 创建 retriever
- retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+ retriever, _ := qdrantRetriever.NewRetriever(ctx, &qdrantRetriever.Config{
   Client:     client,
   Collection: "my_collection",
   Embedding:  &myEmbedding{},
@@ -57,12 +57,10 @@ type Config struct {
 ### 过滤
 
 ```go
-import "github.com/cloudwego/eino-ext/components/retriever/qdrant/options"
-
 docs, _ := retriever.Retrieve(ctx, "query",
-    options.WithFilter(&qdrant.Filter{
+    qdrantRetriever.WithFilter(&qdrant.Filter{
         Must: []*qdrant.Condition{
-            qdrant.NewMatch("metadata.location", "Paris")
+            qdrant.NewMatch("metadata.location", "Paris"),
         },
     }),
 )
@@ -72,7 +70,7 @@ docs, _ := retriever.Retrieve(ctx, "query",
 
 ```go
 scoreThreshold := 0.7
-retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+retriever, _ := qdrantRetriever.NewRetriever(ctx, &qdrantRetriever.Config{
     // ... 其他配置
     ScoreThreshold: &scoreThreshold,
 })
