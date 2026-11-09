@@ -498,7 +498,8 @@ image-generation APIs remain in the legacy module.
   Eino Concat merges adjacent chunks, later parts/items may wait for the current
   item's final metadata. Within an item, an already-started section is emitted
   first; persistent SDK indices preserve the original arrays for history input.
-  Legacy text, reasoning and function arguments remain incremental.
+  Legacy text and function arguments remain incremental; summary display follows
+  the emitted summary part chunks.
   A previous response ID supplies cached history without resending it.
   Reasoning parts and their signatures are included automatically.
 - System and developer messages can appear between conversation turns. Put
@@ -527,9 +528,11 @@ image-generation APIs remain in the legacy module.
   information beyond Eino's common fields.
 - Terminal stream events fill text and tool-call fields not already emitted as
   deltas. An empty completed output returns `ErrEmptyResponse`, as in Generate.
-  Reasoning display text also receives a missing suffix when one delta channel
-  matches a terminal prefix. Mixed channels or a different flattened segment
-  order keep the streamed display; complete reasoning remains in output parts.
+  `ReasoningContent` displays only reasoning summaries, with nonempty segments
+  separated by newlines. Streams derive this view from summary part chunks, so
+  added/delta/done snapshots do not duplicate it. Raw reasoning content and
+  signatures remain in output parts and subsequent SDK input; no summary means
+  an empty `ReasoningContent`.
   When stopping a stream early, cancel its request context as well as closing
   the reader: Eino v0.9.22 does not propagate reader closure to a blocked SDK read.
 

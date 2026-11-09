@@ -27,12 +27,11 @@ import (
 // Track the original projections before modifiers. Terminal output supplies any
 // fields or suffixes not already emitted, without duplicating existing deltas.
 type responsesStreamState struct {
-	parts            responsesPartsStream
-	content          strings.Builder
-	tools            map[int]*responsesStreamTool
-	reasoning        strings.Builder
-	reasoningSummary bool
-	mixedReasoning   bool
+	parts          responsesPartsStream
+	content        strings.Builder
+	tools          map[int]*responsesStreamTool
+	summaryIndex   int
+	summaryStarted bool
 }
 
 type responsesStreamTool struct {
@@ -42,7 +41,6 @@ type responsesStreamTool struct {
 
 func (s *responsesStreamState) record(msg *schema.Message) error {
 	s.content.WriteString(msg.Content)
-	s.reasoning.WriteString(msg.ReasoningContent)
 	for _, call := range msg.ToolCalls {
 		index := *call.Index
 		if s.tools == nil {
@@ -86,14 +84,8 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		return nil, terminal, nil
 	}
 	msg.AssistantGenMultiContent = parts
+	msg.ReasoningContent = s.summaryDelta(parts)
 	if !terminal {
-		if msg.ReasoningContent != "" {
-			summary := event.OneOf.Type == responses.ResponseReasoningSummaryTextDeltaEventResponseStreamEventSum
-			if s.reasoning.Len() > 0 && s.reasoningSummary != summary {
-				s.mixedReasoning = true
-			}
-			s.reasoningSummary = summary
-		}
 		if err := s.record(msg); err != nil {
 			return nil, false, err
 		}
@@ -111,9 +103,6 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 	msg.Content, err = responsesStreamSuffix(msg.Content, s.content.String(), "content")
 	if err != nil {
 		return nil, true, err
-	}
-	if s.reasoning.Len() > 0 {
-		msg.ReasoningContent = s.reasoningSuffix(resp.Output)
 	}
 	var toolDeltas []schema.ToolCall
 	for index, output := range resp.Output {
@@ -150,38 +139,23 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 	return msg, true, nil
 }
 
-// This compatibility view flattens indexed reasoning segments. Only a uniform
-// channel with a matching terminal prefix has an unambiguous missing suffix.
-// Mixed channels or a different flattened order retain the streamed display;
-// canonical terminal parts always contain the complete reasoning output.
-func (s *responsesStreamState) reasoningSuffix(output []responses.OutputItem) string {
-	if s.mixedReasoning {
-		return ""
-	}
-	var full strings.Builder
-	for _, item := range output {
-		reasoning, ok := item.OneOf.GetItemReasoning()
-		if !ok {
+// Canonical part chunks already contain only un-emitted suffixes in order.
+// Derive the display from summary chunks alone, including added/done snapshots.
+func (s *responsesStreamState) summaryDelta(parts []schema.MessageOutputPart) string {
+	var text strings.Builder
+	for _, part := range parts {
+		section, _ := extraString(part.Extra, keyResponsesSection)
+		if section != "summary" || part.Reasoning == nil || part.Reasoning.Text == "" {
 			continue
 		}
-		if s.reasoningSummary {
-			// Keep the legacy delta display's concatenation. Canonical parts
-			// retain the individual summary segments and their indices.
-			for _, part := range reasoning.Summary {
-				full.WriteString(part.Text.Or(""))
-			}
-		} else {
-			for _, part := range reasoning.Content {
-				if text, ok := part.OneOf.GetOutputContentItemReasoningText(); ok {
-					full.WriteString(text.Text.Or(""))
-				}
-			}
+		index := part.StreamingMeta.Index
+		if s.summaryStarted && s.summaryIndex != index {
+			text.WriteByte('\n')
 		}
+		text.WriteString(part.Reasoning.Text)
+		s.summaryIndex, s.summaryStarted = index, true
 	}
-	if strings.HasPrefix(full.String(), s.reasoning.String()) {
-		return full.String()[s.reasoning.Len():]
-	}
-	return ""
+	return text.String()
 }
 
 // Eino merges tool IDs and names atomically; only arguments are text deltas.

@@ -443,7 +443,7 @@ Context 和图片生成 API 仍使用旧模块。
   分配稳定的 part 索引；item done 或终止事件补齐元数据/签名，不重放完整正文。
   Eino Concat 只合并相邻 chunk，因此后续 parts/items 可能等待当前 item 的最终元数据；
   item 内优先输出已经开始的 section，持久索引确保下轮恢复原始 SDK 数组顺序。
-  旧正文、推理和函数参数字段仍保持增量输出。
+  旧正文和函数参数字段仍保持增量输出，summary 展示随对应 part chunks 输出。
   previous response ID 提供缓存历史，无需重发历史内容。
   reasoning parts 及其签名自动回传。
 - system 和 developer 消息可位于对话中间；文本放入 `Content`，输入内容块放入
@@ -463,9 +463,10 @@ Context 和图片生成 API 仍使用旧模块。
   `GetResponsesTokenUsageDetails` 读取完整 SDK 用量；输出 parts 和 Extra 提供注释、
   内置工具结果等通用字段之外的信息。
 - 流式终止事件会补齐 delta 尚未发出的正文与工具调用；completed 的空输出与
-  Generate 一样返回 `ErrEmptyResponse`。单一推理渠道与终态文本前缀匹配时，也会补齐
-  展示字段缺少的后缀；混合渠道或分段压平后顺序不同时保留已输出的展示文本，完整推理
-  仍保存在输出 parts 中。提前停止读取时，同时取消请求 context 并
+  Generate 一样返回 `ErrEmptyResponse`。`ReasoningContent` 只展示 summary，非空分段
+  以换行符连接；流式从 summary part chunks 派生，added/delta/done 快照不重复展示。
+  原始 reasoning content 和签名保留在输出 parts 及下轮 SDK 输入中；没有 summary 时
+  `ReasoningContent` 为空。提前停止读取时，同时取消请求 context 并
   关闭 reader；Eino v0.9.22 的 reader 关闭不会中断 SDK 中阻塞的读取。
 
 [message parts 示例](examples/responses/message_parts/main.go) 演示编辑输出 parts、

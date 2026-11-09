@@ -71,8 +71,11 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 
 	incremental := 0
 	for _, chunk := range chunks[:len(chunks)-1] {
-		if (chunk.Content != "" || chunk.ReasoningContent != "") && len(chunk.AssistantGenMultiContent) > 0 {
-			incremental++
+		for _, part := range chunk.AssistantGenMultiContent {
+			if part.Text != "" || (part.Reasoning != nil && part.Reasoning.Text != "") {
+				incremental++
+				break
+			}
 		}
 	}
 	if (merged.Content != "" || merged.ReasoningContent != "") && incremental == 0 {

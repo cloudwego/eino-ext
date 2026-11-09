@@ -72,7 +72,7 @@ func TestResponsesOutputProjection(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			original := projectedResponsesMessage(t, mode, responsesProjectionJSON)
 			equal(t, "AB", original.Content)
-			equal(t, "raw", original.ReasoningContent)
+			equal(t, "one\ntwo", original.ReasoningContent)
 			equal(t, 1, len(original.ToolCalls))
 			if len(original.AssistantGenMultiContent) == 0 {
 				t.Fatal("native output has no canonical parts")
@@ -664,7 +664,7 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 			merged, err := schema.ConcatMessages(chunks)
 			check(t, err)
 			equal(t, "ABC", merged.Content)
-			equal(t, "R1R2", merged.ReasoningContent)
+			equal(t, "S1\nS2", merged.ReasoningContent)
 			equal(t, 8, len(merged.AssistantGenMultiContent))
 			for index, want := range []string{"R1", "R2", "S1", "S2", "A", "B", "C"} {
 				part := merged.AssistantGenMultiContent[index]

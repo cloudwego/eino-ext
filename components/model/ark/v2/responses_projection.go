@@ -60,7 +60,7 @@ func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem) 
 	}
 	msg.AssistantGenMultiContent = parts
 	msg.Content = content.String()
-	msg.ReasoningContent = responsesReasoningText(reasoning)
+	msg.ReasoningContent = responsesSummaryText(reasoning)
 	msg.ToolCalls = toolCalls
 	return nil
 }
@@ -159,6 +159,12 @@ func responsesReasoningOutputPart(itemIndex, contentIndex int, text string) sche
 		Extra: responsesContentIndices(itemIndex, contentIndex, "reasoning_text")}
 }
 
+func responsesSummaryDelta(itemIndex, summaryIndex int, text string) schema.MessageOutputPart {
+	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: text}, Extra: map[string]any{
+		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("summary"), keyResponsesSummaryIndex: metadataInt64(summaryIndex),
+	}}
+}
+
 func responsesContentIndices(itemIndex, contentIndex int, contentType string) map[string]any {
 	return map[string]any{
 		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("content"),
@@ -214,22 +220,14 @@ func projectResponsesContentPart(child responses.OutputContentItem, itemIndex, c
 	return part, nil
 }
 
-func responsesReasoningText(items []responses.ItemReasoning) string {
-	var summary, raw []string
+func responsesSummaryText(items []responses.ItemReasoning) string {
+	var summary []string
 	for _, item := range items {
 		for _, part := range item.Summary {
 			if text := part.Text.Or(""); text != "" {
 				summary = append(summary, text)
 			}
 		}
-		for _, part := range item.Content {
-			if text, ok := part.OneOf.GetOutputContentItemReasoningText(); ok {
-				raw = append(raw, text.Text.Or(""))
-			}
-		}
-	}
-	if len(raw) > 0 {
-		return strings.Join(raw, "")
 	}
 	return strings.Join(summary, "\n")
 }

@@ -121,11 +121,13 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 		msg = &schema.Message{Role: schema.Assistant, Content: ev.ResponseTextDeltaEvent.Delta.Or("")}
 		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesTextOutputPart(int(ev.ResponseTextDeltaEvent.OutputIndex), int(ev.ResponseTextDeltaEvent.ContentIndex), msg.Content)}
 	case responses.ResponseReasoningTextDeltaEventResponseStreamEventSum:
-		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningTextDeltaEvent.Delta.Or("")}
-		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesReasoningOutputPart(int(ev.ResponseReasoningTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningTextDeltaEvent.ContentIndex), msg.ReasoningContent)}
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
+			responsesReasoningOutputPart(int(ev.ResponseReasoningTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningTextDeltaEvent.ContentIndex), ev.ResponseReasoningTextDeltaEvent.Delta.Or("")),
+		}}
 	case responses.ResponseReasoningRawTextDeltaEventResponseStreamEventSum:
-		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningRawTextDeltaEvent.Delta.Or("")}
-		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesReasoningOutputPart(int(ev.ResponseReasoningRawTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningRawTextDeltaEvent.ContentIndex), msg.ReasoningContent)}
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{
+			responsesReasoningOutputPart(int(ev.ResponseReasoningRawTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningRawTextDeltaEvent.ContentIndex), ev.ResponseReasoningRawTextDeltaEvent.Delta.Or("")),
+		}}
 	case responses.ResponseReasoningSummaryTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningSummaryTextDeltaEvent.Delta.Or("")}
 		msg.AssistantGenMultiContent = []schema.MessageOutputPart{responsesSummaryDelta(int(ev.ResponseReasoningSummaryTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningSummaryTextDeltaEvent.SummaryIndex), msg.ReasoningContent)}
@@ -171,12 +173,6 @@ func resolveResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 		msg = &schema.Message{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, Extra: map[string]any{keyResponsesItemIndex: metadataInt64(index)}, Function: schema.FunctionCall{Arguments: delta.Delta.Or("")}}}}
 	}
 	return msg, false, err
-}
-
-func responsesSummaryDelta(itemIndex, summaryIndex int, text string) schema.MessageOutputPart {
-	return schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Text: text}, Extra: map[string]any{
-		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("summary"), keyResponsesSummaryIndex: metadataInt64(summaryIndex),
-	}}
 }
 
 func responsesPartEvent(part responses.OutputContentItem, itemIndex, contentIndex int) (*schema.Message, error) {

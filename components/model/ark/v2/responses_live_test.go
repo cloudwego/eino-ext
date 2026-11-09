@@ -186,8 +186,14 @@ func TestResponsesLive(t *testing.T) {
 		check(t, err)
 		assistant, err := readResponsesStream(t, sr)
 		check(t, err)
-		if assistant.ReasoningContent == "" {
-			t.Fatal("missing reasoning")
+		hasReasoning := false
+		for _, part := range assistant.AssistantGenMultiContent {
+			if part.Reasoning != nil && (part.Reasoning.Text != "" || part.Reasoning.Signature != "") {
+				hasReasoning = true
+			}
+		}
+		if !hasReasoning {
+			t.Fatal("missing reasoning parts")
 		}
 		history := []*schema.Message{schema.UserMessage("What is 17 times 19? Answer briefly."), assistant, schema.UserMessage("Add one to that answer. Reply with only the number.")}
 		answer, err := reasoning.Generate(ctx, history, WithResponsesThinking(config.Thinking))

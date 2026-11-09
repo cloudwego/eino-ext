@@ -65,7 +65,7 @@ func TestResponsesTerminalOutputReconciliation(t *testing.T) {
 					}, nil)
 					first := callResponsesWithOptions(t, cm, "stream", []*schema.Message{schema.UserMessage("first")})
 					equal(t, "done", first.Content)
-					equal(t, "raw thought", first.ReasoningContent)
+					equal(t, "summary", first.ReasoningContent)
 					equal(t, 1, len(first.ToolCalls))
 					equal(t, "inspect", first.ToolCalls[0].Function.Name)
 					equal(t, "{}", first.ToolCalls[0].Function.Arguments)
@@ -91,19 +91,23 @@ func TestResponsesEmptyCompletedStream(t *testing.T) {
 	}
 }
 
-func TestResponsesTerminalReasoningSuffix(t *testing.T) {
+func TestResponsesSummaryDisplay(t *testing.T) {
 	for _, ending := range []string{"completed", "incomplete"} {
 		for _, tc := range []struct {
 			name, output, want string
 			rawDeltas          []string
 			summary            string
 		}{
-			{"raw prefix", `{"summary":[],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "raw thought", []string{"raw"}, ""},
-			{"summary prefix", `{"summary":[{"type":"summary_text","text":"one"},{"type":"summary_text","text":"two"}]}`, "onetwo", nil, "one"},
-			{"complete", `{"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "raw thought", []string{"raw thought"}, ""},
-			{"mixed", `{"summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "sumraw", []string{"raw"}, "sum"},
-			{"no terminal plaintext", `{"summary":[],"encrypted_content":"cipher"}`, "raw", []string{"raw"}, ""},
-			{"different flattened order", `{"content":[{"type":"reasoning_text","text":"A1"},{"type":"reasoning_text","text":"B"}]}`, "AB", []string{"A", "B"}, ""},
+			{"raw prefix", `{"summary":[],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "", []string{"raw"}, ""},
+			{"summary prefix", `{"summary":[{"type":"summary_text","text":"one"},{"type":"summary_text","text":"two"}]}`, "one\ntwo", nil, "one"},
+			{"complete", `{"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "", []string{"raw thought"}, ""},
+			{"mixed", `{"summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"raw thought"}]}`, "summary", []string{"raw"}, "sum"},
+			{"identical summary and raw", `{"summary":[{"type":"summary_text","text":"same"}],"content":[{"type":"reasoning_text","text":"same"}]}`, "same", []string{"same"}, "sa"},
+			{"summary only at terminal", `{"summary":[{"type":"summary_text","text":"one"},{"type":"summary_text","text":"two"}],"content":[{"type":"reasoning_text","text":"raw"}]}`, "one\ntwo", []string{"raw"}, ""},
+			{"empty summary segments", `{"summary":[{"type":"summary_text","text":""},{"type":"summary_text","text":"one"},{"type":"summary_text","text":""},{"type":"summary_text","text":"two"}]}`, "one\ntwo", nil, ""},
+			{"summary absent at terminal", `{"summary":[],"encrypted_content":"cipher"}`, "sum", []string{"raw"}, "sum"},
+			{"no terminal plaintext", `{"summary":[],"encrypted_content":"cipher"}`, "", []string{"raw"}, ""},
+			{"different flattened order", `{"content":[{"type":"reasoning_text","text":"A1"},{"type":"reasoning_text","text":"B"}]}`, "", []string{"A", "B"}, ""},
 		} {
 			t.Run(ending+"/"+tc.name, func(t *testing.T) {
 				cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
@@ -128,8 +132,28 @@ func TestResponsesTerminalReasoningSuffix(t *testing.T) {
 				if len(msg.AssistantGenMultiContent) == 0 {
 					t.Fatal("missing canonical terminal parts")
 				}
+				inputs, err := toResponsesInput([]*schema.Message{msg})
+				check(t, err)
+				reasoning, ok := inputs[0].OneOf.GetItemReasoning()
+				equal(t, true, ok)
+				if len(tc.rawDeltas) > 0 && len(reasoning.Content) == 0 {
+					t.Fatal("raw reasoning was lost from canonical history")
+				}
 			})
 		}
+	}
+}
+
+func TestResponsesRawReasoningDeltasDoNotPopulateDisplay(t *testing.T) {
+	for _, kind := range []string{"reasoning_text", "reasoning_raw_text"} {
+		t.Run(kind, func(t *testing.T) {
+			var state responsesStreamState
+			msg, err := resolveResponsesTestEvent(t, &state, fmt.Sprintf(`{"type":"response.%s.delta","output_index":0,"content_index":0,"delta":"raw thought"}`, kind))
+			check(t, err)
+			equal(t, "", msg.ReasoningContent)
+			equal(t, 1, len(msg.AssistantGenMultiContent))
+			equal(t, "raw thought", msg.AssistantGenMultiContent[0].Reasoning.Text)
+		})
 	}
 }
 

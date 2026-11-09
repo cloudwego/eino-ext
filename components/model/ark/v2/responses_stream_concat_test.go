@@ -156,6 +156,7 @@ func TestResponsesEmptyAddedPartKeepsItsIndex(t *testing.T) {
 		equal(t, index, part.StreamingMeta.Index)
 		equal(t, text, part.Reasoning.Text)
 	}
+	equal(t, "AB\nCD", merged.ReasoningContent)
 	equal(t, "cipher", merged.AssistantGenMultiContent[1].Reasoning.Signature)
 	equal(t, "", merged.AssistantGenMultiContent[2].Reasoning.Signature)
 	kind, _ := extraString(merged.AssistantGenMultiContent[0].Extra, keyResponsesItemType)
@@ -222,7 +223,7 @@ func TestResponsesContentKinds(t *testing.T) {
 						t.Fatal("reasoning JSON has a top-level text field")
 					}
 					equal(t, "", msg.Content)
-					equal(t, "AB", msg.ReasoningContent)
+					equal(t, "", msg.ReasoningContent)
 				} else {
 					equal(t, schema.ChatMessagePartTypeText, part.Type)
 					equal(t, "AB", part.Text)
@@ -379,6 +380,7 @@ func TestResponsesSummaryIndicesAndOneSignature(t *testing.T) {
 			}
 			merged, err := schema.ConcatMessages(chunks)
 			check(t, err)
+			equal(t, "AB\nCD", merged.ReasoningContent)
 			equal(t, 4, len(merged.AssistantGenMultiContent))
 			equal(t, "AB", merged.AssistantGenMultiContent[0].Reasoning.Text)
 			equal(t, "CD", merged.AssistantGenMultiContent[1].Reasoning.Text)
