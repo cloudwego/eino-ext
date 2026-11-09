@@ -484,9 +484,11 @@ image-generation APIs remain in the legacy module.
   the adapter does not replace the entire input to implement unsupported fields.
   SDK-documented extensions remain in use for tool strictness and explicit
   payload modifiers; SDK annotation codecs preserve unknown annotation variants.
-  Streams emit complete parts once at the terminal event while text, reasoning
-  and function arguments continue through existing delta fields. A previous
-  response ID supplies cached history without resending it.
+  Generate leaves part `StreamingMeta` nil. Streams emit complete parts once at
+  the terminal event, with indices identifying their final positions so Concat
+  keeps adjacent parts separate. Text, reasoning and function arguments continue
+  through existing delta fields; these events do not emit partial output parts.
+  A previous response ID supplies cached history without resending it.
   Reasoning parts and their signatures are included automatically.
 - System and developer messages can appear between conversation turns. Put
   text in `Content`, or input parts in `UserInputMultiContent`; the adapter

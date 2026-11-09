@@ -433,7 +433,9 @@ Context 和图片生成 API 仍使用旧模块。
   历史转换限于 SDK 输入类型，不通过整体替换 input 补充 SDK 未支持的字段。
   工具 strict 和显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
   使用 SDK codec 自带的未知变体保留机制。
-  流式完整 parts 在终止事件一次性发出，正文、推理和函数参数保持增量输出。
+  Generate 的 part `StreamingMeta` 为 nil。流式完整 parts 在终止事件一次性发出，
+  索引表示最终位置，防止 Concat 合并相邻 parts；正文、推理和函数参数保持增量输出，
+  这些增量事件不输出局部 output parts。
   previous response ID 提供缓存历史，无需重发历史内容。
   reasoning parts 及其签名自动回传。
 - system 和 developer 消息可位于对话中间；文本放入 `Content`，输入内容块放入

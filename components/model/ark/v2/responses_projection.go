@@ -37,11 +37,7 @@ func setResponsesFinalOutput(msg *schema.Message, output []responses.OutputItem)
 		if err != nil {
 			return fmt.Errorf("Responses output item %d: %w", index, err)
 		}
-		for _, child := range children {
-			// Stream merge indices are independent of persistent item indices.
-			child.StreamingMeta = &schema.MessageStreamingMeta{Index: len(parts)}
-			parts = append(parts, child)
-		}
+		parts = append(parts, children...)
 	}
 	msg.AssistantGenMultiContent = parts
 	return nil

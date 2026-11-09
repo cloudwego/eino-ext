@@ -18,7 +18,9 @@ package ark
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -583,6 +585,90 @@ func TestResponsesProjectionUsesSDKFields(t *testing.T) {
 ]`), raw)
 				})
 			}
+		})
+	}
+}
+
+func TestResponsesStreamingPartMetadata(t *testing.T) {
+	output := `[
+ {"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"S1"},{"type":"summary_text","text":"S2"}],"content":[{"type":"reasoning_text","text":"R1"},{"type":"reasoning_text","text":"R2"}],"encrypted_content":"cipher"},
+ {"type":"message","id":"m1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"A"},{"type":"output_text","text":"B"}]},
+ {"type":"message","id":"m2","role":"assistant","status":"completed","content":[{"type":"output_text","text":"C"}]},
+ {"type":"function_call","call_id":"call","name":"inspect","arguments":"{}","status":"completed"}
+]`
+	var compact bytes.Buffer
+	check(t, json.Compact(&compact, []byte(output)))
+	output = compact.String()
+	generated := projectedResponsesMessage(t, "generate", output)
+	for _, part := range generated.AssistantGenMultiContent {
+		if part.StreamingMeta != nil {
+			t.Fatal("Generate returned part streaming metadata")
+		}
+	}
+	wantInput, err := toResponsesInput([]*schema.Message{generated})
+	check(t, err)
+	wantInputJSON, err := json.Marshal(wantInput)
+	check(t, err)
+	for _, ending := range []string{"completed", "incomplete"} {
+		t.Run(ending, func(t *testing.T) {
+			cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, delta := range []struct {
+					event string
+					data  map[string]any
+				}{
+					{"response.reasoning_text.delta", map[string]any{"output_index": 0, "content_index": 0, "item_id": "r", "delta": "R1"}},
+					{"response.output_text.delta", map[string]any{"output_index": 1, "content_index": 0, "item_id": "m1", "delta": "A"}},
+					{"response.output_text.delta", map[string]any{"output_index": 1, "content_index": 1, "item_id": "m1", "delta": "B"}},
+				} {
+					_, _ = io.WriteString(w, responseEvent(delta.event, delta.data))
+				}
+				response := fmt.Sprintf(`{"id":"parts","created_at":1,"object":"response","model":"test","status":%q,"output":%s}`, ending, output)
+				_, _ = io.WriteString(w, responseEvent("response."+ending, map[string]any{"response": json.RawMessage(response)}))
+			}, nil)
+			sr, err := cm.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+			check(t, err)
+			defer sr.Close()
+			var chunks []*schema.Message
+			for {
+				chunk, err := sr.Recv()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				check(t, err)
+				chunks = append(chunks, chunk)
+			}
+			equal(t, 4, len(chunks))
+			for _, chunk := range chunks[:len(chunks)-1] {
+				equal(t, 0, len(chunk.AssistantGenMultiContent))
+			}
+			terminal := chunks[len(chunks)-1]
+			equal(t, 7, len(terminal.AssistantGenMultiContent))
+			for index, part := range terminal.AssistantGenMultiContent {
+				if part.StreamingMeta == nil {
+					t.Fatal("terminal stream part has no merge identity")
+				}
+				equal(t, index, part.StreamingMeta.Index)
+			}
+			merged, err := schema.ConcatMessages(chunks)
+			check(t, err)
+			equal(t, "ABC", merged.Content)
+			equal(t, "R1R2", merged.ReasoningContent)
+			equal(t, 7, len(merged.AssistantGenMultiContent))
+			for index, want := range []string{"S1\nS2", "R1", "R2", "A", "B", "C"} {
+				part := merged.AssistantGenMultiContent[index]
+				if part.Reasoning != nil {
+					equal(t, want, part.Reasoning.Text)
+				} else {
+					equal(t, want, part.Text)
+				}
+			}
+			equal(t, "cipher", merged.AssistantGenMultiContent[0].Reasoning.Signature)
+			input, err := toResponsesInput([]*schema.Message{merged})
+			check(t, err)
+			raw, err := json.Marshal(input)
+			check(t, err)
+			equalRawJSON(t, wantInputJSON, raw)
 		})
 	}
 }

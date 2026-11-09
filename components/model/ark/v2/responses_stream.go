@@ -140,6 +140,12 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		return nil, true, err
 	}
 
+	// Parts are emitted once, as the complete terminal projection. These are
+	// final positions, not positions in individual delta events. Distinct indices
+	// keep Concat from merging adjacent text or reasoning parts.
+	for index := range msg.AssistantGenMultiContent {
+		msg.AssistantGenMultiContent[index].StreamingMeta = &schema.MessageStreamingMeta{Index: index}
+	}
 	return msg, true, nil
 }
 
