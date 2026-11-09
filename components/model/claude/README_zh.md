@@ -143,6 +143,12 @@ type Config struct {
     // Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
     // Optional for Bedrock
     Region string
+    
+    // AWSConfig is an already-resolved AWS config used verbatim for Bedrock.
+    // When set, AccessKey, SecretAccessKey, SessionToken, Profile, Region and
+    // HTTPClient are ignored and no default config is loaded.
+    // Optional for Bedrock
+    AWSConfig *aws.Config
 
     // ByVertex indicates whether to use Google Vertex AI
     ByVertex bool
@@ -208,8 +214,20 @@ type Config struct {
     // ThinkingConfig configures Claude thinking using Anthropic SDK's native union.
     ThinkingConfig *anthropic.ThinkingConfigParamUnion
 
+    // Effort sets output_config.effort on every request.
+    // Adaptive-thinking models use effort in place of a thinking budget.
+    // Overridden per request by WithEffort.
+    // Optional. One of anthropic.OutputConfigEffortLow / Medium / High / Xhigh / Max
+    Effort anthropic.OutputConfigEffort `json:"effort,omitempty"`
+
     // HTTPClient specifies the client to send HTTP requests.
     HTTPClient *http.Client `json:"http_client"`
+
+    // RequestOptions are extra SDK request options appended on every transport.
+    // This is the only way to inject e.g. option.WithHTTPClient on Bedrock, where
+    // HTTPClient only reaches AWS credential loading, not the Anthropic client itself.
+    // Optional.
+    RequestOptions []option.RequestOption
 
     // RequestTimeout specifies the timeout for each API request.
     // Optional.
@@ -231,6 +249,29 @@ type Config struct {
 - 设置 `ByVertex: true` 并提供 `VertexProjectID` / `VertexRegion`，或依赖 `Config` 中说明的环境变量自动检测。
 - 当设置了 `VertexServiceAccountJSON` 时，通过 `google.CredentialsFromJSON` 在内存中构建凭证，并传给 `vertex.WithCredentials`（无需 ADC 或环境变量鉴权）。
 - 当 `VertexServiceAccountJSON` 为空时，使用 `vertex.WithGoogleAuth`（Application Default Credentials）。
+
+对于 Amazon Bedrock，凭证解析规则如下：
+
+- 如果设置了 `Config.AWSConfig`，则通过 `bedrock.WithConfig` 原样使用它；`AccessKey`、`SecretAccessKey`、`SessionToken`、`Profile`、`Region` 和 `HTTPClient` 会被忽略。
+- 否则加载 AWS 默认配置链，并在其上应用 `AccessKey` / `SecretAccessKey`（或 `Profile`）、`Region` 和 `HTTPClient`。
+- `Config.RequestOptions` 会在每个分支（Bedrock、Vertex、直连）的传输选项之后追加，因此在其中设置的 `option.WithHTTPClient` 会被 Anthropic client 最终使用。
+
+## 输出精力（Output Effort）
+
+自适应思考模型（Claude Opus 4.7 及更新版本）使用 `output_config.effort` 取代思考预算。可以在 `Config.Effort` 上设置默认值，并通过 `claude.WithEffort` 按请求覆盖：
+
+```go
+cm, err := claude.NewChatModel(ctx, &claude.Config{
+    APIKey:    apiKey,
+    Model:     "claude-opus-4-7",
+    MaxTokens: 3000,
+    Effort:    anthropic.OutputConfigEffortMedium, // 所有请求的默认值
+})
+
+resp, err := cm.Generate(ctx, messages, claude.WithEffort(anthropic.OutputConfigEffortHigh)) // 仅本次请求
+```
+
+任一处为空时，`output_config.effort` 不会被设置。`WithEffort("")` 会在本次请求中清除 `Config.Effort` 的默认值。
 
 ## 示例
 
