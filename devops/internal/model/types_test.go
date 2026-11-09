@@ -17,8 +17,11 @@
 package model
 
 import (
+	"encoding/json"
+	"reflect"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/cloudwego/eino-ext/devops/internal/utils/generic"
@@ -35,6 +38,68 @@ type Custom struct {
 	Key7 []int32                    `json:"key_7"`
 	Key8 []*schema.Message          `json:"key_8"`
 	Key9 []any                      `json:"key_9"`
+}
+
+type pointerTextCodec [1]byte
+
+func (p *pointerTextCodec) MarshalText() ([]byte, error) {
+	return []byte{p[0]}, nil
+}
+
+func (p *pointerTextCodec) UnmarshalText(text []byte) error {
+	if len(text) > 0 {
+		p[0] = text[0]
+	}
+	return nil
+}
+
+type marshalOnlyTextCodec [1]byte
+
+func (marshalOnlyTextCodec) MarshalText() ([]byte, error) {
+	return []byte("value"), nil
+}
+
+type unmarshalOnlyTextCodec [1]byte
+
+func (*unmarshalOnlyTextCodec) UnmarshalText([]byte) error {
+	return nil
+}
+
+type jsonOverrideTextCodec [1]byte
+
+func (jsonOverrideTextCodec) MarshalText() ([]byte, error) {
+	return []byte("text"), nil
+}
+
+func (*jsonOverrideTextCodec) UnmarshalText([]byte) error {
+	return nil
+}
+
+func (jsonOverrideTextCodec) MarshalJSON() ([]byte, error) {
+	return []byte(`{"value":"json"}`), nil
+}
+
+func (*jsonOverrideTextCodec) UnmarshalJSON([]byte) error {
+	return nil
+}
+
+func Test_isTextJSONType(t *testing.T) {
+	uuidType := reflect.TypeOf(uuid.UUID{})
+	assert.True(t, isTextJSONType(uuidType))
+	assert.True(t, isTextJSONType(reflect.PointerTo(uuidType)))
+	assert.True(t, isTextJSONType(reflect.PointerTo(reflect.PointerTo(uuidType))))
+
+	pointerCodecType := reflect.TypeOf(pointerTextCodec{})
+	assert.False(t, isTextJSONType(pointerCodecType))
+	assert.True(t, isTextJSONType(reflect.PointerTo(pointerCodecType)))
+	encoded, err := json.Marshal(&pointerTextCodec{'x'})
+	assert.NoError(t, err)
+	assert.JSONEq(t, `"x"`, string(encoded))
+
+	assert.False(t, isTextJSONType(reflect.TypeOf(marshalOnlyTextCodec{})))
+	assert.False(t, isTextJSONType(reflect.TypeOf(unmarshalOnlyTextCodec{})))
+	assert.False(t, isTextJSONType(reflect.TypeOf(jsonOverrideTextCodec{})))
+	assert.False(t, isTextJSONType(reflect.PointerTo(reflect.TypeOf(jsonOverrideTextCodec{}))))
 }
 
 func Test_UnmarshalJson(t *testing.T) {
@@ -197,6 +262,76 @@ func Test_UnmarshalJson(t *testing.T) {
 		assert.NoError(t, err)
 		ins := result.Interface().(*schema.Message)
 		assert.Equal(t, ins.Extra["k1"], []int32{1, 2})
+	})
+
+	t.Run("text JSON types", func(t *testing.T) {
+		const id = "550e8400-e29b-41d4-a716-446655440000"
+		expected := uuid.MustParse(id)
+
+		type uuidInput struct {
+			ID       uuid.UUID            `json:"customer_id"`
+			Optional *uuid.UUID           `json:"optional"`
+			IDs      []uuid.UUID          `json:"ids"`
+			ByName   map[string]uuid.UUID `json:"by_name"`
+		}
+
+		result, err := UnmarshalJson([]byte(`{
+			"customer_id":"`+id+`",
+			"optional":"`+id+`",
+			"ids":["`+id+`"],
+			"by_name":{"primary":"`+id+`"}
+		}`), reflect.TypeOf(uuidInput{}))
+		assert.NoError(t, err)
+		input := result.Interface().(uuidInput)
+		assert.Equal(t, expected, input.ID)
+		assert.Equal(t, expected, *input.Optional)
+		assert.Equal(t, []uuid.UUID{expected}, input.IDs)
+		assert.Equal(t, expected, input.ByName["primary"])
+
+		var ptr **uuid.UUID
+		result, err = UnmarshalJson([]byte(`"`+id+`"`), reflect.TypeOf(ptr))
+		assert.NoError(t, err)
+		assert.Equal(t, expected, **result.Interface().(**uuid.UUID))
+
+		result, err = UnmarshalJson([]byte(`null`), reflect.TypeOf(ptr))
+		assert.NoError(t, err)
+		assert.Nil(t, result.Interface().(**uuid.UUID))
+
+		RegisterType(reflect.TypeOf(uuid.UUID{}))
+		var registeredSchemaFound bool
+		for _, registeredSchema := range GetRegisteredTypeJsonSchema() {
+			if registeredSchema.Title == "uuid.UUID" {
+				registeredSchemaFound = true
+				assert.Equal(t, "string", string(registeredSchema.Type))
+				break
+			}
+		}
+		assert.True(t, registeredSchemaFound)
+
+		result, err = UnmarshalJson(
+			[]byte(`{"_eino_go_type":"uuid.UUID","_value":"`+id+`"}`),
+			reflect.TypeOf((*any)(nil)).Elem(),
+		)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, result.Interface().(uuid.UUID))
+
+		assert.NotPanics(t, func() {
+			_, err = UnmarshalJson(
+				[]byte(`[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]`),
+				reflect.TypeOf(uuid.UUID{}),
+			)
+		})
+		assert.Error(t, err)
+
+		_, err = UnmarshalJson([]byte(`"not-a-uuid"`), reflect.TypeOf(uuid.UUID{}))
+		assert.Error(t, err)
+	})
+
+	t.Run("pointer text JSON type", func(t *testing.T) {
+		var codec *pointerTextCodec
+		result, err := UnmarshalJson([]byte(`"x"`), reflect.TypeOf(codec))
+		assert.NoError(t, err)
+		assert.Equal(t, byte('x'), result.Interface().(*pointerTextCodec)[0])
 	})
 }
 
