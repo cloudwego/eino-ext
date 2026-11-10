@@ -26,6 +26,7 @@ import (
 
 	"github.com/bytedance/mockey"
 	"github.com/eino-contrib/jsonschema"
+	aclopenai "github.com/cloudwego/eino-ext/libs/acl/openai"
 	"github.com/meguminnnnnnnnn/go-openai"
 	orderedmap "github.com/wk8/go-ordered-map/v2"
 
@@ -323,4 +324,51 @@ func TestOpenAIGenerate(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+// TestCustomHeadersConfig verifies that CustomHeaders set in ChatModelConfig
+// are correctly passed through to the underlying aclopenai.Config.
+func TestCustomHeadersConfig(t *testing.T) {
+	config := &ChatModelConfig{
+		APIKey: "test-key",
+		Model:  "gpt-4",
+		CustomHeaders: map[string]string{
+			"X-Request-ID":  "test-req-123",
+			"X-Custom-Tier": "premium",
+		},
+	}
+
+	nConf := buildConfigHelper(config)
+	if nConf.CustomHeaders == nil {
+		t.Fatal("expected CustomHeaders to be non-nil")
+	}
+	if nConf.CustomHeaders["X-Request-ID"] != "test-req-123" {
+		t.Errorf("expected X-Request-ID to be 'test-req-123', got '%s'", nConf.CustomHeaders["X-Request-ID"])
+	}
+	if nConf.CustomHeaders["X-Custom-Tier"] != "premium" {
+		t.Errorf("expected X-Custom-Tier to be 'premium', got '%s'", nConf.CustomHeaders["X-Custom-Tier"])
+	}
+}
+
+// TestCustomHeadersNil verifies that nil CustomHeaders is handled correctly.
+func TestCustomHeadersNil(t *testing.T) {
+	config := &ChatModelConfig{
+		APIKey: "test-key",
+		Model:  "gpt-4",
+	}
+
+	nConf := buildConfigHelper(config)
+	if nConf.CustomHeaders != nil {
+		t.Error("expected CustomHeaders to be nil when not configured")
+	}
+}
+
+// buildConfigHelper mirrors how NewChatModel converts ChatModelConfig to aclopenai.Config.
+func buildConfigHelper(config *ChatModelConfig) *aclopenai.Config {
+	return &aclopenai.Config{
+		APIKey:        config.APIKey,
+		Model:         config.Model,
+		BaseURL:       config.BaseURL,
+		CustomHeaders: config.CustomHeaders,
+	}
 }
