@@ -28,4 +28,5 @@ type functionDefinition struct {
 	Name        string             `json:"name"`
 	Description string             `json:"description,omitempty"`
 	Parameters  *jsonschema.Schema `json:"parameters"`
+	Strict      *bool              `json:"strict,omitempty"`
 }
