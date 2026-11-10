@@ -75,6 +75,20 @@ func main() {
 
 ```
 
+## 响应 ID
+
+使用 `openai.GetResponseID(msg)` 读取 `Generate` 返回消息或 `Stream` 分片中
+Chat Completions 响应体的 `id`。通过 `schema.ConcatMessages` 合并分片后，
+该 ID 仍然保留，重复出现的 ID 不会被拼接。
+这是响应 ID（例如 `chatcmpl-...`），不是 HTTP `X-Request-ID` 响应头。
+没有 ID 时，该函数返回空字符串。
+
+```go
+responseID := openai.GetResponseID(resp)
+```
+
+该函数复用现有的消息元数据及其流式合并行为，无需导入底层 ACL 包或检查 `Message.Extra`。
+
 ## 配置
 
 可以使用 `openai.ChatModelConfig` 结构体配置模型：

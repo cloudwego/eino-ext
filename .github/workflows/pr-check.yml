@@ -6,17 +6,17 @@ jobs:
   compliant:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
       - name: Check License Header
-        uses: apache/skywalking-eyes/header@v0.4.0
+        uses: apache/skywalking-eyes/header@438e4ea5682269933ea2c8b5608662e52af26959 # v0.4.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check Spell
-        uses: crate-ci/typos@v1.42.3
+        uses: crate-ci/typos@06d010dfe4c84fdab1a25ea02b57b3585018ba80 # v1.42.3
         with:
           config: .github/workflows/typos.toml
 

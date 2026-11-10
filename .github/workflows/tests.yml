@@ -18,8 +18,8 @@ jobs:
       COVERAGE_FILE: coverage.out
       BREAKDOWN_FILE: base.coverage
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.25.6"
       # - name: Go test for every module
@@ -73,14 +73,14 @@ jobs:
 
       - name: Download base.coverage for diff coverage rate
         id: download-base-coverage
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         continue-on-error: true
         with:
           name: ${{ env.BREAKDOWN_FILE }}
 
       - name: Calculate coverage
         id: calculate-coverage
-        uses: vladopajic/go-test-coverage@v2.12.1
+        uses: vladopajic/go-test-coverage@f5435e92b0a4496013d599a34389f4fbd9985a01 # v2.12.1
         with:
           profile: ${{env.COVERAGE_PROFILES}}
           config: ./.testcoverage.yml
@@ -88,7 +88,7 @@ jobs:
           diff-base-breakdown-file-name: ${{ steps.download-base-coverage.outcome == 'success' && env.BREAKDOWN_FILE || '' }}
 
       - name: Upload base.coverage of main branch
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: github.ref_name == 'main'
         with:
           name: ${{env.BREAKDOWN_FILE}}
@@ -96,7 +96,7 @@ jobs:
           if-no-files-found: error
       - name: Find coverage report
         if: ${{ always() && github.event.pull_request.number != null }}
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
         continue-on-error: true
         id: find-comment
         with:
@@ -105,7 +105,7 @@ jobs:
           body-includes: 'go-test-coverage report:'
       - name: Post coverage report
         if: ${{ always() && github.event.pull_request.number != null }}
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         continue-on-error: true
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -120,9 +120,9 @@ jobs:
   unit-benchmark-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version: "1.25.6"
 
@@ -144,7 +144,7 @@ jobs:
       pull-requests: write
       repository-projects: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
 
@@ -284,7 +284,7 @@ jobs:
 
       - name: Find existing comment
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: peter-evans/find-comment@v3
+        uses: peter-evans/find-comment@3eae4d37986fb5a8592848f6a574fdf654e61f9e # v3
         id: find-comment
         with:
           issue-number: ${{ github.event.pull_request.number }}
@@ -293,7 +293,7 @@ jobs:
 
       - name: Post or update PR comment
         if: steps.check-mods.outputs.needs_tag == 'true' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        uses: peter-evans/create-or-update-comment@v4
+        uses: peter-evans/create-or-update-comment@71345be0265236311c031f5c7866368bd1eff043 # v4
         with:
           issue-number: ${{ github.event.pull_request.number }}
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
