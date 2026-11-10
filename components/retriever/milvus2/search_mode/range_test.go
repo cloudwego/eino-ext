@@ -33,11 +33,11 @@ import (
 
 func TestNewRange(t *testing.T) {
 	convey.Convey("test NewRange", t, func() {
-		convey.Convey("test with default metric type", func() {
-			r := NewRange("", 0.5)
+		convey.Convey("test with default values", func() {
+			r := NewRange("", 10.0)
 			convey.So(r, convey.ShouldNotBeNil)
-			convey.So(r.MetricType, convey.ShouldEqual, milvus2.L2)
-			convey.So(r.Radius, convey.ShouldEqual, 0.5)
+			convey.So(r.MetricType, convey.ShouldBeEmpty)
+			convey.So(r.Radius, convey.ShouldEqual, 10.0)
 		})
 
 		convey.Convey("test with L2 metric type", func() {
