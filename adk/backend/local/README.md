@@ -72,6 +72,9 @@ type Config struct {
     // Recommended for production use to prevent command injection
     ValidateCommand func(string) error
 
+    // Optional: follow symlink directories during GlobInfo traversal.
+    FollowSymlinkDirsInGlob bool
+
     // Optional: image/PDF/DPI limits for MultiModalRead.
     // Zero/negative fields fall back to defaults; values above hard-caps are silently clamped.
     MultiModalRead MultiModalReadConfig

@@ -242,6 +242,10 @@ var errReadAllBytesTooLarge = errors.New("file exceeds max allowed size")
 type Config struct {
 	ValidateCommand func(string) error
 
+	// FollowSymlinkDirsInGlob controls whether GlobInfo traverses symlink directories.
+	// Returned paths remain relative to the requested path and are not canonicalized.
+	FollowSymlinkDirsInGlob bool
+
 	// MultiModalRead overrides default size/page/DPI limits used by
 	// Local.MultiModalRead. Optional; zero-value fields fall back to
 	// package defaults (see MultiModalReadConfig field comments).
@@ -250,6 +254,8 @@ type Config struct {
 
 type Local struct {
 	validateCommand func(string) error
+
+	followSymlinkDirsInGlob bool
 
 	// multiModalReadCfg carries already-resolved (defaults applied, hard-caps
 	// enforced) limits used by MultiModalRead. Every field is guaranteed > 0.
@@ -278,8 +284,9 @@ func NewBackend(_ context.Context, cfg *Config) (*Local, error) {
 	}
 
 	return &Local{
-		validateCommand:   validateCommand,
-		multiModalReadCfg: resolveMultiModalReadConfig(cfg.MultiModalRead),
+		validateCommand:         validateCommand,
+		followSymlinkDirsInGlob: cfg.FollowSymlinkDirsInGlob,
+		multiModalReadCfg:       resolveMultiModalReadConfig(cfg.MultiModalRead),
 	}, nil
 }
 
@@ -839,38 +846,45 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 	path := filepath.Clean(req.Path)
 
 	var matches []string
-	err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err != nil {
-			if os.IsPermission(err) {
-				return filepath.SkipDir
-			}
-			return err
-		}
-
-		relPath, err := filepath.Rel(path, p)
-		if err != nil {
-			return fmt.Errorf("failed to get relative path: %w", err)
-		}
-
-		relPath = filepath.ToSlash(relPath)
-
-		if relPath == "." {
-			return nil
-		}
-
-		matched, _ := doublestar.Match(req.Pattern, relPath)
-		if matched {
+	var err error
+	if s.followSymlinkDirsInGlob {
+		err = walkDirFollowSymlinks(ctx, path, req.Pattern, func(relPath string) {
 			matches = append(matches, relPath)
-		}
+		})
+	} else {
+		err = filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
 
-		return nil
-	})
+			if err != nil {
+				if os.IsPermission(err) {
+					return filepath.SkipDir
+				}
+				return err
+			}
+
+			relPath, err := filepath.Rel(path, p)
+			if err != nil {
+				return fmt.Errorf("failed to get relative path: %w", err)
+			}
+
+			relPath = filepath.ToSlash(relPath)
+
+			if relPath == "." {
+				return nil
+			}
+
+			matched, _ := doublestar.Match(req.Pattern, relPath)
+			if matched {
+				matches = append(matches, relPath)
+			}
+
+			return nil
+		})
+	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to walk directory: %w", err)
@@ -886,6 +900,99 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 	}
 
 	return files, nil
+}
+
+func walkDirFollowSymlinks(ctx context.Context, root string, pattern string, onMatch func(string)) error {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+
+	ancestors := map[string]struct{}{
+		filepath.Clean(realRoot): {},
+	}
+
+	return walkDirFollowSymlinksRecursive(ctx, root, "", pattern, ancestors, onMatch)
+}
+
+func walkDirFollowSymlinksRecursive(ctx context.Context, dir string, relDir string, pattern string, ancestors map[string]struct{}, onMatch func(string)) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsPermission(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		childPath := filepath.Join(dir, entry.Name())
+		relPath := filepath.ToSlash(filepath.Join(relDir, entry.Name()))
+
+		matched, _ := doublestar.Match(pattern, relPath)
+		if matched {
+			onMatch(relPath)
+		}
+
+		if entry.IsDir() {
+			if err := walkChildDirFollowSymlinks(ctx, childPath, relPath, pattern, ancestors, onMatch); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if entry.Type()&os.ModeSymlink == 0 {
+			continue
+		}
+
+		info, err := os.Stat(childPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		if !info.IsDir() {
+			continue
+		}
+
+		if err := walkChildDirFollowSymlinks(ctx, childPath, relPath, pattern, ancestors, onMatch); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func walkChildDirFollowSymlinks(ctx context.Context, dir string, relDir string, pattern string, ancestors map[string]struct{}, onMatch func(string)) error {
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	realDir = filepath.Clean(realDir)
+	if _, ok := ancestors[realDir]; ok {
+		return nil
+	}
+
+	ancestors[realDir] = struct{}{}
+	err = walkDirFollowSymlinksRecursive(ctx, dir, relDir, pattern, ancestors, onMatch)
+	delete(ancestors, realDir)
+	return err
 }
 
 func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
