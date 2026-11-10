@@ -64,14 +64,26 @@ type LoaderConfig struct {
     Parser parser.Parser
     
     // Client 指定要使用的 HTTP 客户端
-    // 可选。默认值：http.DefaultClient
+    // 可选。默认值：带 30 秒超时、使用 http.DefaultTransport 的 http.Client
+    //（HTTP(S)_PROXY 与拨号超时仍然生效）
     Client *http.Client
     
     // RequestBuilder 自定义 HTTP 请求
     // 可选。默认值：GET 请求构建器
     RequestBuilder func(ctx context.Context, source document.Source, opts ...document.LoaderOption) (*http.Request, error)
+
+    // MaxResponseBytes 限制传给 Parser 的响应体字节数。
+    // 超出时返回 ErrResponseTooLarge，而不是静默截断文档。
+    // 可选。默认值：10 MiB
+    MaxResponseBytes int64
 }
 ```
+
+### 行为说明
+
+- 非 2xx 响应会作为错误返回，不再被当作文档内容解析，错误页不会进入语料。
+- 响应体超过 `MaxResponseBytes` 时，`Load` 返回 `ErrResponseTooLarge`。
+- `RequestBuilder` 能够收到传给 `Load` 的 `document.LoaderOption`。
 
 ## 高级用法
 
