@@ -839,20 +839,7 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 	path := filepath.Clean(req.Path)
 
 	var matches []string
-	err := filepath.WalkDir(path, func(p string, d os.DirEntry, err error) error {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-
-		if err != nil {
-			if os.IsPermission(err) {
-				return filepath.SkipDir
-			}
-			return err
-		}
-
+	err := walkDirFollowSymlinks(ctx, path, func(p string, _ os.DirEntry) error {
 		relPath, err := filepath.Rel(path, p)
 		if err != nil {
 			return fmt.Errorf("failed to get relative path: %w", err)
@@ -886,6 +873,122 @@ func (s *Local) GlobInfo(ctx context.Context, req *filesystem.GlobInfoRequest) (
 	}
 
 	return files, nil
+}
+
+// walkDirFollowSymlinks visits every entry under root, descending into both
+// regular directories and directory symlinks. Symlinks are traversed through
+// their logical paths so callers continue to see paths rooted at the symlink
+// rather than the physical target.
+func walkDirFollowSymlinks(
+	ctx context.Context,
+	root string,
+	visit func(path string, entry os.DirEntry) error,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	rootInfo, err := os.Stat(root)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if err != nil {
+		if os.IsPermission(err) {
+			return nil
+		}
+		// WalkDir visits a broken root symlink as an entry without following
+		// it. Preserve the equivalent empty result for that case.
+		if linkInfo, linkErr := os.Lstat(root); linkErr == nil && linkInfo.Mode()&os.ModeSymlink != 0 {
+			return nil
+		}
+		return err
+	}
+	if !rootInfo.IsDir() {
+		return nil
+	}
+
+	return walkDirChildren(ctx, root, []os.FileInfo{rootInfo}, visit)
+}
+
+func walkDirChildren(
+	ctx context.Context,
+	dir string,
+	ancestors []os.FileInfo,
+	visit func(path string, entry os.DirEntry) error,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	entries, err := os.ReadDir(dir)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if err != nil {
+		if os.IsPermission(err) {
+			return nil
+		}
+		return err
+	}
+
+	for _, entry := range entries {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		entryPath := filepath.Join(dir, entry.Name())
+		if err := visit(entryPath, entry); err != nil {
+			return err
+		}
+
+		dirInfo, err := followedDirectoryInfo(entryPath, entry)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if err != nil {
+			// A broken, looping, or inaccessible symlink remains a matchable
+			// entry, but there is no directory we can safely descend into.
+			if entry.Type()&os.ModeSymlink != 0 || os.IsPermission(err) {
+				continue
+			}
+			return err
+		}
+		if dirInfo == nil || isAncestorDirectory(ancestors, dirInfo) {
+			continue
+		}
+
+		if err := walkDirChildren(ctx, entryPath, append(ancestors, dirInfo), visit); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func followedDirectoryInfo(path string, entry os.DirEntry) (os.FileInfo, error) {
+	if entry.Type()&os.ModeSymlink == 0 && !entry.IsDir() {
+		return nil, nil
+	}
+	// Stat the current path instead of trusting the type cached by ReadDir.
+	// Besides following symlinks, this handles a directory being replaced
+	// between ReadDir and descent without using stale identity information.
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.IsDir() {
+		return info, nil
+	}
+	return nil, nil
+}
+
+func isAncestorDirectory(ancestors []os.FileInfo, candidate os.FileInfo) bool {
+	for _, ancestor := range ancestors {
+		if os.SameFile(ancestor, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
