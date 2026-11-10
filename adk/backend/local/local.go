@@ -262,11 +262,10 @@ var defaultValidateCommand = func(string) error {
 
 // NewBackend creates a new local filesystem Local instance.
 //
-// IMPORTANT - System Compatibility:
-//   - Supported: Unix/MacOS only
-//   - NOT Supported: Windows (requires custom implementation of filesystem.Backend)
-//   - Command Execution: Uses /bin/sh by default for Execute method
-//   - If /bin/sh does not meet your requirements, please implement your own filesystem.Backend
+// IMPORTANT - Command Execution:
+//   - Unix/macOS use /bin/sh.
+//   - Windows uses cmd.exe.
+//   - If the system shell does not meet your requirements, implement your own filesystem.Backend.
 func NewBackend(_ context.Context, cfg *Config) (*Local, error) {
 	if cfg == nil {
 		return nil, errors.New("config is required")
@@ -987,7 +986,7 @@ func (s *Local) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (
 		return nil, err
 	}
 
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", input.Command)
+	cmd := newShellCmd(ctx, input.Command)
 
 	var stdoutBuf, stderrBuf strings.Builder
 	cmd.Stdout = &stdoutBuf
@@ -1023,7 +1022,7 @@ func (s *Local) Execute(ctx context.Context, input *filesystem.ExecuteRequest) (
 
 // initStreamingCmd creates command with stdout and stderr pipes.
 func (s *Local) initStreamingCmd(ctx context.Context, command string) (*exec.Cmd, io.ReadCloser, io.ReadCloser, error) {
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
+	cmd := newShellCmd(ctx, command)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -1037,6 +1036,13 @@ func (s *Local) initStreamingCmd(ctx context.Context, command string) (*exec.Cmd
 	}
 
 	return cmd, stdout, stderr, nil
+}
+
+func newShellCmd(ctx context.Context, command string) *exec.Cmd {
+	if runtime.GOOS == "windows" {
+		return exec.CommandContext(ctx, "cmd.exe", "/C", command)
+	}
+	return exec.CommandContext(ctx, "/bin/sh", "-c", command)
 }
 
 // runCmdInBackground executes command in background without waiting for completion.
