@@ -1221,6 +1221,10 @@ func getWebSearchToolResultActionParam(ws *WebSearchResult) (action responses.Re
 			},
 		}, nil
 
+	case WebSearchActionOpenPage, WebSearchActionFind:
+		// The paired call already carries the URL and pattern.
+		return action, nil
+
 	default:
 		return action, fmt.Errorf("unknown web search result action type: %s", ws.ActionType)
 	}
@@ -1773,6 +1777,11 @@ func webSearchToContentBlocks(item responses.ResponseFunctionWebSearch) (blocks 
 				},
 			},
 		}
+		res = &ServerToolResult{
+			WebSearch: &WebSearchResult{
+				ActionType: WebSearchActionOpenPage,
+			},
+		}
 
 	case responses.ResponseFunctionWebSearchActionFind:
 		args = &ServerToolCallArguments{
@@ -1782,6 +1791,11 @@ func webSearchToContentBlocks(item responses.ResponseFunctionWebSearch) (blocks 
 					URL:     variant.URL,
 					Pattern: variant.Pattern,
 				},
+			},
+		}
+		res = &ServerToolResult{
+			WebSearch: &WebSearchResult{
+				ActionType: WebSearchActionFind,
 			},
 		}
 
