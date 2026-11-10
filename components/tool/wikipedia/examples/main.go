@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Create search request
-	m, err := sonic.MarshalString(wikipedia.SearchRequest{"bytedance"})
+	m, err := sonic.MarshalString(wikipedia.SearchRequest{Query: "bytedance"})
 	if err != nil {
 		log.Fatal("Failed to marshal search request:", err)
 	}
