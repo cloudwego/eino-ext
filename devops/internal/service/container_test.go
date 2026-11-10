@@ -67,6 +67,26 @@ func Test_containerServiceImpl_AddGraphInfo(t *testing.T) {
 		assert.Equal(t, s.graphNameCounter[mockGraphName], 10)
 	})
 
+	t.Run("reject graph beyond limit", func(t *testing.T) {
+		mockGraphName := "mock_graph"
+		s := &containerServiceImpl{
+			container:        map[string]*model.GraphContainer{},
+			graphNameCounter: map[string]int{},
+		}
+
+		for i := 0; i < maxGraphNum; i++ {
+			_, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{})
+			if !assert.NoError(t, err) {
+				return
+			}
+		}
+
+		_, err := s.AddGraphInfo(mockGraphName, &compose.GraphInfo{})
+		assert.EqualError(t, err, fmt.Sprintf("too many graph, max=%d", maxGraphNum))
+		assert.Equal(t, maxGraphNum, s.totalGraphNum)
+		assert.Len(t, s.container, maxGraphNum)
+	})
+
 	t.Run("add graph info with subGraph, once", func(t *testing.T) {
 		mockGraphName := "mock_graph"
 		s := &containerServiceImpl{
