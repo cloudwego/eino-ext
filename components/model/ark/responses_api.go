@@ -509,6 +509,10 @@ func (cm *ResponsesAPIChatModel) genRequestAndOptions(in []*schema.Message, opti
 		return nil, err
 	}
 
+	if responseReq.PreviousResponseId != nil && !specOptions.toolsOnCache {
+		return responseReq, nil
+	}
+
 	err = cm.populateTools(responseReq, options, specOptions.enableWebSearch, specOptions.maxToolCalls)
 
 	if err != nil {
@@ -731,9 +735,6 @@ func convToolResultToString(msg *schema.Message) (string, error) {
 
 func (cm *ResponsesAPIChatModel) populateTools(responseReq *responses.ResponsesRequest, options *model.Options, enableToolWebSearch *ToolWebSearch, maxToolCalls *int64) error {
 
-	if responseReq.PreviousResponseId != nil {
-		return nil
-	}
 	tools := cm.tools
 	if options.Tools != nil {
 		var err error

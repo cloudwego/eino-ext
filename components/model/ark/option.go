@@ -28,7 +28,8 @@ type arkOptions struct {
 
 	thinking *arkModel.Thinking
 
-	cache *CacheOption
+	cache        *CacheOption
+	toolsOnCache bool
 
 	enableWebSearch *ToolWebSearch
 
@@ -105,6 +106,18 @@ type CacheOption struct {
 func WithCache(cache *CacheOption) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
 		o.cache = cache
+	})
+}
+
+// WithToolsOnCache includes tools and their tool-choice configuration in a
+// Responses API request with a previous_response_id.
+// Tools bound to the model or supplied via model.WithTools are
+// included, together with any configured web search tool and max tool calls.
+// By default, these are omitted when previous_response_id is set.
+// This option has no effect on Context API requests.
+func WithToolsOnCache() model.Option {
+	return model.WrapImplSpecificOptFn(func(o *arkOptions) {
+		o.toolsOnCache = true
 	})
 }
 
