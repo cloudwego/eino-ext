@@ -253,6 +253,96 @@ func (m *mockStream) Close() error {
 	return nil
 }
 
+// drainTrackingStream signals when it has been read all the way to EOF, which
+// lets a test detect a consumer that keeps pulling from upstream after it has
+// already reported a terminal error. Recv is only ever called by the single
+// streaming goroutine, so the bookkeeping needs no locking.
+type drainTrackingStream struct {
+	responses []*deepseek.StreamChatCompletionResponse
+	idx       int
+	drained   chan struct{}
+	notified  bool
+}
+
+func (m *drainTrackingStream) Recv() (*deepseek.StreamChatCompletionResponse, error) {
+	if m.idx >= len(m.responses) {
+		if !m.notified {
+			m.notified = true
+			close(m.drained)
+		}
+
+		return nil, io.EOF
+	}
+	res := m.responses[m.idx]
+	m.idx++
+
+	return res, nil
+}
+
+func (m *drainTrackingStream) Close() error {
+	return nil
+}
+
+// TestStreamStopsReadingAfterResolveError pins the terminal behaviour of the
+// streaming goroutine. Every other terminal branch in that loop returns
+// immediately; the resolve-error branch used to send the error downstream and
+// then keep reading, so a provider that stayed connected (empty deltas are a
+// common keepalive) kept the goroutine and its HTTP connection alive long after
+// the consumer had given up.
+func TestStreamStopsReadingAfterResolveError(t *testing.T) {
+	responses := []*deepseek.StreamChatCompletionResponse{
+		{
+			Choices: []deepseek.StreamChoices{
+				{Index: 0, Delta: deepseek.StreamDelta{Role: "assistant", Content: "Hello"}},
+			},
+		},
+		{
+			// extractLogProbs rejects a non-map value, so this chunk makes
+			// resolveStreamResponse fail after found stays false.
+			Choices: []deepseek.StreamChoices{
+				{Index: 0, Logprobs: "not-a-map"},
+			},
+		},
+	}
+	for i := 0; i < 100; i++ {
+		responses = append(responses, &deepseek.StreamChatCompletionResponse{
+			Choices: []deepseek.StreamChoices{{Index: 0}},
+		})
+	}
+
+	stream := &drainTrackingStream{responses: responses, drained: make(chan struct{})}
+	defer mockey.Mock((*deepseek.Client).CreateChatCompletionStream).To(
+		func(ctx context.Context, request *deepseek.StreamChatCompletionRequest) (deepseek.ChatCompletionStream, error) {
+			return stream, nil
+		}).Build().UnPatch()
+
+	ctx := context.Background()
+	cm, err := NewChatModel(ctx, &ChatModelConfig{
+		APIKey:  "my-api-key",
+		Timeout: time.Second,
+		Model:   "deepseek-chat",
+	})
+	assert.Nil(t, err)
+
+	out, err := cm.Stream(ctx, []*schema.Message{schema.UserMessage("hello")})
+	assert.Nil(t, err)
+	defer out.Close()
+
+	msg, err := out.Recv()
+	assert.Nil(t, err)
+	assert.Equal(t, "Hello", msg.Content)
+
+	_, err = out.Recv()
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "failed to resolve stream response from DeepSeek")
+
+	select {
+	case <-stream.drained:
+		t.Fatal("streaming goroutine kept reading upstream after reporting a resolve error")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestPanicErr(t *testing.T) {
 	err := newPanicErr("info", []byte("stack"))
 	assert.Equal(t, "panic error: info, \nstack: stack", err.Error())
