@@ -314,6 +314,9 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("file not found: %s", path)
 		}
+		if os.IsPermission(err) {
+			return nil, fmt.Errorf("permission denied: %s", path)
+		}
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
@@ -321,6 +324,9 @@ func (s *Local) Read(ctx context.Context, req *filesystem.ReadRequest) (*filesys
 	info, err := file.Stat()
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat file: %w", err)
+	}
+	if info.IsDir() {
+		return nil, fmt.Errorf("%s is a directory, not a file", path)
 	}
 	if info.Size() == 0 {
 		return &filesystem.FileContent{}, nil
@@ -619,6 +625,9 @@ func splitPagesRange(pages string) (startStr, endStr string, hasRange bool, err 
 	}
 	parts := strings.SplitN(trimmed, "-", 2)
 	startStr = strings.TrimSpace(parts[0])
+	if startStr == "" {
+		return "", "", false, fmt.Errorf("invalid pages parameter: %q (open-start range is not supported, start page is required)", pages)
+	}
 	if len(parts) == 1 {
 		return startStr, "", false, nil
 	}
