@@ -19,6 +19,9 @@ package claude
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
@@ -307,6 +310,72 @@ func clearAnthropicAuthEnv(t *testing.T) {
 			t.Cleanup(func() { os.Unsetenv(key) })
 		}
 	}
+}
+
+func TestStreamWithBufferedEmptyMessages(t *testing.T) {
+	clearAnthropicAuthEnv(t)
+	const response = `event: message_start
+data: {"type":"message_start","message":{"id":"msg_test","type":"message","role":"assistant","model":"claude-3-opus-20240229","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":1,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"OK"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":1}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "/v1/messages", r.URL.Path)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, err := io.WriteString(w, response)
+		assert.NoError(t, err)
+	}))
+	defer server.Close()
+
+	ctx := t.Context()
+	cm, err := NewChatModel(ctx, &Config{
+		APIKey:     "test-key",
+		Model:      "claude-3-opus-20240229",
+		MaxTokens:  1,
+		BaseURL:    &server.URL,
+		HTTPClient: server.Client(),
+	})
+	if !assert.NoError(t, err) {
+		return
+	}
+	stream, err := cm.Stream(ctx, []*schema.Message{schema.UserMessage("hello")})
+	if !assert.NoError(t, err) {
+		return
+	}
+	defer stream.Close()
+
+	var messages []*schema.Message
+	for {
+		message, err := stream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if !assert.NoError(t, err) {
+			return
+		}
+		messages = append(messages, message)
+	}
+	message, err := schema.ConcatMessages(messages)
+	if !assert.NoError(t, err) {
+		return
+	}
+	assert.Equal(t, "OK", message.Content)
+	assert.Equal(t, schema.Assistant, message.Role)
 }
 
 func TestConvStreamEvent(t *testing.T) {
