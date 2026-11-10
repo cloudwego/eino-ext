@@ -29,6 +29,12 @@ go get github.com/cloudwego/eino-ext/components/model/ark@latest
 
 This model is used for standard chat and text generation tasks.
 
+For models that return `encrypted_content`, both `Generate` and `Stream` preserve
+the opaque reasoning content in `schema.Message.Extra`. You can inspect it with
+`ark.GetEncryptedContent(msg)`. Include the returned assistant message in the next
+request to send the value back automatically, including after a tool call. When
+persisting conversation history, keep `Extra` along with the other message fields.
+
 ### Quick Start
 
 Here's a quick example of how to use the `ChatModel`:

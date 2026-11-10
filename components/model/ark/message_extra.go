@@ -24,6 +24,7 @@ import (
 const (
 	keyOfRequestID             = "ark-request-id"
 	keyOfReasoningContent      = "ark-reasoning-content"
+	keyOfEncryptedContent      = "ark-encrypted-content"
 	keyOfRawReasoningContent   = "ark-raw-reasoning-content"
 	keyOfModelName             = "ark-model-name"
 	videoURLFPS                = "ark-model-video-url-fps"
@@ -119,6 +120,17 @@ func GetReasoningContent(msg *schema.Message) (string, bool) {
 
 func setReasoningContent(msg *schema.Message, reasoningContent string) {
 	setMsgExtra(msg, keyOfReasoningContent, reasoningContent)
+}
+
+// GetEncryptedContent returns the opaque reasoning content from a Chat Completions
+// response. It is preserved in Message.Extra and sent back when the message is
+// included in a subsequent request.
+func GetEncryptedContent(msg *schema.Message) (string, bool) {
+	return getMsgExtraValue[string](msg, keyOfEncryptedContent)
+}
+
+func setEncryptedContent(msg *schema.Message, encryptedContent string) {
+	setMsgExtra(msg, keyOfEncryptedContent, encryptedContent)
 }
 
 func getRawReasoningContent(msg *schema.Message) (string, bool) {
