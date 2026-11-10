@@ -40,7 +40,7 @@ func main() {
 		Host:        "https://cloud.langfuse.com",
 		PublicKey:   "pk-lf-...",
 		SecretKey:   "sk-lf-...",
-		ServiceName: "eino-app",
+		Name:        "eino-app",
 		Release:     "v1.0.0",
 	})
 	
