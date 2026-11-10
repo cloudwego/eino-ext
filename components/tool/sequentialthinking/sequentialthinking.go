@@ -198,6 +198,10 @@ func (t *thinkingServer) formatThought(td *ThoughtRequest) string {
 //   - result: The processed thought result
 //   - err: An error if processing fails
 func (t *thinkingServer) processThought(_ context.Context, td *ThoughtRequest) (*ThoughtResult, error) {
+	// The total is an estimate; expand it before validating a new thought.
+	if td.TotalThoughts > 0 && td.ThoughtNumber > td.TotalThoughts {
+		td.TotalThoughts = td.ThoughtNumber
+	}
 	validated := t.validate(td)
 	if validated.ThoughtNumber > validated.TotalThoughts {
 		validated.TotalThoughts = validated.ThoughtNumber
