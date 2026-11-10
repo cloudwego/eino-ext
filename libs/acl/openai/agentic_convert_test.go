@@ -583,6 +583,74 @@ func TestChunkConverter(t *testing.T) {
 		assert.Equal(t, 2, out4.ContentBlocks[0].StreamingMeta.Index)
 	})
 
+	t.Run("text interleaved between tool calls", func(t *testing.T) {
+		conv := newChunkConverter()
+
+		// Chunk 1: text
+		chunk1 := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "\n\n",
+		}
+		out1, err := conv.convert(chunk1)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, out1.ContentBlocks[0].StreamingMeta.Index)
+
+		// Chunk 2: tool call 0 starts (new block)
+		chunk2 := &schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Index: intPtr(0), ID: "call_1", Function: schema.FunctionCall{Name: "exec", Arguments: `{"command"`}},
+			},
+		}
+		out2, err := conv.convert(chunk2)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, out2.ContentBlocks[0].StreamingMeta.Index)
+
+		// Chunk 3: tool call 0 continues (same block)
+		chunk3 := &schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Index: intPtr(0), Function: schema.FunctionCall{Arguments: `: "whoami"}`}},
+			},
+		}
+		out3, err := conv.convert(chunk3)
+		assert.NoError(t, err)
+		assert.Equal(t, 1, out3.ContentBlocks[0].StreamingMeta.Index)
+
+		// Chunk 4: text interleaved between tool calls. Some providers emit
+		// whitespace content chunks between parallel tool calls; this must start
+		// a new block instead of reusing the text block's index, otherwise
+		// ConcatAgenticMessages groups it with the tool-call block and fails
+		// with a block type mismatch.
+		chunk4 := &schema.Message{
+			Role:    schema.Assistant,
+			Content: "\n",
+		}
+		out4, err := conv.convert(chunk4)
+		assert.NoError(t, err)
+		assert.Equal(t, 2, out4.ContentBlocks[0].StreamingMeta.Index)
+
+		// Chunk 5: tool call 1 starts (new block)
+		chunk5 := &schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{
+				{Index: intPtr(1), ID: "call_2", Function: schema.FunctionCall{Name: "exec", Arguments: `{"command": "id"}`}},
+			},
+		}
+		out5, err := conv.convert(chunk5)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, out5.ContentBlocks[0].StreamingMeta.Index)
+
+		// The full frame sequence must concatenate without a block type mismatch.
+		frames := make([]*schema.AgenticMessage, 0, 5)
+		for _, out := range []*schema.AgenticMessage{out1, out2, out3, out4, out5} {
+			frames = append(frames, out)
+		}
+		msg, err := schema.ConcatAgenticMessages(frames)
+		assert.NoError(t, err)
+		assert.NotNil(t, msg)
+	})
+
 	t.Run("multiContent with source index changes", func(t *testing.T) {
 		conv := newChunkConverter()
 
