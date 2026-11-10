@@ -123,13 +123,6 @@ func TestInputFileID(t *testing.T) {
 	})
 }
 
-func TestChatFileIDUnsupported(t *testing.T) {
-	id := "file-123"
-	if _, _, err := validateMessagePartCommon(schema.MessagePartCommon{FileID: &id}, "image"); err == nil {
-		t.Fatal("the pinned Chat SDK cannot represent FileID")
-	}
-}
-
 func TestInputFileIDPrecedence(t *testing.T) {
 	for _, media := range []struct {
 		name    string

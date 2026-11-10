@@ -129,7 +129,7 @@ func (cm *completionAPIChatModel) Generate(ctx context.Context, in []*schema.Mes
 
 	var resp model.ChatCompletionResponse
 	if specOptions.cache != nil && specOptions.cache.ContextID != nil {
-		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(req, *specOptions.cache.ContextID),
+		resp, err = cm.client.CreateContextChatCompletion(ctx, *cm.convCompletionRequest(&req.CreateChatCompletionRequest, *specOptions.cache.ContextID),
 			arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	} else if cm.batchChat != nil && cm.batchChat.EnableBatchChat {
 		// batch chat need set context timeout
@@ -220,7 +220,7 @@ func (cm *completionAPIChatModel) Stream(ctx context.Context, in []*schema.Messa
 
 	var stream *autils.ChatCompletionStreamReader
 	if arkOpts.cache != nil && arkOpts.cache.ContextID != nil {
-		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *cm.convCompletionRequest(req, *arkOpts.cache.ContextID),
+		stream, err = cm.client.CreateContextChatCompletionStream(ctx, *cm.convCompletionRequest(&req.CreateChatCompletionRequest, *arkOpts.cache.ContextID),
 			arkruntime.WithCustomHeaders(arkOpts.customHeaders))
 	} else if cm.batchChat != nil && cm.batchChat.EnableBatchChat {
 		return nil, fmt.Errorf("batch chat not support stream")
@@ -311,9 +311,9 @@ func populateChatMsgReasoningContent(in *schema.Message, msg *model.ChatCompleti
 	return
 }
 
-func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *model.CreateChatCompletionRequest, err error) {
+func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmodel.Options, arkOpts *arkOptions) (req *chatCompletionRequest, err error) {
 
-	req = &model.CreateChatCompletionRequest{
+	req = &chatCompletionRequest{CreateChatCompletionRequest: model.CreateChatCompletionRequest{
 		MaxTokens:           options.MaxTokens,
 		Temperature:         options.Temperature,
 		TopP:                options.TopP,
@@ -326,7 +326,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		ServiceTier:         cm.serviceTier,
 		ReasoningEffort:     arkOpts.reasoningEffort,
 		MaxCompletionTokens: arkOpts.maxCompletionTokens,
-	}
+	}}
 
 	if cm.responseFormat != nil {
 		req.ResponseFormat = &model.ResponseFormat{
@@ -349,7 +349,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		}
 
 		nMsg := &model.ChatCompletionMessage{
-			Content:    content,
+			Content:    &content.ChatCompletionMessageContent,
 			Role:       string(msg.Role),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  cm.toArkToolCalls(msg.ToolCalls),
@@ -357,6 +357,15 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		populateChatMsgReasoningContent(msg, nMsg)
 		if len(msg.Name) > 0 {
 			nMsg.Name = &msg.Name
+		}
+		if len(content.fileIDParts) > 0 {
+			if arkOpts.cache != nil && arkOpts.cache.ContextID != nil {
+				return nil, fmt.Errorf("FileID is not supported with Context API caching; use Chat Completions without a context cache")
+			}
+			if req.contents == nil {
+				req.contents = make(map[int]*chatCompletionMessageContent)
+			}
+			req.contents[len(req.Messages)] = content
 		}
 		req.Messages = append(req.Messages, nMsg)
 	}
@@ -384,7 +393,7 @@ func (cm *completionAPIChatModel) genRequest(in []*schema.Message, options *fmod
 		}
 	}
 
-	err = populateCompletionAPIToolChoice(req, options.ToolChoice, options.AllowedToolNames)
+	err = populateCompletionAPIToolChoice(&req.CreateChatCompletionRequest, options.ToolChoice, options.AllowedToolNames)
 	if err != nil {
 		return nil, err
 	}
@@ -464,9 +473,6 @@ func validateMessagePartCommon(c schema.MessagePartCommon, partName string) (raw
 			return "", true, fmt.Errorf("%s part must have MIMEType when using Base64Data", partName)
 		}
 		return *c.Base64Data, true, nil
-	}
-	if c.FileID != nil {
-		return "", false, fmt.Errorf("%s FileID is not supported by the current Ark Chat SDK; use the Responses API", partName)
 	}
 	return "", false, fmt.Errorf("%s part must contain either a URL or Base64Data", partName)
 }
@@ -622,12 +628,13 @@ func (cm *completionAPIChatModel) toMessageToolCalls(toolCalls []*model.ToolCall
 	return ret
 }
 
-func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.ChatCompletionMessageContent, error) {
+func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*chatCompletionMessageContent, error) {
 	if len(msg.UserInputMultiContent) == 0 && len(msg.AssistantGenMultiContent) == 0 && len(msg.MultiContent) == 0 {
-		return &model.ChatCompletionMessageContent{StringValue: ptrOf(msg.Content)}, nil
+		return &chatCompletionMessageContent{ChatCompletionMessageContent: model.ChatCompletionMessageContent{StringValue: ptrOf(msg.Content)}}, nil
 	}
 
 	var parts []*model.ChatCompletionMessageContentPart
+	var fileIDParts map[int]*chatCompletionFileIDPart
 	if len(msg.UserInputMultiContent) > 0 && len(msg.AssistantGenMultiContent) > 0 {
 		return nil, fmt.Errorf("a message cannot contain both UserInputMultiContent and AssistantGenMultiContent")
 	}
@@ -638,6 +645,18 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 		}
 		parts = make([]*model.ChatCompletionMessageContentPart, 0, len(msg.UserInputMultiContent))
 		for _, part := range msg.UserInputMultiContent {
+			fileIDPart, err := toChatFileIDPart(part)
+			if err != nil {
+				return nil, err
+			}
+			if fileIDPart != nil {
+				if fileIDParts == nil {
+					fileIDParts = make(map[int]*chatCompletionFileIDPart)
+				}
+				fileIDParts[len(parts)] = fileIDPart
+				parts = append(parts, &model.ChatCompletionMessageContentPart{Type: fileIDPart.Type})
+				continue
+			}
 			switch part.Type {
 			case schema.ChatMessagePartTypeText:
 				parts = append(parts, &model.ChatCompletionMessageContentPart{
@@ -798,8 +817,9 @@ func (cm *completionAPIChatModel) toArkContent(msg *schema.Message) (*model.Chat
 		}
 	}
 
-	return &model.ChatCompletionMessageContent{
-		ListValue: parts,
+	return &chatCompletionMessageContent{
+		ChatCompletionMessageContent: model.ChatCompletionMessageContent{ListValue: parts},
+		fileIDParts:                  fileIDParts,
 	}, nil
 }
 
