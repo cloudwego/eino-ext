@@ -298,8 +298,15 @@ func (s *Local) LsInfo(ctx context.Context, req *filesystem.LsInfoRequest) ([]fi
 
 	var files []filesystem.FileInfo
 	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get info of %s: %w", entry.Name(), err)
+		}
 		files = append(files, filesystem.FileInfo{
-			Path: entry.Name(),
+			Path:       entry.Name(),
+			IsDir:      entry.IsDir(),
+			Size:       info.Size(),
+			ModifiedAt: info.ModTime().Format(time.RFC3339Nano),
 		})
 	}
 

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +52,7 @@ func TestLsInfo(t *testing.T) {
 		defer os.RemoveAll(dir)
 
 		// Create test files and directories
-		assert.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte(""), 0644))
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "file1.txt"), []byte("hello"), 0644))
 		assert.NoError(t, os.Mkdir(filepath.Join(dir, "subdir"), 0755))
 
 		req := &filesystem.LsInfoRequest{Path: dir}
@@ -59,7 +60,36 @@ func TestLsInfo(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Len(t, files, 2)
 		assert.Equal(t, "file1.txt", files[0].Path)
+		assert.False(t, files[0].IsDir)
+		assert.Equal(t, int64(len("hello")), files[0].Size)
+		_, err = time.Parse(time.RFC3339Nano, files[0].ModifiedAt)
+		assert.NoError(t, err)
 		assert.Equal(t, "subdir", files[1].Path)
+		assert.True(t, files[1].IsDir)
+		_, err = time.Parse(time.RFC3339Nano, files[1].ModifiedAt)
+		assert.NoError(t, err)
+	})
+
+	t.Run("symlink entries report the link itself", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("creating symlinks on windows requires privileges")
+		}
+
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+
+		assert.NoError(t, os.WriteFile(filepath.Join(dir, "target.txt"), []byte("hello"), 0644))
+		assert.NoError(t, os.Symlink("target.txt", filepath.Join(dir, "link.txt")))
+
+		req := &filesystem.LsInfoRequest{Path: dir}
+		files, err := s.LsInfo(ctx, req)
+		assert.NoError(t, err)
+		assert.Len(t, files, 2)
+		assert.Equal(t, "link.txt", files[0].Path)
+		assert.False(t, files[0].IsDir)
+		assert.Equal(t, int64(len("target.txt")), files[0].Size)
+		assert.Equal(t, "target.txt", files[1].Path)
+		assert.False(t, files[1].IsDir)
 	})
 
 	t.Run("list non-existent directory", func(t *testing.T) {
