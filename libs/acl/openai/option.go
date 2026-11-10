@@ -56,6 +56,7 @@ type ResponseAgenticMessageModifier func(ctx context.Context, msg *schema.Agenti
 type ResponseChunkAgenticMessageModifier func(ctx context.Context, msg *schema.AgenticMessage) (*schema.AgenticMessage, error)
 
 type openaiOptions struct {
+	ToolStrictMode                      map[string]bool
 	ExtraFields                         map[string]any
 	ReasoningEffort                     ReasoningEffortLevel
 	ExtraHeader                         map[string]string
@@ -66,6 +67,15 @@ type openaiOptions struct {
 	ResponseAgenticMessageModifier      ResponseAgenticMessageModifier
 	ResponseChunkAgenticMessageModifier ResponseChunkAgenticMessageModifier
 	MaxCompletionTokens                 *int
+}
+
+// WithToolStrictMode sets strict argument generation for the named function tools in this request.
+// Tools absent from toolStrictMode keep their existing behavior. With the Chat Completions
+// SDK, false is omitted from the request, which uses the API's default non-strict behavior.
+func WithToolStrictMode(toolStrictMode map[string]bool) model.Option {
+	return model.WrapImplSpecificOptFn(func(o *openaiOptions) {
+		o.ToolStrictMode = toolStrictMode
+	})
 }
 
 // WithExtraFields replaces the extra fields configured for the request.
