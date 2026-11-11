@@ -32,6 +32,7 @@ import (
 	"github.com/cloudwego/eino/adk"
 	"github.com/cloudwego/eino/callbacks"
 	"github.com/cloudwego/eino/components"
+	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 	"go.opentelemetry.io/otel/attribute"
@@ -51,9 +52,12 @@ type (
 )
 
 type spanState struct {
-	span       trace.Span
-	attributes *spanAttributeWriter
-	run        *traceRun
+	modelConfigMu   sync.Mutex
+	modelConfig     *model.Config
+	modelToolChoice *schema.ToolChoice
+	span            trace.Span
+	attributes      *spanAttributeWriter
+	run             *traceRun
 	// enclosingAgent owns recovery of failures from this callback. Only an
 	// outermost agent (or a call outside an agent) can fail the root trace.
 	enclosingAgent *spanState
@@ -287,14 +291,23 @@ func (c *CallbackHandler) startSpan(ctx context.Context, info *callbacks.RunInfo
 
 func (c *CallbackHandler) setInput(state *spanState, info *callbacks.RunInfo, inputs []callbacks.CallbackInput) string {
 	if isGeneration(info) {
-		config, messages, extra, err := extractModelInput(inputs)
+		input, err := extractModelInput(inputs)
 		if err != nil {
 			state.recordError("model input", err)
 			return ""
 		}
-		serialized := c.setJSONAttribute(state, "langfuse.observation.input", messages)
-		setModelConfig(state.attributes.setString, config)
-		setMetadata(state.attributes.setString, extra, c.losses)
+		serialized := c.setJSONAttribute(state, "langfuse.observation.input", input.Messages)
+		state.setModelConfig(input.Config, input.ToolChoice)
+		if len(input.Tools) > 0 {
+			definitions, err := toolDefinitions(input.Tools)
+			if err != nil {
+				c.losses.Add(lossPayloadSerialization, 1)
+				state.recordError("model tools", err)
+			} else if len(definitions) > 0 {
+				c.setJSONAttribute(state, "gen_ai.tool.definitions", definitions)
+			}
+		}
+		setMetadata(state.attributes.setString, input.Extra, c.losses)
 		return serialized
 	}
 	return c.setJSONAttribute(state, "langfuse.observation.input", collapseValues(inputs))
@@ -308,15 +321,37 @@ func (c *CallbackHandler) setOutput(state *spanState, info *callbacks.RunInfo, o
 			return ""
 		}
 		serialized := c.setJSONAttribute(state, "langfuse.observation.output", output.Message)
-		setModelConfig(state.attributes.setString, output.Config)
+		state.setModelConfig(output.Config, nil)
 		setMetadata(state.attributes.setString, extra, c.losses)
 		setUsage(state.attributes.setInt, modelUsage(output))
+		if output.Message != nil && output.Message.ResponseMeta != nil && output.Message.ResponseMeta.FinishReason != "" {
+			state.attributes.setStringSlice("gen_ai.response.finish_reasons", []string{output.Message.ResponseMeta.FinishReason})
+		}
 		if !completionStart.IsZero() {
 			state.attributes.setString("langfuse.observation.completion_start_time", completionStart.UTC().Format(time.RFC3339Nano))
 		}
 		return serialized
 	}
 	return c.setJSONAttribute(state, "langfuse.observation.output", collapseValues(outputs))
+}
+
+// Langfuse prefers explicit model parameters over gen_ai.request.* attributes.
+// Keep the input tool choice when a later output callback refreshes the config.
+func (s *spanState) setModelConfig(config *model.Config, toolChoice *schema.ToolChoice) {
+	if config == nil && toolChoice == nil {
+		return
+	}
+	s.modelConfigMu.Lock()
+	defer s.modelConfigMu.Unlock()
+	if config != nil {
+		copied := *config
+		s.modelConfig = &copied
+	}
+	if toolChoice != nil {
+		copied := *toolChoice
+		s.modelToolChoice = &copied
+	}
+	setModelConfig(s.attributes.setString, s.modelConfig, s.modelToolChoice)
 }
 
 func (c *CallbackHandler) setJSONAttribute(state *spanState, key string, value any) string {
@@ -708,6 +743,28 @@ func (w *spanAttributeWriter) setString(key, value string) string {
 		}
 	}
 	return prepared
+}
+
+func (w *spanAttributeWriter) setStringSlice(key string, values []string) {
+	if len(values) == 0 {
+		return
+	}
+	prepared := make([]string, len(values))
+	size := len(key)
+	for i, value := range values {
+		prepared[i] = w.prepare(value)
+		size += len(prepared[i])
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.remaining >= 0 {
+		if size > w.remaining {
+			w.losses.Add(lossSpanAttributeBudget, 1)
+			return
+		}
+		w.remaining -= size
+	}
+	w.span.SetAttributes(attribute.StringSlice(key, prepared))
 }
 
 func (w *spanAttributeWriter) outputValue() string {

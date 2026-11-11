@@ -15,6 +15,7 @@
 - 使用标准 OpenTelemetry context 传播父子关系。
 - 可选择折叠 Eino Agent 产生的框架内部 Chain、ReAct Graph 和 Lambda 包装层。
 - 将 trace 名称、用户、会话、标签、release、environment、version 和 metadata 传播到子 observation。
+- ChatModel generation 包含回调提供的工具定义和参数 schema、工具选择策略、结束原因以及总 token 和缓存写入 token 用量。工具定义同样经过脱敏和大小限制。
 - 支持 input/output 脱敏、大小限制、OTLP 批处理、采样、自定义 exporter、自定义 HTTP client、flush 和优雅关闭。
 
 ## 安装
@@ -23,7 +24,7 @@
 go get github.com/cloudwego/eino-ext/callbacks/langfuse/v2
 ```
 
-当前实现使用 Go 1.23+、Eino 0.9.14 和 OpenTelemetry Go 1.38。
+当前实现使用 Go 1.23+、Eino 0.9.21 和 OpenTelemetry Go 1.38。
 
 ## 使用方法
 
