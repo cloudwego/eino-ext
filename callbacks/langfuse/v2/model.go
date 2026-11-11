@@ -38,36 +38,68 @@ type tokenUsage struct {
 	Input           int
 	Output          int
 	InputCached     int
+	InputCacheWrite int
+	Total           int
 	OutputReasoning int
 }
 
-func extractModelInput(inputs []callbacks.CallbackInput) (*model.Config, []*schema.Message, map[string]any, error) {
-	var config *model.Config
+func extractModelInput(inputs []callbacks.CallbackInput) (*model.CallbackInput, error) {
+	result := &model.CallbackInput{}
 	var messageArrays [][]*schema.Message
-	var extra map[string]any
 	for _, input := range inputs {
 		converted := model.ConvCallbackInput(input)
 		if converted == nil {
 			continue
 		}
 		if converted.Config != nil {
-			config = converted.Config
+			result.Config = converted.Config
 		}
 		if len(converted.Messages) > 0 {
 			messageArrays = append(messageArrays, converted.Messages)
 		}
 		if converted.Extra != nil {
-			extra = converted.Extra
+			result.Extra = converted.Extra
+		}
+		if converted.Tools != nil {
+			result.Tools = converted.Tools
+		}
+		if converted.ToolChoice != nil {
+			result.ToolChoice = converted.ToolChoice
 		}
 	}
-	if len(messageArrays) == 0 {
-		return config, nil, extra, nil
+	if len(messageArrays) > 0 {
+		messages, err := concatMessageArrays(messageArrays)
+		if err != nil {
+			return nil, err
+		}
+		result.Messages = messages
 	}
-	messages, err := concatMessageArrays(messageArrays)
-	if err != nil {
-		return nil, nil, nil, err
+	return result, nil
+}
+
+type toolDefinition struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Parameters  any    `json:"parameters,omitempty"`
+}
+
+func toolDefinitions(tools []*schema.ToolInfo) ([]toolDefinition, error) {
+	definitions := make([]toolDefinition, 0, len(tools))
+	for _, tool := range tools {
+		if tool == nil {
+			continue
+		}
+		definition := toolDefinition{Name: tool.Name, Description: tool.Desc}
+		parameters, err := tool.ToJSONSchema()
+		if err != nil {
+			return nil, fmt.Errorf("tool %q parameters: %w", tool.Name, err)
+		}
+		if parameters != nil {
+			definition.Parameters = parameters
+		}
+		definitions = append(definitions, definition)
 	}
-	return config, messages, extra, nil
+	return definitions, nil
 }
 
 func extractModelOutput(outputs []callbacks.CallbackOutput) (*modelOutput, map[string]any, error) {
@@ -132,14 +164,21 @@ func concatMessageArrays(arrays [][]*schema.Message) ([]*schema.Message, error) 
 	return result, nil
 }
 
-func setModelConfig(setAttribute stringAttributeSetter, config *model.Config) {
-	if config == nil {
+func setModelConfig(setAttribute stringAttributeSetter, config *model.Config, toolChoice *schema.ToolChoice) {
+	if config == nil && toolChoice == nil {
 		return
+	}
+	if config == nil {
+		config = &model.Config{}
 	}
 	if config.Model != "" {
 		setAttribute("langfuse.observation.model.name", config.Model)
 	}
-	parameters := make(map[string]any, 4)
+	parameters := make(map[string]any, 5)
+	if toolChoice != nil {
+		parameters["tool_choice"] = string(*toolChoice)
+		setAttribute("gen_ai.request.tool_choice", string(*toolChoice))
+	}
 	if config.MaxTokens != 0 {
 		parameters["max_tokens"] = config.MaxTokens
 	}
@@ -169,6 +208,8 @@ func setUsage(setAttribute intAttributeSetter, usage *tokenUsage) {
 	}
 	setAttribute("gen_ai.usage.input_tokens", usage.Input)
 	setAttribute("gen_ai.usage.output_tokens", usage.Output)
+	setAttribute("gen_ai.usage.total_tokens", usage.Total)
+	setAttribute("gen_ai.usage.cache_creation.input_tokens", usage.InputCacheWrite)
 	setAttribute("gen_ai.usage.cache_read.input_tokens", usage.InputCached)
 	setAttribute("gen_ai.usage.reasoning.output_tokens", usage.OutputReasoning)
 }
@@ -181,7 +222,9 @@ func modelUsage(output *modelOutput) *tokenUsage {
 		return inclusiveTokenUsage(
 			output.Usage.PromptTokens,
 			output.Usage.CompletionTokens,
+			output.Usage.TotalTokens,
 			output.Usage.PromptTokenDetails.CachedTokens,
+			output.Usage.PromptTokenDetails.CacheWriteTokens,
 			output.Usage.CompletionTokensDetails.ReasoningTokens,
 		)
 	}
@@ -191,7 +234,9 @@ func modelUsage(output *modelOutput) *tokenUsage {
 			return inclusiveTokenUsage(
 				usage.PromptTokens,
 				usage.CompletionTokens,
+				usage.TotalTokens,
 				usage.PromptTokenDetails.CachedTokens,
+				usage.PromptTokenDetails.CacheWriteTokens,
 				usage.CompletionTokensDetails.ReasoningTokens,
 			)
 		}
@@ -199,15 +244,18 @@ func modelUsage(output *modelOutput) *tokenUsage {
 	return nil
 }
 
-func inclusiveTokenUsage(input, output, inputCached, outputReasoning int) *tokenUsage {
+func inclusiveTokenUsage(input, output, total, inputCached, inputCacheWrite, outputReasoning int) *tokenUsage {
 	input = max(input, 0)
 	output = max(output, 0)
 	inputCached = min(max(inputCached, 0), input)
+	inputCacheWrite = min(max(inputCacheWrite, 0), input-inputCached)
 	outputReasoning = min(max(outputReasoning, 0), output)
 	return &tokenUsage{
 		Input:           input,
 		Output:          output,
 		InputCached:     inputCached,
+		InputCacheWrite: inputCacheWrite,
+		Total:           max(total, 0),
 		OutputReasoning: outputReasoning,
 	}
 }

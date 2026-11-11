@@ -15,6 +15,7 @@ This package targets Langfuse v4's observations-first data model. It sends one c
 - Parent/child relationships use standard OpenTelemetry context propagation.
 - Same-name Eino ChatModelAgent implementation Chains can be collapsed with an opt-in setting.
 - Trace name, user, session, tags, release, environment, version, and metadata are propagated to child observations for Langfuse v4.
+- ChatModel generations include supplied tool definitions and parameter schemas, tool choice, finish reasons, and total/cache-write token usage. Tool definitions use the same masking and size limits as input/output.
 - Input/output masking and size limits are configurable.
 - OTLP batching, sampling, custom exporters, custom HTTP clients, flush, and graceful shutdown are supported.
 
@@ -24,7 +25,7 @@ This package targets Langfuse v4's observations-first data model. It sends one c
 go get github.com/cloudwego/eino-ext/callbacks/langfuse/v2
 ```
 
-The callback uses Go 1.23+, Eino 0.9.14, and OpenTelemetry Go 1.38.
+The callback uses Go 1.23+, Eino 0.9.21, and OpenTelemetry Go 1.38.
 
 ## Usage
 

@@ -32,7 +32,8 @@ func TestModelUsageUsesInclusiveOTelCounts(t *testing.T) {
 				CompletionTokens: 30,
 				TotalTokens:      130,
 				PromptTokenDetails: model.PromptTokenDetails{
-					CachedTokens: 20,
+					CachedTokens:     20,
+					CacheWriteTokens: 10,
 				},
 				CompletionTokensDetails: model.CompletionTokensDetails{
 					ReasoningTokens: 10,
@@ -45,7 +46,8 @@ func TestModelUsageUsesInclusiveOTelCounts(t *testing.T) {
 				CompletionTokens: 30,
 				TotalTokens:      130,
 				PromptTokenDetails: schema.PromptTokenDetails{
-					CachedTokens: 20,
+					CachedTokens:     20,
+					CacheWriteTokens: 10,
 				},
 				CompletionTokensDetails: schema.CompletionTokensDetails{
 					ReasoningTokens: 10,
@@ -55,8 +57,10 @@ func TestModelUsageUsesInclusiveOTelCounts(t *testing.T) {
 	}
 	want := &tokenUsage{
 		Input:           100,
+		Total:           130,
 		Output:          30,
 		InputCached:     20,
+		InputCacheWrite: 10,
 		OutputReasoning: 10,
 	}
 	for name, output := range tests {
@@ -69,8 +73,8 @@ func TestModelUsageUsesInclusiveOTelCounts(t *testing.T) {
 }
 
 func TestInclusiveTokenUsageClampsInvalidDetails(t *testing.T) {
-	got := inclusiveTokenUsage(5, 3, 10, 4)
-	want := &tokenUsage{Input: 5, Output: 3, InputCached: 5, OutputReasoning: 3}
+	got := inclusiveTokenUsage(5, 3, 8, 10, 6, 4)
+	want := &tokenUsage{Total: 8, Input: 5, Output: 3, InputCached: 5, OutputReasoning: 3}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("inclusiveTokenUsage() = %#v, want %#v", got, want)
 	}
@@ -80,13 +84,15 @@ func TestSetUsageUsesOTelGenAIAttributes(t *testing.T) {
 	got := make(map[string]int)
 	setUsage(func(key string, value int) {
 		got[key] = value
-	}, &tokenUsage{Input: 100, Output: 30, InputCached: 20, OutputReasoning: 10})
+	}, &tokenUsage{Input: 100, Output: 30, Total: 130, InputCached: 20, InputCacheWrite: 10, OutputReasoning: 10})
 
 	want := map[string]int{
-		"gen_ai.usage.input_tokens":            100,
-		"gen_ai.usage.output_tokens":           30,
-		"gen_ai.usage.cache_read.input_tokens": 20,
-		"gen_ai.usage.reasoning.output_tokens": 10,
+		"gen_ai.usage.input_tokens":                100,
+		"gen_ai.usage.total_tokens":                130,
+		"gen_ai.usage.cache_creation.input_tokens": 10,
+		"gen_ai.usage.output_tokens":               30,
+		"gen_ai.usage.cache_read.input_tokens":     20,
+		"gen_ai.usage.reasoning.output_tokens":     10,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("usage attributes = %#v, want %#v", got, want)
