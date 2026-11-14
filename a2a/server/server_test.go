@@ -19,6 +19,8 @@ package server
 import (
 	"context"
 	"errors"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -266,6 +268,66 @@ func TestWrapSendMessageStreamingResponseUnion(t *testing.T) {
 	}, taskID, contextID)
 	assert.Equal(t, taskID, union.TaskArtifactUpdateEvent.TaskID)
 	assert.Equal(t, contextID, union.TaskArtifactUpdateEvent.ContextID)
+}
+
+func TestStreamingConsolidatesConcurrentWritesInDeliveryOrder(t *testing.T) {
+	const eventCount = 32
+	ctx := context.Background()
+	registrar := &mockHandlerRegistrar{}
+	taskStore := newInMemoryTaskStore()
+
+	require.NoError(t, RegisterHandlers(ctx, registrar, &Config{
+		TaskStore:    taskStore,
+		PushNotifier: NewInMemoryPushNotifier(),
+		MessageStreamingHandler: func(_ context.Context, _ *InputParams, writer ResponseEventWriter) error {
+			var writers sync.WaitGroup
+			start := make(chan struct{})
+			errs := make(chan error, eventCount)
+			for index := 0; index < eventCount; index++ {
+				writers.Add(1)
+				go func(index int) {
+					defer writers.Done()
+					<-start
+					errs <- writer.Write(models.ResponseEvent{
+						Message: &models.Message{MessageID: strconv.Itoa(index), Role: models.RoleAgent},
+					})
+				}(index)
+			}
+			close(start)
+			writers.Wait()
+			close(errs)
+			for err := range errs {
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		TaskEventsConsolidator: func(_ context.Context, _ *InputParams, events []models.ResponseEvent, _ error) *models.TaskContent {
+			history := make([]*models.Message, 0, len(events))
+			for _, event := range events {
+				history = append(history, event.Message)
+			}
+			return &models.TaskContent{
+				Status:  models.TaskStatus{State: models.TaskStateCompleted},
+				History: history,
+			}
+		},
+	}))
+
+	writer := &mockWriter{}
+	require.NoError(t, registrar.h.SendMessageStreaming(ctx, &models.MessageSendParams{
+		Message: models.Message{Role: models.RoleUser},
+	}, writer))
+	require.Len(t, writer.unions, eventCount)
+
+	task, exists, err := taskStore.Get(ctx, writer.unions[0].GetTaskID())
+	require.NoError(t, err)
+	require.True(t, exists)
+	require.Len(t, task.History, eventCount)
+	for index, union := range writer.unions {
+		require.Equal(t, union.Message.MessageID, task.History[index].MessageID)
+	}
 }
 
 type mockHandlerRegistrar struct {
