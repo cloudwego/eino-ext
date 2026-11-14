@@ -569,21 +569,16 @@ type streamResponseWriter struct {
 	mu     sync.Mutex
 }
 
-func (r *streamResponseWriter) Write(p models.ResponseEvent) (err error) {
+func (r *streamResponseWriter) Write(p models.ResponseEvent) error {
 	r.mu.Lock()
-	defer func() {
-		r.mu.Unlock()
-		if err == nil {
-			r.events = append(r.events, p)
-		}
-	}()
+	defer r.mu.Unlock()
 	(&p).EnsureRequiredFields()
 	chunk := wrapSendMessageStreamingResponseUnion(p, r.taskID, r.contextID)
 
-	err = r.s.queue.Push(r.ctx, r.taskID, chunk, nil)
-	if err != nil {
+	if err := r.s.queue.Push(r.ctx, r.taskID, chunk, nil); err != nil {
 		return fmt.Errorf("failed to push chunk to queue: %s", err)
 	}
+	r.events = append(r.events, p)
 
 	if r.s.pushNotifier != nil {
 		go func() {
@@ -593,8 +588,7 @@ func (r *streamResponseWriter) Write(p models.ResponseEvent) (err error) {
 					r.s.logger(r.ctx, "panic when send notification of task[%s]: %v", r.taskID, utils.NewPanicErr(e, debug.Stack()))
 				}
 			}()
-			err = r.s.pushNotifier.SendNotification(r.ctx, chunk)
-			if err != nil {
+			if err := r.s.pushNotifier.SendNotification(r.ctx, chunk); err != nil {
 				r.s.logger(r.ctx, "failed to push notification to notifier: %s", err)
 			}
 		}()
