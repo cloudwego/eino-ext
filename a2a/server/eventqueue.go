@@ -63,7 +63,10 @@ func (i *inMemoryEventQueue) Pop(ctx context.Context, taskID string) (event *mod
 		return nil, nil, false, fmt.Errorf("failed to pop from queue: cannot find the queue of task[%s]", taskID)
 	}
 	ch := v.(*unboundedChan[*inMemoryEventQueuePair])
-	resp, success := ch.Receive()
+	resp, success, err := ch.Receive(ctx)
+	if err != nil {
+		return nil, nil, false, err
+	}
 	if success {
 		return resp.union, resp.taskErr, false, nil
 	}
@@ -110,23 +113,36 @@ func (ch *unboundedChan[T]) Send(value T) {
 	ch.notEmpty.Signal() // Wake up one goroutine waiting to receive
 }
 
-func (ch *unboundedChan[T]) Receive() (T, bool) {
+func (ch *unboundedChan[T]) Receive(ctx context.Context) (T, bool, error) {
 	ch.mutex.Lock()
 	defer ch.mutex.Unlock()
 
-	for len(ch.buffer) == 0 && !ch.closed {
-		ch.notEmpty.Wait() // Wait until data is available
+	if len(ch.buffer) == 0 && !ch.closed && ctx.Done() != nil {
+		stop := context.AfterFunc(ctx, func() {
+			ch.mutex.Lock()
+			defer ch.mutex.Unlock()
+			ch.notEmpty.Broadcast()
+		})
+		defer stop()
+	}
+
+	for len(ch.buffer) == 0 && !ch.closed && ctx.Err() == nil {
+		ch.notEmpty.Wait()
+	}
+
+	var zero T
+	if err := ctx.Err(); err != nil {
+		return zero, false, err
 	}
 
 	if len(ch.buffer) == 0 {
 		// Channel is closed and empty
-		var zero T
-		return zero, false
+		return zero, false, nil
 	}
 
 	val := ch.buffer[0]
 	ch.buffer = ch.buffer[1:]
-	return val, true
+	return val, true, nil
 }
 
 func (ch *unboundedChan[T]) Close() {

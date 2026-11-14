@@ -310,7 +310,8 @@ func TestUnboundedChan_FIFO(t *testing.T) {
 	ch.Send(2)
 	ch.Send(3)
 	for _, want := range []int{1, 2, 3} {
-		got, ok := ch.Receive()
+		got, ok, err := ch.Receive(context.Background())
+		assert.NoError(t, err)
 		if !ok || got != want {
 			t.Errorf("got %d ok=%v, want %d ok=true", got, ok, want)
 		}
@@ -322,15 +323,18 @@ func TestUnboundedChan_CloseWithBufferedDrains(t *testing.T) {
 	ch.Send(1)
 	ch.Send(2)
 	ch.Close()
-	got, ok := ch.Receive()
+	got, ok, err := ch.Receive(context.Background())
+	assert.NoError(t, err)
 	if !ok || got != 1 {
 		t.Errorf("first after close: got %d ok=%v", got, ok)
 	}
-	got, ok = ch.Receive()
+	got, ok, err = ch.Receive(context.Background())
+	assert.NoError(t, err)
 	if !ok || got != 2 {
 		t.Errorf("second after close: got %d ok=%v", got, ok)
 	}
-	_, ok = ch.Receive()
+	_, ok, err = ch.Receive(context.Background())
+	assert.NoError(t, err)
 	if ok {
 		t.Errorf("third after close should be ok=false")
 	}
@@ -340,7 +344,8 @@ func TestUnboundedChan_CloseWakesPendingReceiver(t *testing.T) {
 	ch := newUnboundedChan[int]()
 	done := make(chan struct{})
 	go func() {
-		_, ok := ch.Receive()
+		_, ok, err := ch.Receive(context.Background())
+		assert.NoError(t, err)
 		if ok {
 			t.Errorf("Receive on closed empty chan should return ok=false")
 		}
