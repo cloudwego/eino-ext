@@ -20,12 +20,18 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net"
 	"testing"
+	"time"
 
 	. "github.com/bytedance/mockey"
 	"github.com/cloudwego/eino/components/embedding"
+	"github.com/cloudwego/eino/components/retriever"
+	"github.com/cloudwego/eino/compose"
+	"github.com/cloudwego/eino/schema"
 	qdrant "github.com/qdrant/go-client/qdrant"
 	. "github.com/smartystreets/goconvey/convey"
+	"google.golang.org/grpc"
 )
 
 const CollectionName string = "test_collection"
@@ -178,6 +184,89 @@ func TestRetrieverRetrieveWithError(t *testing.T) {
 			})
 		})
 	})
+}
+
+type captureQdrantQuery struct {
+	qdrant.UnimplementedPointsServer
+	requests chan *qdrant.QueryPoints
+}
+
+func (s *captureQdrantQuery) Query(_ context.Context, request *qdrant.QueryPoints) (*qdrant.QueryResponse, error) {
+	s.requests <- request
+	return &qdrant.QueryResponse{}, nil
+}
+
+func TestRetrieverScoreThreshold(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpc.NewServer()
+	requests := make(chan *qdrant.QueryPoints, 4)
+	qdrant.RegisterPointsServer(server, &captureQdrantQuery{requests: requests})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+
+	client, err := qdrant.NewClient(&qdrant.Config{
+		Host:                   "127.0.0.1",
+		Port:                   listener.Addr().(*net.TCPAddr).Port,
+		SkipCompatibilityCheck: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+
+	for _, tc := range []struct {
+		name           string
+		defaultScore   *float64
+		requestedScore *float64
+		want           *float32
+	}{
+		{name: "no threshold"},
+		{name: "configured default", defaultScore: qdrant.PtrOf(0.25), want: qdrant.PtrOf(float32(0.25))},
+		{name: "per-call threshold", requestedScore: qdrant.PtrOf(0.75), want: qdrant.PtrOf(float32(0.75))},
+		{name: "zero overrides the default", defaultScore: qdrant.PtrOf(0.25), requestedScore: qdrant.PtrOf(0.0), want: qdrant.PtrOf(float32(0))},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			r, err := NewRetriever(ctx, &Config{
+				Client:         client,
+				Collection:     CollectionName,
+				Embedding:      &mockEmbeddingQdrant{dims: 4},
+				ScoreThreshold: tc.defaultScore,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			runnable, err := compose.NewChain[string, []*schema.Document]().AppendRetriever(r).Compile(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var opts []compose.Option
+			if tc.requestedScore != nil {
+				opts = append(opts, compose.WithRetrieverOption(retriever.WithScoreThreshold(*tc.requestedScore)))
+			}
+			if _, err := runnable.Invoke(ctx, "test query", opts...); err != nil {
+				t.Fatal(err)
+			}
+
+			select {
+			case request := <-requests:
+				if tc.want == nil {
+					if request.ScoreThreshold != nil {
+						t.Fatalf("score_threshold = %v, want absent", *request.ScoreThreshold)
+					}
+				} else if request.ScoreThreshold == nil || *request.ScoreThreshold != *tc.want {
+					t.Fatalf("score_threshold = %v, present = %t; want %v",
+						request.GetScoreThreshold(), request.ScoreThreshold != nil, *tc.want)
+				}
+			case <-ctx.Done():
+				t.Fatal("no Qdrant query received")
+			}
+		})
+	}
 }
 
 func TestRetrieverTypeAndCallbacks(t *testing.T) {

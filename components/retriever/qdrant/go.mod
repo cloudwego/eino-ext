@@ -7,6 +7,7 @@ require (
 	github.com/cloudwego/eino v0.6.0
 	github.com/qdrant/go-client v1.15.2
 	github.com/smartystreets/goconvey v1.8.1
+	google.golang.org/grpc v1.66.0
 )
 
 require (
@@ -42,7 +43,6 @@ require (
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240827150818-7e3bb234dfed // indirect
-	google.golang.org/grpc v1.66.0 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
