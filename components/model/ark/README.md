@@ -545,3 +545,11 @@ func main() {
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [Volcengine Ark Model Documentation](https://www.volcengine.com/docs/82379/1263272)
+
+### Clear reasoning
+
+`ark.ClearReasoning(history)` returns message copies with reasoning text, ciphertext and reasoning parts removed. It preserves text and tool calls without modifying the original messages.
+
+```go
+history = ark.ClearReasoning(history)
+```
