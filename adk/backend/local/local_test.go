@@ -132,6 +132,29 @@ func TestRead(t *testing.T) {
 		assert.Contains(t, err.Error(), "file not found")
 	})
 
+	t.Run("read file but permission denied", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		filePath := filepath.Join(dir, "test.txt")
+		assert.NoError(t, os.WriteFile(filePath, []byte(""), 0644))
+		assert.NoError(t, os.Chmod(filePath, 0000))
+		req := &filesystem.ReadRequest{FilePath: filePath}
+		_, err = s.Read(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "permission denied")
+	})
+
+	t.Run("read directory", func(t *testing.T) {
+		dir := setupTestDir(t)
+		defer os.RemoveAll(dir)
+		subDir := filepath.Join(dir, "subdir")
+		os.Mkdir(subDir, 0755)
+		req := &filesystem.ReadRequest{FilePath: subDir}
+		_, err = s.Read(ctx, req)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "is a directory, not a file")
+	})
+
 	t.Run("read large file with pagination", func(t *testing.T) {
 		dir := setupTestDir(t)
 		defer os.RemoveAll(dir)
