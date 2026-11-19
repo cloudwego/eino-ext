@@ -1058,12 +1058,12 @@ func convSchemaMessage(message *schema.Message) (mp anthropic.MessageParam, err 
 	var messageParams []anthropic.ContentBlockParamUnion
 
 	if message.Role == schema.Assistant {
-		thinkingContent, hasThinking := GetThinking(message)
-		if hasThinking && thinkingContent != "" {
-			signature, hasSignature := getThinkingSignature(message)
-			if hasSignature && signature != "" {
-				messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
-			}
+		// A signed thinking block must be sent back unchanged. With display "omitted" (the default on Claude 5) the
+		// block carries a signature but empty thinking text, so only the signature decides whether to replay it.
+		thinkingContent, _ := GetThinking(message)
+		signature, hasSignature := getThinkingSignature(message)
+		if hasSignature && signature != "" {
+			messageParams = append(messageParams, anthropic.NewThinkingBlock(signature, thinkingContent))
 		}
 
 		// Restore tool_search events from Extra
