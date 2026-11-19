@@ -23,10 +23,11 @@ import (
 )
 
 type claudeOptions struct {
-	serverTools    []*ServerToolConfig
-	customHeaders  map[string]string
-	extraFields    map[string]any
-	requestTimeout time.Duration
+	serverTools            []*ServerToolConfig
+	customHeaders          map[string]string
+	extraFields            map[string]any
+	responseExtraFieldKeys map[string]struct{}
+	requestTimeout         time.Duration
 }
 
 // WithServerTools specifies server-side tools available to the model.
@@ -72,5 +73,18 @@ func WithExtraFields(fields map[string]any) model.Option {
 func WithRequestTimeout(d time.Duration) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *claudeOptions) {
 		o.requestTimeout = d
+	})
+}
+
+// WithResponseExtraFields preserves response extra fields with the given
+// top-level keys for this call. Passing no keys preserves all extra fields.
+// Without this option, no response extra fields are preserved.
+func WithResponseExtraFields(keys ...string) model.Option {
+	fieldKeys := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		fieldKeys[key] = struct{}{}
+	}
+	return model.WrapImplSpecificOptFn(func(o *claudeOptions) {
+		o.responseExtraFieldKeys = fieldKeys
 	})
 }

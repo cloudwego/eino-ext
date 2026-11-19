@@ -346,6 +346,7 @@ func (m *Model) Generate(ctx context.Context, input []*schema.AgenticMessage, op
 	if err != nil {
 		return nil, fmt.Errorf("convert response to agentic message failed: %w", err)
 	}
+	outMsg = extractResponseExtraFields(outMsg, resp.JSON.ExtraFields, specOptions.responseExtraFieldKeys)
 
 	callbacks.OnEnd(ctx, &model.AgenticCallbackOutput{
 		Message:    outMsg,
@@ -398,6 +399,7 @@ func (m *Model) Stream(ctx context.Context, input []*schema.AgenticMessage, opts
 		}()
 
 		converter := newStreamConverter()
+		converter.responseExtraFieldKeys = specOptions.responseExtraFieldKeys
 		for stream.Next() {
 			chunk, chunkErr := converter.toMessageStreamingChunk(stream.Current())
 			if chunkErr != nil {
