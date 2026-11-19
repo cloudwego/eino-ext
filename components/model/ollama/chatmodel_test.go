@@ -619,3 +619,29 @@ func Test_toOllamaMessage(t *testing.T) {
 		})
 	})
 }
+
+func TestGenRequestMaxTokens(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("call option sets num_predict", func(t *testing.T) {
+		cm := &ChatModel{config: &ChatModelConfig{Model: "llama3"}}
+		req, cbInput, err := cm.genRequest(ctx, false, []*schema.Message{schema.UserMessage("hi")}, model.WithMaxTokens(16))
+		assert.NoError(t, err)
+		assert.EqualValues(t, 16, req.Options["num_predict"])
+		assert.Equal(t, 16, cbInput.Config.MaxTokens)
+	})
+
+	t.Run("call option overrides configured num_predict", func(t *testing.T) {
+		cm := &ChatModel{config: &ChatModelConfig{Model: "llama3", Options: &Options{NumPredict: 100}}}
+		req, _, err := cm.genRequest(ctx, false, []*schema.Message{schema.UserMessage("hi")}, model.WithMaxTokens(16))
+		assert.NoError(t, err)
+		assert.EqualValues(t, 16, req.Options["num_predict"])
+	})
+
+	t.Run("configured num_predict is kept without call option", func(t *testing.T) {
+		cm := &ChatModel{config: &ChatModelConfig{Model: "llama3", Options: &Options{NumPredict: 100}}}
+		req, _, err := cm.genRequest(ctx, false, []*schema.Message{schema.UserMessage("hi")})
+		assert.NoError(t, err)
+		assert.EqualValues(t, 100, req.Options["num_predict"])
+	})
+}

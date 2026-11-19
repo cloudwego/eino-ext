@@ -253,6 +253,9 @@ func (cm *ChatModel) genRequest(_ context.Context, stream bool, in []*schema.Mes
 		mo.Temperature = &cm.config.Options.Temperature
 		mo.TopP = &cm.config.Options.TopP
 		mo.Stop = cm.config.Options.Stop
+		if cm.config.Options.NumPredict != 0 {
+			mo.MaxTokens = &cm.config.Options.NumPredict
+		}
 		o.Seed = &cm.config.Options.Seed
 	}
 
@@ -270,6 +273,9 @@ func (cm *ChatModel) genRequest(_ context.Context, stream bool, in []*schema.Mes
 	}
 	if commonOptions.TopP != nil {
 		ollamaOptions.TopP = *commonOptions.TopP
+	}
+	if commonOptions.MaxTokens != nil {
+		ollamaOptions.NumPredict = *commonOptions.MaxTokens
 	}
 	if len(commonOptions.Stop) > 0 {
 		ollamaOptions.Stop = commonOptions.Stop
@@ -326,6 +332,7 @@ func (cm *ChatModel) genRequest(_ context.Context, stream bool, in []*schema.Mes
 			Temperature: ollamaOptions.Temperature,
 			TopP:        ollamaOptions.TopP,
 			Stop:        ollamaOptions.Stop,
+			MaxTokens:   ollamaOptions.NumPredict,
 		},
 	}
 
