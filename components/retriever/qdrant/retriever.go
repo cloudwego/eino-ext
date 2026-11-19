@@ -121,8 +121,8 @@ func (r *Retriever) Retrieve(ctx context.Context, query string, opts ...retrieve
 		Limit:          qdrant.PtrOf(uint64(*co.TopK)),
 		WithPayload:    qdrant.NewWithPayload(true),
 	}
-	if r.scoreThreshold != nil {
-		searchReq.ScoreThreshold = qdrant.PtrOf(float32(*r.scoreThreshold))
+	if co.ScoreThreshold != nil {
+		searchReq.ScoreThreshold = qdrant.PtrOf(float32(*co.ScoreThreshold))
 	}
 	if io.Filter != nil {
 		searchReq.Filter = io.Filter
