@@ -17,6 +17,7 @@
 package model
 
 import (
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -33,6 +34,44 @@ const (
 )
 
 var registeredTypeMap = make(map[string]reflect.Type)
+
+var (
+	textMarshalerType   = reflect.TypeOf((*encoding.TextMarshaler)(nil)).Elem()
+	textUnmarshalerType = reflect.TypeOf((*encoding.TextUnmarshaler)(nil)).Elem()
+	jsonMarshalerType   = reflect.TypeOf((*json.Marshaler)(nil)).Elem()
+	jsonUnmarshalerType = reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()
+)
+
+func isTextJSONType(rt reflect.Type) bool {
+	if rt == nil {
+		return false
+	}
+
+	ptrLevel := 0
+	for rt.Kind() == reflect.Pointer {
+		ptrLevel++
+		rt = rt.Elem()
+	}
+
+	ptrType := reflect.PointerTo(rt)
+	marshalType := rt
+	if ptrLevel > 0 {
+		marshalType = ptrType
+	}
+
+	// Pointer-only MarshalText is context-dependent for a non-pointer value.
+	if !marshalType.Implements(textMarshalerType) || !ptrType.Implements(textUnmarshalerType) {
+		return false
+	}
+
+	for _, codecType := range []reflect.Type{rt, ptrType} {
+		if codecType.Implements(jsonMarshalerType) || codecType.Implements(jsonUnmarshalerType) {
+			return false
+		}
+	}
+
+	return true
+}
 
 func init() {
 	for i, rt := range registeredTypes {
@@ -103,7 +142,7 @@ func RegisterType(rt reflect.Type) {
 }
 
 func UnmarshalJson(b []byte, rt reflect.Type) (val reflect.Value, err error) {
-	if generic.ComfortableKind(rt.Kind()) {
+	if generic.ComfortableKind(rt.Kind()) || isTextJSONType(rt) {
 		ins := reflect.New(rt).Elem()
 		if err = json.Unmarshal(b, ins.Addr().Interface()); err != nil {
 			return val, fmt.Errorf("unmarshal failed, err=%v, str=%s", err.Error(), string(b))
