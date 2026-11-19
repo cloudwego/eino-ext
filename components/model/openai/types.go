@@ -24,12 +24,16 @@ import (
 	openai2 "github.com/meguminnnnnnnnn/go-openai"
 )
 
+// ReasoningEffortLevel controls reasoning effort. Supported values depend on the model.
+// Other provider-specific values may be passed as strings.
 type ReasoningEffortLevel openai.ReasoningEffortLevel
 
 const (
-	ReasoningEffortLevelLow    = ReasoningEffortLevel(openai.ReasoningEffortLevelLow)
-	ReasoningEffortLevelMedium = ReasoningEffortLevel(openai.ReasoningEffortLevelMedium)
-	ReasoningEffortLevelHigh   = ReasoningEffortLevel(openai.ReasoningEffortLevelHigh)
+	ReasoningEffortLevelNone   ReasoningEffortLevel = "none"
+	ReasoningEffortLevelLow                         = ReasoningEffortLevel(openai.ReasoningEffortLevelLow)
+	ReasoningEffortLevelMedium                      = ReasoningEffortLevel(openai.ReasoningEffortLevelMedium)
+	ReasoningEffortLevelHigh                        = ReasoningEffortLevel(openai.ReasoningEffortLevelHigh)
+	ReasoningEffortLevelXHigh  ReasoningEffortLevel = "xhigh"
 )
 
 type APIError struct {
