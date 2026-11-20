@@ -461,7 +461,8 @@ Context 和图片生成 API 仍使用旧模块。
   reasoning parts 保留 `Text` 和 `Signature`；没有 reasoning part 时，用 `ReasoningContent`
   生成推理 item，与媒体 parts 共存时也会保留。工具调用保持数组顺序、ID、函数名和参数。
   此路径不读取模型私有 `Extra`；流式合包索引不代表 parts 与工具调用两个数组之间的顺序。
-- 本适配器自身的输出通过原生 item/content 索引确定 parts 和 tools 的原始顺序；删除 `ToolCall` 会删除
+- 回传本适配器的输出时，各 item（含工具调用）按原生 item 索引排列。同一个 message item
+  内的正文按 `AssistantGenMultiContent` 当前的切片顺序发送。删除 `ToolCall` 会删除
   对应函数 item，删除内容 part 会删除对应分段。删除承载 item 元数据的 data part 前，
   应先将其 item 级 Extra 转移到保留的 part；缺少 item 元数据的引用会报错。
   新增且没有原生元数据的 part 会追加为新的输入 item。编辑缓存历史后，应先使其缓存失效。

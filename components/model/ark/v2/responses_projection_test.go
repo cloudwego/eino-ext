@@ -181,6 +181,22 @@ func TestResponsesProjectionEditsAndIndices(t *testing.T) {
 			equalRawJSON(t, initial[i], actual[i])
 		}
 	})
+	for _, index := range []any{nil, float64(0), "invalid"} {
+		t.Run(fmt.Sprintf("text parts ignore content index %v", index), func(t *testing.T) {
+			msg := clone()
+			for _, part := range msg.AssistantGenMultiContent {
+				if part.Type == schema.ChatMessagePartTypeText {
+					delete(part.Extra, keyResponsesSection)
+					if index == nil {
+						delete(part.Extra, keyResponsesContentIndex)
+					} else {
+						part.Extra[keyResponsesContentIndex] = index
+					}
+				}
+			}
+			equal(t, wire(original), wire(msg))
+		})
+	}
 	t.Run("delete text and tool", func(t *testing.T) {
 		msg := clone()
 		msg.ToolCalls = nil
@@ -242,7 +258,7 @@ func TestResponsesProjectionEditsAndIndices(t *testing.T) {
 		check(t, err)
 		equalRawJSON(t, before, after)
 	})
-	for _, kind := range []string{"invalid item index", "null item index", "string item index", "fractional item index", "invalid content index", "invalid tool index", "invalid scalar metadata", "invalid annotations", "duplicate item metadata", "orphan content"} {
+	for _, kind := range []string{"invalid item index", "null item index", "string item index", "fractional item index", "invalid tool index", "invalid scalar metadata", "invalid annotations", "duplicate item metadata", "orphan content"} {
 		t.Run(kind, func(t *testing.T) {
 			msg := clone()
 			switch kind {
@@ -254,13 +270,6 @@ func TestResponsesProjectionEditsAndIndices(t *testing.T) {
 				msg.AssistantGenMultiContent[0].Extra[keyResponsesItemIndex] = "0"
 			case "fractional item index":
 				msg.AssistantGenMultiContent[0].Extra[keyResponsesItemIndex] = 0.5
-			case "invalid content index":
-				for i := range msg.AssistantGenMultiContent {
-					if _, content := msg.AssistantGenMultiContent[i].Extra[keyResponsesContentIndex]; content {
-						msg.AssistantGenMultiContent[i].Extra[keyResponsesContentIndex] = nil
-						break
-					}
-				}
 			case "invalid tool index":
 				msg.ToolCalls[0].Extra[keyResponsesItemIndex] = nil
 			case "invalid scalar metadata":
@@ -433,6 +442,15 @@ func TestResponsesReorderedPartsAndTools(t *testing.T) {
  {"type":"reasoning","id":"r2","status":"completed","summary":[{"type":"summary_text","text":"another summary"}],"content":[],"encrypted_content":"cipher two"},
  {"type":"message","id":"b","status":"completed","role":"assistant","content":[{"type":"output_text","text":"last"}]}
 ]`
+	// The first message's text parts are reversed. Items keep their native order.
+	const want = `[
+ {"type":"message","id":"a","role":"assistant","content":[{"type":"output_text","text":"second"},{"type":"output_text","text":"first"}]},
+ {"type":"function_call","call_id":"c1","name":"f","arguments":"{}"},
+ {"type":"reasoning","id":"r1","status":"completed","summary":[{"type":"summary_text","text":"summary one\nsummary two"}],"content":[{"type":"reasoning_text","text":"content one"},{"type":"reasoning_text","text":"content two"}],"encrypted_content":"cipher one"},
+ {"type":"function_call","call_id":"c2","name":"g","arguments":"{}"},
+ {"type":"reasoning","id":"r2","status":"completed","summary":[{"type":"summary_text","text":"another summary"}],"encrypted_content":"cipher two"},
+ {"type":"message","id":"b","role":"assistant","content":[{"type":"output_text","text":"last"}]}
+]`
 	for _, mode := range []string{"generate", "stream"} {
 		t.Run(mode, func(t *testing.T) {
 			msg := projectedResponsesMessage(t, mode, output)
@@ -450,10 +468,7 @@ func TestResponsesReorderedPartsAndTools(t *testing.T) {
 					check(t, err)
 					raw, err = json.Marshal(input)
 					check(t, err)
-					expected := strings.ReplaceAll(output, `"status":"completed","role":"assistant",`, `"role":"assistant",`)
-					expected = strings.ReplaceAll(expected, `"text":"summary one"},{"type":"summary_text","text":"summary two"`, `"text":"summary one\nsummary two"`)
-					expected = strings.ReplaceAll(expected, `"content":[],"encrypted_content"`, `"encrypted_content"`)
-					equalRawJSON(t, []byte(expected), raw)
+					equalRawJSON(t, []byte(want), raw)
 				})
 			}
 		})
@@ -774,18 +789,15 @@ func assertRawReasoning(t *testing.T, part schema.MessageOutputPart, want ...str
 	}
 }
 
-// Explicitly indexed v2 parts can share an item in native history.
-func TestResponsesIndexedReasoningHistory(t *testing.T) {
+func TestResponsesHistoryRejectsSplitReasoningItem(t *testing.T) {
 	summary := projectResponsesSummaryPart(0, 0, "summary")
 	summary.Extra[keyResponsesItemType] = "reasoning"
-	summary.Reasoning.Signature = "cipher"
-	raw := projectResponsesReasoningPart(0, 0, "first")
-	msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projectResponsesReasoningPart(0, 1, "second"), summary, raw}}
-	inputs, err := toResponsesInput([]*schema.Message{msg})
-	check(t, err)
-	data, err := json.Marshal(inputs)
-	check(t, err)
-	equalRawJSON(t, []byte(`[{"type":"reasoning","status":"completed","summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"first"},{"type":"reasoning_text","text":"second"}],"encrypted_content":"cipher"}]`), data)
+	raw := projectResponsesReasoningPart(0, 0, "raw")
+	msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{summary, raw}}
+	_, err := toResponsesInput([]*schema.Message{msg})
+	if err == nil || !strings.Contains(err.Error(), "exactly one reasoning part") {
+		t.Fatalf("expected split reasoning item to be rejected, got %v", err)
+	}
 }
 
 func TestResponsesRawReasoningKeyIsolation(t *testing.T) {

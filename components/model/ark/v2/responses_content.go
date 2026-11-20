@@ -169,7 +169,8 @@ func toResponsesAssistantInput(msg *schema.Message) ([]responses.InputItem, erro
 			}
 		}
 		if !hasReasoningPart {
-			items = append(items, responsesReasoningInput(msg.ReasoningContent, ""))
+			item := responsesReasoningItem(msg.ReasoningContent, "")
+			items = append(items, responses.InputItem{OneOf: responses.NewItemReasoningInputItemSum(item)})
 		}
 	}
 	appendMessage := func(content responses.MessageContent) {
@@ -187,15 +188,12 @@ func toResponsesAssistantInput(msg *schema.Message) ([]responses.InputItem, erro
 		}
 		for _, part := range msg.AssistantGenMultiContent {
 			if part.Type == schema.ChatMessagePartTypeReasoning {
-				if part.Reasoning == nil {
-					return nil, fmt.Errorf("assistant reasoning must not be nil")
-				}
 				flush()
-				input := responsesReasoningInput(part.Reasoning.Text, part.Reasoning.Signature)
-				if err := appendPartRawReasoning(&input.OneOf.ItemReasoning, &part); err != nil {
+				item, err := responsesReasoningPart(&part)
+				if err != nil {
 					return nil, err
 				}
-				items = append(items, input)
+				items = append(items, responses.InputItem{OneOf: responses.NewItemReasoningInputItemSum(item)})
 				continue
 			}
 			content, err := toResponsesAssistantContentItem(part)
@@ -233,13 +231,34 @@ func toResponsesAssistantInput(msg *schema.Message) ([]responses.InputItem, erro
 	return items, nil
 }
 
-func responsesReasoningInput(text, signature string) responses.InputItem {
+func responsesReasoningItem(text, signature string) responses.ItemReasoning {
 	item := responses.ItemReasoning{Type: responses.ItemReasoningTypeReasoning, Status: responses.ItemStatusCompleted,
 		EncryptedContent: responseString(signature)}
 	if text != "" {
 		item.Summary = []responses.ReasoningSummaryPart{{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(text)}}
 	}
-	return responses.InputItem{OneOf: responses.NewItemReasoningInputItemSum(item)}
+	return item
+}
+
+func responsesReasoningPart(part *schema.MessageOutputPart) (responses.ItemReasoning, error) {
+	if part.Reasoning == nil {
+		return responses.ItemReasoning{}, fmt.Errorf("assistant reasoning must not be nil")
+	}
+	item := responsesReasoningItem(part.Reasoning.Text, part.Reasoning.Signature)
+	value := part.Extra[keyRawReasoningContent]
+	if value == nil {
+		return item, nil
+	}
+	raw, ok := decodeRawReasoning(value)
+	if !ok {
+		return item, fmt.Errorf("invalid raw reasoning content in Extra[%q]", keyRawReasoningContent)
+	}
+	for _, text := range raw {
+		var sum responses.OutputContentItemSum
+		sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: responses.NewOptString(text)})
+		item.Content = append(item.Content, responses.OutputContentItem{OneOf: sum})
+	}
+	return item, nil
 }
 
 func responsesOutputTextPart(text string) responses.ContentItem {

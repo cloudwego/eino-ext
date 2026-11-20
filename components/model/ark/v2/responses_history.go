@@ -30,8 +30,8 @@ func hasResponsesItemMetadata(part *schema.MessageOutputPart) bool {
 	return exists
 }
 
-// Native item/content indices preserve the order of the projected parts and
-// ToolCalls. Build SDK input items directly; output JSON is never replayed.
+// Native item indices order the projected items and ToolCalls. Within each
+// message item, content follows the order of AssistantGenMultiContent.
 // Without Ark item metadata, leave the entire message to the standard mapping.
 func toResponsesHistoryInput(msg *schema.Message) ([]responses.InputItem, bool, error) {
 	partsByItem := make(map[int][]*schema.MessageOutputPart)
@@ -209,15 +209,8 @@ func toResponsesHistoryMessage(extra map[string]any, parts []*schema.MessageOutp
 		item.Partial = responses.NewOptBool(partial)
 	}
 	// Only SDK input fields are mapped; output-only attributes are omitted.
-	summary, ordered, err := responsesHistorySections(parts, false)
-	if err != nil {
-		return item, err
-	}
-	if len(summary) > 0 {
-		return item, fmt.Errorf("message cannot contain reasoning summaries")
-	}
-	content := make([]responses.ContentItem, 0, len(ordered))
-	for _, part := range ordered {
+	content := make([]responses.ContentItem, 0, len(parts))
+	for _, part := range parts {
 		kind, _ := extraString(part.Extra, keyResponsesContentType)
 		text, annotations, err := responsesHistoryText(part)
 		if err != nil {
@@ -235,8 +228,17 @@ func toResponsesHistoryMessage(extra map[string]any, parts []*schema.MessageOutp
 }
 
 func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOutputPart) (responses.ItemReasoning, error) {
-	item := responses.ItemReasoning{Type: responses.ItemReasoningTypeReasoning, Status: responses.ItemStatusCompleted}
-	var err error
+	if len(parts) != 1 || parts[0].Type != schema.ChatMessagePartTypeReasoning {
+		return responses.ItemReasoning{}, fmt.Errorf("Responses reasoning item must contain exactly one reasoning part")
+	}
+	// A content type belongs to an individual SDK segment, not the public item.
+	if _, typed := parts[0].Extra[keyResponsesContentType]; typed {
+		return responses.ItemReasoning{}, fmt.Errorf("unexpected content type on reasoning item")
+	}
+	item, err := responsesReasoningPart(parts[0])
+	if err != nil {
+		return item, err
+	}
 	item.ID, err = responsesMetadataString(extra, keyResponsesItemID)
 	if err != nil {
 		return item, err
@@ -248,121 +250,7 @@ func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOu
 	if status.IsSet() {
 		item.Status = responses.ItemStatus(status.Value)
 	}
-	summary, content, err := responsesHistorySections(parts, true)
-	if err != nil {
-		return item, err
-	}
-	for _, part := range summary {
-		item.Summary = append(item.Summary, responses.ReasoningSummaryPart{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(part.Reasoning.Text)})
-	}
-	for _, part := range content {
-		kind, _ := extraString(part.Extra, keyResponsesContentType)
-		if kind != "reasoning_text" || part.Reasoning == nil || part.Type != schema.ChatMessagePartTypeReasoning {
-			return item, fmt.Errorf("Responses reasoning content must be reasoning_text with a reasoning part")
-		}
-		appendResponsesRawText(&item, responses.NewOptString(part.Reasoning.Text))
-	}
-	var signature string
-	for _, part := range parts {
-		if part.Type != schema.ChatMessagePartTypeReasoning || part.Reasoning == nil {
-			continue
-		}
-		if value := part.Reasoning.Signature; value != "" {
-			if signature != "" && signature != value {
-				return item, fmt.Errorf("conflicting reasoning signatures")
-			}
-			signature = value
-		}
-		if _, hasSection := part.Extra[keyResponsesSection]; !hasSection {
-			if err := appendPartRawReasoning(&item, part); err != nil {
-				return item, err
-			}
-			if part.Reasoning.Text == "" {
-				continue
-			}
-			item.Summary = append(item.Summary, responses.ReasoningSummaryPart{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(part.Reasoning.Text)})
-		}
-	}
-	item.EncryptedContent = responseString(signature)
 	return item, nil
-}
-
-func appendPartRawReasoning(item *responses.ItemReasoning, part *schema.MessageOutputPart) error {
-	value := part.Extra[keyRawReasoningContent]
-	if value == nil {
-		return nil
-	}
-	raw, ok := decodeRawReasoning(value)
-	if !ok {
-		return fmt.Errorf("invalid raw reasoning content in Extra[%q]", keyRawReasoningContent)
-	}
-	for _, text := range raw {
-		appendResponsesRawText(item, responses.NewOptString(text))
-	}
-	return nil
-}
-
-func appendResponsesRawText(item *responses.ItemReasoning, text responses.OptString) {
-	var sum responses.OutputContentItemSum
-	sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text})
-	item.Content = append(item.Content, responses.OutputContentItem{OneOf: sum})
-}
-
-// Summary and content preserve their SDK indices independently.
-func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool) (summary []*schema.MessageOutputPart, ordered []*schema.MessageOutputPart, err error) {
-	content := make(map[int]*schema.MessageOutputPart)
-	summaries := make(map[int]*schema.MessageOutputPart)
-	for _, part := range parts {
-		sectionValue, hasSection := part.Extra[keyResponsesSection]
-		section, sectionOK := stringValue(sectionValue)
-		index, hasIndex, err := extraIndex(part.Extra, keyResponsesContentIndex)
-		if err != nil {
-			return nil, nil, err
-		}
-		if reasoning && !hasIndex && part.Type == schema.ChatMessagePartTypeReasoning && part.Reasoning != nil {
-			if !hasSection {
-				if _, typed := part.Extra[keyResponsesContentType]; typed {
-					return nil, nil, fmt.Errorf("unexpected content type on reasoning item")
-				}
-				continue // A reasoning item can contain just an encrypted signature.
-			}
-			if sectionOK && section == "summary" {
-				summaryIndex, _, err := extraIndex(part.Extra, keyResponsesSummaryIndex)
-				if err != nil {
-					return nil, nil, err
-				}
-				if summaries[summaryIndex] != nil {
-					return nil, nil, fmt.Errorf("duplicate reasoning summary index %d", summaryIndex)
-				}
-				summaries[summaryIndex] = part
-				continue
-			}
-		}
-		if !sectionOK || section != "content" || !hasIndex {
-			return nil, nil, fmt.Errorf("incomplete Responses content metadata")
-		}
-		if content[index] != nil {
-			return nil, nil, fmt.Errorf("duplicate Responses content index %d", index)
-		}
-		content[index] = part
-	}
-	var summaryIndices []int
-	for index := range summaries {
-		summaryIndices = append(summaryIndices, index)
-	}
-	sort.Ints(summaryIndices)
-	for _, index := range summaryIndices {
-		summary = append(summary, summaries[index])
-	}
-	indices := make([]int, 0, len(content))
-	for index := range content {
-		indices = append(indices, index)
-	}
-	sort.Ints(indices)
-	for _, index := range indices {
-		ordered = append(ordered, content[index])
-	}
-	return summary, ordered, nil
 }
 
 func responsesHistoryText(part *schema.MessageOutputPart) (responses.OptString, []responses.Annotation, error) {

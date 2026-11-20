@@ -525,8 +525,9 @@ image-generation APIs remain in the legacy module.
   Tool calls retain their array order, IDs, function names and arguments.
   Provider-specific `Extra` is ignored. Streaming merge indices do not define
   ordering between the separate parts and tool-call arrays.
-- For this adapter's output, native item/content indices determine original
-  output order across parts and tools. Deleting a
+- For this adapter's output, native item indices order the output items, including
+  tool calls. Within each message item, history replay sends content parts in their
+  current order in `AssistantGenMultiContent`. Deleting a
   `ToolCall` removes its function item; deleting content parts removes those
   segments. Before deleting the data part that carries item metadata, transfer
   its item-level Extra entries to a retained part; unresolved item references are
