@@ -452,6 +452,17 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 	if err != nil {
 		return fmt.Errorf("failed to reset queue for new task[%s]: %w", t.ID, err)
 	}
+	if eq, ok := s.queue.(*inMemoryEventQueue); ok {
+		// If we fail or panic before the handler goroutine takes over the queue,
+		// close it before the task lock is released so that it can be evicted.
+		defer func() {
+			if needReleaseLock {
+				if closeErr := eq.Close(detachedCtx, t.ID); closeErr != nil {
+					s.logger(detachedCtx, "failed to close queue for task[%s]: %s", t.ID, closeErr.Error())
+				}
+			}
+		}()
+	}
 
 	// register notification
 	if input.Configuration != nil && input.Configuration.PushNotificationConfig != nil && s.pushNotifier != nil {
@@ -463,6 +474,12 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 			return fmt.Errorf("failed to set push notification config for task[%s]: %w", t.ID, err)
 		}
 	}
+
+	reader, err := s.newEventQueueReader(t.ID)
+	if err != nil {
+		return fmt.Errorf("failed to pop task[%s]: %w", t.ID, err)
+	}
+	defer reader.Release()
 
 	needReleaseLock = false // will release after execution
 
@@ -519,7 +536,7 @@ func (s *A2AServer) sendMessageStreaming(ctx context.Context, input *models.Mess
 	}()
 
 	for {
-		resp, taskErr, closed, err := s.queue.Pop(detachedCtx, t.ID)
+		resp, taskErr, closed, err := reader.Pop(detachedCtx)
 		if err != nil {
 			return fmt.Errorf("failed to pop task[%s]: %w", t.ID, err)
 		}
@@ -606,8 +623,13 @@ func (r *streamResponseWriter) Write(p models.ResponseEvent) (err error) {
 func (s *A2AServer) resubscribeTask(ctx context.Context, input *models.TaskIDParams, writer models.ResponseWriter) error {
 	// events in queue can only be read once, so if multi clients subscribe one task, the events clients received will be incompleted.
 	defer writer.Close()
+	reader, err := s.newEventQueueReader(input.ID)
+	if err != nil {
+		return fmt.Errorf("failed to pop task[%s]: %w", input.ID, err)
+	}
+	defer reader.Release()
 	for {
-		resp, taskErr, closed, err := s.queue.Pop(ctx, input.ID)
+		resp, taskErr, closed, err := reader.Pop(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to pop task[%s]: %w", input.ID, err)
 		}
@@ -623,6 +645,40 @@ func (s *A2AServer) resubscribeTask(ctx context.Context, input *models.TaskIDPar
 		}
 	}
 }
+
+// eventQueueReader reads the events of a single task.
+type eventQueueReader interface {
+	Pop(ctx context.Context) (event *models.SendMessageStreamingResponseUnion, taskErr error, closed bool, err error)
+	Release()
+}
+
+// newEventQueueReader returns a reader of taskID's events, which must be released
+// once the caller stops reading. The default in-memory queue is read through a
+// subscription that keeps the queue alive while the caller is reading, including
+// while it is blocked writing to a slow client, and starts the eviction grace
+// period of a closed queue once released. Other EventQueue implementations are
+// read through Pop as is and manage the retention of their queues themselves.
+func (s *A2AServer) newEventQueueReader(taskID string) (eventQueueReader, error) {
+	if eq, ok := s.queue.(*inMemoryEventQueue); ok {
+		sub, err := eq.subscribe(taskID)
+		if err != nil {
+			return nil, err
+		}
+		return sub, nil
+	}
+	return &customEventQueueReader{queue: s.queue, taskID: taskID}, nil
+}
+
+type customEventQueueReader struct {
+	queue  EventQueue
+	taskID string
+}
+
+func (r *customEventQueueReader) Pop(ctx context.Context) (event *models.SendMessageStreamingResponseUnion, taskErr error, closed bool, err error) {
+	return r.queue.Pop(ctx, r.taskID)
+}
+
+func (r *customEventQueueReader) Release() {}
 
 func (s *A2AServer) setTasksPushNotificationConfig(ctx context.Context, input *models.TaskPushNotificationConfig) (*models.TaskPushNotificationConfig, error) {
 	return input, s.pushNotifier.Set(ctx, input)
