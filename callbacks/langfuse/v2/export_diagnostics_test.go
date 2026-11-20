@@ -36,6 +36,11 @@ type diagnosticTestRoundTripper struct{}
 func (diagnosticTestRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	trace := httptrace.ContextClientTrace(request.Context())
 	trace.GotConn(httptrace.GotConnInfo{Reused: true})
+	// Insert a controlled client-write phase between GotConn and WroteRequest so the
+	// recorder's write duration is positive on every platform. Firing both callbacks
+	// back-to-back collapses write to a zero nanosecond floor and makes the >0
+	// assertion depend on platform clock resolution rather than measured latency.
+	time.Sleep(5 * time.Millisecond)
 	trace.WroteRequest(httptrace.WroteRequestInfo{})
 	time.Sleep(time.Millisecond)
 	trace.GotFirstResponseByte()
