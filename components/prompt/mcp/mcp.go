@@ -55,15 +55,10 @@ func (c *chatTemplate) Format(ctx context.Context, vs map[string]any, _ ...promp
 		arg[k] = fmt.Sprint(v)
 	}
 
-	result, err := c.cli.GetPrompt(ctx, mcp.GetPromptRequest{
-		Params: struct {
-			Name      string            `json:"name"`
-			Arguments map[string]string `json:"arguments,omitempty"`
-		}{
-			Name:      c.name,
-			Arguments: arg,
-		},
-	})
+	request := mcp.GetPromptRequest{}
+	request.Params.Name = c.name
+	request.Params.Arguments = arg
+	result, err := c.cli.GetPrompt(ctx, request)
 	if err != nil {
 		return nil, fmt.Errorf("get mcp prompt fail: %w", err)
 	}

@@ -10,6 +10,8 @@ A MCP Tool implementation for [Eino](https://github.com/cloudwego/eino) that imp
 
 ## Installation
 
+Requires Go 1.25.5 or later.
+
 ```bash
 go get github.com/cloudwego/eino-ext/components/tool/mcp@latest
 ```
