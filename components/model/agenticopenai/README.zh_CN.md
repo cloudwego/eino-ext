@@ -378,6 +378,12 @@ ext := msg.ResponseMeta.OpenAIExtension // 强类型，无需断言
 > **说明：** `OpenAIExtension.ID` 正是 `EnableAutoCache` 和 `WithHeadPreviousResponseID` 用来延续缓存多轮
 > 对话的值。参见 [缓存](#缓存)。
 
+> **说明：** `OpenAIExtension` 同时也是本包判断"该 assistant 消息由 Responses API 产出"的依据，这类消息会被
+> 原样回放给 API。如果你把 `*schema.AgenticMessage` 转换成其他消息类型（例如把本模型适配成
+> `model.BaseChatModel`）后再转回来，请保留 `ResponseMeta.OpenAIExtension`，至少保留内容块里的
+> `openai-item-id`。否则 reasoning 块可能被丢弃，API 会以
+> `Item 'fc_...' of type 'function_call' was provided without its required 'reasoning' item: 'rs_...'` 拒绝请求。
+
 #### Chat Completions API —— `ResponseMeta.Extension` (`any`)
 
 `NewChatModel` 无法使用 `OpenAIExtension`（它是 Responses 专用的），因此改为填充通用的 `Extension any`
