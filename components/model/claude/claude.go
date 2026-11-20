@@ -443,9 +443,9 @@ func (cm *ChatModel) Stream(ctx context.Context, input []*schema.Message, opts .
 			}
 
 			if len(waitList) != 0 {
-				message, err = schema.ConcatMessages(append(waitList, message))
-				if err != nil {
-					_ = sw.Send(nil, fmt.Errorf("concat empty message fail: %w", err))
+				message, err_ = schema.ConcatMessages(append(waitList, message))
+				if err_ != nil {
+					_ = sw.Send(nil, fmt.Errorf("concat empty message fail: %w", err_))
 					return
 				}
 				waitList = []*schema.Message{}
