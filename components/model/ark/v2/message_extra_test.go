@@ -58,6 +58,112 @@ func equalMetadataJSON(t *testing.T, want, got any) {
 	equal(t, values[0], values[1])
 }
 
+func TestClearReasoningReplay(t *testing.T) {
+	ctx := context.Background()
+	for _, source := range []string{"chat", "responses"} {
+		t.Run(source, func(t *testing.T) {
+			requests := make(chan map[string]any, 1)
+			chatModel := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+				requests <- decodeRequest(t, r)
+				writeResponse(w)
+			}, nil)
+			responsesModel := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+				requests <- decodeRequest(t, r)
+				writeResponses(w)
+			}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true}})
+			var sourceModel model.BaseChatModel = chatModel
+			if source == "responses" {
+				sourceModel = responsesModel
+			}
+			first, err := sourceModel.Generate(ctx, []*schema.Message{schema.UserMessage("hello")})
+			check(t, err)
+			<-requests
+			history := historyWithToolResult(first)
+			clean := ClearReasoning(history)
+			equal(t, first.ResponseMeta, clean[1].ResponseMeta)
+
+			// Replay the originals after cleanup as well. Compare the complete
+			// wire histories, including text, tool call IDs and tool results.
+			_, err = chatModel.Generate(ctx, history)
+			check(t, err)
+			wantChat := (<-requests)["messages"].([]any)
+			assistant := wantChat[1].(map[string]any)
+			equal(t, first.ReasoningContent, assistant["reasoning_content"])
+			equal(t, "cipher", assistant["encrypted_content"])
+			delete(assistant, "reasoning_content")
+			delete(assistant, "encrypted_content")
+			_, err = chatModel.Generate(ctx, clean)
+			check(t, err)
+			equal(t, wantChat, (<-requests)["messages"])
+
+			_, err = responsesModel.Generate(ctx, history, WithCache(nil))
+			check(t, err)
+			original := (<-requests)["input"].([]any)
+			equal(t, 6, len(original))
+			reasoning := original[1].(map[string]any)
+			equal(t, "reasoning", reasoning["type"])
+			if source == "responses" {
+				equal(t, "cipher", reasoning["encrypted_content"])
+				equal(t, "raw thought", reasoning["content"].([]any)[0].(map[string]any)["text"])
+			}
+			_, err = responsesModel.Generate(ctx, clean, WithCache(nil))
+			check(t, err)
+			body := <-requests
+			_, hasPrevious := body["previous_response_id"]
+			equal(t, false, hasPrevious)
+			equal(t, append(original[:1], original[2:]...), body["input"])
+		})
+	}
+}
+
+func TestClearReasoningCopiesHistory(t *testing.T) {
+	equal(t, ([]*schema.Message)(nil), ClearReasoning(nil))
+	equal(t, []*schema.Message{}, ClearReasoning([]*schema.Message{}))
+	itemIndex := func(i int64) map[string]any {
+		return map[string]any{keyResponsesItemIndex: metadataInt64(i)}
+	}
+	msg := &schema.Message{Role: schema.Assistant, Extra: map[string]any{
+		keyEncryptedContent: "", keyCacheExpiration: metadataInt64(42), "ark-encrypted-content": "legacy",
+	}, AssistantGenMultiContent: []schema.MessageOutputPart{
+		{Type: ResponsesOutputItem, Extra: itemIndex(0)},
+		{Type: schema.ChatMessagePartTypeReasoning, Extra: itemIndex(0)},
+		{Type: ResponsesOutputItem, Extra: itemIndex(0)},
+		{Type: schema.ChatMessagePartTypeReasoning},
+		{Type: ResponsesOutputItem, Extra: map[string]any{keyResponsesItemType: "reasoning", keyResponsesItemIndex: metadataInt64(1)}},
+		{Type: ResponsesOutputItem, Extra: itemIndex(1)},
+		{Type: ResponsesOutputItem, Extra: map[string]any{keyResponsesItemType: "web_search_call", keyResponsesItemIndex: metadataInt64(2)}},
+		{Type: schema.ChatMessagePartTypeText, Text: "answer"},
+	}}
+	for _, codec := range messagePersistenceCodecs() {
+		t.Run(codec.name, func(t *testing.T) {
+			raw, err := codec.marshal(msg)
+			check(t, err)
+			var restored schema.Message
+			check(t, codec.unmarshal(raw, &restored))
+			other := &schema.Message{Extra: map[string]any{keyCacheExpiration: metadataInt64(21)},
+				AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "other", Extra: itemIndex(0)}}}
+			clean := ClearReasoning([]*schema.Message{&restored, nil, other})
+			equal(t, (*schema.Message)(nil), clean[1])
+			equal(t, restored.AssistantGenMultiContent[6:], clean[0].AssistantGenMultiContent)
+			equal(t, other.AssistantGenMultiContent, clean[2].AssistantGenMultiContent)
+			_, encrypted := GetEncryptedContent(clean[0])
+			equal(t, false, encrypted)
+			equal(t, "legacy", clean[0].Extra["ark-encrypted-content"])
+			equal(t, clean, ClearReasoning(clean))
+			expires, ok := GetCacheExpiration(clean[0])
+			equal(t, true, ok)
+			equal(t, int64(42), expires)
+			check(t, InvalidateMessageCaches(clean))
+			for _, original := range []*schema.Message{&restored, other} {
+				_, ok := GetCacheExpiration(original)
+				equal(t, true, ok)
+			}
+			clean[0].AssistantGenMultiContent[1].Text = "edit"
+			equal(t, "answer", restored.AssistantGenMultiContent[7].Text)
+		})
+	}
+}
+
 func TestMessageExtraSurvivesSerialization(t *testing.T) {
 	for _, mode := range []string{"chat", "chat stream", "responses", "responses stream"} {
 		t.Run(mode, func(t *testing.T) {
@@ -142,6 +248,9 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 				}
 			}
 			for key, value := range msg.Extra {
+				if !strings.HasPrefix(key, "ark-v2-") {
+					t.Fatalf("unversioned message metadata key %q", key)
+				}
 				if strings.HasSuffix(key, ".set") {
 					t.Fatalf("optional presence duplicated in Extra[%q]", key)
 				}
@@ -398,4 +507,27 @@ func TestVideoFPSOuterExtraWire(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestLegacyExtraKeysIgnored(t *testing.T) {
+	msg := &schema.Message{Extra: map[string]any{
+		"ark-request-id": "old-request", "ark-model-name": "old-model", "ark-service-tier": "old-tier",
+		"ark-response-id": "old-response", "ark-response-cache-expire-at": float64(2000000000),
+	}}
+	equal(t, "", GetArkRequestID(msg))
+	_, ok := GetModelName(msg)
+	equal(t, false, ok)
+	_, ok = GetServiceTier(msg)
+	equal(t, false, ok)
+	_, ok = GetResponseID(msg)
+	equal(t, false, ok)
+	_, ok = GetCacheExpiration(msg)
+	equal(t, false, ok)
+	part := &schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Extra: map[string]any{"ark-model-video-url-fps": 1.0}}
+	if GetInputVideoFPS(part) != nil {
+		t.Fatal("read FPS from the legacy key")
+	}
+	SetInputVideoFPS(part, 2)
+	equal(t, 2.0, *GetInputVideoFPS(part))
+	equal(t, 1.0, part.Extra["ark-model-video-url-fps"])
 }

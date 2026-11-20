@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/bytedance/sonic"
+	ark "github.com/cloudwego/eino-ext/components/model/ark/v2"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -45,10 +46,10 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 		if part.StreamingMeta == nil || part.StreamingMeta.Index != index {
 			return fmt.Errorf("part %d has an unexpected stream merge index", index)
 		}
-		if part.Type == schema.ChatMessagePartTypeText && fmt.Sprint(part.Extra["ark-responses-content-type"]) == "output_text" {
+		if part.Type == schema.ChatMessagePartTypeText && fmt.Sprint(part.Extra["ark-v2-responses-content-type"]) == "output_text" {
 			text.WriteString(part.Text)
 		}
-		if fmt.Sprint(part.Extra["ark-responses-item-type"]) == "function_call" {
+		if fmt.Sprint(part.Extra["ark-v2-responses-item-type"]) == "function_call" {
 			return fmt.Errorf("function call metadata belongs in ToolCall.Extra")
 		}
 	}
@@ -62,10 +63,10 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 			return fmt.Errorf("incomplete or duplicate function call after concat")
 		}
 		if call.Index == nil || *call.Index != index ||
-			fmt.Sprint(call.Extra["ark-responses-item-type"]) != "function_call" {
+			fmt.Sprint(call.Extra["ark-v2-responses-item-type"]) != "function_call" {
 			return fmt.Errorf("function call lost its Responses item metadata after concat")
 		}
-		item, err := strconv.Atoi(fmt.Sprint(call.Extra["ark-responses-item-index"]))
+		item, err := strconv.Atoi(fmt.Sprint(call.Extra["ark-v2-responses-item-index"]))
 		if err != nil || item < 0 || items[item] {
 			return fmt.Errorf("function call has an invalid or duplicate Responses item index")
 		}
@@ -79,7 +80,8 @@ func PrintResponsesConcat(chunks []*schema.Message, merged *schema.Message) erro
 	incremental := 0
 	for _, chunk := range chunks[:len(chunks)-1] {
 		for _, part := range chunk.AssistantGenMultiContent {
-			if part.Text != "" || (part.Reasoning != nil && part.Reasoning.Text != "") {
+			_, hasRaw := ark.GetRawReasoningContent(&part)
+			if part.Text != "" || (part.Reasoning != nil && part.Reasoning.Text != "") || hasRaw {
 				incremental++
 				break
 			}
@@ -111,13 +113,13 @@ func PrintResponsesChunk(sequence int, chunk *schema.Message) error {
 	fmt.Printf("\nChunk %d (signatures abbreviated):\n%s\n", sequence, raw)
 	for index, part := range chunk.AssistantGenMultiContent {
 		if part.StreamingMeta != nil {
-			fmt.Printf("Chunk %d part %d: item=%v section=%v summary=%v content=%v stream_index=%d\n", sequence, index,
-				part.Extra["ark-responses-item-index"], part.Extra["ark-responses-section"], part.Extra["ark-responses-summary-index"], part.Extra["ark-responses-content-index"], part.StreamingMeta.Index)
+			fmt.Printf("Chunk %d part %d: item=%v section=%v content=%v stream_index=%d\n", sequence, index,
+				part.Extra["ark-v2-responses-item-index"], part.Extra["ark-v2-responses-section"], part.Extra["ark-v2-responses-content-index"], part.StreamingMeta.Index)
 		}
 	}
 	for _, call := range chunk.ToolCalls {
 		if call.Index != nil {
-			fmt.Printf("Chunk %d tool: item=%v tool_index=%d\n", sequence, call.Extra["ark-responses-item-index"], *call.Index)
+			fmt.Printf("Chunk %d tool: item=%v tool_index=%d\n", sequence, call.Extra["ark-v2-responses-item-index"], *call.Index)
 		}
 	}
 	return nil

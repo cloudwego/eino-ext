@@ -34,7 +34,7 @@ import (
 
 const responsesProjectionJSON = `[
  {"type":"function_call","id":"fc","call_id":"call","name":"inspect","arguments":"{}","status":"completed","extension":9007199254740993},
- {"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"one","extension":1},{"type":"summary_text","text":"two"}],"content":[{"type":"reasoning_text","text":"raw","annotations":[]}],"encrypted_content":"cipher"},
+ {"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"one","extension":1},{"type":"summary_text","text":"two"}],"content":[{"type":"reasoning_text","text":"raw"}],"encrypted_content":"cipher"},
  {"type":"message","id":"m","role":"assistant","status":"completed","phase":"final_answer","extension":true,"content":[{"type":"output_text","text":"A","extension":9007199254740993,"annotations":[{"type":"future_annotation","value":9007199254740993}]},{"type":"output_text","text":"B","extension":true}]},
  {"type":"message","id":"empty","role":"assistant","status":"completed","content":[]},
  {"type":"future_output","payload":{"value":9007199254740993}}
@@ -43,7 +43,7 @@ const responsesProjectionJSON = `[
 // Only fields represented by the SDK input schema belong in the next request.
 const responsesProjectionInputJSON = `[
  {"type":"function_call","id":"fc","call_id":"call","name":"inspect","arguments":"{}","status":"completed"},
- {"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"one"},{"type":"summary_text","text":"two"}],"content":[{"type":"reasoning_text","text":"raw","annotations":[]}],"encrypted_content":"cipher"},
+ {"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"one\ntwo"}],"content":[{"type":"reasoning_text","text":"raw"}],"encrypted_content":"cipher"},
  {"type":"message","id":"m","role":"assistant","content":[{"type":"output_text","text":"A","annotations":[{"type":"future_annotation","value":9007199254740993}]},{"type":"output_text","text":"B"}]},
  {"type":"message","id":"empty","role":"assistant","content":[]}
 ]`
@@ -103,7 +103,7 @@ func TestResponsesOutputProjection(t *testing.T) {
 							part.Text = "edited"
 							foundText = true
 						}
-						if part.Reasoning != nil && part.Reasoning.Text == "one" {
+						if part.Reasoning != nil && part.Reasoning.Text == "one\ntwo" {
 							part.Reasoning.Text = "changed"
 
 							foundReasoning = true
@@ -118,7 +118,7 @@ func TestResponsesOutputProjection(t *testing.T) {
 					check(t, err)
 					raw, err = json.Marshal(input)
 					check(t, err)
-					want := strings.NewReplacer(`"text":"A"`, `"text":"edited"`, `"text":"one"`, `"text":"changed"`, `"encrypted_content":"cipher"`, `"encrypted_content":"new cipher"`, `"call_id":"call"`, `"call_id":"changed call"`, `"name":"inspect"`, `"name":"new_name"`, `"arguments":"{}"`, `"arguments":"{\"x\":1}"`).Replace(responsesProjectionInputJSON)
+					want := strings.NewReplacer(`"text":"A"`, `"text":"edited"`, `"text":"one\ntwo"`, `"text":"changed"`, `"encrypted_content":"cipher"`, `"encrypted_content":"new cipher"`, `"call_id":"call"`, `"call_id":"changed call"`, `"name":"inspect"`, `"name":"new_name"`, `"arguments":"{}"`, `"arguments":"{\"x\":1}"`).Replace(responsesProjectionInputJSON)
 					equalRawJSON(t, []byte(want), raw)
 					for _, item := range input {
 						if _, _, unknown := item.OneOf.GetUnknown(); unknown {
@@ -297,7 +297,7 @@ func TestResponsesProjectionPresence(t *testing.T) {
 	var items []responses.OutputItem
 	check(t, sonic.UnmarshalString(output, &items))
 	msg := &schema.Message{Role: schema.Assistant}
-	check(t, projectResponsesOutput(msg, items))
+	check(t, projectResponsesOutput(msg, items, false))
 	for _, codec := range messagePersistenceCodecs() {
 		t.Run(codec.name, func(t *testing.T) {
 			raw, err := codec.marshal(msg)
@@ -333,7 +333,7 @@ func TestResponsesFlatMetadata(t *testing.T) {
 					itemKind, ok := extraString(part.Extra, keyResponsesItemType)
 					equal(t, true, ok)
 					equal(t, "message", itemKind)
-					annotations, ok := extraString(part.Extra, "ark-responses-annotations")
+					annotations, ok := extraString(part.Extra, "ark-v2-responses-annotations")
 					equal(t, true, ok)
 					equalRawJSON(t, []byte(`[{"type":"future_annotation","value":9007199254740993}]`), []byte(annotations))
 				}
@@ -401,36 +401,22 @@ func TestResponsesReasoningUsesPublicSignature(t *testing.T) {
 			}
 		}
 	})
-	t.Run("move signature between reasoning parts", func(t *testing.T) {
+	t.Run("edit item signature", func(t *testing.T) {
 		msg := clone()
-		last := -1
-		for i := range msg.AssistantGenMultiContent {
-			part := &msg.AssistantGenMultiContent[i]
-			if part.Reasoning != nil {
-				part.Reasoning.Signature = ""
-				last = i
-			}
-		}
-		if last < 0 {
-			t.Fatal("no reasoning part")
-		}
-		msg.AssistantGenMultiContent[last].Reasoning.Signature = "moved cipher"
+		part := &msg.AssistantGenMultiContent[0]
+		part.Reasoning.Text = ""
+		part.Reasoning.Signature = "moved cipher"
 		input, err := toResponsesInput([]*schema.Message{msg})
 		check(t, err)
 		raw, err := json.Marshal(input)
 		check(t, err)
 		expected := strings.Replace(responsesProjectionInputJSON, `"encrypted_content":"cipher"`, `"encrypted_content":"moved cipher"`, 1)
+		expected = strings.Replace(expected, `"summary":[{"type":"summary_text","text":"one\ntwo"}],`, "", 1)
 		equalRawJSON(t, []byte(expected), raw)
 	})
 	t.Run("conflicting public signatures", func(t *testing.T) {
 		msg := clone()
-		for i := range msg.AssistantGenMultiContent {
-			part := &msg.AssistantGenMultiContent[i]
-			if part.Reasoning != nil && part.Reasoning.Signature == "" {
-				part.Reasoning.Signature = "another cipher"
-				break
-			}
-		}
+		msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: &schema.MessageOutputReasoning{Signature: "another cipher"}, Extra: map[string]any{keyResponsesItemIndex: metadataInt64(1)}})
 		_, err := toResponsesInput([]*schema.Message{msg})
 		if err == nil {
 			t.Fatal("multiple item signatures accepted")
@@ -465,6 +451,7 @@ func TestResponsesReorderedPartsAndTools(t *testing.T) {
 					raw, err = json.Marshal(input)
 					check(t, err)
 					expected := strings.ReplaceAll(output, `"status":"completed","role":"assistant",`, `"role":"assistant",`)
+					expected = strings.ReplaceAll(expected, `"text":"summary one"},{"type":"summary_text","text":"summary two"`, `"text":"summary one\nsummary two"`)
 					expected = strings.ReplaceAll(expected, `"content":[],"encrypted_content"`, `"encrypted_content"`)
 					equalRawJSON(t, []byte(expected), raw)
 				})
@@ -477,7 +464,7 @@ func TestResponsesItemMetadataMergesIntoFirstDataPart(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		t.Run(mode, func(t *testing.T) {
 			msg := projectedResponsesMessage(t, mode, responsesProjectionJSON)
-			equal(t, 7, len(msg.AssistantGenMultiContent))
+			equal(t, 5, len(msg.AssistantGenMultiContent))
 			seen := map[int]bool{}
 			for _, part := range msg.AssistantGenMultiContent {
 				index, exists, err := extraIndex(part.Extra, keyResponsesItemIndex)
@@ -490,19 +477,10 @@ func TestResponsesItemMetadataMergesIntoFirstDataPart(t *testing.T) {
 						t.Fatal("item with data still has a separate metadata part")
 					}
 				}
-				if section, _ := extraString(part.Extra, keyResponsesSection); section == "summary" {
-					index, exists, err := extraIndex(part.Extra, keyResponsesSummaryIndex)
-					check(t, err)
-					equal(t, true, exists)
-					if index == 0 {
-						equal(t, "one", part.Reasoning.Text)
-						equal(t, "cipher", part.Reasoning.Signature)
-					} else {
-						equal(t, "two", part.Reasoning.Text)
-					}
-					if _, exists := part.Extra[keyResponsesContentIndex]; exists {
-						t.Fatal("summary retains a segment index")
-					}
+				if part.Reasoning != nil {
+					equal(t, "one\ntwo", part.Reasoning.Text)
+					equal(t, "cipher", part.Reasoning.Signature)
+					assertRawReasoning(t, part, "raw")
 				}
 			}
 		})
@@ -652,12 +630,12 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 			}
 			equal(t, 4, len(chunks))
 			equal(t, 1, len(chunks[0].AssistantGenMultiContent))
-			equal(t, "R1", chunks[0].AssistantGenMultiContent[0].Reasoning.Text)
+			assertRawReasoning(t, chunks[0].AssistantGenMultiContent[0], "R1")
 			for _, chunk := range chunks[1 : len(chunks)-1] {
 				equal(t, 0, len(chunk.AssistantGenMultiContent))
 			}
 			terminal := chunks[len(chunks)-1]
-			equal(t, 7, len(terminal.AssistantGenMultiContent))
+			equal(t, 4, len(terminal.AssistantGenMultiContent))
 			for index, part := range terminal.AssistantGenMultiContent {
 				if part.StreamingMeta == nil {
 					t.Fatal("terminal stream part has no merge identity")
@@ -668,8 +646,8 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 			check(t, err)
 			equal(t, "ABC", merged.Content)
 			equal(t, "S1\nS2", merged.ReasoningContent)
-			equal(t, 7, len(merged.AssistantGenMultiContent))
-			for index, want := range []string{"R1", "R2", "S1", "S2", "A", "B", "C"} {
+			equal(t, 4, len(merged.AssistantGenMultiContent))
+			for index, want := range []string{"S1\nS2", "A", "B", "C"} {
 				part := merged.AssistantGenMultiContent[index]
 				if part.Reasoning != nil {
 					equal(t, want, part.Reasoning.Text)
@@ -677,7 +655,8 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 					equal(t, want, part.Text)
 				}
 			}
-			equal(t, "cipher", merged.AssistantGenMultiContent[2].Reasoning.Signature)
+			assertRawReasoning(t, merged.AssistantGenMultiContent[0], "R1", "R2")
+			equal(t, "cipher", merged.AssistantGenMultiContent[0].Reasoning.Signature)
 			input, err := toResponsesInput([]*schema.Message{merged})
 			check(t, err)
 			raw, err := json.Marshal(input)
@@ -698,7 +677,12 @@ func TestResponsesUnknownContentRemainsOpaque(t *testing.T) {
 				}
 				output := fmt.Sprintf(`[{"type":%q,"id":"item","role":"assistant","status":"completed","content":[{"type":%q,"text":"A"},%s,{"type":%q,"text":"B"}]}]`, kind, contentType, unknown, contentType)
 				msg := projectedResponsesMessage(t, mode, output)
-				equal(t, 3, len(msg.AssistantGenMultiContent))
+				wantParts := 3
+				if kind == "reasoning" {
+					wantParts = 2
+					assertRawReasoning(t, msg.AssistantGenMultiContent[0], "A", "B")
+				}
+				equal(t, wantParts, len(msg.AssistantGenMultiContent))
 				part := msg.AssistantGenMultiContent[1]
 				equal(t, ResponsesOutputItem, part.Type)
 				equal(t, "", part.Text)
@@ -778,4 +762,47 @@ func TestResponsesMessageJSONRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+func assertRawReasoning(t *testing.T, part schema.MessageOutputPart, want ...string) {
+	t.Helper()
+	raw, ok := GetRawReasoningContent(&part)
+	equal(t, true, ok)
+	equal(t, len(want), len(raw))
+	for i := range want {
+		equal(t, want[i], raw[i])
+	}
+}
+
+// Explicitly indexed v2 parts can share an item in native history.
+func TestResponsesIndexedReasoningHistory(t *testing.T) {
+	summary := projectResponsesSummaryPart(0, 0, "summary")
+	summary.Extra[keyResponsesItemType] = "reasoning"
+	summary.Reasoning.Signature = "cipher"
+	raw := projectResponsesReasoningPart(0, 0, "first")
+	msg := &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projectResponsesReasoningPart(0, 1, "second"), summary, raw}}
+	inputs, err := toResponsesInput([]*schema.Message{msg})
+	check(t, err)
+	data, err := json.Marshal(inputs)
+	check(t, err)
+	equalRawJSON(t, []byte(`[{"type":"reasoning","status":"completed","summary":[{"type":"summary_text","text":"summary"}],"content":[{"type":"reasoning_text","text":"first"},{"type":"reasoning_text","text":"second"}],"encrypted_content":"cipher"}]`), data)
+}
+
+func TestResponsesRawReasoningKeyIsolation(t *testing.T) {
+	const legacyKey = "ark-raw-reasoning-content"
+	msg := projectedResponsesMessage(t, "generate", `[{"type":"reasoning","status":"completed","content":[{"type":"reasoning_text","text":"v2 raw"}]}]`)
+	part := &msg.AssistantGenMultiContent[0]
+	if _, ok := part.Extra[legacyKey]; ok {
+		t.Fatal("v2 wrote the legacy ark raw reasoning key")
+	}
+	part.Extra[legacyKey] = []any{"legacy raw"}
+	assertRawReasoning(t, *part, "v2 raw")
+	delete(part.Extra, keyRawReasoningContent)
+	if _, ok := GetRawReasoningContent(part); ok {
+		t.Fatal("v2 read the legacy ark raw reasoning key")
+	}
+	input, err := toResponsesInput([]*schema.Message{msg})
+	check(t, err)
+	equal(t, 1, len(input))
+	equal(t, 0, len(input[0].OneOf.ItemReasoning.Content))
 }

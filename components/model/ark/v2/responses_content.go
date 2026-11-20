@@ -191,7 +191,11 @@ func toResponsesAssistantInput(msg *schema.Message) ([]responses.InputItem, erro
 					return nil, fmt.Errorf("assistant reasoning must not be nil")
 				}
 				flush()
-				items = append(items, responsesReasoningInput(part.Reasoning.Text, part.Reasoning.Signature))
+				input := responsesReasoningInput(part.Reasoning.Text, part.Reasoning.Signature)
+				if err := appendPartRawReasoning(&input.OneOf.ItemReasoning, &part); err != nil {
+					return nil, err
+				}
+				items = append(items, input)
 				continue
 			}
 			content, err := toResponsesAssistantContentItem(part)

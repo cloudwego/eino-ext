@@ -183,8 +183,7 @@ func (s *responsesStreamState) toolDelta(call responses.ItemFunctionToolCall, in
 func (s *responsesStreamState) summaryDelta(parts []schema.MessageOutputPart) string {
 	var text strings.Builder
 	for _, part := range parts {
-		section, _ := extraString(part.Extra, keyResponsesSection)
-		if section != "summary" || part.Reasoning == nil || part.Reasoning.Text == "" {
+		if part.Reasoning == nil || part.Reasoning.Text == "" {
 			continue
 		}
 		index := part.StreamingMeta.Index
@@ -224,16 +223,13 @@ func projectResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	ev := &event.OneOf
 	switch ev.Type {
 	case responses.ResponseCompletedEventResponseStreamEventSum:
-		msg, err = projectResponsesResponse(&ev.ResponseCompletedEvent.Response, req)
+		msg, err = projectResponsesResponseParts(&ev.ResponseCompletedEvent.Response, req, true)
 		return msg, true, err
 	case responses.ResponseIncompleteEventResponseStreamEventSum:
-		msg, err = projectResponsesResponse(&ev.ResponseIncompleteEvent.Response, req)
+		msg, err = projectResponsesResponseParts(&ev.ResponseIncompleteEvent.Response, req, true)
 		return msg, true, err
 	case responses.ResponseFailedEventResponseStreamEventSum:
-		resp := ev.ResponseFailedEvent.Response
-		resp.Status = responses.NewOptResponseStatus(responses.ResponseStatusFailed)
-		msg, err = projectResponsesMetadata(&resp, req)
-		return msg, true, err
+		return nil, true, responseFailedError(&ev.ResponseFailedEvent.Response)
 	case responses.ResponseErrorEventResponseStreamEventSum:
 		return nil, false, fmt.Errorf("Ark stream error (%s): %s", ev.ResponseErrorEvent.Code.Or(""), ev.ResponseErrorEvent.Message)
 	case responses.ResponseTextDeltaEventResponseStreamEventSum:
@@ -250,6 +246,9 @@ func projectResponsesStreamEvent(event *responses.ResponseStreamEvent, req *resp
 	case responses.ResponseReasoningSummaryTextDeltaEventResponseStreamEventSum:
 		msg = &schema.Message{Role: schema.Assistant, ReasoningContent: ev.ResponseReasoningSummaryTextDeltaEvent.Delta.Or("")}
 		msg.AssistantGenMultiContent = []schema.MessageOutputPart{projectResponsesSummaryPart(int(ev.ResponseReasoningSummaryTextDeltaEvent.OutputIndex), int(ev.ResponseReasoningSummaryTextDeltaEvent.SummaryIndex), msg.ReasoningContent)}
+	case responses.ResponseReasoningSummaryTextDoneEventResponseStreamEventSum:
+		e := ev.ResponseReasoningSummaryTextDoneEvent
+		msg = &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projectResponsesSummaryPart(int(e.OutputIndex), int(e.SummaryIndex), e.Text.Or(""))}}
 	case responses.ResponseContentPartAddedEventResponseStreamEventSum:
 		e := ev.ResponseContentPartAddedEvent
 		msg, err = projectResponsesStreamContentPart(e.Part, int(e.OutputIndex), int(e.ContentIndex))
@@ -327,17 +326,20 @@ type responsesStreamPart struct {
 	prototype schema.MessageOutputPart
 	received  strings.Builder
 	emitted   string
-	index     int
+	started   bool
 	pending   bool
 }
 
 type responsesStreamItem struct {
-	kind         responses.OutputItemSumType
-	parts        map[responsesPartKey]*responsesStreamPart
-	section      string
-	source       []schema.MessageOutputPart
-	done, closed bool
-	signature    string
+	projection       reasoningItemProjection
+	publicIndices    map[responsesPartKey]int
+	kind             responses.OutputItemSumType
+	parts            map[responsesPartKey]*responsesStreamPart
+	pending          []responsesPartKey
+	lastSummaryIndex int
+	source           []schema.MessageOutputPart
+	done, closed     bool
+	signature        string
 }
 
 // Eino merges adjacent part chunks. Keep one item open until its done event
@@ -421,65 +423,29 @@ func (s *responsesPartsStream) resolve(event *responses.ResponseStreamEvent, msg
 		}
 	default:
 	}
-	if ev.Type != responses.ResponseOutputItemDoneEventResponseStreamEventSum {
-		if !terminal && msg != nil {
-			for _, part := range msg.AssistantGenMultiContent {
-				index, _, err := extraIndex(part.Extra, keyResponsesItemIndex)
-				if err != nil {
-					return nil, err
-				}
-				key := responsesPartIdentity(part)
-				if key.index < 0 {
-					return nil, fmt.Errorf("negative Responses content index")
-				}
-				item := s.item(index)
-				if key.section == "content" &&
-					((item.kind == responses.ItemReasoningOutputItemSum && part.Type == schema.ChatMessagePartTypeText) ||
-						(item.kind == responses.ItemOutputMessageOutputItemSum && part.Type == schema.ChatMessagePartTypeReasoning)) {
-					return nil, fmt.Errorf("Responses item %d (%s) cannot contain a %s part", index, item.kind, part.Type)
-				}
-				if item.closed {
-					return nil, fmt.Errorf("Responses item %d received a delta after output_item.done", index)
-				}
-				cell := item.parts[key]
-				if cell == nil {
-					cell = &responsesStreamPart{prototype: copyResponsesPart(part), index: -1}
-					if cell.prototype.Reasoning != nil {
-						cell.prototype.Reasoning.Signature = ""
-					}
-					item.parts[key] = cell
-				}
-				if item.section == "" {
-					item.section = key.section
-				}
-				snapshot := false
-				switch ev.Type {
-				case responses.ResponseOutputItemAddedEventResponseStreamEventSum,
-					responses.ResponseContentPartAddedEventResponseStreamEventSum,
-					responses.ResponseContentPartDoneEventResponseStreamEventSum,
-					responses.ResponseReasoningSummaryPartAddedEventResponseStreamEventSum,
-					responses.ResponseReasoningSummaryPartDoneEventResponseStreamEventSum:
-					snapshot = true
-				}
-				text := responsesPartText(part)
-				if snapshot {
-					if text != "" {
-						if !strings.HasPrefix(text, cell.received.String()) {
-							return nil, fmt.Errorf("Responses part snapshot differs from its delta prefix")
-						}
-						cell.received.WriteString(text[cell.received.Len():])
-					}
-					cell.prototype = copyResponsesPart(part)
-					if cell.prototype.Reasoning != nil {
-						cell.prototype.Reasoning.Signature = ""
-					}
-					cell.pending = true
-				} else {
-					cell.received.WriteString(text)
-				}
+	if !terminal && msg != nil && ev.Type != responses.ResponseOutputItemDoneEventResponseStreamEventSum {
+		snapshot := false
+		switch ev.Type {
+		case responses.ResponseOutputItemAddedEventResponseStreamEventSum,
+			responses.ResponseContentPartAddedEventResponseStreamEventSum,
+			responses.ResponseContentPartDoneEventResponseStreamEventSum,
+			responses.ResponseReasoningSummaryPartAddedEventResponseStreamEventSum,
+			responses.ResponseReasoningSummaryPartDoneEventResponseStreamEventSum,
+			responses.ResponseReasoningSummaryTextDoneEventResponseStreamEventSum:
+			snapshot = true
+		}
+
+		for _, part := range msg.AssistantGenMultiContent {
+			index, _, err := extraIndex(part.Extra, keyResponsesItemIndex)
+			if err != nil {
+				return nil, err
+			}
+			if err := s.item(index).recordSegment(index, part, snapshot, index == s.nextItem); err != nil {
+				return nil, err
 			}
 		}
 	}
+
 	if terminal && msg != nil {
 		groups := make(map[int][]schema.MessageOutputPart)
 		for _, part := range msg.AssistantGenMultiContent {
@@ -509,6 +475,62 @@ func (s *responsesPartsStream) resolve(event *responses.ResponseStreamEvent, msg
 		}
 	}
 	return s.drain()
+}
+
+func (item *responsesStreamItem) recordSegment(index int, part schema.MessageOutputPart, snapshot, active bool) error {
+	key := responsesPartIdentity(part)
+	if key.index < 0 {
+		return fmt.Errorf("negative Responses content index")
+	}
+
+	if key.section == "content" &&
+		((item.kind == responses.ItemReasoningOutputItemSum && part.Type == schema.ChatMessagePartTypeText) ||
+			(item.kind == responses.ItemOutputMessageOutputItemSum && part.Type == schema.ChatMessagePartTypeReasoning)) {
+		return fmt.Errorf("Responses item %d (%s) cannot contain a %s part", index, item.kind, part.Type)
+	}
+	if item.closed {
+		return fmt.Errorf("Responses item %d received a delta after output_item.done", index)
+	}
+	cell := item.parts[key]
+	if cell == nil {
+		cell = &responsesStreamPart{prototype: copyResponsesPart(part)}
+		if cell.prototype.Reasoning != nil {
+			cell.prototype.Reasoning.Signature = ""
+		}
+		item.parts[key] = cell
+	}
+	delta := responsesPartText(part)
+	if snapshot {
+		if delta != "" {
+			suffix, ok := strings.CutPrefix(delta, cell.received.String())
+			if !ok {
+				return fmt.Errorf("Responses part snapshot differs from its delta prefix")
+			}
+			delta = suffix
+		}
+		cell.prototype = copyResponsesPart(part)
+		if cell.prototype.Reasoning != nil {
+			cell.prototype.Reasoning.Signature = ""
+		}
+	}
+	if key.section == "summary" && delta != "" {
+		if key.index < item.lastSummaryIndex {
+			return fmt.Errorf("Responses item %d summary_index decreased from %d to %d", index, item.lastSummaryIndex, key.index)
+		}
+		item.lastSummaryIndex = key.index
+	}
+	cell.received.WriteString(delta)
+	// Message parts must stay adjacent for Eino Concat. Reasoning segments
+	// share one public part; raw slots can stream once their position is known.
+	ready := key.index == 0 && part.Type == schema.ChatMessagePartTypeText
+	if part.Reasoning != nil {
+		ready = key.section == "summary" || key.index <= len(item.projection.rawSlots)
+	}
+	if ready && !cell.pending && (delta != "" || (active && (snapshot || !cell.started))) {
+		cell.pending = true
+		item.pending = append(item.pending, key)
+	}
+	return nil
 }
 
 func (s *responsesPartsStream) finish(index int, parts []schema.MessageOutputPart, terminal bool) error {
@@ -544,6 +566,13 @@ func (s *responsesPartsStream) finish(index int, parts []schema.MessageOutputPar
 		if kind == "reasoning" {
 			// Encrypted reasoning can first arrive in the terminal response.
 			if currentSignature == "" {
+				for _, part := range parts {
+					if part.Reasoning != nil && responsesPartIdentity(part).section != "" {
+						if err := item.recordSegment(index, part, true, index == s.nextItem); err != nil {
+							return err
+						}
+					}
+				}
 				return nil
 			}
 		}
@@ -559,30 +588,28 @@ func (s *responsesPartsStream) drain() ([]schema.MessageOutputPart, error) {
 		if item == nil {
 			break
 		}
-		key := responsesPartKey{section: item.section, index: 0}
-		active := item.parts[key]
+		var segments []schema.MessageOutputPart
 		if !item.done {
-			if active != nil && (active.index < 0 || active.pending || active.received.Len() > len(active.emitted)) && (active.prototype.Type == schema.ChatMessagePartTypeText || active.prototype.Type == schema.ChatMessagePartTypeReasoning) {
-				part := copyResponsesPart(active.prototype)
-				setResponsesPartText(&part, active.received.String()[len(active.emitted):])
-				if active.index < 0 {
-					active.index = s.nextIndex
-					s.nextIndex++
-				}
-				part.StreamingMeta = &schema.MessageStreamingMeta{Index: active.index}
-				active.emitted = active.received.String()
-				active.pending = false
-				out = append(out, part)
+			for _, key := range item.pending {
+				cell := item.parts[key]
+				part := copyResponsesPart(cell.prototype)
+				setResponsesPartText(&part, cell.received.String()[len(cell.emitted):])
+				cell.started = true
+				cell.emitted = cell.received.String()
+				cell.pending = false
+				segments = append(segments, part)
 			}
+			item.pending = item.pending[:0]
+			out = append(out, s.publicParts(item, segments)...)
 			break
 		}
-		full := s.completeParts(item, key)
+		full := s.completeParts(item)
 		for _, original := range full {
 			part := copyResponsesPart(original)
 			partKey := responsesPartIdentity(part)
 			cell := item.parts[partKey]
 			if cell == nil {
-				cell = &responsesStreamPart{index: -1}
+				cell = &responsesStreamPart{}
 				item.parts[partKey] = cell
 			}
 			text := responsesPartText(part)
@@ -592,47 +619,56 @@ func (s *responsesPartsStream) drain() ([]schema.MessageOutputPart, error) {
 			if !strings.HasPrefix(text, cell.received.String()) || !strings.HasPrefix(text, cell.emitted) {
 				return nil, fmt.Errorf("Responses item %d part %v differs from its streamed prefix", s.nextItem, partKey)
 			}
-			setResponsesPartText(&part, text[len(cell.emitted):])
-			if cell.index < 0 {
-				cell.index = s.nextIndex
-				s.nextIndex++
+			suffix := text[len(cell.emitted):]
+			if partKey.section == "summary" && suffix != "" && partKey.index < item.projection.summaryIndex {
+				return nil, fmt.Errorf("Responses item %d snapshot extends summary_index %d after index %d was emitted", s.nextItem, partKey.index, item.projection.summaryIndex)
 			}
-			part.StreamingMeta = &schema.MessageStreamingMeta{Index: cell.index}
+			setResponsesPartText(&part, suffix)
+			cell.started = true
 			cell.emitted = text
-			out = append(out, part)
+			segments = append(segments, part)
 		}
+		out = append(out, s.publicParts(item, segments)...)
 		item.closed = true
 		s.nextItem++
 	}
 	return out, nil
 }
 
-func (s *responsesPartsStream) completeParts(item *responsesStreamItem, activeKey responsesPartKey) []schema.MessageOutputPart {
-	full := make([]schema.MessageOutputPart, len(item.source))
-	keys := make(map[responsesPartKey]bool)
-	header := make(map[string]any)
-	var signature string
-	for i, original := range item.source {
-		full[i] = copyResponsesPart(original)
-		keys[responsesPartIdentity(original)] = true
-		if original.Reasoning != nil && original.Reasoning.Signature != "" {
-			signature = original.Reasoning.Signature
+func (s *responsesPartsStream) publicParts(item *responsesStreamItem, segments []schema.MessageOutputPart) []schema.MessageOutputPart {
+	parts := item.projection.parts(segments)
+	for i := range parts {
+		key := responsesPartIdentity(parts[i])
+		if item.publicIndices == nil {
+			item.publicIndices = make(map[responsesPartKey]int)
 		}
+		index, ok := item.publicIndices[key]
+		if !ok {
+			index = s.nextIndex
+			s.nextIndex++
+			item.publicIndices[key] = index
+		}
+		parts[i].StreamingMeta = &schema.MessageStreamingMeta{Index: index}
 	}
-	if len(full) > 0 {
-		for k, v := range full[0].Extra {
-			switch k {
-			case keyResponsesItemIndex, keyResponsesSection, keyResponsesContentIndex, keyResponsesSummaryIndex, keyResponsesContentType, keyResponsesAnnotations, keyResponsesContentData:
-			default:
-				header[k] = v
-			}
-		}
+	// Eino merges adjacent chunks. A terminal snapshot can omit an already
+	// streamed part, which completeParts restores after the SDK's segments.
+	if item.done && len(parts) > 1 {
+		sort.SliceStable(parts, func(i, j int) bool { return parts[i].StreamingMeta.Index < parts[j].StreamingMeta.Index })
+	}
+	return parts
+}
+
+func (s *responsesPartsStream) completeParts(item *responsesStreamItem) []schema.MessageOutputPart {
+	full := item.source
+	keys := make(map[responsesPartKey]bool, len(full))
+	for _, part := range full {
+		keys[responsesPartIdentity(part)] = true
 	}
 
 	// A terminal response may omit plaintext that was supplied through deltas.
 	var missing []responsesPartKey
 	for key, cell := range item.parts {
-		if !keys[key] && (cell.received.Len() > 0 || cell.index >= 0) {
+		if !keys[key] && (cell.received.Len() > 0 || cell.started) {
 			missing = append(missing, key)
 		}
 	}
@@ -642,55 +678,21 @@ func (s *responsesPartsStream) completeParts(item *responsesStreamItem, activeKe
 		}
 		return missing[i].index < missing[j].index
 	})
-	for _, key := range missing {
-		part := copyResponsesPart(item.parts[key].prototype)
-		setResponsesPartText(&part, item.parts[key].received.String())
-		if len(full) == 1 && full[0].Reasoning != nil && responsesPartIdentity(full[0]).section == "" {
-			full[0] = part
-		} else {
+	if len(missing) > 0 {
+		full = append([]schema.MessageOutputPart(nil), full...)
+		for _, key := range missing {
+			cell := item.parts[key]
+			part := copyResponsesPart(cell.prototype)
+			// The terminal source owns item metadata; only recover the missing segment.
+			delete(part.Extra, keyResponsesItemID)
+			delete(part.Extra, keyResponsesItemType)
+			delete(part.Extra, keyResponsesItemStatus)
+			delete(part.Extra, keyResponsesItemRole)
+			delete(part.Extra, keyResponsesPartial)
+			setResponsesPartText(&part, cell.received.String())
 			full = append(full, part)
 		}
 	}
-	if active := item.parts[activeKey]; active != nil && active.index >= 0 {
-		sort.SliceStable(full, func(i, j int) bool {
-			a, b := responsesPartIdentity(full[i]), responsesPartIdentity(full[j])
-			if (a.section == activeKey.section) != (b.section == activeKey.section) {
-				return a.section == activeKey.section
-			}
-			if a.section == b.section {
-				return a.index < b.index
-			}
-			return false
-		})
-	}
 
-	// Item metadata belongs to the first part in emission order. A summary keeps
-	// the encrypted signature when one exists, regardless of delta arrival order.
-	carrier, summaryCarrier := -1, -1
-	for i := range full {
-		for k := range header {
-			delete(full[i].Extra, k)
-		}
-		if full[i].Reasoning != nil {
-			full[i].Reasoning.Signature = ""
-			if carrier < 0 {
-				carrier = i
-			}
-			if summaryCarrier < 0 && responsesPartIdentity(full[i]).section == "summary" {
-				summaryCarrier = i
-			}
-		}
-	}
-	if len(full) > 0 {
-		for k, v := range header {
-			full[0].Extra[k] = v
-		}
-	}
-	if summaryCarrier >= 0 {
-		carrier = summaryCarrier
-	}
-	if carrier >= 0 {
-		full[carrier].Reasoning.Signature = signature
-	}
 	return full
 }

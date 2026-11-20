@@ -57,8 +57,8 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	}
 	exampleutil.PrintResponse(reply)
 	for _, part := range reply.AssistantGenMultiContent {
-		if part.Type == ark.ResponsesOutputItem && fmt.Sprint(part.Extra["ark-responses-item-type"]) == "web_search_call" {
-			fmt.Printf("Search item: %v status=%v\n", part.Extra["ark-responses-item-id"], part.Extra["ark-responses-item-status"])
+		if part.Type == ark.ResponsesOutputItem && fmt.Sprint(part.Extra["ark-v2-responses-item-type"]) == "web_search_call" {
+			fmt.Printf("Search item: %v status=%v\n", part.Extra["ark-v2-responses-item-id"], part.Extra["ark-v2-responses-item-status"])
 		}
 	}
 	if usage, ok := ark.GetResponsesTokenUsageDetails(reply); ok {

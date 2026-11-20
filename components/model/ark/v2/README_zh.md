@@ -322,8 +322,8 @@ fmt.Println(reply.Content)
 通用 token 计数仅保存在 `ResponseMeta.Usage`，思考文本保存在 `ReasoningContent`。
 两个 usage getter 将当前通用统计与 `Extra` 中的 SDK 专有明细合并返回，
 因此 modifier 或流拼接对通用统计的修改也会反映在 getter 结果中。
-SDK 专有计数和服务状态平铺为独立 key，例如 `ark-responses-usage-details.input_tokens_details.audio_tokens`
-和 `ark-service-status.model_fallback.fallback_triggered`。复杂的 provider 属性和工具明细
+SDK 专有计数和服务状态平铺为独立 key，例如 `ark-v2-responses-usage-details.input_tokens_details.audio_tokens`
+和 `ark-v2-service-status.model_fallback.fallback_triggered`。复杂的 provider 属性和工具明细
 保存为 JSON 字符串，用量辅助函数在恢复后还原 SDK 类型。
 usage getter 只读取 `ResponseMeta.Usage` 和当前 `Extra` 格式。
 可选计数通过 key 是否存在区分未设置和显式零值；流拼接保留每个 SDK 专有字段
@@ -422,22 +422,20 @@ Context 和图片生成 API 仍使用旧模块。
   item 元数据合入首个 data part；仅没有映射 data part 时使用独立的
   `ark.ResponsesOutputItem`，例如空消息和内置工具输出。函数调用的 item 元数据
   保存在对应的 `ToolCalls[i].Extra`，与函数值放在一起，不生成 `AssistantGenMultiContent` part。
-  item 使用 `ark-responses-item-type`、`ark-responses-item-id`、`ark-responses-item-status`、
-  `ark-responses-item-role`、`ark-responses-partial`；content 使用独立的
-  `ark-responses-content-type` 和 `ark-responses-annotations`。
+  消息、part 和工具调用的私有元数据统一使用 `ark-v2-` 前缀。会话缓存续接和失效操作只读取或清理 v2 的缓存元数据。
+  item 使用 `ark-v2-responses-item-type`、`ark-v2-responses-item-id`、`ark-v2-responses-item-status`、
+  `ark-v2-responses-item-role`、`ark-v2-responses-partial`；content 使用独立的
+  `ark-v2-responses-content-type` 和 `ark-v2-responses-annotations`。
   输出直接读取 SDK 类型，不从 raw JSON 补取 SDK 未声明的 `message.phase`、
   `action.queries` 等字段。没有标准 Eino 映射的内置工具或未知变体，仅将 SDK 值
-  以原子 JSON 保存在 `ark-responses-item-data` / `ark-responses-content-data`。
+  以原子 JSON 保存在 `ark-v2-responses-item-data` / `ark-v2-responses-content-data`。
   SDK annotations codec 和未知变体兼容机制保留自身值，经 JSON/gob 持久化保留数字精度。
   这些输出元数据不会自动成为请求字段；文本、签名和函数值只保存在公开字段。
-  `ark-responses-item-index` 保存 parts/tools 的 item 归属和顺序，section/content-index
-  以及 `ark-responses-summary-index` 保存 item 内两种数组的原生索引，独立于流式合包索引。
-  每个 summary 对应一个 reasoning part，输入转换恢复有序 summary 数组。
-  首个 summary part 保存该 item 唯一的加密 `Signature`；没有 summary 时使用首个
-  reasoning content part。输入转换读取
-  同一 item 任意 reasoning part 的签名，非空签名冲突则报错。
-  message 的 `output_text` 映射到 `Text`，reasoning 的 `reasoning_text` 映射到
-  `Reasoning.Text`；完整响应、流式和原生历史均拒绝已知 content 类型与父 item 矛盾的组合。
+  `ark-v2-responses-item-index` 保存 parts/tools 的 item 归属和顺序。每个 reasoning item 生成一个 reasoning part。
+  `Reasoning.Text` 用换行连接非空 summary，`Reasoning.Signature` 保存本项密文。
+  `GetRawReasoningContent(&part)` 按顺序返回 part.Extra 中的原始推理文本分段。
+  历史回传将非空摘要写为一段 summary，各段 raw 文本分别写为一个 `reasoning_text`。
+  message 的 `output_text` 单独生成 text part，保留正文和 annotations。
   消息、推理和函数调用历史直接映射到 SDK 输入类型；输出专用 item 在后续输入中忽略。
   当前适配器不提供 server-side MCP、Tool Search 的配置与历史转换，
   即使 SDK 已声明相应输入类型，也不自动回传。这些 SDK 输出值留在 Message 中供读取；
@@ -445,14 +443,12 @@ Context 和图片生成 API 仍使用旧模块。
   历史转换限于 SDK 输入类型，不通过整体替换 input 补充 SDK 未支持的字段。
   工具 strict 和显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
   使用 SDK codec 自带的未知变体保留机制。
-  Generate 的 part `StreamingMeta` 为 nil。流式根据原生
-  `(output_index, section, summary_index/content_index)` 为 added、delta、done
-  分配稳定的 part 索引。每个 part 首次发出时，从 0 开始递增分配并在后续包复用，
+  Generate 的 part `StreamingMeta` 为 nil。流式为每个 reasoning item 和每个 message content part 分配独立索引。每个 part 首次发出时，从 0 开始递增分配并在后续包复用，
   不按 `output_index` 做算术编码。函数调用单独从 0 开始按首次出现顺序分配
   `ToolCall.Index`，后续包复用；原生 `output_index` 保存在 ToolCall.Extra 以恢复历史顺序。
   函数调用不占用 part 索引。item done 或终止事件补齐元数据/签名，不重放完整正文。
   Eino Concat 只合并相邻 chunk，因此后续 parts/items 可能等待当前 item 的最终元数据；
-  item 内优先输出已经开始的 section，持久索引确保下轮恢复原始 SDK 数组顺序。
+  同一 reasoning item 的新增摘要文本按 `summary_index` 单调不减地输出。若较早的索引又出现新增文本，流返回错误。done 和终态快照只补缺失后缀，raw 文本按 `content_index` 独立累积。
   旧正文和函数参数字段仍保持增量输出，summary 展示随对应 part chunks 输出。
   previous response ID 提供缓存历史，无需重发历史内容。
   reasoning parts 及其签名自动回传。
@@ -502,6 +498,11 @@ Responses 的强制选择仅在显式提供一个函数名称时按名称调用�
 后续传入完整历史时，适配器寻找最近的未过期缓存消息，仅发送其后的增量，
 并设置 `previous_response_id`。`GetCacheExpiration` 读取过期时间；编辑缓存历史后，
 使用 `InvalidateMessageCaches(messages)` 使相关消息的缓存失效。
+
+切换模型时，可用 `clean := ark.ClearReasoning(history)` 取得移除推理摘要、原文和密文的历史副本。
+Chat Completions 可直接传入 `clean`。Responses 使用 `next.Generate(ctx, clean, ark.WithCache(nil))`
+可跳过本次服务端上下文续接，发送完整的清理后历史。函数复制每条消息、消息顶层的 Extra map
+及输出 part 切片，其他嵌套值仍与原消息共享。
 
 缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools`
 （包括额外请求体中的工具编码）和 `tool_choice`。需要更换工具设置时应建立新的缓存链；

@@ -293,7 +293,10 @@ func TestChatSharedRequestInputs(t *testing.T) {
 	common, specified := cm.getOptions(options...)
 	snapshot := func() string {
 		current, ark := cm.getOptions(options...)
-		data, err := json.Marshal([]any{cm.config, cm.rawTools, common, current, tools, stops, names,
+		config := &cm.config
+		data, err := json.Marshal([]any{config.Model, config.ToolStrict, config.Stop, config.CustomHeader,
+			config.Thinking, config.ResponseFormat, config.MaxCompletionTokens, config.ParallelToolCalls,
+			cm.rawTools, common, current, tools, stops, names,
 			specified.customHeaders, specified.thinking, specified.maxCompletionTokens, specified.parallelToolCalls,
 			ark.customHeaders, ark.thinking, ark.maxCompletionTokens, ark.parallelToolCalls})
 		check(t, err)

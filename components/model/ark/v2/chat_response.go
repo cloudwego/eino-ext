@@ -28,10 +28,10 @@ import (
 )
 
 const (
-	keyEncryptedContent  = "ark-encrypted-content"
-	keyServiceStatus     = "ark-service-status"
-	keyUsageDetails      = "ark-usage-details"
-	keyModerationHitType = "ark-moderation-hit-type"
+	keyEncryptedContent  = extraKeyPrefix + "encrypted-content"
+	keyServiceStatus     = extraKeyPrefix + "service-status"
+	keyUsageDetails      = extraKeyPrefix + "usage-details"
+	keyModerationHitType = extraKeyPrefix + "moderation-hit-type"
 )
 
 func resolveChatResponse(resp *chat.ChatCompletionResponse) (*schema.Message, error) {

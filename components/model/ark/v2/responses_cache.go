@@ -25,8 +25,8 @@ import (
 )
 
 const (
-	keyResponseID      = "ark-response-id"
-	keyCacheExpiration = "ark-response-cache-expire-at"
+	keyResponseID      = extraKeyPrefix + "response-id"
+	keyCacheExpiration = extraKeyPrefix + "response-cache-expire-at"
 )
 
 // SessionCacheConfig enables storing Responses and reusing their server context.

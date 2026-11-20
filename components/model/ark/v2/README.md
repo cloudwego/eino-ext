@@ -351,8 +351,8 @@ Ark metadata in `Extra` uses scalar values so messages can round-trip through
 combine the current common counts with SDK-specific details in `Extra`, so changes
 made by modifiers or stream concatenation are reflected in their results.
 SDK-specific counts and service-status fields use flat keys, such as
-`ark-responses-usage-details.input_tokens_details.audio_tokens` and
-`ark-service-status.model_fallback.fallback_triggered`. Complex provider
+`ark-v2-responses-usage-details.input_tokens_details.audio_tokens` and
+`ark-v2-service-status.model_fallback.fallback_triggered`. Complex provider
 attributes and tool details are JSON strings. Usage helpers reconstruct SDK types
 after restoration. Usage helpers read common counts from `ResponseMeta.Usage` and
 SDK-specific fields from the current `Extra` format. An optional count is set
@@ -466,30 +466,27 @@ image-generation APIs remain in the legacy module.
   message or an opaque built-in output. A function call's item metadata belongs
   to its `ToolCalls[i].Extra`, alongside the function values; it creates no
   `AssistantGenMultiContent` part.
-  Item metadata uses `ark-responses-item-type`, `ark-responses-item-id`,
-  `ark-responses-item-status`, `ark-responses-item-role`, and `ark-responses-partial`;
-  content uses its own `ark-responses-content-type` and `ark-responses-annotations`.
+  The adapter stores message, part, and tool-call metadata under `ark-v2-` keys.
+  Session cache reuse and invalidation operate only on v2 cache metadata.
+  Item metadata uses `ark-v2-responses-item-type`, `ark-v2-responses-item-id`,
+  `ark-v2-responses-item-status`, `ark-v2-responses-item-role`, and `ark-v2-responses-partial`;
+  content uses its own `ark-v2-responses-content-type` and `ark-v2-responses-annotations`.
   Output projection reads SDK types directly. Fields not exposed by the SDK,
   including `message.phase` and `action.queries`, are not extracted from raw JSON.
   Built-in or unknown variants without a standard Eino mapping retain the SDK
-  value as atomic JSON in `ark-responses-item-data` / `ark-responses-content-data`.
+  value as atomic JSON in `ark-v2-responses-item-data` / `ark-v2-responses-content-data`.
   SDK annotation codecs and unknown-variant fallbacks preserve their own values
   and number precision through JSON/gob persistence.
   These metadata fields are not automatically sent
   as request fields, and mapped text, signatures and function values are not
   duplicated in Extra.
-  `ark-responses-item-index` records item ownership and order across parts/tools;
-  section plus `ark-responses-summary-index` / content indices preserve the SDK
-  part boundaries within an item. Each summary has its own reasoning part;
-  input conversion restores the ordered summary array.
-  These persistent indices are independent of stream merge indices. The first
-  summary part carries its item's encrypted `Signature` (or the first reasoning
-  content part when no summary exists); input
-  conversion accepts it on any reasoning part of that item and rejects
-  conflicting nonempty signatures.
-  Message content maps `output_text` to `Text`; reasoning content maps
-  `reasoning_text` to `Reasoning.Text`. Known content types that contradict the
-  parent item are rejected in complete responses, streams and native history.
+  `ark-v2-responses-item-index` records item ownership and order across parts/tools;
+  each reasoning item produces one reasoning part. Its `Reasoning.Text` joins
+  nonempty summaries with newlines, and `Reasoning.Signature` holds its encrypted
+  content. `GetRawReasoningContent(&part)` returns the ordered raw text segments
+  stored in the part's Extra. History sends the joined summary as one entry
+  and each raw segment as a separate `reasoning_text`. Message `output_text`
+  retains its text and annotations on a separate text part.
   Message, reasoning and function-call history maps directly to SDK input types.
   Output-only items are omitted from subsequent input. Server-side MCP and
   Tool Search configuration and history mapping are outside this adapter's
@@ -500,9 +497,7 @@ image-generation APIs remain in the legacy module.
   the adapter does not replace the entire input to implement unsupported fields.
   SDK-documented extensions remain in use for tool strictness and explicit
   payload modifiers; SDK annotation codecs preserve unknown annotation variants.
-  Generate leaves part `StreamingMeta` nil. Streams map the native
-  `(output_index, section, summary_index/content_index)` identity to a stable
-  part index across added, delta and done events. Each part receives the next
+  Generate leaves part `StreamingMeta` nil. Streams assign one merge index per reasoning item and one per message content part. Each part receives the next
   zero-based index when first emitted; this index is reused, rather than derived
   arithmetically from `output_index`. Function calls have separate zero-based
   `ToolCall.Index` values assigned on first occurrence and reused for all chunks.
@@ -510,8 +505,10 @@ image-generation APIs remain in the legacy module.
   function calls allocate no part index. Metadata/signatures are completed
   at item done or the terminal response; complete text is not replayed. Because
   Eino Concat merges adjacent chunks, later parts/items may wait for the current
-  item's final metadata. Within an item, an already-started section is emitted
-  first; persistent SDK indices preserve the original arrays for history input.
+  item's final metadata. Within a reasoning item, new summary text streams in nondecreasing
+  `summary_index` order. Returning to an earlier index with additional text
+  fails the stream. Done and terminal snapshots supply only missing suffixes.
+  Raw reasoning segments accumulate independently by `content_index`.
   Legacy text and function arguments remain incremental; summary display follows
   the emitted summary part chunks.
   A previous response ID supplies cached history without resending it.
@@ -573,6 +570,13 @@ responses and automatically reuse the newest unexpired cached message in later
 calls. Send the full conversation; the adapter trims it after that message and
 sets `previous_response_id`. Read expiry with `GetCacheExpiration`, and call
 `InvalidateMessageCaches(messages)` after editing cached history.
+
+When switching models, `clean := ark.ClearReasoning(history)` removes reasoning
+summaries, raw text, and encrypted content from a copy of the history. Pass
+`clean` to Chat Completions directly. For Responses, use
+`next.Generate(ctx, clean, ark.WithCache(nil))` to send the full edited history
+and bypass the server context for that call. Each message, its top-level Extra
+map, and its output part slice are copied. Other nested values are shared.
 
 Cached continuations inherit their tool definitions from the first request.
 The adapter omits `tools`, including its extra-body encoding, and `tool_choice`

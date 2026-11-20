@@ -87,12 +87,10 @@ The [message parts example](message_parts/main.go) edits returned text parts,
 changes the aggregate compatibility fields to unrelated values, persists the
 message through JSON, and continues with Stream. The model receives the edited
 parts. The first data part carries item metadata; other parts reference its
-item-index. Transfer item-level Extra before deleting that data part. Reasoning
-summaries retain their native summary indices. One encrypted signature belongs
-to the item and is carried by its first summary part. Item and tool positions
-remain independent of stream merge indices. Added/delta/done chunks belonging
-to the same SDK part reuse one stream merge index. `ReasoningContent` displays
-only summaries; raw reasoning text remains in the structured output parts.
+item-index. Transfer item-level Extra before deleting that data part. Each reasoning item
+has one part and one stream merge index. Its text holds the joined summary,
+its signature holds the encrypted content, and `GetRawReasoningContent`
+returns the ordered raw segments. `ReasoningContent` displays only summaries.
 Function call item metadata is stored in `ToolCall.Extra`; function calls do not
 create empty output parts.
 

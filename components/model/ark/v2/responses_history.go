@@ -257,16 +257,10 @@ func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOu
 	}
 	for _, part := range content {
 		kind, _ := extraString(part.Extra, keyResponsesContentType)
-		text, annotations, err := responsesHistoryText(part)
-		if err != nil {
-			return item, err
-		}
-		if kind != "reasoning_text" || part.Type != schema.ChatMessagePartTypeReasoning {
+		if kind != "reasoning_text" || part.Reasoning == nil || part.Type != schema.ChatMessagePartTypeReasoning {
 			return item, fmt.Errorf("Responses reasoning content must be reasoning_text with a reasoning part")
 		}
-		var sum responses.OutputContentItemSum
-		sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text, Annotations: annotations})
-		item.Content = append(item.Content, responses.OutputContentItem{OneOf: sum})
+		appendResponsesRawText(&item, responses.NewOptString(part.Reasoning.Text))
 	}
 	var signature string
 	for _, part := range parts {
@@ -279,12 +273,39 @@ func toResponsesHistoryReasoning(extra map[string]any, parts []*schema.MessageOu
 			}
 			signature = value
 		}
-		if _, hasSection := part.Extra[keyResponsesSection]; !hasSection && part.Reasoning.Text != "" {
+		if _, hasSection := part.Extra[keyResponsesSection]; !hasSection {
+			if err := appendPartRawReasoning(&item, part); err != nil {
+				return item, err
+			}
+			if part.Reasoning.Text == "" {
+				continue
+			}
 			item.Summary = append(item.Summary, responses.ReasoningSummaryPart{Type: responses.ReasoningSummaryPartTypeSummaryText, Text: responses.NewOptString(part.Reasoning.Text)})
 		}
 	}
 	item.EncryptedContent = responseString(signature)
 	return item, nil
+}
+
+func appendPartRawReasoning(item *responses.ItemReasoning, part *schema.MessageOutputPart) error {
+	value := part.Extra[keyRawReasoningContent]
+	if value == nil {
+		return nil
+	}
+	raw, ok := decodeRawReasoning(value)
+	if !ok {
+		return fmt.Errorf("invalid raw reasoning content in Extra[%q]", keyRawReasoningContent)
+	}
+	for _, text := range raw {
+		appendResponsesRawText(item, responses.NewOptString(text))
+	}
+	return nil
+}
+
+func appendResponsesRawText(item *responses.ItemReasoning, text responses.OptString) {
+	var sum responses.OutputContentItemSum
+	sum.SetOutputContentItemReasoningText(responses.OutputContentItemReasoningText{Type: responses.OutputContentItemReasoningTextTypeReasoningText, Text: text})
+	item.Content = append(item.Content, responses.OutputContentItem{OneOf: sum})
 }
 
 // Summary and content preserve their SDK indices independently.
@@ -300,6 +321,9 @@ func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool)
 		}
 		if reasoning && !hasIndex && part.Type == schema.ChatMessagePartTypeReasoning && part.Reasoning != nil {
 			if !hasSection {
+				if _, typed := part.Extra[keyResponsesContentType]; typed {
+					return nil, nil, fmt.Errorf("unexpected content type on reasoning item")
+				}
 				continue // A reasoning item can contain just an encrypted signature.
 			}
 			if sectionOK && section == "summary" {
@@ -342,18 +366,10 @@ func responsesHistorySections(parts []*schema.MessageOutputPart, reasoning bool)
 }
 
 func responsesHistoryText(part *schema.MessageOutputPart) (responses.OptString, []responses.Annotation, error) {
-	var text string
-	switch part.Type {
-	case schema.ChatMessagePartTypeText:
-		text = part.Text
-	case schema.ChatMessagePartTypeReasoning:
-		if part.Reasoning == nil {
-			return responses.OptString{}, nil, fmt.Errorf("assistant reasoning must not be nil")
-		}
-		text = part.Reasoning.Text
-	default:
-		return responses.OptString{}, nil, fmt.Errorf("unsupported Responses content part %q", part.Type)
+	if part.Type != schema.ChatMessagePartTypeText {
+		return responses.OptString{}, nil, fmt.Errorf("expected output text part")
 	}
+	text := part.Text
 	var annotations []responses.Annotation
 	if value, exists := part.Extra[keyResponsesAnnotations]; exists {
 		raw, ok := stringValue(value)

@@ -39,31 +39,31 @@ var _ model.ToolCallingChatModel = (*ResponsesAPIChatModel)(nil)
 // (WithCustomHeader, WithParallelToolCalls and modifiers) also apply.
 // SDK-specific formats and built-in tools use ark-runtime-go Responses types.
 type ResponsesAPIConfig struct {
-	Timeout                      *time.Duration               `json:"timeout,omitempty"`
-	HTTPClient                   *http.Client                 `json:"http_client,omitempty"`
-	RetryTimes                   *int                         `json:"retry_times,omitempty"`
-	BaseURL                      string                       `json:"base_url,omitempty"`
-	Region                       string                       `json:"region,omitempty"`
-	APIKey                       string                       `json:"api_key,omitempty"`
-	AccessKey                    string                       `json:"access_key,omitempty"`
-	SecretKey                    string                       `json:"secret_key,omitempty"`
-	Model                        string                       `json:"model"`
-	MaxOutputTokens              *int                         `json:"max_output_tokens,omitempty"`
-	Temperature                  *float32                     `json:"temperature,omitempty"`
-	TopP                         *float32                     `json:"top_p,omitempty"`
-	CustomHeader                 map[string]string            `json:"custom_header,omitempty"`
-	ResponseFormat               *responses.TextFormat        `json:"response_format,omitempty"`
-	Thinking                     *responses.Thinking          `json:"thinking,omitempty"`
-	ServiceTier                  *string                      `json:"service_tier,omitempty"`
-	ReasoningEffort              *responses.ReasoningEffort   `json:"reasoning_effort,omitempty"`
-	ParallelToolCalls            *bool                        `json:"parallel_tool_calls,omitempty"`
-	ToolStrict                   *bool                        `json:"tool_strict,omitempty"`
-	SessionCache                 *SessionCacheConfig          `json:"session_cache,omitempty"`
-	EnableToolWebSearch          *responses.WebSearchTool     `json:"enable_tool_web_search,omitempty"`
-	MaxToolCalls                 *int64                       `json:"max_tool_calls,omitempty"`
-	RequestPayloadModifier       RequestPayloadModifier       `json:"-"`
-	ResponseMessageModifier      ResponseMessageModifier      `json:"-"`
-	ResponseChunkMessageModifier ResponseChunkMessageModifier `json:"-"`
+	Timeout                      *time.Duration
+	HTTPClient                   *http.Client
+	RetryTimes                   *int
+	BaseURL                      string
+	Region                       string
+	APIKey                       string
+	AccessKey                    string
+	SecretKey                    string
+	Model                        string
+	MaxOutputTokens              *int
+	Temperature                  *float32
+	TopP                         *float32
+	CustomHeader                 map[string]string
+	ResponseFormat               *responses.TextFormat
+	Thinking                     *responses.Thinking
+	ServiceTier                  *string
+	ReasoningEffort              *responses.ReasoningEffort
+	ParallelToolCalls            *bool
+	ToolStrict                   *bool
+	SessionCache                 *SessionCacheConfig
+	EnableToolWebSearch          *responses.WebSearchTool
+	MaxToolCalls                 *int64
+	RequestPayloadModifier       RequestPayloadModifier
+	ResponseMessageModifier      ResponseMessageModifier
+	ResponseChunkMessageModifier ResponseChunkMessageModifier
 }
 
 type ResponsesAPIChatModel struct {

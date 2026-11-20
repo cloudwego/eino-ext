@@ -43,44 +43,44 @@ var ErrEmptyResponse = errors.New("empty response received from model")
 // and function calling.
 type ChatModelConfig struct {
 	// Timeout defaults to 10 minutes. HTTPClient, when provided, takes precedence.
-	Timeout    *time.Duration `json:"timeout,omitempty"`
-	HTTPClient *http.Client   `json:"http_client,omitempty"`
+	Timeout    *time.Duration
+	HTTPClient *http.Client
 	// RetryTimes defaults to 2. A pointer to zero disables retries.
-	RetryTimes *int `json:"retry_times,omitempty"`
+	RetryTimes *int
 	// BaseURL defaults to https://ark.cn-beijing.volces.com/api/v3.
-	BaseURL string `json:"base_url,omitempty"`
+	BaseURL string
 	// Region defaults to cn-beijing.
-	Region string `json:"region,omitempty"`
+	Region string
 	// APIKey takes precedence over AccessKey and SecretKey.
-	APIKey              string                             `json:"api_key,omitempty"`
-	AccessKey           string                             `json:"access_key,omitempty"`
-	SecretKey           string                             `json:"secret_key,omitempty"`
-	Model               string                             `json:"model"`
-	MaxTokens           *int                               `json:"max_tokens,omitempty"`
-	MaxCompletionTokens *int                               `json:"max_completion_tokens,omitempty"`
-	Temperature         *float32                           `json:"temperature,omitempty"`
-	TopP                *float32                           `json:"top_p,omitempty"`
-	Stop                []string                           `json:"stop,omitempty"`
-	FrequencyPenalty    *float32                           `json:"frequency_penalty,omitempty"`
-	PresencePenalty     *float32                           `json:"presence_penalty,omitempty"`
-	RepetitionPenalty   *float32                           `json:"repetition_penalty,omitempty"`
-	LogitBias           map[string]int                     `json:"logit_bias,omitempty"`
-	LogProbs            bool                               `json:"log_probs,omitempty"`
-	TopLogProbs         int                                `json:"top_log_probs,omitempty"`
-	ResponseFormat      *chat.ChatCompletionResponseFormat `json:"response_format,omitempty"`
-	Thinking            *chat.Thinking                     `json:"thinking,omitempty"`
-	ServiceTier         *string                            `json:"service_tier,omitempty"`
-	ReasoningEffort     *chat.ReasoningEffort              `json:"reasoning_effort,omitempty"`
-	ParallelToolCalls   *bool                              `json:"parallel_tool_calls,omitempty"`
-	User                *string                            `json:"user,omitempty"`
+	APIKey              string
+	AccessKey           string
+	SecretKey           string
+	Model               string
+	MaxTokens           *int
+	MaxCompletionTokens *int
+	Temperature         *float32
+	TopP                *float32
+	Stop                []string
+	FrequencyPenalty    *float32
+	PresencePenalty     *float32
+	RepetitionPenalty   *float32
+	LogitBias           map[string]int
+	LogProbs            bool
+	TopLogProbs         int
+	ResponseFormat      *chat.ChatCompletionResponseFormat
+	Thinking            *chat.Thinking
+	ServiceTier         *string
+	ReasoningEffort     *chat.ReasoningEffort
+	ParallelToolCalls   *bool
+	User                *string
 	// ToolStrict sets the default strict schema adherence for function tools.
 	// WithToolStrict overrides it for an individual tool. Nil omits the field
 	// for tools without an explicit override.
-	ToolStrict                   *bool                        `json:"tool_strict,omitempty"`
-	CustomHeader                 map[string]string            `json:"custom_header,omitempty"`
-	RequestPayloadModifier       RequestPayloadModifier       `json:"-"`
-	ResponseMessageModifier      ResponseMessageModifier      `json:"-"`
-	ResponseChunkMessageModifier ResponseChunkMessageModifier `json:"-"`
+	ToolStrict                   *bool
+	CustomHeader                 map[string]string
+	RequestPayloadModifier       RequestPayloadModifier
+	ResponseMessageModifier      ResponseMessageModifier
+	ResponseChunkMessageModifier ResponseChunkMessageModifier
 }
 
 type ChatModel struct {

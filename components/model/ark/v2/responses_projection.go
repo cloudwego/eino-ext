@@ -17,6 +17,7 @@
 package ark
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -26,24 +27,24 @@ import (
 )
 
 const (
-	keyResponsesUsage = "ark-responses-usage-details"
+	keyResponsesUsage = extraKeyPrefix + "responses-usage-details"
 
-	keyResponsesItemIndex    = "ark-responses-item-index"
-	keyResponsesSection      = "ark-responses-section"
-	keyResponsesContentIndex = "ark-responses-content-index"
-	keyResponsesSummaryIndex = "ark-responses-summary-index"
-	keyResponsesItemType     = "ark-responses-item-type"
-	keyResponsesContentType  = "ark-responses-content-type"
-	keyResponsesItemID       = "ark-responses-item-id"
-	keyResponsesItemStatus   = "ark-responses-item-status"
-	keyResponsesItemRole     = "ark-responses-item-role"
-	keyResponsesPartial      = "ark-responses-partial"
-	keyResponsesNamespace    = "ark-responses-namespace"
-	keyResponsesAnnotations  = "ark-responses-annotations"
+	keyResponsesItemIndex    = extraKeyPrefix + "responses-item-index"
+	keyResponsesSection      = extraKeyPrefix + "responses-section"
+	keyResponsesContentIndex = extraKeyPrefix + "responses-content-index"
+	keyResponsesSummaryIndex = extraKeyPrefix + "responses-summary-index"
+	keyResponsesItemType     = extraKeyPrefix + "responses-item-type"
+	keyResponsesContentType  = extraKeyPrefix + "responses-content-type"
+	keyResponsesItemID       = extraKeyPrefix + "responses-item-id"
+	keyResponsesItemStatus   = extraKeyPrefix + "responses-item-status"
+	keyResponsesItemRole     = extraKeyPrefix + "responses-item-role"
+	keyResponsesPartial      = extraKeyPrefix + "responses-partial"
+	keyResponsesNamespace    = extraKeyPrefix + "responses-namespace"
+	keyResponsesAnnotations  = extraKeyPrefix + "responses-annotations"
 	// SDK values without an Eino data mapping remain observable as atomic JSON.
 	// They are never decoded into additional request fields.
-	keyResponsesItemData    = "ark-responses-item-data"
-	keyResponsesContentData = "ark-responses-content-data"
+	keyResponsesItemData    = extraKeyPrefix + "responses-item-data"
+	keyResponsesContentData = extraKeyPrefix + "responses-content-data"
 )
 
 // ResponsesOutputItem carries an item with no mapped data part, such as an
@@ -52,6 +53,10 @@ const (
 const ResponsesOutputItem schema.ChatMessagePartType = "ark_responses_item"
 
 func projectResponsesResponse(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
+	return projectResponsesResponseParts(resp, req, false)
+}
+
+func projectResponsesResponseParts(resp *responses.Response, req *responses.ResponsesRequest, keepSegments bool) (*schema.Message, error) {
 	msg, err := projectResponsesMetadata(resp, req)
 	if err != nil {
 		return nil, err
@@ -59,10 +64,22 @@ func projectResponsesResponse(resp *responses.Response, req *responses.Responses
 	if err := validateResponsesOutput(resp, req); err != nil {
 		return nil, err
 	}
-	if err := projectResponsesOutput(msg, resp.Output); err != nil {
+	if err := projectResponsesOutput(msg, resp.Output, keepSegments); err != nil {
 		return nil, err
 	}
 	return msg, nil
+}
+
+func responseFailedError(resp *responses.Response) error {
+	problem := resp.Error.Or(responses.ResponseError{})
+	message := "Ark response failed"
+	if problem.Code != "" {
+		message += " (" + problem.Code + ")"
+	}
+	if problem.Message != "" {
+		message += ": " + problem.Message
+	}
+	return errors.New(message)
 }
 
 func projectResponsesMetadata(resp *responses.Response, req *responses.ResponsesRequest) (*schema.Message, error) {
@@ -70,8 +87,7 @@ func projectResponsesMetadata(resp *responses.Response, req *responses.Responses
 		return nil, ErrEmptyResponse
 	}
 	if resp.Status.Or("") == responses.ResponseStatusFailed || resp.Error.IsSet() {
-		problem := resp.Error.Or(responses.ResponseError{})
-		return nil, fmt.Errorf("Ark response failed (%s): %s", problem.Code, problem.Message)
+		return nil, responseFailedError(resp)
 	}
 	msg := &schema.Message{Role: schema.Assistant, ResponseMeta: &schema.ResponseMeta{FinishReason: string(resp.Status.Or(""))}, Extra: map[string]any{}}
 	if d, ok := resp.IncompleteDetails.Get(); ok {
@@ -111,7 +127,7 @@ func validateResponsesOutput(resp *responses.Response, req *responses.ResponsesR
 
 // Project a complete SDK output into canonical parts and legacy message fields
 // together. Streaming callers reconcile the legacy fields after projection.
-func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem) error {
+func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem, keepSegments bool) error {
 	var parts []schema.MessageOutputPart
 	var content strings.Builder
 	var reasoning []responses.ItemReasoning
@@ -120,6 +136,10 @@ func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem) 
 		children, err := projectResponsesItem(item, index)
 		if err != nil {
 			return fmt.Errorf("Responses output item %d: %w", index, err)
+		}
+		if !keepSegments && item.OneOf.Type == responses.ItemReasoningOutputItemSum {
+			var projection reasoningItemProjection
+			children = projection.parts(children)
 		}
 		parts = append(parts, children...)
 		switch item.OneOf.Type {
@@ -250,17 +270,22 @@ func projectResponsesOutputContent(content []responses.OutputContentItem, index 
 // OutputContentItem covers both message.content and reasoning.content. Parent
 // type constraints are checked by the full-item or streaming-state caller.
 func projectResponsesOutputContentPart(child responses.OutputContentItem, itemIndex, contentIndex int) (schema.MessageOutputPart, error) {
-	var part schema.MessageOutputPart
-	var annotations []responses.Annotation
 	switch child.OneOf.Type {
+	case responses.OutputContentItemReasoningTextOutputContentItemSum:
+		return projectResponsesReasoningPart(itemIndex, contentIndex, child.OneOf.OutputContentItemReasoningText.Text.Or("")), nil
 	case responses.OutputContentItemTextOutputContentItemSum:
 		value := child.OneOf.OutputContentItemText
-		part, annotations = projectResponsesTextPart(itemIndex, contentIndex, value.Text.Or("")), value.Annotations
-	case responses.OutputContentItemReasoningTextOutputContentItemSum:
-		value := child.OneOf.OutputContentItemReasoningText
-		part, annotations = projectResponsesReasoningPart(itemIndex, contentIndex, value.Text.Or("")), value.Annotations
+		part := projectResponsesTextPart(itemIndex, contentIndex, value.Text.Or(""))
+		if value.Annotations != nil {
+			raw, err := sonic.Marshal(value.Annotations)
+			if err != nil {
+				return part, fmt.Errorf("content part %d annotations: %w", contentIndex, err)
+			}
+			part.Extra[keyResponsesAnnotations] = metadataString(raw)
+		}
+		return part, nil
 	default:
-		part = schema.MessageOutputPart{Type: ResponsesOutputItem, Extra: responsesContentPartExtra(itemIndex, contentIndex, string(child.OneOf.Type))}
+		part := schema.MessageOutputPart{Type: ResponsesOutputItem, Extra: responsesContentPartExtra(itemIndex, contentIndex, string(child.OneOf.Type))}
 		if kind, _, unknown := child.OneOf.GetUnknown(); unknown {
 			part.Extra[keyResponsesContentType] = metadataString(kind)
 		}
@@ -269,15 +294,8 @@ func projectResponsesOutputContentPart(child responses.OutputContentItem, itemIn
 			return part, fmt.Errorf("content part %d: %w", contentIndex, err)
 		}
 		part.Extra[keyResponsesContentData] = metadataString(raw)
+		return part, nil
 	}
-	if annotations != nil {
-		raw, err := sonic.Marshal(annotations)
-		if err != nil {
-			return part, fmt.Errorf("content part %d annotations: %w", contentIndex, err)
-		}
-		part.Extra[keyResponsesAnnotations] = metadataString(raw)
-	}
-	return part, nil
 }
 
 func projectResponsesTextPart(itemIndex, contentIndex int, text string) schema.MessageOutputPart {
@@ -301,6 +319,78 @@ func responsesContentPartExtra(itemIndex, contentIndex int, contentType string) 
 		keyResponsesItemIndex: metadataInt64(itemIndex), keyResponsesSection: metadataString("content"),
 		keyResponsesContentIndex: metadataInt64(contentIndex), keyResponsesContentType: metadataString(contentType),
 	}
+}
+
+// Fold the ordered native summary and raw segments of one item into its public
+// reasoning part. A stream retains this state between emissions of that item.
+type reasoningItemProjection struct {
+	summaryStarted bool
+	summaryIndex   int
+	rawSlots       map[int]int
+}
+
+func (p *reasoningItemProjection) parts(segments []schema.MessageOutputPart) []schema.MessageOutputPart {
+	if len(segments) == 0 || (len(segments) == 1 && segments[0].Reasoning == nil) {
+		return segments
+	}
+	var out []schema.MessageOutputPart
+	var reasoning *schema.MessageOutputReasoning
+	var extra map[string]any
+	var summary strings.Builder
+	var raw rawReasoningContent
+	for _, segment := range segments {
+		if segment.Reasoning == nil {
+			out = append(out, segment)
+			continue
+		}
+		if reasoning == nil {
+			reasoning = &schema.MessageOutputReasoning{}
+			extra = make(map[string]any)
+			out = append(out, schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning, Reasoning: reasoning, Extra: extra})
+		}
+		for key, value := range segment.Extra {
+			switch key {
+			case keyResponsesSection, keyResponsesContentType, keyResponsesContentIndex, keyResponsesSummaryIndex:
+			default:
+				extra[key] = value
+			}
+		}
+		if signature := segment.Reasoning.Signature; signature != "" {
+			reasoning.Signature = signature
+		}
+		key := responsesPartIdentity(segment)
+		text := segment.Reasoning.Text
+		switch key.section {
+		case "summary":
+			if text != "" {
+				if p.summaryStarted && p.summaryIndex != key.index {
+					summary.WriteByte('\n')
+				}
+				summary.WriteString(text)
+				p.summaryIndex, p.summaryStarted = key.index, true
+			}
+		case "content":
+			if p.rawSlots == nil {
+				p.rawSlots = make(map[int]int)
+			}
+			slot, ok := p.rawSlots[key.index]
+			if !ok {
+				slot = len(p.rawSlots)
+				p.rawSlots[key.index] = slot
+			}
+			for len(raw) <= slot {
+				raw = append(raw, "")
+			}
+			raw[slot] += text
+		}
+	}
+	if reasoning != nil {
+		reasoning.Text = summary.String()
+		if len(raw) > 0 {
+			extra[keyRawReasoningContent] = raw
+		}
+	}
+	return out
 }
 
 func projectResponsesSummaryText(items []responses.ItemReasoning) string {

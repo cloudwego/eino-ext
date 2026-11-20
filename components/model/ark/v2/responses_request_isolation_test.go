@@ -35,17 +35,16 @@ import (
 
 func responsesRequestInputSnapshot(t *testing.T, cm *ResponsesAPIChatModel, common *model.Options, opts *arkOptions, tools []*schema.ToolInfo) map[string]any {
 	t.Helper()
-	state := struct {
-		Config   ResponsesAPIConfig
-		Bound    []*schema.ToolInfo
-		Common   *model.Options
-		Cache    *CacheOption
-		Headers  map[string]string
-		Search   *responses.WebSearchTool
-		Thinking *responses.Thinking
-		Tools    []*schema.ToolInfo
-	}{cm.config, cm.rawTools, common, opts.cache, opts.customHeaders, opts.enableWebSearch, opts.responsesThinking, tools}
-	raw, err := json.Marshal(&state)
+	config := &cm.config
+	state := map[string]any{
+		"Model": config.Model, "Temperature": config.Temperature, "ToolStrict": config.ToolStrict,
+		"SessionCache": config.SessionCache, "CustomHeader": config.CustomHeader,
+		"EnableToolWebSearch": config.EnableToolWebSearch, "ConfigThinking": config.Thinking,
+		"MaxToolCalls": config.MaxToolCalls, "ParallelToolCalls": config.ParallelToolCalls,
+		"Bound": cm.rawTools, "Common": common, "Tools": tools, "Cache": opts.cache,
+		"Headers": opts.customHeaders, "Search": opts.enableWebSearch, "Thinking": opts.responsesThinking,
+	}
+	raw, err := json.Marshal(state)
 	check(t, err)
 	var snapshot map[string]any
 	check(t, json.Unmarshal(raw, &snapshot))

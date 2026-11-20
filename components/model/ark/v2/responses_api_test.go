@@ -280,7 +280,7 @@ func TestResponsesStreamFailures(t *testing.T) {
 	for _, test := range []struct{ name, wire, want string }{
 		{"empty", "", "unexpected EOF"},
 		{"done_only", "data: [DONE]\n\n", "unexpected EOF"},
-		{"failed", terminalEvent("response.failed"), "failed deliberately"},
+		{"failed", terminalEvent("response.failed"), "Ark response failed (server_error): failed deliberately"},
 		{"error", responseEvent("error", map[string]any{"message": "bad input", "code": "bad_request", "param": "input"}), "bad input"},
 		{"invalid", "data: {broken}\n\n", ""},
 	} {
@@ -302,6 +302,30 @@ func TestResponsesStreamFailures(t *testing.T) {
 			equal(t, false, finalized)
 		})
 	}
+}
+
+func TestResponsesStreamFailedAfterDelta(t *testing.T) {
+	delta := responseEvent("response.output_text.delta", map[string]any{
+		"delta": "partial", "output_index": 0, "content_index": 0, "item_id": "msg-1",
+	})
+	// The event type is authoritative even with a completed snapshot and no error details.
+	failed := responseEvent("response.failed", map[string]any{"response": json.RawMessage(responsesJSON)})
+	cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, delta+failed)
+	}, nil)
+	sr, err := cm.Stream(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	check(t, err)
+	defer sr.Close()
+	msg, err := sr.Recv()
+	check(t, err)
+	equal(t, "partial", msg.Content)
+	msg, err = sr.Recv()
+	if msg != nil || err == nil || err.Error() != "Ark response failed" {
+		t.Fatalf("expected only the failure, got message %v and error %v", msg, err)
+	}
+	_, err = sr.Recv()
+	equal(t, true, errors.Is(err, io.EOF))
 }
 
 func TestResponsesCacheAndReasoning(t *testing.T) {
@@ -326,10 +350,16 @@ func TestResponsesCacheAndReasoning(t *testing.T) {
 	}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 	first, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")})
 	check(t, err)
+	// A persisted message can carry both packages' cache metadata.
+	legacyExpiry := float64(time.Now().Add(time.Hour).Unix())
+	first.Extra["ark-response-id"] = "legacy-response"
+	first.Extra["ark-response-cache-expire-at"] = legacyExpiry
 	history := []*schema.Message{schema.UserMessage("hi"), first, schema.UserMessage("next")}
 	_, err = cm.Generate(context.Background(), history, WithCache(&CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}, HeadPreviousResponseID: ptr("prefix")}))
 	check(t, err)
 	check(t, InvalidateMessageCaches([]*schema.Message{first}))
+	equal(t, legacyExpiry, first.Extra["ark-response-cache-expire-at"])
+	equal(t, "legacy-response", first.Extra["ark-response-id"])
 	_, err = cm.Generate(context.Background(), history)
 	check(t, err)
 }

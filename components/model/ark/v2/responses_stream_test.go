@@ -155,8 +155,8 @@ func TestResponsesEmptyAddedPartKeepsItsIndex(t *testing.T) {
 	var chunks []*schema.Message
 	for _, raw := range []string{
 		`{"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"reasoning_text","text":""}}`,
-		`{"type":"response.reasoning_summary_text.delta","output_index":0,"summary_index":1,"delta":"CD"}`,
 		`{"type":"response.reasoning_summary_text.delta","output_index":0,"summary_index":0,"delta":"AB"}`,
+		`{"type":"response.reasoning_summary_text.delta","output_index":0,"summary_index":1,"delta":"CD"}`,
 		`{"type":"response.reasoning_text.delta","output_index":0,"content_index":0,"delta":"R"}`,
 		`{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"r","status":"completed","encrypted_content":"cipher","summary":[{"type":"summary_text","text":"AB"},{"type":"summary_text","text":"CD"}],"content":[{"type":"reasoning_text","text":"R"}]}}`,
 	} {
@@ -170,15 +170,12 @@ func TestResponsesEmptyAddedPartKeepsItsIndex(t *testing.T) {
 	equal(t, "", chunks[0].AssistantGenMultiContent[0].Reasoning.Text)
 	merged, err := schema.ConcatMessages(chunks)
 	check(t, err)
-	equal(t, 3, len(merged.AssistantGenMultiContent))
-	for index, text := range []string{"R", "AB", "CD"} {
-		part := merged.AssistantGenMultiContent[index]
-		equal(t, index, part.StreamingMeta.Index)
-		equal(t, text, part.Reasoning.Text)
-	}
+	equal(t, 1, len(merged.AssistantGenMultiContent))
+	part := merged.AssistantGenMultiContent[0]
+	assertRawReasoning(t, part, "R")
+	equal(t, "AB\nCD", part.Reasoning.Text)
 	equal(t, "AB\nCD", merged.ReasoningContent)
-	equal(t, "cipher", merged.AssistantGenMultiContent[1].Reasoning.Signature)
-	equal(t, "", merged.AssistantGenMultiContent[2].Reasoning.Signature)
+	equal(t, "cipher", part.Reasoning.Signature)
 	kind, _ := extraString(merged.AssistantGenMultiContent[0].Extra, keyResponsesItemType)
 	equal(t, "reasoning", kind)
 	inputs, err := toResponsesInput([]*schema.Message{merged})
@@ -186,10 +183,96 @@ func TestResponsesEmptyAddedPartKeepsItsIndex(t *testing.T) {
 	equal(t, 1, len(inputs))
 	r, ok := inputs[0].OneOf.GetItemReasoning()
 	equal(t, true, ok)
-	equal(t, 2, len(r.Summary))
-	equal(t, "AB", r.Summary[0].Text.Or(""))
-	equal(t, "CD", r.Summary[1].Text.Or(""))
+	equal(t, 1, len(r.Summary))
+	equal(t, "AB\nCD", r.Summary[0].Text.Or(""))
 	equal(t, "cipher", r.EncryptedContent.Or(""))
+}
+
+// Summary deltas advance monotonically within an item. Repeated snapshots
+// of an earlier segment are valid when they add no text.
+func TestResponsesSummaryStreamOrder(t *testing.T) {
+	delta := func(index int, text string) string {
+		return fmt.Sprintf(`{"type":"response.reasoning_summary_text.delta","output_index":0,"summary_index":%d,"delta":%q}`, index, text)
+	}
+	done := func(index int, text string) string {
+		return fmt.Sprintf(`{"type":"response.reasoning_summary_text.done","output_index":0,"summary_index":%d,"text":%q}`, index, text)
+	}
+	terminal := func(first, second string) string {
+		return fmt.Sprintf(`{"type":"response.completed","response":{"id":"resp","created_at":1,"object":"response","model":"test","status":"completed","output":[{"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":%q},{"type":"summary_text","text":%q}]}]}}`, first, second)
+	}
+	var state responsesStreamState
+	var chunks []*schema.Message
+	for _, step := range []struct{ event, want string }{
+		{delta(0, "A"), "A"}, {done(0, "AB"), "B"}, {delta(1, "X"), "\nX"},
+		{done(0, "AB"), ""}, {delta(1, "Y"), "Y"}, {terminal("AB", "XYZ"), "Z"},
+	} {
+		msg, err := resolveResponsesTestEvent(t, &state, step.event)
+		check(t, err)
+		equal(t, step.want, msg.ReasoningContent)
+		if step.want != "" {
+			equal(t, 1, len(msg.AssistantGenMultiContent))
+			part := msg.AssistantGenMultiContent[0]
+			equal(t, 0, part.StreamingMeta.Index)
+			equal(t, step.want, part.Reasoning.Text)
+		}
+		chunks = append(chunks, msg)
+	}
+	merged, err := schema.ConcatMessages(chunks)
+	check(t, err)
+	equal(t, "AB\nXYZ", merged.ReasoningContent)
+	equal(t, 1, len(merged.AssistantGenMultiContent))
+	equal(t, merged.ReasoningContent, merged.AssistantGenMultiContent[0].Reasoning.Text)
+
+	t.Run("item done supplies text before the signature", func(t *testing.T) {
+		var state responsesStreamState
+		item := `{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"r","status":"completed","summary":[{"type":"summary_text","text":"AB"}]}}`
+		a, err := resolveResponsesTestEvent(t, &state, delta(0, "A"))
+		check(t, err)
+		b, err := resolveResponsesTestEvent(t, &state, item)
+		check(t, err)
+		equal(t, "B", b.ReasoningContent)
+		c, err := resolveResponsesTestEvent(t, &state, `{"type":"response.completed","response":{"id":"resp","created_at":1,"object":"response","model":"test","status":"completed","output":[{"type":"reasoning","id":"r","status":"completed","encrypted_content":"cipher"}]}}`)
+		check(t, err)
+		equal(t, "", c.ReasoningContent)
+		merged, err := schema.ConcatMessages([]*schema.Message{a, b, c})
+		check(t, err)
+		equal(t, 1, len(merged.AssistantGenMultiContent))
+		part := merged.AssistantGenMultiContent[0]
+		equal(t, "AB", part.Reasoning.Text)
+		equal(t, "cipher", part.Reasoning.Signature)
+	})
+	for name, event := range map[string]string{"delta": delta(0, "B"), "done": done(0, "AB"), "terminal": terminal("AB", "X")} {
+		t.Run(name+" extends earlier summary", func(t *testing.T) {
+			var state responsesStreamState
+			for _, event := range []string{delta(0, "A"), delta(1, "X"), delta(0, "")} {
+				_, err := resolveResponsesTestEvent(t, &state, event)
+				check(t, err)
+			}
+			_, err := resolveResponsesTestEvent(t, &state, event)
+			if err == nil || !strings.Contains(err.Error(), "summary_index") {
+				t.Fatalf("expected summary index error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestResponsesInterleavedRawReasoning(t *testing.T) {
+	var state responsesStreamState
+	var chunks []*schema.Message
+	for _, delta := range []struct {
+		index int
+		text  string
+	}{{1, "X"}, {0, "A"}, {1, "Y"}, {0, "B"}} {
+		event := fmt.Sprintf(`{"type":"response.reasoning_text.delta","output_index":0,"content_index":%d,"delta":%q}`, delta.index, delta.text)
+		msg, err := resolveResponsesTestEvent(t, &state, event)
+		check(t, err)
+		equal(t, "", msg.ReasoningContent)
+		chunks = append(chunks, msg)
+	}
+	merged, err := schema.ConcatMessages(chunks)
+	check(t, err)
+	equal(t, 1, len(merged.AssistantGenMultiContent))
+	assertRawReasoning(t, merged.AssistantGenMultiContent[0], "AB", "XY")
 }
 
 func TestResponsesContradictoryPartEvents(t *testing.T) {
@@ -238,7 +321,8 @@ func TestResponsesContentKinds(t *testing.T) {
 				if itemType == "reasoning" {
 					equal(t, schema.ChatMessagePartTypeReasoning, part.Type)
 					equal(t, "", part.Text)
-					equal(t, "AB", part.Reasoning.Text)
+					equal(t, "", part.Reasoning.Text)
+					assertRawReasoning(t, part, "AB")
 					if _, exists := fields["text"]; exists {
 						t.Fatal("reasoning JSON has a top-level text field")
 					}
@@ -386,7 +470,7 @@ func TestResponsesSummaryIndicesAndOneSignature(t *testing.T) {
 					key := responsesPartIdentity(part)
 					expected := key.index
 					if item == 1 {
-						expected += 2
+						expected++
 					}
 					equal(t, expected, part.StreamingMeta.Index)
 					counts[expected]++
@@ -398,9 +482,8 @@ func TestResponsesSummaryIndicesAndOneSignature(t *testing.T) {
 			merged, err := schema.ConcatMessages(chunks)
 			check(t, err)
 			equal(t, "AB\nCD", merged.ReasoningContent)
-			equal(t, 4, len(merged.AssistantGenMultiContent))
-			equal(t, "AB", merged.AssistantGenMultiContent[0].Reasoning.Text)
-			equal(t, "CD", merged.AssistantGenMultiContent[1].Reasoning.Text)
+			equal(t, 3, len(merged.AssistantGenMultiContent))
+			equal(t, "AB\nCD", merged.AssistantGenMultiContent[0].Reasoning.Text)
 			signatures := 0
 			for _, part := range merged.AssistantGenMultiContent {
 				if part.Reasoning != nil && part.Reasoning.Signature != "" {
@@ -414,9 +497,8 @@ func TestResponsesSummaryIndicesAndOneSignature(t *testing.T) {
 			equal(t, 2, len(inputs))
 			r, ok := inputs[0].OneOf.GetItemReasoning()
 			equal(t, true, ok)
-			equal(t, 2, len(r.Summary))
-			equal(t, "AB", r.Summary[0].Text.Or(""))
-			equal(t, "CD", r.Summary[1].Text.Or(""))
+			equal(t, 1, len(r.Summary))
+			equal(t, "AB\nCD", r.Summary[0].Text.Or(""))
 			equal(t, "cipher", r.EncryptedContent.Or(""))
 		})
 	}
@@ -505,7 +587,7 @@ func TestResponsesMixedStreamConcat(t *testing.T) {
 							}
 						}
 					}
-					equal(t, 6, len(identities))
+					equal(t, 4, len(identities))
 					equal(t, true, partialTools[0])
 					equal(t, true, partialTools[1])
 					merged, err = schema.ConcatMessages(chunks)
@@ -515,9 +597,10 @@ func TestResponsesMixedStreamConcat(t *testing.T) {
 				equal(t, "Add first.\nMultiply second.", merged.ReasoningContent)
 				equal(t, status, merged.ResponseMeta.FinishReason)
 				equal(t, 130, merged.ResponseMeta.Usage.TotalTokens)
-				equal(t, 6, len(merged.AssistantGenMultiContent))
-				wantNative := []string{"0/summary/0", "0/summary/1", "0/content/0", "1/content/0", "1/content/1", "4/content/0"}
-				wantText := []string{"Add first.", "Multiply second.", "Check independent operations.", "I will ", "call both tools.", "\nWaiting for results."}
+				equal(t, 4, len(merged.AssistantGenMultiContent))
+				assertRawReasoning(t, merged.AssistantGenMultiContent[0], "Check independent operations.")
+				wantNative := []string{"0//0", "1/content/0", "1/content/1", "4/content/0"}
+				wantText := []string{"Add first.\nMultiply second.", "I will ", "call both tools.", "\nWaiting for results."}
 				signatures := 0
 				for index, part := range merged.AssistantGenMultiContent {
 					native, _, e := extraIndex(part.Extra, keyResponsesItemIndex)
@@ -569,7 +652,7 @@ func TestResponsesMixedStreamConcat(t *testing.T) {
 					check(t, err)
 					equalRawJSON(t, wantJSON, actualJSON)
 					reasoning := actual[0].OneOf.ItemReasoning
-					equal(t, 2, len(reasoning.Summary))
+					equal(t, 1, len(reasoning.Summary))
 					equal(t, 1, len(reasoning.Content))
 					equal(t, "fixture-encrypted-reasoning", reasoning.EncryptedContent.Or(""))
 					equal(t, "call-add", actual[2].OneOf.ItemFunctionToolCall.CallID.Or(""))
@@ -796,11 +879,23 @@ func TestResponsesRawReasoningDeltasDoNotPopulateDisplay(t *testing.T) {
 	for _, kind := range []string{"reasoning_text", "reasoning_raw_text"} {
 		t.Run(kind, func(t *testing.T) {
 			var state responsesStreamState
-			msg, err := resolveResponsesTestEvent(t, &state, fmt.Sprintf(`{"type":"response.%s.delta","output_index":0,"content_index":0,"delta":"raw thought"}`, kind))
+			var chunks []*schema.Message
+			for _, text := range []string{"raw ", "thought"} {
+				msg, err := resolveResponsesTestEvent(t, &state, fmt.Sprintf(`{"type":"response.%s.delta","output_index":0,"content_index":0,"delta":%q}`, kind, text))
+				check(t, err)
+				equal(t, "", msg.ReasoningContent)
+				equal(t, 1, len(msg.AssistantGenMultiContent))
+				part := msg.AssistantGenMultiContent[0]
+				equal(t, 0, part.StreamingMeta.Index)
+				equal(t, "", part.Reasoning.Text)
+				assertRawReasoning(t, part, text)
+				chunks = append(chunks, msg)
+			}
+			merged, err := schema.ConcatMessages(chunks)
 			check(t, err)
-			equal(t, "", msg.ReasoningContent)
-			equal(t, 1, len(msg.AssistantGenMultiContent))
-			equal(t, "raw thought", msg.AssistantGenMultiContent[0].Reasoning.Text)
+			equal(t, 1, len(merged.AssistantGenMultiContent))
+			assertRawReasoning(t, merged.AssistantGenMultiContent[0], "raw thought")
+
 		})
 	}
 }
