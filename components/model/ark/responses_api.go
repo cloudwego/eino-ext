@@ -1085,6 +1085,7 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 	}
 	setContextID(msg, resp.Id)
 	setResponseID(msg, resp.Id)
+	setModelName(msg, resp.Model)
 
 	if resp.ServiceTier != nil {
 		setServiceTier(msg, resp.ServiceTier.String())
@@ -1444,6 +1445,7 @@ func (cm *ResponsesAPIChatModel) setStreamChunkDefaultExtra(msg *schema.Message,
 	}
 	setContextID(msg, object.Id)
 	setResponseID(msg, object.Id)
+	setModelName(msg, object.Model)
 	if object.ServiceTier != nil {
 		setServiceTier(msg, object.ServiceTier.String())
 	}
