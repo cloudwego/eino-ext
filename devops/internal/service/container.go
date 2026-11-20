@@ -65,7 +65,7 @@ func (s *containerServiceImpl) AddGraphInfo(rootGN string, rootGI *compose.Graph
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if s.totalGraphNum > maxGraphNum {
+	if s.totalGraphNum >= maxGraphNum {
 		return "", fmt.Errorf("too many graph, max=%d", maxGraphNum)
 	}
 
