@@ -105,7 +105,7 @@ func (e *Embedder) EmbedStrings(ctx context.Context, texts []string, opts ...emb
 	}
 
 	resp, err := e.cli.Models.EmbedContent(ctx,
-		e.conf.Model,
+		conf.Model,
 		contents,
 		embedContentConfig,
 	)
