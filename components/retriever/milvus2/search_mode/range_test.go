@@ -18,6 +18,7 @@ package search_mode
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/cloudwego/eino/components/embedding"
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
+	"github.com/milvus-io/milvus/client/v2/entity"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/smartystreets/goconvey/convey"
 
@@ -79,17 +81,45 @@ func TestRange_BuildSearchOption(t *testing.T) {
 		}
 
 		convey.Convey("test basic range search option", func() {
-			r := NewRange(milvus2.L2, 1.0)
+			r := NewRange(milvus2.COSINE, 0.4)
 			opt, err := r.BuildSearchOption(ctx, config, queryVector)
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(opt, convey.ShouldNotBeNil)
+
+			request, err := opt.Request()
+			convey.So(err, convey.ShouldBeNil)
+
+			searchParams := entity.KvPairsMap(request.GetSearchParams())
+			annParams := map[string]float64{}
+			err = json.Unmarshal([]byte(searchParams["params"]), &annParams)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(annParams, convey.ShouldResemble, map[string]float64{
+				"radius": 0.4,
+			})
+			convey.So(searchParams["metric_type"], convey.ShouldEqual, string(milvus2.COSINE))
+			_, hasRadius := searchParams["radius"]
+			convey.So(hasRadius, convey.ShouldBeFalse)
 		})
 
 		convey.Convey("test with range filter (ring search)", func() {
-			r := NewRange(milvus2.L2, 1.0).WithRangeFilter(0.5)
+			r := NewRange(milvus2.COSINE, 0.4).WithRangeFilter(1.0)
 			opt, err := r.BuildSearchOption(ctx, config, queryVector)
 			convey.So(err, convey.ShouldBeNil)
-			convey.So(opt, convey.ShouldNotBeNil)
+
+			request, err := opt.Request()
+			convey.So(err, convey.ShouldBeNil)
+
+			searchParams := entity.KvPairsMap(request.GetSearchParams())
+			annParams := map[string]float64{}
+			err = json.Unmarshal([]byte(searchParams["params"]), &annParams)
+			convey.So(err, convey.ShouldBeNil)
+			convey.So(annParams, convey.ShouldResemble, map[string]float64{
+				"radius":       0.4,
+				"range_filter": 1.0,
+			})
+			_, hasRadius := searchParams["radius"]
+			convey.So(hasRadius, convey.ShouldBeFalse)
+			_, hasRangeFilter := searchParams["range_filter"]
+			convey.So(hasRangeFilter, convey.ShouldBeFalse)
 		})
 
 		convey.Convey("test with partitions", func() {
