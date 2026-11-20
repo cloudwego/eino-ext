@@ -541,3 +541,11 @@ func main() {
 
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
 - [火山引擎方舟模型文档](https://www.volcengine.com/docs/82379/1263272)
+
+### 清理推理内容
+
+`ark.ClearReasoning(history)` 返回消息副本，清除推理明文、密文和 reasoning parts；保留正文和工具调用，不修改原消息。
+
+```go
+history = ark.ClearReasoning(history)
+```

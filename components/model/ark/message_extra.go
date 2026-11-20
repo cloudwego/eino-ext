@@ -17,24 +17,28 @@
 package ark
 
 import (
+	"strings"
+
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
 
 const (
-	keyOfRequestID             = "ark-request-id"
-	keyOfReasoningContent      = "ark-reasoning-content"
-	keyOfRawReasoningContent   = "ark-raw-reasoning-content"
-	keyOfModelName             = "ark-model-name"
-	videoURLFPS                = "ark-model-video-url-fps"
-	keyOfContextID             = "ark-context-id"
-	keyOfResponseID            = "ark-response-id"
-	keyOfResponseCacheExpireAt = "ark-response-cache-expire-at"
-	keyOfServiceTier           = "ark-service-tier"
-	keyOfPartial               = "ark-partial"
-	ImageSizeKey               = "seedream-image-size"
+	keyOfReasoningEncryptedContent = "ark-reasoning-encrypted-content"
+	keyOfRequestID                 = "ark-request-id"
+	keyOfReasoningContent          = "ark-reasoning-content"
+	keyOfRawReasoningContent       = "ark-raw-reasoning-content"
+	keyOfModelName                 = "ark-model-name"
+	videoURLFPS                    = "ark-model-video-url-fps"
+	keyOfContextID                 = "ark-context-id"
+	keyOfResponseID                = "ark-response-id"
+	keyOfResponseCacheExpireAt     = "ark-response-cache-expire-at"
+	keyOfServiceTier               = "ark-service-tier"
+	keyOfPartial                   = "ark-partial"
+	ImageSizeKey                   = "seedream-image-size"
 )
 
+type arkRawReasoningContent []string
 type arkRequestID string
 type arkModelName string
 type arkServiceTier string
@@ -43,6 +47,33 @@ type arkContextID string
 type arkResponseCacheExpireAt int64
 
 func init() {
+	compose.RegisterStreamChunkConcatFunc(func(chunks []arkRawReasoningContent) (arkRawReasoningContent, error) {
+		var contentLengths []int
+		for _, chunk := range chunks {
+			if len(chunk) > len(contentLengths) {
+				contentLengths = append(contentLengths, make([]int, len(chunk)-len(contentLengths))...)
+			}
+			for i, text := range chunk {
+				contentLengths[i] += len(text)
+			}
+		}
+		builders := make([]strings.Builder, len(contentLengths))
+		for i, length := range contentLengths {
+			builders[i].Grow(length)
+		}
+		for _, chunk := range chunks {
+			for i, text := range chunk {
+				builders[i].WriteString(text)
+			}
+		}
+		var result arkRawReasoningContent
+		for i := range builders {
+			result = append(result, builders[i].String())
+		}
+		return result, nil
+	})
+	schema.RegisterName[arkRawReasoningContent]("_eino_ext_ark_raw_reasoning_content")
+
 	compose.RegisterStreamChunkConcatFunc(func(chunks []arkRequestID) (final arkRequestID, err error) {
 		if len(chunks) == 0 {
 			return "", nil
@@ -121,12 +152,35 @@ func setReasoningContent(msg *schema.Message, reasoningContent string) {
 	setMsgExtra(msg, keyOfReasoningContent, reasoningContent)
 }
 
-func getRawReasoningContent(msg *schema.Message) (string, bool) {
-	return getMsgExtraValue[string](msg, keyOfRawReasoningContent)
+// GetRawReasoningContent returns the text of each reasoning.content (CoT) entry
+// in a reasoning part, in content order. The summary is in part.Reasoning.Text.
+func GetRawReasoningContent(part *schema.MessageOutputPart) ([]string, bool) {
+	rawReasoning := rawReasoningContent(part.Extra)
+	return rawReasoning, len(rawReasoning) > 0
 }
 
-func setRawReasoningContent(msg *schema.Message, reasoningContent string) {
-	setMsgExtra(msg, keyOfRawReasoningContent, reasoningContent)
+func rawReasoningContent(extra map[string]any) []string {
+	switch value := extra[keyOfRawReasoningContent].(type) {
+	case arkRawReasoningContent:
+		return []string(value)
+	case []string:
+		return value
+	case []any:
+		result := make([]string, len(value))
+		for i, item := range value {
+			text, ok := item.(string)
+			if !ok {
+				return nil
+			}
+			result[i] = text
+		}
+		return result
+	case string:
+		if value != "" {
+			return []string{value}
+		}
+	}
+	return nil
 }
 
 func GetModelName(msg *schema.Message) (string, bool) {
@@ -410,4 +464,38 @@ func getPartial(msg *schema.Message) bool {
 		return false
 	}
 	return v
+}
+
+// ClearReasoning returns copies of the supplied messages with reasoning text,
+// ciphertext and reasoning parts removed. Text and tool calls are retained.
+// Messages must not contain nil entries.
+func ClearReasoning(messages []*schema.Message) []*schema.Message {
+	if messages == nil {
+		return nil
+	}
+	result := make([]*schema.Message, len(messages))
+	for i, msg := range messages {
+		copied := *msg
+		copied.ReasoningContent = ""
+		if msg.Extra != nil {
+			copied.Extra = make(map[string]any, len(msg.Extra))
+			for k, v := range msg.Extra {
+				switch k {
+				case keyOfReasoningContent, keyOfRawReasoningContent, keyOfReasoningEncryptedContent:
+					continue
+				}
+				copied.Extra[k] = v
+			}
+		}
+		if msg.AssistantGenMultiContent != nil {
+			copied.AssistantGenMultiContent = make([]schema.MessageOutputPart, 0, len(msg.AssistantGenMultiContent))
+			for _, p := range msg.AssistantGenMultiContent {
+				if p.Type != schema.ChatMessagePartTypeReasoning {
+					copied.AssistantGenMultiContent = append(copied.AssistantGenMultiContent, p)
+				}
+			}
+		}
+		result[i] = &copied
+	}
+	return result
 }
