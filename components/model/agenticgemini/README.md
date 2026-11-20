@@ -145,6 +145,16 @@ type Config struct {
 }
 ```
 
+## Function Tool Call IDs
+
+When Gemini returns `FunctionCall.id`, this package preserves it as
+`schema.FunctionToolCall.CallID`. Function calls and results sent back to Gemini use the
+same value in `FunctionCall.id` and `FunctionResponse.id`, so parallel calls to the same
+function remain correctly paired even when results arrive out of order.
+
+For models or gateways that omit `FunctionCall.id`, the package generates a unique UUID
+for `CallID`. Pass that `CallID` unchanged in the corresponding
+`schema.FunctionToolResult`.
 
 ## Extension Fields
 
