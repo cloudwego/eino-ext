@@ -60,6 +60,11 @@ func GetTools(ctx context.Context, conf *Config) ([]tool.BaseTool, error) {
 
 	listResults, err := conf.Cli.ListTools(ctx, mcp.ListToolsRequest{
 		Header: header,
+		PaginatedRequest: mcp.PaginatedRequest{
+			Params: mcp.PaginatedParams{
+				Meta: conf.Meta,
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list mcp tools fail: %w", err)
