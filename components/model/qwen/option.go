@@ -27,6 +27,12 @@ type options struct {
 	// Optional. Default: base on the Model
 	// https://help.aliyun.com/zh/model-studio/deep-thinking
 	EnableThinking *bool
+
+	// ExtraFields are the caller's extra body fields. They are merged with the
+	// fields this package derives from other options (such as EnableThinking)
+	// and sent through a single openai.WithExtraFields, because that option
+	// replaces rather than merges.
+	ExtraFields map[string]any
 }
 
 // WithEnableThinking is the option to set the enable thinking for the model.
@@ -42,7 +48,8 @@ func WithExtraHeader(header map[string]string) model.Option {
 }
 
 // WithExtraFields is used to set extra body fields for the request.
-// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key.
+// These fields will be merged into the top-level JSON request body, overriding any existing fields with the same key,
+// including the fields set by EnableThinking. If WithExtraFields is passed more than once, the last call wins.
 //
 // Example:
 //
@@ -60,5 +67,7 @@ func WithExtraHeader(header map[string]string) model.Option {
 //	    "chat_template_kwargs": {"enable_thinking": true}
 //	}
 func WithExtraFields(extraFields map[string]any) model.Option {
-	return openai.WithExtraFields(extraFields)
+	return model.WrapImplSpecificOptFn(func(opt *options) {
+		opt.ExtraFields = extraFields
+	})
 }
