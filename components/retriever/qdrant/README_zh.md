@@ -15,7 +15,7 @@ import (
  "context"
  "github.com/cloudwego/eino/components/embedding"
  qdrant "github.com/qdrant/go-client/qdrant"
- "github.com/cloudwego/eino-ext/components/retriever/qdrant"
+ qretriever "github.com/cloudwego/eino-ext/components/retriever/qdrant"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
  })
 
  // 创建 retriever
- retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+ retriever, _ := qretriever.NewRetriever(ctx, &qretriever.Config{
   Client:     client,
   Collection: "my_collection",
   Embedding:  &myEmbedding{},
@@ -49,10 +49,27 @@ type Config struct {
     Embedding      embedding.Embedder  // 查询嵌入组件
     ScoreThreshold *float64            // 可选的分数阈值
     TopK           int                 // 结果数量
+    VectorName     string              // 可选：要查询的命名向量
 }
 ```
 
 ## 高级用法
+
+### 命名向量
+
+当集合中存放了多个向量空间（例如每个 embedding 模型一个）时，将 `VectorName`
+设置为与查询 embedder 对应的向量名。它必须是 indexer 的 `VectorConfig` 列表中
+配置过的某个名字，从而确保查询比较的是一个确实写入过向量的空间。留空时查询集合
+默认的匿名向量，与本组件的历史行为一致。
+
+```go
+retriever, _ := qretriever.NewRetriever(ctx, &qretriever.Config{
+    Client:     client,
+    Collection: "docs",
+    VectorName: "bge-m3",
+    Embedding:  bgeM3,
+})
+```
 
 ### 过滤
 
@@ -72,7 +89,7 @@ docs, _ := retriever.Retrieve(ctx, "query",
 
 ```go
 scoreThreshold := 0.7
-retriever, _ := qdrant.NewRetriever(ctx, &qdrant.Config{
+retriever, _ := qretriever.NewRetriever(ctx, &qretriever.Config{
     // ... 其他配置
     ScoreThreshold: &scoreThreshold,
 })
