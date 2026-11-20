@@ -144,6 +144,12 @@ type Config struct {
     // Obtain from: https://docs.aws.amazon.com/bedrock/latest/userguide/getting-started.html
     // Optional for Bedrock
     Region string
+    
+    // AWSConfig is an already-resolved AWS config used verbatim for Bedrock.
+    // When set, AccessKey, SecretAccessKey, SessionToken, Profile, Region and
+    // HTTPClient are ignored and no default config is loaded.
+    // Optional for Bedrock
+    AWSConfig *aws.Config
 
     // ByVertex indicates whether to use Google Vertex AI
     ByVertex bool
@@ -209,8 +215,20 @@ type Config struct {
     // ThinkingConfig configures Claude thinking using Anthropic SDK's native union.
     ThinkingConfig *anthropic.ThinkingConfigParamUnion
 
+    // Effort sets output_config.effort on every request.
+    // Adaptive-thinking models use effort in place of a thinking budget.
+    // Overridden per request by WithEffort.
+    // Optional. One of anthropic.OutputConfigEffortLow / Medium / High / Xhigh / Max
+    Effort anthropic.OutputConfigEffort `json:"effort,omitempty"`
+
     // HTTPClient specifies the client to send HTTP requests.
     HTTPClient *http.Client `json:"http_client"`
+
+    // RequestOptions are extra SDK request options appended on every transport.
+    // This is the only way to inject e.g. option.WithHTTPClient on Bedrock, where
+    // HTTPClient only reaches AWS credential loading, not the Anthropic client itself.
+    // Optional.
+    RequestOptions []option.RequestOption
 
     // RequestTimeout specifies the timeout for each API request.
     // Optional.
@@ -233,9 +251,28 @@ For Google Vertex AI, authentication resolution works as follows:
 - When `VertexServiceAccountJSON` is set, credentials are built in-memory via `google.CredentialsFromJSON` and passed to `vertex.WithCredentials` (no ADC or env vars required for auth).
 - When `VertexServiceAccountJSON` is empty, `vertex.WithGoogleAuth` (Application Default Credentials) is used.
 
+For Amazon Bedrock, credential resolution works as follows:
 
+- If `Config.AWSConfig` is set, it is used verbatim via `bedrock.WithConfig`. `AccessKey`, `SecretAccessKey`, `SessionToken`, `Profile`, `Region` and `HTTPClient` are ignored.
+- Otherwise the AWS default config chain is loaded, with `AccessKey` / `SecretAccessKey` (or `Profile`), `Region` and `HTTPClient` applied on top.
+- `Config.RequestOptions` are appended after the transport option on every branch (Bedrock, Vertex, direct), so a later `option.WithHTTPClient` there is the one the Anthropic client uses.
 
+## Output Effort
 
+Adaptive-thinking models (Claude Opus 4.7 and newer) take `output_config.effort` instead of a thinking budget. Set a default on `Config.Effort` and override it per request with `claude.WithEffort`:
+
+```go
+cm, err := claude.NewChatModel(ctx, &claude.Config{
+    APIKey:    apiKey,
+    Model:     "claude-opus-4-7",
+    MaxTokens: 3000,
+    Effort:    anthropic.OutputConfigEffortMedium, // default for every request
+})
+
+resp, err := cm.Generate(ctx, messages, claude.WithEffort(anthropic.OutputConfigEffortHigh)) // this request only
+```
+
+An empty effort, from either place, leaves `output_config.effort` unset. `WithEffort("")` clears a `Config.Effort` default for that request.
 
 ## Structured Output
 
