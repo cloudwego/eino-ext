@@ -39,6 +39,7 @@ import (
 
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/cloudwego/eino/adk/filesystem"
+	"github.com/cloudwego/eino/adk/middlewares/plantask"
 	"github.com/cloudwego/eino/schema"
 	"github.com/klippa-app/go-pdfium"
 	"github.com/klippa-app/go-pdfium/references"
@@ -907,6 +908,14 @@ func (s *Local) Write(ctx context.Context, req *filesystem.WriteRequest) error {
 		return fmt.Errorf("failed to write to file: %w", err)
 	}
 
+	return nil
+}
+
+func (s *Local) Delete(ctx context.Context, req *plantask.DeleteRequest) error {
+	path := filepath.Clean(req.FilePath)
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("failed to delete file %s: %w", path, err)
+	}
 	return nil
 }
 
