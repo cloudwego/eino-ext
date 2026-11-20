@@ -3,7 +3,8 @@ module github.com/cloudwego/eino-ext/callbacks/langfuse/v2
 go 1.23.0
 
 require (
-	github.com/cloudwego/eino v0.9.14
+	github.com/cloudwego/eino v0.9.21
+	github.com/eino-contrib/jsonschema v1.0.3
 	go.opentelemetry.io/otel v1.38.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.38.0
 	go.opentelemetry.io/otel/sdk v1.38.0
@@ -19,7 +20,6 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
