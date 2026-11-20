@@ -136,7 +136,7 @@ See the following examples for more usage:
 - **`Write(ctx, req)`** - Write file content; creates the file if it doesn't exist, otherwise **overwrites** existing content (parent directories are created automatically).
 - **`Edit(ctx, req)`** - Search and replace in file
 - **`GrepRaw(ctx, req)`** - Search pattern in files
-- **`GlobInfo(ctx, req)`** - Find files by glob pattern
+- **`GlobInfo(ctx, req)`** - Find files by glob pattern, following directory symlinks while preventing cycles
 
 ### Additional Methods
 
