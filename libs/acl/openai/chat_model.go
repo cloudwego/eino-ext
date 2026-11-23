@@ -912,7 +912,7 @@ func (c *Client) Stream(ctx context.Context, in []*schema.Message,
 					var err_ error
 					lastEmptyMsg, err_ = specOptions.ResponseChunkMessageModifier(ctx_, lastEmptyMsg, nil, true)
 					if err_ != nil {
-						sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err))
+						sw.Send(nil, fmt.Errorf("failed to modify chunk message: %w", err_))
 						return
 					}
 				}
