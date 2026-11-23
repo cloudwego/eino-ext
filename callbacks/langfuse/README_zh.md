@@ -4,6 +4,10 @@
 
 这是一个为 [Eino](https://github.com/cloudwego/eino) 实现的 Langfuse 回调。该工具实现了 `Handler` 接口，可以与 Eino 的应用无缝集成以提供增强的可观测和追踪能力。
 
+> **已弃用。** Langfuse Cloud 或 Langfuse v4 用户请参阅 [v2 回调和迁移指南](v2/README_zh.md)。已自托管 Langfuse v3 的用户可以继续使用 v1 回调。
+>
+> 对于旧版数据摄入请求，Langfuse Cloud 可能返回 HTTP 207，并在响应中包含单个事件的 400 错误。配置官方 Langfuse Cloud 地址时，v1 回调会记录一次迁移警告。
+
 ## 特性
 
 - 实现了 `github.com/cloudwego/eino/callbacks.Handler` 接口
@@ -37,7 +41,7 @@ func main() {
 	ctx := context.Background()
 	
 	cbh, flusher := langfuse.NewLangfuseHandler(&langfuse.Config{
-		Host:        "https://cloud.langfuse.com",
+		Host:        "http://localhost:3000",
 		PublicKey:   "pk-lf-...",
 		SecretKey:   "sk-lf-...",
 		ServiceName: "eino-app",
@@ -67,7 +71,7 @@ func main() {
 ```go
 type Config struct {
     // Langfuse 服务器地址 (必填)
-    // 例子: "https://cloud.langfuse.com"
+    // 例子: "http://localhost:3000"
     Host string
     
     // 公钥，用于认证 (必填)

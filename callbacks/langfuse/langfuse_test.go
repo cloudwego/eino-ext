@@ -17,11 +17,14 @@
 package langfuse
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +39,46 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestIsLangfuseCloudHost(t *testing.T) {
+	for _, tt := range []struct {
+		host string
+		want bool
+	}{
+		{"https://cloud.langfuse.com", true},
+		{"https://us.cloud.langfuse.com/", true},
+		{"https://jp.cloud.langfuse.com", true},
+		{"https://HIPAA.cloud.langfuse.com.:443/path", true},
+		{"http://localhost:3000", false},
+		{"https://cloud.langfuse.com.example.org", false},
+		{"https://cloud.langfuse.com@example.org", false},
+		{"https://example.org/cloud.langfuse.com", false},
+		{"https://[", false},
+	} {
+		t.Run(tt.host, func(t *testing.T) {
+			assert.Equal(t, tt.want, isLangfuseCloudHost(tt.host))
+		})
+	}
+}
+
+func TestWarnLegacyCloudOnce(t *testing.T) {
+	var logs bytes.Buffer
+	previousWriter := log.Writer()
+	log.SetOutput(&logs)
+	cloudWarningOnce = sync.Once{}
+	t.Cleanup(func() {
+		log.SetOutput(previousWriter)
+		cloudWarningOnce = sync.Once{}
+	})
+
+	warnLegacyCloud("http://localhost:3000")
+	assert.Empty(t, logs.String())
+
+	warnLegacyCloud("https://cloud.langfuse.com")
+	warnLegacyCloud("https://us.cloud.langfuse.com")
+	assert.Equal(t, 1, strings.Count(logs.String(), "deprecated"))
+	assert.Contains(t, logs.String(), "callbacks/langfuse/v2/README.md#migrating-from-v1")
+}
 
 func TestLangfuseCallback(t *testing.T) {
 	ctrl := gomock.NewController(t)

@@ -4,6 +4,10 @@ English | [简体中文](README_zh.md)
 
 A Langfuse callback implementation for [Eino](https://github.com/cloudwego/eino) that implements the `Handler` interface. This enables seamless integration with Eino's application for enhanced observability and tracing.
 
+> **Deprecated.** Use [the v2 callback and migration guide](v2/README.md#migrating-from-v1) for Langfuse Cloud or Langfuse v4. This v1 callback remains available for existing self-hosted Langfuse v3 deployments.
+>
+> Langfuse Cloud may respond to legacy ingestion with HTTP 207 and individual 400 event errors. The v1 handler logs a one-time migration warning for official Langfuse Cloud hosts.
+
 ## Features
 
 - Implements `github.com/cloudwego/eino/callbacks.Handler` interface
@@ -37,7 +41,7 @@ func main() {
 	ctx := context.Background()
 	
 	cbh, flusher := langfuse.NewLangfuseHandler(&langfuse.Config{
-		Host:        "https://cloud.langfuse.com",
+		Host:        "http://localhost:3000",
 		PublicKey:   "pk-lf-...",
 		SecretKey:   "sk-lf-...",
 		ServiceName: "eino-app",
@@ -67,7 +71,7 @@ The callback can be configured using the `Config` struct:
 ```go
 type Config struct {
     // Host is the Langfuse server URL (Required)
-    // Example: "https://cloud.langfuse.com"
+    // Example: "http://localhost:3000"
     Host string
     
     // PublicKey is the public key for authentication (Required)
