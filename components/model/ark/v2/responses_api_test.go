@@ -313,7 +313,7 @@ func TestResponsesCacheAndReasoning(t *testing.T) {
 	first.Extra["ark-response-id"] = "legacy-response"
 	first.Extra["ark-response-cache-expire-at"] = legacyExpiry
 	history := []*schema.Message{schema.UserMessage("hi"), first, schema.UserMessage("next")}
-	_, err = cm.Generate(context.Background(), history, WithCache(&CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}, HeadPreviousResponseID: ptr("prefix")}))
+	_, err = cm.Generate(context.Background(), history, WithCache(CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}, HeadPreviousResponseID: ptr("prefix")}))
 	check(t, err)
 	check(t, InvalidateMessageCaches([]*schema.Message{first}))
 	equal(t, legacyExpiry, first.Extra["ark-response-cache-expire-at"])

@@ -76,7 +76,7 @@ func TestResponsesCachedRequestOmitsTools(t *testing.T) {
 				if kind != "no tools" && kind != "call tools" && kind != "web search" {
 					check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 				}
-				opts := []model.Option{WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached-response")})}
+				opts := []model.Option{WithCache(CacheOption{HeadPreviousResponseID: ptr("cached-response")})}
 				if kind == "call tools" {
 					opts = append(opts, model.WithTools([]*schema.ToolInfo{toolInfo("inspect")}))
 				}

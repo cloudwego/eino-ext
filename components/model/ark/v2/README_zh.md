@@ -436,10 +436,18 @@ Responses 的强制选择仅在显式提供一个函数名称时按名称调用�
 并设置 `previous_response_id`。`GetResponseCacheRef` 一并读取缓存响应 ID 和 Unix 秒级过期时间；编辑缓存历史后，
 使用 `InvalidateMessageCaches(messages)` 使相关消息的缓存失效。
 
-切换模型时，可用 `clean := ark.ClearReasoning(history)` 取得移除推理摘要、原文和密文的历史副本。
-Chat Completions 可直接传入 `clean`。Responses 使用 `next.Generate(ctx, clean, ark.WithCache(nil))`
-可跳过本次服务端上下文续接，发送完整的清理后历史。函数复制每条消息、消息顶层的 Extra map
-及输出 part 切片，其他嵌套值仍与原消息共享。
+切换模型时，可用 `ark.ClearReasoning(history)` 取得移除推理摘要、原文和密文的历史副本。
+函数复制每条消息、消息顶层的 Extra map 及输出 part 切片，其他嵌套值仍与原消息共享。
+Chat Completions 可直接使用副本。使用 Responses 时，在副本上使旧缓存引用失效即可完整回放。
+如果启用了会话缓存，本轮响应会建立新的缓存链。
+
+```go
+clean := ark.ClearReasoning(history)
+if err := ark.InvalidateMessageCaches(clean); err != nil {
+	return nil, err
+}
+return next.Generate(ctx, clean)
+```
 
 缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools` 和 `tool_choice`。
 需要更换工具设置时应建立新的缓存链；
@@ -452,7 +460,7 @@ Chat Completions 可直接传入 `clean`。Responses 使用 `next.Generate(ctx, 
 续接继承首轮工具集合。强制调用示例在最终使用 Forbidden 前使本地缓存引用失效，
 通过完整历史建立新链，让新的策略生效。
 
-`WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` 可以显式续接已存储的响应或
+`WithCache(ark.CacheOption{HeadPreviousResponseID: &id})` 可以显式续接已存储的响应或
 前缀；历史中有效的缓存消息优先于此 ID。`CreatePrefixCache(ctx, prefix, ttl)` 用于
 服务支持的前缀缓存。TTL 为零时采用服务默认过期时间。缓存服务需要为账号和模型
 开通；服务权限错误不能视为适配器错误。

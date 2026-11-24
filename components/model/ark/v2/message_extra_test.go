@@ -96,9 +96,13 @@ func TestClearReasoningReplay(t *testing.T) {
 			check(t, err)
 			equal(t, wantChat, (<-requests)["messages"])
 
-			_, err = responsesModel.Generate(ctx, history, WithCache(nil))
+			disableCache := WithCache(CacheOption{SessionCache: &SessionCacheConfig{EnableCache: false}})
+			_, err = responsesModel.Generate(ctx, history, disableCache)
 			check(t, err)
-			original := (<-requests)["input"].([]any)
+			originalBody := <-requests
+			equal(t, false, originalBody["store"])
+			equal(t, "disabled", originalBody["caching"].(map[string]any)["type"])
+			original := originalBody["input"].([]any)
 			equal(t, 6, len(original))
 			reasoning := original[1].(map[string]any)
 			equal(t, "reasoning", reasoning["type"])
@@ -106,12 +110,24 @@ func TestClearReasoningReplay(t *testing.T) {
 				equal(t, "cipher", reasoning["encrypted_content"])
 				equal(t, "raw thought", reasoning["content"].([]any)[0].(map[string]any)["text"])
 			}
-			_, err = responsesModel.Generate(ctx, clean, WithCache(nil))
+			check(t, InvalidateMessageCaches(clean))
+			replayed, err := responsesModel.Generate(ctx, clean)
 			check(t, err)
 			body := <-requests
 			_, hasPrevious := body["previous_response_id"]
 			equal(t, false, hasPrevious)
 			equal(t, append(original[:1], original[2:]...), body["input"])
+			equal(t, true, body["store"])
+			equal(t, "enabled", body["caching"].(map[string]any)["type"])
+
+			ref, ok := GetResponseCacheRef(replayed)
+			equal(t, true, ok)
+			next := append(clean, replayed, schema.ToolMessage("result", "call-1"))
+			_, err = responsesModel.Generate(ctx, next)
+			check(t, err)
+			body = <-requests
+			equal(t, ref.ResponseID, body["previous_response_id"])
+			equal(t, 1, len(body["input"].([]any)))
 		})
 	}
 }

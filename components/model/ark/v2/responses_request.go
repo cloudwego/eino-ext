@@ -31,7 +31,7 @@ func (cm *ResponsesAPIChatModel) getOptions(opts ...model.Option) (*model.Option
 			Temperature: cm.config.Temperature, TopP: cm.config.TopP, ToolChoice: cm.toolChoice}, opts...),
 		model.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader, responsesThinking: cm.config.Thinking,
 			responsesReasoningEffort: cm.config.ReasoningEffort,
-			cache:                    &CacheOption{SessionCache: cm.config.SessionCache}, enableWebSearch: cm.config.EnableToolWebSearch,
+			cache:                    CacheOption{SessionCache: cm.config.SessionCache}, enableWebSearch: cm.config.EnableToolWebSearch,
 			maxToolCalls: cm.config.MaxToolCalls}, opts...)
 }
 

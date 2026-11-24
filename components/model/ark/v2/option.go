@@ -23,7 +23,7 @@ import (
 )
 
 type arkOptions struct {
-	cache                    *CacheOption
+	cache                    CacheOption
 	enableWebSearch          *responses.WebSearchTool
 	maxToolCalls             *int64
 	customHeaders            map[string]string

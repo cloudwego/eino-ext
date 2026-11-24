@@ -87,10 +87,7 @@ func InvalidateMessageCaches(messages []*schema.Message) error {
 	return nil
 }
 
-func populateResponsesCache(in []*schema.Message, req *responses.ResponsesRequest, config *CacheOption) ([]*schema.Message, error) {
-	if config == nil {
-		return in, nil
-	}
+func populateResponsesCache(in []*schema.Message, req *responses.ResponsesRequest, config CacheOption) ([]*schema.Message, error) {
 	now := time.Now().Unix()
 	if config.HeadPreviousResponseID != nil {
 		if *config.HeadPreviousResponseID == "" {

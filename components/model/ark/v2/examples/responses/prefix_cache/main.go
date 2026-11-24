@@ -47,7 +47,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 		return err
 	}
 	fmt.Println("Prefix response:", info.ResponseID)
-	reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("What was the code? Reply with the code only.")}, ark.WithCache(&ark.CacheOption{HeadPreviousResponseID: &info.ResponseID}))
+	reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("What was the code? Reply with the code only.")}, ark.WithCache(ark.CacheOption{HeadPreviousResponseID: &info.ResponseID}))
 	if err != nil {
 		return err
 	}

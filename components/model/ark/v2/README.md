@@ -499,12 +499,20 @@ calls. Send the full conversation; the adapter trims it after that message and
 sets `previous_response_id`. Read the cached response ID and Unix expiration time with `GetResponseCacheRef`, and call
 `InvalidateMessageCaches(messages)` after editing cached history.
 
-When switching models, `clean := ark.ClearReasoning(history)` removes reasoning
-summaries, raw text, and encrypted content from a copy of the history. Pass
-`clean` to Chat Completions directly. For Responses, use
-`next.Generate(ctx, clean, ark.WithCache(nil))` to send the full edited history
-and bypass the server context for that call. Each message, its top-level Extra
-map, and its output part slice are copied. Other nested values are shared.
+When switching models, `ark.ClearReasoning(history)` removes reasoning summaries,
+raw text, and encrypted content from a copy of the history. Each message, its
+top-level Extra map, and its output part slice are copied. Other nested values
+are shared. Chat Completions can use the copy directly. For Responses, invalidate
+the cache references on the copy to replay the full history and start a new cache
+chain when session caching is enabled.
+
+```go
+clean := ark.ClearReasoning(history)
+if err := ark.InvalidateMessageCaches(clean); err != nil {
+	return nil, err
+}
+return next.Generate(ctx, clean)
+```
 
 Cached continuations inherit their tool definitions from the first request.
 The adapter omits `tools` and `tool_choice`
@@ -512,7 +520,7 @@ whenever it sends `previous_response_id`. To change tool settings, start a new c
 chain; for automatic session caching, invalidate the message caches and resend
 the full conversation.
 
-`WithCache(&ark.CacheOption{HeadPreviousResponseID: &id})` explicitly continues a
+`WithCache(ark.CacheOption{HeadPreviousResponseID: &id})` explicitly continues a
 stored response or prefix. A valid cached message takes precedence over this
 head ID. `CreatePrefixCache(ctx, prefix, ttl)` creates a reusable prefix where
 supported. Zero TTL leaves expiration to the service. Cache availability must

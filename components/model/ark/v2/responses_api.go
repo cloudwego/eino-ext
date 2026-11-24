@@ -234,7 +234,7 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	// parsed options. Only the derived options passed to this build omit cache.
 	common, opts := cm.getOptions(options...)
 	prefixOptions := *opts
-	prefixOptions.cache = nil
+	prefixOptions.cache = CacheOption{}
 	request, err := cm.genRequest(prefix, common, &prefixOptions)
 	if err != nil {
 		return nil, err
@@ -261,8 +261,9 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	return result, nil
 }
 
-// WithCache overrides the Responses API session-cache configuration for one call.
-func WithCache(cache *CacheOption) model.Option {
+// WithCache replaces the Responses API cache configuration for one call.
+// Omit this option to use the model's session-cache configuration.
+func WithCache(cache CacheOption) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.cache = cache })
 }
 

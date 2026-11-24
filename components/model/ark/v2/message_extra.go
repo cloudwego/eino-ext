@@ -50,7 +50,9 @@ type rawReasoningContent []string
 // ClearReasoning returns history suitable for replay through Chat Completions or
 // Responses after removing reasoning text, signatures, and native reasoning items.
 // It copies each message, its Extra map and its output part slice. Other nested
-// values are shared. To replay the full history with Responses, pass WithCache(nil).
+// values are shared. The copy retains its cache references. Before replaying
+// the full history with Responses session caching, call InvalidateMessageCaches
+// on the copy to start a new cache chain.
 func ClearReasoning(messages []*schema.Message) []*schema.Message {
 	if messages == nil {
 		return nil

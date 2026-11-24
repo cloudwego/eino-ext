@@ -388,10 +388,10 @@ func TestResponsesForcedBuiltInTools(t *testing.T) {
 				if kind == "cached" {
 					// These local definitions are not sent; the server already
 					// owns the definitions associated with the cached response.
-					opts = append(opts, WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithTools([]*schema.ToolInfo{{Name: "ignored", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.FalseSchema)}}))
+					opts = append(opts, WithCache(CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithTools([]*schema.ToolInfo{{Name: "ignored", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.FalseSchema)}}))
 				}
 				if kind == "cached named" {
-					opts = []model.Option{WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithToolChoice(schema.ToolChoiceForced, "inspect")}
+					opts = []model.Option{WithCache(CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithToolChoice(schema.ToolChoiceForced, "inspect")}
 				}
 				callResponsesWithOptions(t, cm, mode, []*schema.Message{schema.UserMessage("first")}, opts...)
 			})
@@ -420,7 +420,7 @@ func TestResponsesAllowedNamesWithBuiltInAndCache(t *testing.T) {
 				// Cached definitions belong to the server; even unusable local
 				// schemas must not be converted when continuing the same subset.
 				opts := []model.Option{
-					WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}),
+					WithCache(CacheOption{HeadPreviousResponseID: ptr("cached")}),
 					model.WithToolChoice(choice, "inspect", "other"),
 					model.WithTools([]*schema.ToolInfo{
 						{Name: "inspect", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.FalseSchema)},

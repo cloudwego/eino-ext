@@ -78,7 +78,7 @@ func TestResponsesRequestInputsAreReadOnly(t *testing.T) {
 				options = append(options, model.WithTools(tools[:2]), model.WithToolChoice(schema.ToolChoiceAllowed, "inspect"))
 			}
 			if kind == "cached named" || kind == "cached allowed" {
-				options = append(options, WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}))
+				options = append(options, WithCache(CacheOption{HeadPreviousResponseID: ptr("cached")}))
 				choice := schema.ToolChoiceForced
 				if kind == "cached allowed" {
 					choice = schema.ToolChoiceAllowed
@@ -107,7 +107,7 @@ func TestResponsesSharedRequestOptions(t *testing.T) {
 			check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect"), toolInfo("other")}))
 			var options []model.Option
 			if cached {
-				options = []model.Option{WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithToolChoice(schema.ToolChoiceForced, "inspect")}
+				options = []model.Option{WithCache(CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithToolChoice(schema.ToolChoiceForced, "inspect")}
 			}
 			common, opts := cm.getOptions(options...)
 			before := responsesRequestInputSnapshot(t, cm, common, opts, nil)
@@ -234,7 +234,7 @@ func TestResponsesPrefixCachePreservesOptions(t *testing.T) {
 		writeResponses(w)
 	}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 	check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
-	cache := &CacheOption{HeadPreviousResponseID: ptr("existing-response"), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 1800}}
+	cache := CacheOption{HeadPreviousResponseID: ptr("existing-response"), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 1800}}
 	options := []model.Option{WithCache(cache)}
 	common, opts := cm.getOptions(options...)
 	before := responsesRequestInputSnapshot(t, cm, common, opts, nil)

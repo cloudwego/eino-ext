@@ -151,11 +151,11 @@ func TestResponsesMetadataAndCacheValidation(t *testing.T) {
 	now := time.Now().Unix()
 	msg := &schema.Message{Extra: map[string]any{keyResponseID: metadataString("cached"), keyCacheExpiration: metadataInt64(now + 100)}}
 	req := &responses.ResponsesRequest{}
-	remaining, err := populateResponsesCache([]*schema.Message{schema.UserMessage("old"), msg, schema.UserMessage("new")}, req, &CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}, HeadPreviousResponseID: ptr("prefix")})
+	remaining, err := populateResponsesCache([]*schema.Message{schema.UserMessage("old"), msg, schema.UserMessage("new")}, req, CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}, HeadPreviousResponseID: ptr("prefix")})
 	check(t, err)
 	equal(t, 1, len(remaining))
 	equal(t, "cached", req.PreviousResponseID.Or(""))
-	_, err = populateResponsesCache([]*schema.Message{msg}, req, &CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}})
+	_, err = populateResponsesCache([]*schema.Message{msg}, req, CacheOption{SessionCache: &SessionCacheConfig{EnableCache: true}})
 	if err == nil {
 		t.Fatal("expected missing incremental input")
 	}
@@ -212,7 +212,7 @@ func TestResponsesPrefixCache(t *testing.T) {
 	check(t, err)
 	equal(t, "resp-1", info.ResponseID)
 	equal(t, 11, info.Usage.TotalTokens)
-	reply, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("continue prefix")}, WithCache(&CacheOption{HeadPreviousResponseID: &info.ResponseID}))
+	reply, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("continue prefix")}, WithCache(CacheOption{HeadPreviousResponseID: &info.ResponseID}))
 	check(t, err)
 	equal(t, "done", reply.Content)
 	equal(t, int32(2), calls.Load())
