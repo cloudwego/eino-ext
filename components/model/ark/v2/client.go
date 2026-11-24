@@ -17,11 +17,7 @@
 package ark
 
 import (
-	"bytes"
-	"fmt"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/volcengine/ark-runtime-go/arkruntime"
@@ -53,48 +49,11 @@ func newArkClient(config clientConfig) *arkruntime.Client {
 		opts = append(opts, arkruntime.WithRetryTimes(*config.retryTimes))
 	}
 	if config.httpClient != nil {
-		opts = append(opts, arkruntime.WithHTTPClient(config.httpClient))
+		httpClient := *config.httpClient
+		opts = append(opts, arkruntime.WithHTTPClient(&httpClient))
 	}
-	// Copy the SDK-configured HTTP client so capturing response bodies does not
-	// mutate a caller-owned client or change its transport/timeout policies.
-	connection := arkruntime.NewClientConfig(config.apiKey, config.accessKey, config.secretKey, opts...)
-	httpClient := *connection.HTTPClient
-	transport := httpClient.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
-	httpClient.Transport = &responseCaptureTransport{next: transport}
-	opts = append(opts, arkruntime.WithHTTPClient(&httpClient))
 	if config.apiKey != "" {
 		return arkruntime.NewClientWithApiKey(config.apiKey, opts...)
 	}
 	return arkruntime.NewClientWithAkSk(config.accessKey, config.secretKey, opts...)
-}
-
-type responseCaptureKey struct{}
-type responseCapture struct {
-	rawBody []byte
-}
-
-type responseCaptureTransport struct {
-	next http.RoundTripper
-}
-
-func (t *responseCaptureTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	capture, _ := req.Context().Value(responseCaptureKey{}).(*responseCapture)
-	if capture == nil || (!strings.HasSuffix(req.URL.Path, "/chat/completions") && !strings.HasSuffix(req.URL.Path, "/responses")) {
-		return t.next.RoundTrip(req)
-	}
-	resp, err := t.next.RoundTrip(req)
-	if err != nil || resp == nil || resp.Body == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return resp, err
-	}
-	raw, err := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
-	if err != nil {
-		return nil, fmt.Errorf("read response payload: %w", err)
-	}
-	capture.rawBody = raw
-	resp.Body = io.NopCloser(bytes.NewReader(raw))
-	return resp, nil
 }

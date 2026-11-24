@@ -147,19 +147,6 @@ func TestResponsesInputValidation(t *testing.T) {
 	}
 }
 
-func TestResponsesPayloadValidation(t *testing.T) {
-	cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
-		t.Error("invalid payload reached HTTP")
-		writeResponses(w)
-	}, nil)
-	for _, raw := range []string{`null`, `[]`, `{}`, `{"model":null,"input":[]}`, `{"model":"m","input":null}`, `{"model":"m","input":42}`} {
-		_, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")}, WithRequestPayloadModifier(func(context.Context, []*schema.Message, []byte) ([]byte, error) { return []byte(raw), nil }))
-		if err == nil {
-			t.Errorf("expected invalid payload: %s", raw)
-		}
-	}
-}
-
 func TestResponsesMetadataAndCacheValidation(t *testing.T) {
 	now := time.Now().Unix()
 	msg := &schema.Message{Extra: map[string]any{keyResponseID: metadataString("cached"), keyCacheExpiration: metadataInt64(now + 100)}}

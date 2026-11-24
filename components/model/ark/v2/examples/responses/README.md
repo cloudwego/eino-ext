@@ -25,7 +25,6 @@ go run ./examples/responses/tools
 | [structured_output](structured_output/main.go) | Configure strict JSON schema and decode the answer | Optional `ARK_PROMPT` |
 | [reasoning](reasoning/main.go) | Stream reasoning and pass the assistant message back for a follow-up | Uses a fixed multiplication/follow-up conversation |
 | [mixed_stream](mixed_stream/main.go) | Enable thinking and bind two tools, print every chunk and its native/merge indices, concatenate, and execute addition and multiplication | Optional `ARK_PROMPT` |
-| [modifiers](modifiers/main.go) | Modify request JSON, inspect original response bytes, and finalize a stream | Optional `ARK_PROMPT` |
 | [multimodal](multimodal/main.go) | Build image/audio/video message parts, or read a local image as base64 | `ARK_IMAGE_URL`, `ARK_AUDIO_URL`, `ARK_VIDEO_URL`; optional `ARK_IMAGE_FILE` and `ARK_PROMPT` |
 | [file](file/main.go) | Send a PDF by FileID or local base64 | Required `ARK_FILE_ID` or `ARK_FILE_PATH`; optional `ARK_PROMPT` |
 | [upload](upload/main.go) | Upload a PDF, wait for processing, send its FileID, and delete the temporary file | Required `ARK_FILE_PATH`; optional `ARK_PROMPT` |

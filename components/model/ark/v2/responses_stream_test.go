@@ -924,29 +924,6 @@ func TestResponsesRawReasoningDeltasDoNotPopulateDisplay(t *testing.T) {
 	}
 }
 
-func TestResponsesChunkModifierRetainsRaw(t *testing.T) {
-	var saved [][]byte
-	cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		for _, delta := range []string{"a", "b"} {
-			_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{"output_index": 1, "content_index": 0, "item_id": "msg-1", "delta": delta}))
-		}
-		response := strings.ReplaceAll(responsesJSON, `"done"`, `"ab"`)
-		_, _ = io.WriteString(w, responseEvent("response.completed", map[string]any{"response": json.RawMessage(response)}))
-	}, &ResponsesAPIConfig{ResponseChunkMessageModifier: func(_ context.Context, msg *schema.Message, raw []byte, end bool) (*schema.Message, error) {
-		if !end {
-			saved = append(saved, raw)
-		}
-		return msg, nil
-	}})
-	callResponsesWithOptions(t, cm, "stream", []*schema.Message{schema.UserMessage("first")})
-	for i, delta := range []string{"a", "b"} {
-		var event struct{ Delta string }
-		check(t, json.Unmarshal(saved[i], &event))
-		equal(t, delta, event.Delta)
-	}
-}
-
 func TestResponsesStreamToolIdentityIsAtomic(t *testing.T) {
 	for _, field := range []string{"call_id", "name"} {
 		t.Run(field, func(t *testing.T) {

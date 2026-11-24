@@ -38,59 +38,51 @@ func TestResponsesToolDefinitionsWire(t *testing.T) {
 	check(t, err)
 	for _, mode := range []string{"generate", "stream"} {
 		for _, source := range []string{"bound", "option"} {
-			for _, modified := range []bool{false, true} {
-				name := mode + "/" + source
-				if modified {
-					name += "/modifier"
-				}
-				t.Run(name, func(t *testing.T) {
-					base := &schema.ToolInfo{Name: "inspect", Desc: "Inspect a value", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters), Extra: map[string]any{"local-only": "metadata"}}
-					tools := []*schema.ToolInfo{base, {Name: "no_args"}}
-					before, err := json.Marshal(tools)
-					check(t, err)
-					config := &ResponsesAPIConfig{EnableToolWebSearch: &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}}
-					if modified {
-						config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }
+			name := mode + "/" + source
+			t.Run(name, func(t *testing.T) {
+				base := &schema.ToolInfo{Name: "inspect", Desc: "Inspect a value", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters), Extra: map[string]any{"local-only": "metadata"}}
+				tools := []*schema.ToolInfo{base, {Name: "no_args"}, {Name: "nil_schema", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(nil)}}
+				before, err := json.Marshal(tools)
+				check(t, err)
+				config := &ResponsesAPIConfig{EnableToolWebSearch: &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}}
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					var body struct {
+						Tools  []map[string]json.RawMessage
+						Stream bool
 					}
-					cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
-						var body struct {
-							Tools  []map[string]json.RawMessage
-							Stream bool
-						}
-						check(t, json.NewDecoder(r.Body).Decode(&body))
-						equal(t, 3, len(body.Tools))
+					check(t, json.NewDecoder(r.Body).Decode(&body))
+					equal(t, len(tools)+1, len(body.Tools))
 
-						for i, tool := range body.Tools[:2] {
-							equal(t, `"function"`, string(tool["type"]))
-							var name string
-							check(t, json.Unmarshal(tool["name"], &name))
-							equal(t, tools[i].Name, name)
-							if i == 1 {
-								equal(t, json.RawMessage(nil), tool["parameters"])
-								equal(t, json.RawMessage(nil), tool["description"])
-							} else {
-								equalRawJSON(t, expectedParameters, tool["parameters"])
-								equal(t, `"Inspect a value"`, string(tool["description"]))
-							}
-							equal(t, json.RawMessage(nil), tool["extra"])
-							equal(t, json.RawMessage(nil), tool["local-only"])
+					for i, tool := range body.Tools[:len(tools)] {
+						equal(t, `"function"`, string(tool["type"]))
+						var name string
+						check(t, json.Unmarshal(tool["name"], &name))
+						equal(t, tools[i].Name, name)
+						if i > 0 {
+							equal(t, json.RawMessage(nil), tool["parameters"])
+							equal(t, json.RawMessage(nil), tool["description"])
+						} else {
+							equalRawJSON(t, expectedParameters, tool["parameters"])
+							equal(t, `"Inspect a value"`, string(tool["description"]))
 						}
-						equal(t, `"web_search"`, string(body.Tools[2]["type"]))
-						equal(t, "2", string(body.Tools[2]["limit"]))
-						writeResponsesHistoryReply(w, false, body.Stream)
-					}, config)
-					var opts []model.Option
-					if source == "bound" {
-						check(t, cm.BindTools(tools))
-					} else {
-						opts = append(opts, model.WithTools(tools))
+						equal(t, json.RawMessage(nil), tool["extra"])
+						equal(t, json.RawMessage(nil), tool["local-only"])
 					}
-					callResponsesWithOptions(t, cm, mode, []*schema.Message{schema.UserMessage("hello")}, opts...)
-					after, err := json.Marshal(tools)
-					check(t, err)
-					equalRawJSON(t, before, after)
-				})
-			}
+					equal(t, `"web_search"`, string(body.Tools[len(tools)]["type"]))
+					equal(t, "2", string(body.Tools[len(tools)]["limit"]))
+					writeResponsesHistoryReply(w, false, body.Stream)
+				}, config)
+				var opts []model.Option
+				if source == "bound" {
+					check(t, cm.BindTools(tools))
+				} else {
+					opts = append(opts, model.WithTools(tools))
+				}
+				callResponsesWithOptions(t, cm, mode, []*schema.Message{schema.UserMessage("hello")}, opts...)
+				after, err := json.Marshal(tools)
+				check(t, err)
+				equalRawJSON(t, before, after)
+			})
 		}
 	}
 }

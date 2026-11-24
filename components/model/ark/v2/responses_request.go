@@ -18,12 +18,9 @@ package ark
 
 import (
 	"bytes"
-	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
@@ -35,16 +32,13 @@ func (cm *ResponsesAPIChatModel) getOptions(opts ...model.Option) (*model.Option
 		model.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader, responsesThinking: cm.config.Thinking,
 			responsesReasoningEffort: cm.config.ReasoningEffort,
 			cache:                    &CacheOption{SessionCache: cm.config.SessionCache}, enableWebSearch: cm.config.EnableToolWebSearch,
-			maxToolCalls:           cm.config.MaxToolCalls,
-			requestPayloadModifier: cm.config.RequestPayloadModifier, responseMessageModifier: cm.config.ResponseMessageModifier,
-			responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier}, opts...)
+			maxToolCalls: cm.config.MaxToolCalls}, opts...)
 }
 
 // A built request owns its wire payload and derived callback data. Caller
 // configuration and parsed options remain inputs throughout construction.
 type responsesRequest struct {
 	payload       *responses.ResponsesRequest
-	extra         map[string]interface{}
 	callbackTools []*schema.ToolInfo
 }
 
@@ -90,94 +84,12 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 		return nil, err
 	}
 	req.Input = responses.NewInputItemArrayResponsesInput(items)
-	var extra map[string]interface{}
 	tools, err := cm.buildResponsesTools(common, opts, req.PreviousResponseID.IsSet())
 	if err != nil {
 		return nil, err
 	}
-	req.ToolChoice = tools.choice
-	if tools.definitions != nil {
-		if extra == nil {
-			extra = make(map[string]interface{})
-		}
-		extra["tools"] = tools.definitions
-	}
-	return &responsesRequest{payload: req, extra: extra, callbackTools: tools.callbackTools}, nil
-}
-
-func prepareResponsesPayload(ctx context.Context, in []*schema.Message, req *responses.ResponsesRequest, extra map[string]interface{}, modifier RequestPayloadModifier) (*responses.ResponsesRequest, map[string]interface{}, error) {
-	if modifier == nil {
-		return req, extra, nil
-	}
-	raw, err := sonic.Marshal(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	var fields map[string]json.RawMessage
-	if err = sonic.Unmarshal(raw, &fields); err != nil {
-		return nil, nil, err
-	}
-	for key, value := range extra {
-		fields[key], err = sonic.Marshal(value)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-	originalInput := fields["input"]
-	raw, err = sonic.Marshal(fields)
-	if err != nil {
-		return nil, nil, err
-	}
-	raw, err = modifier(ctx, in, raw)
-	if err != nil {
-		return nil, nil, fmt.Errorf("modify request payload: %w", err)
-	}
-	fields = nil
-	if err = sonic.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return nil, nil, fmt.Errorf("modified request payload must be a JSON object")
-	}
-	var name string
-	if value, ok := fields["model"]; !ok || sonic.Unmarshal(value, &name) != nil || name == "" {
-		return nil, nil, fmt.Errorf("modified request payload must contain a non-empty string model")
-	}
-	input, ok := fields["input"]
-	if !ok || bytes.Equal(bytes.TrimSpace(input), []byte("null")) {
-		return nil, nil, fmt.Errorf("modified request payload must contain input")
-	}
-	fields["stream"], _ = sonic.Marshal(req.Stream.Or(false))
-	body := make(map[string]interface{}, len(fields))
-	for key, value := range fields {
-		body[key] = value
-	}
-	wire := &responses.ResponsesRequest{Model: name, Stream: req.Stream}
-	if bytes.Equal(input, originalInput) {
-		wire.Input = req.Input
-		body["input"] = responsesInputWithFiles(&wire.Input, input)
-	} else {
-		// Decode edited input only for SDK file preprocessing. Preserve the raw
-		// JSON for unknown fields and exact numbers in the final payload.
-		if err = sonic.Unmarshal(input, &wire.Input); err != nil {
-			return nil, nil, fmt.Errorf("modified input: %w", err)
-		}
-		body["input"] = responsesInputWithFiles(&wire.Input, input)
-	}
-	// Cache metadata must describe the payload actually sent after modification.
-	for key, target := range map[string]interface{}{"store": &wire.Store, "expire_at": &wire.ExpireAt, "caching": &wire.Caching} {
-		if value, exists := fields[key]; exists {
-			if err = sonic.Unmarshal(value, target); err != nil {
-				return nil, nil, fmt.Errorf("modified %s: %w", key, err)
-			}
-		}
-	}
-	// These fields also describe the effective request in output callbacks.
-	for key, target := range map[string]interface{}{"max_output_tokens": &wire.MaxOutputTokens, "temperature": &wire.Temperature, "top_p": &wire.TopP, "thinking": &wire.Thinking} {
-		if value, exists := fields[key]; exists && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
-			if err = sonic.Unmarshal(value, target); err != nil {
-				return nil, nil, fmt.Errorf("modified %s: %w", key, err)
-			}
-		}
-	}
-	return wire, body, nil
+	req.Tools, req.ToolChoice = tools.definitions, tools.choice
+	return &responsesRequest{payload: req, callbackTools: tools.callbackTools}, nil
 }
 
 func responsesCallbackConfig(req *responses.ResponsesRequest) *model.Config {
@@ -213,7 +125,7 @@ func responsesHeaders(opts *arkOptions) map[string]string {
 // Tool definitions have one wire representation. Callback tools are local
 // function metadata; they cannot describe an arbitrary server-side cache.
 type responsesTools struct {
-	definitions   json.RawMessage
+	definitions   []responses.Tool
 	choice        responses.OptToolChoice
 	callbackTools []*schema.ToolInfo
 }
@@ -272,19 +184,11 @@ func responsesCallbackTools(tools []*schema.ToolInfo, names []string) []*schema.
 	return selected
 }
 
-// Keep function parameters as raw JSON to preserve schema extensions and number precision.
-type responsesFunctionTool struct {
-	Type        responses.FunctionToolType `json:"type"`
-	Name        string                     `json:"name"`
-	Description string                     `json:"description,omitempty"`
-	Parameters  json.RawMessage            `json:"parameters,omitempty"`
-}
-
-func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool) (json.RawMessage, error) {
+func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool) ([]responses.Tool, error) {
 	if tools == nil && search == nil {
 		return nil, nil
 	}
-	wireTools := make([]interface{}, 0, len(tools)+1)
+	wireTools := make([]responses.Tool, 0, len(tools)+1)
 	for _, ti := range tools {
 		if ti == nil {
 			return nil, fmt.Errorf("tool info cannot be nil")
@@ -293,26 +197,23 @@ func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool)
 		if err != nil {
 			return nil, err
 		}
-		// Preserve the SDK's object-or-null contract without decoding schema
-		// JSON into a second representation.
-		if len(data) > 0 && data[0] != '{' && !bytes.Equal(data, []byte("null")) {
-			return nil, fmt.Errorf("tool %s schema must be an object", ti.Name)
+		function := responses.FunctionTool{Type: responses.FunctionToolTypeFunction, Name: ti.Name}
+		if ti.Desc != "" {
+			function.Description = responses.NewOptString(ti.Desc)
 		}
-		wireTools = append(wireTools, &responsesFunctionTool{
-			Type: responses.FunctionToolTypeFunction, Name: ti.Name,
-			Description: ti.Desc, Parameters: data,
-		})
+		if len(data) > 0 && !bytes.Equal(data, []byte("null")) {
+			if err := function.Parameters.UnmarshalJSON(data); err != nil {
+				return nil, fmt.Errorf("tool %s schema must be an object: %w", ti.Name, err)
+			}
+		}
+		wireTools = append(wireTools, responses.Tool{OneOf: responses.NewFunctionToolToolSum(function)})
 	}
 	if search != nil {
 		tool := *search
 		tool.Type = responses.WebSearchToolTypeWebSearch
-		wireTools = append(wireTools, &tool)
+		wireTools = append(wireTools, responses.Tool{OneOf: responses.NewWebSearchToolToolSum(tool)})
 	}
-	raw, err := sonic.Marshal(wireTools)
-	if err != nil {
-		return nil, fmt.Errorf("serialize Responses tools: %w", err)
-	}
-	return json.RawMessage(raw), nil
+	return wireTools, nil
 }
 
 func toResponsesToolChoice(choice *schema.ToolChoice, names []string) responses.OptToolChoice {
@@ -334,90 +235,4 @@ func toResponsesToolChoice(choice *schema.ToolChoice, names []string) responses.
 		mode = responses.ToolChoiceOptionsRequired
 	}
 	return responses.NewOptToolChoice(responses.NewToolChoiceOptionsToolChoice(mode))
-}
-
-// Modified JSON must retain fields the SDK does not know about, while local
-// file URLs must reflect SDK preprocessing. Patch only those media sources.
-type responsesFileInput struct {
-	input *responses.ResponsesInput
-	raw   json.RawMessage
-	files []responsesFilePart
-}
-
-type responsesFilePart struct{ item, content int }
-
-func responsesInputWithFiles(input *responses.ResponsesInput, raw json.RawMessage) interface{} {
-	items, _ := input.GetInputItemArray()
-	var files []responsesFilePart
-	for i := range items {
-		message, ok := items[i].OneOf.GetItemEasyMessage()
-		if !ok {
-			continue
-		}
-		parts, _ := message.Content.GetContentItemArray()
-		for j := range parts {
-			_, url, _ := responsesFileSource(parts[j])
-			if strings.HasPrefix(url, "file://") {
-				files = append(files, responsesFilePart{item: i, content: j})
-			}
-		}
-	}
-	if len(files) == 0 {
-		return raw
-	}
-	return &responsesFileInput{input: input, raw: raw, files: files}
-}
-
-func (in *responsesFileInput) MarshalJSON() ([]byte, error) {
-	var rawItems []json.RawMessage
-	if err := sonic.Unmarshal(in.raw, &rawItems); err != nil {
-		return nil, err
-	}
-	items, _ := in.input.GetInputItemArray()
-	for _, file := range in.files {
-		part := items[file.item].OneOf.ItemEasyMessage.Content.ContentItemArray[file.content]
-		key, url, id := responsesFileSource(part)
-		if url != "" || !id.IsSet() {
-			continue
-		}
-		var message map[string]json.RawMessage
-		if err := sonic.Unmarshal(rawItems[file.item], &message); err != nil {
-			return nil, err
-		}
-		var parts []map[string]json.RawMessage
-		if err := sonic.Unmarshal(message["content"], &parts); err != nil {
-			return nil, err
-		}
-		delete(parts[file.content], key)
-		var err error
-		parts[file.content]["file_id"], err = sonic.Marshal(id.Value)
-		if err != nil {
-			return nil, err
-		}
-		message["content"], err = sonic.Marshal(parts)
-		if err != nil {
-			return nil, err
-		}
-		rawItems[file.item], err = sonic.Marshal(message)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return sonic.Marshal(rawItems)
-}
-
-func responsesFileSource(part responses.ContentItem) (key, url string, id responses.OptString) {
-	switch part.OneOf.Type {
-	case responses.ContentItemImageContentItemSum:
-		image := part.OneOf.ContentItemImage
-		return "image_url", image.ImageURL.Or(""), image.FileID
-	case responses.ContentItemVideoContentItemSum:
-		video := part.OneOf.ContentItemVideo
-		return "video_url", video.VideoURL, video.FileID
-	case responses.ContentItemFileContentItemSum:
-		file := part.OneOf.ContentItemFile
-		return "file_url", file.FileURL.Or(""), file.FileID
-	default:
-		return "", "", responses.OptString{}
-	}
 }

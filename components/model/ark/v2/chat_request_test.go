@@ -53,7 +53,7 @@ func writeChatModelResponse(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&body)
 	if body["stream"] == true {
 		w.Header().Set("Content-Type", "text/event-stream")
-		sseChunk(w, modifierChunk)
+		sseChunk(w, chatTextChunk)
 		sseChunk(w, "[DONE]")
 	} else {
 		writeResponse(w)
@@ -103,7 +103,7 @@ func TestChatToolSelectionAndCallbacks(t *testing.T) {
 						equal(t, tc.selected, actual)
 						if body["stream"] == true {
 							w.Header().Set("Content-Type", "text/event-stream")
-							sseChunk(w, modifierChunk)
+							sseChunk(w, chatTextChunk)
 							sseChunk(w, "[DONE]")
 						} else {
 							writeResponse(w)
@@ -155,79 +155,13 @@ func TestChatSelectsToolsBeforeEncoding(t *testing.T) {
 	callChatModel(t, context.Background(), cm, "generate", model.WithTools(tools), model.WithToolChoice(schema.ToolChoiceAllowed, "inspect"))
 }
 
-func TestChatModifierCallbackConfig(t *testing.T) {
-	for _, mode := range []string{"generate", "stream"} {
-		for _, remove := range []bool{false, true} {
-			name := mode + "/edit"
-			if remove {
-				name = mode + "/delete"
-			}
-			t.Run(name, func(t *testing.T) {
-				var observed []*model.CallbackOutput
-				handler := callbacks.NewHandlerBuilder().OnEndFn(func(ctx context.Context, _ *callbacks.RunInfo, out callbacks.CallbackOutput) context.Context {
-					observed = append(observed, out.(*model.CallbackOutput))
-					return ctx
-				}).OnEndWithStreamOutputFn(func(ctx context.Context, _ *callbacks.RunInfo, reader *schema.StreamReader[callbacks.CallbackOutput]) context.Context {
-					defer reader.Close()
-					for {
-						out, err := reader.Recv()
-						if err != nil {
-							return ctx
-						}
-						observed = append(observed, out.(*model.CallbackOutput))
-					}
-				}).Build()
-				config := &ChatModelConfig{Model: "original", MaxTokens: ptr(7), Temperature: ptr(float32(0.5)), TopP: ptr(float32(0.9)), Stop: []string{"old"}, Thinking: &chat.Thinking{Type: chat.NewOptThinkingMode(chat.ThinkingModeDisabled)}}
-				config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
-					return modifyJSON(raw, func(fields map[string]json.RawMessage) {
-						fields["model"] = json.RawMessage(`"modified"`)
-						if remove {
-							for _, key := range []string{"max_tokens", "temperature", "top_p", "stop", "thinking"} {
-								delete(fields, key)
-							}
-						} else {
-							fields["max_tokens"] = json.RawMessage(`123`)
-							fields["temperature"] = json.RawMessage(`0.25`)
-							fields["top_p"] = json.RawMessage(`0.75`)
-							fields["stop"] = json.RawMessage(`"END"`)
-							fields["thinking"] = json.RawMessage(`{"type":"enabled"}`)
-						}
-					})
-				}
-				cm := testModel(t, writeChatModelResponse, config)
-				callChatModel(t, callbacks.InitCallbacks(context.Background(), nil, handler), cm, mode)
-				if len(observed) == 0 {
-					t.Fatal("missing output callback")
-				}
-				for _, out := range observed {
-					equal(t, "modified", out.Config.Model)
-					if remove {
-						equal(t, 0, out.Config.MaxTokens)
-						equal(t, float32(0), out.Config.Temperature)
-						equal(t, float32(0), out.Config.TopP)
-						equal(t, []string(nil), out.Config.Stop)
-						equal(t, (*chat.Thinking)(nil), out.Extra["thinking"])
-					} else {
-						equal(t, 123, out.Config.MaxTokens)
-						equal(t, float32(0.25), out.Config.Temperature)
-						equal(t, float32(0.75), out.Config.TopP)
-						equal(t, []string{"END"}, out.Config.Stop)
-						equal(t, chat.ThinkingModeEnabled, out.Extra["thinking"].(*chat.Thinking).Type.Or(""))
-					}
-				}
-			})
-		}
-	}
-}
-
 func TestChatEmptyChoiceStream(t *testing.T) {
 	for _, tc := range []struct{ name, payload string }{
 		{"done only", ""},
 		{"usage only", `{"id":"x","object":"chat.completion.chunk","created":1,"model":"m","choices":[],"usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0}}}`},
-		{"other choice", `{"id":"x","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":1,"delta":{"content":"ignored"},"finish_reason":null}],"usage":null}`},
+		{"other choice", `{"id":"x","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":1,"delta":{"content":"ignored"}}],"usage":null}`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			finalized := false
 			cm := testModel(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
 				if tc.payload != "" {
@@ -235,19 +169,11 @@ func TestChatEmptyChoiceStream(t *testing.T) {
 				}
 				sseChunk(w, "[DONE]")
 			}, nil)
-			reader, err := cm.Stream(context.Background(), nil, WithResponseChunkMessageModifier(func(_ context.Context, message *schema.Message, _ []byte, end bool) (*schema.Message, error) {
-				if end {
-					finalized = true
-				}
-				return message, nil
-			}))
+			reader, err := cm.Stream(context.Background(), nil)
 			check(t, err)
 			_, err = schema.ConcatMessageStream(reader)
 			if !errors.Is(err, ErrEmptyResponse) {
 				t.Fatalf("want ErrEmptyResponse, got %v", err)
-			}
-			if finalized {
-				t.Error("empty choice stream finalized successfully")
 			}
 		})
 	}
@@ -259,14 +185,9 @@ func TestChatRoleOnlyStream(t *testing.T) {
 		sseChunk(w, `{"id":"x","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":"stop"}],"usage":null}`)
 		sseChunk(w, "[DONE]")
 	}, nil)
-	finalized := false
-	message := callChatModel(t, context.Background(), cm, "stream", WithResponseChunkMessageModifier(func(_ context.Context, message *schema.Message, _ []byte, end bool) (*schema.Message, error) {
-		finalized = finalized || end
-		return message, nil
-	}))
+	message := callChatModel(t, context.Background(), cm, "stream")
 	equal(t, schema.Assistant, message.Role)
 	equal(t, "", message.Content)
-	equal(t, true, finalized)
 }
 
 func TestChatSharedRequestInputs(t *testing.T) {
@@ -436,24 +357,6 @@ func TestToolChoiceAndBinding(t *testing.T) {
 	_, err = (&ChatModel{}).buildChatTools(&model.Options{ToolChoice: ptr(schema.ToolChoiceForced)})
 	if err == nil {
 		t.Fatal("expected no tools error")
-	}
-}
-
-func TestStreamCompatibilityDecoder(t *testing.T) {
-	// Omitted usage and nullable optional deltas are accepted; other malformed
-	// values must still fail the SDK decoder.
-	payload := `{"id":"x","model":"m","object":"chat.completion.chunk","created":1,"choices":[{"index":0,"delta":{"content":null,"reasoning_content":null,"tool_calls":null},"finish_reason":null,"logprobs":null}]}`
-	var native chat.ChatCompletionStreamResponse
-	if err := json.Unmarshal([]byte(payload), &native); err == nil {
-		t.Fatal("SDK behavior changed; reevaluate compatibility decoder")
-	}
-	check(t, (chatStreamUnmarshaler{}).Unmarshal([]byte(payload), &native))
-	equal(t, true, native.Usage.Null)
-	if err := (chatStreamUnmarshaler{}).Unmarshal([]byte(`{"choices":"invalid"}`), &native); err == nil {
-		t.Fatal("expected malformed stream error")
-	}
-	if err := (chatStreamUnmarshaler{}).Unmarshal([]byte(`null`), &native); err == nil {
-		t.Fatal("expected null stream error")
 	}
 }
 

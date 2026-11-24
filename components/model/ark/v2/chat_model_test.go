@@ -32,6 +32,7 @@ import (
 	fmodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
+	"github.com/volcengine/ark-runtime-go/arkruntime/utils"
 )
 
 const responseJSON = `{"id":"req-1","object":"chat.completion","created":1,"model":"actual-model","choices":[{"index":0,"message":{"role":"assistant","content":"done","reasoning_content":"think","encrypted_content":"cipher","tool_calls":[{"id":"call-1","type":"function","function":{"name":"inspect","arguments":"{}"}}]},"finish_reason":"tool_calls","logprobs":{"content":[{"token":"done","logprob":-0.2,"bytes":[100],"top_logprobs":[{"token":"ok","logprob":-0.4,"bytes":[111]}]}]}}],"usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":2,"audio_tokens":1},"completion_tokens_details":{"reasoning_tokens":1}},"service_tier":"default","service_status":{"model_fallback":{"fallback_triggered":true,"original_model":"requested-model"}}}`
@@ -238,7 +239,7 @@ func TestStream(t *testing.T) {
 		message := body["messages"].([]any)[0].(map[string]any)
 		equal(t, "file-1", message["content"].([]any)[0].(map[string]any)["image_url"].(map[string]any)["file_id"])
 		w.Header().Set("Content-Type", "text/event-stream")
-		sseChunk(w, `{"id":"req-stream","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"think","encrypted_content":"enc","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"inspect","arguments":"{\"path\":"}}]},"finish_reason":null}],"usage":null}`)
+		sseChunk(w, `{"id":"req-stream","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"think","encrypted_content":"enc","tool_calls":[{"index":0,"id":"call-1","type":"function","function":{"name":"inspect","arguments":"{\"path\":"}}]}}],"usage":null}`)
 		sseChunk(w, `{"id":"req-stream","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"content":"done","encrypted_content":"rypted","tool_calls":[{"index":0,"function":{"arguments":"\"report.pdf\"}"}}]},"finish_reason":"tool_calls","moderation_hit_type":"text"}],"usage":null}`)
 		sseChunk(w, `{"id":"req-stream","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":3,"total_tokens":11,"prompt_tokens_details":{"cached_tokens":2},"completion_tokens_details":{"reasoning_tokens":1}},"service_tier":"default"}`)
 		sseChunk(w, `[DONE]`)
@@ -271,24 +272,43 @@ func TestStream(t *testing.T) {
 	equal(t, 0, *final.ToolCalls[0].Index)
 }
 
-func TestStreamRequiresDoneBeforeFinalModifier(t *testing.T) {
+const chatTextChunk = `{"id":"chunk","object":"chat.completion.chunk","created":1,"model":"model","choices":[{"index":0,"delta":{"role":"assistant","content":"done"}}],"usage":null}`
+
+func TestStreamUsesSDKDecoder(t *testing.T) {
+	const chunk = `{"id":"chunk","object":"chat.completion.chunk","created":1,"model":"model","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}],"usage":null}`
+	var native chat.ChatCompletionStreamResponse
+	wantErr := (&utils.JSONUnmarshaler{}).Unmarshal([]byte(chunk), &native)
+
+	cm := testModel(t, func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		sseChunk(w, chunk)
+		sseChunk(w, "[DONE]")
+	}, nil)
+	reader, err := cm.Stream(context.Background(), nil)
+	check(t, err)
+	defer reader.Close()
+	msg, err := reader.Recv()
+	if wantErr != nil {
+		if err == nil || err.Error() != wantErr.Error() {
+			t.Fatalf("Recv error = %v, SDK error = %v", err, wantErr)
+		}
+		return
+	}
+	check(t, err)
+	equal(t, "hello", msg.Content)
+}
+
+func TestStreamRequiresDone(t *testing.T) {
 	for _, done := range []bool{false, true} {
 		t.Run(map[bool]string{false: "truncated", true: "complete"}[done], func(t *testing.T) {
 			cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
-				sseChunk(w, modifierChunk)
+				sseChunk(w, chatTextChunk)
 				if done {
 					sseChunk(w, "[DONE]")
 				}
 			}, nil)
-			finalized := make(chan struct{}, 1)
-			reader, err := cm.Stream(context.Background(), nil, WithResponseChunkMessageModifier(
-				func(_ context.Context, msg *schema.Message, _ []byte, end bool) (*schema.Message, error) {
-					if end {
-						finalized <- struct{}{}
-					}
-					return msg, nil
-				}))
+			reader, err := cm.Stream(context.Background(), nil)
 			check(t, err)
 			defer reader.Close()
 			msg, err := reader.Recv()
@@ -297,12 +317,10 @@ func TestStreamRequiresDoneBeforeFinalModifier(t *testing.T) {
 			_, err = reader.Recv()
 			if done {
 				equal(t, io.EOF, err)
-				equal(t, 1, len(finalized))
 			} else {
 				if !errors.Is(err, io.ErrUnexpectedEOF) {
 					t.Fatalf("truncated stream reported success: %v", err)
 				}
-				equal(t, 0, len(finalized))
 			}
 		})
 	}
@@ -412,4 +430,20 @@ func TestChatCacheUsesOnlyChatCompletions(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestChatModelPreservesHTTPClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { writeResponse(w) }))
+	defer server.Close()
+	client := server.Client()
+	client.Timeout = time.Second
+	model, err := NewChatModel(context.Background(), &ChatModelConfig{Model: "m", APIKey: "key", BaseURL: server.URL, HTTPClient: client, Timeout: ptr(2 * time.Second)})
+	check(t, err)
+	_, err = model.Generate(context.Background(), nil)
+	check(t, err)
+	if model.client.HTTPClient() == client {
+		t.Fatal("caller-owned client was not copied")
+	}
+	equal(t, client.Transport, model.client.HTTPClient().Transport)
+	equal(t, time.Second, model.client.HTTPClient().Timeout)
 }

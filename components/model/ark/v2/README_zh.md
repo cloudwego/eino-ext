@@ -109,7 +109,8 @@ for {
 流式消息按增量返回正文、思考内容和工具调用。收集消息后，可以使用
 `schema.ConcatMessages` 拼接。流式请求会请求最终 token 用量，该信息可能在没有
 正文的尾包中返回。使用结束后关闭 reader；提前停止消费时，同时取消请求 context，
-及时结束正在等待下一个数据块的 HTTP 读取。
+及时结束正在等待下一个数据块的 HTTP 读取。若连接在 `[DONE]` 前关闭，读取返回
+`io.ErrUnexpectedEOF`；若正常结束但未收到序号为 0 的候选，返回 `ErrEmptyResponse`。
 
 ## 函数调用
 
@@ -240,68 +241,6 @@ if err != nil {
 fmt.Println(reply.Content)
 ```
 
-## 请求与响应定制
-
-可以在 `ChatModelConfig` 中配置 modifier，也可以按单次调用指定：
-
-| 选项 | 修改对象 | 适用范围 |
-| --- | --- | --- |
-| `WithRequestPayloadModifier` | 序列化后的请求 JSON，同时可读取输入的 Eino 消息 | `Generate`、`Stream` |
-| `WithResponseMessageModifier` | 转换后的 `*schema.Message`，同时可读取原始响应 JSON | `Generate` |
-| `WithResponseChunkMessageModifier` | 转换后的消息分片，同时可读取原始分片 JSON | `Stream` |
-
-定制请求 Payload 时，导入 `encoding/json` 使用 `json.RawMessage`，
-通过 `github.com/bytedance/sonic` 进行 JSON 编解码：
-
-```go
-modifier := ark.WithRequestPayloadModifier(func(ctx context.Context, messages []*schema.Message, rawBody []byte) ([]byte, error) {
-    var payload map[string]json.RawMessage
-    if err := sonic.Unmarshal(rawBody, &payload); err != nil {
-        return nil, err
-    }
-    payload["stream_options"] = json.RawMessage(`{"include_usage":true,"chunk_include_usage":true}`)
-    return sonic.Marshal(payload)
-})
-reader, err := cm.Stream(ctx, messages, modifier)
-if err != nil {
-    log.Fatal(err)
-}
-defer reader.Close()
-```
-
-modifier 在请求转换、序列化后执行一次，随后由 SDK 发送或重试请求，可用于添加生成式
-SDK 类型尚未暴露的字段。返回值必须是 JSON 对象，并保留字符串类型的 `model` 字段及 `messages` 字段。`Generate` 和 `Stream` 负责设置流式标志，流式请求会请求最终 usage。
-Eino 每次返回一个 completion，因此 `n` 应不设置或设为 1。
-
-定制响应消息时，返回处理后的 `*schema.Message`：
-
-```go
-reply, err := cm.Generate(ctx, messages, ark.WithResponseMessageModifier(
-    func(ctx context.Context, message *schema.Message, rawBody []byte) (*schema.Message, error) {
-        if message.Extra == nil {
-            message.Extra = make(map[string]any)
-        }
-        message.Extra["application"] = "my-assistant"
-        return message, nil
-    },
-))
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(reply.Content)
-```
-
-响应 modifier 在 Eino 回调收到消息之前执行，回调和调用方看到的是处理后的消息。
-`rawBody` 是原始响应 JSON。`Generate` 的 modifier 必须返回非 nil 的消息。
-
-流式 modifier 处理每个分片时 `end == false`。当分片没有标准 Eino 消息投影时，
-消息可能为 nil，但仍可读取原始 JSON。收到 `[DONE]` 事件后会额外调用一次，
-此时 `end == true`，消息和 rawBody 均为 nil，可以返回一条结束消息。
-提前遇到 EOF 会返回 `io.ErrUnexpectedEOF`，不触发结束调用。返回 nil 表示跳过该分片。
-
-调用级 modifier 会替换初始化配置中的同名 modifier，传入 nil 可为本次调用禁用它。
-返回错误会中止请求或流。模型并发使用时，modifier 也应支持并发调用。
-
 ## 返回信息
 
 `schema.Message` 通过 `Content`、`ReasoningContent`、`ToolCalls` 和 `ResponseMeta`
@@ -321,7 +260,7 @@ fmt.Println(reply.Content)
 `Extra` 中的方舟元数据使用原子值保存，支持 `encoding/json`、Sonic 和 gob 编解码往返。
 通用 token 计数仅保存在 `ResponseMeta.Usage`，思考文本保存在 `ReasoningContent`。
 两个 usage getter 将当前通用统计与 `Extra` 中的 SDK 专有明细合并返回，
-因此 modifier 或流拼接对通用统计的修改也会反映在 getter 结果中。
+因此流拼接对通用统计的修改也会反映在 getter 结果中。
 SDK 专有计数和服务状态平铺为独立 key，例如 `ark-v2-responses-usage-details.input_tokens_details.audio_tokens`
 和 `ark-v2-service-status.model_fallback.fallback_triggered`。复杂的 provider 属性和工具明细
 保存为 JSON 字符串，用量辅助函数在恢复后还原 SDK 类型。
@@ -355,10 +294,9 @@ go run ./examples/generate
 | [multimodal](examples/multimodal/main.go) | 图片、音频、视频和文件，支持 URL、本地文件 base64 或 FileID |
 | [tool_result](examples/tool_result/main.go) | 在多模态工具结果中回传文档 FileID，并匹配 `ToolCallID` |
 | [structured_output](examples/structured_output/main.go) | 严格 JSON schema 输出并解析为 Go 结构体 |
-| [modifiers](examples/modifiers/main.go) | 修改请求 JSON、读取原始响应以及流正常完成时的处理 |
 
 其余示例可通过 `go run ./examples/stream`、`go run ./examples/tools`、
-`go run ./examples/structured_output` 或 `go run ./examples/modifiers` 运行。
+`go run ./examples/structured_output` 运行。
 
 多模态示例通过参数选择类型和来源。`base64` 来源会读取本地文件并编码，
 `-mime` 可以覆盖根据文件扩展名推断的 MIME 类型：
@@ -395,8 +333,7 @@ if err != nil {
 reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("你好")})
 ```
 
-`ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置、请求头和
-请求/响应/流式 modifier。其 `Thinking`、`ReasoningEffort` 分别使用
+`ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置和请求头。其 `Thinking`、`ReasoningEffort` 分别使用
 `responses.Thinking`、`responses.ReasoningEffort`，单次调用通过
 `WithResponsesThinking`、`WithResponsesReasoningEffort` 覆盖。
 Chat Completions 使用自己的 SDK 类型及 `WithThinking` / `WithReasoningEffort`。
@@ -441,8 +378,7 @@ Context 和图片生成 API 仍使用旧模块。
   即使 SDK 已声明相应输入类型，也不自动回传。这些 SDK 输出值留在 Message 中供读取；
   没有支持的输入映射的未知内容 part 会报错。
   历史转换限于 SDK 输入类型，不通过整体替换 input 补充 SDK 未支持的字段。
-  显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
-  使用 SDK codec 自带的未知变体保留机制。
+  annotations 使用 SDK codec 自带的未知变体保留机制。
   Generate 的 part `StreamingMeta` 为 nil。流式为每个 reasoning item 和每个 message content part 分配独立索引。每个 part 首次发出时，从 0 开始递增分配并在后续包复用，
   不按 `output_index` 做算术编码。函数调用单独从 0 开始按首次出现顺序分配
   `ToolCall.Index`，后续包复用；原生 `output_index` 保存在 ToolCall.Extra 以恢复历史顺序。
@@ -505,8 +441,8 @@ Chat Completions 可直接传入 `clean`。Responses 使用 `next.Generate(ctx, 
 可跳过本次服务端上下文续接，发送完整的清理后历史。函数复制每条消息、消息顶层的 Extra map
 及输出 part 切片，其他嵌套值仍与原消息共享。
 
-缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools`
-（包括额外请求体中的工具编码）和 `tool_choice`。需要更换工具设置时应建立新的缓存链；
+缓存续接继承首轮工具定义。发送 `previous_response_id` 时，适配器会省略 `tools` 和 `tool_choice`。
+需要更换工具设置时应建立新的缓存链；
 自动会话缓存可先使消息缓存失效，再发送完整对话。
 
 [工具配置示例](examples/responses/tool_options/main.go) 展示如何按候选名称
@@ -521,16 +457,12 @@ Chat Completions 可直接传入 `clean`。Responses 使用 `next.Generate(ctx, 
 服务支持的前缀缓存。TTL 为零时采用服务默认过期时间。缓存服务需要为账号和模型
 开通；服务权限错误不能视为适配器错误。
 
-### 流式事件与 modifier
+### 流式事件
 
 文本、推理增量和带索引的工具参数可用 `schema.ConcatMessages` 拼接。并行工具调用
 按输出索引区分，终止事件只发送一次响应元数据和 token 用量。
 `response.incomplete` 保留部分输出并记录结束原因；`response.failed` 和 `error`
 返回错误。未收到终止响应就遇到 EOF 或 `[DONE]`，返回 `io.ErrUnexpectedEOF`。
-
-请求 modifier 收到包含 `model` 和 `input` 的 JSON 对象，保留 SDK 未识别的字段和 JSON 数字精度。`Generate` / `Stream` 控制 `stream` 字段。
-响应 modifier 收到原始响应 JSON；流式 modifier 收到每个原始事件，包括没有通用消息
-投影的事件。`response.completed` / `response.incomplete` 后调用一次 `end == true`。
 
 ### 运行示例与验证
 
@@ -543,7 +475,6 @@ go run ./examples/responses/stream
 go run ./examples/responses/tools
 go run ./examples/responses/structured_output
 go run ./examples/responses/reasoning
-go run ./examples/responses/modifiers
 go run ./examples/responses/file
 ```
 
@@ -571,8 +502,8 @@ PDF base64 / FileID 均已通过。适配器保留官方文档的原生多模态
 | 文件 | 职责 |
 | --- | --- |
 | `chat_model.go` | Chat Completions 配置、调用选项、Generate 和 Stream |
-| `chat_request.go`、`chat_content.go` | Chat 请求构造、工具、payload modifier 和内容转换 |
-| `chat_response.go` | Chat 响应解码、投影、用量和元数据 |
+| `chat_request.go`、`chat_content.go` | Chat 请求构造、工具和内容转换 |
+| `chat_response.go` | Chat 响应投影、用量和元数据 |
 | `responses_api.go`、`responses_request.go` | Responses 配置、调用选项、API 调用和请求构造 |
 | `responses_content.go`、`responses_history.go` | 标准消息转换和原生 Responses 历史重建 |
 | `responses_projection.go`、`responses_stream.go`、`responses_cache.go` | Responses 输出投影、流式合包和缓存管理 |

@@ -58,7 +58,7 @@ func callResponsesWithOptions(t *testing.T, cm *ResponsesAPIChatModel, mode stri
 
 func TestResponsesCachedRequestOmitsTools(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
-		for _, kind := range []string{"no tools", "bound", "call tools", "web search", "modifier"} {
+		for _, kind := range []string{"no tools", "bound", "call tools", "web search"} {
 			t.Run(mode+"/"+kind, func(t *testing.T) {
 				config := &ResponsesAPIConfig{}
 				if kind == "web search" {
@@ -79,9 +79,6 @@ func TestResponsesCachedRequestOmitsTools(t *testing.T) {
 				opts := []model.Option{WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached-response")})}
 				if kind == "call tools" {
 					opts = append(opts, model.WithTools([]*schema.ToolInfo{toolInfo("inspect")}))
-				}
-				if kind == "modifier" {
-					opts = append(opts, WithRequestPayloadModifier(func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }))
 				}
 				reply := callResponsesWithOptions(t, cm, mode, []*schema.Message{schema.UserMessage("second turn")}, opts...)
 				equal(t, "continued", reply.Content)

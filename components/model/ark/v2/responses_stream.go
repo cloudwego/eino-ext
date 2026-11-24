@@ -22,12 +22,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
 )
 
-// Track the original projections before modifiers. Terminal output supplies any
+// Track the projected stream segments. Terminal output supplies any
 // missing reasoning and tool fields. Message text comes only from text deltas.
 type responsesStreamState struct {
 	parts          responsesPartsStream
@@ -302,20 +301,6 @@ func projectResponsesStreamContentPart(part responses.OutputContentItem, itemInd
 		return nil, err
 	}
 	return &schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{projected}}, nil
-}
-
-// Capture original SSE payloads only for an explicitly configured modifier.
-type responsesPayloadDecoder struct {
-	raw    []byte
-	retain bool
-}
-
-func (d *responsesPayloadDecoder) Unmarshal(raw []byte, value interface{}) error {
-	if d.retain {
-		// Modifiers may retain the original frame in application metadata.
-		d.raw = append([]byte(nil), raw...)
-	}
-	return sonic.Unmarshal(raw, value)
 }
 
 type responsesPartKey struct {

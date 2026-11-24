@@ -137,45 +137,6 @@ func TestResponsesLive(t *testing.T) {
 		check(t, sonic.UnmarshalString(msg.Content, &answer))
 		equal(t, "OK", answer.Status)
 	})
-	t.Run("modifiers", func(t *testing.T) {
-		request := WithRequestPayloadModifier(func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
-			var fields map[string]interface{}
-			if err := sonic.Unmarshal(raw, &fields); err != nil {
-				return nil, err
-			}
-			fields["max_output_tokens"] = 128
-			return sonic.Marshal(fields)
-		})
-		msg, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Reply OK.")}, request, WithResponseMessageModifier(func(_ context.Context, msg *schema.Message, raw []byte) (*schema.Message, error) {
-			if len(raw) == 0 {
-				t.Error("missing raw response")
-			}
-			msg.Content += "_MODIFIED"
-			return msg, nil
-		}))
-		check(t, err)
-		if !strings.HasSuffix(msg.Content, "_MODIFIED") {
-			t.Fatal("Generate modifier missing")
-		}
-		finalized := 0
-		sr, err := cm.Stream(ctx, []*schema.Message{schema.UserMessage("Reply OK.")}, request, WithResponseChunkMessageModifier(func(_ context.Context, msg *schema.Message, raw []byte, end bool) (*schema.Message, error) {
-			if end {
-				finalized++
-				return &schema.Message{Content: "_FINAL"}, nil
-			}
-			if len(raw) == 0 {
-				t.Error("missing raw event")
-			}
-			return msg, nil
-		}))
-		check(t, err)
-		msg, err = readResponsesStream(t, sr)
-		check(t, err)
-		equal(t, 1, finalized)
-		if !strings.HasSuffix(msg.Content, "_FINAL") {
-			t.Fatal("stream finalization missing")
-		}
-	})
 	t.Run("reasoning_passback", func(t *testing.T) {
 		next := *config
 		next.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
@@ -295,14 +256,7 @@ func TestResponsesLive(t *testing.T) {
 			t.Skip("set ARK_RESPONSES_LIVE_WEBSEARCH=1 for accounts with web search enabled")
 		}
 		query := []*schema.Message{schema.UserMessage("Search the web for the CloudWeGo Eino official GitHub repository and reply with its URL.")}
-		msg, err := cm.Generate(ctx, query, WithEnableToolWebSearch(&responses.WebSearchTool{Limit: responses.NewOptInt64(2)}), WithMaxToolCalls(1), WithRequestPayloadModifier(func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
-			var fields map[string]interface{}
-			if err := sonic.Unmarshal(raw, &fields); err != nil {
-				return nil, err
-			}
-			fields["tool_choice"] = map[string]string{"type": "web_search"}
-			return sonic.Marshal(fields)
-		}))
+		msg, err := cm.Generate(ctx, query, WithEnableToolWebSearch(&responses.WebSearchTool{Limit: responses.NewOptInt64(2)}), WithMaxToolCalls(1), model.WithToolChoice(schema.ToolChoiceForced))
 		check(t, err)
 		if !strings.Contains(strings.ToLower(msg.Content), "github.com/cloudwego/eino") {
 			t.Fatalf("search result missing: %q", msg.Content)

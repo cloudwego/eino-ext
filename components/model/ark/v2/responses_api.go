@@ -35,33 +35,29 @@ import (
 
 var _ model.ToolCallingChatModel = (*ResponsesAPIChatModel)(nil)
 
-// ResponsesAPIConfig configures an Ark Responses API model. Shared call options
-// (WithCustomHeader and modifiers) also apply.
+// ResponsesAPIConfig configures an Ark Responses API model.
 // SDK-specific formats and built-in tools use ark-runtime-go Responses types.
 type ResponsesAPIConfig struct {
-	Timeout                      *time.Duration
-	HTTPClient                   *http.Client
-	RetryTimes                   *int
-	BaseURL                      string
-	Region                       string
-	APIKey                       string
-	AccessKey                    string
-	SecretKey                    string
-	Model                        string
-	MaxOutputTokens              *int
-	Temperature                  *float32
-	TopP                         *float32
-	CustomHeader                 map[string]string
-	ResponseFormat               *responses.TextFormat
-	Thinking                     *responses.Thinking
-	ServiceTier                  *string
-	ReasoningEffort              *responses.ReasoningEffort
-	SessionCache                 *SessionCacheConfig
-	EnableToolWebSearch          *responses.WebSearchTool
-	MaxToolCalls                 *int64
-	RequestPayloadModifier       RequestPayloadModifier
-	ResponseMessageModifier      ResponseMessageModifier
-	ResponseChunkMessageModifier ResponseChunkMessageModifier
+	Timeout             *time.Duration
+	HTTPClient          *http.Client
+	RetryTimes          *int
+	BaseURL             string
+	Region              string
+	APIKey              string
+	AccessKey           string
+	SecretKey           string
+	Model               string
+	MaxOutputTokens     *int
+	Temperature         *float32
+	TopP                *float32
+	CustomHeader        map[string]string
+	ResponseFormat      *responses.TextFormat
+	Thinking            *responses.Thinking
+	ServiceTier         *string
+	ReasoningEffort     *responses.ReasoningEffort
+	SessionCache        *SessionCacheConfig
+	EnableToolWebSearch *responses.WebSearchTool
+	MaxToolCalls        *int64
 }
 
 type ResponsesAPIChatModel struct {
@@ -139,37 +135,19 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	wire, extra, err := prepareResponsesPayload(ctx, in, request.payload, request.extra, opts.requestPayloadModifier)
-	if err != nil {
-		return nil, err
-	}
-	var capture *responseCapture
-	if opts.responseMessageModifier != nil {
-		capture = &responseCapture{}
-	}
-	ctx = context.WithValue(ctx, responseCaptureKey{}, capture)
-	resp, err := cm.client.CreateResponses(ctx, wire, arkruntime.WithCustomHeaders(responsesHeaders(opts)), arkruntime.WithExtraBody(extra))
+	resp, err := cm.client.CreateResponses(ctx, request.payload, arkruntime.WithCustomHeaders(responsesHeaders(opts)))
 	if err != nil {
 		return nil, fmt.Errorf("create Responses: %w", err)
 	}
-	out, err = projectResponsesResponse(&resp.Response, wire)
+	out, err = projectResponsesResponse(&resp.Response, request.payload)
 	if err != nil {
 		return nil, err
 	}
 	if requestID := resp.GetHeader().Get("X-Request-Id"); requestID != "" {
 		out.Extra[keyRequestID] = metadataString(requestID)
 	}
-	if opts.responseMessageModifier != nil {
-		out, err = opts.responseMessageModifier(ctx, out, capture.rawBody)
-		if err != nil {
-			return nil, fmt.Errorf("modify response message: %w", err)
-		}
-		if out == nil {
-			return nil, fmt.Errorf("response message modifier returned nil")
-		}
-	}
-	callbacks.OnEnd(ctx, &model.CallbackOutput{Message: out, Config: responsesCallbackConfig(wire), TokenUsage: toModelCallbackUsage(out.ResponseMeta),
-		Extra: map[string]any{"thinking": responsesCallbackThinking(wire), "model_name": resp.Model}})
+	callbacks.OnEnd(ctx, &model.CallbackOutput{Message: out, Config: responsesCallbackConfig(request.payload), TokenUsage: toModelCallbackUsage(out.ResponseMeta),
+		Extra: map[string]any{"thinking": responsesCallbackThinking(request.payload), "model_name": resp.Model}})
 	return out, nil
 }
 
@@ -187,19 +165,12 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 			callbacks.OnError(ctx, err)
 		}
 	}()
-	wire, extra, err := prepareResponsesPayload(ctx, in, request.payload, request.extra, opts.requestPayloadModifier)
+	stream, err := cm.client.CreateResponsesStream(ctx, request.payload, arkruntime.WithCustomHeaders(responsesHeaders(opts)))
 	if err != nil {
 		return nil, err
 	}
-	ctx = context.WithValue(ctx, responseCaptureKey{}, (*responseCapture)(nil))
-	stream, err := cm.client.CreateResponsesStream(ctx, wire, arkruntime.WithCustomHeaders(responsesHeaders(opts)), arkruntime.WithExtraBody(extra))
-	if err != nil {
-		return nil, err
-	}
-	decoder := &responsesPayloadDecoder{retain: opts.responseChunkMessageModifier != nil}
-	stream.Unmarshaler = decoder
-	callbackConfig := responsesCallbackConfig(wire)
-	thinking := responsesCallbackThinking(wire)
+	callbackConfig := responsesCallbackConfig(request.payload)
+	thinking := responsesCallbackThinking(request.payload)
 	sr, sw := schema.Pipe[*model.CallbackOutput](1)
 	go func() {
 		defer func() {
@@ -226,7 +197,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 				_ = sw.Send(nil, e)
 				return
 			}
-			msg, terminal, e := state.resolve(event, wire)
+			msg, terminal, e := state.resolve(event, request.payload)
 			if e != nil {
 				_ = sw.Send(nil, e)
 				return
@@ -236,30 +207,12 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 					msg.Extra[keyRequestID] = metadataString(requestID)
 				}
 			}
-			if modifier := opts.responseChunkMessageModifier; modifier != nil {
-				msg, e = modifier(ctx, msg, decoder.raw, false)
-				if e != nil {
-					_ = sw.Send(nil, fmt.Errorf("modify response chunk message: %w", e))
-					return
-				}
-			}
 			if msg != nil && send(msg) {
 				return
 			}
-			if !terminal {
-				continue
+			if terminal {
+				return
 			}
-			if modifier := opts.responseChunkMessageModifier; modifier != nil {
-				last, e := modifier(ctx, nil, nil, true)
-				if e != nil {
-					_ = sw.Send(nil, fmt.Errorf("modify final response chunk message: %w", e))
-					return
-				}
-				if last != nil {
-					_ = send(last)
-				}
-			}
-			return
 		}
 	}()
 	_, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr, func(value *model.CallbackOutput) (callbacks.CallbackOutput, error) { return value, nil }))
@@ -293,15 +246,11 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	if ttl > 0 {
 		req.ExpireAt = responses.NewOptInt64(time.Now().Unix() + int64(ttl))
 	}
-	wire, extra, err := prepareResponsesPayload(ctx, prefix, req, request.extra, opts.requestPayloadModifier)
+	resp, err := cm.client.CreateResponses(ctx, req, arkruntime.WithCustomHeaders(responsesHeaders(opts)))
 	if err != nil {
 		return nil, err
 	}
-	resp, err := cm.client.CreateResponses(ctx, wire, arkruntime.WithCustomHeaders(responsesHeaders(opts)), arkruntime.WithExtraBody(extra))
-	if err != nil {
-		return nil, err
-	}
-	msg, err := projectResponsesMetadata(&resp.Response, wire)
+	msg, err := projectResponsesMetadata(&resp.Response, req)
 	if err != nil {
 		return nil, err
 	}

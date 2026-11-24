@@ -29,7 +29,6 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/bytedance/sonic"
 	"github.com/cloudwego/eino/schema"
 )
 
@@ -69,66 +68,60 @@ func equalRawJSON(t *testing.T, want, got []byte) {
 func TestResponsesHistoryUsesSDKInputs(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		for _, codec := range messagePersistenceCodecs() {
-			for _, modifier := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/%s/modifier=%t", mode, codec.name, modifier), func(t *testing.T) {
-					var calls atomic.Int32
-					requests := make(chan []json.RawMessage, 2)
-					config := &ResponsesAPIConfig{}
-					if modifier {
-						config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }
+			t.Run(mode+"/"+codec.name, func(t *testing.T) {
+				var calls atomic.Int32
+				requests := make(chan []json.RawMessage, 2)
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					var body struct {
+						Input  []json.RawMessage
+						Stream bool
 					}
-					cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
-						var body struct {
-							Input  []json.RawMessage
-							Stream bool
-						}
-						if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-							t.Error(err)
-							return
-						}
-						requests <- body.Input
-						if calls.Add(1) != 1 {
-							writeResponsesHistoryReply(w, false, body.Stream)
-							return
-						}
-						response := fmt.Sprintf(`{"id":"replay-1","created_at":1,"object":"response","model":"test","status":"completed","output":%s}`, responsesReplayOutputJSON)
-						var compact bytes.Buffer
-						if err := json.Compact(&compact, []byte(response)); err != nil {
-							t.Error(err)
-							return
-						}
-						response = compact.String()
-						if !body.Stream {
-							w.Header().Set("Content-Type", "application/json")
-							_, _ = io.WriteString(w, response)
-							return
-						}
-						w.Header().Set("Content-Type", "text/event-stream")
-						_, _ = io.WriteString(w, responseEvent("response.output_item.added", map[string]any{"output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc-1", "call_id": "call-1", "name": "inspect", "arguments": ""}}))
-						_, _ = io.WriteString(w, responseEvent("response.function_call_arguments.delta", map[string]any{"output_index": 0, "item_id": "fc-1", "delta": "{}"}))
-						_, _ = io.WriteString(w, responseEvent("response.reasoning_summary_text.delta", map[string]any{"output_index": 1, "summary_index": 0, "item_id": "rs-1", "delta": "thought"}))
-						_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{"output_index": 2, "content_index": 0, "item_id": "msg-1", "delta": "done"}))
-						_, _ = io.WriteString(w, responseEvent("response.completed", map[string]any{"response": json.RawMessage(response)}))
-					}, config)
-					check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
-					user := schema.UserMessage("inspect")
-					first := callResponsesWithOptions(t, cm, mode, []*schema.Message{user})
-					<-requests
-					history := roundTripHistory(t, codec, []*schema.Message{user, first, {Role: schema.Tool, ToolCallID: "call-1", Content: "tool result"}, schema.UserMessage("follow-up")})
-					reply := callResponsesWithOptions(t, cm, mode, history)
-					equal(t, "continued", reply.Content)
-					input := <-requests
-					var output []json.RawMessage
-					check(t, json.Unmarshal([]byte(responsesReplayInputJSON), &output))
-					equal(t, len(output)+3, len(input))
-					for i := range output {
-						equalRawJSON(t, output[i], input[i+1])
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+						return
 					}
-					saved, ok := responsesInputJSON(history[1])
-					equal(t, true, ok)
-					equalRawJSON(t, []byte(responsesReplayInputJSON), []byte(saved))
-				})
-			}
+					requests <- body.Input
+					if calls.Add(1) != 1 {
+						writeResponsesHistoryReply(w, false, body.Stream)
+						return
+					}
+					response := fmt.Sprintf(`{"id":"replay-1","created_at":1,"object":"response","model":"test","status":"completed","output":%s}`, responsesReplayOutputJSON)
+					var compact bytes.Buffer
+					if err := json.Compact(&compact, []byte(response)); err != nil {
+						t.Error(err)
+						return
+					}
+					response = compact.String()
+					if !body.Stream {
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = io.WriteString(w, response)
+						return
+					}
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = io.WriteString(w, responseEvent("response.output_item.added", map[string]any{"output_index": 0, "item": map[string]any{"type": "function_call", "id": "fc-1", "call_id": "call-1", "name": "inspect", "arguments": ""}}))
+					_, _ = io.WriteString(w, responseEvent("response.function_call_arguments.delta", map[string]any{"output_index": 0, "item_id": "fc-1", "delta": "{}"}))
+					_, _ = io.WriteString(w, responseEvent("response.reasoning_summary_text.delta", map[string]any{"output_index": 1, "summary_index": 0, "item_id": "rs-1", "delta": "thought"}))
+					_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{"output_index": 2, "content_index": 0, "item_id": "msg-1", "delta": "done"}))
+					_, _ = io.WriteString(w, responseEvent("response.completed", map[string]any{"response": json.RawMessage(response)}))
+				}, nil)
+				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
+				user := schema.UserMessage("inspect")
+				first := callResponsesWithOptions(t, cm, mode, []*schema.Message{user})
+				<-requests
+				history := roundTripHistory(t, codec, []*schema.Message{user, first, {Role: schema.Tool, ToolCallID: "call-1", Content: "tool result"}, schema.UserMessage("follow-up")})
+				reply := callResponsesWithOptions(t, cm, mode, history)
+				equal(t, "continued", reply.Content)
+				input := <-requests
+				var output []json.RawMessage
+				check(t, json.Unmarshal([]byte(responsesReplayInputJSON), &output))
+				equal(t, len(output)+3, len(input))
+				for i := range output {
+					equalRawJSON(t, output[i], input[i+1])
+				}
+				saved, ok := responsesInputJSON(history[1])
+				equal(t, true, ok)
+				equalRawJSON(t, []byte(responsesReplayInputJSON), []byte(saved))
+			})
 		}
 	}
 }
@@ -233,51 +226,43 @@ func TestAssistantReasoningOutputParts(t *testing.T) {
 func TestResponsesReplayWithSDKFilePreprocessing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "image.png")
 	check(t, os.WriteFile(path, []byte("image fixture"), 0600))
-	for _, modifier := range []bool{false, true} {
-		t.Run(fmt.Sprint(modifier), func(t *testing.T) {
-			var calls, uploads, retrieves atomic.Int32
-			requests := make(chan map[string]any, 2)
-			config := &ResponsesAPIConfig{}
-			if modifier {
-				config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }
+	var calls, uploads, retrieves atomic.Int32
+	requests := make(chan map[string]any, 2)
+	cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v3/files", "/api/v3/files/file-1":
+			if r.Method == http.MethodPost {
+				uploads.Add(1)
+			} else {
+				retrieves.Add(1)
 			}
-			cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/api/v3/files", "/api/v3/files/file-1":
-					if r.Method == http.MethodPost {
-						uploads.Add(1)
-					} else {
-						retrieves.Add(1)
-					}
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = io.WriteString(w, `{"id":"file-1","object":"file","bytes":13,"created_at":1,"expire_at":-1,"filename":"image.png","purpose":"user_data","status":"active"}`)
-				case "/api/v3/responses":
-					requests <- decodeRequest(t, r)
-					calls.Add(1)
-					writeResponses(w)
-				default:
-					t.Error("unexpected SDK request", r.URL.Path)
-					http.NotFound(w, r)
-				}
-			}, config)
-			first, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("first")})
-			check(t, err)
-			<-requests
-			_, err = cm.Generate(context.Background(), []*schema.Message{first, {Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
-				{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}},
-			}}})
-			check(t, err)
-			input := (<-requests)["input"].([]any)
-			image := input[len(input)-1].(map[string]any)["content"].([]any)[0].(map[string]any)
-			equal(t, "file-1", image["file_id"])
-			if _, exists := image["image_url"]; exists {
-				t.Fatal("SDK-preprocessed file URL restored")
-			}
-			equal(t, int32(1), uploads.Load())
-			equal(t, int32(1), retrieves.Load())
-			equal(t, int32(2), calls.Load())
-		})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":"file-1","object":"file","bytes":13,"created_at":1,"expire_at":-1,"filename":"image.png","purpose":"user_data","status":"active"}`)
+		case "/api/v3/responses":
+			requests <- decodeRequest(t, r)
+			calls.Add(1)
+			writeResponses(w)
+		default:
+			t.Error("unexpected SDK request", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}, nil)
+	first, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("first")})
+	check(t, err)
+	<-requests
+	_, err = cm.Generate(context.Background(), []*schema.Message{first, {Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{
+		{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}},
+	}}})
+	check(t, err)
+	input := (<-requests)["input"].([]any)
+	image := input[len(input)-1].(map[string]any)["content"].([]any)[0].(map[string]any)
+	equal(t, "file-1", image["file_id"])
+	if _, exists := image["image_url"]; exists {
+		t.Fatal("SDK-preprocessed file URL restored")
 	}
+	equal(t, int32(1), uploads.Load())
+	equal(t, int32(1), retrieves.Load())
+	equal(t, int32(2), calls.Load())
 }
 
 func TestResponsesReasoningInputDefaults(t *testing.T) {
@@ -515,84 +500,61 @@ func TestResponsesReplayAdjacentMessages(t *testing.T) {
 	}
 }
 
-func TestResponsesModifiedInputFilePreprocessing(t *testing.T) {
+func TestResponsesInputFilePreprocessing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fixture")
 	check(t, os.WriteFile(path, []byte("fixture"), 0600))
 	for _, mode := range []string{"generate", "stream"} {
 		for _, kind := range []string{"image", "video", "file"} {
-			for _, edit := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/%s/edit=%t", mode, kind, edit), func(t *testing.T) {
-					modifier := func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
-						if !edit {
-							return raw, nil
-						}
-						var fields map[string]json.RawMessage
-						if err := sonic.Unmarshal(raw, &fields); err != nil {
-							return nil, err
-						}
-						// Preserve unknown fields and exact numbers while the SDK
-						// replaces the local media URL in this edited input.
-						fields["input"] = json.RawMessage(fmt.Sprintf(`[{"type":"message","role":"user","extension":9007199254740993,"content":[{"type":"input_%s","%s_url":%q,"extension":9007199254740993}]}]`, kind, kind, "file://"+path))
-						return sonic.Marshal(fields)
-					}
-					var uploads atomic.Int32
-					cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
-						switch r.URL.Path {
-						case "/api/v3/files", "/api/v3/files/file-1":
-							if r.Method == http.MethodPost {
-								uploads.Add(1)
-								if err := r.ParseMultipartForm(1024); err != nil {
-									t.Error(err)
-								}
-								if r.MultipartForm != nil {
-									defer r.MultipartForm.RemoveAll()
-								}
-							}
-							w.Header().Set("Content-Type", "application/json")
-							_, _ = io.WriteString(w, `{"id":"file-1","object":"file","bytes":7,"created_at":1,"expire_at":-1,"filename":"fixture","purpose":"user_data","status":"active"}`)
-						case "/api/v3/responses":
-							var body struct {
-								Input []struct {
-									Extension json.Number
-									Content   []map[string]json.RawMessage
-								}
-								Stream bool
-							}
-							if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Run(mode+"/"+kind, func(t *testing.T) {
+				var uploads atomic.Int32
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					switch r.URL.Path {
+					case "/api/v3/files", "/api/v3/files/file-1":
+						if r.Method == http.MethodPost {
+							uploads.Add(1)
+							if err := r.ParseMultipartForm(1024); err != nil {
 								t.Error(err)
 							}
-							for _, part := range body.Input[len(body.Input)-1].Content {
-								equal(t, `"file-1"`, string(part["file_id"]))
-								if _, exists := part[kind+"_url"]; exists {
-									t.Error("modifier restored the original media URL")
-								}
-								if edit {
-									equal(t, "9007199254740993", string(part["extension"]))
-								}
+							if r.MultipartForm != nil {
+								defer r.MultipartForm.RemoveAll()
 							}
-							if edit {
-								equal(t, "9007199254740993", body.Input[0].Extension.String())
-							}
-							writeResponsesHistoryReply(w, false, body.Stream)
-						default:
-							t.Error("unexpected path", r.URL.Path)
-							http.NotFound(w, r)
 						}
-					}, &ResponsesAPIConfig{RequestPayloadModifier: modifier})
-					part := schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}}
-					if kind == "video" {
-						part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}}
-					} else if kind == "file" {
-						part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}}
+						w.Header().Set("Content-Type", "application/json")
+						_, _ = io.WriteString(w, `{"id":"file-1","object":"file","bytes":7,"created_at":1,"expire_at":-1,"filename":"fixture","purpose":"user_data","status":"active"}`)
+					case "/api/v3/responses":
+						var body struct {
+							Input []struct {
+								Content []map[string]json.RawMessage
+							}
+							Stream bool
+						}
+						if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+							t.Error(err)
+						}
+						for _, part := range body.Input[len(body.Input)-1].Content {
+							equal(t, `"file-1"`, string(part["file_id"]))
+							if kind == "video" {
+								// The SDK encodes video_url as a required string, even after upload.
+								equal(t, `""`, string(part["video_url"]))
+							} else {
+								equal(t, json.RawMessage(nil), part[kind+"_url"])
+							}
+						}
+						writeResponsesHistoryReply(w, false, body.Stream)
+					default:
+						t.Error("unexpected path", r.URL.Path)
+						http.NotFound(w, r)
 					}
-					callResponsesWithOptions(t, cm, mode, []*schema.Message{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{part, part}}})
-					wantUploads := int32(2)
-					if edit {
-						wantUploads = 1
-					}
-					equal(t, wantUploads, uploads.Load())
-				})
-			}
+				}, nil)
+				part := schema.MessageInputPart{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}}
+				if kind == "video" {
+					part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}}
+				} else if kind == "file" {
+					part = schema.MessageInputPart{Type: schema.ChatMessagePartTypeFileURL, File: &schema.MessageInputFile{MessagePartCommon: schema.MessagePartCommon{URL: ptr("file://" + path)}}}
+				}
+				callResponsesWithOptions(t, cm, mode, []*schema.Message{{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{part, part}}})
+				equal(t, int32(2), uploads.Load())
+			})
 		}
 	}
 }

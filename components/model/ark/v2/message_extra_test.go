@@ -186,7 +186,7 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 				cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
 					if decodeRequest(t, r)["stream"] == true {
 						w.Header().Set("Content-Type", "text/event-stream")
-						sseChunk(w, `{"id":"req-1","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"th","encrypted_content":"ci"},"finish_reason":null}],"usage":null}`)
+						sseChunk(w, `{"id":"req-1","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"th","encrypted_content":"ci"}}],"usage":null}`)
 						sseChunk(w, `{"id":"req-1","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"content":"done","reasoning_content":"ink","encrypted_content":"pher"},"finish_reason":"stop"}],"usage":null}`)
 						usageChunk, encodeErr := json.Marshal(map[string]any{
 							"id": "req-1", "object": "chat.completion.chunk", "created": 1, "model": "actual-model", "choices": []any{},
@@ -402,7 +402,7 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 			responseMessage, err := projectResponsesResponse(&response, &responses.ResponsesRequest{})
 			check(t, err)
 			wantChat, wantResponse := chatResponse.Usage.Value, response.Usage.Value
-			// Change all common counts, including zero values, as a modifier may do.
+			// Change all common counts, including zero values.
 			wantChat.PromptTokens, wantChat.CompletionTokens, wantChat.TotalTokens = 0, 20, 20
 			wantChat.PromptTokensDetails.CachedTokens, wantChat.CompletionTokensDetails.ReasoningTokens = 0, 10
 			wantResponse.InputTokens, wantResponse.OutputTokens, wantResponse.TotalTokens = 0, 20, 20

@@ -113,6 +113,8 @@ for {
 
 Streaming messages contain incremental content, reasoning, and tool calls.
 Use `schema.ConcatMessages` to assemble collected chunks into one message.
+A connection closed before `[DONE]` returns `io.ErrUnexpectedEOF`. A completed stream
+without choice 0 returns `ErrEmptyResponse`.
 The stream requests final token usage, which may arrive in a chunk without text.
 Close the reader after use. When stopping early, also cancel the request context
 so an HTTP read waiting for the next chunk can finish promptly.
@@ -258,77 +260,6 @@ if err != nil {
 fmt.Println(reply.Content)
 ```
 
-## Request and response customization
-
-Configure the modifiers in `ChatModelConfig`, or select them per call:
-
-| Option | Modified object | Applies to |
-| --- | --- | --- |
-| `WithRequestPayloadModifier` | Serialized request JSON, with the input Eino messages available as context | `Generate`, `Stream` |
-| `WithResponseMessageModifier` | Converted `*schema.Message`, with the original response JSON available as context | `Generate` |
-| `WithResponseChunkMessageModifier` | Converted message chunk, with the original chunk JSON available as context | `Stream` |
-
-To customize the request payload, import `encoding/json` for `json.RawMessage`
-and `github.com/bytedance/sonic` for JSON encoding and decoding:
-
-```go
-modifier := ark.WithRequestPayloadModifier(func(ctx context.Context, messages []*schema.Message, rawBody []byte) ([]byte, error) {
-    var payload map[string]json.RawMessage
-    if err := sonic.Unmarshal(rawBody, &payload); err != nil {
-        return nil, err
-    }
-    payload["stream_options"] = json.RawMessage(`{"include_usage":true,"chunk_include_usage":true}`)
-    return sonic.Marshal(payload)
-})
-reader, err := cm.Stream(ctx, messages, modifier)
-if err != nil {
-    log.Fatal(err)
-}
-defer reader.Close()
-```
-
-The modifier runs once after request conversion and serialization, before the SDK
-sends or retries the request. It can add fields the generated SDK types do not
-expose. The result must be a JSON object retaining a string `model` and `messages`.
-`Generate` and `Stream` control the stream flag, and streaming always requests
-final usage. Eino returns one completion, so `n` must be omitted or equal to 1.
-
-To customize the Eino message, return the final `*schema.Message`:
-
-```go
-reply, err := cm.Generate(ctx, messages, ark.WithResponseMessageModifier(
-    func(ctx context.Context, message *schema.Message, rawBody []byte) (*schema.Message, error) {
-        if message.Extra == nil {
-            message.Extra = make(map[string]any)
-        }
-        message.Extra["application"] = "my-assistant"
-        return message, nil
-    },
-))
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Println(reply.Content)
-```
-
-Response modifiers run before Eino callbacks receive the message, so callbacks
-observe the modified output. `rawBody` contains the original response JSON.
-A Generate modifier must return a non-nil message.
-Output callback configuration reflects the payload after request modification;
-the start callback observes the configuration before modification.
-
-The streaming modifier receives `end == false` for each chunk. Its message can be
-nil when a chunk has no standard message projection; the raw JSON is still
-available. After the `[DONE]` event, it is called once with `end == true` and nil
-message/rawBody, and may return a final message. A premature EOF returns
-`io.ErrUnexpectedEOF` without this final call. Returning nil skips a chunk.
-If no chunk contains completion choice 0, the stream returns `ErrEmptyResponse`
-without successful finalization. A valid choice with empty text is accepted.
-
-A call-specific modifier replaces the corresponding configured modifier. Passing
-nil disables it for that call. Returning an error aborts the request or stream.
-Modifiers must support concurrent calls when the model is shared.
-
 ## Returned messages
 
 `schema.Message` exposes `Content`, `ReasoningContent`, `ToolCalls`, and
@@ -349,7 +280,7 @@ Ark metadata in `Extra` uses scalar values so messages can round-trip through
 `encoding/json`, Sonic, and gob. Common token counts are stored only in
 `ResponseMeta.Usage`, and reasoning text in `ReasoningContent`. Both usage helpers
 combine the current common counts with SDK-specific details in `Extra`, so changes
-made by modifiers or stream concatenation are reflected in their results.
+made by stream concatenation are reflected in their results.
 SDK-specific counts and service-status fields use flat keys, such as
 `ark-v2-responses-usage-details.input_tokens_details.audio_tokens` and
 `ark-v2-service-status.model_fallback.fallback_triggered`. Complex provider
@@ -389,10 +320,9 @@ optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
 | [multimodal](examples/multimodal/main.go) | Image/audio/video/file input using a URL, local-file base64, or FileID |
 | [tool_result](examples/tool_result/main.go) | Return a document FileID in a multimodal tool result with the matching `ToolCallID` |
 | [structured_output](examples/structured_output/main.go) | Strict JSON schema output and decoding into a Go struct |
-| [modifiers](examples/modifiers/main.go) | Request JSON edits, raw response access, and successful stream finalization |
 
 Run the other examples with `go run ./examples/stream`, `go run ./examples/tools`,
-`go run ./examples/structured_output`, or `go run ./examples/modifiers`.
+or `go run ./examples/structured_output`.
 
 For multimodal input, select a kind and source. The base64 source reads the local
 file and encodes it; `-mime` overrides MIME type detection from its extension:
@@ -430,8 +360,7 @@ if err != nil {
 reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Hello")})
 ```
 
-`ResponsesAPIConfig` shares connection settings, custom headers,
-and request/response/chunk modifiers with `ChatModelConfig`.
+`ResponsesAPIConfig` shares connection settings and custom headers with `ChatModelConfig`.
 Its `Thinking` and `ReasoningEffort` fields use `responses.Thinking` and
 `responses.ReasoningEffort`; override them with `WithResponsesThinking` and
 `WithResponsesReasoningEffort`. Chat Completions uses its own SDK types and
@@ -494,7 +423,7 @@ image-generation APIs remain in the legacy module.
   Unknown content without a supported input
   mapping returns an error. History conversion stays within SDK input types;
   the adapter does not replace the entire input to implement unsupported fields.
-  SDK-documented extensions remain in use for explicit payload modifiers; SDK annotation codecs preserve unknown annotation variants.
+  SDK annotation codecs preserve unknown annotation variants.
   Generate leaves part `StreamingMeta` nil. Streams assign one merge index per reasoning item and one per message content part. Each part receives the next
   zero-based index when first emitted; this index is reused, rather than derived
   arithmetically from `output_index`. Function calls have separate zero-based
@@ -578,7 +507,7 @@ and bypass the server context for that call. Each message, its top-level Extra
 map, and its output part slice are copied. Other nested values are shared.
 
 Cached continuations inherit their tool definitions from the first request.
-The adapter omits `tools`, including its extra-body encoding, and `tool_choice`
+The adapter omits `tools` and `tool_choice`
 whenever it sends `previous_response_id`. To change tool settings, start a new cache
 chain; for automatic session caching, invalidate the message caches and resend
 the full conversation.
@@ -603,7 +532,7 @@ history, print cached token usage, and inherit the first request's tool set.
 The forced example invalidates local cache references before applying Forbidden
 in a new chain for its final answer.
 
-### Streaming and modifiers
+### Streaming
 
 Text/reasoning deltas and indexed function arguments can be concatenated with
 `schema.ConcatMessages`. Parallel function calls are tracked by output index.
@@ -611,13 +540,6 @@ The terminal event supplies response metadata and token usage exactly once.
 `response.incomplete` preserves partial output and records its reason;
 `response.failed` and `error` return errors. EOF or `[DONE]` without a terminal
 response is `io.ErrUnexpectedEOF`.
-
-Request modifiers receive a JSON object with `model` and `input`. Unknown fields
-and exact JSON numbers survive SDK serialization. `Stream`
-and `Generate` retain control of `stream`. Response modifiers receive original
-response JSON. Chunk modifiers receive each original event, including events
-without a message projection; successful finalization (`end == true`) occurs
-once after `response.completed` or `response.incomplete`.
 
 ### Runnable examples and verification
 
@@ -631,7 +553,6 @@ go run ./examples/responses/stream
 go run ./examples/responses/tools
 go run ./examples/responses/structured_output
 go run ./examples/responses/reasoning
-go run ./examples/responses/modifiers
 go run ./examples/responses/file
 ```
 
@@ -661,8 +582,8 @@ multimodal tool-result request shape; local wire tests cover each media source.
 | Files | Responsibility |
 | --- | --- |
 | `chat_model.go` | Chat Completions configuration, call options, Generate, and Stream |
-| `chat_request.go`, `chat_content.go` | Chat request construction, tools, payload modifiers, and content conversion |
-| `chat_response.go` | Chat response decoding, projection, usage, and metadata |
+| `chat_request.go`, `chat_content.go` | Chat request construction, tools, and content conversion |
+| `chat_response.go` | Chat response projection, usage, and metadata |
 | `responses_api.go`, `responses_request.go` | Responses configuration, call options, API calls, and request construction |
 | `responses_content.go`, `responses_history.go` | Standard message conversion and native Responses history reconstruction |
 | `responses_projection.go`, `responses_stream.go`, `responses_cache.go` | Responses output projection, stream assembly, and cache management |

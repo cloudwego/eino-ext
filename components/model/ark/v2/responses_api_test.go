@@ -104,19 +104,12 @@ func readResponsesStream(t *testing.T, sr *schema.StreamReader[*schema.Message])
 
 func TestResponsesGenerate(t *testing.T) {
 	var callbackContent string
-	var modifierCalls int
 	config := &ResponsesAPIConfig{Model: "requested-model", MaxOutputTokens: ptr(1024), Temperature: ptr(float32(0.7)), TopP: ptr(float32(0.9)),
 		Thinking: &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeDisabled)}, ReasoningEffort: ptr(responses.ReasoningEffortLow),
 		SessionCache:        &SessionCacheConfig{EnableCache: true, TTL: 3600},
 		EnableToolWebSearch: &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}, MaxToolCalls: ptr(int64(3)),
 		CustomHeader:   map[string]string{"X-Test": "configured"},
 		ResponseFormat: &responses.TextFormat{Type: responses.TextFormatTypeJSONObject},
-		ResponseMessageModifier: func(_ context.Context, msg *schema.Message, raw []byte) (*schema.Message, error) {
-			modifierCalls++
-			equal(t, responsesJSON, string(raw))
-			msg.Content += "!"
-			return msg, nil
-		},
 	}
 	cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 		equal(t, "/api/v3/responses", r.URL.Path)
@@ -154,9 +147,8 @@ func TestResponsesGenerate(t *testing.T) {
 	}).Build())
 	out, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("hello")}, WithCustomHeader(map[string]string{"X-Test": "override"}), WithParallelToolCalls(false))
 	check(t, err)
-	equal(t, "done!", out.Content)
-	equal(t, "done!", callbackContent)
-	equal(t, 1, modifierCalls)
+	equal(t, "done", out.Content)
+	equal(t, "done", callbackContent)
 	equal(t, "summary", out.ReasoningContent)
 	equal(t, "function", out.ToolCalls[0].Type)
 	equal(t, "call-1", out.ToolCalls[0].ID)
@@ -186,37 +178,16 @@ func TestResponsesToolsAndPayload(t *testing.T) {
 		for _, names := range [][]string{{"inspect"}, {"inspect", "other"}} {
 			t.Run(string(choice)+strings.Join(names, "-"), func(t *testing.T) {
 				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
-					raw, err := io.ReadAll(r.Body)
-					if err != nil {
-						t.Error(err)
-						return
-					}
-					if !strings.Contains(string(raw), "9007199254740993") {
-						t.Error("lost numeric precision")
-					}
-					var body map[string]any
-					check(t, sonic.Unmarshal(raw, &body))
+					body := decodeRequest(t, r)
 					equal(t, len(names), len(body["tools"].([]any)))
 					equal(t, false, body["stream"])
-					if _, ok := body["temperature"]; ok {
-						t.Error("deleted field restored")
-					}
 					if choice == schema.ToolChoiceForced && len(names) == 1 {
 						equal(t, "inspect", body["tool_choice"].(map[string]any)["name"])
 					}
 					writeResponses(w)
 				}, &ResponsesAPIConfig{Temperature: ptr(float32(1))})
 				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect"), toolInfo("other"), toolInfo("excluded")}))
-				_, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")}, model.WithToolChoice(choice, names...), WithRequestPayloadModifier(func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
-					var body map[string]json.RawMessage
-					if err := sonic.Unmarshal(raw, &body); err != nil {
-						return nil, err
-					}
-					delete(body, "temperature")
-					body["opaque"] = json.RawMessage(`{"integer":9007199254740993}`)
-					body["stream"] = json.RawMessage("true")
-					return sonic.Marshal(body)
-				}))
+				_, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")}, model.WithToolChoice(choice, names...))
 				check(t, err)
 			})
 		}
@@ -226,7 +197,6 @@ func TestResponsesToolsAndPayload(t *testing.T) {
 func TestResponsesStream(t *testing.T) {
 	for _, ending := range []string{"response.completed", "response.incomplete"} {
 		t.Run(ending, func(t *testing.T) {
-			finalized, rawEvents := 0, 0
 			cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 				equal(t, true, decodeRequest(t, r)["stream"])
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -245,22 +215,12 @@ func TestResponsesStream(t *testing.T) {
 					{"type":"message","id":"msg-1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"hello","annotations":[]}]},
 					{"type":"reasoning","id":"rs-1","status":"completed","summary":[],"content":[{"type":"reasoning_text","text":"thought"}]}
 				]`)))
-			}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, ResponseChunkMessageModifier: func(_ context.Context, msg *schema.Message, raw []byte, end bool) (*schema.Message, error) {
-				if end {
-					finalized++
-					return &schema.Message{Content: "!"}, nil
-				}
-				if len(raw) == 0 {
-					t.Error("missing raw SSE event")
-				}
-				rawEvents++
-				return msg, nil
-			}})
+			}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 			sr, err := cm.Stream(context.Background(), []*schema.Message{schema.UserMessage("hi")})
 			check(t, err)
 			out, err := readResponsesStream(t, sr)
 			check(t, err)
-			equal(t, "hello!", out.Content)
+			equal(t, "hello", out.Content)
 			equal(t, "", out.ReasoningContent)
 			equal(t, 2, len(out.ToolCalls))
 			equal(t, "call-0", out.ToolCalls[0].ID)
@@ -268,8 +228,6 @@ func TestResponsesStream(t *testing.T) {
 			equal(t, "{{", out.ToolCalls[0].Function.Arguments)
 			equal(t, "call-1", out.ToolCalls[1].ID)
 			equal(t, 11, out.ResponseMeta.Usage.TotalTokens)
-			equal(t, 1, finalized)
-			equal(t, 9, rawEvents)
 			if ending == "response.incomplete" {
 				equal(t, "max_output_tokens", out.ResponseMeta.FinishReason)
 			} else {
@@ -290,21 +248,16 @@ func TestResponsesStreamFailures(t *testing.T) {
 		{"invalid", "data: {broken}\n\n", ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			finalized := false
 			cm := testResponsesModel(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
 				_, _ = io.WriteString(w, test.wire)
 			}, nil)
-			sr, err := cm.Stream(context.Background(), []*schema.Message{schema.UserMessage("hi")}, WithResponseChunkMessageModifier(func(_ context.Context, msg *schema.Message, _ []byte, end bool) (*schema.Message, error) {
-				finalized = finalized || end
-				return msg, nil
-			}))
+			sr, err := cm.Stream(context.Background(), []*schema.Message{schema.UserMessage("hi")})
 			check(t, err)
 			_, err = readResponsesStream(t, sr)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("expected %q, got %v", test.want, err)
 			}
-			equal(t, false, finalized)
 		})
 	}
 }
@@ -524,18 +477,9 @@ func TestResponsesEffectiveCallbackConfig(t *testing.T) {
 			}).Build()
 			cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 				body := decodeRequest(t, r)
-				equal(t, "modified", body["model"])
+				equal(t, "configured", body["model"])
 				writeResponsesHistoryReply(w, false, body["stream"] == true)
-			}, &ResponsesAPIConfig{RequestPayloadModifier: func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
-				var fields map[string]json.RawMessage
-				if err := json.Unmarshal(raw, &fields); err != nil {
-					return nil, err
-				}
-				fields["model"] = json.RawMessage(`"modified"`)
-				fields["max_output_tokens"] = json.RawMessage(`123`)
-				fields["temperature"] = json.RawMessage(`0.25`)
-				return json.Marshal(fields)
-			}})
+			}, &ResponsesAPIConfig{Model: "configured", MaxOutputTokens: ptr(123), Temperature: ptr(float32(0.25))})
 			check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect"), toolInfo("other")}))
 			ctx := callbacks.InitCallbacks(context.Background(), nil, handler)
 			callResponsesWithOptionsContext(t, ctx, cm, mode, model.WithToolChoice(schema.ToolChoiceAllowed, "other"))
@@ -545,7 +489,7 @@ func TestResponsesEffectiveCallbackConfig(t *testing.T) {
 				t.Fatal("missing callback output")
 			}
 			for _, config := range configs {
-				equal(t, "modified", config.Model)
+				equal(t, "configured", config.Model)
 				equal(t, 123, config.MaxTokens)
 				equal(t, float32(0.25), config.Temperature)
 			}
@@ -556,14 +500,11 @@ func TestResponsesEffectiveCallbackConfig(t *testing.T) {
 func TestResponsesEffectiveCallbackThinking(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		for _, tc := range []struct {
-			name, modified, want string
-			configured           bool
+			name, want string
+			configured bool
 		}{
-			{"unchanged", "", "enabled", true},
-			{"replaced", `{"type":"disabled"}`, "disabled", true},
-			{"added", `{"type":"disabled"}`, "disabled", false},
-			{"deleted", "delete", "", true},
-			{"null", "null", "", true},
+			{"enabled", "enabled", true},
+			{"unset", "", false},
 		} {
 			t.Run(mode+"/"+tc.name, func(t *testing.T) {
 				var observed []string
@@ -594,20 +535,6 @@ func TestResponsesEffectiveCallbackThinking(t *testing.T) {
 				config := &ResponsesAPIConfig{}
 				if tc.configured {
 					config.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
-				}
-				if tc.modified != "" {
-					config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
-						var fields map[string]json.RawMessage
-						if err := json.Unmarshal(raw, &fields); err != nil {
-							return nil, err
-						}
-						if tc.modified == "delete" {
-							delete(fields, "thinking")
-						} else {
-							fields["thinking"] = json.RawMessage(tc.modified)
-						}
-						return json.Marshal(fields)
-					}
 				}
 				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 					body := decodeRequest(t, r)

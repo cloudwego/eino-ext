@@ -74,11 +74,8 @@ type ChatModelConfig struct {
 	// ToolStrict sets the default strict schema adherence for function tools.
 	// WithToolStrict overrides it for an individual tool. Nil omits the field
 	// for tools without an explicit override.
-	ToolStrict                   *bool
-	CustomHeader                 map[string]string
-	RequestPayloadModifier       RequestPayloadModifier
-	ResponseMessageModifier      ResponseMessageModifier
-	ResponseChunkMessageModifier ResponseChunkMessageModifier
+	ToolStrict   *bool
+	CustomHeader map[string]string
 }
 
 type ChatModel struct {
@@ -146,14 +143,11 @@ func (cm *ChatModel) getOptions(opts ...fmodel.Option) (*fmodel.Options, *arkOpt
 		ToolChoice:  cm.toolChoice,
 	}, opts...)
 	ark := fmodel.GetImplSpecificOptions(&arkOptions{
-		customHeaders:                cm.config.CustomHeader,
-		thinking:                     cm.config.Thinking,
-		reasoningEffort:              cm.config.ReasoningEffort,
-		maxCompletionTokens:          cm.config.MaxCompletionTokens,
-		parallelToolCalls:            cm.config.ParallelToolCalls,
-		requestPayloadModifier:       cm.config.RequestPayloadModifier,
-		responseMessageModifier:      cm.config.ResponseMessageModifier,
-		responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier,
+		customHeaders:       cm.config.CustomHeader,
+		thinking:            cm.config.Thinking,
+		reasoningEffort:     cm.config.ReasoningEffort,
+		maxCompletionTokens: cm.config.MaxCompletionTokens,
+		parallelToolCalls:   cm.config.ParallelToolCalls,
 	}, opts...)
 	return common, ark
 }
@@ -194,16 +188,7 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 		}
 	}()
 
-	wireReq, extraBody, err := prepareRequestPayload(ctx, in, req, specOptions.requestPayloadModifier)
-	if err != nil {
-		return nil, err
-	}
-	var capture *responseCapture
-	if specOptions.responseMessageModifier != nil {
-		capture = &responseCapture{}
-	}
-	ctx = context.WithValue(ctx, responseCaptureKey{}, capture)
-	resp, err := cm.client.CreateChatCompletion(ctx, wireReq, arkruntime.WithCustomHeaders(specOptions.customHeaders), arkruntime.WithExtraBody(extraBody))
+	resp, err := cm.client.CreateChatCompletion(ctx, req, arkruntime.WithCustomHeaders(specOptions.customHeaders))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chat completion: %w", err)
 	}
@@ -212,22 +197,13 @@ func (cm *ChatModel) Generate(ctx context.Context, in []*schema.Message, opts ..
 	if err != nil {
 		return nil, err
 	}
-	if specOptions.responseMessageModifier != nil {
-		outMsg, err = specOptions.responseMessageModifier(ctx, outMsg, capture.rawBody)
-		if err != nil {
-			return nil, fmt.Errorf("modify response message: %w", err)
-		}
-		if outMsg == nil {
-			return nil, fmt.Errorf("response message modifier returned nil")
-		}
-	}
 
 	callbacks.OnEnd(ctx, &fmodel.CallbackOutput{
 		Message:    outMsg,
-		Config:     callbackConfig(wireReq),
+		Config:     callbackConfig(req),
 		TokenUsage: toModelCallbackUsage(outMsg.ResponseMeta),
 		Extra: map[string]any{
-			"thinking":   callbackThinking(wireReq),
+			"thinking":   callbackThinking(req),
 			"model_name": resp.Model,
 		},
 	})
@@ -261,23 +237,14 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		}
 	}()
 
-	wireReq, extraBody, err := prepareRequestPayload(ctx, in, req, arkOpts.requestPayloadModifier)
-	if err != nil {
-		return nil, err
-	}
-	reqConf := callbackConfig(wireReq)
-	// A stream may be started from a response modifier's context. Do not let
-	// that parent's response capture buffer consume this SSE response body.
-	ctx = context.WithValue(ctx, responseCaptureKey{}, (*responseCapture)(nil))
-	stream, err := cm.client.CreateChatCompletionStream(ctx, wireReq, arkruntime.WithCustomHeaders(arkOpts.customHeaders), arkruntime.WithExtraBody(extraBody))
+	reqConf := callbackConfig(req)
+	stream, err := cm.client.CreateChatCompletionStream(ctx, req, arkruntime.WithCustomHeaders(arkOpts.customHeaders))
 	if err != nil {
 		return nil, err
 	}
 
-	decoder := &streamPayloadDecoder{capture: arkOpts.responseChunkMessageModifier != nil}
-	stream.Unmarshaler = decoder
 	sr, sw := schema.Pipe[*fmodel.CallbackOutput](1)
-	go func(ctx context.Context) {
+	go func() {
 		defer func() {
 			panicErr := recover()
 			if panicErr != nil {
@@ -293,8 +260,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 		for {
 			resp, err := stream.Recv()
 			if errors.Is(err, io.EOF) {
-				// The SDK also returns EOF for a body closed before [DONE]. Such
-				// a response is incomplete and must not run successful finalization.
+				// The SDK also returns EOF if the connection closes before [DONE].
 				if !stream.IsFinished {
 					_ = sw.Send(nil, io.ErrUnexpectedEOF)
 					return
@@ -302,14 +268,6 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				if !seenChoice {
 					_ = sw.Send(nil, ErrEmptyResponse)
 					return
-				}
-				if modifier := arkOpts.responseChunkMessageModifier; modifier != nil {
-					last, e := modifier(ctx, nil, nil, true)
-					if e != nil {
-						_ = sw.Send(nil, fmt.Errorf("modify final response chunk message: %w", e))
-					} else if last != nil {
-						_ = sw.Send(&fmodel.CallbackOutput{Message: last, Config: reqConf, TokenUsage: toModelCallbackUsage(last.ResponseMeta)}, nil)
-					}
 				}
 				return
 			}
@@ -333,14 +291,6 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				return
 			}
 
-			if modifier := arkOpts.responseChunkMessageModifier; modifier != nil {
-				msg, e = modifier(ctx, msg, decoder.rawBody, false)
-				if e != nil {
-					_ = sw.Send(nil, fmt.Errorf("modify response chunk message: %w", e))
-					return
-				}
-				msgFound = msg != nil
-			}
 			if !msgFound {
 				continue
 			}
@@ -350,7 +300,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				Config:     reqConf,
 				TokenUsage: toModelCallbackUsage(msg.ResponseMeta),
 				Extra: map[string]any{
-					"thinking":   callbackThinking(wireReq),
+					"thinking":   callbackThinking(req),
 					"model_name": resp.Model,
 				},
 			}, nil)
@@ -358,7 +308,7 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...f
 				return
 			}
 		}
-	}(ctx)
+	}()
 
 	ctx, nsr := callbacks.OnEndWithStreamOutput(ctx, schema.StreamReaderWithConvert(sr,
 		func(src *fmodel.CallbackOutput) (callbacks.CallbackOutput, error) {

@@ -56,7 +56,7 @@ func TestToolStrictWire(t *testing.T) {
 					}
 					if mode == "stream" {
 						w.Header().Set("Content-Type", "text/event-stream")
-						sseChunk(w, modifierChunk)
+						sseChunk(w, chatTextChunk)
 						sseChunk(w, "[DONE]")
 					} else {
 						writeResponse(w)
@@ -127,7 +127,7 @@ func TestAllowedToolNamesWire(t *testing.T) {
 						equal(t, selection.want, body["tool_choice"])
 						if mode == "stream" {
 							w.Header().Set("Content-Type", "text/event-stream")
-							sseChunk(w, modifierChunk)
+							sseChunk(w, chatTextChunk)
 							sseChunk(w, "[DONE]")
 						} else {
 							writeResponse(w)
