@@ -44,7 +44,6 @@ func run(ctx context.Context, config *ark.ChatModelConfig) error {
 		if err := sonic.Unmarshal(raw, &payload); err != nil {
 			return nil, err
 		}
-		payload["user"] = json.RawMessage(`"eino-example"`)
 		var stream bool
 		if err := sonic.Unmarshal(payload["stream"], &stream); err != nil {
 			return nil, err

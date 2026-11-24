@@ -39,70 +39,57 @@ func TestResponsesToolDefinitionsWire(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
 		for _, source := range []string{"bound", "option"} {
 			for _, modified := range []bool{false, true} {
-				for _, strict := range []struct {
-					name  string
-					value *bool
-				}{{"unset", nil}, {"true", ptr(true)}, {"false", ptr(false)}} {
-					name := mode + "/" + source + "/" + strict.name
-					if modified {
-						name += "/modifier"
-					}
-					t.Run(name, func(t *testing.T) {
-						base := &schema.ToolInfo{Name: "inspect", Desc: "Inspect a value", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters), Extra: map[string]any{"local-only": "metadata"}}
-						tools := []*schema.ToolInfo{base, WithToolStrict(base, true), WithToolStrict(base, false), {Name: "no_args"}}
-						tools[1].Name, tools[2].Name = "strict", "flexible"
-						before, err := json.Marshal(tools)
-						check(t, err)
-						config := &ResponsesAPIConfig{ToolStrict: strict.value, EnableToolWebSearch: &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}}
-						if modified {
-							config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }
-						}
-						cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
-							var body struct {
-								Tools  []map[string]json.RawMessage
-								Stream bool
-							}
-							check(t, json.NewDecoder(r.Body).Decode(&body))
-							equal(t, 5, len(body.Tools))
-							expectedStrict := []*bool{strict.value, ptr(true), ptr(false), strict.value}
-							for i, tool := range body.Tools[:4] {
-								equal(t, `"function"`, string(tool["type"]))
-								var name string
-								check(t, json.Unmarshal(tool["name"], &name))
-								equal(t, tools[i].Name, name)
-								if expectedStrict[i] == nil {
-									equal(t, json.RawMessage(nil), tool["strict"])
-								} else {
-									raw, err := json.Marshal(*expectedStrict[i])
-									check(t, err)
-									equalRawJSON(t, raw, tool["strict"])
-								}
-								if i == 3 {
-									equal(t, json.RawMessage(nil), tool["parameters"])
-									equal(t, json.RawMessage(nil), tool["description"])
-								} else {
-									equalRawJSON(t, expectedParameters, tool["parameters"])
-									equal(t, `"Inspect a value"`, string(tool["description"]))
-								}
-								equal(t, json.RawMessage(nil), tool["extra"])
-								equal(t, json.RawMessage(nil), tool["local-only"])
-							}
-							equal(t, `"web_search"`, string(body.Tools[4]["type"]))
-							equal(t, "2", string(body.Tools[4]["limit"]))
-							writeResponsesHistoryReply(w, false, body.Stream)
-						}, config)
-						var opts []model.Option
-						if source == "bound" {
-							check(t, cm.BindTools(tools))
-						} else {
-							opts = append(opts, model.WithTools(tools))
-						}
-						callResponsesWithOptions(t, cm, mode, []*schema.Message{schema.UserMessage("hello")}, opts...)
-						after, err := json.Marshal(tools)
-						check(t, err)
-						equalRawJSON(t, before, after)
-					})
+				name := mode + "/" + source
+				if modified {
+					name += "/modifier"
 				}
+				t.Run(name, func(t *testing.T) {
+					base := &schema.ToolInfo{Name: "inspect", Desc: "Inspect a value", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters), Extra: map[string]any{"local-only": "metadata"}}
+					tools := []*schema.ToolInfo{base, {Name: "no_args"}}
+					before, err := json.Marshal(tools)
+					check(t, err)
+					config := &ResponsesAPIConfig{EnableToolWebSearch: &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}}
+					if modified {
+						config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }
+					}
+					cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+						var body struct {
+							Tools  []map[string]json.RawMessage
+							Stream bool
+						}
+						check(t, json.NewDecoder(r.Body).Decode(&body))
+						equal(t, 3, len(body.Tools))
+
+						for i, tool := range body.Tools[:2] {
+							equal(t, `"function"`, string(tool["type"]))
+							var name string
+							check(t, json.Unmarshal(tool["name"], &name))
+							equal(t, tools[i].Name, name)
+							if i == 1 {
+								equal(t, json.RawMessage(nil), tool["parameters"])
+								equal(t, json.RawMessage(nil), tool["description"])
+							} else {
+								equalRawJSON(t, expectedParameters, tool["parameters"])
+								equal(t, `"Inspect a value"`, string(tool["description"]))
+							}
+							equal(t, json.RawMessage(nil), tool["extra"])
+							equal(t, json.RawMessage(nil), tool["local-only"])
+						}
+						equal(t, `"web_search"`, string(body.Tools[2]["type"]))
+						equal(t, "2", string(body.Tools[2]["limit"]))
+						writeResponsesHistoryReply(w, false, body.Stream)
+					}, config)
+					var opts []model.Option
+					if source == "bound" {
+						check(t, cm.BindTools(tools))
+					} else {
+						opts = append(opts, model.WithTools(tools))
+					}
+					callResponsesWithOptions(t, cm, mode, []*schema.Message{schema.UserMessage("hello")}, opts...)
+					after, err := json.Marshal(tools)
+					check(t, err)
+					equalRawJSON(t, before, after)
+				})
 			}
 		}
 	}
@@ -147,7 +134,6 @@ func TestResponsesInvalidToolsBeforeHTTP(t *testing.T) {
 	cm := testResponsesModel(t, func(http.ResponseWriter, *http.Request) { t.Error("invalid tools reached HTTP") }, nil)
 	for _, tools := range [][]*schema.ToolInfo{
 		{nil},
-		{{Name: "invalid", Extra: map[string]any{toolStrictKey: "true"}}},
 		{{Name: "invalid", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.FalseSchema)}},
 	} {
 		if _, err := cm.WithTools(tools); err == nil {
@@ -410,7 +396,7 @@ func TestResponsesForcedBuiltInTools(t *testing.T) {
 				if kind == "cached" {
 					// These local definitions are not sent; the server already
 					// owns the definitions associated with the cached response.
-					opts = append(opts, WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithTools([]*schema.ToolInfo{{Name: "ignored", Extra: map[string]any{toolStrictKey: "unused"}}}))
+					opts = append(opts, WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithTools([]*schema.ToolInfo{{Name: "ignored", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.FalseSchema)}}))
 				}
 				if kind == "cached named" {
 					opts = []model.Option{WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}), model.WithToolChoice(schema.ToolChoiceForced, "inspect")}
@@ -445,8 +431,8 @@ func TestResponsesAllowedNamesWithBuiltInAndCache(t *testing.T) {
 					WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached")}),
 					model.WithToolChoice(choice, "inspect", "other"),
 					model.WithTools([]*schema.ToolInfo{
-						{Name: "inspect", Extra: map[string]any{toolStrictKey: "unused"}},
-						{Name: "other", Extra: map[string]any{toolStrictKey: "unused"}},
+						{Name: "inspect", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.FalseSchema)},
+						{Name: "other", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(jsonschema.FalseSchema)},
 					}),
 				}
 				callResponsesWithOptions(t, cm, mode, []*schema.Message{schema.UserMessage("next")}, opts...)

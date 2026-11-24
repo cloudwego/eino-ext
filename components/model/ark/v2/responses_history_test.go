@@ -73,7 +73,7 @@ func TestResponsesHistoryUsesSDKInputs(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/%s/modifier=%t", mode, codec.name, modifier), func(t *testing.T) {
 					var calls atomic.Int32
 					requests := make(chan []json.RawMessage, 2)
-					config := &ResponsesAPIConfig{ToolStrict: ptr(true)}
+					config := &ResponsesAPIConfig{}
 					if modifier {
 						config.RequestPayloadModifier = func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }
 					}

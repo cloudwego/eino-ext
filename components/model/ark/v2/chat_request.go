@@ -40,8 +40,8 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, o
 	req := &chat.ChatCompletionRequest{
 		Model: dereferenceOrZero(options.Model), Temperature: optFloat(options.Temperature),
 		TopP: optFloat(options.TopP), FrequencyPenalty: optFloat(c.FrequencyPenalty),
-		PresencePenalty: optFloat(c.PresencePenalty), RepetitionPenalty: optFloat(c.RepetitionPenalty),
-		Messages: make([]chat.ChatCompletionRequestMessage, 0, len(in)),
+		PresencePenalty: optFloat(c.PresencePenalty),
+		Messages:        make([]chat.ChatCompletionRequestMessage, 0, len(in)),
 	}
 	var err error
 	if req.MaxTokens, err = optInt(options.MaxTokens, "max_tokens"); err != nil {
@@ -87,9 +87,6 @@ func (cm *ChatModel) genRequest(in []*schema.Message, options *fmodel.Options, o
 	}
 	if opts.parallelToolCalls != nil {
 		req.ParallelToolCalls = chat.NewOptBool(*opts.parallelToolCalls)
-	}
-	if c.User != nil {
-		req.User = chat.NewOptString(*c.User)
 	}
 
 	for i, msg := range in {

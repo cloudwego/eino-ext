@@ -275,6 +275,31 @@ func TestResponsesInterleavedRawReasoning(t *testing.T) {
 	assertRawReasoning(t, merged.AssistantGenMultiContent[0], "AB", "XY")
 }
 
+func TestResponsesOnlyTextDeltasSupplyMessageText(t *testing.T) {
+	var state responsesStreamState
+	var chunks []*schema.Message
+	for _, event := range []string{
+		`{"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":"added"}}`,
+		`{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"A"}`,
+		`{"type":"response.output_text.delta","output_index":0,"content_index":1,"delta":"B"}`,
+		`{"type":"response.content_part.done","output_index":0,"content_index":0,"part":{"type":"output_text","text":"done"}}`,
+		`{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"X"},{"type":"output_text","text":"Y"}]}}`,
+		`{"type":"response.completed","response":{"id":"r","object":"response","created_at":1,"model":"test","status":"completed","output":[{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"x"},{"type":"output_text","text":"y"}]}]}}`,
+	} {
+		chunk, err := resolveResponsesTestEvent(t, &state, event)
+		check(t, err)
+		if chunk != nil {
+			chunks = append(chunks, chunk)
+		}
+	}
+	msg, err := schema.ConcatMessages(chunks)
+	check(t, err)
+	equal(t, "AB", msg.Content)
+	equal(t, 2, len(msg.AssistantGenMultiContent))
+	equal(t, "A", msg.AssistantGenMultiContent[0].Text)
+	equal(t, "B", msg.AssistantGenMultiContent[1].Text)
+}
+
 func TestResponsesContradictoryPartEvents(t *testing.T) {
 	const delta = `{"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"A"}`
 	const done = `{"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"A"}]}}`
@@ -282,10 +307,7 @@ func TestResponsesContradictoryPartEvents(t *testing.T) {
 		name   string
 		events []string
 	}{
-		{"snapshot prefix", []string{delta, `{"type":"response.content_part.done","output_index":0,"content_index":0,"part":{"type":"output_text","text":"B"}}`}},
-		{"buffered prefix", []string{delta, `{"type":"response.output_text.delta","output_index":0,"content_index":1,"delta":"B"}`, strings.Replace(done, `"text":"A"}`, `"text":"A"},{"type":"output_text","text":"C"}`, 1)}},
 		{"delta after done", []string{done, delta}},
-		{"changed terminal", []string{done, `{"type":"response.completed","response":{"id":"r","object":"response","created_at":1,"model":"test","status":"completed","output":[{"type":"message","id":"m","role":"assistant","status":"completed","content":[{"type":"output_text","text":"B"}]}]}}`}},
 		{"omitted item", []string{strings.Replace(delta, `"output_index":0`, `"output_index":1`, 1), `{"type":"response.incomplete","response":{"id":"r","object":"response","created_at":1,"model":"test","status":"incomplete","output":[]}}`}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -795,7 +817,9 @@ func TestResponsesTerminalOutputReconciliation(t *testing.T) {
 						_, _ = io.WriteString(w, responseEvent("response."+ending, map[string]any{"response": json.RawMessage(response)}))
 					}, nil)
 					first := callResponsesWithOptions(t, cm, "stream", []*schema.Message{schema.UserMessage("first")})
-					equal(t, "done", first.Content)
+					want := map[string]string{"all deltas": "done", "prefix": "do"}[events]
+					equal(t, want, first.Content)
+					equal(t, want, first.AssistantGenMultiContent[1].Text)
 					equal(t, "summary", first.ReasoningContent)
 					equal(t, 1, len(first.ToolCalls))
 					equal(t, "inspect", first.ToolCalls[0].Function.Name)

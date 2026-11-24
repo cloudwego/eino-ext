@@ -68,9 +68,9 @@ func main() {
 | `Timeout`, `HTTPClient`, `RetryTimes` | Request timeout, custom HTTP client, and retries; `HTTPClient` takes precedence over `Timeout` |
 | `MaxTokens`, `MaxCompletionTokens` | Output token limits; select the parameter supported by the model |
 | `Temperature`, `TopP`, `Stop` | Sampling and stop sequences |
-| `FrequencyPenalty`, `PresencePenalty`, `RepetitionPenalty`, `LogitBias` | Token selection controls |
+| `FrequencyPenalty`, `PresencePenalty`, `LogitBias` | Token selection controls |
 | `Thinking`, `ReasoningEffort`, `ResponseFormat` | Thinking mode, reasoning effort, and output format using official SDK types |
-| `CustomHeader`, `ServiceTier`, `User` | Custom headers, service tier, and end-user identifier |
+| `CustomHeader`, `ServiceTier` | Custom headers and service tier |
 
 Eino options such as `model.WithModel`, `model.WithTemperature`,
 `model.WithMaxTokens`, and `model.WithTopP` set values for an individual call.
@@ -430,8 +430,8 @@ if err != nil {
 reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Hello")})
 ```
 
-`ResponsesAPIConfig` shares connection settings, custom headers, parallel function
-calls, and request/response/chunk modifiers with `ChatModelConfig`.
+`ResponsesAPIConfig` shares connection settings, custom headers,
+and request/response/chunk modifiers with `ChatModelConfig`.
 Its `Thinking` and `ReasoningEffort` fields use `responses.Thinking` and
 `responses.ReasoningEffort`; override them with `WithResponsesThinking` and
 `WithResponsesReasoningEffort`. Chat Completions uses its own SDK types and
@@ -447,8 +447,7 @@ image-generation APIs remain in the legacy module.
   `ark-beta-web-search: true` unless explicitly overridden in custom headers.
   `MaxToolCalls` and
   `WithMaxToolCalls` bound built-in tool rounds as supported by the service.
-- Function tools support `ToolStrict`, `WithToolStrict`, call-level tool options,
-  and allowed-name filtering. Eino tool calls retain `Type: "function"` and
+- Function tools support call-level tool options and allowed-name filtering. Eino tool calls retain `Type: "function"` and
   `call_id` as `ToolCall.ID`; return results using that ID in `ToolCallID`.
   Explicit allowed names restrict the call to those function tools, excluding
   built-in search. Without names, forced choice can use any configured tool.
@@ -495,8 +494,7 @@ image-generation APIs remain in the legacy module.
   Unknown content without a supported input
   mapping returns an error. History conversion stays within SDK input types;
   the adapter does not replace the entire input to implement unsupported fields.
-  SDK-documented extensions remain in use for tool strictness and explicit
-  payload modifiers; SDK annotation codecs preserve unknown annotation variants.
+  SDK-documented extensions remain in use for explicit payload modifiers; SDK annotation codecs preserve unknown annotation variants.
   Generate leaves part `StreamingMeta` nil. Streams assign one merge index per reasoning item and one per message content part. Each part receives the next
   zero-based index when first emitted; this index is reused, rather than derived
   arithmetically from `output_index`. Function calls have separate zero-based
@@ -507,7 +505,7 @@ image-generation APIs remain in the legacy module.
   Eino Concat merges adjacent chunks, later parts/items may wait for the current
   item's final metadata. Within a reasoning item, new summary text streams in nondecreasing
   `summary_index` order. Returning to an earlier index with additional text
-  fails the stream. Done and terminal snapshots supply only missing suffixes.
+  fails the stream. Reasoning snapshots supply only missing reasoning suffixes.
   Raw reasoning segments accumulate independently by `content_index`.
   Legacy text and function arguments remain incremental; summary display follows
   the emitted summary part chunks.
@@ -538,8 +536,8 @@ image-generation APIs remain in the legacy module.
   request ID when returned. `GetResponsesTokenUsageDetails` returns full SDK
   usage. Inspect output parts and their Extra for annotations and built-in tool
   information beyond Eino's common fields.
-- Terminal stream events fill text and tool-call fields not already emitted as
-  deltas. An empty completed output returns `ErrEmptyResponse`, as in Generate.
+- Streamed message text comes only from `response.output_text.delta`. A stream
+  without text deltas has empty message text. Terminal events still complete tool calls. An empty completed output returns `ErrEmptyResponse`, as in Generate.
   `ReasoningContent` displays only reasoning summaries, with nonempty segments
   separated by newlines. Streams derive this view from summary part chunks, so
   added/delta/done snapshots do not duplicate it. Raw reasoning content and
@@ -569,7 +567,7 @@ arbitrary cached response ID.
 Set `SessionCache: &ark.SessionCacheConfig{EnableCache: true, TTL: 3600}` to store
 responses and automatically reuse the newest unexpired cached message in later
 calls. Send the full conversation; the adapter trims it after that message and
-sets `previous_response_id`. Read expiry with `GetCacheExpiration`, and call
+sets `previous_response_id`. Read the cached response ID and Unix expiration time with `GetResponseCacheRef`, and call
 `InvalidateMessageCaches(messages)` after editing cached history.
 
 When switching models, `clean := ark.ClearReasoning(history)` removes reasoning
@@ -595,8 +593,8 @@ adapter defect.
 The [message parts example](examples/responses/message_parts/main.go) edits and
 persists canonical output parts before continuing the conversation.
 
-The [tool options example](examples/responses/tool_options/main.go) combines
-strict overrides and function-name subsets. The
+The [tool options example](examples/responses/tool_options/main.go) demonstrates
+allowed and forced function-name subsets. The
 [forced cached tools example](examples/responses/cached_tools/main.go) reuses the
 same Forced multi-name options for addition and multiplication; the
 [allowed cached tools example](examples/responses/cached_tool_options/main.go)
@@ -614,8 +612,8 @@ The terminal event supplies response metadata and token usage exactly once.
 `response.failed` and `error` return errors. EOF or `[DONE]` without a terminal
 response is `io.ErrUnexpectedEOF`.
 
-Request modifiers receive a JSON object with `model` and `input`. Unknown fields,
-strict tool settings, and exact JSON numbers survive SDK serialization. `Stream`
+Request modifiers receive a JSON object with `model` and `input`. Unknown fields
+and exact JSON numbers survive SDK serialization. `Stream`
 and `Generate` retain control of `stream`. Response modifiers receive original
 response JSON. Chunk modifiers receive each original event, including events
 without a message projection; successful finalization (`end == true`) occurs

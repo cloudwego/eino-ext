@@ -40,8 +40,6 @@ func main() {
 
 func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	config.Thinking = &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)}
-	parallel := true
-	config.ParallelToolCalls = &parallel
 	cm, err := ark.NewResponsesAPIChatModel(ctx, config)
 	if err != nil {
 		return err

@@ -28,10 +28,9 @@ import (
 )
 
 // Track the original projections before modifiers. Terminal output supplies any
-// fields or suffixes not already emitted, without duplicating existing deltas.
+// missing reasoning and tool fields. Message text comes only from text deltas.
 type responsesStreamState struct {
 	parts          responsesPartsStream
-	content        strings.Builder
 	tools          map[int]*responsesStreamTool // keyed by SDK output_index
 	summaryIndex   int
 	summaryStarted bool
@@ -44,7 +43,6 @@ type responsesStreamTool struct {
 }
 
 func (s *responsesStreamState) record(msg *schema.Message) error {
-	s.content.WriteString(msg.Content)
 	for i := range msg.ToolCalls {
 		call := &msg.ToolCalls[i]
 		outputIndex, exists, err := extraIndex(call.Extra, keyResponsesItemIndex)
@@ -87,6 +85,13 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 	msg, terminal, err := projectResponsesStreamEvent(event, req)
 	if err != nil {
 		return msg, terminal, err
+	}
+	// Message text comes from output_text.delta. For now, we ignore differences
+	// between the accumulated deltas and the text in done or terminal events.
+	if msg != nil && event.OneOf.Type != responses.ResponseTextDeltaEventResponseStreamEventSum {
+		for i := range msg.AssistantGenMultiContent {
+			msg.AssistantGenMultiContent[i].Text = ""
+		}
 	}
 	parts, err := s.parts.resolve(event, msg, terminal)
 	if err != nil {
@@ -132,10 +137,6 @@ func (s *responsesStreamState) resolve(event *responses.ResponseStreamEvent, req
 		resp = &event.OneOf.ResponseIncompleteEvent.Response
 	default:
 		return msg, terminal, nil
-	}
-	msg.Content, err = responsesStreamSuffix(msg.Content, s.content.String(), "content")
-	if err != nil {
-		return nil, true, err
 	}
 	var toolDeltas []schema.ToolCall
 	for index, output := range resp.Output {

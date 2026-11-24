@@ -158,7 +158,7 @@ func TestGenerateOptionsAndCallbacks(t *testing.T) {
 		equal(t, "override", r.Header.Get("X-Custom"))
 		equal(t, "", r.Header.Get("X-Default"))
 		body := decodeRequest(t, r)
-		for key, want := range map[string]any{"model": "override-model", "temperature": float64(0), "top_p": float64(0), "max_tokens": float64(0), "max_completion_tokens": float64(16), "parallel_tool_calls": false, "user": "user-1", "repetition_penalty": float64(1), "logprobs": true, "top_logprobs": float64(3), "thinking": map[string]any{"type": "disabled"}, "reasoning_effort": "high", "response_format": map[string]any{"type": "json_object"}, "stream": false} {
+		for key, want := range map[string]any{"model": "override-model", "temperature": float64(0), "top_p": float64(0), "max_tokens": float64(0), "max_completion_tokens": float64(16), "parallel_tool_calls": false, "logprobs": true, "top_logprobs": float64(3), "thinking": map[string]any{"type": "disabled"}, "reasoning_effort": "high", "response_format": map[string]any{"type": "json_object"}, "stream": false} {
 			equal(t, want, body[key])
 		}
 		equal(t, []any{"stop"}, body["stop"])
@@ -174,7 +174,7 @@ func TestGenerateOptionsAndCallbacks(t *testing.T) {
 		equal(t, "developer", messages[0].(map[string]any)["role"])
 		writeResponse(w)
 	}, &ChatModelConfig{Model: "base", CustomHeader: map[string]string{"X-Default": "default"}, ParallelToolCalls: ptr(true), ToolStrict: ptr(true),
-		LogProbs: true, TopLogProbs: 3, RepetitionPenalty: ptr(float32(1)), LogitBias: map[string]int{"7": -10}, User: ptr("user-1"),
+		LogProbs: true, TopLogProbs: 3, LogitBias: map[string]int{"7": -10},
 		ResponseFormat: &chat.ChatCompletionResponseFormat{Type: chat.NewOptResponseFormatType(chat.ResponseFormatTypeJSONObject)},
 	})
 	bound, err := cm.WithTools([]*schema.ToolInfo{toolInfo("inspect")})

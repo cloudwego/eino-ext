@@ -64,9 +64,9 @@ func main() {
 | `Timeout`、`HTTPClient`、`RetryTimes` | 请求超时、自定义 HTTP 客户端和重试次数；提供 `HTTPClient` 时其超时配置优先于 `Timeout` |
 | `MaxTokens`、`MaxCompletionTokens` | 输出 token 限制，按模型要求选择参数 |
 | `Temperature`、`TopP`、`Stop` | 采样参数和停止词 |
-| `FrequencyPenalty`、`PresencePenalty`、`RepetitionPenalty`、`LogitBias` | token 选择控制 |
+| `FrequencyPenalty`、`PresencePenalty`、`LogitBias` | token 选择控制 |
 | `Thinking`、`ReasoningEffort`、`ResponseFormat` | 使用官方 SDK 类型配置思考模式、推理强度和输出格式 |
-| `CustomHeader`、`ServiceTier`、`User` | 自定义请求头、服务等级和终端用户标识 |
+| `CustomHeader`、`ServiceTier` | 自定义请求头和服务等级 |
 
 单次调用可以使用 Eino 的 `model.WithModel`、`model.WithTemperature`、
 `model.WithMaxTokens`、`model.WithTopP` 等选项。
@@ -395,7 +395,7 @@ if err != nil {
 reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("你好")})
 ```
 
-`ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置、请求头、并行工具调用和
+`ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置、请求头和
 请求/响应/流式 modifier。其 `Thinking`、`ReasoningEffort` 分别使用
 `responses.Thinking`、`responses.ReasoningEffort`，单次调用通过
 `WithResponsesThinking`、`WithResponsesReasoningEffort` 覆盖。
@@ -409,7 +409,7 @@ Context 和图片生成 API 仍使用旧模块。
 - `EnableToolWebSearch` 使用 `responses.WebSearchTool`；单次调用可通过
   `WithEnableToolWebSearch(nil)` 关闭。适配器默认发送 `ark-beta-web-search: true`，
   可用自定义请求头覆盖。`MaxToolCalls` / `WithMaxToolCalls` 设置内置工具轮次上限。
-- 函数工具支持 `ToolStrict`、`WithToolStrict`、调用级工具配置和候选名称筛选。
+- 函数工具支持调用级工具配置和候选名称筛选。
   Eino 工具调用的 `Type` 为 `function`，`ToolCall.ID` 保存 API 的 `call_id`；
   回传结果时将该值放入 `ToolCallID`。
 - 图片、音频、视频、文件及多模态工具结果沿用相同 Eino 消息结构与
@@ -441,14 +441,14 @@ Context 和图片生成 API 仍使用旧模块。
   即使 SDK 已声明相应输入类型，也不自动回传。这些 SDK 输出值留在 Message 中供读取；
   没有支持的输入映射的未知内容 part 会报错。
   历史转换限于 SDK 输入类型，不通过整体替换 input 补充 SDK 未支持的字段。
-  工具 strict 和显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
+  显式 payload modifier 继续使用 SDK 已声明的扩展能力；annotations
   使用 SDK codec 自带的未知变体保留机制。
   Generate 的 part `StreamingMeta` 为 nil。流式为每个 reasoning item 和每个 message content part 分配独立索引。每个 part 首次发出时，从 0 开始递增分配并在后续包复用，
   不按 `output_index` 做算术编码。函数调用单独从 0 开始按首次出现顺序分配
   `ToolCall.Index`，后续包复用；原生 `output_index` 保存在 ToolCall.Extra 以恢复历史顺序。
   函数调用不占用 part 索引。item done 或终止事件补齐元数据/签名，不重放完整正文。
   Eino Concat 只合并相邻 chunk，因此后续 parts/items 可能等待当前 item 的最终元数据；
-  同一 reasoning item 的新增摘要文本按 `summary_index` 单调不减地输出。若较早的索引又出现新增文本，流返回错误。done 和终态快照只补缺失后缀，raw 文本按 `content_index` 独立累积。
+  同一 reasoning item 的新增摘要文本按 `summary_index` 单调不减地输出。若较早的索引又出现新增文本，流返回错误。推理的 done 和终态快照只补缺失的推理后缀，raw 文本按 `content_index` 独立累积。
   旧正文和函数参数字段仍保持增量输出，summary 展示随对应 part chunks 输出。
   previous response ID 提供缓存历史，无需重发历史内容。
   reasoning parts 及其签名自动回传。
@@ -469,7 +469,7 @@ Context 和图片生成 API 仍使用旧模块。
 - `GetResponseID` 读取响应 ID；`GetArkRequestID` 读取服务返回的 HTTP 请求 ID。
   `GetResponsesTokenUsageDetails` 读取完整 SDK 用量；输出 parts 和 Extra 提供注释、
   内置工具结果等通用字段之外的信息。
-- 流式终止事件会补齐 delta 尚未发出的正文与工具调用；completed 的空输出与
+- 流式正文只取 `response.output_text.delta`，没有正文 delta 时正文为空。终止事件仍会补齐工具调用。completed 的空输出与
   Generate 一样返回 `ErrEmptyResponse`。`ReasoningContent` 只展示 summary，非空分段
   以换行符连接；流式从 summary part chunks 派生，added/delta/done 快照不重复展示。
   原始 reasoning content 和签名保留在输出 parts 及下轮 SDK 输入中；没有 summary 时
@@ -497,7 +497,7 @@ Responses 的强制选择仅在显式提供一个函数名称时按名称调用�
 
 通过 `SessionCache: &ark.SessionCacheConfig{EnableCache: true, TTL: 3600}` 存储响应。
 后续传入完整历史时，适配器寻找最近的未过期缓存消息，仅发送其后的增量，
-并设置 `previous_response_id`。`GetCacheExpiration` 读取过期时间；编辑缓存历史后，
+并设置 `previous_response_id`。`GetResponseCacheRef` 一并读取缓存响应 ID 和 Unix 秒级过期时间；编辑缓存历史后，
 使用 `InvalidateMessageCaches(messages)` 使相关消息的缓存失效。
 
 切换模型时，可用 `clean := ark.ClearReasoning(history)` 取得移除推理摘要、原文和密文的历史副本。
@@ -509,8 +509,8 @@ Chat Completions 可直接传入 `clean`。Responses 使用 `next.Generate(ctx, 
 （包括额外请求体中的工具编码）和 `tool_choice`。需要更换工具设置时应建立新的缓存链；
 自动会话缓存可先使消息缓存失效，再发送完整对话。
 
-[工具配置示例](examples/responses/tool_options/main.go) 展示 strict 覆盖值与候选名称
-筛选。[强制缓存工具示例](examples/responses/cached_tools/main.go) 用相同的 Forced
+[工具配置示例](examples/responses/tool_options/main.go) 展示如何按候选名称
+筛选工具。[强制缓存工具示例](examples/responses/cached_tools/main.go) 用相同的 Forced
 多名称 options 完成加法和乘法；[允许缓存工具示例](examples/responses/cached_tool_options/main.go)
 保持 Allowed options 不变，直到普通下一轮。两者都保留完整历史、打印缓存 token 数，
 续接继承首轮工具集合。强制调用示例在最终使用 Forbidden 前使本地缓存引用失效，
@@ -528,8 +528,7 @@ Chat Completions 可直接传入 `clean`。Responses 使用 `next.Generate(ctx, 
 `response.incomplete` 保留部分输出并记录结束原因；`response.failed` 和 `error`
 返回错误。未收到终止响应就遇到 EOF 或 `[DONE]`，返回 `io.ErrUnexpectedEOF`。
 
-请求 modifier 收到包含 `model` 和 `input` 的 JSON 对象，保留 SDK 未识别的字段、
-工具 strict 设置和 JSON 数字精度。`Generate` / `Stream` 控制 `stream` 字段。
+请求 modifier 收到包含 `model` 和 `input` 的 JSON 对象，保留 SDK 未识别的字段和 JSON 数字精度。`Generate` / `Stream` 控制 `stream` 字段。
 响应 modifier 收到原始响应 JSON；流式 modifier 收到每个原始事件，包括没有通用消息
 投影的事件。`response.completed` / `response.incomplete` 后调用一次 `end == true`。
 

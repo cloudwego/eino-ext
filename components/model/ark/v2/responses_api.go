@@ -36,7 +36,7 @@ import (
 var _ model.ToolCallingChatModel = (*ResponsesAPIChatModel)(nil)
 
 // ResponsesAPIConfig configures an Ark Responses API model. Shared call options
-// (WithCustomHeader, WithParallelToolCalls and modifiers) also apply.
+// (WithCustomHeader and modifiers) also apply.
 // SDK-specific formats and built-in tools use ark-runtime-go Responses types.
 type ResponsesAPIConfig struct {
 	Timeout                      *time.Duration
@@ -56,8 +56,6 @@ type ResponsesAPIConfig struct {
 	Thinking                     *responses.Thinking
 	ServiceTier                  *string
 	ReasoningEffort              *responses.ReasoningEffort
-	ParallelToolCalls            *bool
-	ToolStrict                   *bool
 	SessionCache                 *SessionCacheConfig
 	EnableToolWebSearch          *responses.WebSearchTool
 	MaxToolCalls                 *int64
@@ -95,7 +93,7 @@ func (cm *ResponsesAPIChatModel) WithTools(tools []*schema.ToolInfo) (model.Tool
 	if len(tools) == 0 {
 		return nil, fmt.Errorf("no tools to bind")
 	}
-	if _, err := toResponsesTools(tools, nil, cm.config.ToolStrict); err != nil {
+	if _, err := toResponsesTools(tools, nil); err != nil {
 		return nil, err
 	}
 	next := *cm

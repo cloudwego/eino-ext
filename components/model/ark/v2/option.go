@@ -65,6 +65,7 @@ func WithCustomHeader(headers map[string]string) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.customHeaders = headers })
 }
 
+// WithParallelToolCalls controls parallel tool calls for Chat Completions.
 func WithParallelToolCalls(enabled bool) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.parallelToolCalls = &enabled })
 }

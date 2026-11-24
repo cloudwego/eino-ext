@@ -37,11 +37,11 @@ func responsesRequestInputSnapshot(t *testing.T, cm *ResponsesAPIChatModel, comm
 	t.Helper()
 	config := &cm.config
 	state := map[string]any{
-		"Model": config.Model, "Temperature": config.Temperature, "ToolStrict": config.ToolStrict,
+		"Model": config.Model, "Temperature": config.Temperature,
 		"SessionCache": config.SessionCache, "CustomHeader": config.CustomHeader,
 		"EnableToolWebSearch": config.EnableToolWebSearch, "ConfigThinking": config.Thinking,
-		"MaxToolCalls": config.MaxToolCalls, "ParallelToolCalls": config.ParallelToolCalls,
-		"Bound": cm.rawTools, "Common": common, "Tools": tools, "Cache": opts.cache,
+		"MaxToolCalls": config.MaxToolCalls,
+		"Bound":        cm.rawTools, "Common": common, "Tools": tools, "Cache": opts.cache,
 		"Headers": opts.customHeaders, "Search": opts.enableWebSearch, "Thinking": opts.responsesThinking,
 	}
 	raw, err := json.Marshal(state)
@@ -64,7 +64,7 @@ func TestResponsesRequestInputsAreReadOnly(t *testing.T) {
 	for _, kind := range []string{"bound", "filtered", "cached named", "cached allowed"} {
 		t.Run(kind, func(t *testing.T) {
 			cm := testResponsesModel(t, func(http.ResponseWriter, *http.Request) { t.Error("request preparation reached HTTP") }, &ResponsesAPIConfig{
-				Model: "original", Temperature: ptr(float32(0.5)), ToolStrict: ptr(true),
+				Model: "original", Temperature: ptr(float32(0.5)),
 				CustomHeader:        map[string]string{"X-Instance": "original"},
 				SessionCache:        &SessionCacheConfig{EnableCache: true, TTL: 3600},
 				Thinking:            &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeEnabled)},
@@ -103,7 +103,7 @@ func TestResponsesRequestInputsAreReadOnly(t *testing.T) {
 func TestResponsesSharedRequestOptions(t *testing.T) {
 	for _, cached := range []bool{false, true} {
 		t.Run(fmt.Sprint(cached), func(t *testing.T) {
-			cm := testResponsesModel(t, func(http.ResponseWriter, *http.Request) { t.Error("request preparation reached HTTP") }, &ResponsesAPIConfig{ToolStrict: ptr(true)})
+			cm := testResponsesModel(t, func(http.ResponseWriter, *http.Request) { t.Error("request preparation reached HTTP") }, &ResponsesAPIConfig{})
 			check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect"), toolInfo("other")}))
 			var options []model.Option
 			if cached {
@@ -146,7 +146,7 @@ func TestResponsesSameInstanceCacheLifecycle(t *testing.T) {
 					var count atomic.Int32
 					var callbackTools [][]string
 					requests := make(chan map[string]any, 4)
-					config := &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, ToolStrict: ptr(true), CustomHeader: map[string]string{"X-Instance": "original"}, EnableToolWebSearch: &responses.WebSearchTool{}}
+					config := &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, CustomHeader: map[string]string{"X-Instance": "original"}, EnableToolWebSearch: &responses.WebSearchTool{}}
 					cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 						body := decodeRequest(t, r)
 						requests <- body
@@ -173,7 +173,7 @@ func TestResponsesSameInstanceCacheLifecycle(t *testing.T) {
 						return ctx
 					}).Build()
 					ctx := callbacks.InitCallbacks(context.Background(), nil, handler)
-					options := []model.Option{model.WithToolChoice(tc.choice, tc.names...), WithParallelToolCalls(false)}
+					options := []model.Option{model.WithToolChoice(tc.choice, tc.names...)}
 					if source == "option" {
 						options = append(options, model.WithTools([]*schema.ToolInfo{toolInfo("inspect"), toolInfo("other"), toolInfo("override-excluded")}))
 					}
@@ -200,7 +200,6 @@ func TestResponsesSameInstanceCacheLifecycle(t *testing.T) {
 						function := tool.(map[string]any)
 						equal(t, tc.names[i], function["name"])
 						equal(t, "function", function["type"])
-						equal(t, true, function["strict"])
 					}
 					equal(t, tc.wire, firstRequest["tool_choice"])
 					history = append(history, first, schema.UserMessage("second"))
@@ -233,7 +232,7 @@ func TestResponsesPrefixCachePreservesOptions(t *testing.T) {
 	cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 		requests <- decodeRequest(t, r)
 		writeResponses(w)
-	}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}, ToolStrict: ptr(true)})
+	}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 	check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 	cache := &CacheOption{HeadPreviousResponseID: ptr("existing-response"), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 1800}}
 	options := []model.Option{WithCache(cache)}

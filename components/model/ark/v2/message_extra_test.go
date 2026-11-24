@@ -123,7 +123,7 @@ func TestClearReasoningCopiesHistory(t *testing.T) {
 		return map[string]any{keyResponsesItemIndex: metadataInt64(i)}
 	}
 	msg := &schema.Message{Role: schema.Assistant, Extra: map[string]any{
-		keyEncryptedContent: "", keyCacheExpiration: metadataInt64(42), "ark-encrypted-content": "legacy",
+		keyEncryptedContent: "", keyResponseID: metadataString("r1"), keyCacheExpiration: metadataInt64(42), "ark-encrypted-content": "legacy",
 	}, AssistantGenMultiContent: []schema.MessageOutputPart{
 		{Type: ResponsesOutputItem, Extra: itemIndex(0)},
 		{Type: schema.ChatMessagePartTypeReasoning, Extra: itemIndex(0)},
@@ -140,7 +140,7 @@ func TestClearReasoningCopiesHistory(t *testing.T) {
 			check(t, err)
 			var restored schema.Message
 			check(t, codec.unmarshal(raw, &restored))
-			other := &schema.Message{Extra: map[string]any{keyCacheExpiration: metadataInt64(21)},
+			other := &schema.Message{Extra: map[string]any{keyResponseID: metadataString("r2"), keyCacheExpiration: metadataInt64(21)},
 				AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "other", Extra: itemIndex(0)}}}
 			clean := ClearReasoning([]*schema.Message{&restored, nil, other})
 			equal(t, (*schema.Message)(nil), clean[1])
@@ -150,12 +150,17 @@ func TestClearReasoningCopiesHistory(t *testing.T) {
 			equal(t, false, encrypted)
 			equal(t, "legacy", clean[0].Extra["ark-encrypted-content"])
 			equal(t, clean, ClearReasoning(clean))
-			expires, ok := GetCacheExpiration(clean[0])
+			ref, ok := GetResponseCacheRef(clean[0])
 			equal(t, true, ok)
-			equal(t, int64(42), expires)
+			equal(t, ResponseCacheRef{ResponseID: "r1", ExpireAt: 42}, ref)
 			check(t, InvalidateMessageCaches(clean))
+			_, ok = GetResponseCacheRef(clean[0])
+			equal(t, false, ok)
+			id, ok := GetResponseID(clean[0])
+			equal(t, true, ok)
+			equal(t, "r1", id)
 			for _, original := range []*schema.Message{&restored, other} {
-				_, ok := GetCacheExpiration(original)
+				_, ok := GetResponseCacheRef(original)
 				equal(t, true, ok)
 			}
 			clean[0].AssistantGenMultiContent[1].Text = "edit"
@@ -304,10 +309,10 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 						equal(t, true, ok)
 						equal(t, wantUsage, usage)
 						equalMetadataJSON(t, msg.AssistantGenMultiContent, restored.AssistantGenMultiContent)
-						wantExpiration, _ := GetCacheExpiration(msg)
-						expiration, ok := GetCacheExpiration(&restored)
+						wantRef, _ := GetResponseCacheRef(msg)
+						ref, ok := GetResponseCacheRef(&restored)
 						equal(t, true, ok)
-						equal(t, wantExpiration, expiration)
+						equal(t, wantRef, ref)
 						wantInput, err := toResponsesInput([]*schema.Message{msg})
 						check(t, err)
 						input, err := toResponsesInput([]*schema.Message{&restored})
@@ -521,7 +526,7 @@ func TestLegacyExtraKeysIgnored(t *testing.T) {
 	equal(t, false, ok)
 	_, ok = GetResponseID(msg)
 	equal(t, false, ok)
-	_, ok = GetCacheExpiration(msg)
+	_, ok = GetResponseCacheRef(msg)
 	equal(t, false, ok)
 	part := &schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Extra: map[string]any{"ark-model-video-url-fps": 1.0}}
 	if GetInputVideoFPS(part) != nil {

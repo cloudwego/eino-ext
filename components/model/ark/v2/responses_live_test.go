@@ -97,14 +97,13 @@ func TestResponsesLive(t *testing.T) {
 		}
 		next := *config
 		next.SessionCache = &SessionCacheConfig{EnableCache: true, TTL: 3600}
-		next.ToolStrict = ptr(true)
 		cached, err := NewResponsesAPIChatModel(ctx, &next)
 		check(t, err)
 		check(t, cached.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 		first, err := cached.Generate(ctx, []*schema.Message{schema.UserMessage("Remember the code CACHE_731. Reply OK.")}, model.WithToolChoice(schema.ToolChoiceForbidden))
 		check(t, err)
-		expires, ok := GetCacheExpiration(first)
-		if !ok || expires <= time.Now().Unix() {
+		ref, ok := GetResponseCacheRef(first)
+		if !ok || ref.ExpireAt <= time.Now().Unix() {
 			t.Fatal("missing valid cache expiration")
 		}
 		msg, err := cached.Generate(ctx, []*schema.Message{first, schema.UserMessage("What was the code? Reply with the code only.")}, model.WithToolChoice(schema.ToolChoiceForbidden))

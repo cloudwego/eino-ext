@@ -56,7 +56,7 @@ func projectResponsesResponse(resp *responses.Response, req *responses.Responses
 	return projectResponsesResponseParts(resp, req, false)
 }
 
-func projectResponsesResponseParts(resp *responses.Response, req *responses.ResponsesRequest, keepSegments bool) (*schema.Message, error) {
+func projectResponsesResponseParts(resp *responses.Response, req *responses.ResponsesRequest, streaming bool) (*schema.Message, error) {
 	msg, err := projectResponsesMetadata(resp, req)
 	if err != nil {
 		return nil, err
@@ -64,7 +64,7 @@ func projectResponsesResponseParts(resp *responses.Response, req *responses.Resp
 	if err := validateResponsesOutput(resp, req); err != nil {
 		return nil, err
 	}
-	if err := projectResponsesOutput(msg, resp.Output, keepSegments); err != nil {
+	if err := projectResponsesOutput(msg, resp.Output, streaming); err != nil {
 		return nil, err
 	}
 	return msg, nil
@@ -126,8 +126,8 @@ func validateResponsesOutput(resp *responses.Response, req *responses.ResponsesR
 }
 
 // Project a complete SDK output into canonical parts and legacy message fields
-// together. Streaming callers reconcile the legacy fields after projection.
-func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem, keepSegments bool) error {
+// together. Streaming callers keep reasoning segments and get text from deltas.
+func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem, streaming bool) error {
 	var parts []schema.MessageOutputPart
 	var content strings.Builder
 	var reasoning []responses.ItemReasoning
@@ -137,13 +137,16 @@ func projectResponsesOutput(msg *schema.Message, output []responses.OutputItem, 
 		if err != nil {
 			return fmt.Errorf("Responses output item %d: %w", index, err)
 		}
-		if !keepSegments && item.OneOf.Type == responses.ItemReasoningOutputItemSum {
+		if !streaming && item.OneOf.Type == responses.ItemReasoningOutputItemSum {
 			var projection reasoningItemProjection
 			children = projection.parts(children)
 		}
 		parts = append(parts, children...)
 		switch item.OneOf.Type {
 		case responses.ItemOutputMessageOutputItemSum:
+			if streaming {
+				continue
+			}
 			for _, part := range children {
 				if part.Type == schema.ChatMessagePartTypeText {
 					content.WriteString(part.Text)

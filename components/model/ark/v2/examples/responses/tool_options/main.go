@@ -36,17 +36,14 @@ func main() {
 }
 
 func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
-	strict := true
-	config.ToolStrict = &strict
 	var parameters jsonschema.Schema
 	if err := sonic.UnmarshalString(`{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}`, &parameters); err != nil {
 		return err
 	}
 	add := &schema.ToolInfo{Name: "add", Desc: "Add two integers", ParamsOneOf: schema.NewParamsOneOfByJSONSchema(&parameters)}
-	multiply := ark.WithToolStrict(&schema.ToolInfo{Name: "multiply", Desc: "Multiply two integers", ParamsOneOf: add.ParamsOneOf}, false)
-	subtract := ark.WithToolStrict(&schema.ToolInfo{Name: "subtract", Desc: "Subtract b from a", ParamsOneOf: add.ParamsOneOf}, true)
-	// add inherits strict=true; multiply overrides it with false. All three
-	// tools are available locally, but the candidate names exclude subtract.
+	multiply := &schema.ToolInfo{Name: "multiply", Desc: "Multiply two integers", ParamsOneOf: add.ParamsOneOf}
+	subtract := &schema.ToolInfo{Name: "subtract", Desc: "Subtract b from a", ParamsOneOf: add.ParamsOneOf}
+	// All three tools are available locally. The candidate names exclude subtract.
 	tools := []*schema.ToolInfo{add, multiply, subtract}
 	cm, err := ark.NewResponsesAPIChatModel(ctx, config)
 	if err != nil {
@@ -73,8 +70,7 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 
 	fmt.Println("Forced subset: add, multiply")
 	history = append(history, schema.UserMessage("Now use multiply to calculate 6 * 7."))
-	// The per-call definitions replace the bindings; strict overrides are
-	// preserved. Multiple forced names send required with a filtered tool set.
+	// Multiple forced names send required with a filtered tool set.
 	reader, err := cm.Stream(ctx, history, model.WithTools(tools), model.WithToolChoice(schema.ToolChoiceForced, "add", "multiply"))
 	if err != nil {
 		return err

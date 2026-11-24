@@ -21,10 +21,10 @@ go run ./examples/responses/tools
 | [generate](generate/main.go) | Generate a text response | Optional `ARK_PROMPT` |
 | [stream](stream/main.go) | Receive deltas, concatenate, and check/print the assembled message structure | Optional `ARK_PROMPT` |
 | [tools](tools/main.go) | Force a streamed call without naming the sole tool, execute addition, and return its result | Uses a fixed `8 + 13` conversation |
-| [tool_options](tool_options/main.go) | Combine strict defaults/overrides, full JSON Schema, bound/call-level tools, and Allowed/Forced name subsets | Uses fixed addition and multiplication prompts |
+| [tool_options](tool_options/main.go) | Combine full JSON Schema, bound/call-level tools, and Allowed/Forced name subsets | Uses fixed addition and multiplication prompts |
 | [structured_output](structured_output/main.go) | Configure strict JSON schema and decode the answer | Optional `ARK_PROMPT` |
 | [reasoning](reasoning/main.go) | Stream reasoning and pass the assistant message back for a follow-up | Uses a fixed multiplication/follow-up conversation |
-| [mixed_stream](mixed_stream/main.go) | Enable thinking and parallel tools, print every chunk and its native/merge indices, concatenate, and execute addition and multiplication | Optional `ARK_PROMPT` |
+| [mixed_stream](mixed_stream/main.go) | Enable thinking and bind two tools, print every chunk and its native/merge indices, concatenate, and execute addition and multiplication | Optional `ARK_PROMPT` |
 | [modifiers](modifiers/main.go) | Modify request JSON, inspect original response bytes, and finalize a stream | Optional `ARK_PROMPT` |
 | [multimodal](multimodal/main.go) | Build image/audio/video message parts, or read a local image as base64 | `ARK_IMAGE_URL`, `ARK_AUDIO_URL`, `ARK_VIDEO_URL`; optional `ARK_IMAGE_FILE` and `ARK_PROMPT` |
 | [file](file/main.go) | Send a PDF by FileID or local base64 | Required `ARK_FILE_ID` or `ARK_FILE_PATH`; optional `ARK_PROMPT` |
@@ -59,11 +59,11 @@ for subsequent calls. Model-answer checks belong to the separate validation
 harness and adapter tests.
 
 The [tool options example](tool_options/main.go) shows a full parameter schema
-with `additionalProperties: false`. `add` inherits the model's strict default,
-`multiply` overrides it with false, and `subtract` is excluded by candidate names.
+with `additionalProperties: false`. The candidate names include `add` and
+`multiply` and exclude `subtract`.
 Allowed permits a direct answer; Forced requires a call. A single explicit name
 selects that function; Forced without a name or with multiple names uses
-`required`. The basic tools example leaves strict unset.
+`required`.
 
 The [forced cached tools example](cached_tools/main.go) keeps the same model,
 complete Eino history, and Forced candidate options across two function calls.

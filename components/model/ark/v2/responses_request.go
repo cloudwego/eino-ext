@@ -33,8 +33,8 @@ func (cm *ResponsesAPIChatModel) getOptions(opts ...model.Option) (*model.Option
 	return model.GetCommonOptions(&model.Options{Model: &cm.config.Model, MaxTokens: cm.config.MaxOutputTokens,
 			Temperature: cm.config.Temperature, TopP: cm.config.TopP, ToolChoice: cm.toolChoice}, opts...),
 		model.GetImplSpecificOptions(&arkOptions{customHeaders: cm.config.CustomHeader, responsesThinking: cm.config.Thinking,
-			responsesReasoningEffort: cm.config.ReasoningEffort, parallelToolCalls: cm.config.ParallelToolCalls,
-			cache: &CacheOption{SessionCache: cm.config.SessionCache}, enableWebSearch: cm.config.EnableToolWebSearch,
+			responsesReasoningEffort: cm.config.ReasoningEffort,
+			cache:                    &CacheOption{SessionCache: cm.config.SessionCache}, enableWebSearch: cm.config.EnableToolWebSearch,
 			maxToolCalls:           cm.config.MaxToolCalls,
 			requestPayloadModifier: cm.config.RequestPayloadModifier, responseMessageModifier: cm.config.ResponseMessageModifier,
 			responseChunkMessageModifier: cm.config.ResponseChunkMessageModifier}, opts...)
@@ -70,9 +70,6 @@ func (cm *ResponsesAPIChatModel) genRequest(in []*schema.Message, common *model.
 	}
 	if opts.responsesReasoningEffort != nil {
 		req.Reasoning = responses.NewOptReasoning(responses.Reasoning{Effort: responses.NewOptReasoningEffort(*opts.responsesReasoningEffort)})
-	}
-	if opts.parallelToolCalls != nil {
-		req.ParallelToolCalls = responses.NewOptBool(*opts.parallelToolCalls)
 	}
 	if opts.maxToolCalls != nil {
 		req.MaxToolCalls = responses.NewOptInt64(*opts.maxToolCalls)
@@ -250,7 +247,7 @@ func (cm *ResponsesAPIChatModel) buildResponsesTools(common *model.Options, opts
 		return responsesTools{}, fmt.Errorf("tool_choice is forced but no tools are provided")
 	}
 	choice := toResponsesToolChoice(common.ToolChoice, common.AllowedToolNames)
-	definitions, err := toResponsesTools(tools, search, cm.config.ToolStrict)
+	definitions, err := toResponsesTools(tools, search)
 	if err != nil {
 		return responsesTools{}, err
 	}
@@ -275,17 +272,15 @@ func responsesCallbackTools(tools []*schema.ToolInfo, names []string) []*schema.
 	return selected
 }
 
-// The pinned SDK's function tool lacks strict. Encode every function using this
-// representation so strict does not select a different serialization path.
+// Keep function parameters as raw JSON to preserve schema extensions and number precision.
 type responsesFunctionTool struct {
 	Type        responses.FunctionToolType `json:"type"`
 	Name        string                     `json:"name"`
 	Description string                     `json:"description,omitempty"`
 	Parameters  json.RawMessage            `json:"parameters,omitempty"`
-	Strict      *bool                      `json:"strict,omitempty"`
 }
 
-func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool, strict *bool) (json.RawMessage, error) {
+func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool) (json.RawMessage, error) {
 	if tools == nil && search == nil {
 		return nil, nil
 	}
@@ -293,10 +288,6 @@ func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool,
 	for _, ti := range tools {
 		if ti == nil {
 			return nil, fmt.Errorf("tool info cannot be nil")
-		}
-		setting, err := toolStrict(ti, strict)
-		if err != nil {
-			return nil, err
 		}
 		data, err := toolParametersJSON(ti)
 		if err != nil {
@@ -309,7 +300,7 @@ func toResponsesTools(tools []*schema.ToolInfo, search *responses.WebSearchTool,
 		}
 		wireTools = append(wireTools, &responsesFunctionTool{
 			Type: responses.FunctionToolTypeFunction, Name: ti.Name,
-			Description: ti.Desc, Parameters: data, Strict: setting,
+			Description: ti.Desc, Parameters: data,
 		})
 	}
 	if search != nil {

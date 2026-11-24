@@ -79,7 +79,7 @@ func mediaDataURL(mimeType, data string) string {
 const toolStrictKey = "ark-tool-strict"
 
 // WithToolStrict returns a copy of tool with its function strict setting. The
-// setting overrides the model's ToolStrict default for this tool in both WithTools
+// setting overrides the Chat model's ToolStrict default for this tool in both WithTools
 // and model.WithTools. The original ToolInfo and its Extra map are unchanged.
 func WithToolStrict(tool *schema.ToolInfo, strict bool) *schema.ToolInfo {
 	if tool == nil {

@@ -57,11 +57,24 @@ func GetResponseID(msg *schema.Message) (string, bool) {
 	}
 	return extraString(msg.Extra, keyResponseID)
 }
-func GetCacheExpiration(msg *schema.Message) (int64, bool) {
-	if msg == nil {
-		return 0, false
+
+// ResponseCacheRef identifies a stored response and its expiration in Unix seconds.
+type ResponseCacheRef struct {
+	ResponseID string
+	ExpireAt   int64
+}
+
+// GetResponseCacheRef returns the cache reference recorded on msg, including expired references.
+func GetResponseCacheRef(msg *schema.Message) (ResponseCacheRef, bool) {
+	id, ok := GetResponseID(msg)
+	if !ok || id == "" {
+		return ResponseCacheRef{}, false
 	}
-	return extraInt64(msg.Extra, keyCacheExpiration)
+	expires, ok := extraInt64(msg.Extra, keyCacheExpiration)
+	if !ok {
+		return ResponseCacheRef{}, false
+	}
+	return ResponseCacheRef{ResponseID: id, ExpireAt: expires}, true
 }
 
 // InvalidateMessageCaches prevents automatic cache reuse for these messages.
@@ -105,18 +118,14 @@ func populateResponsesCache(in []*schema.Message, req *responses.ResponsesReques
 		return in, nil
 	}
 	for i := len(in) - 1; i >= 0; i-- {
-		expires, ok := GetCacheExpiration(in[i])
-		if !ok || expires <= now {
-			continue
-		}
-		id, ok := GetResponseID(in[i])
-		if !ok || id == "" {
+		ref, ok := GetResponseCacheRef(in[i])
+		if !ok || ref.ExpireAt <= now {
 			continue
 		}
 		if i+1 == len(in) {
 			return nil, fmt.Errorf("no incremental input after cached response")
 		}
-		req.PreviousResponseID = responses.NewOptString(id)
+		req.PreviousResponseID = responses.NewOptString(ref.ResponseID)
 		return in[i+1:], nil
 	}
 	return in, nil

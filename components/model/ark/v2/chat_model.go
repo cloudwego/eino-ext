@@ -63,7 +63,6 @@ type ChatModelConfig struct {
 	Stop                []string
 	FrequencyPenalty    *float32
 	PresencePenalty     *float32
-	RepetitionPenalty   *float32
 	LogitBias           map[string]int
 	LogProbs            bool
 	TopLogProbs         int
@@ -72,7 +71,6 @@ type ChatModelConfig struct {
 	ServiceTier         *string
 	ReasoningEffort     *chat.ReasoningEffort
 	ParallelToolCalls   *bool
-	User                *string
 	// ToolStrict sets the default strict schema adherence for function tools.
 	// WithToolStrict overrides it for an individual tool. Nil omits the field
 	// for tools without an explicit override.

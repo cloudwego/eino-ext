@@ -58,12 +58,9 @@ func callResponsesWithOptions(t *testing.T, cm *ResponsesAPIChatModel, mode stri
 
 func TestResponsesCachedRequestOmitsTools(t *testing.T) {
 	for _, mode := range []string{"generate", "stream"} {
-		for _, kind := range []string{"no tools", "bound", "strict", "call tools", "web search", "modifier"} {
+		for _, kind := range []string{"no tools", "bound", "call tools", "web search", "modifier"} {
 			t.Run(mode+"/"+kind, func(t *testing.T) {
 				config := &ResponsesAPIConfig{}
-				if kind == "strict" || kind == "modifier" {
-					config.ToolStrict = ptr(true)
-				}
 				if kind == "web search" {
 					config.EnableToolWebSearch = &responses.WebSearchTool{}
 				}
@@ -81,7 +78,7 @@ func TestResponsesCachedRequestOmitsTools(t *testing.T) {
 				}
 				opts := []model.Option{WithCache(&CacheOption{HeadPreviousResponseID: ptr("cached-response")})}
 				if kind == "call tools" {
-					opts = append(opts, model.WithTools([]*schema.ToolInfo{WithToolStrict(toolInfo("inspect"), false)}))
+					opts = append(opts, model.WithTools([]*schema.ToolInfo{toolInfo("inspect")}))
 				}
 				if kind == "modifier" {
 					opts = append(opts, WithRequestPayloadModifier(func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) { return raw, nil }))
@@ -116,7 +113,7 @@ func TestResponsesCachedImageToolContinuation(t *testing.T) {
 						return
 					}
 					writeResponsesHistoryReply(w, false, body["stream"] == true)
-				}, &ResponsesAPIConfig{ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
+				}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("view_image")}))
 				user := schema.UserMessage("view the image")
 				first, err := cm.Generate(context.Background(), []*schema.Message{user})
@@ -125,7 +122,7 @@ func TestResponsesCachedImageToolContinuation(t *testing.T) {
 				if _, present := body["previous_response_id"]; present {
 					t.Fatal("first call reused a cache")
 				}
-				equal(t, true, body["tools"].([]any)[0].(map[string]any)["strict"])
+				equal(t, "view_image", body["tools"].([]any)[0].(map[string]any)["name"])
 				tool := &schema.Message{Role: schema.Tool, ToolCallID: "call-image", UserInputMultiContent: []schema.MessageInputPart{
 					{Type: schema.ChatMessagePartTypeText, Text: "image result"},
 					{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{Base64Data: ptr("aGVsbG8="), MIMEType: "image/png"}}},
@@ -148,7 +145,7 @@ func TestResponsesCachedImageToolContinuation(t *testing.T) {
 				if _, present := body["previous_response_id"]; present {
 					t.Fatal("invalidated cache was reused")
 				}
-				equal(t, true, body["tools"].([]any)[0].(map[string]any)["strict"])
+				equal(t, "view_image", body["tools"].([]any)[0].(map[string]any)["name"])
 				input = body["input"].([]any)
 				equal(t, 3, len(input))
 				equal(t, "user", input[0].(map[string]any)["role"])
@@ -171,12 +168,12 @@ func TestResponsesCachedTextConversation(t *testing.T) {
 					return
 				}
 				writeResponsesHistoryReply(w, false, body["stream"] == true)
-			}, &ResponsesAPIConfig{ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
+			}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 			check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 			user := schema.UserMessage("first turn")
 			first := callResponsesWithOptions(t, cm, mode, []*schema.Message{user})
 			firstRequest := <-requests
-			equal(t, true, firstRequest["tools"].([]any)[0].(map[string]any)["strict"])
+			equal(t, "inspect", firstRequest["tools"].([]any)[0].(map[string]any)["name"])
 			id, ok := GetResponseID(first)
 			equal(t, true, ok)
 			reply := callResponsesWithOptions(t, cm, mode, []*schema.Message{user, first, schema.UserMessage("second turn")})
@@ -203,11 +200,11 @@ func TestResponsesCachedToolConversation(t *testing.T) {
 						return
 					}
 					writeResponsesHistoryReply(w, calls.Add(1) == 1, body["stream"] == true)
-				}, &ResponsesAPIConfig{ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
+				}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
 				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 				user := schema.UserMessage("inspect")
 				first := callResponsesWithOptions(t, cm, mode, []*schema.Message{user})
-				equal(t, true, (<-requests)["tools"].([]any)[0].(map[string]any)["strict"])
+				equal(t, "inspect", (<-requests)["tools"].([]any)[0].(map[string]any)["name"])
 				history := roundTripHistory(t, codec, []*schema.Message{user, first, {Role: schema.Tool, ToolCallID: "call-1", Content: "tool result"}})
 				answer := callResponsesWithOptions(t, cm, mode, history)
 				body := <-requests

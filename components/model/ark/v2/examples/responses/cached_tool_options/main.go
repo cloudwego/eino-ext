@@ -37,8 +37,6 @@ func main() {
 
 func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	config.SessionCache = &ark.SessionCacheConfig{EnableCache: true, TTL: 3600}
-	strict := true
-	config.ToolStrict = &strict
 	cm, err := ark.NewResponsesAPIChatModel(ctx, config)
 	if err != nil {
 		return err

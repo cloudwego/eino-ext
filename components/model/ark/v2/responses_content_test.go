@@ -208,7 +208,7 @@ func TestResponsesPrefixCache(t *testing.T) {
 			writeResponses(w)
 			return
 		}
-		equal(t, true, body["tools"].([]any)[0].(map[string]any)["strict"])
+		equal(t, "inspect", body["tools"].([]any)[0].(map[string]any)["name"])
 		equal(t, true, body["store"])
 		equal(t, true, body["caching"].(map[string]any)["prefix"])
 		equal(t, false, body["stream"])
@@ -219,7 +219,7 @@ func TestResponsesPrefixCache(t *testing.T) {
 		check(t, err)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(raw)
-	}, &ResponsesAPIConfig{ToolStrict: ptr(true)})
+	}, &ResponsesAPIConfig{})
 	check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 	info, err := cm.CreatePrefixCache(context.Background(), []*schema.Message{schema.SystemMessage("prefix")}, 3600)
 	check(t, err)

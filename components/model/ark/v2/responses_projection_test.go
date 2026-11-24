@@ -58,6 +58,20 @@ func projectedResponsesMessage(t *testing.T, mode, output string) *schema.Messag
 		raw = compact.String()
 		if body["stream"] == true {
 			w.Header().Set("Content-Type", "text/event-stream")
+			var items []struct {
+				ID      string
+				Content []struct{ Type, Text string }
+			}
+			check(t, json.Unmarshal([]byte(output), &items))
+			for i, item := range items {
+				for j, part := range item.Content {
+					if part.Type == "output_text" {
+						_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{
+							"output_index": i, "content_index": j, "item_id": item.ID, "delta": part.Text,
+						}))
+					}
+				}
+			}
 			_, _ = io.WriteString(w, responseEvent("response.completed", map[string]any{"response": json.RawMessage(raw)}))
 		} else {
 			w.Header().Set("Content-Type", "application/json")
@@ -625,6 +639,7 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 					{"response.reasoning_text.delta", map[string]any{"output_index": 0, "content_index": 0, "item_id": "r", "delta": "R1"}},
 					{"response.output_text.delta", map[string]any{"output_index": 1, "content_index": 0, "item_id": "m1", "delta": "A"}},
 					{"response.output_text.delta", map[string]any{"output_index": 1, "content_index": 1, "item_id": "m1", "delta": "B"}},
+					{"response.output_text.delta", map[string]any{"output_index": 2, "content_index": 0, "item_id": "m2", "delta": "C"}},
 				} {
 					_, _ = io.WriteString(w, responseEvent(delta.event, delta.data))
 				}
@@ -643,7 +658,7 @@ func TestResponsesStreamingPartMetadata(t *testing.T) {
 				check(t, err)
 				chunks = append(chunks, chunk)
 			}
-			equal(t, 4, len(chunks))
+			equal(t, 5, len(chunks))
 			equal(t, 1, len(chunks[0].AssistantGenMultiContent))
 			assertRawReasoning(t, chunks[0].AssistantGenMultiContent[0], "R1")
 			for _, chunk := range chunks[1 : len(chunks)-1] {

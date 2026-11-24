@@ -107,7 +107,7 @@ func TestResponsesGenerate(t *testing.T) {
 	var modifierCalls int
 	config := &ResponsesAPIConfig{Model: "requested-model", MaxOutputTokens: ptr(1024), Temperature: ptr(float32(0.7)), TopP: ptr(float32(0.9)),
 		Thinking: &responses.Thinking{Type: responses.NewOptThinkingMode(responses.ThinkingModeDisabled)}, ReasoningEffort: ptr(responses.ReasoningEffortLow),
-		ParallelToolCalls: ptr(true), ToolStrict: ptr(true), SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600},
+		SessionCache:        &SessionCacheConfig{EnableCache: true, TTL: 3600},
 		EnableToolWebSearch: &responses.WebSearchTool{Limit: responses.NewOptInt64(2)}, MaxToolCalls: ptr(int64(3)),
 		CustomHeader:   map[string]string{"X-Test": "configured"},
 		ResponseFormat: &responses.TextFormat{Type: responses.TextFormatTypeJSONObject},
@@ -137,7 +137,12 @@ func TestResponsesGenerate(t *testing.T) {
 		equal(t, 2, len(tools))
 		function := tools[0].(map[string]any)
 		equal(t, "inspect", function["name"])
-		equal(t, false, function["strict"])
+		if _, ok := function["strict"]; ok {
+			t.Error("Responses function tool contains Chat strict setting")
+		}
+		if _, ok := body["parallel_tool_calls"]; ok {
+			t.Error("Responses request contains Chat parallel tool setting")
+		}
 		equal(t, "function", function["type"])
 		equal(t, "web_search", tools[1].(map[string]any)["type"])
 		writeResponses(w)
@@ -147,7 +152,7 @@ func TestResponsesGenerate(t *testing.T) {
 		callbackContent = out.(*model.CallbackOutput).Message.Content
 		return context.Background()
 	}).Build())
-	out, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("hello")}, WithCustomHeader(map[string]string{"X-Test": "override"}))
+	out, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("hello")}, WithCustomHeader(map[string]string{"X-Test": "override"}), WithParallelToolCalls(false))
 	check(t, err)
 	equal(t, "done!", out.Content)
 	equal(t, "done!", callbackContent)
@@ -160,9 +165,9 @@ func TestResponsesGenerate(t *testing.T) {
 	id, ok := GetResponseID(out)
 	equal(t, true, ok)
 	equal(t, "resp-1", id)
-	expires, ok := GetCacheExpiration(out)
+	ref, ok := GetResponseCacheRef(out)
 	equal(t, true, ok)
-	equal(t, int64(4102444800), expires)
+	equal(t, ResponseCacheRef{ResponseID: id, ExpireAt: 4102444800}, ref)
 	usage, ok := GetResponsesTokenUsageDetails(out)
 	equal(t, true, ok)
 	equal(t, int64(2), usage.InputTokensDetails.CachedTokens)
@@ -200,7 +205,7 @@ func TestResponsesToolsAndPayload(t *testing.T) {
 						equal(t, "inspect", body["tool_choice"].(map[string]any)["name"])
 					}
 					writeResponses(w)
-				}, &ResponsesAPIConfig{Temperature: ptr(float32(1)), ToolStrict: ptr(true)})
+				}, &ResponsesAPIConfig{Temperature: ptr(float32(1))})
 				check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect"), toolInfo("other"), toolInfo("excluded")}))
 				_, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hi")}, model.WithToolChoice(choice, names...), WithRequestPayloadModifier(func(_ context.Context, _ []*schema.Message, raw []byte) ([]byte, error) {
 					var body map[string]json.RawMessage
@@ -365,7 +370,7 @@ func TestResponsesCacheAndReasoning(t *testing.T) {
 }
 
 func TestResponsesConcurrentAndCancellation(t *testing.T) {
-	cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) { writeResponses(w) }, &ResponsesAPIConfig{ToolStrict: ptr(true)})
+	cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) { writeResponses(w) }, &ResponsesAPIConfig{})
 	check(t, cm.BindTools([]*schema.ToolInfo{toolInfo("inspect")}))
 	var wg sync.WaitGroup
 	for i := 0; i < 8; i++ {
