@@ -68,8 +68,8 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	if err != nil {
 		return err
 	}
-	id, _ := ark.GetResponseID(assistant)
-	fmt.Println("Cached tool-call response:", id)
+	meta, _ := ark.GetResponsesMetadata(assistant)
+	fmt.Println("Cached tool-call response:", meta.ResponseID)
 	if len(assistant.ToolCalls) == 0 {
 		// Allowed may choose a direct answer; the cache can still be reused.
 		exampleutil.PrintResponse(assistant)

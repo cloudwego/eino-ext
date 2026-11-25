@@ -61,8 +61,8 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 			fmt.Printf("Search item: %v status=%v\n", part.Extra["ark-v2-responses-item-id"], part.Extra["ark-v2-responses-item-status"])
 		}
 	}
-	if usage, ok := ark.GetResponsesTokenUsageDetails(reply); ok {
-		fmt.Println("Web search calls:", usage.ToolUsage.Or(responses.ToolUsage{}).WebSearch.Or(0))
+	if meta, ok := ark.GetResponsesMetadata(reply); ok && meta.UsageDetails != nil {
+		fmt.Println("Web search calls:", meta.UsageDetails.ToolUsage.Or(responses.ToolUsage{}).WebSearch.Or(0))
 	}
 	return nil
 }

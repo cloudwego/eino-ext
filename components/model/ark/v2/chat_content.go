@@ -41,20 +41,22 @@ func toArkContent(msg *schema.Message) (chat.ChatCompletionMessageContent, error
 		}
 	case len(msg.AssistantGenMultiContent) > 0:
 		for _, output := range msg.AssistantGenMultiContent {
-			if output.Type == schema.ChatMessagePartTypeReasoning {
+			switch output.Type {
+			case schema.ChatMessagePartTypeText:
+				parts = append(parts, chatTextPart(output.Text))
+			case schema.ChatMessagePartTypeReasoning:
 				if output.Reasoning == nil {
 					return chat.ChatCompletionMessageContent{}, fmt.Errorf("assistant reasoning must not be nil")
 				}
-				continue
+			default:
+				return chat.ChatCompletionMessageContent{}, fmt.Errorf("unsupported assistant part type %s", output.Type)
 			}
-			part, err := toChatOutputPart(output)
-			if err != nil {
-				return chat.ChatCompletionMessageContent{}, err
-			}
-			parts = append(parts, part)
 		}
 	case len(msg.MultiContent) > 0:
 		for _, legacy := range msg.MultiContent {
+			if msg.Role == schema.Assistant && legacy.Type != schema.ChatMessagePartTypeText {
+				return chat.ChatCompletionMessageContent{}, fmt.Errorf("unsupported assistant part type %s", legacy.Type)
+			}
 			part, err := toChatLegacyPart(legacy)
 			if err != nil {
 				return chat.ChatCompletionMessageContent{}, err
@@ -191,25 +193,6 @@ func chatVideoPart(common schema.MessagePartCommon, fps *float64) (chat.ChatComp
 	}
 	sum = chat.NewChatCompletionContentPartVideoChatCompletionContentPartSum(chat.ChatCompletionContentPartVideo{Type: chat.ChatCompletionContentPartVideoTypeVideoURL, VideoURL: video})
 	return chat.ChatCompletionContentPart{OneOf: sum}, nil
-}
-
-func toChatOutputPart(part schema.MessageOutputPart) (chat.ChatCompletionContentPart, error) {
-	switch part.Type {
-	case schema.ChatMessagePartTypeText:
-		return chatTextPart(part.Text), nil
-	case schema.ChatMessagePartTypeImageURL:
-		if part.Image == nil {
-			return chat.ChatCompletionContentPart{}, fmt.Errorf("assistant image must not be nil")
-		}
-		return chatImagePart(part.Image.MessagePartCommon, "")
-	case schema.ChatMessagePartTypeVideoURL:
-		if part.Video == nil {
-			return chat.ChatCompletionContentPart{}, fmt.Errorf("assistant video must not be nil")
-		}
-		return chatVideoPart(part.Video.MessagePartCommon, GetOutputVideoFPS(&part))
-	default:
-		return chat.ChatCompletionContentPart{}, fmt.Errorf("unsupported assistant part type %s", part.Type)
-	}
 }
 
 func toChatLegacyPart(part schema.ChatMessagePart) (chat.ChatCompletionContentPart, error) {

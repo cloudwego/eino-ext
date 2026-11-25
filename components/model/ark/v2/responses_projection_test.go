@@ -773,8 +773,8 @@ func TestResponsesMessageJSONRoundTrip(t *testing.T) {
 			}
 			check(t, err)
 			equal(t, "done", msg.Content)
-			wantUsage, ok := GetResponsesTokenUsageDetails(msg)
-			if !ok {
+			want, ok := GetResponsesMetadata(msg)
+			if !ok || want.UsageDetails == nil {
 				t.Fatal("missing Responses usage")
 			}
 			for _, codec := range responsesUsageJSONCodecs {
@@ -785,9 +785,9 @@ func TestResponsesMessageJSONRoundTrip(t *testing.T) {
 					check(t, codec.unmarshal(raw, &restored))
 					equal(t, msg.Content, restored.Content)
 					equal(t, msg.ResponseMeta.Usage, restored.ResponseMeta.Usage)
-					usage, ok := GetResponsesTokenUsageDetails(&restored)
+					meta, ok := GetResponsesMetadata(&restored)
 					equal(t, true, ok)
-					equal(t, wantUsage, usage)
+					equal(t, want.UsageDetails, meta.UsageDetails)
 				})
 			}
 		})

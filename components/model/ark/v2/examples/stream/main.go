@@ -68,7 +68,8 @@ func run(ctx context.Context, config *ark.ChatModelConfig) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("\nrequest_id=%s\nreasoning=%s\nanswer=%s\nusage=%+v\n",
-		ark.GetArkRequestID(message), message.ReasoningContent, message.Content, message.ResponseMeta.Usage)
+	meta, _ := ark.GetChatResponseMetadata(message)
+	fmt.Printf("\ncompletion_id=%s\nreasoning=%s\nanswer=%s\nusage=%+v\n",
+		meta.CompletionID, message.ReasoningContent, message.Content, message.ResponseMeta.Usage)
 	return nil
 }

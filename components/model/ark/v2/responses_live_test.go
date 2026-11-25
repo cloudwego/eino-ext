@@ -55,8 +55,8 @@ func TestResponsesLive(t *testing.T) {
 		if !strings.Contains(msg.Content, "ARK_OK") || msg.ResponseMeta.Usage == nil {
 			t.Fatalf("unexpected content or missing usage: %q", msg.Content)
 		}
-		id, _ := GetResponseID(msg)
-		if id == "" {
+		meta, ok := GetResponsesMetadata(msg)
+		if !ok || meta.ResponseID == "" {
 			t.Fatal("missing response ID")
 		}
 	})

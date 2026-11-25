@@ -51,22 +51,20 @@ type CacheInfo struct {
 	Usage      schema.TokenUsage
 }
 
-func GetResponseID(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	return extraString(msg.Extra, keyResponseID)
-}
-
 // ResponseCacheRef identifies a stored response and its expiration in Unix seconds.
 type ResponseCacheRef struct {
 	ResponseID string
 	ExpireAt   int64
 }
 
-// GetResponseCacheRef returns the cache reference recorded on msg, including expired references.
+// GetResponseCacheRef reads a stored Responses API result's ID and expiration.
+// It returns false for nil messages or when either field is missing. An expired
+// reference remains readable, but cannot be used for automatic continuation.
 func GetResponseCacheRef(msg *schema.Message) (ResponseCacheRef, bool) {
-	id, ok := GetResponseID(msg)
+	if msg == nil {
+		return ResponseCacheRef{}, false
+	}
+	id, ok := extraString(msg.Extra, keyResponseID)
 	if !ok || id == "" {
 		return ResponseCacheRef{}, false
 	}

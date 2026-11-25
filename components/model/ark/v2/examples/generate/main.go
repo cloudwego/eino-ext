@@ -45,6 +45,7 @@ func run(ctx context.Context, config *ark.ChatModelConfig) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s\nrequest_id=%s\nusage=%+v\n", result.Content, ark.GetArkRequestID(result), result.ResponseMeta.Usage)
+	meta, _ := ark.GetChatResponseMetadata(result)
+	fmt.Printf("%s\ncompletion_id=%s\nusage=%+v\n", result.Content, meta.CompletionID, result.ResponseMeta.Usage)
 	return nil
 }

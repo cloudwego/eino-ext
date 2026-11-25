@@ -27,7 +27,8 @@ import (
 )
 
 const (
-	keyResponsesUsage = extraKeyPrefix + "responses-usage-details"
+	keyResponsesRequestID = extraKeyPrefix + "responses-request-id"
+	keyResponsesUsage     = extraKeyPrefix + "responses-usage-details"
 
 	keyResponsesItemIndex    = extraKeyPrefix + "responses-item-index"
 	keyResponsesSection      = extraKeyPrefix + "responses-section"
@@ -408,11 +409,40 @@ func projectResponsesSummaryText(items []responses.ItemReasoning) string {
 	return strings.Join(summary, "\n")
 }
 
-// GetResponsesTokenUsageDetails combines the current ResponseMeta.Usage with
-// modality and built-in tool usage in Extra. It returns false when
-// ResponseMeta.Usage is absent.
-func GetResponsesTokenUsageDetails(msg *schema.Message) (responses.ResponseUsage, bool) {
-	return readResponsesUsage(msg)
+// ResponsesMetadata holds the message-level metadata of a Responses API response.
+type ResponsesMetadata struct {
+	ResponseID   string // id from the response body, used for previous_response_id.
+	RequestID    string // X-Request-Id from the HTTP response headers.
+	ModelName    string
+	ServiceTier  *string
+	UsageDetails *responses.ResponseUsage
+}
+
+// GetResponsesMetadata reads metadata from a Responses API result, terminal
+// stream chunk, or concatenated stream. It returns false for nil messages or
+// when the stored metadata cannot identify the Responses API unambiguously.
+// Missing fields keep their zero values. UsageDetails is nil when usage is absent.
+func GetResponsesMetadata(msg *schema.Message) (ResponsesMetadata, bool) {
+	if msg == nil {
+		return ResponsesMetadata{}, false
+	}
+	isChat, isResponses := metadataProtocols(msg.Extra)
+	if !isResponses || isChat {
+		return ResponsesMetadata{}, false
+	}
+	requestID, ok := extraString(msg.Extra, keyResponsesRequestID)
+	if !ok {
+		requestID, _ = extraString(msg.Extra, keyLegacyRequestID)
+	}
+	id, _ := extraString(msg.Extra, keyResponseID)
+	model, _ := extraString(msg.Extra, keyModelName)
+	return ResponsesMetadata{
+		ResponseID:   id,
+		RequestID:    requestID,
+		ModelName:    model,
+		ServiceTier:  optionalValue(extraString(msg.Extra, keyServiceTier)),
+		UsageDetails: optionalValue(readResponsesUsage(msg)),
+	}, true
 }
 
 func setResponsesUsage(msg *schema.Message, usage responses.ResponseUsage) error {

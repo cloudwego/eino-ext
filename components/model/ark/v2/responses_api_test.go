@@ -154,15 +154,14 @@ func TestResponsesGenerate(t *testing.T) {
 	equal(t, "call-1", out.ToolCalls[0].ID)
 	equal(t, 11, out.ResponseMeta.Usage.TotalTokens)
 	equal(t, 1, out.ResponseMeta.Usage.CompletionTokensDetails.ReasoningTokens)
-	id, ok := GetResponseID(out)
+	meta, ok := GetResponsesMetadata(out)
 	equal(t, true, ok)
-	equal(t, "resp-1", id)
+	equal(t, "resp-1", meta.ResponseID)
 	ref, ok := GetResponseCacheRef(out)
 	equal(t, true, ok)
-	equal(t, ResponseCacheRef{ResponseID: id, ExpireAt: 4102444800}, ref)
-	usage, ok := GetResponsesTokenUsageDetails(out)
-	equal(t, true, ok)
-	equal(t, int64(2), usage.InputTokensDetails.CachedTokens)
+	equal(t, ResponseCacheRef{ResponseID: meta.ResponseID, ExpireAt: 4102444800}, ref)
+	equal(t, "request-1", meta.RequestID)
+	equal(t, int64(2), meta.UsageDetails.InputTokensDetails.CachedTokens)
 	itemCount := 0
 	for i := range out.AssistantGenMultiContent {
 		if hasResponsesItemMetadata(&out.AssistantGenMultiContent[i]) {
@@ -233,8 +232,9 @@ func TestResponsesStream(t *testing.T) {
 			} else {
 				equal(t, "completed", out.ResponseMeta.FinishReason)
 			}
-			id, _ := GetResponseID(out)
-			equal(t, "resp-1", id)
+			meta, ok := GetResponsesMetadata(out)
+			equal(t, true, ok)
+			equal(t, "resp-1", meta.ResponseID)
 		})
 	}
 }

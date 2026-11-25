@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	keyChatCompletionID  = extraKeyPrefix + "chat-completion-id"
 	keyEncryptedContent  = extraKeyPrefix + "encrypted-content"
 	keyServiceStatus     = extraKeyPrefix + "service-status"
 	keyUsageDetails      = extraKeyPrefix + "usage-details"
@@ -111,7 +112,7 @@ func resolveStreamResponse(resp *chat.ChatCompletionStreamResponse) (*schema.Mes
 
 func setResponseExtra(msg *schema.Message, id, model string, tier chat.OptResponseServiceTier, status chat.OptChatCompletionServiceStatus) {
 	if id != "" {
-		msg.Extra[keyRequestID] = metadataString(id)
+		msg.Extra[keyChatCompletionID] = metadataString(id)
 	}
 	if model != "" {
 		msg.Extra[keyModelName] = metadataString(model)
@@ -155,32 +156,53 @@ func toBytes(bytes []int32) []int64 {
 	return out
 }
 
-func GetModerationHitType(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	return extraString(msg.Extra, keyModerationHitType)
+// ChatResponseMetadata holds the message-level metadata of a Chat Completions response.
+type ChatResponseMetadata struct {
+	CompletionID      string // id from the Chat Completions response body.
+	ModelName         string
+	ServiceTier       *string
+	ServiceStatus     *chat.ChatCompletionServiceStatus
+	ModerationHitType *string
+	UsageDetails      *chat.CompletionUsage
 }
 
-// GetEncryptedContent returns encrypted reasoning for passing an assistant message
-// back to the API. Stream fragments concatenate as ordinary strings.
+// GetChatResponseMetadata reads metadata from a Chat Completions result, stream
+// chunk, or concatenated stream. It returns false for nil messages or when the
+// stored metadata cannot identify Chat Completions unambiguously. Missing fields
+// keep their zero values. UsageDetails is nil when usage is absent or the common
+// token counts exceed the SDK's int32 range.
+func GetChatResponseMetadata(msg *schema.Message) (ChatResponseMetadata, bool) {
+	if msg == nil {
+		return ChatResponseMetadata{}, false
+	}
+	isChat, isResponses := metadataProtocols(msg.Extra)
+	if !isChat || isResponses {
+		return ChatResponseMetadata{}, false
+	}
+	id, ok := extraString(msg.Extra, keyChatCompletionID)
+	if !ok {
+		id, _ = extraString(msg.Extra, keyLegacyRequestID)
+	}
+	model, _ := extraString(msg.Extra, keyModelName)
+	return ChatResponseMetadata{
+		CompletionID:      id,
+		ModelName:         model,
+		ServiceTier:       optionalValue(extraString(msg.Extra, keyServiceTier)),
+		ServiceStatus:     optionalValue(readServiceStatus(msg)),
+		ModerationHitType: optionalValue(extraString(msg.Extra, keyModerationHitType)),
+		UsageDetails:      optionalValue(readChatUsage(msg)),
+	}, true
+}
+
+// GetEncryptedContent reads the message-level encrypted reasoning returned by
+// Chat Completions for assistant history replay. Stream fragments concatenate.
+// It returns false for nil messages or missing ciphertext. Responses API reasoning
+// items carry their own ciphertext in MessageOutputPart.Reasoning.Signature.
 func GetEncryptedContent(msg *schema.Message) (string, bool) {
 	if msg == nil {
 		return "", false
 	}
 	return extraString(msg.Extra, keyEncryptedContent)
-}
-
-// GetServiceStatus returns the service's model fallback information.
-func GetServiceStatus(msg *schema.Message) (chat.ChatCompletionServiceStatus, bool) {
-	return readServiceStatus(msg)
-}
-
-// GetTokenUsageDetails combines the current ResponseMeta.Usage with SDK-specific
-// counts stored in Extra. It returns false when ResponseMeta.Usage is absent.
-// It returns false if common counts cannot fit the SDK's int32 fields.
-func GetTokenUsageDetails(msg *schema.Message) (chat.CompletionUsage, bool) {
-	return readChatUsage(msg)
 }
 
 func setServiceStatus(msg *schema.Message, status chat.ChatCompletionServiceStatus) {

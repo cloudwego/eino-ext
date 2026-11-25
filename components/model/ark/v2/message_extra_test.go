@@ -22,6 +22,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"reflect"
 	"strings"
@@ -172,9 +173,9 @@ func TestClearReasoningCopiesHistory(t *testing.T) {
 			check(t, InvalidateMessageCaches(clean))
 			_, ok = GetResponseCacheRef(clean[0])
 			equal(t, false, ok)
-			id, ok := GetResponseID(clean[0])
+			meta, ok := GetResponsesMetadata(clean[0])
 			equal(t, true, ok)
-			equal(t, "r1", id)
+			equal(t, "r1", meta.ResponseID)
 			for _, original := range []*schema.Message{&restored, other} {
 				_, ok := GetResponseCacheRef(original)
 				equal(t, true, ok)
@@ -258,7 +259,7 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 			}
 			check(t, err)
 			for _, key := range []string{
-				"ark-reasoning-content",
+				"ark-reasoning-content", keyLegacyRequestID,
 				keyUsageDetails + ".prompt_tokens", keyUsageDetails + ".completion_tokens", keyUsageDetails + ".total_tokens",
 				keyUsageDetails + ".prompt_tokens_details.cached_tokens", keyUsageDetails + ".completion_tokens_details.reasoning_tokens",
 				keyResponsesUsage + ".input_tokens", keyResponsesUsage + ".output_tokens", keyResponsesUsage + ".total_tokens",
@@ -300,30 +301,25 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 						got.ToolCalls[i].Index = nil
 					}
 					equalMetadataJSON(t, &want, &got)
-					equal(t, GetArkRequestID(msg), GetArkRequestID(&restored))
 					equal(t, msg.ReasoningContent, restored.ReasoningContent)
 					if chatAPI {
-						usage, ok := GetTokenUsageDetails(&restored)
+						want, _ := GetChatResponseMetadata(msg)
+						meta, ok := GetChatResponseMetadata(&restored)
 						equal(t, true, ok)
-						equal(t, expectedChatUsage, usage)
-						model, ok := GetModelName(&restored)
-						equal(t, true, ok)
-						equal(t, "actual-model", model)
-						tier, ok := GetServiceTier(&restored)
-						equal(t, true, ok)
-						equal(t, "default", tier)
+						equal(t, want, meta)
+						equal(t, "req-1", meta.CompletionID)
+						equal(t, &expectedChatUsage, meta.UsageDetails)
+						equal(t, "actual-model", meta.ModelName)
+						equal(t, ptr("default"), meta.ServiceTier)
 						cipher, ok := GetEncryptedContent(&restored)
 						equal(t, true, ok)
 						equal(t, "cipher", cipher)
-						wantStatus, _ := GetServiceStatus(msg)
-						status, ok := GetServiceStatus(&restored)
-						equal(t, true, ok)
-						equal(t, wantStatus, status)
 					} else {
-						wantUsage, _ := GetResponsesTokenUsageDetails(msg)
-						usage, ok := GetResponsesTokenUsageDetails(&restored)
+						want, _ := GetResponsesMetadata(msg)
+						meta, ok := GetResponsesMetadata(&restored)
 						equal(t, true, ok)
-						equal(t, wantUsage, usage)
+						equal(t, want, meta)
+						equal(t, "request-1", meta.RequestID)
 						equalMetadataJSON(t, msg.AssistantGenMultiContent, restored.AssistantGenMultiContent)
 						wantRef, _ := GetResponseCacheRef(msg)
 						ref, ok := GetResponseCacheRef(&restored)
@@ -388,16 +384,14 @@ func TestUsageConcatCombinesCommonCountsAndLastDetails(t *testing.T) {
 					var restored schema.Message
 					check(t, codec.unmarshal(raw, &restored))
 					if api == "chat" {
-						usage, ok := GetTokenUsageDetails(&restored)
+						meta, ok := GetChatResponseMetadata(&restored)
 						equal(t, true, ok)
-						equal(t, chatUsage, usage)
-						status, ok := GetServiceStatus(&restored)
-						equal(t, true, ok)
-						equal(t, chat.ChatCompletionServiceStatus{}, status)
+						equal(t, &chatUsage, meta.UsageDetails)
+						equal(t, &chat.ChatCompletionServiceStatus{}, meta.ServiceStatus)
 					} else {
-						usage, ok := GetResponsesTokenUsageDetails(&restored)
+						meta, ok := GetResponsesMetadata(&restored)
 						equal(t, true, ok)
-						equal(t, responseUsage, usage)
+						equal(t, &responseUsage, meta.UsageDetails)
 					}
 				})
 			}
@@ -424,7 +418,8 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 			wantResponse.InputTokens, wantResponse.OutputTokens, wantResponse.TotalTokens = 0, 20, 20
 			wantResponse.InputTokensDetails.CachedTokens, wantResponse.OutputTokensDetails.ReasoningTokens = 0, 10
 			if format == "common only" {
-				chatMessage.Extra, responseMessage.Extra = nil, nil
+				chatMessage.Extra = map[string]any{keyChatCompletionID: "completion"}
+				responseMessage.Extra = map[string]any{keyResponseID: "response"}
 				wantChat.PromptTokensDetails.AudioTokens = chat.OptInt32{}
 				wantResponse.InputTokensDetails.AudioTokens, wantResponse.InputTokensDetails.AudioCachedTokens = responses.OptInt64{}, responses.OptInt64{}
 				wantResponse.ToolUsage, wantResponse.ToolUsageDetails = responses.OptToolUsage{}, responses.OptToolUsageDetails{}
@@ -439,16 +434,16 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 					check(t, err)
 					var restored schema.Message
 					check(t, codec.unmarshal(raw, &restored))
-					chatUsage, ok := GetTokenUsageDetails(&restored)
+					chatMeta, ok := GetChatResponseMetadata(&restored)
 					equal(t, true, ok)
-					equal(t, wantChat, chatUsage)
+					equal(t, &wantChat, chatMeta.UsageDetails)
 					raw, err = codec.marshal(responseMessage)
 					check(t, err)
 					var restoredResponse schema.Message
 					check(t, codec.unmarshal(raw, &restoredResponse))
-					responseUsage, ok := GetResponsesTokenUsageDetails(&restoredResponse)
+					responseMeta, ok := GetResponsesMetadata(&restoredResponse)
 					equal(t, true, ok)
-					equal(t, wantResponse, responseUsage)
+					equal(t, &wantResponse, responseMeta.UsageDetails)
 				})
 			}
 		})
@@ -458,7 +453,11 @@ func TestUsageDetailsFollowResponseMeta(t *testing.T) {
 func TestVideoFPSOuterExtraWire(t *testing.T) {
 	for _, api := range []string{"chat", "responses"} {
 		for _, mode := range []string{"generate", "stream"} {
-			for _, role := range []schema.RoleType{schema.User, schema.Tool, schema.Assistant} {
+			roles := []schema.RoleType{schema.User, schema.Tool}
+			if api == "responses" {
+				roles = append(roles, schema.Assistant)
+			}
+			for _, role := range roles {
 				for _, codec := range messagePersistenceCodecs() {
 					for _, location := range []string{"outer", "deprecated only"} {
 						t.Run(api+"/"+mode+"/"+string(role)+"/"+codec.name+"/"+location, func(t *testing.T) {
@@ -502,7 +501,7 @@ func TestVideoFPSOuterExtraWire(t *testing.T) {
 								}
 								// Responses assistant history uses standard fields only;
 								// private output FPS is not a portable media property.
-								if location == "outer" && !(api == "responses" && role == schema.Assistant) {
+								if location == "outer" && role != schema.Assistant {
 									equal(t, float64(0.25), video["fps"])
 								} else if _, exists := video["fps"]; exists {
 									t.Error("private FPS was sent outside its supported input")
@@ -530,17 +529,68 @@ func TestVideoFPSOuterExtraWire(t *testing.T) {
 	}
 }
 
+func TestResponseMetadataProtocol(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		extra     map[string]any
+		chat      *ChatResponseMetadata
+		responses *ResponsesMetadata
+	}{
+		{name: "shared fields", extra: map[string]any{keyModelName: "model", keyServiceTier: "default"}},
+		{name: "legacy ID alone", extra: map[string]any{keyLegacyRequestID: "same-id"}},
+		{name: "conflicting IDs", extra: map[string]any{keyChatCompletionID: "chat", keyResponsesRequestID: "http"}},
+		{name: "chat ID", extra: map[string]any{keyChatCompletionID: "same-id"}, chat: &ChatResponseMetadata{CompletionID: "same-id"}},
+		{name: "responses header only", extra: map[string]any{keyResponsesRequestID: "same-id"}, responses: &ResponsesMetadata{RequestID: "same-id"}},
+		{name: "responses body only", extra: map[string]any{keyResponseID: "body"}, responses: &ResponsesMetadata{ResponseID: "body"}},
+		{name: "legacy chat", extra: map[string]any{keyLegacyRequestID: "same-id", keyEncryptedContent: "cipher"}, chat: &ChatResponseMetadata{CompletionID: "same-id"}},
+		{name: "legacy responses", extra: map[string]any{keyLegacyRequestID: "same-id", keyResponseID: "body"}, responses: &ResponsesMetadata{ResponseID: "body", RequestID: "same-id"}},
+		{name: "chat new ID takes precedence", extra: map[string]any{keyLegacyRequestID: "old", keyChatCompletionID: "new"}, chat: &ChatResponseMetadata{CompletionID: "new"}},
+		{name: "responses new ID takes precedence", extra: map[string]any{keyLegacyRequestID: "old", keyResponsesRequestID: "new"}, responses: &ResponsesMetadata{RequestID: "new"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := &schema.Message{Extra: tc.extra}
+			chat, ok := GetChatResponseMetadata(msg)
+			equal(t, tc.chat != nil, ok)
+			if ok {
+				equal(t, tc.chat, &chat)
+			}
+			responses, ok := GetResponsesMetadata(msg)
+			equal(t, tc.responses != nil, ok)
+			if ok {
+				equal(t, tc.responses, &responses)
+			}
+		})
+	}
+	for _, msg := range []*schema.Message{nil, {ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{TotalTokens: 1}}}} {
+		chat, ok := GetChatResponseMetadata(msg)
+		equal(t, false, ok)
+		equal(t, ChatResponseMetadata{}, chat)
+		responses, ok := GetResponsesMetadata(msg)
+		equal(t, false, ok)
+		equal(t, ResponsesMetadata{}, responses)
+	}
+}
+
+func TestChatMetadataUsageOverflow(t *testing.T) {
+	if math.MaxInt == math.MaxInt32 {
+		t.Skip("schema.TokenUsage cannot exceed int32 on this architecture")
+	}
+	n := int64(math.MaxInt32) + 1
+	msg := &schema.Message{Extra: map[string]any{keyChatCompletionID: "chat"},
+		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{TotalTokens: int(n)}}}
+	meta, ok := GetChatResponseMetadata(msg)
+	equal(t, true, ok)
+	equal(t, ChatResponseMetadata{CompletionID: "chat"}, meta)
+}
+
 func TestLegacyExtraKeysIgnored(t *testing.T) {
 	msg := &schema.Message{Extra: map[string]any{
 		"ark-request-id": "old-request", "ark-model-name": "old-model", "ark-service-tier": "old-tier",
 		"ark-response-id": "old-response", "ark-response-cache-expire-at": float64(2000000000),
 	}}
-	equal(t, "", GetArkRequestID(msg))
-	_, ok := GetModelName(msg)
+	_, ok := GetChatResponseMetadata(msg)
 	equal(t, false, ok)
-	_, ok = GetServiceTier(msg)
-	equal(t, false, ok)
-	_, ok = GetResponseID(msg)
+	_, ok = GetResponsesMetadata(msg)
 	equal(t, false, ok)
 	_, ok = GetResponseCacheRef(msg)
 	equal(t, false, ok)

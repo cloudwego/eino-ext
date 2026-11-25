@@ -171,12 +171,12 @@ func TestResponsesCachedTextConversation(t *testing.T) {
 			first := callResponsesWithOptions(t, cm, mode, []*schema.Message{user})
 			firstRequest := <-requests
 			equal(t, "inspect", firstRequest["tools"].([]any)[0].(map[string]any)["name"])
-			id, ok := GetResponseID(first)
+			ref, ok := GetResponseCacheRef(first)
 			equal(t, true, ok)
 			reply := callResponsesWithOptions(t, cm, mode, []*schema.Message{user, first, schema.UserMessage("second turn")})
 			equal(t, "continued", reply.Content)
 			body := <-requests
-			equal(t, id, body["previous_response_id"])
+			equal(t, ref.ResponseID, body["previous_response_id"])
 			input := body["input"].([]any)
 			equal(t, 1, len(input))
 			equal(t, "second turn", input[0].(map[string]any)["content"])

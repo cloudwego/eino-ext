@@ -264,6 +264,10 @@ func TestInvalidInputsDoNotSendRequests(t *testing.T) {
 		"unknown role":             {{Role: "unknown", Content: "text"}},
 		"mixed":                    {{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText}}, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText}}}},
 		"wrong input role":         {{Role: schema.Assistant, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeText}}}},
+		"assistant image":          {{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("image-file")}}}}}},
+		"assistant video":          {{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("video-file")}}}}}},
+		"legacy assistant image":   {{Role: schema.Assistant, MultiContent: []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: "https://example.com/image"}}}}},
+		"legacy assistant video":   {{Role: schema.Assistant, MultiContent: []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeVideoURL, VideoURL: &schema.ChatMessageVideoURL{URL: "https://example.com/video"}}}}},
 		"nil image":                {{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeImageURL}}}},
 		"nil audio":                {{Role: schema.Tool, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeAudioURL}}}},
 		"nil video":                {{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeVideoURL}}}},
@@ -292,10 +296,9 @@ func TestInvalidInputsDoNotSendRequests(t *testing.T) {
 	}
 }
 
-func TestLegacyContentAndAssistantHistory(t *testing.T) {
+func TestUserMediaContent(t *testing.T) {
 	video := schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: schema.MessagePartCommon{URL: ptr("https://example.com/video")}}}
 	SetInputVideoFPS(&video, 0.25)
-	output := schema.MessageOutputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("video-file")}}, Extra: map[string]any{keyVideoFPS: 0.5}}
 	cases := []struct {
 		msg        *schema.Message
 		field, key string
@@ -303,8 +306,7 @@ func TestLegacyContentAndAssistantHistory(t *testing.T) {
 	}{
 		{&schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{video}}, "video_url", "fps", 0.25},
 		{&schema.Message{Role: schema.User, MultiContent: []schema.ChatMessagePart{{Type: schema.ChatMessagePartTypeImageURL, ImageURL: &schema.ChatMessageImageURL{URL: "https://example.com/image", Detail: schema.ImageURLDetailLow}}}}, "image_url", "detail", "low"},
-		{&schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{output}}, "video_url", "file_id", "video-file"},
-		{&schema.Message{Role: schema.Assistant, AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageOutputImage{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("image-file")}}}}}, "image_url", "file_id", "image-file"},
+		{&schema.Message{Role: schema.User, UserInputMultiContent: []schema.MessageInputPart{{Type: schema.ChatMessagePartTypeImageURL, Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{FileID: ptr("image-file")}}}}}, "image_url", "file_id", "image-file"},
 	}
 	for _, tc := range cases {
 		msg, err := toArkMessage(tc.msg)
@@ -315,7 +317,7 @@ func TestLegacyContentAndAssistantHistory(t *testing.T) {
 		check(t, json.Unmarshal(data, &body))
 		equal(t, tc.want, body["content"].([]any)[0].(map[string]any)[tc.field].(map[string]any)[tc.key])
 	}
-	equal(t, 0.5, *GetOutputVideoFPS(&output))
+
 	equal(t, 0.25, *GetInputVideoFPS(&video))
 }
 
@@ -369,13 +371,11 @@ func TestMetadataSurvivesCheckpoint(t *testing.T) {
 	check(t, gob.NewEncoder(&buffer).Encode(msg))
 	var restored schema.Message
 	check(t, gob.NewDecoder(&buffer).Decode(&restored))
-	equal(t, "req-1", GetArkRequestID(&restored))
-	status, ok := GetServiceStatus(&restored)
+	meta, ok := GetChatResponseMetadata(&restored)
 	equal(t, true, ok)
-	equal(t, true, status.ModelFallback.Value.FallbackTriggered)
-	usage, ok := GetTokenUsageDetails(&restored)
-	equal(t, true, ok)
-	equal(t, int32(11), usage.TotalTokens)
+	equal(t, "req-1", meta.CompletionID)
+	equal(t, true, meta.ServiceStatus.ModelFallback.Value.FallbackTriggered)
+	equal(t, int32(11), meta.UsageDetails.TotalTokens)
 }
 
 func TestFileBase64UsesDataURL(t *testing.T) {

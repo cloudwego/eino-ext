@@ -32,7 +32,7 @@ import (
 const extraKeyPrefix = "ark-v2-"
 
 const (
-	keyRequestID           = extraKeyPrefix + "request-id"
+	keyLegacyRequestID     = extraKeyPrefix + "request-id"
 	keyModelName           = extraKeyPrefix + "model-name"
 	keyServiceTier         = extraKeyPrefix + "service-tier"
 	keyRawReasoningContent = extraKeyPrefix + "raw-reasoning-content"
@@ -109,7 +109,9 @@ func withoutReasoningParts(parts []schema.MessageOutputPart) []schema.MessageOut
 	return kept
 }
 
-// GetRawReasoningContent returns the ordered reasoning.content text segments of an Ark reasoning part.
+// GetRawReasoningContent reads the ordered reasoning.content text segments from
+// a Responses API reasoning output part. Summary text is available in part.Reasoning.Text.
+// It returns false for nil parts and when no raw reasoning segments are present.
 func GetRawReasoningContent(part *schema.MessageOutputPart) ([]string, bool) {
 	if part == nil || part.Reasoning == nil {
 		return nil, false
@@ -261,27 +263,31 @@ func extraIndex(extra map[string]any, key string) (index int, exists bool, err e
 	return int(value), true, nil
 }
 
-func GetArkRequestID(msg *schema.Message) string {
-	if msg == nil {
-		return ""
+// Older checkpoints used one key for both the Chat completion ID and the
+// Responses HTTP request ID. Only protocol-specific metadata identifies it.
+func metadataProtocols(extra map[string]any) (chat, responses bool) {
+	for key := range extra {
+		switch key {
+		case keyChatCompletionID, keyEncryptedContent, keyServiceStatus, keyModerationHitType:
+			chat = true
+		case keyResponseID, keyResponsesRequestID, keyCacheExpiration:
+			responses = true
+		default:
+			chat = chat || strings.HasPrefix(key, keyUsageDetails+".")
+			responses = responses || strings.HasPrefix(key, keyResponsesUsage+".")
+		}
 	}
-	value, _ := extraString(msg.Extra, keyRequestID)
-	return value
-}
-func GetModelName(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	return extraString(msg.Extra, keyModelName)
-}
-func GetServiceTier(msg *schema.Message) (string, bool) {
-	if msg == nil {
-		return "", false
-	}
-	return extraString(msg.Extra, keyServiceTier)
+	return chat, responses
 }
 
-// SetInputVideoFPS sets the frame sampling rate in MessageInputPart.Extra.
+func optionalValue[T any](value T, present bool) *T {
+	if !present {
+		return nil
+	}
+	return &value
+}
+
+// SetInputVideoFPS sets the video input sampling rate for Chat Completions and the Responses API.
 // Nil or non-video parts are ignored.
 func SetInputVideoFPS(part *schema.MessageInputPart, fps float64) {
 	if part == nil || part.Type != schema.ChatMessagePartTypeVideoURL {
@@ -293,23 +299,14 @@ func SetInputVideoFPS(part *schema.MessageInputPart, fps float64) {
 	part.Extra[keyVideoFPS] = fps
 }
 
-// GetInputVideoFPS reads the FPS setting from a video input part's Extra.
+// GetInputVideoFPS reads the sampling rate configured on a video input part for
+// Chat Completions or the Responses API. It returns nil for a nil or non-video
+// part, or when the part has no numeric FPS setting.
 func GetInputVideoFPS(part *schema.MessageInputPart) *float64 {
 	if part == nil || part.Type != schema.ChatMessagePartTypeVideoURL {
 		return nil
 	}
-	return getFPS(part.Extra)
-}
-
-// GetOutputVideoFPS reads the FPS setting from a video output part's Extra.
-func GetOutputVideoFPS(part *schema.MessageOutputPart) *float64 {
-	if part == nil || part.Type != schema.ChatMessagePartTypeVideoURL {
-		return nil
-	}
-	return getFPS(part.Extra)
-}
-func getFPS(extra map[string]any) *float64 {
-	switch value := extra[keyVideoFPS].(type) {
+	switch value := part.Extra[keyVideoFPS].(type) {
 	case float64:
 		return &value
 	case json.Number:

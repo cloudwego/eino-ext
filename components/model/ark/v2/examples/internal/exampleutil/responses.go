@@ -45,8 +45,8 @@ func RunResponses(run func(context.Context, *ark.ResponsesAPIConfig) error) erro
 
 func PrintResponse(message *schema.Message) {
 	fmt.Println(message.Content)
-	id, _ := ark.GetResponseID(message)
-	fmt.Println("Response:", id)
+	meta, _ := ark.GetResponsesMetadata(message)
+	fmt.Println("Response:", meta.ResponseID)
 	if message.ResponseMeta != nil {
 		fmt.Printf("Usage: %+v\n", message.ResponseMeta.Usage)
 	}

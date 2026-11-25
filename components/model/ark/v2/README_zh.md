@@ -180,9 +180,7 @@ part := schema.MessageInputPart{
 ark.SetInputVideoFPS(&part, 1)
 ```
 
-`GetInputVideoFPS(&part)` 读取配置值。`GetOutputVideoFPS` 接收
-`*schema.MessageOutputPart`，用于助手视频历史。
-nil 或非视频 part 会忽略；FPS 不再从废弃的 `MessagePartCommon.Extra` 读取。
+`GetInputVideoFPS(&part)` 从 `MessageInputPart.Extra` 读取两个 API 共用的视频输入采样率。part 为 nil、类型为非视频或未配置采样率时返回 nil。
 
 每个媒体 part 在 `MessagePartCommon` 中选择一个来源：`URL`、`Base64Data` 或
 `FileID`。所有 base64 输入均需提供 `MIMEType`。图片、视频和文件发送时转换为
@@ -245,31 +243,27 @@ fmt.Println(reply.Content)
 
 `schema.Message` 通过 `Content`、`ReasoningContent`、`ToolCalls` 和 `ResponseMeta`
 提供正文、思考内容、工具调用、结束原因、token 用量和 log probabilities。
-本包还提供以下辅助函数读取 Ark 返回信息：
+按生成消息的 API 读取响应元信息。
 
-| 函数 | 返回信息 |
+| Getter | 可读取的字段 |
 | --- | --- |
-| `GetArkRequestID` | Completion ID |
-| `GetModelName` | 实际模型名称 |
-| `GetServiceTier` | 服务等级 |
-| `GetEncryptedContent` | 加密思考内容 |
-| `GetModerationHitType` | 内容审核分类 |
-| `GetServiceStatus` | 服务状态，包括模型回退信息 |
-| `GetTokenUsageDetails` | SDK 完整用量，包括各模态 token 明细 |
+| `GetChatResponseMetadata` | Chat Completions 响应体中的 `CompletionID`、`ModelName`、`ServiceTier`、`ServiceStatus`、`ModerationHitType` 和 SDK 用量 `UsageDetails` |
+| `GetResponsesMetadata` | Responses 响应体中的 `ResponseID`、HTTP 响应头 `X-Request-Id` 中的 `RequestID`、`ModelName`、`ServiceTier` 和 SDK 用量 `UsageDetails` |
+
+当消息缺少能确定该 getter 所属 API 的元信息时，getter 返回 `ok == false`。单个流式分片可能只含部分字段，合包后可读取各分片已返回的元信息。缺失的可选字段为 nil。读取旧检查点的共享请求 ID 时，消息中还需有能确定协议的专属字段。
+
+`GetEncryptedContent` 读取 Chat Completions 助手消息中用于历史回放的密文。Responses 的每个 reasoning 输出 part 通过自己的 `Reasoning.Signature` 承载密文。服务返回原始推理文本时，可用 `GetRawReasoningContent` 按顺序读取该 part 的文本分段。
 
 `Extra` 中的方舟元数据使用原子值保存，支持 `encoding/json`、Sonic 和 gob 编解码往返。
-通用 token 计数仅保存在 `ResponseMeta.Usage`，思考文本保存在 `ReasoningContent`。
-两个 usage getter 将当前通用统计与 `Extra` 中的 SDK 专有明细合并返回，
-因此流拼接对通用统计的修改也会反映在 getter 结果中。
+两个元信息 getter 都根据当前 `ResponseMeta.Usage` 和 `Extra` 的协议专有明细还原 `UsageDetails`，因此流式合包后的用量也能反映在结果中。
 SDK 专有计数和服务状态平铺为独立 key，例如 `ark-v2-responses-usage-details.input_tokens_details.audio_tokens`
 和 `ark-v2-service-status.model_fallback.fallback_triggered`。复杂的 provider 属性和工具明细
-保存为 JSON 字符串，用量辅助函数在恢复后还原 SDK 类型。
-usage getter 只读取 `ResponseMeta.Usage` 和当前 `Extra` 格式。
+保存为 JSON 字符串。
 可选计数通过 key 是否存在区分未设置和显式零值；流拼接保留每个 SDK 专有字段
 最后一次提供的值，后续缺失字段不会清空此前的值。
 Responses 历史根据下文所述的输出 parts 和 ToolCalls 构造。
 
-多轮对话中保留返回的 assistant 消息，即可向 API 回传其中的思考内容、加密思考内容
+Chat Completions 中，调用方新增的图片和视频放在 user 消息里。多轮对话直接将返回的 assistant 消息追加到历史，即可回传其中的思考内容、加密思考内容
 和工具调用。本包集成 Eino 模型回调，提供请求、响应、错误和用量信息。
 
 ## 可运行示例
@@ -402,9 +396,7 @@ Context 和图片生成 API 仍使用旧模块。
   对应函数 item，删除内容 part 会删除对应分段。删除承载 item 元数据的 data part 前，
   应先将其 item 级 Extra 转移到保留的 part；缺少 item 元数据的引用会报错。
   新增且没有原生元数据的 part 会追加为新的输入 item。编辑缓存历史后，应先使其缓存失效。
-- `GetResponseID` 读取响应 ID；`GetArkRequestID` 读取服务返回的 HTTP 请求 ID。
-  `GetResponsesTokenUsageDetails` 读取完整 SDK 用量；输出 parts 和 Extra 提供注释、
-  内置工具结果等通用字段之外的信息。
+- `GetResponsesMetadata` 读取响应 ID、HTTP 请求 ID 和 SDK 用量。`GetResponseCacheRef` 读取缓存响应的 ID 和过期时间。输出 parts 及其 Extra 保存注释和内置工具结果。
 - 流式正文只取 `response.output_text.delta`，没有正文 delta 时正文为空。终止事件仍会补齐工具调用。completed 的空输出与
   Generate 一样返回 `ErrEmptyResponse`。`ReasoningContent` 只展示 summary，非空分段
   以换行符连接；流式从 summary part chunks 派生，added/delta/done 快照不重复展示。

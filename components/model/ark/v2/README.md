@@ -196,10 +196,9 @@ part := schema.MessageInputPart{
 ark.SetInputVideoFPS(&part, 1)
 ```
 
-`GetInputVideoFPS(&part)` reads the configured value. `GetOutputVideoFPS` takes
-`*schema.MessageOutputPart` for assistant history.
-Nil or non-video parts are ignored. The deprecated `MessagePartCommon.Extra`
-is not read for FPS.
+`GetInputVideoFPS(&part)` reads the input sampling rate for both APIs. It
+reads the value from `MessageInputPart.Extra` and returns nil for a nil or
+non-video part, or when no rate is configured there.
 
 For each media part, set one source in `MessagePartCommon`: `URL`, `Base64Data`,
 or `FileID`. All base64 inputs require `MIMEType`. Images, videos, and files are
@@ -264,35 +263,39 @@ fmt.Println(reply.Content)
 
 `schema.Message` exposes `Content`, `ReasoningContent`, `ToolCalls`, and
 `ResponseMeta` with finish reason, token usage, and log probabilities.
-Additional Ark response data is available through these helpers:
+Use the getter for the API that produced the message.
 
-| Helper | Result |
+| Getter | Available data |
 | --- | --- |
-| `GetArkRequestID` | Completion ID |
-| `GetModelName` | Actual model name |
-| `GetServiceTier` | Service tier |
-| `GetEncryptedContent` | Encrypted reasoning content |
-| `GetModerationHitType` | Moderation classification |
-| `GetServiceStatus` | Service status, including model fallback information |
-| `GetTokenUsageDetails` | Full SDK usage, including modality-specific counts |
+| `GetChatResponseMetadata` | `CompletionID` from the Chat Completions response body, `ModelName`, `ServiceTier`, `ServiceStatus`, `ModerationHitType`, and SDK `UsageDetails` |
+| `GetResponsesMetadata` | `ResponseID` from the Responses body, `RequestID` from the HTTP `X-Request-Id` header, `ModelName`, `ServiceTier`, and SDK `UsageDetails` |
+
+Both getters return `ok == false` when the message has no metadata identifying
+the requested API. A stream chunk can carry partial metadata. Read the
+concatenated message for all fields received. Missing optional fields are nil.
+Older checkpoints with a shared request ID require another API-specific field
+to determine which ID it represents.
+
+`GetEncryptedContent` reads Chat Completions assistant-message ciphertext for
+replay. For the Responses API, each reasoning output part carries its own
+`Reasoning.Signature`. `GetRawReasoningContent` reads that part's ordered raw
+reasoning text segments when supplied by the service.
 
 Ark metadata in `Extra` uses scalar values so messages can round-trip through
-`encoding/json`, Sonic, and gob. Common token counts are stored only in
-`ResponseMeta.Usage`, and reasoning text in `ReasoningContent`. Both usage helpers
-combine the current common counts with SDK-specific details in `Extra`, so changes
-made by stream concatenation are reflected in their results.
+`encoding/json`, Sonic, and gob. Both metadata getters reconstruct
+`UsageDetails` from the current `ResponseMeta.Usage` and API-specific details in
+`Extra`, including after stream concatenation.
 SDK-specific counts and service-status fields use flat keys, such as
 `ark-v2-responses-usage-details.input_tokens_details.audio_tokens` and
 `ark-v2-service-status.model_fallback.fallback_triggered`. Complex provider
-attributes and tool details are JSON strings. Usage helpers reconstruct SDK types
-after restoration. Usage helpers read common counts from `ResponseMeta.Usage` and
-SDK-specific fields from the current `Extra` format. An optional count is set
+attributes and tool details are JSON strings. An optional count is set
 when its key exists, including an explicit zero. Stream concatenation keeps the
 last provided value for each SDK-specific field; an omitted field leaves it
 unchanged. Responses history is generated from the canonical output parts and
 ToolCalls described below.
 
-Keep the returned assistant message in conversation history to pass its reasoning,
+For Chat Completions, put newly supplied images and videos in a user message.
+Append the returned assistant message directly to history to pass its reasoning,
 encrypted reasoning, and tool calls back to the API. The adapter integrates with
 Eino model callbacks for request, response, error, and usage reporting.
 
@@ -461,10 +464,9 @@ image-generation APIs remain in the legacy module.
   rejected. New parts without native metadata are appended as new input items.
   Invalidate a cached
   message before reusing edited history.
-- `GetResponseID` exposes the response ID; `GetArkRequestID` exposes the HTTP
-  request ID when returned. `GetResponsesTokenUsageDetails` returns full SDK
-  usage. Inspect output parts and their Extra for annotations and built-in tool
-  information beyond Eino's common fields.
+- Use `GetResponsesMetadata` for the response ID, HTTP request ID, and SDK
+  usage. Use `GetResponseCacheRef` for a stored response ID and its expiration.
+  Output parts and their Extra carry annotations and built-in tool information.
 - Streamed message text comes only from `response.output_text.delta`. A stream
   without text deltas has empty message text. Terminal events still complete tool calls. An empty completed output returns `ErrEmptyResponse`, as in Generate.
   `ReasoningContent` displays only reasoning summaries, with nonempty segments
