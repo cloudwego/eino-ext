@@ -27,7 +27,8 @@ import (
 )
 
 const (
-	keyResponsesUsage = extraKeyPrefix + "responses-usage-details"
+	keyResponsesIncompleteDetails = extraKeyPrefix + "responses-incomplete-details"
+	keyResponsesUsage             = extraKeyPrefix + "responses-usage-details"
 
 	keyResponsesItemIndex    = extraKeyPrefix + "responses-item-index"
 	keyResponsesSection      = extraKeyPrefix + "responses-section"
@@ -91,7 +92,9 @@ func projectResponsesMetadata(resp *responses.Response, req *responses.Responses
 	}
 	msg := &schema.Message{Role: schema.Assistant, ResponseMeta: &schema.ResponseMeta{FinishReason: string(resp.Status.Or(""))}, Extra: map[string]any{}}
 	if d, ok := resp.IncompleteDetails.Get(); ok {
-		msg.ResponseMeta.FinishReason = d.Reason
+		if err := setJSONExtra(msg, keyResponsesIncompleteDetails, &d); err != nil {
+			return nil, err
+		}
 	}
 	if resp.ID != "" {
 		msg.Extra[keyResponseID] = metadataString(resp.ID)
@@ -414,11 +417,18 @@ type ResponsesMetadata struct {
 	ModelName    string
 	ServiceTier  *string
 	UsageDetails *responses.ResponseUsage
+	// IncompleteDetails is the response's incomplete_details object, including
+	// the reason and any content_filter details. It is nil when omitted, even
+	// if ResponseMeta.FinishReason is "incomplete".
+	IncompleteDetails *responses.IncompleteDetails
 }
 
 // GetResponsesMetadata reads metadata from a Responses API result, terminal
 // stream chunk, or concatenated stream. It returns false for nil messages or
 // when the stored metadata cannot identify the Responses API unambiguously.
+// On Generate results and terminal stream messages, msg.ResponseMeta.FinishReason
+// is the Responses API status (for example, "completed" or "incomplete").
+// When it is "incomplete", consult IncompleteDetails for the reported cause.
 // Missing fields keep their zero values. UsageDetails is nil when usage is absent.
 func GetResponsesMetadata(msg *schema.Message) (ResponsesMetadata, bool) {
 	if msg == nil {
@@ -431,10 +441,11 @@ func GetResponsesMetadata(msg *schema.Message) (ResponsesMetadata, bool) {
 	id, _ := extraString(msg.Extra, keyResponseID)
 	model, _ := extraString(msg.Extra, keyModelName)
 	return ResponsesMetadata{
-		ResponseID:   id,
-		ModelName:    model,
-		ServiceTier:  optionalValue(extraString(msg.Extra, keyServiceTier)),
-		UsageDetails: optionalValue(readResponsesUsage(msg)),
+		ResponseID:        id,
+		ModelName:         model,
+		ServiceTier:       optionalValue(extraString(msg.Extra, keyServiceTier)),
+		UsageDetails:      optionalValue(readResponsesUsage(msg)),
+		IncompleteDetails: optionalValue(readJSONExtra[responses.IncompleteDetails](msg, keyResponsesIncompleteDetails)),
 	}, true
 }
 

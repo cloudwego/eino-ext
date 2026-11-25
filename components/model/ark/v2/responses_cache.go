@@ -46,7 +46,9 @@ type CacheOption struct {
 	SessionCache           *SessionCacheConfig
 }
 
-type CacheInfo struct {
+// PrefixCacheResult contains the response ID for reusing the prefix and the token
+// usage reported by CreatePrefixCache.
+type PrefixCacheResult struct {
 	ResponseID string
 	Usage      schema.TokenUsage
 }

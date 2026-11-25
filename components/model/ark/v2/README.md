@@ -268,7 +268,12 @@ Use the getter for the API that produced the message.
 | Getter | Available data |
 | --- | --- |
 | `GetChatResponseMetadata` | `CompletionID` from the Chat Completions response body, `ModelName`, `ServiceTier`, `ServiceStatus`, `ModerationHitType`, and SDK `UsageDetails` |
-| `GetResponsesMetadata` | `ResponseID` from the Responses body, `ModelName`, `ServiceTier`, and SDK `UsageDetails` |
+| `GetResponsesMetadata` | `ResponseID` from the Responses body, `ModelName`, `ServiceTier`, `IncompleteDetails`, and SDK `UsageDetails` |
+
+For Generate results and terminal stream messages, the Responses API status is
+available in `ResponseMeta.FinishReason`. When it is `"incomplete"`, read
+`IncompleteDetails.Reason` for the cause if the service supplied details.
+Otherwise, `IncompleteDetails` is nil.
 
 Both getters return `ok == false` when the message has no metadata identifying
 the requested API. A stream chunk can carry partial metadata. Read the
@@ -523,7 +528,8 @@ the full conversation.
 `WithCache(ark.CacheOption{HeadPreviousResponseID: &id})` explicitly continues a
 stored response or prefix. A valid cached message takes precedence over this
 head ID. `CreatePrefixCache(ctx, prefix, ttl)` creates a reusable prefix where
-supported. Zero TTL leaves expiration to the service. Cache availability must
+supported and returns a `PrefixCacheResult` with the response ID and token
+usage for the creation call. Zero TTL leaves expiration to the service. Cache availability must
 be enabled for the account and model; a permission error does not prove an
 adapter defect.
 
@@ -545,7 +551,7 @@ in a new chain for its final answer.
 Text/reasoning deltas and indexed function arguments can be concatenated with
 `schema.ConcatMessages`. Parallel function calls are tracked by output index.
 The terminal event supplies response metadata and token usage exactly once.
-`response.incomplete` preserves partial output and records its reason;
+`response.incomplete` preserves partial output.
 `response.failed` and `error` return errors. EOF or `[DONE]` without a terminal
 response is `io.ErrUnexpectedEOF`.
 

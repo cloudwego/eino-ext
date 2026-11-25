@@ -225,15 +225,56 @@ func TestResponsesStream(t *testing.T) {
 			equal(t, "{{", out.ToolCalls[0].Function.Arguments)
 			equal(t, "call-1", out.ToolCalls[1].ID)
 			equal(t, 11, out.ResponseMeta.Usage.TotalTokens)
-			if ending == "response.incomplete" {
-				equal(t, "max_output_tokens", out.ResponseMeta.FinishReason)
-			} else {
-				equal(t, "completed", out.ResponseMeta.FinishReason)
-			}
 			meta, ok := GetResponsesMetadata(out)
 			equal(t, true, ok)
+			if ending == "response.incomplete" {
+				equal(t, "incomplete", out.ResponseMeta.FinishReason)
+				equal(t, &responses.IncompleteDetails{Reason: "max_output_tokens"}, meta.IncompleteDetails)
+			} else {
+				equal(t, "completed", out.ResponseMeta.FinishReason)
+				equal(t, (*responses.IncompleteDetails)(nil), meta.IncompleteDetails)
+			}
 			equal(t, "resp-1", meta.ResponseID)
 		})
+	}
+}
+
+func TestResponsesIncompleteDetails(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		details *responses.IncompleteDetails
+	}{
+		{name: "omitted"},
+		{name: "content filter", details: &responses.IncompleteDetails{
+			Reason:        "content_filter",
+			ContentFilter: responses.NewOptContentFilter(responses.ContentFilter{Type: "text", Details: "filtered"}),
+		}},
+	} {
+		for _, mode := range []string{"generate", "stream"} {
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				body := map[string]any{"id": "resp-1", "object": "response", "model": "test", "created_at": 1, "status": "incomplete", "output": []any{}}
+				if tc.details != nil {
+					body["incomplete_details"] = tc.details
+				}
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					if decodeRequest(t, r)["stream"] == true {
+						w.Header().Set("Content-Type", "text/event-stream")
+						_, _ = io.WriteString(w, responseEvent("response.incomplete", map[string]any{"response": body}))
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					check(t, json.NewEncoder(w).Encode(body))
+				}, nil)
+				msg := callHistoryModel(t, cm, mode, []*schema.Message{schema.UserMessage("hi")})
+				for _, codec := range messagePersistenceCodecs() {
+					restored := roundTripHistory(t, codec, []*schema.Message{msg})[0]
+					equal(t, "incomplete", restored.ResponseMeta.FinishReason)
+					meta, ok := GetResponsesMetadata(restored)
+					equal(t, true, ok)
+					equal(t, tc.details, meta.IncompleteDetails)
+				}
+			})
+		}
 	}
 }
 

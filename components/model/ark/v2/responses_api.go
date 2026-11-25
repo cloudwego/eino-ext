@@ -215,7 +215,7 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 
 // CreatePrefixCache stores a reusable prefix. Availability depends on the model
 // and account; unsupported combinations return the service's error.
-func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int, options ...model.Option) (*CacheInfo, error) {
+func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix []*schema.Message, ttl int, options ...model.Option) (*PrefixCacheResult, error) {
 	if len(prefix) == 0 {
 		return nil, fmt.Errorf("prefix must not be empty")
 	}
@@ -246,7 +246,7 @@ func (cm *ResponsesAPIChatModel) CreatePrefixCache(ctx context.Context, prefix [
 	if err != nil {
 		return nil, err
 	}
-	result := &CacheInfo{ResponseID: resp.ID}
+	result := &PrefixCacheResult{ResponseID: resp.ID}
 	if msg.ResponseMeta.Usage != nil {
 		result.Usage = *msg.ResponseMeta.Usage
 	}

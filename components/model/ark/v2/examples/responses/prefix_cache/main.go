@@ -42,12 +42,12 @@ func run(ctx context.Context, config *ark.ResponsesAPIConfig) error {
 	}
 	// Cache a reusable prefix. Availability and minimum size depend on the model.
 	prefix := strings.Repeat("Reference context for this example. ", 256) + "Remember the code PREFIX_731."
-	info, err := cm.CreatePrefixCache(ctx, []*schema.Message{schema.SystemMessage(prefix)}, 3600)
+	result, err := cm.CreatePrefixCache(ctx, []*schema.Message{schema.SystemMessage(prefix)}, 3600)
 	if err != nil {
 		return err
 	}
-	fmt.Println("Prefix response:", info.ResponseID)
-	reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("What was the code? Reply with the code only.")}, ark.WithCache(ark.CacheOption{HeadPreviousResponseID: &info.ResponseID}))
+	fmt.Println("Prefix response:", result.ResponseID)
+	reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("What was the code? Reply with the code only.")}, ark.WithCache(ark.CacheOption{HeadPreviousResponseID: &result.ResponseID}))
 	if err != nil {
 		return err
 	}

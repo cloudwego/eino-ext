@@ -248,7 +248,10 @@ fmt.Println(reply.Content)
 | Getter | 可读取的字段 |
 | --- | --- |
 | `GetChatResponseMetadata` | Chat Completions 响应体中的 `CompletionID`、`ModelName`、`ServiceTier`、`ServiceStatus`、`ModerationHitType` 和 SDK 用量 `UsageDetails` |
-| `GetResponsesMetadata` | Responses 响应体中的 `ResponseID`、`ModelName`、`ServiceTier` 和 SDK 用量 `UsageDetails` |
+| `GetResponsesMetadata` | Responses 响应体中的 `ResponseID`、`ModelName`、`ServiceTier`、`IncompleteDetails` 和 SDK 用量 `UsageDetails` |
+
+Responses 的 Generate 结果和流式终止消息通过 `ResponseMeta.FinishReason` 返回服务端的 `status`。
+值为 `"incomplete"` 时，可从 `IncompleteDetails.Reason` 读取未完成的原因。服务端未提供详情时，`IncompleteDetails` 为 nil。
 
 当消息缺少能确定该 getter 所属 API 的元信息时，getter 返回 `ok == false`。单个流式分片可能只含部分字段，合包后可读取各分片已返回的元信息。缺失的可选字段为 nil。
 
@@ -453,15 +456,15 @@ return next.Generate(ctx, clean)
 通过完整历史建立新链，让新的策略生效。
 
 `WithCache(ark.CacheOption{HeadPreviousResponseID: &id})` 可以显式续接已存储的响应或
-前缀；历史中有效的缓存消息优先于此 ID。`CreatePrefixCache(ctx, prefix, ttl)` 用于
-服务支持的前缀缓存。TTL 为零时采用服务默认过期时间。缓存服务需要为账号和模型
+前缀；历史中有效的缓存消息优先于此 ID。`CreatePrefixCache(ctx, prefix, ttl)` 创建前缀缓存并返回
+`PrefixCacheResult`，其中包含用于续接的响应 ID 和本次创建的 token 用量。TTL 为零时采用服务默认过期时间。缓存服务需要为账号和模型
 开通；服务权限错误不能视为适配器错误。
 
 ### 流式事件
 
 文本、推理增量和带索引的工具参数可用 `schema.ConcatMessages` 拼接。并行工具调用
 按输出索引区分，终止事件只发送一次响应元数据和 token 用量。
-`response.incomplete` 保留部分输出并记录结束原因；`response.failed` 和 `error`
+`response.incomplete` 保留部分输出。`response.failed` 和 `error`
 返回错误。未收到终止响应就遇到 EOF 或 `[DONE]`，返回 `io.ErrUnexpectedEOF`。
 
 ### 运行示例与验证

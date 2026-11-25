@@ -268,7 +268,7 @@ func metadataProtocols(extra map[string]any) (chat, responses bool) {
 		switch key {
 		case keyChatCompletionID, keyEncryptedContent, keyServiceStatus, keyModerationHitType:
 			chat = true
-		case keyResponseID, keyCacheExpiration:
+		case keyResponseID, keyCacheExpiration, keyResponsesIncompleteDetails:
 			responses = true
 		default:
 			chat = chat || strings.HasPrefix(key, keyUsageDetails+".")
