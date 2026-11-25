@@ -20,7 +20,9 @@ go get github.com/cloudwego/eino-ext/components/tool/googlesearch
 
 ## 前置条件
 
-使用此工具之前，您需要：
+Google 自定义搜索 JSON API 已不再接受新客户。已使用 Google 默认端点的用户需在该服务于 2027 年 1 月 1 日停用前完成迁移。详情请参阅 [Google 自定义搜索 JSON API 概览](https://developers.google.com/custom-search/v1/overview)。
+
+如果您已获得该 Google API 的访问权限，您需要：
 
 1. **获取 Google API 密钥**：
    - 访问 [Google Cloud Console](https://console.cloud.google.com/)

@@ -20,7 +20,9 @@ go get github.com/cloudwego/eino-ext/components/tool/googlesearch
 
 ## Prerequisites
 
-Before using this tool, you need to:
+Google no longer accepts new customers for the Custom Search JSON API. If you already use Google's default endpoint, transition before the service is discontinued on January 1, 2027. See the [Google Custom Search JSON API overview](https://developers.google.com/custom-search/v1/overview) for details.
+
+If you already have access to the Google API, you need:
 
 1. **Get a Google API Key**: 
    - Visit [Google Cloud Console](https://console.cloud.google.com/)
