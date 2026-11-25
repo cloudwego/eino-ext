@@ -18,7 +18,10 @@ package openai
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino-ext/libs/acl/openai"
@@ -27,6 +30,8 @@ import (
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 )
+
+const defaultChatCompletionsPath = "/chat/completions"
 
 var _ model.ToolCallingChatModel = (*ChatModel)(nil)
 var _ model.ChatModel = (*ChatModel)(nil)
@@ -117,6 +122,11 @@ type ChatModelConfig struct {
 	// Required for Azure
 	APIVersion string `json:"api_version"`
 
+	// Path sets the custom URL path suffix for chat completion requests, replacing the default "/chat/completions" suffix.
+	// Useful when accessing OpenAI-compatible gateways or wrapped endpoints that use a non-standard path.
+	// Optional. Default: "/chat/completions"
+	Path string `json:"path,omitempty"`
+
 	// The following fields correspond to OpenAI's chat completion API parameters
 	// Ref: https://platform.openai.com/docs/api-reference/chat/create
 
@@ -206,6 +216,16 @@ func NewChatModel(ctx context.Context, config *ChatModelConfig) (*ChatModel, err
 			httpClient = &http.Client{Timeout: config.Timeout}
 		}
 
+		if config.Path != "" {
+			rt, err := newPathRewriteTransport(httpClient.Transport, config.Path)
+			if err != nil {
+				return nil, err
+			}
+			copiedClient := *httpClient
+			copiedClient.Transport = rt
+			httpClient = &copiedClient
+		}
+
 		nConf = &openai.Config{
 			ByAzure:              config.ByAzure,
 			BaseURL:              config.BaseURL,
@@ -290,4 +310,90 @@ func (cm *ChatModel) GetType() string {
 
 func (cm *ChatModel) IsCallbacksEnabled() bool {
 	return cm.cli.IsCallbacksEnabled()
+}
+
+type pathRewriteTransport struct {
+	base        http.RoundTripper
+	path        string
+	rawPath     string
+	escapedPath string
+	rawQuery    string
+	query       url.Values
+}
+
+func newPathRewriteTransport(base http.RoundTripper, customPath string) (*pathRewriteTransport, error) {
+	parsed, err := url.Parse(customPath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid path %q: %w", customPath, err)
+	}
+	if parsed.Scheme != "" || parsed.Host != "" {
+		return nil, fmt.Errorf("invalid path %q: must be a relative path without scheme or host", customPath)
+	}
+
+	p := parsed.Path
+	rawPath := parsed.RawPath
+	if p == "" {
+		p = defaultChatCompletionsPath
+		rawPath = ""
+	} else if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+		if rawPath != "" && !strings.HasPrefix(rawPath, "/") {
+			rawPath = "/" + rawPath
+		}
+	}
+
+	escapedPath := (&url.URL{Path: p, RawPath: rawPath}).EscapedPath()
+
+	var query url.Values
+	if parsed.RawQuery != "" {
+		query, err = url.ParseQuery(parsed.RawQuery)
+		if err != nil {
+			return nil, fmt.Errorf("invalid query in path %q: %w", customPath, err)
+		}
+	}
+
+	if base == nil {
+		base = http.DefaultTransport
+	}
+
+	return &pathRewriteTransport{
+		base:        base,
+		path:        p,
+		rawPath:     rawPath,
+		escapedPath: escapedPath,
+		rawQuery:    parsed.RawQuery,
+		query:       query,
+	}, nil
+}
+
+func (t *pathRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL == nil || !strings.HasSuffix(req.URL.Path, defaultChatCompletionsPath) {
+		return t.base.RoundTrip(req)
+	}
+
+	clonedReq := req.Clone(req.Context())
+	u := clonedReq.URL
+
+	newPath := strings.TrimSuffix(u.Path, defaultChatCompletionsPath) + t.path
+	if u.RawPath != "" || t.rawPath != "" {
+		baseEscaped := strings.TrimSuffix(u.EscapedPath(), defaultChatCompletionsPath)
+		u.RawPath = baseEscaped + t.escapedPath
+	} else {
+		u.RawPath = ""
+	}
+	u.Path = newPath
+
+	if t.rawQuery != "" {
+		if u.RawQuery == "" {
+			u.RawQuery = t.rawQuery
+		} else {
+			q := u.Query()
+			for k, vals := range t.query {
+				q[k] = append([]string(nil), vals...)
+			}
+			u.RawQuery = q.Encode()
+		}
+	}
+
+	return t.base.RoundTrip(clonedReq)
 }

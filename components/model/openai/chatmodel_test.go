@@ -20,8 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/bytedance/mockey"
@@ -323,4 +328,242 @@ func TestOpenAIGenerate(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestChatModelCustomPath(t *testing.T) {
+	const completionJSON = `{"id":"resp-1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
+
+	tests := []struct {
+		name          string
+		baseURLSuffix string
+		byAzure       bool
+		apiVersion    string
+		path          string
+		expectedPath  string
+		expectedQuery url.Values
+	}{
+		{
+			name:          "default path when unset",
+			baseURLSuffix: "/v1",
+			path:          "",
+			expectedPath:  "/v1/chat/completions",
+		},
+		{
+			name:          "custom path with leading slash",
+			baseURLSuffix: "/v1",
+			path:          "/custom/completions",
+			expectedPath:  "/v1/custom/completions",
+		},
+		{
+			name:          "custom path without leading slash",
+			baseURLSuffix: "",
+			path:          "gateway/v2/invoke",
+			expectedPath:  "/gateway/v2/invoke",
+		},
+		{
+			name:          "custom path with trailing slash in baseURL",
+			baseURLSuffix: "/proxy/",
+			path:          "/llm/chat",
+			expectedPath:  "/proxy/llm/chat",
+		},
+		{
+			name:          "custom path with query parameters",
+			baseURLSuffix: "/v1",
+			path:          "/custom/chat?app=demo&mode=fast",
+			expectedPath:  "/v1/custom/chat",
+			expectedQuery: url.Values{"app": {"demo"}, "mode": {"fast"}},
+		},
+		{
+			name:          "query only keeps default path",
+			baseURLSuffix: "/v1",
+			path:          "?app=demo",
+			expectedPath:  "/v1/chat/completions",
+			expectedQuery: url.Values{"app": {"demo"}},
+		},
+		{
+			name:          "azure mode with custom path preserves api-version and merges query",
+			baseURLSuffix: "",
+			byAzure:       true,
+			apiVersion:    "2024-06-01",
+			path:          "/custom/completions?extra=1",
+			expectedPath:  "/openai/deployments/gpt-4/custom/completions",
+			expectedQuery: url.Values{"api-version": {"2024-06-01"}, "extra": {"1"}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotPath string
+			var gotQuery url.Values
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotQuery = r.URL.Query()
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(completionJSON))
+			}))
+			defer srv.Close()
+
+			cm, err := NewChatModel(context.Background(), &ChatModelConfig{
+				APIKey:     "test-key",
+				BaseURL:    srv.URL + tc.baseURLSuffix,
+				ByAzure:    tc.byAzure,
+				APIVersion: tc.apiVersion,
+				Path:       tc.path,
+				Model:      "gpt-4",
+			})
+			if err != nil {
+				t.Fatalf("NewChatModel() error = %v", err)
+			}
+
+			msg, err := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+			if err != nil {
+				t.Fatalf("Generate() error = %v", err)
+			}
+			if msg.Content != "ok" {
+				t.Fatalf("unexpected content: %q", msg.Content)
+			}
+			if gotPath != tc.expectedPath {
+				t.Fatalf("request path = %q, want %q", gotPath, tc.expectedPath)
+			}
+			if len(tc.expectedQuery) > 0 && !reflect.DeepEqual(gotQuery, tc.expectedQuery) {
+				t.Fatalf("request query = %v, want %v", gotQuery, tc.expectedQuery)
+			}
+		})
+	}
+}
+
+func TestChatModelCustomPathStream(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"s-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"hello\"}}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}))
+	defer srv.Close()
+
+	cm, err := NewChatModel(context.Background(), &ChatModelConfig{
+		APIKey:  "test-key",
+		BaseURL: srv.URL + "/api",
+		Path:    "/v2/stream-chat",
+		Model:   "gpt-4",
+	})
+	if err != nil {
+		t.Fatalf("NewChatModel() error = %v", err)
+	}
+
+	sr, err := cm.Stream(context.Background(), []*schema.Message{schema.UserMessage("hi")})
+	if err != nil {
+		t.Fatalf("Stream() error = %v", err)
+	}
+	defer sr.Close()
+
+	var content strings.Builder
+	for {
+		chunk, recvErr := sr.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("Stream Recv() error = %v", recvErr)
+		}
+		content.WriteString(chunk.Content)
+	}
+
+	if gotPath != "/api/v2/stream-chat" {
+		t.Fatalf("stream request path = %q, want %q", gotPath, "/api/v2/stream-chat")
+	}
+	if content.String() != "hello" {
+		t.Fatalf("stream content = %q, want %q", content.String(), "hello")
+	}
+}
+
+func TestChatModelCustomPathPreservesHTTPClientAndConcurrency(t *testing.T) {
+	const completionJSON = `{"id":"resp-1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}]}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/gw/custom" {
+			http.Error(w, "unexpected path: "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		if r.Header.Get("X-Custom-Transport") != "true" {
+			http.Error(w, "missing custom transport header", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(completionJSON))
+	}))
+	defer srv.Close()
+
+	baseRT := roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		cloned := req.Clone(req.Context())
+		cloned.Header.Set("X-Custom-Transport", "true")
+		return http.DefaultTransport.RoundTrip(cloned)
+	})
+	sharedClient := &http.Client{Transport: baseRT}
+
+	cm, err := NewChatModel(context.Background(), &ChatModelConfig{
+		APIKey:     "test-key",
+		BaseURL:    srv.URL + "/gw",
+		Path:       "/custom",
+		Model:      "gpt-4",
+		HTTPClient: sharedClient,
+	})
+	if err != nil {
+		t.Fatalf("NewChatModel() error = %v", err)
+	}
+
+	if reflect.ValueOf(sharedClient.Transport).Pointer() != reflect.ValueOf(baseRT).Pointer() {
+		t.Fatalf("caller HTTPClient.Transport was mutated")
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, genErr := cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("ping")})
+			if genErr != nil {
+				errCh <- genErr
+			}
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+
+	for genErr := range errCh {
+		t.Fatalf("concurrent Generate() error = %v", genErr)
+	}
+}
+
+func TestChatModelCustomPathInvalid(t *testing.T) {
+	invalidPaths := []string{
+		"https://example.com/v1/chat",
+		"//example.com/v1/chat",
+		"/bad/%zz",
+	}
+
+	for _, p := range invalidPaths {
+		t.Run(p, func(t *testing.T) {
+			_, err := NewChatModel(context.Background(), &ChatModelConfig{
+				APIKey: "test-key",
+				Model:  "gpt-4",
+				Path:   p,
+			})
+			if err == nil {
+				t.Fatalf("NewChatModel() expected error for invalid path %q, got nil", p)
+			}
+		})
+	}
 }
