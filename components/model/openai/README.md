@@ -180,8 +180,8 @@ User *string `json:"user,omitempty"`
 // Optional. Useful for experimental features not yet officially supported.
 ExtraFields map[string]any `json:"extra_fields,omitempty"`
 
-// ReasoningEffort will override the default reasoning level of "medium"
-// Optional. Useful for fine tuning response latency vs. accuracy
+// ReasoningEffort controls reasoning effort. Supported values depend on the model.
+// Optional. When empty, the request omits reasoning_effort and uses the model's default.
 ReasoningEffort ReasoningEffortLevel
 
 // Modalities are output types that you would like the model to generate. Most models are capable of generating text, which is the default: ["text"]
@@ -193,6 +193,17 @@ Audio *Audio `json:"audio,omitempty"`
 }
 ```
 
+### Reasoning effort
+
+Set `ChatModelConfig.ReasoningEffort` using `ReasoningEffortLevelNone`,
+`ReasoningEffortLevelLow`, `ReasoningEffortLevelMedium`, `ReasoningEffortLevelHigh`,
+or `ReasoningEffortLevelXHigh`. Supported levels depend on the selected model.
+Other provider-specific string values can also be passed without client-side validation.
+
+Use `openai.WithReasoningEffort(openai.ReasoningEffortLevelNone)` in a `Generate`
+or `Stream` call to override the configured level for that call. `ReasoningEffortLevelNone`
+explicitly sends `"reasoning_effort": "none"`; an empty value omits the field and
+leaves the default to the model.
 
 ## Examples
 
