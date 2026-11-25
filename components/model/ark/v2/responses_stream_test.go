@@ -55,7 +55,6 @@ func TestResponsesStreamConcat(t *testing.T) {
 			cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
 				equal(t, true, decodeRequest(t, r)["stream"])
 				w.Header().Set("Content-Type", "text/event-stream")
-				w.Header().Set("X-Request-Id", "fixture-request-"+name)
 				_, _ = io.WriteString(w, wire)
 			}, nil)
 			for _, concat := range []string{"messages", "stream reader"} {
@@ -550,7 +549,6 @@ func TestResponsesMixedStreamConcat(t *testing.T) {
 					streamWire = prefix + responseEvent("response.incomplete", map[string]any{"response": json.RawMessage(responseJSON)})
 				}
 				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("X-Request-Id", "fixture-mixed-request")
 					if decodeRequest(t, r)["stream"] == true {
 						w.Header().Set("Content-Type", "text/event-stream")
 						_, _ = io.WriteString(w, streamWire)

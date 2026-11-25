@@ -248,9 +248,9 @@ fmt.Println(reply.Content)
 | Getter | 可读取的字段 |
 | --- | --- |
 | `GetChatResponseMetadata` | Chat Completions 响应体中的 `CompletionID`、`ModelName`、`ServiceTier`、`ServiceStatus`、`ModerationHitType` 和 SDK 用量 `UsageDetails` |
-| `GetResponsesMetadata` | Responses 响应体中的 `ResponseID`、HTTP 响应头 `X-Request-Id` 中的 `RequestID`、`ModelName`、`ServiceTier` 和 SDK 用量 `UsageDetails` |
+| `GetResponsesMetadata` | Responses 响应体中的 `ResponseID`、`ModelName`、`ServiceTier` 和 SDK 用量 `UsageDetails` |
 
-当消息缺少能确定该 getter 所属 API 的元信息时，getter 返回 `ok == false`。单个流式分片可能只含部分字段，合包后可读取各分片已返回的元信息。缺失的可选字段为 nil。读取旧检查点的共享请求 ID 时，消息中还需有能确定协议的专属字段。
+当消息缺少能确定该 getter 所属 API 的元信息时，getter 返回 `ok == false`。单个流式分片可能只含部分字段，合包后可读取各分片已返回的元信息。缺失的可选字段为 nil。
 
 `GetEncryptedContent` 读取 Chat Completions 助手消息中用于历史回放的密文。Responses 的每个 reasoning 输出 part 通过自己的 `Reasoning.Signature` 承载密文。服务返回原始推理文本时，可用 `GetRawReasoningContent` 按顺序读取该 part 的文本分段。
 
@@ -282,7 +282,7 @@ go run ./examples/generate
 
 | 示例 | 演示内容 |
 | --- | --- |
-| [generate](examples/generate/main.go) | 文本生成、请求 ID 和 token 用量 |
+| [generate](examples/generate/main.go) | 文本生成、completion ID 和 token 用量 |
 | [stream](examples/stream/main.go) | 思考过程输出、最终用量及 `schema.ConcatMessages` 拼接 |
 | [tools](examples/tools/main.go) | 限制候选工具、拼接流式参数、执行本地加法、回传结果并生成最终回答 |
 | [multimodal](examples/multimodal/main.go) | 图片、音频、视频和文件，支持 URL、本地文件 base64 或 FileID |
@@ -396,7 +396,7 @@ Context 和图片生成 API 仍使用旧模块。
   对应函数 item，删除内容 part 会删除对应分段。删除承载 item 元数据的 data part 前，
   应先将其 item 级 Extra 转移到保留的 part；缺少 item 元数据的引用会报错。
   新增且没有原生元数据的 part 会追加为新的输入 item。编辑缓存历史后，应先使其缓存失效。
-- `GetResponsesMetadata` 读取响应 ID、HTTP 请求 ID 和 SDK 用量。`GetResponseCacheRef` 读取缓存响应的 ID 和过期时间。输出 parts 及其 Extra 保存注释和内置工具结果。
+- `GetResponsesMetadata` 读取响应 ID 和 SDK 用量。`GetResponseCacheRef` 读取缓存响应的 ID 和过期时间。输出 parts 及其 Extra 保存注释和内置工具结果。
 - 流式正文只取 `response.output_text.delta`，没有正文 delta 时正文为空。终止事件仍会补齐工具调用。completed 的空输出与
   Generate 一样返回 `ErrEmptyResponse`。`ReasoningContent` 只展示 summary，非空分段
   以换行符连接；流式从 summary part chunks 派生，added/delta/done 快照不重复展示。

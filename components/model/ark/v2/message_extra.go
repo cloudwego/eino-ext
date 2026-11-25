@@ -32,7 +32,6 @@ import (
 const extraKeyPrefix = "ark-v2-"
 
 const (
-	keyLegacyRequestID     = extraKeyPrefix + "request-id"
 	keyModelName           = extraKeyPrefix + "model-name"
 	keyServiceTier         = extraKeyPrefix + "service-tier"
 	keyRawReasoningContent = extraKeyPrefix + "raw-reasoning-content"
@@ -263,14 +262,13 @@ func extraIndex(extra map[string]any, key string) (index int, exists bool, err e
 	return int(value), true, nil
 }
 
-// Older checkpoints used one key for both the Chat completion ID and the
-// Responses HTTP request ID. Only protocol-specific metadata identifies it.
+// Shared fields such as model name and token counts cannot identify the API.
 func metadataProtocols(extra map[string]any) (chat, responses bool) {
 	for key := range extra {
 		switch key {
 		case keyChatCompletionID, keyEncryptedContent, keyServiceStatus, keyModerationHitType:
 			chat = true
-		case keyResponseID, keyResponsesRequestID, keyCacheExpiration:
+		case keyResponseID, keyCacheExpiration:
 			responses = true
 		default:
 			chat = chat || strings.HasPrefix(key, keyUsageDetails+".")

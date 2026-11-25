@@ -268,13 +268,11 @@ Use the getter for the API that produced the message.
 | Getter | Available data |
 | --- | --- |
 | `GetChatResponseMetadata` | `CompletionID` from the Chat Completions response body, `ModelName`, `ServiceTier`, `ServiceStatus`, `ModerationHitType`, and SDK `UsageDetails` |
-| `GetResponsesMetadata` | `ResponseID` from the Responses body, `RequestID` from the HTTP `X-Request-Id` header, `ModelName`, `ServiceTier`, and SDK `UsageDetails` |
+| `GetResponsesMetadata` | `ResponseID` from the Responses body, `ModelName`, `ServiceTier`, and SDK `UsageDetails` |
 
 Both getters return `ok == false` when the message has no metadata identifying
 the requested API. A stream chunk can carry partial metadata. Read the
 concatenated message for all fields received. Missing optional fields are nil.
-Older checkpoints with a shared request ID require another API-specific field
-to determine which ID it represents.
 
 `GetEncryptedContent` reads Chat Completions assistant-message ciphertext for
 replay. For the Responses API, each reasoning output part carries its own
@@ -316,7 +314,7 @@ optional `ARK_BASE_URL` override, including the `/api/v3` suffix.
 
 | Example | Demonstrates |
 | --- | --- |
-| [generate](examples/generate/main.go) | Text generation, request ID, and token usage |
+| [generate](examples/generate/main.go) | Text generation, completion ID, and token usage |
 | [stream](examples/stream/main.go) | Thinking/reasoning output, final usage, and `schema.ConcatMessages` |
 | [tools](examples/tools/main.go) | Restrict allowed tools, assemble streamed arguments, execute a local addition, and return the result for a final answer |
 | [tool_options](examples/tool_options/main.go) | Reuse per-call tool options, strict defaults and overrides, forced subsets, and an unnamed forced choice |
@@ -464,7 +462,7 @@ image-generation APIs remain in the legacy module.
   rejected. New parts without native metadata are appended as new input items.
   Invalidate a cached
   message before reusing edited history.
-- Use `GetResponsesMetadata` for the response ID, HTTP request ID, and SDK
+- Use `GetResponsesMetadata` for the response ID and SDK
   usage. Use `GetResponseCacheRef` for a stored response ID and its expiration.
   Output parts and their Extra carry annotations and built-in tool information.
 - Streamed message text comes only from `response.output_text.delta`. A stream

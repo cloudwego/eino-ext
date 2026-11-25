@@ -143,9 +143,6 @@ func (cm *ResponsesAPIChatModel) Generate(ctx context.Context, in []*schema.Mess
 	if err != nil {
 		return nil, err
 	}
-	if requestID := resp.GetHeader().Get("X-Request-Id"); requestID != "" {
-		out.Extra[keyResponsesRequestID] = metadataString(requestID)
-	}
 	callbacks.OnEnd(ctx, &model.CallbackOutput{Message: out, Config: responsesCallbackConfig(request.payload), TokenUsage: toModelCallbackUsage(out.ResponseMeta),
 		Extra: map[string]any{"thinking": responsesCallbackThinking(request.payload), "model_name": resp.Model}})
 	return out, nil
@@ -201,11 +198,6 @@ func (cm *ResponsesAPIChatModel) Stream(ctx context.Context, in []*schema.Messag
 			if e != nil {
 				_ = sw.Send(nil, e)
 				return
-			}
-			if terminal && msg != nil {
-				if requestID := stream.Header().Get("X-Request-Id"); requestID != "" {
-					msg.Extra[keyResponsesRequestID] = metadataString(requestID)
-				}
 			}
 			if msg != nil && send(msg) {
 				return

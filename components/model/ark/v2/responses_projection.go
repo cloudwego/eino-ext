@@ -27,8 +27,7 @@ import (
 )
 
 const (
-	keyResponsesRequestID = extraKeyPrefix + "responses-request-id"
-	keyResponsesUsage     = extraKeyPrefix + "responses-usage-details"
+	keyResponsesUsage = extraKeyPrefix + "responses-usage-details"
 
 	keyResponsesItemIndex    = extraKeyPrefix + "responses-item-index"
 	keyResponsesSection      = extraKeyPrefix + "responses-section"
@@ -412,7 +411,6 @@ func projectResponsesSummaryText(items []responses.ItemReasoning) string {
 // ResponsesMetadata holds the message-level metadata of a Responses API response.
 type ResponsesMetadata struct {
 	ResponseID   string // id from the response body, used for previous_response_id.
-	RequestID    string // X-Request-Id from the HTTP response headers.
 	ModelName    string
 	ServiceTier  *string
 	UsageDetails *responses.ResponseUsage
@@ -430,15 +428,10 @@ func GetResponsesMetadata(msg *schema.Message) (ResponsesMetadata, bool) {
 	if !isResponses || isChat {
 		return ResponsesMetadata{}, false
 	}
-	requestID, ok := extraString(msg.Extra, keyResponsesRequestID)
-	if !ok {
-		requestID, _ = extraString(msg.Extra, keyLegacyRequestID)
-	}
 	id, _ := extraString(msg.Extra, keyResponseID)
 	model, _ := extraString(msg.Extra, keyModelName)
 	return ResponsesMetadata{
 		ResponseID:   id,
-		RequestID:    requestID,
 		ModelName:    model,
 		ServiceTier:  optionalValue(extraString(msg.Extra, keyServiceTier)),
 		UsageDetails: optionalValue(readResponsesUsage(msg)),

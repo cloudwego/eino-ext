@@ -57,7 +57,6 @@ func testResponsesModel(t *testing.T, handler http.HandlerFunc, config *Response
 }
 func writeResponses(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-Id", "request-1")
 	_, _ = io.WriteString(w, responsesJSON)
 }
 func responseEvent(kind string, fields map[string]any) string {
@@ -160,7 +159,6 @@ func TestResponsesGenerate(t *testing.T) {
 	ref, ok := GetResponseCacheRef(out)
 	equal(t, true, ok)
 	equal(t, ResponseCacheRef{ResponseID: meta.ResponseID, ExpireAt: 4102444800}, ref)
-	equal(t, "request-1", meta.RequestID)
 	equal(t, int64(2), meta.UsageDetails.InputTokensDetails.CachedTokens)
 	itemCount := 0
 	for i := range out.AssistantGenMultiContent {

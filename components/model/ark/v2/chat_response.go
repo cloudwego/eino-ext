@@ -25,11 +25,13 @@ import (
 )
 
 const (
-	keyChatCompletionID  = extraKeyPrefix + "chat-completion-id"
-	keyEncryptedContent  = extraKeyPrefix + "encrypted-content"
-	keyServiceStatus     = extraKeyPrefix + "service-status"
-	keyUsageDetails      = extraKeyPrefix + "usage-details"
-	keyModerationHitType = extraKeyPrefix + "moderation-hit-type"
+	// Older Chat checkpoints stored the completion body ID under this shared key.
+	keyLegacyChatCompletionID = extraKeyPrefix + "request-id"
+	keyChatCompletionID       = extraKeyPrefix + "chat-completion-id"
+	keyEncryptedContent       = extraKeyPrefix + "encrypted-content"
+	keyServiceStatus          = extraKeyPrefix + "service-status"
+	keyUsageDetails           = extraKeyPrefix + "usage-details"
+	keyModerationHitType      = extraKeyPrefix + "moderation-hit-type"
 )
 
 func resolveChatResponse(resp *chat.ChatCompletionResponse) (*schema.Message, error) {
@@ -181,7 +183,7 @@ func GetChatResponseMetadata(msg *schema.Message) (ChatResponseMetadata, bool) {
 	}
 	id, ok := extraString(msg.Extra, keyChatCompletionID)
 	if !ok {
-		id, _ = extraString(msg.Extra, keyLegacyRequestID)
+		id, _ = extraString(msg.Extra, keyLegacyChatCompletionID)
 	}
 	model, _ := extraString(msg.Extra, keyModelName)
 	return ChatResponseMetadata{

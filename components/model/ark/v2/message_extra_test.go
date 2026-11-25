@@ -259,14 +259,14 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 			}
 			check(t, err)
 			for _, key := range []string{
-				"ark-reasoning-content", keyLegacyRequestID,
+				"ark-reasoning-content", keyLegacyChatCompletionID, "ark-v2-responses-request-id",
 				keyUsageDetails + ".prompt_tokens", keyUsageDetails + ".completion_tokens", keyUsageDetails + ".total_tokens",
 				keyUsageDetails + ".prompt_tokens_details.cached_tokens", keyUsageDetails + ".completion_tokens_details.reasoning_tokens",
 				keyResponsesUsage + ".input_tokens", keyResponsesUsage + ".output_tokens", keyResponsesUsage + ".total_tokens",
 				keyResponsesUsage + ".input_tokens_details.cached_tokens", keyResponsesUsage + ".output_tokens_details.reasoning_tokens",
 			} {
 				if _, exists := msg.Extra[key]; exists {
-					t.Fatalf("common message field duplicated in Extra[%q]", key)
+					t.Fatalf("unexpected metadata in Extra[%q]", key)
 				}
 			}
 			for key, value := range msg.Extra {
@@ -319,7 +319,7 @@ func TestMessageExtraSurvivesSerialization(t *testing.T) {
 						meta, ok := GetResponsesMetadata(&restored)
 						equal(t, true, ok)
 						equal(t, want, meta)
-						equal(t, "request-1", meta.RequestID)
+						equal(t, "resp-1", meta.ResponseID)
 						equalMetadataJSON(t, msg.AssistantGenMultiContent, restored.AssistantGenMultiContent)
 						wantRef, _ := GetResponseCacheRef(msg)
 						ref, ok := GetResponseCacheRef(&restored)
@@ -537,15 +537,14 @@ func TestResponseMetadataProtocol(t *testing.T) {
 		responses *ResponsesMetadata
 	}{
 		{name: "shared fields", extra: map[string]any{keyModelName: "model", keyServiceTier: "default"}},
-		{name: "legacy ID alone", extra: map[string]any{keyLegacyRequestID: "same-id"}},
-		{name: "conflicting IDs", extra: map[string]any{keyChatCompletionID: "chat", keyResponsesRequestID: "http"}},
+		{name: "legacy ID alone", extra: map[string]any{keyLegacyChatCompletionID: "same-id"}},
+		{name: "conflicting IDs", extra: map[string]any{keyChatCompletionID: "chat", keyResponseID: "body"}},
 		{name: "chat ID", extra: map[string]any{keyChatCompletionID: "same-id"}, chat: &ChatResponseMetadata{CompletionID: "same-id"}},
-		{name: "responses header only", extra: map[string]any{keyResponsesRequestID: "same-id"}, responses: &ResponsesMetadata{RequestID: "same-id"}},
+		{name: "responses header only", extra: map[string]any{"ark-v2-responses-request-id": "same-id"}},
 		{name: "responses body only", extra: map[string]any{keyResponseID: "body"}, responses: &ResponsesMetadata{ResponseID: "body"}},
-		{name: "legacy chat", extra: map[string]any{keyLegacyRequestID: "same-id", keyEncryptedContent: "cipher"}, chat: &ChatResponseMetadata{CompletionID: "same-id"}},
-		{name: "legacy responses", extra: map[string]any{keyLegacyRequestID: "same-id", keyResponseID: "body"}, responses: &ResponsesMetadata{ResponseID: "body", RequestID: "same-id"}},
-		{name: "chat new ID takes precedence", extra: map[string]any{keyLegacyRequestID: "old", keyChatCompletionID: "new"}, chat: &ChatResponseMetadata{CompletionID: "new"}},
-		{name: "responses new ID takes precedence", extra: map[string]any{keyLegacyRequestID: "old", keyResponsesRequestID: "new"}, responses: &ResponsesMetadata{RequestID: "new"}},
+		{name: "legacy chat", extra: map[string]any{keyLegacyChatCompletionID: "same-id", keyEncryptedContent: "cipher"}, chat: &ChatResponseMetadata{CompletionID: "same-id"}},
+		{name: "legacy responses", extra: map[string]any{keyLegacyChatCompletionID: "same-id", keyResponseID: "body"}, responses: &ResponsesMetadata{ResponseID: "body"}},
+		{name: "chat new ID takes precedence", extra: map[string]any{keyLegacyChatCompletionID: "old", keyChatCompletionID: "new"}, chat: &ChatResponseMetadata{CompletionID: "new"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := &schema.Message{Extra: tc.extra}
