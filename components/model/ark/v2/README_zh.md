@@ -333,6 +333,7 @@ reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("你好")})
 `ResponsesAPIConfig` 与 `ChatModelConfig` 共享连接配置和请求头。其 `Thinking`、`ReasoningEffort` 分别使用
 `responses.Thinking`、`responses.ReasoningEffort`，单次调用通过
 `WithResponsesThinking`、`WithResponsesReasoningEffort` 覆盖。
+省略 `WithResponsesThinking` 时沿用模型配置。显式传入 `WithResponsesThinking(nil)` 会在本次请求中省略 `thinking` 字段，采用服务端默认行为。
 Chat Completions 使用自己的 SDK 类型及 `WithThinking` / `WithReasoningEffort`。
 输出上限使用 `MaxOutputTokens`，调用时可用
 `model.WithMaxTokens` 覆盖。停止序列仅用于 Chat Completions。
@@ -340,8 +341,9 @@ Context 和图片生成 API 仍使用旧模块。
 
 - `ResponseFormat` 使用 `arkruntime/model/responses.TextFormat`。JSON schema 的
   `type` 为 `json_schema`，`name`、`strict` 和 `schema` 直接放在 format 中。
-- `EnableToolWebSearch` 使用 `responses.WebSearchTool`；单次调用可通过
-  `WithEnableToolWebSearch(nil)` 关闭。适配器默认发送 `ark-beta-web-search: true`，
+- 省略 `WithEnableToolWebSearch` 时沿用模型的 `EnableToolWebSearch` 配置。
+  显式传入 `WithEnableToolWebSearch(nil)` 会从本次请求的工具定义中省略 `web_search`。
+  使用 `previous_response_id` 续接时始终沿用已存储响应的工具集。配置搜索时，适配器默认发送 `ark-beta-web-search: true`，
   可用自定义请求头覆盖。`MaxToolCalls` / `WithMaxToolCalls` 设置内置工具轮次上限。
 - 函数工具支持调用级工具配置和候选名称筛选。
   Eino 工具调用的 `Type` 为 `function`，`ToolCall.ID` 保存 API 的 `call_id`；

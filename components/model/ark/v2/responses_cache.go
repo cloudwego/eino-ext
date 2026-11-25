@@ -32,8 +32,8 @@ const (
 // SessionCacheConfig enables storing Responses and reusing their server context.
 // TTL is in seconds. Zero leaves expiration to the service's default.
 type SessionCacheConfig struct {
-	EnableCache bool `json:"enable_cache"`
-	TTL         int  `json:"ttl"`
+	EnableCache bool
+	TTL         int
 }
 
 // CacheOption controls Responses context reuse. A valid cached message takes

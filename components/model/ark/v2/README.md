@@ -369,7 +369,9 @@ reply, err := cm.Generate(ctx, []*schema.Message{schema.UserMessage("Hello")})
 `ResponsesAPIConfig` shares connection settings and custom headers with `ChatModelConfig`.
 Its `Thinking` and `ReasoningEffort` fields use `responses.Thinking` and
 `responses.ReasoningEffort`; override them with `WithResponsesThinking` and
-`WithResponsesReasoningEffort`. Chat Completions uses its own SDK types and
+`WithResponsesReasoningEffort`. Omitting `WithResponsesThinking` inherits the
+model configuration. Passing `WithResponsesThinking(nil)` omits the `thinking`
+field for that call and uses the service default. Chat Completions uses its own SDK types and
 `WithThinking` / `WithReasoningEffort` options.
 Use `MaxOutputTokens` (or `model.WithMaxTokens`) for its
 output limit. `Stop` sequences apply to Chat Completions. Context and
@@ -377,8 +379,10 @@ image-generation APIs remain in the legacy module.
 
 - `ResponseFormat` uses `arkruntime/model/responses.TextFormat`. For JSON schema,
   set `type: json_schema`, `name`, `strict`, and the JSON schema in `schema`.
-- `EnableToolWebSearch` uses `responses.WebSearchTool`; use
-  `WithEnableToolWebSearch(nil)` to disable it for a call. The adapter supplies
+- Omitting `WithEnableToolWebSearch` inherits the model's `EnableToolWebSearch`
+  setting. Passing `WithEnableToolWebSearch(nil)` omits `web_search` from the
+  tool definitions for that call. Requests with `previous_response_id` always
+  inherit the stored response's tools. When search is configured, the adapter supplies
   `ark-beta-web-search: true` unless explicitly overridden in custom headers.
   `MaxToolCalls` and
   `WithMaxToolCalls` bound built-in tool rounds as supported by the service.

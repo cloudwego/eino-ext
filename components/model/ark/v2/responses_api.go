@@ -260,7 +260,9 @@ func WithCache(cache CacheOption) model.Option {
 }
 
 // WithEnableToolWebSearch configures the Responses API's built-in search tool.
-// A nil value disables it for this call.
+// Omit this option to inherit ResponsesAPIConfig.EnableToolWebSearch. Pass nil
+// to omit web_search from the tool definitions for this call. A request with
+// previous_response_id always inherits the stored response's tools.
 func WithEnableToolWebSearch(tool *responses.WebSearchTool) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.enableWebSearch = tool })
 }
@@ -269,7 +271,10 @@ func WithMaxToolCalls(n int64) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.maxToolCalls = &n })
 }
 
-// WithResponsesThinking configures thinking for the Responses API.
+// WithResponsesThinking configures thinking for one Responses API call.
+// Omit this option to inherit ResponsesAPIConfig.Thinking. Pass nil to omit
+// the thinking field from the request and use the service default. To disable
+// thinking explicitly, set the mode to responses.ThinkingModeDisabled.
 func WithResponsesThinking(thinking *responses.Thinking) model.Option {
 	return model.WrapImplSpecificOptFn(func(o *arkOptions) { o.responsesThinking = thinking })
 }
