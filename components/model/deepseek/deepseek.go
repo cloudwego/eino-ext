@@ -327,6 +327,9 @@ func (cm *ChatModel) Stream(ctx context.Context, in []*schema.Message, opts ...m
 			msg, found, err := resolveStreamResponse(chunk)
 			if err != nil {
 				_ = sw.Send(nil, fmt.Errorf("failed to resolve stream response from DeepSeek: %w", err))
+				// Stop reading: the error has already been delivered downstream, and
+				// every other terminal branch in this loop returns here too.
+				return
 			}
 			if !found {
 				continue
