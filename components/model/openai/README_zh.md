@@ -75,6 +75,54 @@ func main() {
 
 ```
 
+## 使用 schema.Message 调用 Responses API
+
+`NewChatModel` 继续使用 Chat Completions。如果现有 `schema.Message` /
+`ToolCallingChatModel` 流程需要 `/v1/responses`，可使用 `NewResponsesChatModel`，
+无需将消息和中间件迁移到 `schema.AgenticMessage`。
+
+```go
+cm, err := openai.NewResponsesChatModel(ctx, &openai.ResponsesChatModelConfig{
+    APIKey: os.Getenv("OPENAI_API_KEY"),
+    Model: os.Getenv("OPENAI_MODEL"),
+    BaseURL: os.Getenv("OPENAI_BASE_URL"), // 可选
+    ReasoningEffort: openai.ResponsesReasoningEffortHigh,
+})
+```
+
+该模型支持文本和图片输入、文本输出、自定义函数工具（`WithTools` / `BindTools`）、
+工具选择、流式输出、回调和 token 用量。加密 reasoning 保存在 `Message.Extra` 中并随
+历史回传，保存会话时需保留完整消息及 `Extra`。正文和工具调用仍通过 Eino 消息转换。
+服务端内置工具及任意原生 Responses 内容块不在此适配器范围内；需要 `AgenticMessage`
+接口时，请使用 `agenticopenai`。
+
+通用参数继续使用 `model.WithMaxTokens`、`model.WithTemperature` 等选项。Responses
+专用参数使用 `WithResponsesReasoningEffort`、`WithResponsesStore`、
+`WithResponsesPromptCacheKey` 和 `WithResponsesPromptCacheRetention`；现有 Chat
+Completions 专用选项不会应用于 Responses 模型。
+
+默认回传完整历史，response 存储行为遵循供应商默认值。只有明确需要通过已存储的
+response ID 续接时才使用 `WithResponsesUseResponseID(true)`，并确保供应商已存储并
+支持该 response，例如使用 `WithResponsesStore(true)`。SDK 内部重试关闭，由应用或
+ADK 控制重试。
+
+### 代理商扩展流事件
+
+通过 `ResponsesChatModelConfig.StreamEventHandler` 处理 SSE 扩展事件，额外字段可从
+`event.RawJSON()` 读取。回调返回 `ResponsesStreamEventResult`：
+
+- `Error`：立即结束流，原样返回错误，保留 `errors.Is` / `errors.As` 判断，供重试和 failover 使用。
+- `IncompleteError`：仅在流缺少终止响应便结束时使用。终止响应或 SDK/网络错误优先，
+  适合处理可能伴随成功响应出现的限额通知。
+- 返回零值或不配置回调时，标准事件处理行为不变。
+
+每条流内部按顺序调用回调，不同请求可能并发调用同一回调。适配器为每条流独立保存
+`IncompleteError`，接入方不需要共享可变状态来追踪限流。代理事件名称、错误解析与
+错误标识由接入方维护，不内置于通用适配器中。
+
+此实现依赖官方 OpenAI Go SDK，模块最低 Go 版本为 1.22。
+[完整示例](examples/responses/responses.go) 展示了生成、历史回传和流式调用。
+
 ## 配置
 
 可以使用 `openai.ChatModelConfig` 结构体配置模型：
