@@ -23,6 +23,7 @@ import (
 	"github.com/cloudwego/eino/components/retriever"
 	"github.com/cloudwego/eino/schema"
 	"github.com/milvus-io/milvus/client/v2/entity"
+	"github.com/milvus-io/milvus/client/v2/index"
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 
 	milvus2 "github.com/cloudwego/eino-ext/components/retriever/milvus2"
@@ -104,18 +105,20 @@ func (r *Range) BuildSearchOption(ctx context.Context, conf *milvus2.RetrieverCo
 		topK = *co.TopK
 	}
 
+	annParam := index.NewCustomAnnParam()
+	annParam.WithRadius(r.Radius)
+	if r.RangeFilter != nil {
+		annParam.WithRangeFilter(*r.RangeFilter)
+	}
+
 	searchOpt := milvusclient.NewSearchOption(conf.Collection, topK, []entity.Vector{entity.FloatVector(queryVector)}).
 		WithANNSField(conf.VectorField).
 		WithOutputFields(conf.OutputFields...).
-		WithSearchParam("radius", fmt.Sprintf("%v", r.Radius))
+		WithAnnParam(annParam)
 
 	// Apply metric type
 	if r.MetricType != "" {
 		searchOpt.WithSearchParam("metric_type", string(r.MetricType))
-	}
-
-	if r.RangeFilter != nil {
-		searchOpt = searchOpt.WithSearchParam("range_filter", fmt.Sprintf("%v", *r.RangeFilter))
 	}
 
 	if len(conf.Partitions) > 0 {
