@@ -14,13 +14,21 @@
  * limitations under the License.
  */
 
+// Package langfuse implements the legacy Langfuse callback for Eino.
+//
+// Deprecated: Use github.com/cloudwego/eino-ext/callbacks/langfuse/v2 for
+// Langfuse Cloud and Langfuse v4. This package remains available for
+// self-hosted Langfuse v3 deployments.
 package langfuse
 
 import (
 	"context"
 	"io"
 	"log"
+	"net/url"
 	"runtime/debug"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/bytedance/sonic"
@@ -33,7 +41,7 @@ import (
 
 type Config struct {
 	// Host is the Langfuse server URL (Required)
-	// Example: "https://cloud.langfuse.com"
+	// Example: "http://localhost:3000"
 	Host string
 
 	// PublicKey is the public key for authentication (Required)
@@ -125,7 +133,38 @@ type Config struct {
 	Public bool
 }
 
+var cloudWarningOnce sync.Once
+
+func warnLegacyCloud(host string) {
+	if !isLangfuseCloudHost(host) {
+		return
+	}
+	cloudWarningOnce.Do(func() {
+		log.Print("langfuse: callbacks/langfuse v1 is deprecated on Langfuse Cloud. " +
+			"Use callbacks/langfuse/v2: https://github.com/cloudwego/eino-ext/blob/main/callbacks/langfuse/v2/README.md#migrating-from-v1")
+	})
+}
+
+func isLangfuseCloudHost(host string) bool {
+	u, err := url.Parse(host)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	switch strings.TrimSuffix(strings.ToLower(u.Hostname()), ".") {
+	case "cloud.langfuse.com", "us.cloud.langfuse.com", "jp.cloud.langfuse.com", "hipaa.cloud.langfuse.com":
+		return true
+	default:
+		return false
+	}
+}
+
+// NewLangfuseHandler creates a legacy Langfuse callback handler.
+//
+// Deprecated: Use github.com/cloudwego/eino-ext/callbacks/langfuse/v2 for
+// Langfuse Cloud and Langfuse v4.
 func NewLangfuseHandler(cfg *Config) (handler *CallbackHandler, flusher func()) {
+	warnLegacyCloud(cfg.Host)
+
 	var langfuseOpts []langfuse.Option
 	if cfg.Threads > 0 {
 		langfuseOpts = append(langfuseOpts, langfuse.WithThreads(cfg.Threads))
