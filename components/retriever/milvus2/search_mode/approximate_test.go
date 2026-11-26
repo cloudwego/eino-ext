@@ -33,10 +33,10 @@ import (
 
 func TestNewApproximate(t *testing.T) {
 	convey.Convey("test NewApproximate", t, func() {
-		convey.Convey("test with default metric type", func() {
+		convey.Convey("test with default values", func() {
 			approx := NewApproximate("")
 			convey.So(approx, convey.ShouldNotBeNil)
-			convey.So(approx.MetricType, convey.ShouldEqual, milvus2.L2)
+			convey.So(approx.MetricType, convey.ShouldBeEmpty)
 		})
 
 		convey.Convey("test with L2 metric type", func() {
