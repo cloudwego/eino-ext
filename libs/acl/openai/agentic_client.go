@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"runtime/debug"
+	"slices"
 
 	"github.com/meguminnnnnnnnn/go-openai"
 
@@ -278,14 +279,6 @@ func (ac *AgenticClient) Stream(ctx context.Context, input []*schema.AgenticMess
 	return outStream, nil
 }
 
-func (ac *AgenticClient) WithTools(tools []*schema.ToolInfo) (model.AgenticModel, error) {
-	nc, err := ac.client.WithToolsForClient(tools)
-	if err != nil {
-		return nil, err
-	}
-	return &AgenticClient{client: nc}, nil
-}
-
 func (ac *AgenticClient) GetType() string {
 	return "ChatModel/OpenAI"
 }
@@ -306,6 +299,7 @@ func modifyAgenticResponseMessage(ctx context.Context, msg *schema.AgenticMessag
 }
 
 func (ac *AgenticClient) convertAgenticToolChoiceOpts(opts []model.Option) []model.Option {
+	opts = slices.Clone(opts)
 	options := model.GetCommonOptions(nil, opts...)
 	if options.AgenticToolChoice == nil {
 		return opts
