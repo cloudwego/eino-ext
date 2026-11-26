@@ -287,8 +287,10 @@ func (cm *ChatModel) parseCustomOptions(opts ...model.Option) []model.Option {
 		EnableThinking: cm.extraOptions.EnableThinking,
 	}, opts...)
 
-	// Using extra fields to pass the custom options to the underlying client
-	extraFields := make(map[string]any)
+	// Using extra fields to pass the custom options to the underlying client.
+	// openai.WithExtraFields replaces any earlier extra fields, so everything,
+	// including the caller's WithExtraFields, has to go through one call.
+	extraFields := make(map[string]any, len(qwenOpts.ExtraFields)+2)
 	if qwenOpts.EnableThinking != nil {
 		// If using Bailian, use `chat_template_kwargs`.
 		// See https://bailian.console.aliyun.com/?tab=api#/api/?type=model&url=2712576
@@ -300,6 +302,10 @@ func (cm *ChatModel) parseCustomOptions(opts ...model.Option) []model.Option {
 		// If using vLLM, use `enable_thinking`.
 		// See https://qwen.readthedocs.io/zh-cn/latest/deployment/vllm.html
 		extraFields["enable_thinking"] = *qwenOpts.EnableThinking
+	}
+	// Caller-provided fields win on conflict, as documented on WithExtraFields.
+	for k, v := range qwenOpts.ExtraFields {
+		extraFields[k] = v
 	}
 	if len(extraFields) > 0 {
 		opts = append(opts, openai.WithExtraFields(extraFields))
