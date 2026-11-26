@@ -309,6 +309,7 @@ Key pattern: tool returns `compose.Interrupt(ctx, info)` to pause, then `runner.
 - Default to `ChatModelAgent` for most use cases (single agent with tools)
 - Use `Runner` to execute agents -- never call `agent.Run()` directly in production
 - Middleware order matters: PatchToolCalls first, then Reduction, then Summarization
+- Never mutate messages received in middleware or stream callbacks in place (especially `msg.Extra[k] = v`) -- stream fan-out shares message pointers across consumers and in-place writes can cause concurrent map read/write panics; shallow-copy the message, clone the map/slice you change, and use the copy (see reference/middleware.md)
 - Use `DeepAgent` (`adk/prebuilt/deep`) when you need built-in planning + filesystem + sub-agents
 - Use `AgentAsTool` or DeepAgents' SubAgents when a sub-agent needs isolated context (no shared history)
 - Use `TurnLoop` when building interactive applications that need preemption, idle management, or push-based input

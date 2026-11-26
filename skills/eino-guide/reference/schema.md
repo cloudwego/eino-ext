@@ -22,6 +22,8 @@ type Message struct {
 }
 ```
 
+A `*Message` received from a stream or shared pipeline may be read concurrently by other consumers -- treat it as read-only. Never write `msg.Extra[k] = v` on a message you did not create; shallow-copy the message and clone `Extra` first (see StreamReader Key Rules below).
+
 ### Roles
 
 | Role | Constant | Purpose |
@@ -71,6 +73,8 @@ type AgenticMessage struct {
     Extra         map[string]any
 }
 ```
+
+The same read-only rule as `Message` applies: an `*AgenticMessage` from a stream may be shared with concurrent consumers, so never mutate it (or its `Extra` / `ContentBlocks`) in place -- copy-on-write instead.
 
 ### Roles
 
@@ -242,3 +246,4 @@ reader := schema.StreamReaderFromArray(items)
 - **Always `defer stream.Close()`** -- failing to close causes resource leaks
 - **Single consumer** -- a StreamReader can only be read by one goroutine
 - **EOF signals completion** -- `errors.Is(err, io.EOF)` means the stream ended normally
+- **Treat received elements as read-only** -- `StreamReader.Copy` fan-out duplicates readers, not elements, so a `*Message`/`*AgenticMessage` received from a stream may be shared with other branches reading concurrently. Never write to it in place (especially `msg.Extra[k] = v` -- concurrent map read/write panic). To modify: shallow-copy the message, clone the map/slice field you change, modify the clone, pass the copy downstream
