@@ -148,6 +148,7 @@ func (d *DDGS) sendRequestWithRetry(ctx context.Context, req *http.Request, para
 
 		// Check for rate limit response
 		if resp.StatusCode == http.StatusTooManyRequests {
+			_ = resp.Body.Close()
 			if attempt == d.config.MaxRetries {
 				return nil, ErrRateLimit
 			}

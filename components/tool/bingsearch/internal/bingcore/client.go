@@ -143,6 +143,7 @@ func (b *BingClient) sendRequestWithRetry(ctx context.Context, req *http.Request
 
 		// Check for rate limit response
 		if resp.StatusCode == http.StatusTooManyRequests {
+			_ = resp.Body.Close()
 			if attempt == b.config.MaxRetries {
 				return nil, errors.New("rate limit reached")
 			}
