@@ -587,8 +587,11 @@ func (cm *ChatModel) createContextByContextAPI(ctx context.Context, prefix []*sc
 			return nil, fmt.Errorf("convert message fail: %w", err)
 		}
 
+		if len(content.fileIDParts) > 0 {
+			return nil, fmt.Errorf("FileID is not supported with Context API caching; use Chat Completions without a context cache")
+		}
 		req.Messages = append(req.Messages, &model.ChatCompletionMessage{
-			Content:    content,
+			Content:    &content.ChatCompletionMessageContent,
 			Role:       string(msg.Role),
 			ToolCallID: msg.ToolCallID,
 			ToolCalls:  cm.chatModel.toArkToolCalls(msg.ToolCalls),
