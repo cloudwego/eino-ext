@@ -17,10 +17,13 @@
 package langfuse
 
 import (
+	"encoding/binary"
+	"math/rand/v2"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -142,7 +145,7 @@ func (l *langfuseIns) EndTrace(body *TraceEventBody) error {
 //   - error: Any error that occurred during creation
 func (l *langfuseIns) CreateSpan(body *SpanEventBody) (string, error) {
 	if len(body.ID) == 0 {
-		body.ID = uuid.NewString()
+		body.ID = newSpanID()
 	}
 	return body.ID, l.tm.push(&event{
 		ID:   uuid.NewString(),
@@ -231,4 +234,20 @@ func (l *langfuseIns) CreateEvent(body *EventEventBody) (string, error) {
 //   - When you need to ensure all events have been successfully uploaded
 func (l *langfuseIns) Flush() {
 	l.tm.flush()
+}
+
+// OTEL span id should be 16-hex characters.
+//   - https://www.w3.org/TR/trace-context/#parent-id
+//   - https://opentelemetry.io/docs/specs/otel/trace/api/#retrieving-the-traceid-and-spanid
+//
+// This implementation is picked from opentelemetry-go v1.44.0, since the default ID generator is not exported from it.
+func newSpanID() (ret string) {
+	sid := trace.SpanID{}
+	for {
+		binary.NativeEndian.PutUint64(sid[:], rand.Uint64())
+		if sid.IsValid() {
+			break
+		}
+	}
+	return sid.String()
 }

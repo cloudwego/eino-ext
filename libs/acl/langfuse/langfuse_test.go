@@ -165,3 +165,8 @@ func TestLangfuse(t *testing.T) {
 		lf.Flush()
 	})
 }
+
+func TestNewSpanID(t *testing.T) {
+	id := newSpanID()
+	assert.Len(t, id, 16)
+}
