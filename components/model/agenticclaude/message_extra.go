@@ -16,7 +16,10 @@
 
 package agenticclaude
 
-import "github.com/cloudwego/eino/schema"
+import (
+	"github.com/anthropics/anthropic-sdk-go/packages/respjson"
+	"github.com/cloudwego/eino/schema"
+)
 
 // GetCacheCreationInputTokens returns the Anthropic cache_creation_input_tokens
 // count from the message. This is the number of input tokens written into a new
@@ -36,4 +39,54 @@ func GetCacheCreationInputTokens(msg *schema.AgenticMessage) (int, bool) {
 	}
 	v, ok := msg.Extra[keyOfCacheCreationInputTokens].(int)
 	return v, ok
+}
+
+type responseExtraField string
+
+// GetResponseExtraFields returns additional fields from the Messages API response
+// preserved by WithResponseExtraFields. Each value is the original JSON text of
+// the field.
+func GetResponseExtraFields(msg *schema.AgenticMessage) map[string]string {
+	if msg == nil {
+		return nil
+	}
+	var fields map[string]string
+	for key, value := range msg.Extra {
+		var raw string
+		switch value := value.(type) {
+		case responseExtraField:
+			raw = string(value)
+		case string:
+			raw = value
+		default:
+			continue
+		}
+		if fields == nil {
+			fields = make(map[string]string)
+		}
+		fields[key] = raw
+	}
+	return fields
+}
+
+func extractResponseExtraFields(msg *schema.AgenticMessage, fields map[string]respjson.Field, keys map[string]struct{}) *schema.AgenticMessage {
+	if msg == nil || len(fields) == 0 || keys == nil {
+		return msg
+	}
+	for key, field := range fields {
+		if len(keys) > 0 {
+			if _, ok := keys[key]; !ok {
+				continue
+			}
+		}
+		raw := field.Raw()
+		if raw == "" {
+			continue
+		}
+		if msg.Extra == nil {
+			msg.Extra = make(map[string]any)
+		}
+		msg.Extra[key] = responseExtraField(raw)
+	}
+	return msg
 }

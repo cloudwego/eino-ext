@@ -17,10 +17,17 @@
 package agenticclaude
 
 import (
+	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/schema"
 )
 
 func init() {
+	schema.Register[responseExtraField]()
+	compose.RegisterStreamChunkConcatFunc(concatResponseExtraFields)
 	schema.RegisterName[*ServerToolCallArguments]("_eino_ext_claude_server_tool_call_arguments")
 	schema.RegisterName[*ServerToolResult]("_eino_ext_claude_server_tool_result")
+}
+
+func concatResponseExtraFields(values []responseExtraField) (responseExtraField, error) {
+	return values[len(values)-1], nil
 }
