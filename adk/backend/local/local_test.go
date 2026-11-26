@@ -23,7 +23,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -39,6 +41,21 @@ func setupTestDir(t *testing.T) string {
 	dir, err := os.MkdirTemp("", "sandbox-test")
 	assert.NoError(t, err)
 	return dir
+}
+
+func createSymlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return
+	}
+	if runtime.GOOS == "windows" {
+		var errno syscall.Errno
+		if errors.Is(err, os.ErrPermission) || (errors.As(err, &errno) && errno == syscall.Errno(1314)) {
+			t.Skipf("symlink privilege is not available: %v", err)
+		}
+	}
+	require.NoError(t, err)
 }
 
 func TestLsInfo(t *testing.T) {
@@ -363,6 +380,69 @@ func TestGlobInfo(t *testing.T) {
 			actual = append(actual, f.Path)
 		}
 		assert.ElementsMatch(t, expected, actual)
+	})
+
+	t.Run("glob follows directory symlinks", func(t *testing.T) {
+		dir := t.TempDir()
+		targetDir := t.TempDir()
+
+		assert.NoError(t, os.WriteFile(filepath.Join(targetDir, "SKILL.md"), []byte(""), 0644))
+		createSymlinkOrSkip(t, targetDir, filepath.Join(dir, "linked-skill"))
+		createSymlinkOrSkip(t, targetDir, filepath.Join(dir, "second-skill"))
+
+		files, err := s.GlobInfo(ctx, &filesystem.GlobInfoRequest{Path: dir, Pattern: "*/SKILL.md"})
+		assert.NoError(t, err)
+		assert.Equal(t, []filesystem.FileInfo{
+			{Path: "linked-skill/SKILL.md"},
+			{Path: "second-skill/SKILL.md"},
+		}, files)
+	})
+
+	t.Run("glob follows a symlink root", func(t *testing.T) {
+		dir := t.TempDir()
+		targetDir := t.TempDir()
+		skillDir := filepath.Join(targetDir, "eino-guide")
+
+		assert.NoError(t, os.Mkdir(skillDir, 0755))
+		assert.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(""), 0644))
+		symlinkRoot := filepath.Join(dir, "skills")
+		createSymlinkOrSkip(t, targetDir, symlinkRoot)
+
+		files, err := s.GlobInfo(ctx, &filesystem.GlobInfoRequest{Path: symlinkRoot, Pattern: "*/SKILL.md"})
+		assert.NoError(t, err)
+		assert.Equal(t, []filesystem.FileInfo{{Path: "eino-guide/SKILL.md"}}, files)
+	})
+
+	t.Run("glob stops directory symlink cycles", func(t *testing.T) {
+		dir := t.TempDir()
+		targetDir := t.TempDir()
+
+		assert.NoError(t, os.WriteFile(filepath.Join(targetDir, "SKILL.md"), []byte(""), 0644))
+		createSymlinkOrSkip(t, targetDir, filepath.Join(targetDir, "loop"))
+		createSymlinkOrSkip(t, targetDir, filepath.Join(dir, "skill"))
+
+		cycleCtx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		files, err := s.GlobInfo(cycleCtx, &filesystem.GlobInfoRequest{Path: dir, Pattern: "**/SKILL.md"})
+		assert.NoError(t, err)
+		assert.Equal(t, []filesystem.FileInfo{{Path: "skill/SKILL.md"}}, files)
+	})
+
+	t.Run("glob preserves file and broken symlinks", func(t *testing.T) {
+		dir := t.TempDir()
+
+		target := filepath.Join(dir, "target.txt")
+		assert.NoError(t, os.WriteFile(target, []byte(""), 0644))
+		createSymlinkOrSkip(t, target, filepath.Join(dir, "linked.txt"))
+		createSymlinkOrSkip(t, filepath.Join(dir, "missing.txt"), filepath.Join(dir, "broken.txt"))
+
+		files, err := s.GlobInfo(ctx, &filesystem.GlobInfoRequest{Path: dir, Pattern: "*.txt"})
+		assert.NoError(t, err)
+		assert.Equal(t, []filesystem.FileInfo{
+			{Path: "broken.txt"},
+			{Path: "linked.txt"},
+			{Path: "target.txt"},
+		}, files)
 	})
 
 	t.Run("glob with question mark", func(t *testing.T) {
