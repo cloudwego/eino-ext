@@ -18,6 +18,7 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -123,6 +124,61 @@ func TestStream(t *testing.T) {
 		assert.Equal(t, "{\"role\":\"assistant\",\"content\":\"hello\"}", seenBodies[0])
 		// Some versions may not carry RawBody on EOF; accept empty
 		assert.True(t, seenBodies[1] == "rawEOF" || seenBodies[1] == "")
+	})
+
+	t.Run("stream_with_ResponseChunkMessageModifier_eof_error", func(t *testing.T) {
+		c := &Client{config: &Config{Model: "test-model"}}
+		conf := openai.DefaultConfig("dummy-key")
+		c.cli = openai.NewClientWithConfig(conf)
+
+		stream := &openai.ChatCompletionStream{}
+
+		defer mockey.Mock(mockey.GetMethod(c.cli, "CreateChatCompletionStream")).
+			To(func(ctx context.Context, req openai.ChatCompletionRequest, opts ...openai.ChatCompletionRequestOption) (
+				response *openai.ChatCompletionStream, err error) {
+				return stream, nil
+			}).Build().Patch().UnPatch()
+
+		innerStream := populateAndGetEmbeddedStreamReader(stream)
+		var call int
+		defer mockey.Mock(mockey.GetMethod(innerStream, "Recv")).
+			To(func() (openai.ChatCompletionStreamResponse, error) {
+				call++
+				if call == 1 {
+					return openai.ChatCompletionStreamResponse{
+						Choices: []openai.ChatCompletionStreamChoice{
+							{
+								Index: 0,
+								Delta: openai.ChatCompletionStreamChoiceDelta{Role: "assistant", Content: "hello"},
+							},
+						},
+						RawBody: []byte(`{"role":"assistant","content":"hello"}`),
+					}, nil
+				}
+				return openai.ChatCompletionStreamResponse{}, io.EOF
+			}).Build().Patch().UnPatch()
+		defer mockey.Mock(mockey.GetMethod(innerStream, "Close")).Return(nil).Build().Patch().UnPatch()
+
+		expectedErr := errors.New("eof modifier error")
+		in := []*schema.Message{{Role: schema.User, Content: "hello"}}
+		outStream, err := c.Stream(t.Context(), in,
+			WithResponseChunkMessageModifier(func(ctx context.Context, msg *schema.Message, rawBody []byte, end bool) (*schema.Message, error) {
+				if end {
+					return nil, expectedErr
+				}
+				return msg, nil
+			}),
+		)
+		assert.NoError(t, err)
+		defer outStream.Close()
+
+		msg, recvErr := outStream.Recv()
+		assert.NoError(t, recvErr)
+		assert.Equal(t, "hello", msg.Content)
+
+		_, recvErr = outStream.Recv()
+		assert.ErrorIs(t, recvErr, expectedErr)
+		assert.ErrorContains(t, recvErr, "failed to modify chunk message")
 	})
 }
 
