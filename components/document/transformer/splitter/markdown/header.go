@@ -147,19 +147,22 @@ func (h *headerSplitter) splitText(ctx context.Context, text string) []splitResu
 			continue
 		}
 		line = strings.TrimSpace(line)
+		fenceLen := 0
+		if strings.HasPrefix(line, codeSep1) || strings.HasPrefix(line, codeSep2) {
+			for fenceLen < len(line) && line[fenceLen] == line[0] {
+				fenceLen++
+			}
+		}
 		if !bInCodeBlock {
-			if strings.HasPrefix(line, codeSep1) && strings.Count(line, codeSep1) == 1 {
+			if fenceLen > 0 && (line[0] != '`' || !strings.ContainsRune(line[fenceLen:], '`')) {
 				bInCodeBlock = true
-				openingFence = codeSep1
-			} else if strings.HasPrefix(line, codeSep2) {
-				bInCodeBlock = true
-				openingFence = codeSep2
+				openingFence = line[:fenceLen]
 			}
-		} else {
-			if strings.HasPrefix(line, openingFence) {
-				bInCodeBlock = false
-				openingFence = ""
-			}
+		} else if fenceLen >= len(openingFence) && strings.HasPrefix(line, openingFence) && strings.TrimSpace(line[fenceLen:]) == "" {
+			// Closing fences must use the same character, be at least as long,
+			// and have no info string after them.
+			bInCodeBlock = false
+			openingFence = ""
 		}
 		if bInCodeBlock {
 			currentLines = append(currentLines, line)
