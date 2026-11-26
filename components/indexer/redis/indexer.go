@@ -200,6 +200,10 @@ func (i *Indexer) pipelineHSet(ctx context.Context, docs []*schema.Document, opt
 					return fmt.Errorf("[pipelineHSet] duplicate key for value and vector, field=%s", k)
 				}
 
+				if _, found := key2Idx[v.EmbedKey]; found {
+					return fmt.Errorf("[pipelineHSet] duplicate key from embed_key, key=%s", v.EmbedKey)
+				}
+
 				var text string
 				if v.Stringify != nil {
 					text, err = v.Stringify(v.Value)
