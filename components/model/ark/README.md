@@ -1,5 +1,8 @@
 # Volcengine Ark Model
 
+For Chat Completions and Responses using the new official `ark-runtime-go` SDK, see the separate
+[ark/v2 module](v2/README.md). This module retains its existing SDK and APIs.
+
 A Volcengine Ark model implementation for [Eino](https://github.com/cloudwego/eino) that implements the `ToolCallingChatModel` interface. This enables seamless integration with Eino's LLM capabilities for enhanced natural language processing and generation.
 
 This package provides two distinct models:
@@ -545,3 +548,11 @@ func main() {
 
 - [Eino Documentation](https://www.cloudwego.io/zh/docs/eino/)
 - [Volcengine Ark Model Documentation](https://www.volcengine.com/docs/82379/1263272)
+
+### Clear reasoning
+
+`ark.ClearReasoning(history)` returns message copies with reasoning text, ciphertext and reasoning parts removed. It preserves text and tool calls without modifying the original messages.
+
+```go
+history = ark.ClearReasoning(history)
+```

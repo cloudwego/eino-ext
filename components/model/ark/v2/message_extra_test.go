@@ -1,0 +1,603 @@
+/*
+ * Copyright 2026 CloudWeGo Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package ark
+
+import (
+	"bytes"
+	"context"
+	"encoding/gob"
+	"encoding/json"
+	"io"
+	"math"
+	"net/http"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/chat"
+	"github.com/volcengine/ark-runtime-go/arkruntime/model/responses"
+)
+
+func messagePersistenceCodecs() []metadataTestCodec {
+	return append(responsesUsageJSONCodecs, metadataTestCodec{"encoding/json UseNumber", json.Marshal, func(raw []byte, value any) error {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		return decoder.Decode(value)
+	}}, metadataTestCodec{"gob", func(value any) ([]byte, error) {
+		var buffer bytes.Buffer
+		err := gob.NewEncoder(&buffer).Encode(value)
+		return buffer.Bytes(), err
+	}, func(raw []byte, value any) error {
+		return gob.NewDecoder(bytes.NewReader(raw)).Decode(value)
+	}})
+}
+
+func equalMetadataJSON(t *testing.T, want, got any) {
+	t.Helper()
+	values := make([]any, 2)
+	for i, input := range []any{want, got} {
+		raw, err := json.Marshal(input)
+		check(t, err)
+		check(t, json.Unmarshal(raw, &values[i]))
+	}
+	equal(t, values[0], values[1])
+}
+
+func TestClearReasoningReplay(t *testing.T) {
+	ctx := context.Background()
+	for _, source := range []string{"chat", "responses"} {
+		t.Run(source, func(t *testing.T) {
+			requests := make(chan map[string]any, 1)
+			chatModel := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+				requests <- decodeRequest(t, r)
+				writeResponse(w)
+			}, nil)
+			responsesModel := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+				requests <- decodeRequest(t, r)
+				writeResponses(w)
+			}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true}})
+			var sourceModel model.BaseChatModel = chatModel
+			if source == "responses" {
+				sourceModel = responsesModel
+			}
+			first, err := sourceModel.Generate(ctx, []*schema.Message{schema.UserMessage("hello")})
+			check(t, err)
+			<-requests
+			history := historyWithToolResult(first)
+			clean := ClearReasoning(history)
+			equal(t, first.ResponseMeta, clean[1].ResponseMeta)
+
+			// Replay the originals after cleanup as well. Compare the complete
+			// wire histories, including text, tool call IDs and tool results.
+			_, err = chatModel.Generate(ctx, history)
+			check(t, err)
+			wantChat := (<-requests)["messages"].([]any)
+			assistant := wantChat[1].(map[string]any)
+			equal(t, first.ReasoningContent, assistant["reasoning_content"])
+			equal(t, "cipher", assistant["encrypted_content"])
+			delete(assistant, "reasoning_content")
+			delete(assistant, "encrypted_content")
+			_, err = chatModel.Generate(ctx, clean)
+			check(t, err)
+			equal(t, wantChat, (<-requests)["messages"])
+
+			disableCache := WithCache(CacheOption{SessionCache: &SessionCacheConfig{EnableCache: false}})
+			_, err = responsesModel.Generate(ctx, history, disableCache)
+			check(t, err)
+			originalBody := <-requests
+			equal(t, false, originalBody["store"])
+			equal(t, "disabled", originalBody["caching"].(map[string]any)["type"])
+			original := originalBody["input"].([]any)
+			equal(t, 6, len(original))
+			reasoning := original[1].(map[string]any)
+			equal(t, "reasoning", reasoning["type"])
+			if source == "responses" {
+				equal(t, "cipher", reasoning["encrypted_content"])
+				equal(t, "raw thought", reasoning["content"].([]any)[0].(map[string]any)["text"])
+			}
+			check(t, InvalidateMessageCaches(clean))
+			replayed, err := responsesModel.Generate(ctx, clean)
+			check(t, err)
+			body := <-requests
+			_, hasPrevious := body["previous_response_id"]
+			equal(t, false, hasPrevious)
+			equal(t, append(original[:1], original[2:]...), body["input"])
+			equal(t, true, body["store"])
+			equal(t, "enabled", body["caching"].(map[string]any)["type"])
+
+			ref, ok := GetResponseCacheRef(replayed)
+			equal(t, true, ok)
+			next := append(clean, replayed, schema.ToolMessage("result", "call-1"))
+			_, err = responsesModel.Generate(ctx, next)
+			check(t, err)
+			body = <-requests
+			equal(t, ref.ResponseID, body["previous_response_id"])
+			equal(t, 1, len(body["input"].([]any)))
+		})
+	}
+}
+
+func TestClearReasoningCopiesHistory(t *testing.T) {
+	equal(t, ([]*schema.Message)(nil), ClearReasoning(nil))
+	equal(t, []*schema.Message{}, ClearReasoning([]*schema.Message{}))
+	itemIndex := func(i int64) map[string]any {
+		return map[string]any{keyResponsesItemIndex: metadataInt64(i)}
+	}
+	msg := &schema.Message{Role: schema.Assistant, Extra: map[string]any{
+		keyEncryptedContent: "", keyResponseID: metadataString("r1"), keyCacheExpiration: metadataInt64(42), "ark-encrypted-content": "legacy",
+	}, AssistantGenMultiContent: []schema.MessageOutputPart{
+		{Type: ResponsesOutputItem, Extra: itemIndex(0)},
+		{Type: schema.ChatMessagePartTypeReasoning, Extra: itemIndex(0)},
+		{Type: ResponsesOutputItem, Extra: itemIndex(0)},
+		{Type: schema.ChatMessagePartTypeReasoning},
+		{Type: ResponsesOutputItem, Extra: map[string]any{keyResponsesItemType: "reasoning", keyResponsesItemIndex: metadataInt64(1)}},
+		{Type: ResponsesOutputItem, Extra: itemIndex(1)},
+		{Type: ResponsesOutputItem, Extra: map[string]any{keyResponsesItemType: "web_search_call", keyResponsesItemIndex: metadataInt64(2)}},
+		{Type: schema.ChatMessagePartTypeText, Text: "answer"},
+	}}
+	for _, codec := range messagePersistenceCodecs() {
+		t.Run(codec.name, func(t *testing.T) {
+			raw, err := codec.marshal(msg)
+			check(t, err)
+			var restored schema.Message
+			check(t, codec.unmarshal(raw, &restored))
+			other := &schema.Message{Extra: map[string]any{keyResponseID: metadataString("r2"), keyCacheExpiration: metadataInt64(21)},
+				AssistantGenMultiContent: []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeText, Text: "other", Extra: itemIndex(0)}}}
+			clean := ClearReasoning([]*schema.Message{&restored, nil, other})
+			equal(t, (*schema.Message)(nil), clean[1])
+			equal(t, restored.AssistantGenMultiContent[6:], clean[0].AssistantGenMultiContent)
+			equal(t, other.AssistantGenMultiContent, clean[2].AssistantGenMultiContent)
+			_, encrypted := GetEncryptedContent(clean[0])
+			equal(t, false, encrypted)
+			equal(t, "legacy", clean[0].Extra["ark-encrypted-content"])
+			equal(t, clean, ClearReasoning(clean))
+			ref, ok := GetResponseCacheRef(clean[0])
+			equal(t, true, ok)
+			equal(t, ResponseCacheRef{ResponseID: "r1", ExpireAt: 42}, ref)
+			check(t, InvalidateMessageCaches(clean))
+			_, ok = GetResponseCacheRef(clean[0])
+			equal(t, false, ok)
+			meta, ok := GetResponsesMetadata(clean[0])
+			equal(t, true, ok)
+			equal(t, "r1", meta.ResponseID)
+			for _, original := range []*schema.Message{&restored, other} {
+				_, ok := GetResponseCacheRef(original)
+				equal(t, true, ok)
+			}
+			clean[0].AssistantGenMultiContent[1].Text = "edit"
+			equal(t, "answer", restored.AssistantGenMultiContent[7].Text)
+		})
+	}
+}
+
+func TestMessageExtraSurvivesSerialization(t *testing.T) {
+	for _, mode := range []string{"chat", "chat stream", "responses", "responses stream"} {
+		t.Run(mode, func(t *testing.T) {
+			var msg *schema.Message
+			var err error
+			var expectedChatUsage chat.CompletionUsage
+			chatAPI := mode == "chat" || mode == "chat stream"
+			if chatAPI {
+				var response map[string]json.RawMessage
+				check(t, json.Unmarshal([]byte(responseJSON), &response))
+				response["usage"] = json.RawMessage(`{"prompt_tokens":14,"completion_tokens":9,"total_tokens":23,"prompt_tokens_details":{"cached_tokens":2,"text_tokens":3,"image_tokens":4,"provisioned_tokens":5,"audio_tokens":6,"audio_cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":7,"provisioned_tokens":8}}`)
+				check(t, json.Unmarshal(response["usage"], &expectedChatUsage))
+				raw, marshalErr := json.Marshal(response)
+				check(t, marshalErr)
+				cm := testModel(t, func(w http.ResponseWriter, r *http.Request) {
+					if decodeRequest(t, r)["stream"] == true {
+						w.Header().Set("Content-Type", "text/event-stream")
+						sseChunk(w, `{"id":"req-1","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"th","encrypted_content":"ci"}}],"usage":null}`)
+						sseChunk(w, `{"id":"req-1","object":"chat.completion.chunk","created":1,"model":"actual-model","choices":[{"index":0,"delta":{"content":"done","reasoning_content":"ink","encrypted_content":"pher"},"finish_reason":"stop"}],"usage":null}`)
+						usageChunk, encodeErr := json.Marshal(map[string]any{
+							"id": "req-1", "object": "chat.completion.chunk", "created": 1, "model": "actual-model", "choices": []any{},
+							"usage": response["usage"], "service_tier": response["service_tier"], "service_status": response["service_status"],
+						})
+						if encodeErr != nil {
+							t.Error(encodeErr)
+							return
+						}
+						sseChunk(w, string(usageChunk))
+						sseChunk(w, "[DONE]")
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(raw)
+				}, nil)
+				if mode == "chat stream" {
+					msg = callHistoryModel(t, cm, "stream", []*schema.Message{schema.UserMessage("hello")})
+				} else {
+					msg, err = cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+				}
+			} else {
+				var response map[string]json.RawMessage
+				check(t, json.Unmarshal([]byte(responsesJSON), &response))
+				response["usage"] = json.RawMessage(detailedResponsesUsageJSON)
+				var output []json.RawMessage
+				check(t, json.Unmarshal(response["output"], &output))
+				// Unknown SDK union variants retain their JSON in private fields.
+				output = append(output, json.RawMessage(`{"type":"future_output","id":"future-1","payload":{"value":42}}`))
+				response["output"], err = json.Marshal(output)
+				check(t, err)
+				raw, marshalErr := json.Marshal(response)
+				check(t, marshalErr)
+				cm := testResponsesModel(t, func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("X-Request-Id", "request-1")
+					if decodeRequest(t, r)["stream"] == true {
+						w.Header().Set("Content-Type", "text/event-stream")
+						_, _ = io.WriteString(w, responseEvent("response.reasoning_text.delta", map[string]any{"delta": "raw thought", "output_index": 0, "content_index": 0, "item_id": "rs-1"}))
+						_, _ = io.WriteString(w, responseEvent("response.output_text.delta", map[string]any{"delta": "done", "output_index": 1, "content_index": 0, "item_id": "msg-1"}))
+						_, _ = io.WriteString(w, responseEvent("response.completed", map[string]any{"response": json.RawMessage(raw)}))
+						return
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write(raw)
+				}, &ResponsesAPIConfig{SessionCache: &SessionCacheConfig{EnableCache: true, TTL: 3600}})
+				if mode == "responses stream" {
+					reader, streamErr := cm.Stream(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+					check(t, streamErr)
+					msg, err = readResponsesStream(t, reader)
+				} else {
+					msg, err = cm.Generate(context.Background(), []*schema.Message{schema.UserMessage("hello")})
+				}
+			}
+			check(t, err)
+			for _, key := range []string{
+				"ark-reasoning-content", keyLegacyChatCompletionID, "ark-v2-responses-request-id",
+				keyUsageDetails + ".prompt_tokens", keyUsageDetails + ".completion_tokens", keyUsageDetails + ".total_tokens",
+				keyUsageDetails + ".prompt_tokens_details.cached_tokens", keyUsageDetails + ".completion_tokens_details.reasoning_tokens",
+				keyResponsesUsage + ".input_tokens", keyResponsesUsage + ".output_tokens", keyResponsesUsage + ".total_tokens",
+				keyResponsesUsage + ".input_tokens_details.cached_tokens", keyResponsesUsage + ".output_tokens_details.reasoning_tokens",
+			} {
+				if _, exists := msg.Extra[key]; exists {
+					t.Fatalf("unexpected metadata in Extra[%q]", key)
+				}
+			}
+			for key, value := range msg.Extra {
+				if !strings.HasPrefix(key, "ark-v2-") {
+					t.Fatalf("unversioned message metadata key %q", key)
+				}
+				if strings.HasSuffix(key, ".set") {
+					t.Fatalf("optional presence duplicated in Extra[%q]", key)
+				}
+				switch reflect.TypeOf(value).Kind() {
+				case reflect.String, reflect.Bool, reflect.Int64:
+				default:
+					t.Fatalf("Extra[%q] has non-atomic type %T", key, value)
+				}
+			}
+			for _, codec := range messagePersistenceCodecs() {
+				t.Run(codec.name, func(t *testing.T) {
+					raw, err := codec.marshal(msg)
+					check(t, err)
+					var restored schema.Message
+					check(t, codec.unmarshal(raw, &restored))
+					// ToolCall.Index is runtime merge state. In particular, gob
+					// flattens a pointer to zero back to nil. Compare persisted
+					// message data without those indices; history uses native Extra.
+					want, got := *msg, restored
+					want.ToolCalls = append([]schema.ToolCall(nil), msg.ToolCalls...)
+					got.ToolCalls = append([]schema.ToolCall(nil), restored.ToolCalls...)
+					for i := range want.ToolCalls {
+						want.ToolCalls[i].Index = nil
+					}
+					for i := range got.ToolCalls {
+						got.ToolCalls[i].Index = nil
+					}
+					equalMetadataJSON(t, &want, &got)
+					equal(t, msg.ReasoningContent, restored.ReasoningContent)
+					if chatAPI {
+						want, _ := GetChatResponseMetadata(msg)
+						meta, ok := GetChatResponseMetadata(&restored)
+						equal(t, true, ok)
+						equal(t, want, meta)
+						equal(t, "req-1", meta.CompletionID)
+						equal(t, &expectedChatUsage, meta.UsageDetails)
+						equal(t, "actual-model", meta.ModelName)
+						equal(t, ptr("default"), meta.ServiceTier)
+						cipher, ok := GetEncryptedContent(&restored)
+						equal(t, true, ok)
+						equal(t, "cipher", cipher)
+					} else {
+						want, _ := GetResponsesMetadata(msg)
+						meta, ok := GetResponsesMetadata(&restored)
+						equal(t, true, ok)
+						equal(t, want, meta)
+						equal(t, "resp-1", meta.ResponseID)
+						equalMetadataJSON(t, msg.AssistantGenMultiContent, restored.AssistantGenMultiContent)
+						wantRef, _ := GetResponseCacheRef(msg)
+						ref, ok := GetResponseCacheRef(&restored)
+						equal(t, true, ok)
+						equal(t, wantRef, ref)
+						wantInput, err := toResponsesInput([]*schema.Message{msg})
+						check(t, err)
+						input, err := toResponsesInput([]*schema.Message{&restored})
+						check(t, err)
+						equalMetadataJSON(t, wantInput, input)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestUsageConcatCombinesCommonCountsAndLastDetails(t *testing.T) {
+	for _, api := range []string{"chat", "responses"} {
+		t.Run(api, func(t *testing.T) {
+			first := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
+			middle := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
+			last := &schema.Message{ResponseMeta: &schema.ResponseMeta{}, Extra: map[string]any{}}
+			var chatUsage chat.CompletionUsage
+			var responseUsage responses.ResponseUsage
+			if api == "chat" {
+				var response chat.ChatCompletionResponse
+				check(t, json.Unmarshal([]byte(responseJSON), &response))
+				setUsage(first, response.Usage.Value)
+				var update chat.CompletionUsage
+				update.PromptTokensDetails.AudioTokens = chat.NewOptInt32(0)
+				setUsage(middle, update)
+				setUsage(last, chatUsage)
+				chatUsage = response.Usage.Value
+				chatUsage.PromptTokensDetails.AudioTokens = chat.NewOptInt32(0)
+				setServiceStatus(first, response.ServiceStatus.Value)
+				setServiceStatus(last, chat.ChatCompletionServiceStatus{})
+			} else {
+				var usage responses.ResponseUsage
+				check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &usage))
+				check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &responseUsage))
+				usage.InputTokensDetails.AudioTokens = responses.NewOptInt64(7)
+				var err error
+				first, err = projectResponsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(usage)}, &responses.ResponsesRequest{})
+				check(t, err)
+				var update responses.ResponseUsage
+				update.InputTokensDetails.AudioTokens = responses.NewOptInt64(0)
+				middle, err = projectResponsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(update)}, &responses.ResponsesRequest{})
+				check(t, err)
+				var lower responses.ResponseUsage
+				check(t, json.Unmarshal([]byte(`{"input_tokens":1,"output_tokens":1,"total_tokens":2,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":0}}`), &lower))
+				last, err = projectResponsesMetadata(&responses.Response{Usage: responses.NewOptResponseUsage(lower)}, &responses.ResponsesRequest{})
+				check(t, err)
+			}
+			// Explicit zero replaces a count; a later omission leaves it available.
+			joined, err := schema.ConcatMessages([]*schema.Message{first, middle, last})
+			check(t, err)
+			for _, codec := range messagePersistenceCodecs() {
+				t.Run(codec.name, func(t *testing.T) {
+					raw, err := codec.marshal(joined)
+					check(t, err)
+					var restored schema.Message
+					check(t, codec.unmarshal(raw, &restored))
+					if api == "chat" {
+						meta, ok := GetChatResponseMetadata(&restored)
+						equal(t, true, ok)
+						equal(t, &chatUsage, meta.UsageDetails)
+						equal(t, &chat.ChatCompletionServiceStatus{}, meta.ServiceStatus)
+					} else {
+						meta, ok := GetResponsesMetadata(&restored)
+						equal(t, true, ok)
+						equal(t, &responseUsage, meta.UsageDetails)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestUsageDetailsFollowResponseMeta(t *testing.T) {
+	var chatResponse chat.ChatCompletionResponse
+	check(t, json.Unmarshal([]byte(responseJSON), &chatResponse))
+	var response responses.Response
+	check(t, json.Unmarshal([]byte(responsesJSON), &response))
+	check(t, json.Unmarshal([]byte(detailedResponsesUsageJSON), &response.Usage.Value))
+	for _, format := range []string{"current", "common only"} {
+		t.Run(format, func(t *testing.T) {
+			chatMessage, err := resolveChatResponse(&chatResponse)
+			check(t, err)
+			responseMessage, err := projectResponsesResponse(&response, &responses.ResponsesRequest{})
+			check(t, err)
+			wantChat, wantResponse := chatResponse.Usage.Value, response.Usage.Value
+			// Change all common counts, including zero values.
+			wantChat.PromptTokens, wantChat.CompletionTokens, wantChat.TotalTokens = 0, 20, 20
+			wantChat.PromptTokensDetails.CachedTokens, wantChat.CompletionTokensDetails.ReasoningTokens = 0, 10
+			wantResponse.InputTokens, wantResponse.OutputTokens, wantResponse.TotalTokens = 0, 20, 20
+			wantResponse.InputTokensDetails.CachedTokens, wantResponse.OutputTokensDetails.ReasoningTokens = 0, 10
+			if format == "common only" {
+				chatMessage.Extra = map[string]any{keyChatCompletionID: "completion"}
+				responseMessage.Extra = map[string]any{keyResponseID: "response"}
+				wantChat.PromptTokensDetails.AudioTokens = chat.OptInt32{}
+				wantResponse.InputTokensDetails.AudioTokens, wantResponse.InputTokensDetails.AudioCachedTokens = responses.OptInt64{}, responses.OptInt64{}
+				wantResponse.ToolUsage, wantResponse.ToolUsageDetails = responses.OptToolUsage{}, responses.OptToolUsageDetails{}
+			}
+			for _, msg := range []*schema.Message{chatMessage, responseMessage} {
+				msg.ResponseMeta.Usage = &schema.TokenUsage{CompletionTokens: 20, TotalTokens: 20,
+					CompletionTokensDetails: schema.CompletionTokensDetails{ReasoningTokens: 10}}
+			}
+			for _, codec := range messagePersistenceCodecs() {
+				t.Run(codec.name, func(t *testing.T) {
+					raw, err := codec.marshal(chatMessage)
+					check(t, err)
+					var restored schema.Message
+					check(t, codec.unmarshal(raw, &restored))
+					chatMeta, ok := GetChatResponseMetadata(&restored)
+					equal(t, true, ok)
+					equal(t, &wantChat, chatMeta.UsageDetails)
+					raw, err = codec.marshal(responseMessage)
+					check(t, err)
+					var restoredResponse schema.Message
+					check(t, codec.unmarshal(raw, &restoredResponse))
+					responseMeta, ok := GetResponsesMetadata(&restoredResponse)
+					equal(t, true, ok)
+					equal(t, &wantResponse, responseMeta.UsageDetails)
+				})
+			}
+		})
+	}
+}
+
+func TestVideoFPSOuterExtraWire(t *testing.T) {
+	for _, api := range []string{"chat", "responses"} {
+		for _, mode := range []string{"generate", "stream"} {
+			roles := []schema.RoleType{schema.User, schema.Tool}
+			if api == "responses" {
+				roles = append(roles, schema.Assistant)
+			}
+			for _, role := range roles {
+				for _, codec := range messagePersistenceCodecs() {
+					for _, location := range []string{"outer", "deprecated only"} {
+						t.Run(api+"/"+mode+"/"+string(role)+"/"+codec.name+"/"+location, func(t *testing.T) {
+							outer := map[string]any{"application": "preserved"}
+							if location == "outer" && role == schema.Assistant {
+								outer[keyVideoFPS] = float64(0.25)
+							}
+							// Conflicting deprecated metadata must never override or
+							// supply the value configured on the outer part.
+							media := schema.MessagePartCommon{URL: ptr("https://example.com/video.mp4"), Extra: map[string]any{keyVideoFPS: float64(9)}}
+							message := &schema.Message{Role: role}
+							if role == schema.Assistant {
+								message.AssistantGenMultiContent = []schema.MessageOutputPart{{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageOutputVideo{MessagePartCommon: media}, Extra: outer}}
+							} else {
+								part := schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Video: &schema.MessageInputVideo{MessagePartCommon: media}, Extra: outer}
+								if location == "outer" {
+									SetInputVideoFPS(&part, 0.25)
+								}
+								message.UserInputMultiContent = []schema.MessageInputPart{part}
+								if role == schema.Tool {
+									message.ToolCallID = "call-1"
+								}
+							}
+							history := roundTripHistory(t, codec, []*schema.Message{message})
+							before, err := json.Marshal(history)
+							check(t, err)
+							var cm model.BaseChatModel
+							handler := func(w http.ResponseWriter, r *http.Request) {
+								body := decodeRequest(t, r)
+								list, field := "messages", "content"
+								if api == "responses" {
+									list = "input"
+									if role == schema.Tool {
+										field = "output"
+									}
+								}
+								item := body[list].([]any)[0].(map[string]any)
+								video := item[field].([]any)[0].(map[string]any)
+								if api == "chat" {
+									video = video["video_url"].(map[string]any)
+								}
+								// Responses assistant history uses standard fields only;
+								// private output FPS is not a portable media property.
+								if location == "outer" && role != schema.Assistant {
+									equal(t, float64(0.25), video["fps"])
+								} else if _, exists := video["fps"]; exists {
+									t.Error("private FPS was sent outside its supported input")
+								}
+								if api == "chat" {
+									writeChatHistoryReply(w, false, body["stream"] == true)
+								} else {
+									writeResponsesHistoryReply(w, false, body["stream"] == true)
+								}
+							}
+							if api == "chat" {
+								cm = testModel(t, handler, nil)
+							} else {
+								cm = testResponsesModel(t, handler, nil)
+							}
+							callHistoryModel(t, cm, mode, history)
+							after, err := json.Marshal(history)
+							check(t, err)
+							equal(t, string(before), string(after))
+						})
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestResponseMetadataProtocol(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		extra     map[string]any
+		chat      *ChatResponseMetadata
+		responses *ResponsesMetadata
+	}{
+		{name: "shared fields", extra: map[string]any{keyModelName: "model", keyServiceTier: "default"}},
+		{name: "legacy ID alone", extra: map[string]any{keyLegacyChatCompletionID: "same-id"}},
+		{name: "conflicting IDs", extra: map[string]any{keyChatCompletionID: "chat", keyResponseID: "body"}},
+		{name: "chat ID", extra: map[string]any{keyChatCompletionID: "same-id"}, chat: &ChatResponseMetadata{CompletionID: "same-id"}},
+		{name: "responses header only", extra: map[string]any{"ark-v2-responses-request-id": "same-id"}},
+		{name: "responses body only", extra: map[string]any{keyResponseID: "body"}, responses: &ResponsesMetadata{ResponseID: "body"}},
+		{name: "legacy chat", extra: map[string]any{keyLegacyChatCompletionID: "same-id", keyEncryptedContent: "cipher"}, chat: &ChatResponseMetadata{CompletionID: "same-id"}},
+		{name: "legacy responses", extra: map[string]any{keyLegacyChatCompletionID: "same-id", keyResponseID: "body"}, responses: &ResponsesMetadata{ResponseID: "body"}},
+		{name: "chat new ID takes precedence", extra: map[string]any{keyLegacyChatCompletionID: "old", keyChatCompletionID: "new"}, chat: &ChatResponseMetadata{CompletionID: "new"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := &schema.Message{Extra: tc.extra}
+			chat, ok := GetChatResponseMetadata(msg)
+			equal(t, tc.chat != nil, ok)
+			if ok {
+				equal(t, tc.chat, &chat)
+			}
+			responses, ok := GetResponsesMetadata(msg)
+			equal(t, tc.responses != nil, ok)
+			if ok {
+				equal(t, tc.responses, &responses)
+			}
+		})
+	}
+	for _, msg := range []*schema.Message{nil, {ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{TotalTokens: 1}}}} {
+		chat, ok := GetChatResponseMetadata(msg)
+		equal(t, false, ok)
+		equal(t, ChatResponseMetadata{}, chat)
+		responses, ok := GetResponsesMetadata(msg)
+		equal(t, false, ok)
+		equal(t, ResponsesMetadata{}, responses)
+	}
+}
+
+func TestChatMetadataUsageOverflow(t *testing.T) {
+	if math.MaxInt == math.MaxInt32 {
+		t.Skip("schema.TokenUsage cannot exceed int32 on this architecture")
+	}
+	n := int64(math.MaxInt32) + 1
+	msg := &schema.Message{Extra: map[string]any{keyChatCompletionID: "chat"},
+		ResponseMeta: &schema.ResponseMeta{Usage: &schema.TokenUsage{TotalTokens: int(n)}}}
+	meta, ok := GetChatResponseMetadata(msg)
+	equal(t, true, ok)
+	equal(t, ChatResponseMetadata{CompletionID: "chat"}, meta)
+}
+
+func TestLegacyExtraKeysIgnored(t *testing.T) {
+	msg := &schema.Message{Extra: map[string]any{
+		"ark-request-id": "old-request", "ark-model-name": "old-model", "ark-service-tier": "old-tier",
+		"ark-response-id": "old-response", "ark-response-cache-expire-at": float64(2000000000),
+	}}
+	_, ok := GetChatResponseMetadata(msg)
+	equal(t, false, ok)
+	_, ok = GetResponsesMetadata(msg)
+	equal(t, false, ok)
+	_, ok = GetResponseCacheRef(msg)
+	equal(t, false, ok)
+	part := &schema.MessageInputPart{Type: schema.ChatMessagePartTypeVideoURL, Extra: map[string]any{"ark-model-video-url-fps": 1.0}}
+	if GetInputVideoFPS(part) != nil {
+		t.Fatal("read FPS from the legacy key")
+	}
+	SetInputVideoFPS(part, 2)
+	equal(t, 2.0, *GetInputVideoFPS(part))
+	equal(t, 1.0, part.Extra["ark-model-video-url-fps"])
+}

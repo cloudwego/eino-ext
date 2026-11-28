@@ -1,5 +1,8 @@
 # Volcengine Ark 模型
 
+使用新官方 `ark-runtime-go` SDK 的 Chat Completions 与 Responses 请参阅独立的
+[ark/v2 模块使用说明](v2/README_zh.md)。本模块保留现有 SDK 和 API。
+
 一个 [Eino](https://github.com/cloudwego/eino) 的 Volcengine Ark 模型实现，实现了 `ToolCallingChatModel` 接口。这使得与 Eino 的 LLM 功能无缝集成，以增强自然语言处理和生成能力。
 
 该软件包提供了两种不同的模型：
@@ -538,3 +541,11 @@ func main() {
 
 - [Eino 文档](https://www.cloudwego.io/zh/docs/eino/)
 - [火山引擎方舟模型文档](https://www.volcengine.com/docs/82379/1263272)
+
+### 清理推理内容
+
+`ark.ClearReasoning(history)` 返回消息副本，清除推理明文、密文和 reasoning parts；保留正文和工具调用，不修改原消息。
+
+```go
+history = ark.ClearReasoning(history)
+```

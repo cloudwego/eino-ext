@@ -139,8 +139,11 @@ type ResponsesAPIConfig struct {
 
 	// EnableReasoningContentPassback controls whether reasoning content
 	// from assistant messages is passed back to the model in multi-turn conversations.
-	// When enabled, reasoning summaries and raw reasoning content are passed back in their original form,
-	// allowing the model to be aware of its prior chain-of-thought.
+	// When enabled, reasoning summaries and raw CoT are passed back.
+	// Message.ReasoningContent and reasoning part Text contain summaries only.
+	// Use GetRawReasoningContent on a reasoning part to read reasoning.content (raw CoT).
+	// Encrypted content is passed back even when no reasoning text is available.
+	// Returned reasoning metadata is preserved even when this option is false.
 	// However, if a valid previous_response_id is set (via session cache), the passback is
 	// automatically skipped because previous_response_id already preserves the full conversation
 	// context including the chain-of-thought on the server side.
@@ -625,6 +628,81 @@ func (cm *ResponsesAPIChatModel) populateCache(in []*schema.Message, responseReq
 	return in, nil
 }
 
+func reasoningInputItem(text, signature string, rawReasoning []string) *responses.InputItem {
+	r := &responses.ItemReasoning{Type: responses.ItemType_reasoning}
+	if signature != "" {
+		r.EncryptedContent = &signature
+	}
+	if text != "" {
+		r.Summary = []*responses.ReasoningSummaryPart{{Type: responses.ContentItemType_summary_text, Text: text}}
+	}
+	for _, text := range rawReasoning {
+		r.Content = append(r.Content, &responses.OutputContentItem{Union: &responses.OutputContentItem_Text{Text: &responses.OutputContentItemText{Type: responses.ContentItemType_reasoning_text, Text: text}}})
+	}
+	return &responses.InputItem{Union: &responses.InputItem_Reasoning{Reasoning: r}}
+}
+
+func (cm *ResponsesAPIChatModel) assistantInputItems(msg *schema.Message, passback bool) ([]*responses.InputItem, error) {
+	var items []*responses.InputItem
+	hasText, hasReasoning := false, false
+	for _, p := range msg.AssistantGenMultiContent {
+		hasText = hasText || p.Type == schema.ChatMessagePartTypeText
+		hasReasoning = hasReasoning || p.Type == schema.ChatMessagePartTypeReasoning
+	}
+	if passback && !hasReasoning {
+		rawReasoning := rawReasoningContent(msg.Extra)
+		signature, _ := getMsgExtraValue[string](msg, keyOfReasoningEncryptedContent)
+		if msg.ReasoningContent != "" || signature != "" || len(rawReasoning) > 0 {
+			items = append(items, reasoningInputItem(msg.ReasoningContent, signature, rawReasoning))
+		}
+	}
+	for _, p := range msg.AssistantGenMultiContent {
+		switch p.Type {
+		case schema.ChatMessagePartTypeReasoning:
+			if !passback {
+				continue
+			}
+			rawReasoning := rawReasoningContent(p.Extra)
+			if p.Reasoning.Text != "" || p.Reasoning.Signature != "" || len(rawReasoning) > 0 {
+				items = append(items, reasoningInputItem(p.Reasoning.Text, p.Reasoning.Signature, rawReasoning))
+			}
+		case schema.ChatMessagePartTypeText:
+			single := *msg
+			single.AssistantGenMultiContent = []schema.MessageOutputPart{p}
+			m, err := cm.toArkAssistantRoleItemInputMessage(&single)
+			if err != nil {
+				return nil, err
+			}
+			if len(items) > 0 {
+				prev := items[len(items)-1].GetInputMessage()
+				if prev != nil {
+					prev.Content = append(prev.Content, m.Content...)
+					continue
+				}
+			}
+			items = append(items, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: m}})
+		default:
+			return nil, fmt.Errorf("unsupported content type in AssistantGenMultiContent: %s", p.Type)
+		}
+	}
+	if !hasText {
+		single := *msg
+		single.AssistantGenMultiContent = nil
+		m, err := cm.toArkAssistantRoleItemInputMessage(&single)
+		if err != nil {
+			return nil, err
+		}
+		if len(m.Content) > 0 {
+			items = append(items, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: m}})
+		}
+	}
+	for _, call := range msg.ToolCalls {
+		c := &responses.ItemFunctionToolCall{Type: responses.ItemType_function_call, CallId: call.ID, Name: call.Function.Name, Arguments: call.Function.Arguments}
+		items = append(items, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{FunctionToolCall: c}})
+	}
+	return items, nil
+}
+
 func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq *responses.ResponsesRequest, enableReasoningPassback bool) error {
 	itemList := make([]*responses.InputItem, 0, len(in))
 	if len(in) == 0 {
@@ -639,47 +717,12 @@ func (cm *ResponsesAPIChatModel) populateInput(in []*schema.Message, responseReq
 			}
 			itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
 		case schema.Assistant:
-			if enableReasoningPassback && responseReq.PreviousResponseId == nil && msg.ReasoningContent != "" {
-				reasoning := &responses.ItemReasoning{Type: responses.ItemType_reasoning}
-				if rawReasoning, ok := getRawReasoningContent(msg); ok && rawReasoning == msg.ReasoningContent {
-					reasoning.Content = []*responses.OutputContentItem{
-						{
-							Union: &responses.OutputContentItem_Text{
-								Text: &responses.OutputContentItemText{
-									Type: responses.ContentItemType_reasoning_text,
-									Text: rawReasoning,
-								},
-							},
-						},
-					}
-				} else {
-					reasoning.Summary = []*responses.ReasoningSummaryPart{
-						{Text: msg.ReasoningContent},
-					}
-				}
-				itemList = append(itemList, &responses.InputItem{
-					Union: &responses.InputItem_Reasoning{Reasoning: reasoning},
-				})
-			}
-
-			inputMessage, err := cm.toArkAssistantRoleItemInputMessage(msg)
+			assistantItems, err := cm.assistantInputItems(msg, enableReasoningPassback && responseReq.PreviousResponseId == nil)
 			if err != nil {
 				return err
 			}
-			if len(inputMessage.GetContent()) > 0 {
-				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_InputMessage{InputMessage: inputMessage}})
-			}
+			itemList = append(itemList, assistantItems...)
 
-			for _, toolCall := range msg.ToolCalls {
-				itemList = append(itemList, &responses.InputItem{Union: &responses.InputItem_FunctionToolCall{
-					FunctionToolCall: &responses.ItemFunctionToolCall{
-						Type:      responses.ItemType_function_call,
-						CallId:    toolCall.ID,
-						Arguments: toolCall.Function.Arguments,
-						Name:      toolCall.Function.Name,
-					},
-				}})
-			}
 		case schema.System:
 			inputMessage, err := cm.toArkSystemRoleItemInputMessage(msg)
 			if err != nil {
@@ -867,7 +910,7 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 			}
 			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
 				Text: &responses.ContentItemText{
-					Type: responses.ContentItemType_input_text,
+					Type: responses.ContentItemType_output_text,
 					Text: part.Text,
 				},
 			}})
@@ -878,7 +921,7 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 	if msg.Content != "" {
 		inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
 			Text: &responses.ContentItemText{
-				Type: responses.ContentItemType_input_text,
+				Type: responses.ContentItemType_output_text,
 				Text: msg.Content,
 			},
 		}})
@@ -892,7 +935,7 @@ func (cm *ResponsesAPIChatModel) toArkAssistantRoleItemInputMessage(msg *schema.
 			}
 			inputItemMessage.Content = append(inputItemMessage.Content, &responses.ContentItem{Union: &responses.ContentItem_Text{
 				Text: &responses.ContentItemText{
-					Type: responses.ContentItemType_input_text,
+					Type: responses.ContentItemType_output_text,
 					Text: c.Text,
 				},
 			}})
@@ -1006,6 +1049,28 @@ func (cm *ResponsesAPIChatModel) toTools(tis []*schema.ToolInfo) ([]*responses.R
 	return tools, nil
 }
 
+func reasoningOutputPart(r *responses.ItemReasoning) schema.MessageOutputPart {
+	part := schema.MessageOutputPart{Type: schema.ChatMessagePartTypeReasoning}
+	var rawReasoning arkRawReasoningContent
+	for _, c := range r.GetContent() {
+		if c.GetText() != nil && c.GetText().GetType() == responses.ContentItemType_reasoning_text {
+			rawReasoning = append(rawReasoning, c.GetText().GetText())
+		}
+	}
+	var summaries []string
+	for _, s := range r.GetSummary() {
+		if s.Text != "" {
+			summaries = append(summaries, s.Text)
+		}
+	}
+	text := strings.Join(summaries, "\n\n")
+	if len(rawReasoning) > 0 {
+		part.Extra = map[string]any{keyOfRawReasoningContent: rawReasoning}
+	}
+	part.Reasoning = &schema.MessageOutputReasoning{Text: text, Signature: r.GetEncryptedContent()}
+	return part
+}
+
 func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject, cache *cacheConfig) (*schema.Message, error) {
 	msg := &schema.Message{
 		Role: schema.Assistant,
@@ -1039,72 +1104,46 @@ func (cm *ResponsesAPIChatModel) toOutputMessage(resp *responses.ResponseObject,
 		return nil, fmt.Errorf("received empty output from ARK")
 	}
 
-	var reasoningSummary strings.Builder
-	var rawReasoning strings.Builder
-
+	var text, reasoning strings.Builder
 	for _, item := range resp.Output {
 		switch asItem := item.GetUnion().(type) {
 		case *responses.OutputItem_OutputMessage:
 			if asItem.OutputMessage == nil {
 				continue
 			}
-			isMultiContent := len(asItem.OutputMessage.Content) > 1
 			for _, content := range asItem.OutputMessage.Content {
 				if content.GetText() == nil {
 					continue
 				}
-				if !isMultiContent {
-					msg.Content = content.GetText().GetText()
-				} else {
-					msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, schema.MessageOutputPart{
-						Type: schema.ChatMessagePartTypeText,
-						Text: content.GetText().GetText(),
-					})
-				}
+				part := schema.MessageOutputPart{Type: schema.ChatMessagePartTypeText, Text: content.GetText().GetText()}
+				msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, part)
+				text.WriteString(part.Text)
 			}
-
 		case *responses.OutputItem_Reasoning:
 			if asItem.Reasoning == nil {
 				continue
 			}
-			for _, content := range asItem.Reasoning.GetContent() {
-				text := content.GetText()
-				if text == nil || text.GetType() != responses.ContentItemType_reasoning_text {
-					continue
-				}
-				rawReasoning.WriteString(text.GetText())
+			part := reasoningOutputPart(asItem.Reasoning)
+			msg.AssistantGenMultiContent = append(msg.AssistantGenMultiContent, part)
+			if reasoning.Len() > 0 && part.Reasoning.Text != "" {
+				reasoning.WriteString("\n\n")
 			}
-			for _, s := range asItem.Reasoning.GetSummary() {
-				if s.Text == "" {
-					continue
-				}
-				if reasoningSummary.Len() > 0 {
-					reasoningSummary.WriteString("\n\n")
-				}
-				reasoningSummary.WriteString(s.Text)
-			}
-
+			reasoning.WriteString(part.Reasoning.Text)
 		case *responses.OutputItem_FunctionToolCall:
 			if asItem.FunctionToolCall == nil {
 				continue
 			}
 			msg.ToolCalls = append(msg.ToolCalls, schema.ToolCall{
-				ID:   asItem.FunctionToolCall.CallId,
-				Type: asItem.FunctionToolCall.Type.String(),
-				Function: schema.FunctionCall{
-					Name:      asItem.FunctionToolCall.Name,
-					Arguments: asItem.FunctionToolCall.Arguments,
-				},
+				ID:       asItem.FunctionToolCall.CallId,
+				Type:     asItem.FunctionToolCall.Type.String(),
+				Function: schema.FunctionCall{Name: asItem.FunctionToolCall.Name, Arguments: asItem.FunctionToolCall.Arguments},
 			})
 		}
 	}
-
-	if rawReasoning.Len() > 0 {
-		msg.ReasoningContent = rawReasoning.String()
+	msg.Content = text.String()
+	msg.ReasoningContent = reasoning.String()
+	if msg.ReasoningContent != "" {
 		setReasoningContent(msg, msg.ReasoningContent)
-		setRawReasoningContent(msg, msg.ReasoningContent)
-	} else {
-		msg.ReasoningContent = reasoningSummary.String()
 	}
 
 	return msg, nil
@@ -1159,8 +1198,89 @@ func (cm *ResponsesAPIChatModel) toCallbackConfig(req *responses.ResponsesReques
 	}
 }
 
+type responseContentStream struct {
+	textPartIndexes map[responseTextPartKey]int
+	reasoningStates map[int64]*responseReasoningState
+	nextPartIndex   int
+	summaryStarted  bool
+}
+
+type responseTextPartKey struct {
+	outputIndex, contentIndex int64
+}
+
+type responseReasoningState struct {
+	partIndex        int
+	summaryStarted   bool
+	lastSummaryIndex int64
+}
+
+func (s *responseContentStream) textChunk(outputIndex, contentIndex int64, text string) *schema.Message {
+	if s.textPartIndexes == nil {
+		s.textPartIndexes = make(map[responseTextPartKey]int)
+	}
+	key := responseTextPartKey{outputIndex: outputIndex, contentIndex: contentIndex}
+	partIndex, exists := s.textPartIndexes[key]
+	if !exists {
+		partIndex = s.nextPartIndex
+		s.nextPartIndex++
+		s.textPartIndexes[key] = partIndex
+	}
+	return &schema.Message{
+		Role:    schema.Assistant,
+		Content: text,
+		AssistantGenMultiContent: []schema.MessageOutputPart{{
+			Type:          schema.ChatMessagePartTypeText,
+			Text:          text,
+			StreamingMeta: &schema.MessageStreamingMeta{Index: partIndex},
+		}},
+	}
+}
+
+func (s *responseContentStream) reasoningState(outputIndex int64) *responseReasoningState {
+	if s.reasoningStates == nil {
+		s.reasoningStates = make(map[int64]*responseReasoningState)
+	}
+	state := s.reasoningStates[outputIndex]
+	if state == nil {
+		state = &responseReasoningState{partIndex: s.nextPartIndex, lastSummaryIndex: -1}
+		s.nextPartIndex++
+		s.reasoningStates[outputIndex] = state
+	}
+	return state
+}
+
+func (s *responseContentStream) summaryChunk(outputIndex, summaryIndex int64, text string) *schema.Message {
+	state := s.reasoningState(outputIndex)
+	partSummary, messageSummary := text, text
+	if text != "" {
+		if state.summaryStarted && state.lastSummaryIndex != summaryIndex {
+			partSummary = "\n\n" + text
+		}
+		messageSummary = partSummary
+		if !state.summaryStarted && s.summaryStarted {
+			messageSummary = "\n\n" + text
+		}
+		state.summaryStarted = true
+		state.lastSummaryIndex = summaryIndex
+		s.summaryStarted = true
+	}
+	msg := &schema.Message{
+		Role:             schema.Assistant,
+		ReasoningContent: messageSummary,
+		AssistantGenMultiContent: []schema.MessageOutputPart{{
+			Type:          schema.ChatMessagePartTypeReasoning,
+			Reasoning:     &schema.MessageOutputReasoning{Text: partSummary},
+			StreamingMeta: &schema.MessageStreamingMeta{Index: state.partIndex},
+		}},
+	}
+	setReasoningContent(msg, msg.ReasoningContent)
+	return msg
+}
+
 func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.ResponsesStreamReader, config *model.Config, cacheConfig *cacheConfig, sw *schema.StreamWriter[*model.CallbackOutput], thinking *arkModel.Thinking) {
 	var itemFunctionToolCall *responses.ItemFunctionToolCall
+	contentStream := &responseContentStream{}
 
 	for {
 		event, err := streamReader.Recv()
@@ -1185,17 +1305,22 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			if ev.ResponseCompleted == nil || ev.ResponseCompleted.Response == nil {
 				continue
 			}
+
 			msg := cm.handleCompletedStreamEvent(ev.ResponseCompleted.Response)
 			cm.setStreamChunkDefaultExtra(msg, ev.ResponseCompleted.Response, cacheConfig)
 			cm.sendCallbackOutput(sw, config, ev.ResponseCompleted.Response.Model, msg, thinking)
 
 		case *responses.Event_Error:
-			sw.Send(nil, fmt.Errorf("received error: %s", ev.Error.Message))
+			_ = sw.Send(nil, &arkModel.APIError{
+				Code: ev.Error.GetCode(), Message: ev.Error.Message, Param: ev.Error.Param, Type: "error",
+			})
+			return
 
 		case *responses.Event_ResponseIncomplete:
 			if ev.ResponseIncomplete == nil || ev.ResponseIncomplete.Response == nil || ev.ResponseIncomplete.Response.IncompleteDetails == nil {
 				continue
 			}
+
 			detail := ev.ResponseIncomplete.Response.IncompleteDetails.Reason
 			msg := &schema.Message{
 				Role: schema.Assistant,
@@ -1211,26 +1336,39 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			if ev.ResponseFailed == nil || ev.ResponseFailed.Response == nil {
 				continue
 			}
-			var errorMessage string
-			if ev.ResponseFailed.Response.Error != nil {
-				errorMessage = ev.ResponseFailed.Response.Error.Message
-			}
-			msg := &schema.Message{
-				Role: schema.Assistant,
-				ResponseMeta: &schema.ResponseMeta{
-					FinishReason: errorMessage,
-					Usage:        cm.toEinoTokenUsage(ev.ResponseFailed.Response.Usage),
-				},
-			}
-			cm.setStreamChunkDefaultExtra(msg, ev.ResponseFailed.Response, cacheConfig)
-			cm.sendCallbackOutput(sw, config, ev.ResponseFailed.Response.Model, msg, thinking)
+			responseErr := ev.ResponseFailed.Response.Error
+			_ = sw.Send(nil, &arkModel.APIError{
+				Code: responseErr.GetCode(), Message: responseErr.GetMessage(), Type: "response.failed",
+			})
+			return
 
 		case *responses.Event_Item:
 			if ev.Item == nil || ev.Item.GetItem() == nil || ev.Item.GetItem().GetUnion() == nil {
 				continue
 			}
+
 			if outputItemFuncCall, ok := ev.Item.GetItem().GetUnion().(*responses.OutputItem_FunctionToolCall); ok {
 				itemFunctionToolCall = outputItemFuncCall.FunctionToolCall
+			}
+
+		case *responses.Event_ItemDone:
+			if ev.ItemDone == nil || ev.ItemDone.Item == nil {
+				continue
+			}
+			if r := ev.ItemDone.Item.GetReasoning(); r != nil {
+				state := contentStream.reasoningState(ev.ItemDone.OutputIndex)
+				if r.GetEncryptedContent() == "" {
+					continue
+				}
+				msg := &schema.Message{
+					Role: schema.Assistant,
+					AssistantGenMultiContent: []schema.MessageOutputPart{{
+						Type:          schema.ChatMessagePartTypeReasoning,
+						Reasoning:     &schema.MessageOutputReasoning{Signature: r.GetEncryptedContent()},
+						StreamingMeta: &schema.MessageStreamingMeta{Index: state.partIndex},
+					}},
+				}
+				cm.sendCallbackOutput(sw, config, "", msg, thinking)
 			}
 
 		case *responses.Event_FunctionCallArguments:
@@ -1263,35 +1401,33 @@ func (cm *ResponsesAPIChatModel) receivedStreamResponse(streamReader *utils.Resp
 			if ev.ReasoningText == nil || ev.ReasoningText.Delta == nil {
 				continue
 			}
-			delta := *ev.ReasoningText.Delta
-			msg := &schema.Message{
-				Role:             schema.Assistant,
-				ReasoningContent: delta,
-			}
-			setReasoningContent(msg, delta)
+			msg := contentStream.summaryChunk(ev.ReasoningText.OutputIndex, ev.ReasoningText.SummaryIndex, *ev.ReasoningText.Delta)
 			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		case *responses.Event_ReasoningRawTextDelta:
 			if ev.ReasoningRawTextDelta == nil || ev.ReasoningRawTextDelta.Delta == nil {
 				continue
 			}
-			delta := *ev.ReasoningRawTextDelta.Delta
+			state := contentStream.reasoningState(ev.ReasoningRawTextDelta.OutputIndex)
+			contentIndex := ev.ReasoningRawTextDelta.ContentIndex
+			rawContent := make(arkRawReasoningContent, int(contentIndex)+1)
+			rawContent[contentIndex] = *ev.ReasoningRawTextDelta.Delta
 			msg := &schema.Message{
-				Role:             schema.Assistant,
-				ReasoningContent: delta,
+				Role: schema.Assistant,
+				AssistantGenMultiContent: []schema.MessageOutputPart{{
+					Type:          schema.ChatMessagePartTypeReasoning,
+					Reasoning:     &schema.MessageOutputReasoning{},
+					Extra:         map[string]any{keyOfRawReasoningContent: rawContent},
+					StreamingMeta: &schema.MessageStreamingMeta{Index: state.partIndex},
+				}},
 			}
-			setReasoningContent(msg, delta)
-			setRawReasoningContent(msg, delta)
 			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		case *responses.Event_Text:
 			if ev.Text == nil || ev.Text.Delta == nil {
 				continue
 			}
-			msg := &schema.Message{
-				Role:    schema.Assistant,
-				Content: *ev.Text.Delta,
-			}
+			msg := contentStream.textChunk(ev.Text.OutputIndex, ev.Text.ContentIndex, *ev.Text.Delta)
 			cm.sendCallbackOutput(sw, config, "", msg, thinking)
 
 		}
